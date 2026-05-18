@@ -1,0 +1,13 @@
+{
+  "id": "elegant",
+  "name": "Elegant",
+  "description": "Sophisticated layout with serif fonts",
+  "defaults": {
+    "font_family": "Georgia",
+    "font_size": 12,
+    "primary_color": "#5D4037",
+    "table_header_color": "#EFEBE9",
+    "show_logo": true
+  }
+}
+

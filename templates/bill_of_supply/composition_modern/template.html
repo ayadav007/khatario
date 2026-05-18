@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bill of Supply</title>
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --font-family: {{settings.font_family}};
+      --font-size: {{settings.font_size}}px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-family), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: var(--font-size);
+      color: var(--text-color);
+      line-height: 1.6;
+      padding: 30px;
+      background: #f9fafb;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 40px;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    
+    .document-title {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--primary-color);
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+    }
+    
+    .composition-disclaimer {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    
+    .composition-disclaimer .title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #92400e;
+    }
+    
+    .composition-disclaimer .subtitle {
+      font-size: 11px;
+      color: #78350f;
+      margin-top: 4px;
+    }
+    
+    .header {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin: 30px 0;
+      padding: 20px;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+    
+    .business-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: #6366f1;
+      margin-bottom: 10px;
+    }
+    
+    .bill-info {
+      text-align: right;
+    }
+    
+    .bill-number {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 30px 0;
+    }
+    
+    thead {
+      background: var(--primary-color);
+      color: white;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    th {
+      padding: 14px 10px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    tbody tr {
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    td {
+      padding: 12px 10px;
+      font-size: 13px;
+    }
+    
+    .summary {
+      margin: 30px 0;
+      padding: 20px;
+      background: #f8fafc;
+      border-radius: 8px;
+      text-align: right;
+    }
+    
+    .total-row {
+      font-size: 24px;
+      font-weight: 700;
+      color: #6366f1;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 2px solid #6366f1;
+    }
+    
+    @media print {
+      body { background: white; padding: 0; }
+      .container { box-shadow: none; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="document-title">BILL OF SUPPLY</div>
+    
+    <div class="composition-disclaimer">
+      <div class="title">Composition Taxable Person - Not Eligible to Collect Tax on Supplies</div>
+      <div class="subtitle">Registered under Section 10 of the CGST Act, 2017</div>
+    </div>
+    
+    <div class="header">
+      <div>
+        <div class="business-name">{{business.name}}</div>
+        <div>{{business.address}}, {{business.city}}</div>
+        <div>{{business.state}} - {{business.pincode}}</div>
+        {{#if business.gstin}}<div><strong>GSTIN:</strong> {{business.gstin}}</div>{{/if}}
+      </div>
+      <div class="bill-info">
+        <div class="bill-number">{{invoice.invoice_number}}</div>
+        <div>Date: {{invoice.invoice_date}}</div>
+        <div>Place of Supply: {{invoice.place_of_supply}}</div>
+      </div>
+    </div>
+    
+    <div style="margin: 20px 0; padding: 15px; background: color-mix(in srgb, {{settings.primary_color}} 6%, #f8fafc); border-radius: 6px;">
+      <strong>Bill To:</strong> {{customer.name}}<br>
+      {{customer.address}}<br>
+      {{#if customer.gstin}}GSTIN: {{customer.gstin}}{{/if}}
+    </div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Description</th>
+          <th>HSN</th>
+          <th style="text-align: center;">Qty</th>
+          <th style="text-align: right;">Rate</th>
+          <th style="text-align: right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td>{{this.index}}</td>
+          <td>{{this.item_name}}</td>
+          <td>{{this.hsn_sac}}</td>
+          <td style="text-align: center;">{{this.quantity}}</td>
+          <td style="text-align: right;">₹{{this.unit_price}}</td>
+          <td style="text-align: right;">₹{{this.taxable_value}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    
+    <div class="summary">
+      <div>Subtotal: ₹{{invoice.subtotal}}</div>
+      <div class="total-row">Total: ₹{{invoice.grand_total}}</div>
+      <div style="margin-top: 15px; font-size: 12px; color: #64748b;">
+        {{invoice.amount_in_words}}
+      </div>
+    </div>
+    
+    {{#if invoice.notes}}
+    <div style="margin: 20px 0; padding: 15px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px;">
+      <strong>Notes:</strong><br>{{invoice.notes}}
+    </div>
+    {{/if}}
+    
+    <div style="margin-top: 60px; display: flex; justify-content: space-between;">
+      <div>Customer Signature</div>
+      <div>For {{business.name}}</div>
+    </div>
+  </div>
+</body>
+</html>
+

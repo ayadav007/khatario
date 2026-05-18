@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --primary-color: {{settings.primary_color}};
+        --text-color: {{settings.text_color}};
+        --table-header-color: {{settings.table_header_color}};
+        --font-family: {{settings.font_family}};
+        --font-size: {{settings.font_size}}px;
+        --margin-top: {{settings.margin_top}}px;
+        --margin-right: {{settings.margin_right}}px;
+        --margin-bottom: {{settings.margin_bottom}}px;
+        --margin-left: {{settings.margin_left}}px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        font-family: var(--font-family), sans-serif;
+        font-size: var(--font-size);
+        color: var(--text-color);
+        -webkit-print-color-adjust: exact;
+        margin: 0;
+        padding: 0;
+        background: #fff;
+      }
+
+      .page {
+        /* IMPORTANT:
+         * The PDF generator already applies A4 margins.
+         * Using a fixed 210mm page box + extra padding can introduce top whitespace
+         * and force content to spill onto a second page.
+         */
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      .grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid #333;
+      }
+      .grid-table th,
+      .grid-table td {
+        border: 1px solid #333;
+        padding: 6px 8px;
+        vertical-align: top;
+        font-size: 12px;
+      }
+      .grid-table th {
+        background: var(--table-header-color);
+        font-weight: 700;
+        text-align: left;
+      }
+
+      .text-right { text-align: right; }
+      .text-center { text-align: center; }
+      .nowrap { white-space: nowrap; }
+      .small { font-size: 11px; }
+      .xsmall { font-size: 10px; }
+      .section-title { font-weight: 700; margin-bottom: 4px; }
+      .company-name { font-size: 18px; font-weight: 700; }
+      .muted { color: #444; }
+      .logo { max-height: 52px; max-width: 120px; object-fit: contain; }
+      .shade { background: #e9e9e9; }
+      .shade-light { background: #f3f3f3; }
+
+      .signature-box {
+        height: 64px;
+        border: 1px dashed #666;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 6px;
+      }
+      .signature-panel {
+        min-height: 120px;
+        background: #e9e9e9;
+        border: 1px dashed #777;
+        padding: 10px;
+      }
+      .signature-panel .sig-label {
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .signature-panel .sig-image {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f6f6f6;
+        border: 1px solid #cfcfcf;
+      }
+      .signature-panel .sig-image img { max-height: 56px; max-width: 180px; }
+      .cut-line {
+        margin: 8px 0 6px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #666;
+      }
+      .cut-line .scissor { font-size: 14px; }
+      .cut-line .dash { flex: 1; border-top: 1px dashed #777; }
+
+      .ack-title {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+      }
+
+      @media print {
+        /* Let Puppeteer PDF page sizing handle the canvas */
+        .page { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <!-- Header -->
+      <table class="grid-table" style="margin-bottom: 10px;">
+        <tr>
+          <td style="width: 140px;">
+            {{#ifSetting 'show_logo'}}
+              {{#if business.logo_url}}
+                <img class="logo" src="{{business.logo_url}}" alt="Logo" />
+              {{/if}}
+            {{/ifSetting}}
+          </td>
+          <td>
+            {{#ifSetting 'show_business_name'}}
+              <div class="company-name">{{business.name}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_business_address'}}
+              <div class="small muted">
+                {{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}
+              </div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_business_phone'}}
+              {{#if business.phone}}<div class="small muted">Phone: {{business.phone}}</div>{{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_business_gstin'}}
+              {{#if business.gstin}}<div class="small"><b>GSTIN:</b> {{business.gstin}}</div>{{/if}}
+            {{/ifSetting}}
+          </td>
+          <td style="width: 220px;">
+            <div class="section-title">{{invoice.invoice_title}}</div>
+            <div class="small">
+              {{#ifSetting 'show_invoice_number'}}<div><b>No:</b> {{invoice.invoice_number}}</div>{{/ifSetting}}
+              {{#ifSetting 'show_invoice_date'}}<div><b>Date:</b> {{invoice.invoice_date}}</div>{{/ifSetting}}
+              {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><b>State:</b> {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- BILL TO + Invoice details -->
+      <table class="grid-table" style="margin-bottom: 10px;">
+        <tr>
+          <td style="width: 55%;">
+            <div class="section-title">BILL TO:</div>
+            {{#ifSetting 'show_bill_to'}}
+              {{#ifSetting 'show_customer_name'}}<div><b>{{customer.name}}</b></div>{{/ifSetting}}
+              {{#ifSetting 'show_customer_address'}}<div class="small">{{customer.address}}</div>{{/ifSetting}}
+              {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div class="small">Contact No: {{customer.phone}}</div>{{/if}}{{/ifSetting}}
+              {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div class="small">GSTIN: {{customer.gstin}}</div>{{/if}}{{/ifSetting}}
+              {{#ifSetting 'show_customer_state'}}{{#if customer.state}}<div class="small">State: {{customer.state}}</div>{{/if}}{{/ifSetting}}
+            {{/ifSetting}}
+          </td>
+          <td style="width: 45%;">
+            <div class="section-title">Invoice Details:</div>
+            <div class="small">
+              {{#ifSetting 'show_invoice_number'}}<div><b>No:</b> {{invoice.invoice_number}}</div>{{/ifSetting}}
+              {{#ifSetting 'show_invoice_date'}}<div><b>Date:</b> {{invoice.invoice_date}}</div>{{/ifSetting}}
+              {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div><b>Due Date:</b> {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
+              {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><b>Place Of Supply:</b> {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Items table -->
+      <table class="grid-table" style="margin-bottom: 10px;">
+        <thead>
+          <tr>
+            {{#ifSetting 'show_serial_number'}}<th class="text-center" style="width: 32px;">#</th>{{/ifSetting}}
+            {{#ifSetting 'show_item_name'}}<th>Item name</th>{{/ifSetting}}
+            {{#ifSetting 'show_hsn'}}<th style="width: 90px;">HSN/SAC</th>{{/ifSetting}}
+            {{#ifSetting 'show_quantity'}}<th class="text-right" style="width: 70px;">Quantity</th>{{/ifSetting}}
+            {{#ifSetting 'show_unit'}}<th class="text-center" style="width: 60px;">Unit</th>{{/ifSetting}}
+            {{#ifSetting 'show_rate'}}<th class="text-right" style="width: 95px;">Price/Unit(₹)</th>{{/ifSetting}}
+            {{#ifSetting 'show_tax_amount'}}<th class="text-right" style="width: 90px;">GST(₹)</th>{{/ifSetting}}
+            {{#ifSetting 'show_line_total'}}<th class="text-right" style="width: 105px;">Amount(₹)</th>{{/ifSetting}}
+          </tr>
+        </thead>
+        <tbody>
+          {{#each items}}
+            <tr>
+              {{#ifSetting 'show_serial_number'}}<td class="text-center">{{index}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_item_name'}}<td>{{item_name}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_hsn'}}<td class="nowrap">{{hsn_sac}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_quantity'}}<td class="text-right">{{quantity}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_unit'}}<td class="text-center">{{unit}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_rate'}}<td class="text-right">{{formatCurrency unit_price}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_tax_amount'}}<td class="text-right">{{formatCurrency tax_amount}}</td>{{/ifSetting}}
+              {{#ifSetting 'show_line_total'}}<td class="text-right">{{formatCurrency line_total}}</td>{{/ifSetting}}
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+
+      <!-- Tax Summary + Totals -->
+      <table class="grid-table" style="margin-bottom: 10px;">
+        <tr>
+          <td style="width: 65%; padding: 0;">
+            <div style="padding: 6px 8px; font-weight: 700;">Tax Summary:</div>
+            <table class="grid-table" style="border: 0; border-left: 0; border-right: 0;">
+              <thead>
+                <tr>
+                  <th style="width: 90px;">HSN/SAC</th>
+                  <th class="text-right">Taxable amount (₹)</th>
+                  <th class="text-center" colspan="2">CGST</th>
+                  <th class="text-center" colspan="2">SGST/UTGST</th>
+                  <th class="text-right">Total Tax (₹)</th>
+                </tr>
+                <tr>
+                  <th></th>
+                  <th></th>
+                  <th class="text-right xsmall">Rate (%)</th>
+                  <th class="text-right xsmall">Amt (₹)</th>
+                  <th class="text-right xsmall">Rate (%)</th>
+                  <th class="text-right xsmall">Amt (₹)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each invoice.tax_breakdown}}
+                  <tr>
+                    <td class="nowrap">{{hsn_sac}}</td>
+                    <td class="text-right">{{formatCurrency taxable_value}}</td>
+                    <td class="text-right">{{cgst_rate}}</td>
+                    <td class="text-right">{{formatCurrency cgst_amount}}</td>
+                    <td class="text-right">{{sgst_rate}}</td>
+                    <td class="text-right">{{formatCurrency sgst_amount}}</td>
+                    <td class="text-right">{{formatCurrency total_tax}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </td>
+          <td style="width: 35%; padding: 0;">
+            <table class="grid-table" style="border: 0; border-left: 0; border-right: 0;">
+              <tbody>
+                {{#ifSetting 'show_subtotal'}}
+                  <tr>
+                    <td>Sub Total</td>
+                    <td class="text-right nowrap">₹ {{formatCurrency invoice.subtotal}}</td>
+                  </tr>
+                {{/ifSetting}}
+                {{#ifSetting 'show_grand_total'}}
+                  <tr>
+                    <td><b>Total</b></td>
+                    <td class="text-right nowrap"><b>₹ {{formatCurrency invoice.grand_total}}</b></td>
+                  </tr>
+                {{/ifSetting}}
+                {{#ifSetting 'show_amount_in_words'}}
+                  <tr>
+                    <td colspan="2" class="small">
+                      <b>Invoice Amount in Words:</b><br />
+                      {{invoice.amount_in_words}}
+                    </td>
+                  </tr>
+                {{/ifSetting}}
+                {{#ifSetting 'show_paid_amount'}}
+                  <tr>
+                    <td>Received</td>
+                    <td class="text-right nowrap">₹ {{formatCurrency invoice.paid_amount}}</td>
+                  </tr>
+                {{/ifSetting}}
+                {{#ifSetting 'show_balance_amount'}}
+                  <tr>
+                    <td>Balance</td>
+                    <td class="text-right nowrap">₹ {{formatCurrency invoice.balance_amount}}</td>
+                  </tr>
+                {{/ifSetting}}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Payment mode -->
+      <table class="grid-table" style="margin-bottom: 10px;">
+        <tr>
+          <td class="shade-light" style="width: 140px;"><b>Payment Mode:</b></td>
+          <td class="shade-light"></td>
+        </tr>
+        <tr>
+          <td colspan="2">{{invoice.payment_mode}}{{#unless invoice.payment_mode}}Cash{{/unless}}</td>
+        </tr>
+      </table>
+
+      <!-- Terms & Conditions + Signature -->
+      <table class="grid-table" style="margin-bottom: 8px;">
+        <tr>
+          <td class="shade" colspan="2">
+            {{#ifSetting 'show_terms'}}
+              <div class="section-title">Terms &amp; Conditions:</div>
+              <div class="small">{{settings.terms}}{{#unless settings.terms}}Thanks for doing business with us!{{/unless}}</div>
+            {{/ifSetting}}
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 65%; height: 110px;"></td>
+          <td style="width: 35%;">
+            {{#ifSetting 'show_signature'}}
+              <div class="signature-panel">
+                <div class="sig-label">For {{business.name}}:</div>
+                <div class="sig-image">
+                  {{#if business.signature_url}}
+                    <img src="{{business.signature_url}}" alt="Signature" />
+                  {{else}}
+                    <span class="small muted"> </span>
+                  {{/if}}
+                </div>
+                {{#ifSetting 'show_authorized_signatory'}}
+                  <div class="text-center small" style="margin-top: 6px;">Authorized Signatory</div>
+                {{/ifSetting}}
+              </div>
+            {{/ifSetting}}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Cut line before acknowledgement -->
+      <div class="cut-line">
+        <span class="scissor">✂</span>
+        <div class="dash"></div>
+      </div>
+
+      <!-- Acknowledgement -->
+      <div class="ack-title">Acknowledgement</div>
+      <table class="grid-table" style="margin-top: 8px;">
+        <tr>
+          <td style="width: 40%;">
+            <div class="section-title">Company Details:</div>
+            <div class="small">
+              <b>{{business.name}}</b><br />
+              {{business.address}}<br />
+              {{#if business.phone}}Phone: {{business.phone}}{{/if}}
+            </div>
+          </td>
+          <td style="width: 30%;">
+            <div class="section-title">Invoice Details:</div>
+            <div class="small">
+              <div>Invoice No.: {{invoice.invoice_number}}</div>
+              <div>Invoice Date: {{invoice.invoice_date}}</div>
+              <div>Invoice Amount: ₹ {{formatCurrency invoice.grand_total}}</div>
+            </div>
+          </td>
+          <td style="width: 30%;">
+            <div class="section-title">Party Details:</div>
+            <div class="small">
+              <b>{{customer.name}}</b><br />
+              {{customer.address}}
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="3" style="height: 70px;">
+            <div class="section-title">Receiver's Seal &amp; Sign:</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>
+

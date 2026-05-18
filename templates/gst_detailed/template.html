@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --table-header-color: {{settings.table_header_color}};
+      --font-family: {{settings.font_family}};
+      --font-size: {{settings.font_size}}px;
+      --margin-top: {{settings.margin_top}}px;
+      --margin-right: {{settings.margin_right}}px;
+      --margin-bottom: {{settings.margin_bottom}}px;
+      --margin-left: {{settings.margin_left}}px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: var(--font-family), 'Arial', sans-serif; 
+      font-size: var(--font-size); 
+      color: var(--text-color, #000000); 
+      padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);
+    }
+
+    .invoice-wrapper {
+      width: 100%;
+      max-width: 850px;
+      margin: 0 auto;
+      border: 1.5px solid #000;
+    }
+
+    /* Common Table Styles for the Grid Look */
+    .grid-table { width: 100%; border-collapse: collapse; table-layout: fixed; border-bottom: 1px solid #000; }
+    .grid-table td, .grid-table th { 
+      border: 1px solid #000; 
+      padding: 4px 6px; 
+      vertical-align: top;
+      word-wrap: break-word;
+    }
+    .no-border-top { border-top: none !important; }
+    .no-border-bottom { border-bottom: none !important; }
+    .label { font-size: 9px; display: block; margin-bottom: 2px; }
+    .value { font-weight: bold; font-size: 11px; }
+
+    /* Header Grid - Exact Replication */
+    .header-section td { height: 45px; }
+    .business-info { width: 50%; }
+    .meta-box { width: 25%; }
+
+    /* Item Table */
+    .item-table th { background: var(--table-header-color, var(--primary-color)); color: #fff; font-size: 10px; text-transform: capitalize; }
+    .item-row { height: 25px; }
+    .spacer-row { height: 120px; }
+
+    /* Summary Section */
+    .summary-table { width: 100%; border-collapse: collapse; }
+    .summary-table td { border: 1px solid #000; padding: 4px; }
+    
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+  </style>
+</head>
+<body>
+
+<div class="invoice-wrapper">
+  <div style="text-align: center; font-weight: bold; padding: 4px; border-bottom: 1px solid #000;">{{invoice.invoice_title}}</div>
+
+  <table class="grid-table header-section">
+    <tr>
+      <td rowspan="2" class="business-info">
+        {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" style="max-height: 40px; margin-bottom: 4px;"><br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_name'}}<div class="value" style="font-size: 13px;">{{business.name}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_business_address'}}<div style="font-size: 10px;">{{business.address}}<br>{{business.city}}</div>{{/ifSetting}}
+        <div style="font-size: 10px; margin-top: 4px;">
+          {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<b>GSTIN/UIN:</b> {{business.gstin}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_phone'}}{{#if business.phone}}<b>Phone:</b> {{business.phone}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_email'}}{{#if business.email}}<b>Email:</b> {{business.email}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_website'}}{{#if business.website}}<b>Website:</b> {{business.website}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_pan'}}{{#if business.pan}}<b>PAN:</b> {{business.pan}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_cin'}}{{#if business.cin}}<b>CIN:</b> {{business.cin}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_iec'}}{{#if business.iec_code}}<b>IEC Code:</b> {{business.iec_code}}<br>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_business_swift'}}{{#if business.swift_code}}<b>SWIFT Code:</b> {{business.swift_code}}<br>{{/if}}{{/ifSetting}}
+        </div>
+      </td>
+      <td class="meta-box">
+        <span class="label">Invoice No.</span>
+        <span class="value">{{invoice.invoice_number}}</span>
+      </td>
+      <td class="meta-box">
+        <span class="label">Dated</span>
+        <span class="value">{{invoice.invoice_date}}</span>
+      </td>
+    </tr>
+    <tr>
+      {{#ifSetting 'show_invoice_type'}}
+        {{#if invoice.invoice_type}}
+          <td class="meta-box">
+            <span class="label">Invoice Type</span>
+            <span class="value">{{invoice.invoice_type}}</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_due_date'}}
+        {{#if invoice.due_date}}
+          <td class="meta-box">
+            <span class="label">Due Date</span>
+            <span class="value">{{invoice.due_date}}</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_po_number'}}
+        {{#if invoice.po_number}}
+          <td class="meta-box">
+            <span class="label">PO Number</span>
+            <span class="value">{{invoice.po_number}}</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_place_of_supply'}}
+        {{#if invoice.place_of_supply}}
+          <td class="meta-box">
+            <span class="label">Place of Supply</span>
+            <span class="value">{{invoice.place_of_supply}}</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+    </tr>
+    <tr>
+      {{#ifSetting 'show_reverse_charge'}}
+        {{#if invoice.is_reverse_charge}}
+          <td class="meta-box">
+            <span class="label">Reverse Charge</span>
+            <span class="value">Yes</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_eway_bill_number'}}
+        {{#if invoice.eway_bill_number}}
+          <td class="meta-box">
+            <span class="label">E-way Bill No.</span>
+            <span class="value">{{invoice.eway_bill_number}}</span>
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+    </tr>
+    <tr>
+      {{#ifSetting 'show_delivery_note'}}
+        <td class="meta-box">
+          <span class="label">Delivery Note</span>
+          <span class="value">{{invoice.delivery_note}}</span>
+        </td>
+      {{else}}
+        <td class="meta-box">
+          <span class="label">Delivery Note</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+      {{#ifSetting 'show_payment_terms'}}
+        <td class="meta-box">
+          <span class="label">Mode/Terms of Payment</span>
+          <span class="value">{{invoice.payment_terms}}</span>
+        </td>
+      {{else}}
+        <td class="meta-box">
+          <span class="label">Mode/Terms of Payment</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+    </tr>
+    <tr>
+      {{#ifSetting 'show_bill_to'}}
+      <td rowspan="3" class="business-info">
+        <span class="label">Buyer (Bill to)</span>
+        {{#ifSetting 'show_customer_name'}}<div class="value">{{customer.name}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_customer_address'}}<div style="font-size: 10px;">{{customer.address}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div style="font-size: 10px;"><b>Phone:</b> {{customer.phone}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_email'}}{{#if customer.email}}<div style="font-size: 10px;"><b>Email:</b> {{customer.email}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div style="font-size: 10px;"><b>GSTIN/UIN:</b> {{customer.gstin}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_pan'}}{{#if customer.pan}}<div style="font-size: 10px;"><b>PAN:</b> {{customer.pan}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_state'}}<div style="font-size: 10px;"><b>State Name:</b> {{customer.state}}{{#ifSetting 'show_customer_state_code'}}, Code: {{customer.state_code}}{{/ifSetting}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_contact_person'}}{{#if customer.contact_person}}<div style="font-size: 10px;"><b>Contact Person:</b> {{customer.contact_person}}</div>{{/if}}{{/ifSetting}}
+      </td>
+      {{/ifSetting}}
+      {{#ifSetting 'show_ship_to'}}
+        {{#if customer.shipping_name}}
+          <td rowspan="3" class="business-info">
+            <span class="label">Ship to</span>
+            {{#ifSetting 'show_customer_name'}}<div class="value">{{customer.shipping_name}}</div>{{/ifSetting}}
+            {{#ifSetting 'show_customer_address'}}<div style="font-size: 10px;">{{customer.shipping_address}}</div>{{/ifSetting}}
+            {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div style="font-size: 10px;"><b>Phone:</b> {{customer.phone}}</div>{{/if}}{{/ifSetting}}
+            {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div style="font-size: 10px;"><b>GSTIN/UIN:</b> {{customer.gstin}}</div>{{/if}}{{/ifSetting}}
+          </td>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_reference_number'}}
+        <td>
+          <span class="label">Reference No. & Date</span>
+          <span class="value">{{invoice.reference_number}}</span>
+        </td>
+      {{else}}
+        <td>
+          <span class="label">Reference No. & Date</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+      {{#ifSetting 'show_other_references'}}
+        <td>
+          <span class="label">Other References</span>
+          <span class="value">{{invoice.other_references}}</span>
+        </td>
+      {{else}}
+        <td>
+          <span class="label">Other References</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+    </tr>
+    <tr>
+      {{#ifSetting 'show_dispatched_through'}}
+        <td>
+          <span class="label">Dispatched through</span>
+          <span class="value">{{invoice.dispatched_through}}</span>
+        </td>
+      {{else}}
+        <td>
+          <span class="label">Dispatched through</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+      {{#ifSetting 'show_destination'}}
+        <td>
+          <span class="label">Destination</span>
+          <span class="value">{{invoice.destination}}</span>
+        </td>
+      {{else}}
+        <td>
+          <span class="label">Destination</span>
+          <span class="value"></span>
+        </td>
+      {{/ifSetting}}
+    </tr>
+    <tr>
+      {{#ifSetting 'show_terms_of_delivery'}}
+        <td colspan="2">
+          <span class="label">Terms of Delivery</span>
+          <div style="font-size: 10px;">{{invoice.terms_of_delivery}}</div>
+        </td>
+      {{else}}
+        <td colspan="2">
+          <span class="label">Terms of Delivery</span>
+          <div style="font-size: 10px;"></div>
+        </td>
+      {{/ifSetting}}
+    </tr>
+  </table>
+
+  <table class="grid-table item-table">
+    <thead>
+      <tr>
+        {{#ifSetting 'show_serial_number'}}<th style="width: 35px;">SI No.</th>{{/ifSetting}}
+        <th>Description of Goods</th>
+        {{#ifSetting 'show_hsn'}}<th style="width: 75px;">HSN/SAC</th>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<th style="width: 65px;">Quantity</th>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<th style="width: 70px;">Rate</th>{{/ifSetting}}
+        {{#ifSetting 'show_unit'}}<th style="width: 45px;">per</th>{{/ifSetting}}
+        {{#ifSetting 'show_discount_percent'}}<th style="width: 55px;">Disc %</th>{{/ifSetting}}
+        {{#ifSetting 'show_discount_amount'}}<th style="width: 70px;">Discount</th>{{/ifSetting}}
+        {{#ifSetting 'show_tax_rate'}}<th style="width: 55px;">GST Rate</th>{{/ifSetting}}
+        {{#ifSetting 'show_tax_amount'}}<th style="width: 70px;">Tax Amount</th>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<th style="width: 90px;">Amount</th>{{/ifSetting}}
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr class="item-row">
+        {{#ifSetting 'show_serial_number'}}<td class="text-center">{{this.index}}</td>{{/ifSetting}}
+        <td>
+          {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width: 30px; height: 30px; object-fit: cover; vertical-align: middle; margin-right: 6px;" />{{/if}}{{/ifSetting}}
+          <div class="value">{{this.item_name}}</div>
+          {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<small>Batch: {{this.batch_number}}</small>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<small>Expiry: {{this.expiry_date}}</small>{{/if}}{{/ifSetting}}
+        </td>
+        {{#ifSetting 'show_hsn'}}<td class="text-center">{{this.hsn_sac}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<td class="text-center"><b>{{this.quantity}}</b></td>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<td class="text-right">{{this.unit_price}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_unit'}}<td class="text-center">{{this.unit}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_percent'}}<td class="text-right">{{#if this.discount_percent}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_amount'}}<td class="text-right">{{#if this.discount_amount}}₹{{this.discount_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_tax_rate'}}
+          <td class="text-center">
+            {{#if ../invoice.is_igst}}
+              {{this.igst_rate}}%
+            {{else}}
+              {{this.tax_rate}}%
+            {{/if}}
+          </td>
+        {{/ifSetting}}
+        {{#ifSetting 'show_tax_amount'}}<td class="text-right">{{#if this.tax_amount}}₹{{this.tax_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<td class="text-right"><b>{{this.line_total}}</b></td>{{/ifSetting}}
+      </tr>
+      {{/each}}
+      <tr class="spacer-row"> {{#ifSetting 'show_serial_number'}}<td></td>{{/ifSetting}}
+        <td></td>{{#ifSetting 'show_hsn'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_quantity'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_unit'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_percent'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_line_total'}}<td></td>{{/ifSetting}}
+      </tr>
+      <tr>
+        <td colspan="{{#ifSetting 'show_serial_number'}}2{{else}}1{{/ifSetting}}" class="text-right"><b>Total</b></td>
+        {{#ifSetting 'show_hsn'}}<td></td>{{/ifSetting}}
+        <td class="text-center"><b>{{invoice.total_quantity}} Nos</b></td>
+        <td colspan="{{#ifSetting 'show_unit'}}2{{else}}1{{/ifSetting}}"></td>
+        {{#ifSetting 'show_discount_percent'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_amount'}}<td></td>{{/ifSetting}}
+        <td class="text-right"><b>₹{{invoice.subtotal}}</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  {{#unless invoice.is_igst}}
+    {{#if tax_breakdown}}
+      {{#if (gt tax_breakdown.length 0)}}
+        <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+          <thead>
+            <tr>
+              <th rowspan="2" style="width: 15%;">HSN/SAC</th>
+              <th rowspan="2">Taxable Value</th>
+              <th colspan="2">Central Tax</th>
+              <th colspan="2">State Tax</th>
+              <th rowspan="2">Total Tax Amount</th>
+            </tr>
+            <tr>
+              <th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each tax_breakdown}}
+            <tr>
+              <td>{{this.hsn_sac}}</td>
+              <td class="text-right">{{this.taxable_value}}</td>
+              <td class="text-right">{{this.cgst_rate}}%</td>
+              <td class="text-right">{{this.cgst_amount}}</td>
+              <td class="text-right">{{this.sgst_rate}}%</td>
+              <td class="text-right">{{this.sgst_amount}}</td>
+              <td class="text-right"><b>{{this.total_tax}}</b></td>
+            </tr>
+            {{/each}}
+            <tr style="font-weight: bold;">
+              <td>Total</td>
+              <td class="text-right">{{invoice.subtotal}}</td>
+              <td></td>
+              <td class="text-right">{{invoice.cgst_total}}</td>
+              <td></td>
+              <td class="text-right">{{invoice.sgst_total}}</td>
+              <td class="text-right">{{invoice.tax_total}}</td>
+            </tr>
+          </tbody>
+        </table>
+      {{/if}}
+    {{/if}}
+  {{/unless}}
+
+  {{#ifSetting 'show_subtotal'}}
+    <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+      <tr>
+        <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+          <span class="label">Subtotal</span>
+          <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+        </td>
+        <td style="width: 50%; padding: 6px;">
+          {{#ifSetting 'show_discount_total'}}
+            {{#if invoice.discount_total}}
+              <span class="label">Discount</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.discount_total}}</b></div>
+            {{else}}
+              <span class="label">Taxable Amount</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+            {{/if}}
+          {{else}}
+            <span class="label">Taxable Amount</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+          {{/ifSetting}}
+        </td>
+      </tr>
+    </table>
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_discount_total'}}
+    {{#if invoice.discount_total}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Discount</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.discount_total}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Taxable Amount</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_additional_charges'}}
+    {{#if invoice.additional_charges}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Additional Charges</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>+ ₹{{invoice.additional_charges}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Subtotal</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#if invoice.is_igst}}
+    {{#ifSetting 'show_igst'}}
+      {{#if invoice.igst_total}}
+        <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+          <tr>
+            <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+              <span class="label">Taxable Amount</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+            </td>
+            <td style="width: 50%; padding: 6px;">
+              <span class="label">IGST</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.igst_total}}</b></div>
+            </td>
+          </tr>
+        </table>
+      {{/if}}
+    {{/ifSetting}}
+  {{else}}
+    {{#ifSetting 'show_cgst'}}
+      {{#if invoice.cgst_total}}
+        <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+          <tr>
+            <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
+              <span class="label">Taxable Amount</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+            </td>
+            <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
+              <span class="label">CGST</span>
+              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.cgst_total}}</b></div>
+            </td>
+            <td style="width: 33.33%; padding: 6px;">
+              {{#ifSetting 'show_sgst'}}
+                <span class="label">SGST</span>
+                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.sgst_total}}</b></div>
+              {{/ifSetting}}
+            </td>
+          </tr>
+        </table>
+      {{/if}}
+    {{/ifSetting}}
+  {{/if}}
+
+  {{#ifSetting 'show_cess'}}
+    {{#if invoice.cess_total}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">CESS</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.cess_total}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Tax Total</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_tax_total'}}
+    {{#if invoice.tax_total}}
+      {{#unless invoice.is_igst}}
+        {{#unless (and (ifSetting 'show_cgst') (ifSetting 'show_sgst'))}}
+          <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+            <tr>
+              <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+                <span class="label">Total Tax</span>
+                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
+              </td>
+              <td style="width: 50%; padding: 6px;">
+                <span class="label">Grand Total</span>
+                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+              </td>
+            </tr>
+          </table>
+        {{/unless}}
+      {{else}}
+        {{#unless (ifSetting 'show_igst')}}
+          <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+            <tr>
+              <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+                <span class="label">Total Tax</span>
+                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
+              </td>
+              <td style="width: 50%; padding: 6px;">
+                <span class="label">Grand Total</span>
+                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+              </td>
+            </tr>
+          </table>
+        {{/unless}}
+      {{/unless}}
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_grand_total'}}
+    {{#unless (ifSetting 'show_tax_total')}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Total</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Grand Total</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/unless}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_round_off'}}
+    {{#if invoice.round_off}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Round Off</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.round_off}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Amount Payable</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_amount_in_words'}}
+    {{#if invoice.amount_in_words}}
+      <div style="display: flex; border-top: 1px solid #000;">
+        <div style="flex: 1; padding: 6px; border-right: 1px solid #000;">
+          <span class="label">Amount Chargeable (in words)</span>
+          <b>INR {{invoice.amount_in_words}}</b>
+        </div>
+      </div>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_paid_amount'}}
+    {{#if invoice.paid_amount}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Grand Total</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Paid Amount</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.paid_amount}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_balance_amount'}}
+    {{#if invoice.balance_amount}}
+      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
+        <tr>
+          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
+            <span class="label">Balance Due</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.balance_amount}}</b></div>
+          </td>
+          <td style="width: 50%; padding: 6px;">
+            <span class="label">Grand Total</span>
+            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+          </td>
+        </tr>
+      </table>
+    {{/if}}
+  {{/ifSetting}}
+
+  {{#ifSetting 'show_customer_balance'}}
+  <table class="grid-table" style="margin-top: -1px; border-top: 1px solid #000;">
+    <tr>
+      <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
+        <span class="label">Opening Balance</span>
+        <div style="font-size: 11px; margin-top: 2px;"><b>₹{{customer.opening_balance}}</b></div>
+      </td>
+      <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
+        <span class="label">Bill Amount</span>
+        <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
+      </td>
+      <td style="width: 33.33%; padding: 6px;">
+        <span class="label">Balance Due</span>
+        <div style="font-size: 11px; margin-top: 2px;"><b>₹{{customer.balance_due}}</b></div>
+      </td>
+    </tr>
+  </table>
+  {{/ifSetting}}
+
+  <table class="grid-table" style="border: none;">
+    <tr>
+      <td style="width: 50%; border-right: 1px solid #000; border-bottom: none;">
+        {{#ifSetting 'show_bank_details'}}
+          <div class="label">Company's Bank Details</div>
+          <div style="font-size: 10px;">
+            {{#ifSetting 'show_bank_name'}}{{#if business.bank_name}}Bank Name: <b>{{business.bank_name}}</b><br>{{/if}}{{/ifSetting}}
+            {{#ifSetting 'show_account_number'}}{{#if business.account_number}}A/c No.: <b>{{business.account_number}}</b><br>{{/if}}{{/ifSetting}}
+            {{#ifSetting 'show_branch_name'}}{{#if business.branch_name}}Branch: {{business.branch_name}}{{/if}}{{/ifSetting}}
+            {{#ifSetting 'show_ifsc_code'}}{{#if business.ifsc_code}}{{#if business.branch_name}} & {{/if}}IFSC: {{business.ifsc_code}}{{/if}}{{/ifSetting}}
+            {{#ifSetting 'show_swift_code'}}{{#if business.swift_code}}<br>SWIFT: {{business.swift_code}}{{/if}}{{/ifSetting}}
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_terms'}}
+          {{#if settings.terms}}
+            <div class="label" style="margin-top: 10px;">Terms & Conditions</div>
+            <div style="font-size: 9px; white-space: pre-line;">{{settings.terms}}</div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_notes'}}
+          {{#if settings.notes}}
+            <div class="label" style="margin-top: 10px;">Notes</div>
+            <div style="font-size: 9px; white-space: pre-line;">{{settings.notes}}</div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_payment_terms'}}
+          {{#if settings.payment_terms}}
+            <div class="label" style="margin-top: 10px;">Payment Terms</div>
+            <div style="font-size: 9px; white-space: pre-line;">{{settings.payment_terms}}</div>
+          {{/if}}
+        {{/ifSetting}}
+      </td>
+      <td style="width: 50%; text-align: right; border-bottom: none;">
+        {{#ifSetting 'show_qr_code'}}
+          {{#if invoice.qr_code}}
+            <div style="text-align: center; margin-bottom: 10px;">
+              <img src="{{invoice.qr_code}}" style="width: 80px; height: 80px;" />
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        <span class="label">for <b>{{business.name}}</b></span>
+        <div style="height: 50px;"></div>
+        {{#ifSetting 'show_signature'}}
+          {{#ifSetting 'show_authorized_signatory'}}
+            <span class="label">Authorised Signatory</span>
+          {{else}}
+            <span class="label">Authorised Signatory</span>
+          {{/ifSetting}}
+        {{else}}
+          {{#ifSetting 'show_authorized_signatory'}}
+            <span class="label">Authorised Signatory</span>
+          {{/ifSetting}}
+        {{/ifSetting}}
+      </td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

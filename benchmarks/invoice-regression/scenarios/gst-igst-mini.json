@@ -1,0 +1,42 @@
+{
+  "id": "gst-igst-mini",
+  "input": {
+    "supplier_name": "Interstate Vendor",
+    "supplier_gstin": "07AAACP0002A2Z9",
+    "buyer_gstin": "27AAECS0003B1ZV",
+    "invoice_number": "IG-2044",
+    "invoice_date": "2025-03-01",
+    "tax_type": "igst",
+    "price_mode": "exclusive",
+    "subtotal": 5000,
+    "total_igst": 900,
+    "grand_total": 5900,
+    "items": [
+      {
+        "description": "Cable reel",
+        "qty": 2,
+        "rate": 2500,
+        "gst_rate": 18,
+        "line_total": 5900
+      }
+    ],
+    "gst_summary": [
+      {
+        "gst_rate": 18,
+        "taxable_value": 5000,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 900,
+        "total_tax": 900
+      }
+    ]
+  },
+  "expected": {
+    "supplier_gstin": "07AAACP0002A2Z9",
+    "buyer_gstin": "27AAECS0003B1ZV",
+    "tax_type": "igst",
+    "item_count": 1,
+    "grand_total": 5900,
+    "subtotal": 5000
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Composition Standard",
+  "description": "Standard template for businesses under Composition Scheme (Section 10 CGST Act)",
+  "category": "bill_of_supply",
+  "for_document_types": ["bill_of_supply"],
+  "gst_registration_types": ["composition"],
+  "version": "1.0",
+  "preview_image": "/templates/previews/composition_standard.png",
+  "settings": {
+    "primary_color": "#1e40af",
+    "secondary_color": "#fef3c7",
+    "font_family": "Segoe UI, sans-serif",
+    "show_logo": true,
+    "show_signature": true,
+    "show_hsn": true,
+    "show_discount": true,
+    "disclaimer_background": "#fef3c7",
+    "disclaimer_border": "#f59e0b"
+  }
+}
+

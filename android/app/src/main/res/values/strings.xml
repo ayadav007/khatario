@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Khatario</string>
+    <string name="title_activity_main">Khatario</string>
+    <string name="package_name">com.khatario.app</string>
+    <string name="custom_url_scheme">com.khatario.app</string>
+</resources>

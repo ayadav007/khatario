@@ -1,0 +1,357 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  /**
+   * Single page title for list pages: visually hidden below md (mobile TopBar shows context),
+   * normal heading from md and up.
+   */
+  .list-page-h1 {
+    @apply text-2xl font-bold text-text-primary;
+  }
+  @media (max-width: 767px) {
+    .list-page-h1 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
+  }
+
+  /** Landing hero rotating headline — exit down, enter up from below */
+  @keyframes landing-hero-word-exit-down {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(0.65em);
+    }
+  }
+
+  @keyframes landing-hero-word-enter-up {
+    from {
+      opacity: 0;
+      transform: translateY(0.65em);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .landing-hero-word-exit-down {
+    animation: landing-hero-word-exit-down 420ms cubic-bezier(0.33, 1, 0.68, 1) forwards;
+  }
+
+  .landing-hero-word-enter-up {
+    animation: landing-hero-word-enter-up 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-hero-word-exit-down,
+    .landing-hero-word-enter-up {
+      animation: none;
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Canvas: soft teal-cool neutral (pairs with primary teal). Alternatives: #f8fafc slate, #f7f9fc blue-gray */
+    --color-background: #f1f7f6;
+    --color-surface: #ffffff;
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #64748b;
+    --color-text-muted: #94a3b8;
+    --color-border: #e2e8f0;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --color-background: #0f172a;
+    --color-surface: #1e293b;
+    --color-text-primary: #f1f5f9;
+    --color-text-secondary: #cbd5e1;
+    --color-text-muted: #64748b;
+    --color-border: #334155;
+  }
+
+  * {
+    @apply border-border;
+  }
+  /* Prevent horizontal page scroll / left-edge clipping on narrow viewports */
+  html {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+  body {
+    @apply bg-background text-text-primary antialiased;
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* Hide number input spinners for all browsers */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  /**
+   * Brand color — use these instead of raw `bg-primary-*` / `text-primary-*` in JSX where possible.
+   * See .cursor/rules/colors.mdc
+   */
+  .link-primary {
+    @apply text-primary-600 hover:text-primary-700;
+  }
+
+  .focus-primary {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
+  }
+
+  /**
+   * Filled/outline button shells (spacing lives on <Button /> or explicit utilities on plain links).
+   * Mobile-first dense padding is applied via components/ui/Button.tsx `size`.
+   */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-button whitespace-nowrap
+           touch-manipulation
+           bg-primary-500 text-white
+           hover:bg-primary-600 active:bg-primary-700
+           dark:bg-primary-600 dark:text-white dark:hover:bg-primary-700
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200 font-medium;
+  }
+
+  /** Muted block background — replaces ad-hoc bg-primary-50 on containers. */
+  .bg-muted {
+    @apply bg-slate-50 dark:bg-slate-800/50;
+  }
+
+  .border-active {
+    @apply border-primary-500;
+  }
+
+  /**
+   * Long forms (items, customers, settings): full-width stack of FormSection panels.
+   * Use with <FormSection /> from @/components/ui/FormSection.
+   */
+  .form-page-shell {
+    @apply w-full max-w-none space-y-4 md:space-y-6;
+  }
+
+  .form-section-header {
+    @apply border-b border-border bg-white border-l-2 border-l-primary-500
+           px-3 py-2.5 md:px-5 md:py-3.5;
+    @apply dark:border-border-dark dark:bg-slate-900/40;
+  }
+
+  .form-section-title {
+    @apply text-sm font-semibold uppercase tracking-wide text-text-primary;
+  }
+
+  .form-section-description {
+    @apply mt-1 text-sm font-normal normal-case text-text-secondary leading-snug;
+  }
+
+  .form-section-body {
+    @apply px-3 py-3 md:px-6 md:py-5 bg-background;
+    @apply dark:bg-slate-900/30;
+  }
+
+  /**
+   * Light “paper” UI inside dark mode (party statement, similar print previews).
+   * Resets semantic CSS variables so text-text-* / border-border / bg-surface match a light document.
+   */
+  .statement-document {
+    color-scheme: light;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-muted: #64748b;
+    --color-border: #e2e8f0;
+    --color-surface: #f8fafc;
+    --color-background: #ffffff;
+    color: var(--color-text-primary);
+  }
+
+  .card {
+    @apply bg-surface rounded-card shadow-small border border-border 
+           dark:bg-surface-dark dark:border-border-dark;
+  }
+  
+  .input {
+    @apply w-full min-h-10 px-3 py-2 rounded-input border border-border
+           text-sm md:text-base leading-normal touch-manipulation
+           bg-surface text-text-primary placeholder-text-muted
+           dark:bg-surface-dark dark:border-border-dark
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           transition-all duration-200 md:min-h-11 md:px-4 md:py-2.5;
+  }
+  
+  .button-primary {
+    @apply btn-primary;
+  }
+
+  /** Fixed product “secondary” (accent) — not tied to org primary theme */
+  .button-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-button whitespace-nowrap
+           touch-manipulation
+           bg-accent-600 text-white
+           hover:bg-accent-700 active:bg-accent-800
+           dark:bg-accent-600 dark:text-white dark:hover:bg-accent-700
+           focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200 font-medium;
+  }
+  
+  .button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-button whitespace-nowrap
+           touch-manipulation
+           bg-surface text-text-primary font-medium border border-border
+           hover:bg-slate-50 active:bg-slate-100
+           dark:bg-surface-dark dark:text-text-primary dark:border-border-dark
+           dark:hover:bg-slate-800/80
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200;
+  }
+  
+  .button-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-button whitespace-nowrap
+           touch-manipulation
+           text-text-primary font-medium
+           hover:bg-surface active:bg-surface
+           dark:hover:bg-gray-800
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200;
+  }
+  
+  .chip {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+           md:px-3 md:py-1 md:text-sm
+           bg-slate-100 text-text-secondary border border-border
+           dark:bg-slate-800 dark:text-slate-300 dark:border-border-dark;
+  }
+  
+  .chip-success {
+    @apply bg-green-50 text-green-700 border-green-200
+           dark:bg-green-900 dark:text-green-300 dark:border-green-700;
+  }
+  
+  .chip-warning {
+    @apply bg-yellow-50 text-yellow-700 border-yellow-200
+           dark:bg-yellow-900 dark:text-yellow-300 dark:border-yellow-700;
+  }
+  
+  .chip-error {
+    @apply bg-red-50 text-red-700 border-red-200
+           dark:bg-red-900 dark:text-red-300 dark:border-red-700;
+  }
+  
+  .table {
+    @apply w-full border-collapse;
+  }
+  
+  .table-header {
+    @apply bg-slate-50 text-text-primary font-semibold text-xs
+           md:text-sm
+           dark:bg-slate-800/80;
+  }
+  
+  .table-cell {
+    @apply px-3 py-2 border-b border-border text-xs text-text-primary
+           md:px-4 md:py-3 md:text-sm;
+  }
+}
+
+@media print {
+  /* Hide all navigation and UI elements */
+  nav, 
+  header, 
+  footer, 
+  sidebar,
+  aside,
+  .no-print,
+  button,
+  .button-primary,
+  .button-secondary,
+  .button-ghost,
+  [role="navigation"],
+  [role="banner"],
+  .trial-badge,
+  .promotion-banner,
+  .floating-action-button,
+  .breadcrumbs-container,
+  #command-palette,
+  .notification-center {
+    display: none !important;
+  }
+
+  /* Reset layout for paper */
+  body, 
+  main,
+  div[class*="lg:ml-"] {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  /* Ensure the report containers take full width and have no shadows */
+  .card, 
+  .report-container,
+  .balance-sheet-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Standardize table printing */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #eee !important;
+    padding: 8px !important;
+  }
+
+  /* Force headers to be visible and clean */
+  h1, h2, h3, h4, h5, h6 {
+    color: black !important;
+    margin-top: 0 !important;
+  }
+
+  /* Page break rules */
+  .page-break-before { page-break-before: always; }
+  .page-break-after { page-break-after: always; }
+  tr { page-break-inside: avoid; }
+  
+  /* Remove gray backgrounds commonly used in UI */
+  .bg-gray-50, .bg-slate-50, .bg-primary-50 {
+    background-color: transparent !important;
+  }
+}
+

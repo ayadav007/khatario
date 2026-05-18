@@ -1,0 +1,7 @@
+{
+  "id": "tds_certificate",
+  "name": "Standard TDS Certificate",
+  "thumbnail": "/templates/tds_certificate.png",
+  "type": "tds"
+}
+

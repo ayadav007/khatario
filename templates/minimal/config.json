@@ -1,0 +1,13 @@
+{
+  "id": "minimal",
+  "name": "Minimal",
+  "description": "Simple black and white layout",
+  "defaults": {
+    "font_family": "Helvetica",
+    "font_size": 11,
+    "primary_color": "#333333",
+    "table_header_color": "#ffffff",
+    "show_logo": true
+  }
+}
+

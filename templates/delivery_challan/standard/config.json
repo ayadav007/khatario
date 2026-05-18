@@ -1,0 +1,15 @@
+{
+  "name": "Delivery Challan Standard",
+  "description": "GST Rule 55 compliant delivery challan",
+  "category": "delivery_challan",
+  "for_document_types": ["delivery_challan"],
+  "version": "1.0",
+  "settings": {
+    "primary_color": "#0891b2",
+    "show_vehicle_details": true,
+    "show_transport_details": true,
+    "show_reason": true,
+    "show_signature": true
+  }
+}
+

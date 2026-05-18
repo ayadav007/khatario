@@ -1,0 +1,7 @@
+{
+  "id": "expense_voucher",
+  "name": "Standard Expense Voucher",
+  "thumbnail": "/templates/expense_voucher.png",
+  "type": "voucher"
+}
+

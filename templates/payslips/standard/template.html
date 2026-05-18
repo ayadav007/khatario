@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salary Slip - {{salary_period.month}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Arial', sans-serif;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #333;
+      padding: 20px;
+      background: #fff;
+    }
+    
+    .payslip-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      padding: 30px;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #333;
+      padding-bottom: 20px;
+    }
+    
+    .company-logo {
+      max-width: 150px;
+      max-height: 80px;
+      margin-bottom: 10px;
+    }
+    
+    .company-name {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 10px 0;
+      color: #333;
+    }
+    
+    .company-address {
+      font-size: 11px;
+      color: #666;
+      margin: 5px 0;
+    }
+    
+    .payslip-title {
+      font-size: 28px;
+      font-weight: bold;
+      margin: 20px 0 10px 0;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    
+    .salary-period {
+      font-size: 14px;
+      font-weight: 600;
+      color: #555;
+    }
+    
+    .section {
+      margin: 25px 0;
+    }
+    
+    .section-title {
+      background: #f0f0f0;
+      padding: 10px 15px;
+      font-weight: bold;
+      font-size: 13px;
+      border-left: 4px solid #333;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+    
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    th {
+      background: #f9f9f9;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    
+    td {
+      font-size: 12px;
+    }
+    
+    .text-right {
+      text-align: right;
+    }
+    
+    .total-row {
+      font-weight: bold;
+      background: #f5f5f5;
+      border-top: 2px solid #333;
+      border-bottom: 2px solid #333;
+    }
+    
+    .total-row td {
+      padding: 12px 10px;
+      font-size: 13px;
+    }
+    
+    .summary-section {
+      background: #fafafa;
+      padding: 15px;
+      border: 1px solid #ddd;
+      margin: 20px 0;
+    }
+    
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .summary-row:last-child {
+      border-bottom: none;
+      border-top: 2px solid #333;
+      margin-top: 10px;
+      padding-top: 15px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    
+    .amount-in-words {
+      text-align: center;
+      padding: 15px;
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      margin: 20px 0;
+      font-style: italic;
+      font-size: 11px;
+    }
+    
+    .footer {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 10px;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 15px;
+    }
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    
+    .info-item {
+      padding: 5px 0;
+    }
+    
+    .info-label {
+      font-weight: 600;
+      color: #555;
+    }
+    
+    @media print {
+      body {
+        padding: 0;
+      }
+      .payslip-container {
+        border: none;
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="payslip-container">
+    <!-- Header -->
+    <div class="header">
+      {{#if business.logo_url}}
+        <img src="{{business.logo_url}}" class="company-logo" alt="Company Logo">
+      {{/if}}
+      <div class="company-name">{{business.name}}</div>
+      {{#if business.address}}
+        <div class="company-address">{{business.address}}</div>
+      {{/if}}
+      {{#if business.gstin}}
+        <div class="company-address">GSTIN: {{business.gstin}}</div>
+      {{/if}}
+      <div class="payslip-title">Salary Slip</div>
+      <div class="salary-period">For the month of {{salary_period.month}}</div>
+    </div>
+
+    <!-- Employee Information -->
+    <div class="section">
+      <div class="section-title">Employee Information</div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">Employee Name:</span> {{employee.name}}
+        </div>
+        <div class="info-item">
+          <span class="info-label">Employee Code:</span> {{employee.employee_code}}
+        </div>
+        {{#if employee.designation}}
+        <div class="info-item">
+          <span class="info-label">Designation:</span> {{employee.designation}}
+        </div>
+        {{/if}}
+        {{#if employee.department}}
+        <div class="info-item">
+          <span class="info-label">Department:</span> {{employee.department}}
+        </div>
+        {{/if}}
+        {{#if employee.pan_number}}
+        <div class="info-item">
+          <span class="info-label">PAN Number:</span> {{employee.pan_number}}
+        </div>
+        {{/if}}
+        {{#if employee.bank_account}}
+        <div class="info-item">
+          <span class="info-label">Bank Account:</span> {{employee.bank_account}}
+        </div>
+        {{/if}}
+        {{#if employee.bank_name}}
+        <div class="info-item">
+          <span class="info-label">Bank Name:</span> {{employee.bank_name}}
+        </div>
+        {{/if}}
+      </div>
+    </div>
+
+    <!-- Earnings -->
+    <div class="section">
+      <div class="section-title">Earnings</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th class="text-right">Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Basic Salary</td>
+            <td class="text-right">{{formatCurrency earnings.basic_salary}}</td>
+          </tr>
+          {{#if earnings.hra}}
+          <tr>
+            <td>House Rent Allowance (HRA)</td>
+            <td class="text-right">{{formatCurrency earnings.hra}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.transport_allowance}}
+          <tr>
+            <td>Transport Allowance</td>
+            <td class="text-right">{{formatCurrency earnings.transport_allowance}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.medical_allowance}}
+          <tr>
+            <td>Medical Allowance</td>
+            <td class="text-right">{{formatCurrency earnings.medical_allowance}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.special_allowance}}
+          <tr>
+            <td>Special Allowance</td>
+            <td class="text-right">{{formatCurrency earnings.special_allowance}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.overtime}}
+          <tr>
+            <td>Overtime</td>
+            <td class="text-right">{{formatCurrency earnings.overtime}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.bonus}}
+          <tr>
+            <td>Bonus</td>
+            <td class="text-right">{{formatCurrency earnings.bonus}}</td>
+          </tr>
+          {{/if}}
+          {{#if earnings.commission}}
+          <tr>
+            <td>Commission</td>
+            <td class="text-right">{{formatCurrency earnings.commission}}</td>
+          </tr>
+          {{/if}}
+          <tr class="total-row">
+            <td><strong>Total Earnings</strong></td>
+            <td class="text-right"><strong>{{formatCurrency earnings.total_earnings}}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Deductions -->
+    <div class="section">
+      <div class="section-title">Deductions</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th class="text-right">Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#if deductions.provident_fund}}
+          <tr>
+            <td>Provident Fund (PF)</td>
+            <td class="text-right">{{formatCurrency deductions.provident_fund}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.professional_tax}}
+          <tr>
+            <td>Professional Tax</td>
+            <td class="text-right">{{formatCurrency deductions.professional_tax}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.tds}}
+          <tr>
+            <td>Tax Deducted at Source (TDS)</td>
+            <td class="text-right">{{formatCurrency deductions.tds}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.advance_recovery}}
+          <tr>
+            <td>Advance Recovery</td>
+            <td class="text-right">{{formatCurrency deductions.advance_recovery}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.loan_deduction}}
+          <tr>
+            <td>Loan Deduction</td>
+            <td class="text-right">{{formatCurrency deductions.loan_deduction}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.other_deductions}}
+          <tr>
+            <td>Other Deductions</td>
+            <td class="text-right">{{formatCurrency deductions.other_deductions}}</td>
+          </tr>
+          {{/if}}
+          <tr class="total-row">
+            <td><strong>Total Deductions</strong></td>
+            <td class="text-right"><strong>{{formatCurrency deductions.total_deductions}}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Summary -->
+    <div class="section">
+      <div class="section-title">Summary</div>
+      <div class="summary-section">
+        <div class="summary-row">
+          <span>Gross Salary</span>
+          <span>{{formatCurrency summary.gross_salary}}</span>
+        </div>
+        <div class="summary-row">
+          <span>Total Deductions</span>
+          <span>{{formatCurrency summary.total_deductions}}</span>
+        </div>
+        <div class="summary-row">
+          <span>Net Salary Payable</span>
+          <span>{{formatCurrency summary.net_salary}}</span>
+        </div>
+      </div>
+      <div class="amount-in-words">
+        <strong>Amount in Words:</strong> {{summary.amount_in_words}}
+      </div>
+    </div>
+
+    <!-- Attendance Summary (if available) -->
+    {{#if attendance}}
+    <div class="section">
+      <div class="section-title">Attendance Summary</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="text-right">Days/Hours</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Working Days</td>
+            <td class="text-right">{{attendance.working_days}}</td>
+          </tr>
+          <tr>
+            <td>Present Days</td>
+            <td class="text-right">{{attendance.present_days}}</td>
+          </tr>
+          <tr>
+            <td>Absent Days</td>
+            <td class="text-right">{{attendance.absent_days}}</td>
+          </tr>
+          <tr>
+            <td>Leave Days</td>
+            <td class="text-right">{{attendance.leave_days}}</td>
+          </tr>
+          {{#if attendance.overtime_hours}}
+          <tr>
+            <td>Overtime Hours</td>
+            <td class="text-right">{{attendance.overtime_hours}}</td>
+          </tr>
+          {{/if}}
+        </tbody>
+      </table>
+    </div>
+    {{/if}}
+
+    <!-- Footer -->
+    <div class="footer">
+      <p><strong>Payment Date:</strong> {{salary_period.payment_date}}</p>
+      <p style="margin-top: 10px;">This is a computer-generated payslip and does not require a signature.</p>
+      <p style="margin-top: 5px; font-size: 9px;">Generated on: {{salary_period.payment_date}}</p>
+    </div>
+  </div>
+</body>
+</html>
+

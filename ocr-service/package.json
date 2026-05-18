@@ -1,0 +1,22 @@
+{
+  "name": "khatario-invoice-ocr-service",
+  "version": "1.0.0",
+  "description": "Invoice OCR extraction service for Khatario using PaddleOCR + LLM.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1"
+  }
+}

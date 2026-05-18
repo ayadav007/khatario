@@ -1,0 +1,41 @@
+{
+  "id": "gst-cgst-sgst-mini",
+  "input": {
+    "supplier_name": "Test Supplier",
+    "supplier_gstin": "09AABCU9603R1Z7",
+    "invoice_number": "INV-001",
+    "invoice_date": "2024-01-15",
+    "tax_type": "cgst_sgst",
+    "price_mode": "exclusive",
+    "subtotal": 1000,
+    "total_cgst": 90,
+    "total_sgst": 90,
+    "grand_total": 1180,
+    "items": [
+      {
+        "description": "Widget",
+        "qty": 1,
+        "rate": 1000,
+        "gst_rate": 18,
+        "line_total": 1180
+      }
+    ],
+    "gst_summary": [
+      {
+        "gst_rate": 18,
+        "taxable_value": 1000,
+        "cgst": 90,
+        "sgst": 90,
+        "igst": 0,
+        "total_tax": 180
+      }
+    ]
+  },
+  "expected": {
+    "supplier_gstin": "09AABCU9603R1Z7",
+    "tax_type": "cgst_sgst",
+    "item_count": 1,
+    "grand_total": 1180,
+    "subtotal": 1000
+  }
+}

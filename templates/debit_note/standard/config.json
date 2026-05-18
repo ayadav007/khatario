@@ -1,0 +1,14 @@
+{
+  "name": "Debit Note Standard",
+  "description": "Standard GST-compliant debit note template",
+  "category": "debit_note",
+  "for_document_types": ["debit_note"],
+  "version": "1.0",
+  "settings": {
+    "primary_color": "#ea580c",
+    "show_original_invoice": true,
+    "show_reason": true,
+    "show_signature": true
+  }
+}
+

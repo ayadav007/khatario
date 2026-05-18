@@ -1,0 +1,265 @@
+﻿app/api/items/[id]/serials/bulk-import/route.ts(57,41): error TS2345: Argument of type '(s: string) => string' is not assignable to parameter of type '(value: unknown, index: number, array: unknown[]) => string'.
+app/api/items/[id]/serials/bulk-import/route.ts(73,45): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/items/[id]/serials/bulk-import/route.ts(79,35): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/items/[id]/serials/bulk-import/route.ts(91,24): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/items/[id]/serials/bulk-import/route.ts(96,51): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/items/import/route.ts(59,26): error TS2872: This kind of expression is always truthy.
+app/api/items/match/route.ts(41,26): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/items/match/route.ts(69,28): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/items/match/route.ts(100,26): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/items/match/route.ts(131,28): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/items/match/route.ts(162,28): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/journal-entries/[id]/lock/route.ts(62,42): error TS2345: Argument of type '"lock"' is not assignable to parameter of type '"export" | "read" | "create" | "update" | "delete" | "finalize" | "cancel" | "adjust_quantity" | "adjust_value" | "dispatch" | "receive"'.
+app/api/journal-entries/[id]/lock/route.ts(165,42): error TS2345: Argument of type '"unlock"' is not assignable to parameter of type '"export" | "read" | "create" | "update" | "delete" | "finalize" | "cancel" | "adjust_quantity" | "adjust_value" | "dispatch" | "receive"'.
+app/api/journal-entries/[id]/route.ts(126,33): error TS2554: Expected 1-2 arguments, but got 3.
+app/api/leave-types/[id]/route.ts(14,25): error TS2448: Block-scoped variable 'params' used before its declaration.
+app/api/leave-types/[id]/route.ts(14,25): error TS2454: Variable 'params' is used before being assigned.
+app/api/leave-types/[id]/route.ts(14,32): error TS2339: Property 'id' does not exist on type 'any[]'.
+app/api/ledger/account/[accountId]/route.ts(13,23): error TS2448: Block-scoped variable 'params' used before its declaration.
+app/api/ledger/account/[accountId]/route.ts(13,23): error TS2454: Variable 'params' is used before being assigned.
+app/api/ledger/account/[accountId]/route.ts(13,30): error TS2339: Property 'accountId' does not exist on type 'any[]'.
+app/api/ledger/account/[accountId]/statement/pdf/route.ts(92,65): error TS2345: Argument of type '{ account: any; business: any; period: { from: string | null; to: string | null; }; entries: { date: string; particulars: any; voucher: any; debit: string; credit: string; balance: string; }[]; opening_balance: string; closing_balance: string; total_debit: any; total_credit: any; settings: { ...; }; }' is not assignable to parameter of type 'RenderData'.
+app/api/ledger/account/[accountId]/statement/route.ts(91,65): error TS2345: Argument of type '{ account: any; business: any; period: { from: string | null; to: string | null; }; entries: { date: string; particulars: any; voucher: any; debit: string; credit: string; balance: string; }[]; opening_balance: string; closing_balance: string; total_debit: any; total_credit: any; settings: { ...; }; }' is not assignable to parameter of type 'RenderData'.
+app/api/notifications/stream/route.ts(124,14): error TS2367: This comparison appears to be unintentional because the types '"connect" | "connecting" | "wait" | "reconnecting"' and '"ready"' have no overlap.
+app/api/notifications/stream/route.ts(129,11): error TS2367: This comparison appears to be unintentional because the types '"connect" | "connecting" | "wait" | "reconnecting"' and '"ready"' have no overlap.
+app/api/payments/[id]/receipt/pdf/route.ts(61,63): error TS2345: Argument of type '{ payment: any; business: { name: any; address: string; }; settings: { primary_color: string; }; }' is not assignable to parameter of type 'RenderData'.
+app/api/payments/[id]/receipt/route.ts(65,63): error TS2345: Argument of type '{ payment: any; business: { name: any; address: string; }; settings: { primary_color: string; }; }' is not assignable to parameter of type 'RenderData'.
+app/api/period-locks/route.ts(138,52): error TS2345: Argument of type '"lock" | "unlock"' is not assignable to parameter of type '"export" | "read" | "create" | "update" | "delete" | "finalize" | "cancel" | "adjust_quantity" | "adjust_value" | "dispatch" | "receive"'.
+app/api/period-locks/route.ts(268,52): error TS2345: Argument of type '"unlock"' is not assignable to parameter of type '"export" | "read" | "create" | "update" | "delete" | "finalize" | "cancel" | "adjust_quantity" | "adjust_value" | "dispatch" | "receive"'.
+app/api/purchases/route.ts(571,28): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/purchases/route.ts(572,31): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/api/reports/balance-sheet/pdf/route.ts(156,61): error TS2345: Argument of type '{ business: any; data: any; generated_at: string; }' is not assignable to parameter of type 'RenderData'.
+app/api/reports/cash-flow/pdf/route.ts(143,57): error TS2345: Argument of type '{ business: any; data: any; generated_at: string; }' is not assignable to parameter of type 'RenderData'.
+app/api/reports/credit-risk/route.ts(126,9): error TS2783: 'credit_limit' is specified more than once, so this usage will be overwritten.
+app/api/reports/credit-risk/route.ts(127,9): error TS2783: 'current_balance' is specified more than once, so this usage will be overwritten.
+app/api/reports/credit-risk/route.ts(140,9): error TS2783: 'credit_limit' is specified more than once, so this usage will be overwritten.
+app/api/reports/credit-risk/route.ts(141,9): error TS2783: 'current_balance' is specified more than once, so this usage will be overwritten.
+app/api/reports/expense/expense-vs-sales/route.ts(165,12): error TS2339: Property 'total_ratio' does not exist on type '{ total_sales: number; total_expenses: number; }'.
+app/api/reports/expense/expense-vs-sales/route.ts(166,12): error TS2339: Property 'net' does not exist on type '{ total_sales: number; total_expenses: number; }'.
+app/api/reports/gst/gstr1/route.ts(191,13): error TS2304: Cannot find name 'branch_id'.
+app/api/reports/gst/gstr1/route.ts(194,14): error TS2304: Cannot find name 'branch_id'.
+app/api/reports/gst/gstr1/route.ts(223,24): error TS2304: Cannot find name 'branch_id'.
+app/api/reports/profit-loss/pdf/route.ts(144,59): error TS2345: Argument of type '{ business: any; data: any; generated_at: string; }' is not assignable to parameter of type 'RenderData'.
+app/api/reports/trial-balance/pdf/route.ts(118,61): error TS2345: Argument of type '{ business: any; data: any; generated_at: string; }' is not assignable to parameter of type 'RenderData'.
+app/api/settings/roles/[id]/permissions/route.ts(116,29): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ can_view: boolean; can_add: boolean; can_modify: boolean; can_delete: boolean; can_share: boolean; }'.
+app/api/settings/roles/ensure-primary-admin-permissions/route.ts(51,17): error TS2339: Property 'length' does not exist on type 'QueryResult<{ module_key: string; }>'.
+app/api/settings/roles/ensure-primary-admin-permissions/route.ts(62,26): error TS2488: Type 'QueryResult<{ module_key: string; }>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/settings/roles/ensure-primary-admin-permissions/route.ts(98,65): error TS2339: Property 'length' does not exist on type 'QueryResult<{ module_key: string; }>'.
+app/api/settings/roles/ensure-primary-admin-permissions/route.ts(101,30): error TS2339: Property 'length' does not exist on type 'QueryResult<{ module_key: string; }>'.
+app/api/settings/roles/initialize/route.ts(41,23): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/settings/roles/initialize/route.ts(51,25): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/settings/roles/initialize/route.ts(86,17): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/settings/roles/initialize/route.ts(90,26): error TS2488: Type 'QueryResult<any>' must have a '[Symbol.iterator]()' method that returns an iterator.
+app/api/settings/roles/route.ts(190,15): error TS2304: Cannot find name 'query'.
+app/api/settings/roles/route.ts(207,29): error TS2304: Cannot find name 'query'.
+app/api/settings/roles/route.ts(209,15): error TS2304: Cannot find name 'query'.
+app/api/settings/roles/route.ts(219,13): error TS2304: Cannot find name 'query'.
+app/api/shifts/[id]/route.ts(14,21): error TS2448: Block-scoped variable 'params' used before its declaration.
+app/api/shifts/[id]/route.ts(14,21): error TS2454: Variable 'params' is used before being assigned.
+app/api/shifts/[id]/route.ts(14,28): error TS2339: Property 'id' does not exist on type 'any[]'.
+app/api/stock-transfers/route.ts(142,45): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+app/api/stock-transfers/route.ts(142,50): error TS7006: Parameter 'item' implicitly has an 'any' type.
+app/api/suppliers/[id]/route.ts(207,64): error TS2339: Property 'linked_business_id' does not exist on type '{ business_id: string; }'.
+app/api/suppliers/[id]/route.ts(213,51): error TS2339: Property 'linked_business_id' does not exist on type '{ business_id: string; }'.
+app/api/suppliers/match/route.ts(37,22): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(40,26): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(41,28): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(42,20): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(60,21): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(63,26): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(64,28): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(65,20): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(82,22): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(89,12): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(94,26): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(95,28): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(96,20): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(98,28): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(118,26): error TS2339: Property 'length' does not exist on type 'QueryResult<any>'.
+app/api/suppliers/match/route.ts(120,35): error TS2339: Property 'map' does not exist on type 'QueryResult<any>'.
+app/api/tasks/[id]/route.ts(14,20): error TS2448: Block-scoped variable 'params' used before its declaration.
+app/api/tasks/[id]/route.ts(14,20): error TS2454: Variable 'params' is used before being assigned.
+app/api/tasks/[id]/route.ts(14,27): error TS2339: Property 'id' does not exist on type 'any[]'.
+app/api/tax-provisions/route.ts(93,58): error TS2304: Cannot find name 'financialYear'.
+app/api/tds/certificates/[id]/pdf/route.ts(50,63): error TS2345: Argument of type '{ certificate: any; business: { name: any; address: any; city: any; state: any; tan: any; pan: any; }; settings: { primary_color: string; }; }' is not assignable to parameter of type 'RenderData'.
+app/api/tds/reports/summary/route.ts(51,49): error TS2554: Expected 1-2 arguments, but got 3.
+app/api/tds/reports/summary/route.ts(71,25): error TS2554: Expected 1-2 arguments, but got 3.
+app/api/template-preview/route.ts(37,38): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+app/api/template-preview/route.ts(37,62): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+app/api/template-preview/route.ts(518,38): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type 'TemplateSettings'.
+app/api/template-preview/route.ts(519,9): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type 'TemplateSettings'.
+app/api/template-preview/route.ts(519,30): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type 'TemplateSettings'.
+app/api/template-preview/route.ts(519,60): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type 'TemplateSettings'.
+app/api/template-preview/route.ts(525,7): error TS2322: Type 'string' is not assignable to type 'null'.
+app/api/template-preview/route.ts(533,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+app/api/template-preview/route.ts(534,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+app/api/template-preview/route.ts(535,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+app/api/template-preview/route.ts(536,7): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+app/api/todos/stats/route.ts(75,23): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+app/api/todos/stats/route.ts(76,26): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+app/api/todos/stats/route.ts(77,25): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+app/api/todos/stats/route.ts(78,31): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+app/api/tools/whatsapp-groups/route.ts(511,23): error TS2554: Expected 2 arguments, but got 1.
+app/api/tools/whatsapp-groups/route.ts(521,67): error TS2345: Argument of type 'Promise<string | null>' is not assignable to parameter of type 'string'.
+app/api/whatsapp/bot-rules/[id]/route.ts(50,26): error TS2304: Cannot find name 'queryRows'.
+app/api/whatsapp/contacts/import/route.ts(109,9): error TS7034: Variable 'groupId' implicitly has type 'any' in some locations where its type cannot be determined.
+app/api/whatsapp/contacts/import/route.ts(131,21): error TS7005: Variable 'groupId' implicitly has an 'any' type.
+app/api/whatsapp/conversations/[id]/messages/route.ts(226,7): error TS2322: Type 'string | true' is not assignable to type 'string | undefined'.
+app/api/whatsapp/conversations/[id]/route.ts(233,40): error TS2304: Cannot find name 'queryRows'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(575,38): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(576,26): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(579,51): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(589,49): error TS2339: Property 'low' does not exist on type 'number | Long'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(596,13): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(597,11): error TS2322: Type 'string | import("D:/MyApps/Khatario/node_modules/@whiskeysockets/baileys/WAProto/index").proto.WebMessageInfo.Status' is not assignable to type 'string'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(601,28): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(601,49): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(601,68): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(602,26): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(602,40): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(608,55): error TS2345: Argument of type 'IWebMessageInfo' is not assignable to parameter of type 'WAMessage'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(627,77): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(631,84): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(636,15): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(637,23): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(642,22): error TS18049: 'key' is possibly 'null' or 'undefined'.
+app/api/whatsapp/conversations/live/[jid]/messages/route.ts(740,7): error TS2322: Type 'string | true' is not assignable to type 'string | undefined'.
+app/api/whatsapp/webhook/route.ts(43,15): error TS2554: Expected 5-8 arguments, but got 4.
+app/attendance/login/page.tsx(149,17): error TS2322: Type '{ label: string; type: "tel"; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder: string; required: true; maxLength: number; icon: Element; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+components/admin/PlanFeatureMatrix.tsx(65,57): error TS2345: Argument of type '(f: Feature) => void' is not assignable to parameter of type '(value: unknown, index: number, array: unknown[]) => void'.
+components/admin/PlanLimitsMatrix.tsx(61,55): error TS2345: Argument of type '(l: Limit) => void' is not assignable to parameter of type '(value: unknown, index: number, array: unknown[]) => void'.
+components/dashboard/DashboardCardDetails.tsx(151,31): error TS2322: Type '"default" | "success" | "warning" | "secondary"' is not assignable to type '"error" | "default" | "success" | "warning" | undefined'.
+components/dashboard/DashboardCardDetails.tsx(200,31): error TS2322: Type '"default" | "success" | "secondary"' is not assignable to type '"error" | "default" | "success" | "warning" | undefined'.
+components/documents/UnifiedDocumentDetail.tsx(130,24): error TS2322: Type '{ items: ({ label: string; href: string; } | { label: any; })[]; }' is not assignable to type 'IntrinsicAttributes & BreadcrumbsProps'.
+components/invoices/ItemsTable.tsx(108,19): error TS2322: Type 'RefObject<HTMLInputElement> | null' is not assignable to type 'RefObject<HTMLInputElement> | undefined'.
+components/layout/Sidebar.tsx(1106,11): error TS2322: Type '{ limitType: "feature"; featureKey: string; featureName: string; onClose: () => void; onPurchaseSuccess: () => Promise<void>; }' is not assignable to type 'IntrinsicAttributes & UpgradePromptProps'.
+components/notifications/NotificationCenter.tsx(127,40): error TS2345: Argument of type 'string' is not assignable to parameter of type '"error" | "info" | "success" | "warning"'.
+components/notifications/NotificationCenter.tsx(138,68): error TS2345: Argument of type 'string' is not assignable to parameter of type '"error" | "info" | "success" | "warning"'.
+components/promotions/PromotionBanner.tsx(6,25): error TS2305: Module '"@/contexts/LayoutDataContext"' has no exported member 'getBusinessId'.
+components/promotions/PromotionModal.tsx(43,24): error TS2345: Argument of type 'Promotion' is not assignable to parameter of type 'SetStateAction<Promotion | null>'.
+components/promotions/PromotionModal.tsx(55,18): error TS2345: Argument of type 'Promotion' is not assignable to parameter of type 'SetStateAction<Promotion | null>'.
+components/settings/ai-assistant/OffersPromotionsSection.tsx(18,3): error TS2305: Module '"@/types/offers-promotions-presets"' has no exported member 'SafeModeInfo'.
+components/settings/AIAssistantSettingsPage.tsx(277,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(288,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(299,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(310,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(321,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(332,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(343,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/AIAssistantSettingsPage.tsx(354,15): error TS2322: Type '(el: HTMLDivElement | null) => HTMLDivElement | null' is not assignable to type 'LegacyRef<HTMLDivElement> | undefined'.
+components/settings/FeatureFlagsTab.tsx(184,7): error TS18046: 'error' is of type 'unknown'.
+components/settings/InvoiceDesignTab.tsx(321,13): error TS1117: An object literal cannot have multiple properties with the same name.
+components/tables/BulkActions.tsx(65,15): error TS2322: Type '"default" | "outline" | "destructive"' is not assignable to type '"primary" | "secondary" | "ghost" | undefined'.
+components/templates/CustomizeTemplateDrawer.tsx(58,3): error TS2300: Duplicate identifier 'show_payment_terms'.
+components/templates/CustomizeTemplateDrawer.tsx(103,3): error TS2300: Duplicate identifier 'show_payment_terms'.
+components/templates/CustomizeTemplateDrawer.tsx(216,3): error TS1117: An object literal cannot have multiple properties with the same name.
+components/ui/ContinuousBarcodeScanner.tsx(93,16): error TS2339: Property 'barcode' does not exist on type 'ItemSearchResult'.
+components/ui/ContinuousBarcodeScanner.tsx(396,37): error TS2339: Property 'barcode' does not exist on type 'ItemSearchResult'.
+components/ui/ContinuousBarcodeScanner.tsx(403,44): error TS2339: Property 'barcode' does not exist on type 'ItemSearchResult'.
+components/ui/ItemAutocomplete.tsx(91,14): error TS2540: Cannot assign to 'current' because it is a read-only property.
+components/ui/ItemAutocomplete.tsx(819,11): error TS17001: JSX elements cannot have multiple attributes with the same name.
+components/ui/ItemAutocomplete.tsx(957,49): error TS2339: Property 'barcode' does not exist on type 'ItemSearchResult'.
+components/ui/ItemAutocomplete.tsx(957,98): error TS2339: Property 'barcode' does not exist on type 'ItemSearchResult'.
+components/whatsapp/campaigns/CampaignSendTab.tsx(18,3): error TS2353: Object literal may only specify known properties, and 'buttons' does not exist in type 'MessageContent'.
+components/whatsapp/contacts/ImportContactsModal.tsx(157,15): error TS2322: Type '"default" | "outline"' is not assignable to type '"primary" | "secondary" | "ghost" | undefined'.
+components/whatsapp/contacts/ImportContactsModal.tsx(165,15): error TS2322: Type '"default" | "outline"' is not assignable to type '"primary" | "secondary" | "ghost" | undefined'.
+components/whatsapp/conversations/SummaryBar.tsx(161,35): error TS7006: Parameter 'event' implicitly has an 'any' type.
+contexts/ToastContext.tsx(4,20): error TS2459: Module '"@/hooks/useToast"' declares 'Toast' locally, but it is not exported.
+contexts/ToastContext.tsx(21,53): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+contexts/ToastContext.tsx(22,35): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+contexts/ToastContext.tsx(23,33): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+contexts/ToastContext.tsx(24,35): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+contexts/ToastContext.tsx(25,32): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+hooks/useApiErrorHandler.tsx(32,14): error TS2304: Cannot find name 'ApiCallResult'.
+hooks/useAuthorizationError.ts(17,11): error TS2339: Property 'toast' does not exist on type '{ toasts: Toast[]; showToast: (message: string, type?: ToastType, duration?: number, action?: ToastAction | undefined) => string | undefined; removeToast: (id: string) => void; success: (message: string, action?: ToastAction | undefined) => string | undefined; error: (message: string, action?: ToastAction | undefine...'.
+hooks/useCustomers.ts(26,44): error TS2345: Argument of type '{ filter?: "with-balance" | "zero-balance" | undefined; search?: string | undefined; business_id: string | null; }' is not assignable to parameter of type 'string | Record<string, string> | URLSearchParams | string[][] | undefined'.
+hooks/usePermissions.ts(206,27): error TS2339: Property 'is_primary_admin' does not exist on type 'User'.
+hooks/useToast.ts(4,10): error TS2305: Module '"@/components/ui/EnhancedToast"' has no exported member 'Toast'.
+hooks/useWhatsAppSocket.ts(67,5): error TS2741: Property 'businessId' is missing in type '{ onMessage: ((event: WSEvent) => void) | undefined; onConversationUpdate: ((event: WSEvent) => void) | undefined; onSummaryUpdate: ((event: WSEvent) => void) | undefined; onLabelUpdate: ((event: WSEvent) => void) | undefined; onAgentUpdate: ((event: WSEvent) => void) | undefined; }' but required in type 'UseWhatsAppSocketOptions'.
+lib/auth/withPageAuth.tsx(65,13): error TS2322: Type 'T' is not assignable to type 'IntrinsicAttributes & T'.
+lib/campaign-processor.ts(248,36): error TS2339: Property 'key' does not exist on type 'true'.
+lib/campaign-processor.ts(249,39): error TS2339: Property 'key' does not exist on type 'true'.
+lib/campaign-processor.ts(250,36): error TS2339: Property 'id' does not exist on type 'true'.
+lib/campaign-processor.ts(251,39): error TS2339: Property 'id' does not exist on type 'true'.
+lib/commission-calculator.ts(251,11): error TS2304: Cannot find name 'query'.
+lib/commission-calculator.ts(262,11): error TS2304: Cannot find name 'query'.
+lib/commission-calculator.ts(282,11): error TS2304: Cannot find name 'query'.
+lib/commission-calculator.ts(292,11): error TS2304: Cannot find name 'query'.
+lib/db.ts(33,24): error TS2344: Type 'T' does not satisfy the constraint 'QueryResultRow'.
+lib/db.ts(38,34): error TS2344: Type 'T' does not satisfy the constraint 'QueryResultRow'.
+lib/export/csv.ts(67,3): error TS1117: An object literal cannot have multiple properties with the same name.
+lib/export/json.ts(1,24): error TS2305: Module '"@/lib/gst/gstr1"' has no exported member 'GSTR1Report'.
+lib/google-leads/normalizer.ts(12,10): error TS2459: Module '"./placesClient"' declares 'PlaceDetailsResult' locally, but it is not exported.
+lib/gst/gstr9.ts(542,31): error TS2339: Property 'total_itc_available' does not exist on type 'GSTR2BSummary'.
+lib/gst/gstr9.ts(543,60): error TS2339: Property 'total_itc_available' does not exist on type 'GSTR2BSummary'.
+lib/inter-branch-utils.ts(47,5): error TS2322: Type 'BranchInfo | null' is not assignable to type 'BranchInfo | undefined'.
+lib/inter-branch-utils.ts(162,10): error TS18047: 'customer' is possibly 'null'.
+lib/inter-branch-utils.ts(611,7): error TS18048: 'params.inventoryAmount' is possibly 'undefined'.
+lib/inter-branch-utils.ts(618,7): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+lib/inter-branch-utils.ts(633,7): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+lib/inventory-adjustment-service.ts(664,5): error TS2322: Type 'Account | undefined' is not assignable to type 'Account | null'.
+lib/invoice-presenter.ts(231,48): error TS7006: Parameter 'sum' implicitly has an 'any' type.
+lib/invoice-presenter.ts(231,53): error TS7006: Parameter 'item' implicitly has an 'any' type.
+lib/invoice-presenter.ts(340,5): error TS2353: Object literal may only specify known properties, and 'tax_breakdown' does not exist in type 'RenderData'.
+lib/invoice-renderer.ts(47,58): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(58,91): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(63,27): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(70,72): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(70,156): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(73,64): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(73,148): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(76,59): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(76,143): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(79,63): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(79,147): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(82,61): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(82,145): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(86,27): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/invoice-renderer.ts(90,25): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/leave-calculator.ts(104,3): error TS2322: Type '{ current_balance: number; } | null' is not assignable to type '{ current_balance: number; }'.
+lib/ledger-utils.ts(271,19): error TS18047: 'capitalGroup' is possibly 'null'.
+lib/payslip-generator.ts(71,25): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/payslip-generator.ts(73,30): error TS2683: 'this' implicitly has type 'any' because it does not have a type annotation.
+lib/queue/todoReminderQueue.ts(25,7): error TS2322: Type 'Redis' is not assignable to type 'ConnectionOptions'.
+lib/services/closing-stock-valuator.ts(102,13): error TS2345: Argument of type 'string' is not assignable to parameter of type 'ValuationMethod'.
+lib/services/cogs-calculator.ts(329,11): error TS2345: Argument of type 'string' is not assignable to parameter of type 'ValuationMethod'.
+lib/services/year-closing.ts(361,16): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+lib/services/year-closing.ts(362,22): error TS18047: 'unpostedDepreciation' is possibly 'null'.
+lib/template-defaults.ts(120,5): error TS1117: An object literal cannot have multiple properties with the same name.
+lib/whatsapp.ts(1068,37): error TS2304: Cannot find name 'sock'.
+lib/workers/todoReminderWorker.ts(355,7): error TS2322: Type 'Redis' is not assignable to type 'ConnectionOptions'.
+scripts/generate-previews-advanced.ts(151,5): error TS2322: Type '"new"' is not assignable to type 'boolean | "shell" | undefined'.
+scripts/generate-previews-advanced.ts(187,48): error TS18046: 'error' is of type 'unknown'.
+tests/pbac/report-policies.test.ts(69,9): error TS2322: Type '{ business_id: string; branch_id: null; }' is not assignable to type 'PolicyResource'.
+tests/pbac/report-policies.test.ts(153,9): error TS2322: Type '{ business_id: string; warehouse_id: null; }' is not assignable to type 'PolicyResource'.
+tests/pbac/warehouse-policies.test.ts(64,14): error TS2304: Cannot find name 'checkUserWarehousePermission'.
+tests/setup.ts(9,13): error TS2540: Cannot assign to 'NODE_ENV' because it is a read-only property.
+types/business-hours-presets.ts(328,7): error TS2322: Type '{ day: number; isOpen: boolean; openTime: string | undefined; closeTime: string | undefined; }[]' is not assignable to type '{ day: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday"; isOpen: boolean; openTime?: string | undefined; closeTime?: string | undefined; }[]'.
+types/business-hours-presets.ts(355,24): error TS7015: Element implicitly has an 'any' type because index expression is not of type 'number'.
+types/business-type-presets.ts(248,5): error TS2322: Type '{ tone?: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct" | undefined; responseLength?: "brief" | "moderate" | "detailed" | undefined; useCustomerName?: boolean | undefined; }' is not assignable to type '{ tone: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct"; responseLength: "brief" | "moderate" | "detailed"; useCustomerName: boolean; }'.
+types/business-type-presets.ts(257,5): error TS2322: Type '{ showFields?: ("description" | "stock" | "price" | "warranty" | "specifications" | "ingredients" | "sizes" | "colors" | "dimensions")[] | undefined; showOutOfStock?: boolean | undefined; highlightBestSellers?: boolean | undefined; }' is not assignable to type '{ showFields: ("description" | "stock" | "price" | "warranty" | "specifications" | "ingredients" | "sizes" | "colors" | "dimensions")[]; showOutOfStock: boolean; highlightBestSellers: boolean; }'.
+types/business-type-presets.ts(264,7): error TS2322: Type '{ name?: boolean | undefined; phone?: boolean | undefined; email?: boolean | undefined; address?: boolean | undefined; }' is not assignable to type '{ name: boolean; phone: boolean; email: boolean; address: boolean; }'.
+types/business-type-presets.ts(269,5): error TS2322: Type '{ autoMentionActiveOffers?: boolean | undefined; highlightDiscounts?: boolean | undefined; showExpiryDates?: boolean | undefined; }' is not assignable to type '{ autoMentionActiveOffers: boolean; highlightDiscounts: boolean; showExpiryDates: boolean; }'.
+types/business-type-presets.ts(273,5): error TS2322: Type '{ enableUpselling?: boolean | undefined; upsellingStyle?: "moderate" | "subtle" | "aggressive" | undefined; personalizeForReturningCustomers?: boolean | undefined; enableTimeBasedGreetings?: boolean | undefined; }' is not assignable to type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }'.
+types/communication-style-presets.ts(96,5): error TS2739: Type '{ enableTimeBasedGreetings: true; personalizeForReturningCustomers: true; }' is missing the following properties from type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }': enableUpselling, upsellingStyle
+types/communication-style-presets.ts(107,5): error TS2739: Type '{ enableTimeBasedGreetings: true; personalizeForReturningCustomers: true; }' is missing the following properties from type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }': enableUpselling, upsellingStyle
+types/communication-style-presets.ts(118,5): error TS2739: Type '{ enableTimeBasedGreetings: false; personalizeForReturningCustomers: false; }' is missing the following properties from type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }': enableUpselling, upsellingStyle
+types/communication-style-presets.ts(129,5): error TS2739: Type '{ enableTimeBasedGreetings: true; personalizeForReturningCustomers: true; }' is missing the following properties from type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }': enableUpselling, upsellingStyle
+types/communication-style-presets.ts(172,5): error TS2322: Type '{ tone?: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct" | undefined; responseLength?: "brief" | "moderate" | "detailed" | undefined; useCustomerName?: boolean | undefined; }' is not assignable to type '{ tone: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct"; responseLength: "brief" | "moderate" | "detailed"; useCustomerName: boolean; }'.
+types/communication-style-presets.ts(176,5): error TS2322: Type '{ enableUpselling?: boolean | undefined; upsellingStyle?: "moderate" | "subtle" | "aggressive" | undefined; personalizeForReturningCustomers?: boolean | undefined; enableTimeBasedGreetings?: boolean | undefined; }' is not assignable to type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }'.
+types/communication-style-presets.ts(199,40): error TS2367: This comparison appears to be unintentional because the types '"helpful_expert" | "efficient_direct" | undefined' and '"professional_formal"' have no overlap.
+types/communication-style-presets.ts(322,7): error TS2322: Type '{ tone?: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct" | undefined; responseLength?: "brief" | "moderate" | "detailed" | undefined; useCustomerName?: boolean | undefined; }' is not assignable to type '{ tone: "friendly_casual" | "professional_formal" | "helpful_expert" | "efficient_direct"; responseLength: "brief" | "moderate" | "detailed"; useCustomerName: boolean; }'.
+types/communication-style-presets.ts(326,7): error TS2322: Type '{ enableUpselling?: boolean | undefined; upsellingStyle?: "moderate" | "subtle" | "aggressive" | undefined; personalizeForReturningCustomers?: boolean | undefined; enableTimeBasedGreetings?: boolean | undefined; }' is not assignable to type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }'.
+types/customer-handling-presets.ts(285,5): error TS2739: Type '{ personalizeForReturningCustomers: boolean; }' is missing the following properties from type '{ enableUpselling: boolean; upsellingStyle: "moderate" | "subtle" | "aggressive"; personalizeForReturningCustomers: boolean; enableTimeBasedGreetings: boolean; }': enableUpselling, upsellingStyle, enableTimeBasedGreetings
+types/product-info-presets.ts(465,5): error TS1117: An object literal cannot have multiple properties with the same name.
+types/template.ts(58,3): error TS2300: Duplicate identifier 'show_payment_terms'.
+types/template.ts(68,3): error TS2300: Duplicate identifier 'show_customer_address'.
+types/template.ts(68,3): error TS2687: All declarations of 'show_customer_address' must have identical modifiers.
+types/template.ts(118,3): error TS2300: Duplicate identifier 'show_payment_terms'.
+types/template.ts(159,3): error TS2300: Duplicate identifier 'show_customer_address'.
+types/template.ts(159,3): error TS2687: All declarations of 'show_customer_address' must have identical modifiers.
+types/template.ts(159,3): error TS2717: Subsequent property declarations must have the same type.  Property 'show_customer_address' must be of type 'boolean', but here has type 'boolean | undefined'.
+types/whatsapp-bot-config.ts(311,5): error TS2741: Property 'description' is missing in type '{ key: string; label: string; type: "boolean"; default: true; }' but required in type 'UIConfigField'.
+types/whatsapp-bot-config.ts(317,5): error TS2741: Property 'description' is missing in type '{ key: string; label: string; type: "boolean"; default: true; }' but required in type 'UIConfigField'.
+types/whatsapp-bot-config.ts(323,5): error TS2741: Property 'description' is missing in type '{ key: string; label: string; type: "boolean"; default: false; }' but required in type 'UIConfigField'.
+types/whatsapp-bot-config.ts(329,5): error TS2741: Property 'description' is missing in type '{ key: string; label: string; type: "boolean"; default: true; }' but required in type 'UIConfigField'.

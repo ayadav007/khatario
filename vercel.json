@@ -1,0 +1,24 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/send-payment-reminders",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/check-subscriptions",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/send-daily-invoice-summary",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/send-todo-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/todos/check-reminders",
+      "schedule": "* * * * *"
+    }
+  ]
+}

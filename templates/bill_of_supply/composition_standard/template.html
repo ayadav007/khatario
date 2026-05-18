@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bill of Supply</title>
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --table-header-color: {{settings.table_header_color}};
+      --font-family: {{settings.font_family}};
+      --font-size: {{settings.font_size}}px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-family), 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: var(--font-size);
+      color: var(--text-color);
+      line-height: 1.6;
+      padding: 20px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Document Title */
+    .document-title {
+      text-align: center;
+      font-size: 28px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin: 20px 0 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    
+    /* Composition Disclaimer Box */
+    .composition-disclaimer {
+      background: #fef3c7;
+      border: 2px solid #f59e0b;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 15px 0 25px;
+      text-align: center;
+    }
+    
+    .composition-disclaimer .title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #92400e;
+      margin-bottom: 4px;
+    }
+    
+    .composition-disclaimer .subtitle {
+      font-size: 11px;
+      color: #78350f;
+    }
+    
+    /* Header Section */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 25px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid var(--primary-color);
+    }
+    
+    .logo-section {
+      flex: 0 0 150px;
+    }
+    
+    .logo-section img {
+      max-width: 150px;
+      max-height: 80px;
+      object-fit: contain;
+    }
+    
+    .business-info {
+      flex: 1;
+      padding-left: 20px;
+    }
+    
+    .business-name {
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-bottom: 5px;
+    }
+    
+    .business-details {
+      font-size: 11px;
+      color: #4b5563;
+      line-height: 1.5;
+    }
+    
+    /* Bill Details Bar */
+    .bill-meta {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 25px;
+      padding: 12px;
+      background: #eff6ff;
+      background: color-mix(in srgb, var(--primary-color) 8%, white);
+      border-radius: 6px;
+      border: 1px solid #bfdbfe;
+      border: 1px solid color-mix(in srgb, var(--primary-color) 28%, white);
+    }
+    
+    .bill-meta .meta-item {
+      text-align: center;
+    }
+    
+    .bill-meta .meta-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    
+    .bill-meta .meta-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: #1e293b;
+      margin-top: 3px;
+    }
+    
+    /* Party Information */
+    .party-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 25px;
+    }
+    
+    .party-box {
+      padding: 15px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      background: #f9fafb;
+    }
+    
+    .party-box .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: #6b7280;
+      font-weight: 600;
+      margin-bottom: 8px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #d1d5db;
+    }
+    
+    .party-box .name {
+      font-size: 16px;
+      font-weight: bold;
+      color: #111827;
+      margin-bottom: 6px;
+    }
+    
+    .party-box .detail {
+      font-size: 12px;
+      color: #4b5563;
+      margin-bottom: 3px;
+    }
+    
+    /* Items Table - Simplified (No Tax Columns) */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 25px;
+    }
+    
+    /* Solid bands follow Primary Color (matches Customize → Primary: "headers & accents") */
+    thead {
+      background: var(--primary-color);
+      color: white;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    th {
+      padding: 12px 8px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    th.text-right {
+      text-align: right;
+    }
+    
+    th.text-center {
+      text-align: center;
+    }
+    
+    tbody tr {
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    tbody tr:hover {
+      background: #f9fafb;
+    }
+    
+    td {
+      padding: 10px 8px;
+      font-size: 12px;
+    }
+    
+    td.text-right {
+      text-align: right;
+    }
+    
+    td.text-center {
+      text-align: center;
+    }
+    
+    /* Summary Section - No Tax Breakdown */
+    .summary-section {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 30px;
+    }
+    
+    .summary-box {
+      width: 350px;
+      border: 2px solid var(--primary-color);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 15px;
+      font-size: 13px;
+    }
+    
+    .summary-row:not(:last-child) {
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .summary-row.total {
+      background: var(--primary-color);
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    /* Amount in Words */
+    .amount-words {
+      background: #f0fdf4;
+      background: color-mix(in srgb, var(--primary-color) 6%, white);
+      border: 1px solid #86efac;
+      border: 1px solid color-mix(in srgb, var(--primary-color) 35%, white);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 25px;
+      font-size: 13px;
+    }
+
+    .amount-words .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--primary-color);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .amount-words .value {
+      color: color-mix(in srgb, var(--primary-color) 45%, #0f172a);
+      font-weight: 600;
+    }
+    
+    /* Notes Section */
+    .notes-section {
+      margin-bottom: 20px;
+      padding: 12px;
+      background: #f9fafb;
+      border-left: 3px solid #9ca3af;
+      border-radius: 4px;
+    }
+    
+    .notes-section .label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #4b5563;
+      margin-bottom: 4px;
+    }
+    
+    .notes-section .content {
+      font-size: 12px;
+      color: #1f2937;
+    }
+    
+    /* Signature Section */
+    .signature-section {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 40px;
+      padding-top: 60px;
+    }
+    
+    .signature-box {
+      width: 200px;
+      text-align: center;
+      border-top: 1px solid #9ca3af;
+      padding-top: 8px;
+      font-size: 11px;
+      color: #4b5563;
+    }
+    
+    .signature-box img {
+      max-height: 50px;
+      margin-bottom: 8px;
+    }
+    
+    /* Legal Footer */
+    .legal-footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e5e7eb;
+      font-size: 10px;
+      color: #6b7280;
+      text-align: center;
+    }
+    
+    @media print {
+      body { margin: 0; padding: 10px; }
+      .composition-disclaimer { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Document Title -->
+  <div class="document-title">Bill of Supply</div>
+  
+  <!-- Composition Disclaimer -->
+  <div class="composition-disclaimer">
+    <div class="title">Composition Taxable Person - Not Eligible to Collect Tax on Supplies</div>
+    <div class="subtitle">Registered under Section 10 of the Central Goods and Services Tax Act, 2017</div>
+  </div>
+  
+  <!-- Header -->
+  <div class="header">
+    {{#if business.logo_url}}
+    <div class="logo-section">
+      <img src="{{business.logo_url}}" alt="{{business.name}}">
+    </div>
+    {{/if}}
+    <div class="business-info">
+      <div class="business-name">{{business.name}}</div>
+      <div class="business-details">
+        {{#if business.address}}{{business.address}}, {{business.city}}, {{business.state}} - {{business.pincode}}<br>{{/if}}
+        {{#if business.phone}}<strong>Phone:</strong> {{business.phone}}<br>{{/if}}
+        {{#if business.email}}<strong>Email:</strong> {{business.email}}<br>{{/if}}
+        {{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}
+      </div>
+    </div>
+  </div>
+  
+  <!-- Bill Details -->
+  <div class="bill-meta">
+    <div class="meta-item">
+      <div class="meta-label">Bill No.</div>
+      <div class="meta-value">{{invoice.invoice_number}}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Date</div>
+      <div class="meta-value">{{invoice.invoice_date}}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Place of Supply</div>
+      <div class="meta-value">{{invoice.place_of_supply}}</div>
+    </div>
+  </div>
+  
+  <!-- Party Information -->
+  <div class="party-section">
+    <div class="party-box">
+      <div class="label">Bill To</div>
+      <div class="name">{{customer.name}}</div>
+      {{#if customer.address}}
+      <div class="detail">{{customer.address}}</div>
+      {{/if}}
+      {{#if customer.state}}
+      <div class="detail"><strong>State:</strong> {{customer.state}}</div>
+      {{/if}}
+      {{#if customer.gstin}}
+      <div class="detail"><strong>GSTIN:</strong> {{customer.gstin}}</div>
+      {{/if}}
+    </div>
+    
+    <div class="party-box">
+      <div class="label">Ship To</div>
+      {{#if customer.shipping_address}}
+      <div class="detail">{{customer.shipping_address}}</div>
+      {{else}}
+      <div class="detail">Same as Bill To</div>
+      {{/if}}
+    </div>
+  </div>
+  
+  <!-- Items Table (No Tax Columns) -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%">#</th>
+        <th style="width: 40%">Item Description</th>
+        <th style="width: 12%">HSN/SAC</th>
+        <th class="text-center" style="width: 10%">Qty</th>
+        <th class="text-right" style="width: 12%">Rate</th>
+        <th class="text-right" style="width: 10%">Discount</th>
+        <th class="text-right" style="width: 15%">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td class="text-center">{{this.index}}</td>
+        <td>
+          <strong>{{this.item_name}}</strong>
+          {{#if this.description}}
+          <br><span style="font-size: 11px; color: #6b7280;">{{this.description}}</span>
+          {{/if}}
+        </td>
+        <td>{{this.hsn_sac}}</td>
+        <td class="text-center">{{this.quantity}} {{this.unit}}</td>
+        <td class="text-right">₹{{this.unit_price}}</td>
+        <td class="text-right">
+          {{#if this.discount_amount}}
+          ₹{{this.discount_amount}}
+          {{else}}
+          -
+          {{/if}}
+        </td>
+        <td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  
+  <!-- Summary (No Tax Breakdown) -->
+  <div class="summary-section">
+    <div class="summary-box">
+      {{#if invoice.discount_total}}
+      <div class="summary-row">
+        <span>Subtotal</span>
+        <span>₹{{invoice.subtotal}}</span>
+      </div>
+      <div class="summary-row">
+        <span>Discount</span>
+        <span>- ₹{{invoice.discount_total}}</span>
+      </div>
+      {{/if}}
+      {{#if invoice.additional_charges}}
+      <div class="summary-row">
+        <span>Additional Charges</span>
+        <span>₹{{invoice.additional_charges}}</span>
+      </div>
+      {{/if}}
+      <div class="summary-row total">
+        <span>TOTAL AMOUNT</span>
+        <span>₹{{invoice.grand_total}}</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Amount in Words -->
+  <div class="amount-words">
+    <div class="label">Amount in Words</div>
+    <div class="value">{{invoice.amount_in_words}}</div>
+  </div>
+  
+  <!-- Terms & Notes -->
+  {{#if invoice.notes}}
+  <div class="notes-section">
+    <div class="label">NOTES / TERMS</div>
+    <div class="content">{{invoice.notes}}</div>
+  </div>
+  {{/if}}
+  
+  <!-- Signature -->
+  <div class="signature-section">
+    <div class="signature-box">Customer Signature</div>
+    <div class="signature-box">
+      {{#if business.signature_url}}
+      <img src="{{business.signature_url}}" alt="Signature">
+      {{/if}}
+      For {{business.name}}
+    </div>
+  </div>
+  
+  <!-- Legal Footer -->
+  <div class="legal-footer">
+    This is a computer-generated Bill of Supply and does not require a physical signature.<br>
+    Subject to {{business.city}} jurisdiction only.
+  </div>
+</body>
+</html>
+

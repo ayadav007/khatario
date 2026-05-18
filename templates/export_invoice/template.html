@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --table-header-color: {{settings.table_header_color}};
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: {{settings.font_family}}, Arial, sans-serif; 
+      font-size: {{settings.font_size}}px; 
+      color: {{settings.text_color}}; 
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    .invoice-container { 
+      width: 100%; 
+      max-width: 800px; 
+      margin: 0 auto; 
+      padding: 20px; 
+      background: #fff; 
+    }
+    
+    /* Header Section */
+    .header-top {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .invoice-title {
+      font-size: 24px;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .gstin-header {
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .export-banner {
+      background: var(--primary-color);
+      color: white;
+      padding: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      text-align: center;
+      margin: 10px 0;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .original-label {
+      text-align: right;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+    
+    /* Invoice Details - Two Column Layout */
+    .invoice-details {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+    .invoice-details-left, .invoice-details-right {
+      flex: 1;
+    }
+    .invoice-details-left {
+      padding-right: 20px;
+    }
+    .invoice-details-right {
+      padding-left: 20px;
+    }
+    .detail-row {
+      display: flex;
+      margin-bottom: 5px;
+    }
+    .detail-label {
+      font-weight: bold;
+      width: 140px;
+    }
+    .detail-value {
+      flex: 1;
+    }
+    
+    /* Bill To and Ship To Sections */
+    .parties-section {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .party-box {
+      flex: 1;
+      border: 1px solid #ddd;
+    }
+    .party-header {
+      background: var(--primary-color);
+      color: white;
+      padding: 8px;
+      font-weight: bold;
+      font-size: 12px;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .party-content {
+      padding: 10px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .party-company {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    /* Items Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+    thead th {
+      background: #e3f2fd;
+      background: color-mix(in srgb, var(--table-header-color) 14%, white);
+      padding: 8px 5px;
+      text-align: left;
+      font-weight: bold;
+      border: 1px solid #ddd;
+      font-size: 10px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    tbody td {
+      padding: 8px 5px;
+      border: 1px solid #ddd;
+    }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    
+    /* IGST Column Header */
+    .igst-header {
+      text-align: center;
+    }
+    .igst-subheader {
+      display: flex;
+      border-top: 1px solid #ddd;
+    }
+    .igst-subheader th {
+      flex: 1;
+      padding: 5px;
+      font-size: 10px;
+    }
+    
+    /* Summary Section */
+    .summary-section {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+      font-size: 11px;
+    }
+    .summary-left {
+      flex: 1;
+      padding-right: 20px;
+    }
+    .summary-right {
+      width: 300px;
+    }
+    .summary-box {
+      border: 1px solid #ddd;
+      padding: 10px;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    .summary-label {
+      font-weight: bold;
+    }
+    .certification {
+      margin-top: 15px;
+      font-size: 10px;
+      font-style: italic;
+    }
+    .signature-section {
+      margin-top: 40px;
+      text-align: right;
+    }
+    .signature-company {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .signature-line {
+      border-top: 1px solid #333;
+      width: 200px;
+      margin-top: 40px;
+      margin-left: auto;
+    }
+    
+    /* Amount in Words */
+    .amount-words {
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    .payment-terms {
+      margin-top: 10px;
+    }
+    
+    /* Terms & Conditions */
+    .terms-section {
+      margin-top: 20px;
+      font-size: 10px;
+    }
+    .terms-title {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .terms-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .terms-list li {
+      margin-bottom: 3px;
+    }
+    
+    /* Business Info */
+    .business-info {
+      margin-bottom: 15px;
+      font-size: 11px;
+    }
+    {{#ifSetting 'show_logo'}}
+      {{#if business.logo_url}}
+        .business-logo {
+          height: 60px;
+          margin-bottom: 10px;
+        }
+      {{/if}}
+    {{/ifSetting}}
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Header -->
+    <div class="header-top">
+      <div class="invoice-title">{{invoice.invoice_title}}</div>
+      {{#ifSetting 'show_business_gstin'}}
+        {{#if business.gstin}}
+          <div class="gstin-header">GSTIN: {{business.gstin}}</div>
+        {{/if}}
+      {{/ifSetting}}
+      <div class="original-label">Original for recipient</div>
+    </div>
+    
+    <!-- Business Info -->
+    <div class="business-info">
+      {{#ifSetting 'show_logo'}}
+        {{#if business.logo_url}}
+          <img src="{{business.logo_url}}" class="business-logo" />
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_name'}}
+        <div style="font-weight: bold; font-size: 14px;">{{business.name}}</div>
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_address'}}
+        <div style="margin-top: 5px;">
+          {{business.address}}
+          {{#if business.city}}{{business.city}}, {{business.state}}{{/if}}
+          {{#if business.pincode}} - {{business.pincode}}{{/if}}
+        </div>
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_phone'}}
+        {{#if business.phone}}
+          <div>Phone: {{business.phone}}</div>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_email'}}
+        {{#if business.email}}
+          <div>Email: {{business.email}}</div>
+        {{/if}}
+      {{/ifSetting}}
+      {{#ifSetting 'show_business_iec'}}
+        {{#if business.iec_code}}
+          <div style="margin-top: 5px; font-weight: bold;">IEC Code: {{business.iec_code}}</div>
+        {{/if}}
+      {{/ifSetting}}
+      {{#if invoice.is_export}}
+        <div style="margin-top: 5px;">Country: India</div>
+      {{/if}}
+    </div>
+    
+    <!-- Invoice Details - Two Columns -->
+    <div class="invoice-details">
+      <div class="invoice-details-left">
+        {{#ifSetting 'show_invoice_number'}}
+          <div class="detail-row">
+            <span class="detail-label">Invoice No:</span>
+            <span class="detail-value">{{invoice.invoice_number}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_invoice_date'}}
+          <div class="detail-row">
+            <span class="detail-label">Invoice date:</span>
+            <span class="detail-value">{{invoice.invoice_date}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_invoice_type'}}
+          {{#if invoice.invoice_type}}
+            <div class="detail-row">
+              <span class="detail-label">Invoice Type:</span>
+              <span class="detail-value">{{invoice.invoice_type}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_due_date'}}
+          {{#if invoice.due_date}}
+            <div class="detail-row">
+              <span class="detail-label">Due Date:</span>
+              <span class="detail-value">{{invoice.due_date}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_po_number'}}
+          {{#if invoice.po_number}}
+            <div class="detail-row">
+              <span class="detail-label">PO Number:</span>
+              <span class="detail-value">{{invoice.po_number}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_reference_number'}}
+          {{#if invoice.reference_number}}
+            <div class="detail-row">
+              <span class="detail-label">Reference Number:</span>
+              <span class="detail-value">{{invoice.reference_number}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_reverse_charge'}}
+          <div class="detail-row">
+            <span class="detail-label">Reverse Charge Y/N:</span>
+            <span class="detail-value">{{#if invoice.is_reverse_charge}}Y{{else}}N{{/if}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_business_state'}}
+          <div class="detail-row">
+            <span class="detail-label">State:</span>
+            <span class="detail-value">{{business.state}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_business_state_code'}}
+          <div class="detail-row">
+            <span class="detail-label">Code:</span>
+            <span class="detail-value">{{business.state_code}}</span>
+          </div>
+        {{/ifSetting}}
+      </div>
+      <div class="invoice-details-right">
+        {{#ifSetting 'show_invoice_currency'}}
+          {{#if invoice.invoice_currency}}
+            <div class="detail-row">
+              <span class="detail-label">Currency:</span>
+              <span class="detail-value">{{invoice.invoice_currency}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_exchange_rate'}}
+          {{#if invoice.exchange_rate}}
+            <div class="detail-row">
+              <span class="detail-label">Exchange Rate:</span>
+              <span class="detail-value">{{invoice.exchange_rate}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_transport_mode'}}
+          {{#if invoice.transport_mode}}
+            <div class="detail-row">
+              <span class="detail-label">Transport Mode:</span>
+              <span class="detail-value">{{invoice.transport_mode}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_invoice_date'}}
+          <div class="detail-row">
+            <span class="detail-label">Date of Supply:</span>
+            <span class="detail-value">{{invoice.invoice_date}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_place_of_supply'}}
+          <div class="detail-row">
+            <span class="detail-label">Place of Supply:</span>
+            <span class="detail-value">{{invoice.place_of_supply}}{{#if invoice.place_of_supply_state_code}} ({{invoice.place_of_supply_state_code}}){{/if}}</span>
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_delivery_note'}}
+          {{#if invoice.delivery_note}}
+            <div class="detail-row">
+              <span class="detail-label">Delivery Note:</span>
+              <span class="detail-value">{{invoice.delivery_note}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_payment_terms'}}
+          {{#if invoice.payment_terms}}
+            <div class="detail-row">
+              <span class="detail-label">Payment Terms:</span>
+              <span class="detail-value">{{invoice.payment_terms}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_other_references'}}
+          {{#if invoice.other_references}}
+            <div class="detail-row">
+              <span class="detail-label">Other References:</span>
+              <span class="detail-value">{{invoice.other_references}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_dispatched_through'}}
+          {{#if invoice.dispatched_through}}
+            <div class="detail-row">
+              <span class="detail-label">Dispatched Through:</span>
+              <span class="detail-value">{{invoice.dispatched_through}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_destination'}}
+          {{#if invoice.destination}}
+            <div class="detail-row">
+              <span class="detail-label">Destination:</span>
+              <span class="detail-value">{{invoice.destination}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+        {{#ifSetting 'show_terms_of_delivery'}}
+          {{#if invoice.terms_of_delivery}}
+            <div class="detail-row">
+              <span class="detail-label">Terms of Delivery:</span>
+              <span class="detail-value">{{invoice.terms_of_delivery}}</span>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+      </div>
+    </div>
+    
+    <!-- Export Shipping Details -->
+    {{#if invoice.is_export}}
+      {{#if invoice.port_of_loading}}
+        <div class="invoice-details" style="margin-top: 10px; font-size: 10px;">
+          <div class="invoice-details-left">
+            {{#ifSetting 'show_country_of_origin'}}
+              {{#if invoice.country_of_origin}}
+                <div class="detail-row">
+                  <span class="detail-label">Country of Origin:</span>
+                  <span class="detail-value">{{invoice.country_of_origin}}</span>
+                </div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.country_of_origin}}
+                <div class="detail-row">
+                  <span class="detail-label">Country of Origin:</span>
+                  <span class="detail-value">{{invoice.country_of_origin}}</span>
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_port_of_loading'}}
+              {{#if invoice.port_of_loading}}
+                <div class="detail-row">
+                  <span class="detail-label">Port of Loading:</span>
+                  <span class="detail-value">{{invoice.port_of_loading}}</span>
+                </div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.port_of_loading}}
+                <div class="detail-row">
+                  <span class="detail-label">Port of Loading:</span>
+                  <span class="detail-value">{{invoice.port_of_loading}}</span>
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#if invoice.port_code}}
+              <div class="detail-row">
+                <span class="detail-label">Port Code:</span>
+                <span class="detail-value">{{invoice.port_code}}</span>
+              </div>
+            {{/if}}
+          </div>
+          <div class="invoice-details-right">
+            {{#ifSetting 'show_port_of_discharge'}}
+              {{#if invoice.port_of_discharge}}
+                <div class="detail-row">
+                  <span class="detail-label">Port of Discharge:</span>
+                  <span class="detail-value">{{invoice.port_of_discharge}}</span>
+                </div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.port_of_discharge}}
+                <div class="detail-row">
+                  <span class="detail-label">Port of Discharge:</span>
+                  <span class="detail-value">{{invoice.port_of_discharge}}</span>
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_place_of_delivery'}}
+              {{#if invoice.place_of_delivery}}
+                <div class="detail-row">
+                  <span class="detail-label">Place of Delivery:</span>
+                  <span class="detail-value">{{invoice.place_of_delivery}}</span>
+                </div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.place_of_delivery}}
+                <div class="detail-row">
+                  <span class="detail-label">Place of Delivery:</span>
+                  <span class="detail-value">{{invoice.place_of_delivery}}</span>
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_incoterms'}}
+              {{#if invoice.incoterms}}
+                <div class="detail-row">
+                  <span class="detail-label">Incoterms:</span>
+                  <span class="detail-value">{{invoice.incoterms}}</span>
+                </div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.incoterms}}
+                <div class="detail-row">
+                  <span class="detail-label">Incoterms:</span>
+                  <span class="detail-value">{{invoice.incoterms}}</span>
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+          </div>
+        </div>
+      {{/if}}
+      {{#if invoice.awb_number}}
+        {{#ifSetting 'show_awb_number'}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">AWB Number:</span>
+            <span class="detail-value">{{invoice.awb_number}}</span>
+          </div>
+        {{else}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">AWB Number:</span>
+            <span class="detail-value">{{invoice.awb_number}}</span>
+          </div>
+        {{/ifSetting}}
+      {{/if}}
+      {{#if invoice.bl_number}}
+        {{#ifSetting 'show_bl_number'}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">BL Number:</span>
+            <span class="detail-value">{{invoice.bl_number}}</span>
+          </div>
+        {{else}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">BL Number:</span>
+            <span class="detail-value">{{invoice.bl_number}}</span>
+          </div>
+        {{/ifSetting}}
+      {{/if}}
+      {{#if invoice.transport_mode}}
+        {{#ifSetting 'show_transport_mode'}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">Transport Mode:</span>
+            <span class="detail-value">{{invoice.transport_mode}}</span>
+          </div>
+        {{else}}
+          <div class="detail-row" style="font-size: 10px; margin-top: 5px;">
+            <span class="detail-label">Transport Mode:</span>
+            <span class="detail-value">{{invoice.transport_mode}}</span>
+          </div>
+        {{/ifSetting}}
+      {{/if}}
+    {{/if}}
+    </div>
+    
+    <!-- Bill To and Ship To -->
+    <div class="parties-section">
+      {{#ifSetting 'show_bill_to'}}
+        <div class="party-box">
+          <div class="party-header">Bill To</div>
+          <div class="party-content">
+            {{#ifSetting 'show_customer_name'}}
+              <div class="party-company">{{customer.name}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_address'}}
+              <div>{{customer.address}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_gstin'}}
+              {{#if customer.gstin}}
+                <div style="margin-top: 5px;">GSTIN: {{customer.gstin}}</div>
+              {{else}}
+                <div style="margin-top: 5px;">GSTIN:</div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_state'}}
+              <div>State: {{#if customer.state}}{{customer.state}}{{else}}{{/if}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_state_code'}}
+              <div>Code: {{#if customer.state_code}}{{customer.state_code}}{{else}}{{/if}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_country'}}
+              {{#if customer.country}}
+                <div style="margin-top: 5px; font-weight: bold;">Country: {{customer.country}}</div>
+              {{/if}}
+            {{else}}
+              {{#if customer.country}}
+                <div style="margin-top: 5px; font-weight: bold;">Country: {{customer.country}}</div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_buyer_tax_id'}}
+              {{#if invoice.buyer_tax_id}}
+                <div style="margin-top: 5px;">Tax/VAT ID: {{invoice.buyer_tax_id}}</div>
+              {{/if}}
+            {{else}}
+              {{#if invoice.buyer_tax_id}}
+                <div style="margin-top: 5px;">Tax/VAT ID: {{invoice.buyer_tax_id}}</div>
+              {{/if}}
+            {{/ifSetting}}
+          </div>
+        </div>
+      {{/ifSetting}}
+      
+      {{#ifSetting 'show_ship_to'}}
+        <div class="party-box">
+          <div class="party-header">Ship To</div>
+          <div class="party-content">
+            {{#ifSetting 'show_customer_name'}}
+              <div class="party-company">{{#if customer.shipping_name}}{{customer.shipping_name}}{{else}}{{customer.name}}{{/if}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_address'}}
+              <div>{{#if customer.shipping_address}}{{customer.shipping_address}}{{else}}{{customer.address}}{{/if}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_gstin'}}
+              {{#if customer.shipping_gstin}}
+                <div style="margin-top: 5px;">GSTIN: {{customer.shipping_gstin}}</div>
+              {{else}}
+                <div style="margin-top: 5px;">GSTIN:</div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_state'}}
+              <div>State: {{#if customer.shipping_state}}{{customer.shipping_state}}{{else}}{{customer.state}}{{/if}}</div>
+            {{/ifSetting}}
+            {{#ifSetting 'show_customer_state_code'}}
+              <div>Code: {{#if customer.shipping_state_code}}{{customer.shipping_state_code}}{{else}}{{customer.state_code}}{{/if}}</div>
+            {{/ifSetting}}
+          </div>
+        </div>
+      {{/ifSetting}}
+    </div>
+    
+    <!-- Items Table -->
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 5%">S. No.</th>
+          <th style="width: 30%">Product Description</th>
+          <th style="width: 10%">HSN Code</th>
+          <th style="width: 10%" class="text-center">Qty in Pieces</th>
+          <th style="width: 12%" class="text-right">Rate</th>
+          <th style="width: 12%" class="text-right">Taxable value</th>
+          <th colspan="2" class="text-center" style="width: 12%">IGST</th>
+          <th style="width: 9%" class="text-right">Total</th>
+        </tr>
+        <tr>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th class="text-center" style="font-size: 9px;">Rate</th>
+          <th class="text-center" style="font-size: 9px;">Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td class="text-center">{{this.index}}</td>
+          <td>{{this.item_name}}{{#if this.description}}<br><small style="color: #666;">{{this.description}}</small>{{/if}}</td>
+          <td class="text-center">{{this.hsn_sac}}</td>
+          <td class="text-center">{{this.quantity}}</td>
+          <td class="text-right">{{formatCurrency this.unit_price}}</td>
+          <td class="text-right">{{formatCurrency this.taxable_value}}</td>
+          <td class="text-center">{{#if this.igst_rate}}{{this.igst_rate}}{{else}}0{{/if}}</td>
+          <td class="text-right">{{formatCurrency this.igst_amount}}</td>
+          <td class="text-right">{{formatCurrency this.line_total}}</td>
+        </tr>
+        {{/each}}
+        <!-- Empty rows for additional items -->
+        {{#times 5}}
+        <tr>
+          <td class="text-center">&nbsp;</td>
+          <td>&nbsp;</td>
+          <td class="text-center">&nbsp;</td>
+          <td class="text-center">&nbsp;</td>
+          <td class="text-right">&nbsp;</td>
+          <td class="text-right">&nbsp;</td>
+          <td class="text-center">&nbsp;</td>
+          <td class="text-right">&nbsp;</td>
+          <td class="text-right">&nbsp;</td>
+        </tr>
+        {{/times}}
+        <!-- Total Row -->
+        <tr style="font-weight: bold; background: #f5f5f5;">
+          <td colspan="3" class="text-right">Total</td>
+          <td class="text-center">
+            {{#each items}}
+              {{#if @first}}
+                {{#sum ../items 'quantity'}}{{/sum}}
+              {{/if}}
+            {{/each}}
+          </td>
+          <td></td>
+          <td class="text-right">{{formatCurrency invoice.subtotal}}</td>
+          <td></td>
+          <td class="text-right">{{formatCurrency invoice.igst_total}}</td>
+          <td class="text-right">{{formatCurrency invoice.grand_total}}</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <!-- Bank Details (if shown) -->
+    {{#ifSetting 'show_bank_details'}}
+      {{#if business.bank_name}}
+        <div style="margin-top: 20px; font-size: 10px; border-top: 1px solid #ddd; padding-top: 10px;">
+          <strong>Bank Details:</strong><br>
+          {{#ifSetting 'show_bank_name'}}{{business.bank_name}}{{/ifSetting}}
+          {{#ifSetting 'show_account_number'}}{{#if business.account_number}}<br>Account No: {{business.account_number}}{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_ifsc_code'}}{{#if business.ifsc_code}}<br>IFSC: {{business.ifsc_code}}{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_swift_code'}}{{#if business.swift_code}}<br>SWIFT: {{business.swift_code}}{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_branch_name'}}{{#if business.branch_name}}<br>Branch: {{business.branch_name}}{{/if}}{{/ifSetting}}
+        </div>
+      {{/if}}
+    {{/ifSetting}}
+    
+    <!-- Summary Section -->
+    <div class="summary-section">
+      <div class="summary-left">
+        {{#ifSetting 'show_amount_in_words'}}
+          <div class="amount-words">
+            Total invoice amount in words: {{invoice.amount_in_words}}
+            {{#if invoice.invoice_currency}}
+              {{#if (lt invoice.invoice_currency 'INR')}}
+                (in {{invoice.invoice_currency}})
+              {{/if}}
+            {{/if}}
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_payment_terms'}}
+          <div class="payment-terms">
+            <strong>Payment Terms:</strong> {{invoice.payment_terms}}
+          </div>
+        {{/ifSetting}}
+        {{#ifSetting 'show_terms'}}
+          {{#if invoice.terms}}
+            <div class="terms-section">
+              <div class="terms-title">Terms & conditions</div>
+              <ul class="terms-list">
+                {{#each (split invoice.terms '\n')}}
+                  <li>{{this}}</li>
+                {{/each}}
+              </ul>
+            </div>
+          {{/if}}
+        {{/ifSetting}}
+      </div>
+      
+      <div class="summary-right">
+        <div class="summary-box">
+          <div class="summary-row">
+            <span class="summary-label">Total Amount before Tax:</span>
+            <span>{{formatCurrency invoice.subtotal}}</span>
+          </div>
+          <div class="summary-row">
+            <span>Add: IGST</span>
+            <span>{{formatCurrency invoice.igst_total}}</span>
+          </div>
+          {{#if invoice.additional_charges}}
+            <div class="summary-row">
+              <span>Freight & Insurance</span>
+              <span>{{formatCurrency invoice.additional_charges}}</span>
+            </div>
+          {{/if}}
+          <div class="summary-row" style="font-weight: bold; border-top: 1px solid #ddd; padding-top: 5px; margin-top: 5px;">
+            <span>Total Amount after Tax:</span>
+            <span>{{formatCurrency invoice.grand_total}}</span>
+          </div>
+          {{#if invoice.is_reverse_charge}}
+            <div class="summary-row">
+              <span>GST on Reverse Charge</span>
+              <span></span>
+            </div>
+          {{/if}}
+          
+          <!-- Export Declarations -->
+          {{#if invoice.is_export}}
+            {{#ifSetting 'show_lut_declaration'}}
+              {{#if invoice.lut_declaration}}
+                <div class="certification" style="margin-top: 15px; font-weight: bold;">
+                  Supply meant for export under LUT without payment of IGST.
+                </div>
+              {{/if}}
+            {{/ifSetting}}
+            {{#ifSetting 'show_export_declaration'}}
+              <div class="certification" style="margin-top: 10px;">
+                We hereby certify that the goods mentioned are of Indian origin and the information is true and correct.
+              </div>
+            {{/ifSetting}}
+          {{else}}
+            <div class="certification">
+              Certified that the particulars given above are true and correct.
+            </div>
+          {{/if}}
+          {{#ifSetting 'show_signature'}}
+            <div class="signature-section">
+              <div class="signature-company">For {{business.name}}</div>
+              <div class="signature-line"></div>
+              <div style="margin-top: 5px; font-size: 10px;">Authorised signatory</div>
+            </div>
+          {{/ifSetting}}
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

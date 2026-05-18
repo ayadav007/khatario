@@ -1,0 +1,97 @@
+Khatario — in-app feature inventory (from main navigation, Settings, and related routes)
+Generated for help-centre planning. Some items are plan-gated (Upgrade) or require settings (e.g. warehouses).
+
+DASHBOARD
+- Dashboard (home), cash flow card, other widgets as enabled
+
+SUPPLIER MODE (if your business is linked as a supplier to customers)
+- Supplier dashboard
+- Requests to fulfill
+
+SALES
+- Customers (masters, credit, statements)
+- Invoices
+- Quotations (estimates)
+- Sales orders
+- Delivery challans
+- Work orders
+- Credit notes
+- Debit notes
+
+PURCHASES
+- Suppliers
+- Suppliers hub
+- All purchases
+- Purchase requests
+- Purchase orders
+- Purchase returns
+- Expenses (categories, on-account, paid, etc.)
+
+INVENTORY
+- Items (products/services)
+- Print labels (barcode / plan feature)
+- Warehouses (when enabled; multi-warehouse may be plan-gated)
+- Stock transfers (with warehouses)
+- Inventory adjustments
+- Stock summary, closing stock (reports)
+
+ACCOUNTING
+- Chart of accounts
+- Journal entries (incl. templates)
+- General ledger
+- Payments in (from customers)
+- Payments out (to suppliers, etc.)
+- Provisions
+- TDS / TCS (categories, payments, certificates, transactions)
+- Opening balances (setup)
+
+REPORTS (overview page + builder)
+- Custom report builder (plan)
+- Profit & loss
+- Balance sheet
+- Cash flow (statement)
+- Trial balance
+- Receivables aging, payables aging
+- Sales: summary, invoice-wise, item-wise, party-wise, tax-wise, payment mode, discount, credit sales, cancelled, returns, B2B vs B2C
+- Purchase: summary, invoice-wise, supplier-wise, returns, credit, tax-wise
+- GST: GSTR-1, GSTR-2B, GSTR-2B reconciliation, GSTR-3B, GSTR-9, label print log
+- Inter-branch reconciliation (if applicable)
+- Stock valuation, label print log (when enabled)
+
+HR & EMPLOYEES (plan / capability gated)
+- Employees, add employee
+- Attendance (mark, etc.)
+- Leaves
+- Salary payments, advances, payslips
+- Commissions
+- Performance, tasks
+- Activity logs
+- Settings: commission rules, holidays, leave types, shifts
+
+MORE — TOOLS
+- To-do list, HSN/SAC finder, GST calculator, TDS calculator, discount/price/EMI/interest, PAN/GSTIN validators, lead extractor, image tools, etc.
+- All tools index
+
+MORE — WHATSAPP (add-on)
+- Dashboard, conversations, order verification, bot rules, send message, campaigns, contacts, groups, group extractor, unsubscribes
+- Settings: WhatsApp integration
+
+SETTINGS (organization)
+- Organization, suppliers directory, financial years, branches, warehouses, user management, users, roles, user branches/warehouses, activity
+- Tax & GST, GST configuration
+- Account mappings, period locks
+- Plan & subscription
+- UI features, backup & restore
+- Templates & printing, invoice design, label templates, Bluetooth printer, number series, digital signature
+- Number series, holidays, leave types, shifts, commission rules
+- Integrations (WhatsApp, HR, SMS, AI, CRM, etc.)
+- Help: product tour, how-to guides, documentation links
+
+OTHER APP AREAS
+- Search
+- Credit approvals (if used)
+- Notifications
+- Provisions, debit/credit note flows, purchase/sales order flows
+- Admin console (separate app area for platform operators): businesses, plans, HSN, policies, etc.
+
+This list is not a commitment that every sub-screen has a dedicated user guide; guides are written for the most common workflows.

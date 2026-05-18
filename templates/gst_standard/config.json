@@ -1,0 +1,22 @@
+{
+  "id": "gst_standard",
+  "name": "GST Standard",
+  "description": "Professional GST compliant invoice with clear sections",
+  "defaults": {
+    "font_family": "Inter",
+    "font_size": 12,
+    "primary_color": "#3949AB",
+    "table_header_color": "#EEEEEE",
+    "text_color": "#333333",
+    "show_logo": true,
+    "show_business_details": true,
+    "show_hsn": true,
+    "show_discount": true,
+    "show_tax": true,
+    "show_shipping_details": false,
+    "show_bank_details": true,
+    "show_terms": true,
+    "show_signature": true
+  }
+}
+

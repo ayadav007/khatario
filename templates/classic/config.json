@@ -1,0 +1,15 @@
+{
+  "id": "classic",
+  "name": "Classic",
+  "description": "Traditional grid-based layout",
+  "defaults": {
+    "font_family": "Times New Roman",
+    "font_size": 12,
+    "primary_color": "#000000",
+    "table_header_color": "#f0f0f0",
+    "show_logo": true,
+    "show_hsn": true,
+    "show_tax": true
+  }
+}
+

@@ -1,0 +1,13 @@
+{
+  "id": "business_pro",
+  "name": "Business Pro",
+  "description": "Professional layout with sidebar",
+  "defaults": {
+    "font_family": "Roboto",
+    "font_size": 12,
+    "primary_color": "#1f2937",
+    "table_header_color": "#f3f4f6",
+    "show_logo": true
+  }
+}
+

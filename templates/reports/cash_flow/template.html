@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 40px; color: #333; font-size: 12px; line-height: 1.5; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+    .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+    .subtitle { font-size: 14px; color: #666; }
+    .business-info { margin-bottom: 20px; text-align: center; }
+    
+    .section-title { background: #f3f4f6; padding: 8px 12px; font-size: 16px; font-weight: bold; border-top: 2px solid #333; margin-top: 20px; }
+    .subsection-title { padding: 6px 12px; font-size: 14px; font-weight: bold; border-bottom: 1px solid #eee; color: #444; }
+    
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+    .label { width: 70%; }
+    .amount { width: 30%; text-align: right; font-family: monospace; font-size: 13px; }
+    .total-row { font-weight: bold; background: #eee; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    
+    .green { color: #166534; }
+    .red { color: #dc2626; }
+    
+    .footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 10px; color: #999; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">CASH FLOW STATEMENT</div>
+    <div class="subtitle">For the period {{data.period.from_date}} to {{data.period.to_date}}</div>
+  </div>
+
+  <div class="business-info">
+    {{#if business.logo_url}}
+    <div style="margin-bottom: 12px;">
+      <img src="{{business.logo_url}}" alt="" style="max-height: 64px; max-width: 220px; object-fit: contain;" />
+    </div>
+    {{/if}}
+    <div style="font-size: 18px; font-weight: bold;">{{business.name}}</div>
+    <div>{{business.address}}, {{business.city}}</div>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; font-weight: bold; padding: 15px; background: #f9fafb; border: 1px solid #eee; margin-bottom: 20px;">
+    <span>OPENING CASH BALANCE</span>
+    <span>₹ {{data.opening_cash_balance}}</span>
+  </div>
+
+  <!-- OPERATING -->
+  <div class="section-title">CASH FLOW FROM OPERATING ACTIVITIES</div>
+  <table>
+    <tr>
+      <td class="label">Net Profit</td>
+      <td class="amount {{#if data.net_profit_is_positive}}green{{else}}red{{/if}}">₹ {{data.operating_activities.net_profit}}</td>
+    </tr>
+    <tr>
+      <td class="label">Adjustment for Depreciation</td>
+      <td class="amount green">₹ {{data.operating_activities.depreciation}}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="font-weight: bold; padding-top: 15px;">Working Capital Adjustments:</td>
+    </tr>
+    {{#if data.operating_activities.changes_in_working_capital.receivables_increase}}
+    <tr>
+      <td class="label" style="padding-left: 30px;">(Increase) in Receivables</td>
+      <td class="amount red">-₹ {{data.operating_activities.changes_in_working_capital.receivables_increase}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.operating_activities.changes_in_working_capital.receivables_decrease}}
+    <tr>
+      <td class="label" style="padding-left: 30px;">Decrease in Receivables</td>
+      <td class="amount green">+₹ {{data.operating_activities.changes_in_working_capital.receivables_decrease}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.operating_activities.changes_in_working_capital.payables_increase}}
+    <tr>
+      <td class="label" style="padding-left: 30px;">Increase in Payables</td>
+      <td class="amount green">+₹ {{data.operating_activities.changes_in_working_capital.payables_increase}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.operating_activities.changes_in_working_capital.payables_decrease}}
+    <tr>
+      <td class="label" style="padding-left: 30px;">(Decrease) in Payables</td>
+      <td class="amount red">-₹ {{data.operating_activities.changes_in_working_capital.payables_decrease}}</td>
+    </tr>
+    {{/if}}
+    <tr class="total-row">
+      <td class="label">Net Cash from Operating Activities</td>
+      <td class="amount {{#if data.net_operating_is_positive}}green{{else}}red{{/if}}">₹ {{data.operating_activities.net_cash_from_operating}}</td>
+    </tr>
+  </table>
+
+  <!-- INVESTING -->
+  <div class="section-title">CASH FLOW FROM INVESTING ACTIVITIES</div>
+  <table>
+    {{#if data.investing_activities.fixed_asset_purchases}}
+    <tr>
+      <td class="label">Purchase of Fixed Assets</td>
+      <td class="amount red">-₹ {{data.investing_activities.fixed_asset_purchases}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.investing_activities.fixed_asset_sales}}
+    <tr>
+      <td class="label">Sale of Fixed Assets</td>
+      <td class="amount green">+₹ {{data.investing_activities.fixed_asset_sales}}</td>
+    </tr>
+    {{/if}}
+    <tr class="total-row">
+      <td class="label">Net Cash from Investing Activities</td>
+      <td class="amount {{#if data.net_investing_is_positive}}green{{else}}red{{/if}}">₹ {{data.investing_activities.net_cash_from_investing}}</td>
+    </tr>
+  </table>
+
+  <!-- FINANCING -->
+  <div class="section-title">CASH FLOW FROM FINANCING ACTIVITIES</div>
+  <table>
+    {{#if data.financing_activities.capital_introduced}}
+    <tr>
+      <td class="label">Capital Introduced</td>
+      <td class="amount green">+₹ {{data.financing_activities.capital_introduced}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.financing_activities.loans_taken}}
+    <tr>
+      <td class="label">Loans Taken</td>
+      <td class="amount green">+₹ {{data.financing_activities.loans_taken}}</td>
+    </tr>
+    {{/if}}
+    <tr class="total-row">
+      <td class="label">Net Cash from Financing Activities</td>
+      <td class="amount {{#if data.net_financing_is_positive}}green{{else}}red{{/if}}">₹ {{data.financing_activities.net_cash_from_financing}}</td>
+    </tr>
+  </table>
+
+  <div style="display: flex; justify-content: space-between; font-weight: bold; padding: 15px; background: #eee; border-top: 2px solid #333; margin-top: 30px;">
+    <span>NET INCREASE / (DECREASE) IN CASH</span>
+    <span class="{{#if data.net_cash_flow_is_positive}}green{{else}}red{{/if}}">₹ {{data.net_cash_flow}}</span>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; font-weight: bold; padding: 15px; background: #333; color: #fff; margin-top: 5px;">
+    <span>CLOSING CASH BALANCE</span>
+    <span>₹ {{data.closing_cash_balance}}</span>
+  </div>
+
+  <div class="footer">
+    This is a computer generated financial statement.<br>
+    Generated on {{generated_at}}
+  </div>
+</body>
+</html>
+

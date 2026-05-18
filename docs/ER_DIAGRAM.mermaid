@@ -1,0 +1,118 @@
+erDiagram
+
+    %% Relationships
+    businesses ||--o{ users : "has staff"
+    businesses ||--o{ customers : "has customers"
+    businesses ||--o{ suppliers : "has suppliers"
+    businesses ||--o{ categories : "defines"
+    businesses ||--o{ items : "owns inventory"
+    businesses ||--o{ invoices : "issues"
+    businesses ||--o{ purchases : "makes"
+    businesses ||--o{ payments : "records"
+    businesses ||--o{ expenses : "incurs"
+    businesses ||--o{ whatsapp_config : "configures"
+    
+    categories ||--o{ items : "categorizes"
+    
+    items ||--o{ stock_movements : "logs movement"
+    items ||--o{ invoice_items : "sold in"
+    items ||--o{ purchase_items : "bought in"
+    
+    customers ||--o{ invoices : "receives"
+    customers ||--o{ payments : "pays"
+    
+    suppliers ||--o{ purchases : "bills"
+    suppliers ||--o{ payments : "receives"
+    
+    invoices ||--o{ invoice_items : "contains"
+    invoices ||--o{ payments : "paid by"
+    
+    purchases ||--o{ purchase_items : "contains"
+    purchases ||--o{ payments : "paid for"
+    
+    invoice_templates ||--o{ invoice_template_settings : "configured by"
+    invoice_templates ||--o{ invoices : "used by"
+    
+    expense_categories ||--o{ expenses : "classifies"
+
+    %% Definitions
+    businesses {
+        UUID id PK
+        string name
+        string email
+        string currency
+        string state_code
+        string gstin
+    }
+
+    users {
+        UUID id PK
+        UUID business_id FK
+        string name
+        string email
+        string role
+    }
+
+    customers {
+        UUID id PK
+        UUID business_id FK
+        string name
+        string phone
+        decimal opening_balance
+        string opening_balance_type
+    }
+
+    items {
+        UUID id PK
+        UUID category_id FK
+        string name
+        string code
+        decimal current_stock
+        decimal tax_rate
+    }
+
+    invoices {
+        UUID id PK
+        UUID customer_id FK
+        string invoice_number
+        date invoice_date
+        decimal grand_total
+        decimal balance_amount
+        string status
+        string place_of_supply_state_code
+    }
+
+    invoice_items {
+        UUID id PK
+        UUID invoice_id FK
+        UUID item_id FK
+        decimal quantity
+        decimal unit_price
+        decimal line_total
+    }
+
+    payments {
+        UUID id PK
+        UUID customer_id FK "Nullable"
+        UUID supplier_id FK "Nullable"
+        string type "receivable/payable"
+        decimal amount
+        string payment_mode
+        string reference_type
+    }
+
+    stock_movements {
+        UUID id PK
+        UUID item_id FK
+        string type "in/out"
+        decimal quantity
+        string reference_type
+    }
+
+    whatsapp_config {
+        UUID id PK
+        UUID business_id FK
+        string phone_number_id
+        boolean is_connected
+    }
+

@@ -1,0 +1,1260 @@
+{
+  "totalSettings": 110,
+  "settings": [
+    {
+      "name": "header",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "accent",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "table_header",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "text",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "id",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "supports_custom_colors",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_logo",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_name",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_address",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_phone",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_email",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_website",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_gstin",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_pan",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_cin",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_iec",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_business_swift",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_invoice_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_invoice_date",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_invoice_type",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_due_date",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_po_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_reference_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_place_of_supply",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_reverse_charge",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_eway_bill_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_bill_to",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_ship_to",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_name",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_address",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_phone",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_email",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_gstin",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_state",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_state_code",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_pan",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_contact_person",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_country",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_buyer_tax_id",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_serial_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_item_name",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_hsn",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_unit",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_quantity",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_rate",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_discount_percent",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_discount_amount",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_tax_rate",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_tax_amount",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_line_total",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_item_image",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_batch_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_expiry_date",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_subtotal",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_discount_total",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_additional_charges",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_cgst",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_sgst",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_igst",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_cess",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_tax_total",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_round_off",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_grand_total",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_amount_in_words",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_paid_amount",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_balance_amount",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_bank_details",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_bank_name",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_account_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_ifsc_code",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_branch_name",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_swift_code",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_payment_terms",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_terms",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_invoice_currency",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_exchange_rate",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_country_of_origin",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_port_of_loading",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_port_of_discharge",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_place_of_delivery",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_incoterms",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_transport_mode",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_awb_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_bl_number",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_export_declaration",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_lut_declaration",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_notes",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_signature",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_authorized_signatory",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "show_qr_code",
+      "type": "boolean",
+      "isOptional": false
+    },
+    {
+      "name": "primary_color",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "text_color",
+      "type": "string",
+      "isOptional": true
+    },
+    {
+      "name": "table_header_color",
+      "type": "string",
+      "isOptional": true
+    },
+    {
+      "name": "font_size",
+      "type": "number",
+      "isOptional": false
+    },
+    {
+      "name": "font_family",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "page_size",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "margin_top",
+      "type": "number",
+      "isOptional": false
+    },
+    {
+      "name": "margin_bottom",
+      "type": "number",
+      "isOptional": false
+    },
+    {
+      "name": "margin_left",
+      "type": "number",
+      "isOptional": false
+    },
+    {
+      "name": "margin_right",
+      "type": "number",
+      "isOptional": false
+    },
+    {
+      "name": "terms",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "payment_terms",
+      "type": "string",
+      "isOptional": true
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "footer_text",
+      "type": "string",
+      "isOptional": false
+    },
+    {
+      "name": "show_customer_address",
+      "type": "boolean",
+      "isOptional": true
+    },
+    {
+      "name": "show_gstin",
+      "type": "boolean",
+      "isOptional": true
+    },
+    {
+      "name": "show_tax",
+      "type": "boolean",
+      "isOptional": true
+    },
+    {
+      "name": "show_discount",
+      "type": "boolean",
+      "isOptional": true
+    }
+  ],
+  "templateUsage": {
+    "account_statement": {
+      "primary_color": "direct"
+    },
+    "business_pro": {
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "classic": {
+      "table_header": "direct",
+      "text": "direct",
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "text_color": "direct",
+      "table_header_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct",
+      "margin_top": "direct",
+      "margin_bottom": "direct",
+      "margin_left": "direct",
+      "margin_right": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "elegant": {
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "expense_voucher": {},
+    "export_invoice": {
+      "text": "direct",
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_iec": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_country": "ifSetting",
+      "show_buyer_tax_id": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_swift_code": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_invoice_currency": "ifSetting",
+      "show_exchange_rate": "ifSetting",
+      "show_country_of_origin": "ifSetting",
+      "show_port_of_loading": "ifSetting",
+      "show_port_of_discharge": "ifSetting",
+      "show_place_of_delivery": "ifSetting",
+      "show_incoterms": "ifSetting",
+      "show_transport_mode": "ifSetting",
+      "show_awb_number": "ifSetting",
+      "show_bl_number": "ifSetting",
+      "show_export_declaration": "ifSetting",
+      "show_lut_declaration": "ifSetting",
+      "show_signature": "ifSetting",
+      "text_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct"
+    },
+    "gst_standard": {
+      "table_header": "direct",
+      "text": "direct",
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "text_color": "direct",
+      "table_header_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "minimal": {
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "modern": {
+      "table_header": "direct",
+      "text": "direct",
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "primary_color": "direct",
+      "text_color": "direct",
+      "table_header_color": "direct",
+      "font_size": "direct",
+      "font_family": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "payment_receipt": {
+      "primary_color": "direct"
+    },
+    "tds_certificate": {},
+    "thermal_58mm": {
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "font_size": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    },
+    "thermal_80mm": {
+      "show_logo": "ifSetting",
+      "show_business_name": "ifSetting",
+      "show_business_address": "ifSetting",
+      "show_business_phone": "ifSetting",
+      "show_business_email": "ifSetting",
+      "show_business_website": "ifSetting",
+      "show_business_gstin": "ifSetting",
+      "show_business_pan": "ifSetting",
+      "show_business_cin": "ifSetting",
+      "show_invoice_number": "ifSetting",
+      "show_invoice_date": "ifSetting",
+      "show_invoice_type": "ifSetting",
+      "show_due_date": "ifSetting",
+      "show_po_number": "ifSetting",
+      "show_reference_number": "ifSetting",
+      "show_place_of_supply": "ifSetting",
+      "show_reverse_charge": "ifSetting",
+      "show_eway_bill_number": "ifSetting",
+      "show_bill_to": "ifSetting",
+      "show_ship_to": "ifSetting",
+      "show_customer_name": "ifSetting",
+      "show_customer_address": "ifSetting",
+      "show_customer_phone": "ifSetting",
+      "show_customer_email": "ifSetting",
+      "show_customer_gstin": "ifSetting",
+      "show_customer_state": "ifSetting",
+      "show_customer_state_code": "ifSetting",
+      "show_customer_pan": "ifSetting",
+      "show_contact_person": "ifSetting",
+      "show_serial_number": "ifSetting",
+      "show_item_name": "ifSetting",
+      "show_hsn": "ifSetting",
+      "show_unit": "ifSetting",
+      "show_quantity": "ifSetting",
+      "show_rate": "ifSetting",
+      "show_discount_percent": "ifSetting",
+      "show_discount_amount": "ifSetting",
+      "show_tax_rate": "ifSetting",
+      "show_tax_amount": "ifSetting",
+      "show_line_total": "ifSetting",
+      "show_item_image": "ifSetting",
+      "show_batch_number": "ifSetting",
+      "show_expiry_date": "ifSetting",
+      "show_subtotal": "ifSetting",
+      "show_discount_total": "ifSetting",
+      "show_additional_charges": "ifSetting",
+      "show_cgst": "ifSetting",
+      "show_sgst": "ifSetting",
+      "show_igst": "ifSetting",
+      "show_cess": "ifSetting",
+      "show_tax_total": "ifSetting",
+      "show_round_off": "ifSetting",
+      "show_grand_total": "ifSetting",
+      "show_amount_in_words": "ifSetting",
+      "show_paid_amount": "ifSetting",
+      "show_balance_amount": "ifSetting",
+      "show_bank_details": "ifSetting",
+      "show_bank_name": "ifSetting",
+      "show_account_number": "ifSetting",
+      "show_ifsc_code": "ifSetting",
+      "show_branch_name": "ifSetting",
+      "show_payment_terms": "ifSetting",
+      "show_terms": "ifSetting",
+      "show_notes": "ifSetting",
+      "show_signature": "ifSetting",
+      "show_authorized_signatory": "ifSetting",
+      "show_qr_code": "ifSetting",
+      "font_size": "direct",
+      "terms": "direct",
+      "payment_terms": "direct",
+      "notes": "direct",
+      "footer_text": "direct"
+    }
+  },
+  "colorUsage": {
+    "account_statement": {
+      "primary_color": true
+    },
+    "business_pro": {
+      "primary_color": true
+    },
+    "classic": {
+      "primary_color": true,
+      "text_color": true,
+      "table_header_color": true
+    },
+    "elegant": {
+      "primary_color": true
+    },
+    "export_invoice": {
+      "text_color": true
+    },
+    "gst_standard": {
+      "primary_color": true,
+      "text_color": true,
+      "table_header_color": true
+    },
+    "minimal": {
+      "primary_color": true
+    },
+    "modern": {
+      "primary_color": true,
+      "text_color": true,
+      "table_header_color": true
+    },
+    "payment_receipt": {
+      "primary_color": true
+    }
+  },
+  "bankDetailsUsage": {
+    "business_pro": true,
+    "classic": true,
+    "elegant": true,
+    "export_invoice": true,
+    "gst_standard": true,
+    "minimal": true,
+    "modern": true,
+    "thermal_58mm": true,
+    "thermal_80mm": true
+  },
+  "timestamp": "2026-01-05T14:58:03.418Z"
+}

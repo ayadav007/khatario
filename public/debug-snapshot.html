@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Capability Snapshot - Khatario</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a202c;
+      min-height: 100vh;
+      color: #e2e8f0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #4299e1;
+    }
+    .section {
+      background: #2d3748;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .section h2 {
+      color: #63b3ed;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    pre {
+      background: #1a202c;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+    }
+    .status.good {
+      background: #22543d;
+      border-left: 4px solid #48bb78;
+    }
+    .status.bad {
+      background: #742a2a;
+      border-left: 4px solid #f56565;
+    }
+    .status.warning {
+      background: #744210;
+      border-left: 4px solid #ed8936;
+    }
+    button {
+      background: #4299e1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #3182ce;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #4a5568;
+    }
+    th {
+      background: #1a202c;
+      color: #63b3ed;
+      font-weight: 600;
+    }
+    .perm-yes {
+      color: #48bb78;
+      font-weight: bold;
+    }
+    .perm-no {
+      color: #fc8181;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Capability Snapshot Debugger</h1>
+    
+    <div class="section">
+      <h2>📊 Snapshot Status</h2>
+      <div id="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>👤 User & Business Info</h2>
+      <div id="userInfo"></div>
+    </div>
+
+    <div class="section">
+      <h2>🔐 Module Permissions</h2>
+      <div id="permissions"></div>
+    </div>
+
+    <div class="section">
+      <h2>⚡ Enabled Features</h2>
+      <div id="features"></div>
+    </div>
+
+    <div class="section">
+      <h2>📦 Subscription & Addons</h2>
+      <div id="subscription"></div>
+    </div>
+
+    <div class="section">
+      <h2>🛠️ Actions</h2>
+      <button onclick="refreshSnapshot()">🔄 Reload Snapshot</button>
+      <button onclick="forceRefetch(event)">🌐 Force Refetch from Server</button>
+      <button onclick="window.location.href='/'">← Back to App</button>
+    </div>
+
+    <div class="section">
+      <h2>📄 Raw Snapshot Data</h2>
+      <pre id="raw"></pre>
+    </div>
+  </div>
+
+  <script>
+    function findSnapshotKey() {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('offline_capability_')) {
+          return key;
+        }
+      }
+      return null;
+    }
+
+    function loadSnapshot() {
+      const key = findSnapshotKey();
+      if (!key) {
+        return null;
+      }
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        console.error('Failed to parse snapshot:', e);
+        return null;
+      }
+    }
+
+    function formatTimestamp(ts) {
+      if (!ts) return 'Unknown';
+      const date = new Date(ts);
+      const age = Math.floor((Date.now() - ts) / 1000);
+      return `${date.toLocaleString()} (${age}s ago)`;
+    }
+
+    function renderSnapshot() {
+      const snapshot = loadSnapshot();
+      const statusDiv = document.getElementById('status');
+      const userDiv = document.getElementById('userInfo');
+      const permsDiv = document.getElementById('permissions');
+      const featuresDiv = document.getElementById('features');
+      const subDiv = document.getElementById('subscription');
+      const rawDiv = document.getElementById('raw');
+
+      if (!snapshot) {
+        statusDiv.innerHTML = '<div class="status bad">❌ <strong>No Snapshot Found!</strong> You need to login online first to populate the capability snapshot.</div>';
+        userDiv.innerHTML = '<p>N/A</p>';
+        permsDiv.innerHTML = '<p>N/A</p>';
+        featuresDiv.innerHTML = '<p>N/A</p>';
+        subDiv.innerHTML = '<p>N/A</p>';
+        rawDiv.textContent = 'No data';
+        return;
+      }
+
+      // Status
+      const permCount = Object.keys(snapshot.permissions || {}).length;
+      const featureCount = (snapshot.enabledFeatures || []).length;
+      const age = Math.floor((Date.now() - (snapshot.timestamp || 0)) / 1000);
+      const isExpired = age > (24 * 60 * 60);
+
+      let statusHTML = '';
+      if (permCount === 0) {
+        statusHTML = '<div class="status bad">❌ <strong>No Permissions in Snapshot!</strong> This is why your sidebar is empty. You need to fetch permissions from the server.</div>';
+      } else if (isExpired) {
+        statusHTML = `<div class="status warning">⚠️ <strong>Snapshot Expired</strong> (${Math.floor(age / 3600)}h old). Should refresh when online.</div>`;
+      } else {
+        statusHTML = `<div class="status good">✅ <strong>Snapshot OK</strong> - ${permCount} modules, ${featureCount} features</div>`;
+      }
+      statusDiv.innerHTML = statusHTML;
+
+      // User Info
+      userDiv.innerHTML = `
+        <table>
+          <tr><th>Business ID</th><td>${snapshot.businessId || 'N/A'}</td></tr>
+          <tr><th>User ID</th><td>${snapshot.userId || 'N/A'}</td></tr>
+          <tr><th>Primary Admin</th><td>${snapshot.isPrimaryAdmin ? '<span class="perm-yes">YES</span>' : '<span class="perm-no">NO</span>'}</td></tr>
+          <tr><th>Timestamp</th><td>${formatTimestamp(snapshot.timestamp)}</td></tr>
+        </table>
+      `;
+
+      // Permissions
+      const perms = snapshot.permissions || {};
+      if (Object.keys(perms).length === 0) {
+        permsDiv.innerHTML = '<div class="status bad">❌ <strong>No permissions found!</strong> This is the problem. Required modules: customers, invoices, items, reports, settings, etc.</div>';
+      } else {
+        let permHTML = '<table><tr><th>Module</th><th>View</th><th>Add</th><th>Modify</th><th>Delete</th><th>Share</th></tr>';
+        for (const [module, perm] of Object.entries(perms)) {
+          permHTML += `<tr>
+            <td><strong>${module}</strong></td>
+            <td class="${perm.can_view ? 'perm-yes' : 'perm-no'}">${perm.can_view ? '✓' : '✗'}</td>
+            <td class="${perm.can_add ? 'perm-yes' : 'perm-no'}">${perm.can_add ? '✓' : '✗'}</td>
+            <td class="${perm.can_modify ? 'perm-yes' : 'perm-no'}">${perm.can_modify ? '✓' : '✗'}</td>
+            <td class="${perm.can_delete ? 'perm-yes' : 'perm-no'}">${perm.can_delete ? '✓' : '✗'}</td>
+            <td class="${perm.can_share ? 'perm-yes' : 'perm-no'}">${perm.can_share ? '✓' : '✗'}</td>
+          </tr>`;
+        }
+        permHTML += '</table>';
+        permsDiv.innerHTML = permHTML;
+      }
+
+      // Features
+      const features = snapshot.enabledFeatures || [];
+      if (features.length === 0) {
+        featuresDiv.innerHTML = '<p>No enabled features found</p>';
+      } else {
+        featuresDiv.innerHTML = `<pre>${JSON.stringify(features, null, 2)}</pre>`;
+      }
+
+      // Subscription
+      if (snapshot.subscription) {
+        subDiv.innerHTML = `
+          <table>
+            <tr><th>Plan Name</th><td>${snapshot.subscription.plan_display_name || snapshot.subscription.plan_name || 'N/A'}</td></tr>
+            <tr><th>Plan ID</th><td>${snapshot.subscription.plan_id || 'N/A'}</td></tr>
+            <tr><th>Status</th><td>${snapshot.subscription.status || 'N/A'}</td></tr>
+            <tr><th>Addons</th><td>${(snapshot.addons || []).map(a => a.addon_type).join(', ') || 'None'}</td></tr>
+          </table>
+        `;
+      } else {
+        subDiv.innerHTML = '<p>No subscription data</p>';
+      }
+
+      // Raw
+      rawDiv.textContent = JSON.stringify(snapshot, null, 2);
+    }
+
+    function refreshSnapshot() {
+      renderSnapshot();
+    }
+
+    async function forceRefetch(event) {
+      const snapshot = loadSnapshot();
+      if (!snapshot) {
+        alert('No snapshot found. Please login online first.');
+        return;
+      }
+
+      if (!navigator.onLine) {
+        alert('You are offline. Cannot fetch from server.');
+        return;
+      }
+
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '⏳ Fetching...';
+
+      try {
+        console.log('Fetching permissions, subscription, addons, features...');
+        
+        const [permsRes, subRes, addonsRes, featuresRes] = await Promise.all([
+          fetch(`/api/settings/permissions?user_id=${snapshot.userId}`),
+          fetch(`/api/subscriptions/current?business_id=${snapshot.businessId}`),
+          fetch(`/api/subscriptions/addons/current?business_id=${snapshot.businessId}`),
+          fetch(`/api/features/enabled?business_id=${snapshot.businessId}`)
+        ]);
+
+        console.log('Responses received. Parsing...');
+        
+        // Parse permissions (only read response once!)
+        let permissions = {};
+        let isPrimaryAdmin = false;
+        if (permsRes.ok) {
+          const permsData = await permsRes.json();
+          permissions = permsData.permissions || {};
+          isPrimaryAdmin = permsData.isPrimaryAdmin === true;
+          console.log('Permissions:', Object.keys(permissions).length, 'modules');
+        } else {
+          console.error('Permissions fetch failed:', permsRes.status);
+        }
+
+        // Parse subscription
+        let subscription = null;
+        if (subRes.ok) {
+          const subData = await subRes.json();
+          subscription = subData.subscription || null;
+          console.log('Subscription:', subscription?.plan_name || 'None');
+        } else {
+          console.error('Subscription fetch failed:', subRes.status);
+        }
+
+        // Parse addons
+        let addons = [];
+        if (addonsRes.ok) {
+          const addonsData = await addonsRes.json();
+          addons = addonsData.addons || [];
+          console.log('Addons:', addons.length);
+        } else {
+          console.error('Addons fetch failed:', addonsRes.status);
+        }
+
+        // Parse features
+        let enabledFeatures = [];
+        if (featuresRes.ok) {
+          const featuresData = await featuresRes.json();
+          enabledFeatures = featuresData.enabledIds || [];
+          console.log('Features:', enabledFeatures.length);
+        } else {
+          console.error('Features fetch failed:', featuresRes.status);
+        }
+
+        const newSnapshot = {
+          businessId: snapshot.businessId,
+          userId: snapshot.userId,
+          permissions,
+          isPrimaryAdmin,
+          subscription,
+          addons,
+          enabledFeatures,
+          timestamp: Date.now()
+        };
+
+        console.log('Saving new snapshot...');
+        const key = findSnapshotKey();
+        localStorage.setItem(key, JSON.stringify(newSnapshot));
+
+        alert('✅ Snapshot refreshed successfully! Click "Reload Snapshot" to see the changes.');
+        renderSnapshot();
+      } catch (error) {
+        console.error('Force refetch error:', error);
+        alert(`❌ Failed to fetch: ${error.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🌐 Force Refetch from Server';
+      }
+    }
+
+    // Initial render
+    renderSnapshot();
+  </script>
+</body>
+</html>

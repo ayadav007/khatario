@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 40px; color: #333; }
+    .receipt-box { border: 2px solid #eee; padding: 30px; max-width: 600px; margin: auto; }
+    .header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 20px; margin-bottom: 20px; }
+    .title { font-size: 24px; font-weight: bold; color: {{settings.primary_color}}; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .label { color: #666; }
+    .value { font-weight: bold; }
+    .amount { font-size: 32px; font-weight: bold; text-align: center; margin: 30px 0; color: {{settings.primary_color}}; }
+    .footer { margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px; font-size: 12px; color: #999; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="receipt-box">
+    <div class="header">
+      <div>
+        <div class="title">PAYMENT RECEIPT</div>
+        <div style="font-size: 14px; margin-top: 5px;"># {{payment.reference_number}}</div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-weight: bold;">{{business.name}}</div>
+        <div style="font-size: 12px;">{{business.address}}</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="label">Date:</span>
+      <span class="value">{{payment.date}}</span>
+    </div>
+    <div class="row">
+      <span class="label">Received From:</span>
+      <span class="value">{{payment.party_name}}</span>
+    </div>
+    <div class="row">
+      <span class="label">Payment Mode:</span>
+      <span class="value">{{payment.mode}}</span>
+    </div>
+    {{#if payment.reference}}
+    <div class="row">
+      <span class="label">Reference:</span>
+      <span class="value">{{payment.reference}}</span>
+    </div>
+    {{/if}}
+
+    <div class="amount">₹ {{payment.amount}}</div>
+
+    <div class="row" style="border-top: 1px dashed #eee; padding-top: 15px;">
+      <span class="label">Amount in words:</span>
+      <span class="value">{{payment.amount_in_words}}</span>
+    </div>
+
+    <div class="footer">
+      Thank you for your payment!<br>
+      This is a computer generated receipt.
+    </div>
+  </div>
+</body>
+</html>
+

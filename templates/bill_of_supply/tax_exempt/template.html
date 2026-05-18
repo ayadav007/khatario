@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bill of Supply</title>
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --table-header-color: {{settings.table_header_color}};
+      --font-family: {{settings.font_family}};
+      --font-size: {{settings.font_size}}px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-family), Arial, Helvetica, sans-serif;
+      font-size: var(--font-size);
+      color: var(--text-color);
+      line-height: 1.5;
+      padding: 20px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document-title {
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid var(--primary-color);
+    }
+
+    .tax-exempt-notice {
+      /* Fallbacks first for older PDF/print engines without color-mix */
+      background: #ecfdf5;
+      background: color-mix(in srgb, var(--primary-color) 12%, white);
+      border: 2px solid #10b981;
+      border: 2px solid color-mix(in srgb, var(--primary-color) 55%, white);
+      padding: 12px;
+      margin: 15px 0;
+      text-align: center;
+      font-weight: bold;
+      color: #065f46;
+      color: color-mix(in srgb, var(--primary-color) 35%, #0f172a);
+    }
+
+    .info-section {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0;
+    }
+
+    .info-box {
+      flex: 1;
+      padding: 15px;
+      border: 1px solid #d1d5db;
+    }
+
+    .info-box h3 {
+      font-size: 12px;
+      color: var(--primary-color);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      border: 1px solid #d1d5db;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border: 1px solid #d1d5db;
+    }
+
+    th {
+      background: var(--table-header-color);
+      color: white;
+      font-size: 12px;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .total-section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f3f4f6;
+      text-align: right;
+    }
+
+    .total-amount {
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-top: 10px;
+    }
+
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #d1d5db;
+      text-align: center;
+      font-size: 11px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="document-title">BILL OF SUPPLY</div>
+  
+  <div class="tax-exempt-notice">
+    Tax Exempt Supply - No GST Applicable
+  </div>
+  
+  <div class="info-section">
+    <div class="info-box" style="margin-right: 10px;">
+      <h3>From</h3>
+      <strong>{{business.name}}</strong><br>
+      {{business.address}}<br>
+      {{business.city}}, {{business.state}} - {{business.pincode}}<br>
+      {{#if business.phone}}Phone: {{business.phone}}{{/if}}
+    </div>
+    <div class="info-box" style="margin-left: 10px;">
+      <h3>Bill Details</h3>
+      <strong>Bill No:</strong> {{invoice.invoice_number}}<br>
+      <strong>Date:</strong> {{invoice.invoice_date}}<br>
+      <strong>Place of Supply:</strong> {{invoice.place_of_supply}}
+    </div>
+  </div>
+  
+  <div class="info-box" style="margin: 20px 0;">
+    <h3>Bill To</h3>
+    <strong>{{customer.name}}</strong><br>
+    {{customer.address}}<br>
+    {{#if customer.phone}}Phone: {{customer.phone}}{{/if}}
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">#</th>
+        <th style="width: 50%;">Description</th>
+        <th style="width: 15%; text-align: center;">Quantity</th>
+        <th style="width: 15%; text-align: right;">Rate</th>
+        <th style="width: 15%; text-align: right;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td>{{this.index}}</td>
+        <td>{{this.item_name}}</td>
+        <td style="text-align: center;">{{this.quantity}} {{this.unit}}</td>
+        <td style="text-align: right;">₹{{this.unit_price}}</td>
+        <td style="text-align: right;">₹{{this.taxable_value}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  
+  <div class="total-section">
+    {{#if invoice.discount_total}}
+    <div>Subtotal: ₹{{invoice.subtotal}}</div>
+    <div>Discount: -₹{{invoice.discount_total}}</div>
+    {{/if}}
+    <div class="total-amount">Total: ₹{{invoice.grand_total}}</div>
+    <div style="margin-top: 10px; font-size: 12px; color: #6b7280;">
+      <strong>In Words:</strong> {{invoice.amount_in_words}}
+    </div>
+  </div>
+  
+  {{#if invoice.notes}}
+  <div style="margin: 20px 0; padding: 12px; background: #f9fafb; border-left: 3px solid {{settings.primary_color}};">
+    <strong>Notes:</strong><br>
+    {{invoice.notes}}
+  </div>
+  {{/if}}
+  
+  <div style="margin-top: 60px; display: flex; justify-content: space-between;">
+    <div style="border-top: 1px solid #333; padding-top: 5px;">Customer Signature</div>
+    <div style="border-top: 1px solid #333; padding-top: 5px;">Authorized Signatory</div>
+  </div>
+  
+  <div class="footer">
+    This is a computer-generated document. No signature required.
+  </div>
+</body>
+</html>
+

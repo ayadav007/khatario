@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 40px; color: #333; }
+    .voucher-box { border: 2px solid #333; padding: 30px; max-width: 700px; margin: auto; position: relative; }
+    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
+    .title { font-size: 24px; font-weight: bold; }
+    .row { display: flex; justify-content: space-between; margin-bottom: 15px; }
+    .label { font-weight: bold; width: 150px; }
+    .value { flex: 1; border-bottom: 1px dotted #666; }
+    .amount-box { border: 2px solid #333; padding: 10px 20px; font-size: 20px; font-weight: bold; display: inline-block; margin-top: 20px; }
+    .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
+    .sig-box { border-top: 1px solid #333; width: 150px; text-align: center; padding-top: 5px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="voucher-box">
+    <div class="header">
+      <div>
+        <div class="title">EXPENSE VOUCHER</div>
+        <div style="font-size: 12px; margin-top: 5px;">{{business.name}}</div>
+      </div>
+      <div style="text-align: right;">
+        <div>No: <strong>{{expense.id_short}}</strong></div>
+        <div>Date: <strong>{{expense.date}}</strong></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="label">Paid To:</span>
+      <span class="value">{{expense.employee_name}}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">On Account of:</span>
+      <span class="value">{{expense.category}} - {{expense.description}}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Amount in Words:</span>
+      <span class="value">{{expense.amount_in_words}}</span>
+    </div>
+
+    <div class="amount-box">
+      ₹ {{expense.amount}}
+    </div>
+
+    <div class="signature-row">
+      <div class="sig-box">Receiver's Signature</div>
+      <div class="sig-box">Prepared By</div>
+      <div class="sig-box">Authorized By</div>
+    </div>
+  </div>
+</body>
+</html>
+

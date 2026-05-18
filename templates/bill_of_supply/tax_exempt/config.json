@@ -1,0 +1,18 @@
+{
+  "name": "Tax Exempt Simple",
+  "description": "Simple template for unregistered businesses or tax-exempt supplies",
+  "category": "bill_of_supply",
+  "for_document_types": ["bill_of_supply"],
+  "gst_registration_types": ["unregistered"],
+  "version": "1.0",
+  "preview_image": "/templates/previews/tax_exempt.png",
+  "settings": {
+    "primary_color": "#059669",
+    "font_family": "Arial, sans-serif",
+    "show_logo": true,
+    "show_signature": true,
+    "show_hsn": false,
+    "show_discount": true
+  }
+}
+

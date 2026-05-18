@@ -1,0 +1,192 @@
+{
+  "id": "monochrome_audit_v1",
+  "name": "Monochrome Audit",
+  "paper_size": "A4",
+  "orientation": "portrait",
+  "supports_custom_colors": false,
+  "default_colors": {
+    "header": "#000000",
+    "accent": "#000000",
+    "table_header": "#F5F5F5",
+    "text": "#1A1A1A"
+  },
+  "sections": {
+    "header": {
+      "type": "header",
+      "height": 80,
+      "background": "{{colors.header}}",
+      "layout": "row-between",
+      "elements": [
+        {
+          "type": "logo",
+          "visible": "{{settings.show_logo}}",
+          "bind": "business.logo_url",
+          "width": 80,
+          "height": 40,
+          "grayscale": true
+        },
+        {
+          "type": "stack",
+          "align": "right",
+          "children": [
+            {
+              "type": "text",
+              "value": "{{business.name}}",
+              "size": 20,
+              "weight": 700,
+              "color": "#FFFFFF"
+            },
+            {
+              "type": "text",
+              "value": "{{business.address_line1}}",
+              "size": 11,
+              "color": "#CCCCCC"
+            }
+          ]
+        }
+      ]
+    },
+    "party_info": {
+      "type": "two_column",
+      "columns": [
+        {
+          "title": "Bill To",
+          "fields": [
+            {
+              "label": "",
+              "value": "{{customer.name}}"
+            },
+            {
+              "label": "",
+              "value": "{{customer.address}}",
+              "visible": "{{settings.show_customer_address}}"
+            },
+            {
+              "label": "GSTIN",
+              "value": "{{customer.gstin}}",
+              "visible": "{{settings.show_gstin}}"
+            }
+          ]
+        },
+        {
+          "title": "Invoice",
+          "fields": [
+            {
+              "label": "Invoice No",
+              "value": "{{invoice.number}}",
+              "visible": "{{settings.show_invoice_number}}"
+            },
+            {
+              "label": "Date",
+              "value": "{{invoice.date}}",
+              "visible": "{{settings.show_invoice_date}}"
+            },
+            {
+              "label": "Due Date",
+              "value": "{{invoice.due_date}}",
+              "visible": "{{settings.show_due_date}}"
+            }
+          ]
+        }
+      ]
+    },
+    "items_table": {
+      "type": "table",
+      "header_background": "{{colors.table_header}}",
+      "columns": [
+        {
+          "key": "sr_no",
+          "label": "#",
+          "width": 5
+        },
+        {
+          "key": "description",
+          "label": "Description",
+          "width": 35
+        },
+        {
+          "key": "hsn",
+          "label": "HSN/SAC",
+          "width": 10,
+          "visible": "{{settings.show_hsn}}"
+        },
+        {
+          "key": "qty",
+          "label": "Qty",
+          "width": 10
+        },
+        {
+          "key": "unit_price",
+          "label": "Rate",
+          "width": 15
+        },
+        {
+          "key": "tax_rate",
+          "label": "Tax %",
+          "width": 10,
+          "visible": "{{settings.show_tax}}"
+        },
+        {
+          "key": "line_total",
+          "label": "Amount",
+          "width": 15
+        }
+      ]
+    },
+    "summary": {
+      "type": "summary",
+      "align": "right",
+      "fields": [
+        {
+          "label": "Subtotal",
+          "value": "{{invoice.subtotal}}"
+        },
+        {
+          "label": "Discount",
+          "value": "{{invoice.discount_total}}",
+          "visible": "{{settings.show_discount}}"
+        },
+        {
+          "label": "Additional Charges",
+          "value": "{{invoice.additional_charges}}",
+          "visible": "{{settings.show_additional_charges}}"
+        },
+        {
+          "label": "Tax Total",
+          "value": "{{invoice.tax_total}}",
+          "visible": "{{settings.show_tax}}"
+        },
+        {
+          "label": "Round Off",
+          "value": "{{invoice.round_off}}",
+          "visible": "{{settings.show_round_off}}"
+        },
+        {
+          "label": "Grand Total",
+          "value": "{{invoice.grand_total}}",
+          "highlight": true,
+          "background": "#000000",
+          "text_color": "#FFFFFF",
+          "border": "2px solid #000000"
+        }
+      ]
+    },
+    "footer": {
+      "type": "footer",
+      "elements": [
+        {
+          "type": "text_block",
+          "title": "Terms & Conditions",
+          "text": "{{settings.terms}}",
+          "visible": "{{settings.show_terms}}"
+        },
+        {
+          "type": "signature",
+          "label": "For {{business.name}}",
+          "visible": "{{settings.show_signature}}"
+        }
+      ]
+    }
+  }
+}
+

@@ -1,0 +1,21 @@
+Optional PNGs for How to guides. Place files here; they map to /help/how-to/{filename} in the app.
+
+Slugs (match lib/help/how-to-articles.ts):
+
+  getting-started.png
+  key-settings-walkthrough.png
+  create-tax-invoice-step-by-step.png
+  sales-from-quote-to-invoice.png
+  purchase-and-supplier-cycle.png
+  items-warehouses-and-inventory.png
+  chart-of-accounts-and-mappings.png
+  expenses-on-account-and-payment.png
+  payments-ledger-and-journals.png
+  balance-sheet-and-trial-balance.png
+  cash-flow-dashboard.png
+  profit-loss-aging-and-custom-reports.png
+  gst-returns-essentials.png
+  hr-and-payroll-overview.png
+  tools-whatsapp-and-search.png
+
+Full product feature list for planning: lib/help/khatario-feature-inventory.txt

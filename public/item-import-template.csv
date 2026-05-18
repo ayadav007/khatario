@@ -1,0 +1,4 @@
+name,code,barcode,unit,item_type,category_name,selling_price,purchase_price,mrp,tax_rate,hsn_sac,opening_stock,min_stock,description,image_url,is_active
+Sample Item 1,ITEM001,BARCODE001,PCS,goods,Electronics,100,80,120,18,1001,10,2,Example item,https://example.com/image1.jpg,true
+Sample Item 2,ITEM002,BARCODE002,KG,goods,Food,250,200,300,5,2002,5,1,"Another sample item",,true
+Sample Service 1,SRV001,,NOS,service,Consulting,500,0,500,18,998314,0,0,Consulting service,,true

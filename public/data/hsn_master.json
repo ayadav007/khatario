@@ -1,0 +1,122 @@
+[
+  {
+    "code": "6109",
+    "desc": "T-shirts, singlets and other vests, knitted or crocheted",
+    "rate": "5",
+    "category": "Garments"
+  },
+  {
+    "code": "6204",
+    "desc": "Women’s or girls’ suits, ensembles, jackets, dresses, skirts, trousers, bib and brace overalls, breeches and shorts",
+    "rate": "12",
+    "category": "Garments"
+  },
+  {
+    "code": "6203",
+    "desc": "Men’s or boys’ suits, ensembles, jackets, blazers, trousers, bib and brace overalls, breeches and shorts",
+    "rate": "12",
+    "category": "Garments"
+  },
+  {
+    "code": "6105",
+    "desc": "Men’s or boys’ shirts, knitted or crocheted",
+    "rate": "5",
+    "category": "Garments"
+  },
+  {
+    "code": "1905",
+    "desc": "Bread, pastry, cakes, biscuits and other bakers’ wares",
+    "rate": "18",
+    "category": "Food & Groceries"
+  },
+  {
+    "code": "2106",
+    "desc": "Food preparations not elsewhere specified (including namkeens, bhujia, etc.)",
+    "rate": "12",
+    "category": "Food & Groceries"
+  },
+  {
+    "code": "0901",
+    "desc": "Coffee, whether or not roasted or decaffeinated",
+    "rate": "5",
+    "category": "Food & Groceries"
+  },
+  {
+    "code": "0902",
+    "desc": "Tea, whether or not flavoured",
+    "rate": "5",
+    "category": "Food & Groceries"
+  },
+  {
+    "code": "1701",
+    "desc": "Cane or beet sugar and chemically pure sucrose, in solid form",
+    "rate": "5",
+    "category": "Food & Groceries"
+  },
+  {
+    "code": "8471",
+    "desc": "Automatic data processing machines (Computers, Laptops) and units thereof",
+    "rate": "18",
+    "category": "Electronics"
+  },
+  {
+    "code": "8517",
+    "desc": "Telephone sets, including smartphones and other telephones for cellular networks",
+    "rate": "18",
+    "category": "Electronics"
+  },
+  {
+    "code": "8528",
+    "desc": "Monitors and projectors, not incorporating television reception apparatus",
+    "rate": "18",
+    "category": "Electronics"
+  },
+  {
+    "code": "8443",
+    "desc": "Printers, copying machines and facsimile machines",
+    "rate": "18",
+    "category": "Electronics"
+  },
+  {
+    "code": "9403",
+    "desc": "Other furniture (Wood, Metal, Plastic) and parts thereof",
+    "rate": "18",
+    "category": "Furniture"
+  },
+  {
+    "code": "9404",
+    "desc": "Mattress supports; articles of bedding and similar furnishing",
+    "rate": "18",
+    "category": "Furniture"
+  },
+  {
+    "code": "9983",
+    "desc": "Other professional, technical and business services (Consulting, IT)",
+    "rate": "18",
+    "category": "Services"
+  },
+  {
+    "code": "9987",
+    "desc": "Maintenance, repair and installation (except construction) services",
+    "rate": "18",
+    "category": "Services"
+  },
+  {
+    "code": "9963",
+    "desc": "Accommodation, food and beverage services (Hotels/Restaurants)",
+    "rate": "5",
+    "category": "Services"
+  },
+  {
+    "code": "9965",
+    "desc": "Goods transport services (GTA)",
+    "rate": "5",
+    "category": "Services"
+  },
+  {
+    "code": "9967",
+    "desc": "Supporting and auxiliary transport services (Storage, Warehousing)",
+    "rate": "18",
+    "category": "Services"
+  }
+]

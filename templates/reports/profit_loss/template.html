@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 40px; color: #333; font-size: 12px; line-height: 1.5; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+    .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+    .subtitle { font-size: 14px; color: #666; }
+    .business-info { margin-bottom: 20px; text-align: center; }
+    
+    .section-title { background: #f3f4f6; padding: 8px 12px; font-size: 16px; font-weight: bold; border-top: 2px solid #333; margin-top: 20px; }
+    .subsection-title { padding: 6px 12px; font-size: 14px; font-weight: bold; border-bottom: 1px solid #eee; color: #444; }
+    
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+    .label { width: 70%; }
+    .amount { width: 30%; text-align: right; font-family: monospace; font-size: 13px; }
+    .total-row { font-weight: bold; border-top: 1px solid #333; border-bottom: 2px solid #333; background: #fafafa; }
+    .profit-row { font-size: 15px; font-weight: bold; background: #eee; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    
+    .green { color: #166534; }
+    .red { color: #dc2626; }
+    
+    .footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 10px; color: #999; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">PROFIT & LOSS STATEMENT</div>
+    <div class="subtitle">For the period {{data.period.from_date}} to {{data.period.to_date}}</div>
+  </div>
+
+  <div class="business-info">
+    {{#if business.logo_url}}
+    <div style="margin-bottom: 12px;">
+      <img src="{{business.logo_url}}" alt="" style="max-height: 64px; max-width: 220px; object-fit: contain;" />
+    </div>
+    {{/if}}
+    <div style="font-size: 18px; font-weight: bold;">{{business.name}}</div>
+    <div>{{business.address}}, {{business.city}}</div>
+  </div>
+
+  <!-- INCOME -->
+  <div class="section-title">INCOME</div>
+  <div class="subsection-title">Sales / Revenue</div>
+  <table>
+    {{#each data.income.sales.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount green">₹ {{this.amount}}</td>
+    </tr>
+    {{/each}}
+    <tr class="total-row">
+      <td class="label">Total Sales</td>
+      <td class="amount green">₹ {{data.income.sales.total}}</td>
+    </tr>
+  </table>
+
+  <!-- COGS -->
+  {{#if data.cogs}}
+  <div class="section-title">COST OF GOODS SOLD</div>
+  <table>
+    <tr>
+      <td class="label">Opening Stock</td>
+      <td class="amount red">₹ {{data.cogs.opening_stock}}</td>
+    </tr>
+    <tr>
+      <td class="label">Add: Purchases</td>
+      <td class="amount red">₹ {{data.cogs.purchases}}</td>
+    </tr>
+    <tr>
+      <td class="label">Less: Closing Stock</td>
+      <td class="amount green">(₹ {{data.cogs.closing_stock}})</td>
+    </tr>
+    <tr class="total-row">
+      <td class="label">Total COGS</td>
+      <td class="amount red">₹ {{data.cogs.total}}</td>
+    </tr>
+  </table>
+  {{/if}}
+
+  <div class="profit-row">
+    <td style="padding: 12px;">GROSS PROFIT</td>
+    <td class="amount {{#if data.gross_profit_is_positive}}green{{else}}red{{/if}}" style="padding: 12px;">
+      ₹ {{data.gross_profit}}
+    </td>
+  </div>
+
+  <!-- EXPENSES -->
+  <div class="section-title">INDIRECT EXPENSES</div>
+  <table>
+    {{#each data.expenses.indirect.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount red">₹ {{this.amount}}</td>
+    </tr>
+    {{/each}}
+    {{#if data.expenses.indirect.depreciation}}
+    <tr>
+      <td class="label">Depreciation</td>
+      <td class="amount red">₹ {{data.expenses.indirect.depreciation}}</td>
+    </tr>
+    {{/if}}
+    <tr class="total-row">
+      <td class="label">Total Indirect Expenses</td>
+      <td class="amount red">₹ {{data.expenses.indirect.total}}</td>
+    </tr>
+  </table>
+
+  <div class="profit-row" style="background: #f9fafb;">
+    <td style="padding: 12px;">OPERATING PROFIT</td>
+    <td class="amount {{#if data.operating_profit_is_positive}}green{{else}}red{{/if}}" style="padding: 12px;">
+      ₹ {{data.operating_profit}}
+    </td>
+  </div>
+
+  <div class="profit-row" style="margin-top: 20px; border-bottom: 4px double #333;">
+    <td style="padding: 12px; font-size: 18px;">NET PROFIT / (LOSS)</td>
+    <td class="amount {{#if data.net_profit_is_positive}}green{{else}}red{{/if}}" style="padding: 12px; font-size: 18px;">
+      ₹ {{data.net_profit}}
+    </td>
+  </div>
+
+  <div class="footer">
+    This is a computer generated financial statement.<br>
+    Generated on {{generated_at}}
+  </div>
+</body>
+</html>
+

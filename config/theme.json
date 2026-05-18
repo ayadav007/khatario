@@ -1,0 +1,94 @@
+{
+  "name": "NovaBooks Theme",
+  "version": "1.0.0",
+  "colors": {
+    "primary": {
+      "50": "#EEF1F8",
+      "100": "#DDE3F1",
+      "200": "#BBC7E3",
+      "300": "#99ABD5",
+      "400": "#778FC7",
+      "500": "#3949AB",
+      "600": "#2E3A89",
+      "700": "#222C67",
+      "800": "#171D44",
+      "900": "#0B0F22"
+    },
+    "accent": {
+      "50": "#E0F2F1",
+      "100": "#B2DFDB",
+      "200": "#80CBC4",
+      "300": "#4DB6AC",
+      "400": "#26A69A",
+      "500": "#00897B",
+      "600": "#00796B",
+      "700": "#00695C",
+      "800": "#004D40",
+      "900": "#003D32"
+    },
+    "surface": "#FFFFFF",
+    "background": "#F7F9FC",
+    "text": {
+      "primary": "#1A1A1A",
+      "secondary": "#64748B",
+      "muted": "#94A3B8"
+    },
+    "border": "#E2E8F0",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "error": "#EF4444",
+    "info": "#3B82F6"
+  },
+  "typography": {
+    "fontFamily": {
+      "sans": "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif",
+      "mono": "'Fira Code', 'Courier New', monospace"
+    },
+    "fontSize": {
+      "xs": "12px",
+      "sm": "14px",
+      "base": "16px",
+      "lg": "18px",
+      "xl": "20px",
+      "2xl": "24px",
+      "3xl": "30px"
+    },
+    "fontWeight": {
+      "normal": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
+    },
+    "lineHeight": {
+      "tight": "1.25",
+      "normal": "1.5",
+      "relaxed": "1.75"
+    }
+  },
+  "spacing": {
+    "xs": "4px",
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px",
+    "2xl": "48px"
+  },
+  "borderRadius": {
+    "small": "4px",
+    "medium": "8px",
+    "large": "12px",
+    "xl": "16px"
+  },
+  "shadows": {
+    "small": "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    "medium": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+    "large": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)"
+  },
+  "breakpoints": {
+    "mobile": "640px",
+    "tablet": "768px",
+    "desktop": "1024px",
+    "wide": "1280px"
+  }
+}
+

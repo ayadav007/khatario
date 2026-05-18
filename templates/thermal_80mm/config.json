@@ -1,0 +1,21 @@
+{
+  "id": "thermal_80mm",
+  "name": "Thermal Receipt (80mm)",
+  "description": "Compact layout for POS thermal printers",
+  "defaults": {
+    "font_family": "Monospace",
+    "font_size": 10,
+    "primary_color": "#000000",
+    "table_header_color": "#ffffff",
+    "show_logo": true,
+    "show_hsn": false,
+    "show_tax": false,
+    "show_discount": false,
+    "page_size": "80mm",
+    "margin_top": 0,
+    "margin_bottom": 0,
+    "margin_left": 0,
+    "margin_right": 0
+  }
+}
+

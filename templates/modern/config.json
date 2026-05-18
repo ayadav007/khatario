@@ -1,0 +1,13 @@
+{
+  "id": "modern",
+  "name": "Modern",
+  "description": "Clean layout with colored header",
+  "defaults": {
+    "font_family": "Arial",
+    "font_size": 12,
+    "primary_color": "#2563eb",
+    "table_header_color": "#ffffff",
+    "show_logo": true
+  }
+}
+

@@ -1,0 +1,522 @@
+{
+  "totalSettings": 102,
+  "mainTemplates": [
+    "modern",
+    "classic",
+    "gst_standard",
+    "business_pro",
+    "minimal",
+    "elegant"
+  ],
+  "settingsByCategory": {
+    "Header & Business Info": [
+      {
+        "name": "show_business_name",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_address",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_phone",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_email",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_website",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_gstin",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_pan",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_cin",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_iec",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_business_swift",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Invoice Metadata": [
+      {
+        "name": "show_invoice_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_invoice_date",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_invoice_type",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_due_date",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_po_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_reference_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_place_of_supply",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_reverse_charge",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_eway_bill_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_invoice_currency",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_place_of_delivery",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Party Information": [
+      {
+        "name": "show_bill_to",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_ship_to",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_name",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_address",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_phone",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_email",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_gstin",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_state",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_state_code",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_pan",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_contact_person",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_country",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_buyer_tax_id",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_customer_address",
+        "type": "boolean",
+        "isOptional": true
+      }
+    ],
+    "Items Table Columns": [
+      {
+        "name": "show_serial_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_item_name",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_hsn",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_unit",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_quantity",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_rate",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_discount_percent",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_discount_amount",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_tax_rate",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_tax_amount",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_line_total",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_item_image",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_batch_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_expiry_date",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_discount_total",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_tax_total",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Summary/Totals": [
+      {
+        "name": "show_subtotal",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_additional_charges",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_cgst",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_sgst",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_igst",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_cess",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_round_off",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_grand_total",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_amount_in_words",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_paid_amount",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_balance_amount",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Footer": [
+      {
+        "name": "show_bank_details",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_bank_name",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_ifsc_code",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_branch_name",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_swift_code",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_payment_terms",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_terms",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_notes",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_signature",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_authorized_signatory",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_qr_code",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Export-specific": [
+      {
+        "name": "show_exchange_rate",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_country_of_origin",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_port_of_loading",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_port_of_discharge",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_incoterms",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_transport_mode",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_awb_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_bl_number",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_export_declaration",
+        "type": "boolean",
+        "isOptional": false
+      },
+      {
+        "name": "show_lut_declaration",
+        "type": "boolean",
+        "isOptional": false
+      }
+    ],
+    "Appearance": [
+      {
+        "name": "primary_color",
+        "type": "string",
+        "isOptional": false
+      },
+      {
+        "name": "text_color",
+        "type": "string",
+        "isOptional": true
+      },
+      {
+        "name": "table_header_color",
+        "type": "string",
+        "isOptional": true
+      },
+      {
+        "name": "font_size",
+        "type": "number",
+        "isOptional": false
+      },
+      {
+        "name": "font_family",
+        "type": "string",
+        "isOptional": false
+      },
+      {
+        "name": "page_size",
+        "type": "string",
+        "isOptional": false
+      },
+      {
+        "name": "margin_top",
+        "type": "number",
+        "isOptional": false
+      },
+      {
+        "name": "margin_bottom",
+        "type": "number",
+        "isOptional": false
+      },
+      {
+        "name": "margin_left",
+        "type": "number",
+        "isOptional": false
+      },
+      {
+        "name": "margin_right",
+        "type": "number",
+        "isOptional": false
+      }
+    ],
+    "Content": [
+      {
+        "name": "terms",
+        "type": "string",
+        "isOptional": false
+      },
+      {
+        "name": "payment_terms",
+        "type": "string",
+        "isOptional": true
+      },
+      {
+        "name": "notes",
+        "type": "string",
+        "isOptional": false
+      },
+      {
+        "name": "footer_text",
+        "type": "string",
+        "isOptional": false
+      }
+    ]
+  },
+  "testChecklist": {
+    "saveSettings": "Verify settings can be saved via /api/template-assignments",
+    "preview": "Verify settings are applied in /api/invoices/preview",
+    "pdf": "Verify settings are applied in PDF generation",
+    "retrieval": "Verify settings are retrieved correctly from database"
+  }
+}

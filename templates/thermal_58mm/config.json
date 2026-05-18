@@ -1,0 +1,21 @@
+{
+  "id": "thermal_58mm",
+  "name": "Thermal Receipt (58mm)",
+  "description": "Narrow layout for 58mm thermal printers",
+  "defaults": {
+    "font_family": "Monospace",
+    "font_size": 9,
+    "primary_color": "#000000",
+    "table_header_color": "#ffffff",
+    "show_logo": true,
+    "show_hsn": false,
+    "show_tax": false,
+    "show_discount": false,
+    "page_size": "58mm",
+    "margin_top": 0,
+    "margin_bottom": 0,
+    "margin_left": 0,
+    "margin_right": 0
+  }
+}
+

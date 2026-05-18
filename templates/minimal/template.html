@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: {{settings.font_family}}, sans-serif; font-size: {{settings.font_size}}px; color: #111; background:#fff; margin:0; }
+    .container { max-width: 880px; margin: 28px auto; padding: 0 24px; }
+    h1 { font-size: 22px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 24px; color: {{settings.primary_color}}; }
+    .row { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    table { width: 100%; border-top: 2px solid {{settings.primary_color}}; border-bottom: 2px solid {{settings.primary_color}}; margin-bottom: 24px; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.8px; color: {{settings.primary_color}}; }
+    td { padding: 10px 0; border-top: 1px solid #eee; vertical-align: top; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .label { text-transform: uppercase; font-size: 10px; letter-spacing: 1px; color: #6b7280; }
+    .total { font-size: 24px; font-weight: 700; color: {{settings.primary_color}}; }
+    .box { border: 1px solid #f1f5f9; padding: 14px; border-radius: 8px; }
+    .footer { border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 16px; font-size: 12px; color: #475569; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>{{invoice.invoice_title}}{{#ifSetting 'show_invoice_number'}} {{#if invoice.invoice_number}}#{{invoice.invoice_number}}{{/if}}{{/ifSetting}}</h1>
+
+    <div class="row">
+      <div class="box" style="min-width:240px;">
+        <div class="label">From</div>
+        {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" style="max-height: 50px; margin-bottom: 8px;" /><br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_name'}}<div style="font-weight:600;">{{business.name}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_business_address'}}<div>{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_business_phone'}}{{#if business.phone}}<div>{{business.phone}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_email'}}{{#if business.email}}<div>{{business.email}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<div>GSTIN: {{business.gstin}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_pan'}}{{#if business.pan}}<div>PAN: {{business.pan}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_cin'}}{{#if business.cin}}<div>CIN: {{business.cin}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_website'}}{{#if business.website}}<div>{{business.website}}</div>{{/if}}{{/ifSetting}}
+      </div>
+
+      {{#ifSetting 'show_bill_to'}}
+      <div class="box" style="min-width:240px;">
+        <div class="label">To</div>
+        {{#ifSetting 'show_customer_name'}}<div style="font-weight:600;">{{customer.name}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_customer_address'}}{{#if customer.address}}<div style="white-space:pre-line;">{{customer.address}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div>{{customer.phone}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_email'}}{{#if customer.email}}<div>{{customer.email}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div>GSTIN: {{customer.gstin}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_state'}}{{#if customer.state}}<div>State: {{customer.state}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_state_code'}}{{#if customer.state_code}}<div>State Code: {{customer.state_code}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_pan'}}{{#if customer.pan}}<div>PAN: {{customer.pan}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_contact_person'}}{{#if customer.contact_person}}<div>Contact: {{customer.contact_person}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_balance'}}{{#if customer.current_balance}}<div><strong>Outstanding Balance: ₹{{formatCurrency customer.current_balance}}</strong></div>{{/if}}{{/ifSetting}}
+      </div>
+      {{/ifSetting}}
+
+      {{#ifSetting 'show_ship_to'}}
+      <div class="box" style="min-width:240px;">
+        <div class="label">Ship To</div>
+        {{#ifSetting 'show_customer_name'}}<div style="font-weight:600;">{{#if customer.shipping_name}}{{customer.shipping_name}}{{else}}{{customer.name}}{{/if}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_customer_address'}}
+          {{#if customer.shipping_address}}<div style="white-space:pre-line;">{{customer.shipping_address}}</div>
+          {{else if customer.address}}<div style="white-space:pre-line;">{{customer.address}}</div>{{/if}}
+        {{/ifSetting}}
+      </div>
+      {{/ifSetting}}
+
+      <div class="box" style="min-width:240px;">
+        <div class="label">Invoice Details</div>
+        {{#ifSetting 'show_invoice_date'}}<div>Date: {{invoice.invoice_date}}</div>{{/ifSetting}}
+        {{#ifSetting 'show_invoice_type'}}{{#if invoice.invoice_type}}<div>Type: {{invoice.invoice_type}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div>Due: {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_po_number'}}{{#if invoice.po_number}}<div>PO: {{invoice.po_number}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_reference_number'}}{{#if invoice.reference_number}}<div>Ref: {{invoice.reference_number}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_reverse_charge'}}{{#if invoice.is_reverse_charge}}<div>Reverse Charge: Yes</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_eway_bill_number'}}{{#if invoice.eway_bill_number}}<div>E-way: {{invoice.eway_bill_number}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_delivery_note'}}{{#if invoice.delivery_note}}<div>Delivery Note: {{invoice.delivery_note}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_payment_terms'}}{{#if invoice.payment_terms}}<div>Payment Terms: {{invoice.payment_terms}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_other_references'}}{{#if invoice.other_references}}<div>Other References: {{invoice.other_references}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_dispatched_through'}}{{#if invoice.dispatched_through}}<div>Dispatched Through: {{invoice.dispatched_through}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_destination'}}{{#if invoice.destination}}<div>Destination: {{invoice.destination}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_terms_of_delivery'}}{{#if invoice.terms_of_delivery}}<div>Terms of Delivery: {{invoice.terms_of_delivery}}</div>{{/if}}{{/ifSetting}}
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          {{#ifSetting 'show_serial_number'}}<th style="width:5%;">#</th>{{/ifSetting}}
+          {{#ifSetting 'show_item_name'}}<th>Description</th>{{/ifSetting}}
+          {{#ifSetting 'show_hsn'}}<th class="text-center">HSN</th>{{/ifSetting}}
+          {{#ifSetting 'show_unit'}}<th class="text-center">Unit</th>{{/ifSetting}}
+          {{#ifSetting 'show_quantity'}}<th class="text-center">Qty</th>{{/ifSetting}}
+          {{#ifSetting 'show_rate'}}<th class="text-right">Price</th>{{/ifSetting}}
+          {{#ifSetting 'show_discount_percent'}}<th class="text-right">Disc %</th>{{/ifSetting}}
+          {{#ifSetting 'show_discount_amount'}}<th class="text-right">Disc</th>{{/ifSetting}}
+          {{#ifSetting 'show_tax_rate'}}<th class="text-center">Tax %</th>{{/ifSetting}}
+          {{#ifSetting 'show_tax_amount'}}<th class="text-right">Tax</th>{{/ifSetting}}
+          {{#ifSetting 'show_line_total'}}<th class="text-right">Total</th>{{/ifSetting}}
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          {{#ifSetting 'show_serial_number'}}<td>{{this.index}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_item_name'}}
+            <td>
+              {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width:34px; height:34px; object-fit:cover; margin-right:6px; vertical-align:middle;" />{{/if}}{{/ifSetting}}
+              <strong>{{this.item_name}}</strong>
+              {{#if this.variant_name}}<br><small style="color:#6b7280; font-weight: normal;">Variant: {{this.variant_name}}</small>{{/if}}
+              {{#if this.variant_attributes}}<br><small style="color:#6b7280;">{{#each this.variant_attributes}}{{@key}}: {{this}}{{#unless @last}} | {{/unless}}{{/each}}</small>{{/if}}
+              {{#if this.description}}<br><small style="color:#6b7280;">{{this.description}}</small>{{/if}}
+              {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<br><small style="color:#6b7280;">Batch: {{this.batch_number}}</small>{{/if}}{{/ifSetting}}
+              {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<br><small style="color:#6b7280;">Expiry: {{this.expiry_date}}</small>{{/if}}{{/ifSetting}}
+            </td>
+          {{/ifSetting}}
+          {{#ifSetting 'show_hsn'}}<td class="text-center">{{this.hsn_sac}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_unit'}}<td class="text-center">{{this.unit}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_quantity'}}<td class="text-center">{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_rate'}}<td class="text-right">{{formatCurrency this.unit_price}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_discount_percent'}}<td class="text-right">{{#if this.discount_percent}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_discount_amount'}}<td class="text-right">{{#if this.discount_amount}}{{formatCurrency this.discount_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_tax_rate'}}<td class="text-center">{{this.tax_rate}}%</td>{{/ifSetting}}
+          {{#ifSetting 'show_tax_amount'}}<td class="text-right">{{formatCurrency this.tax_amount}}</td>{{/ifSetting}}
+          {{#ifSetting 'show_line_total'}}<td class="text-right">{{formatCurrency this.line_total}}</td>{{/ifSetting}}
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <div class="row">
+      <div class="box" style="min-width:240px;">
+        {{#ifSetting 'show_terms'}}{{#if settings.terms}}<div class="label">Terms</div><div style="white-space:pre-line;">{{settings.terms}}</div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_notes'}}{{#if settings.notes}}<div class="label" style="margin-top:8px;">Notes</div><div style="white-space:pre-line;">{{settings.notes}}</div>{{/if}}{{/ifSetting}}
+        {{#if settings.footer_text}}<div class="label" style="margin-top:8px;">Footer</div><div>{{settings.footer_text}}</div>{{/if}}
+      </div>
+
+      <div class="box" style="min-width:240px; flex:1;">
+        {{#ifSetting 'show_bank_details'}}
+          <div class="label">Bank Details</div>
+          {{#ifSetting 'show_bank_name'}}{{#if business.bank_name}}<div>Bank: {{business.bank_name}}</div>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_account_number'}}{{#if business.account_number}}<div>A/c No: {{business.account_number}}</div>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_ifsc_code'}}{{#if business.ifsc_code}}<div>IFSC: {{business.ifsc_code}}</div>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_branch_name'}}{{#if business.branch_name}}<div>Branch: {{business.branch_name}}</div>{{/if}}{{/ifSetting}}
+          {{#ifSetting 'show_payment_terms'}}{{#if settings.payment_terms}}<div>Terms: {{settings.payment_terms}}</div>{{/if}}{{/ifSetting}}
+        {{/ifSetting}}
+      </div>
+
+      <div class="box" style="min-width:260px;">
+        {{#ifSetting 'show_subtotal'}}<div class="row" style="margin-bottom:6px;"><span>Subtotal</span><span class="text-right">{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
+        {{#ifSetting 'show_discount_total'}}{{#if invoice.discount_total}}<div class="row" style="margin-bottom:6px;"><span>Discount</span><span class="text-right">- {{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_additional_charges'}}{{#if invoice.additional_charges}}<div class="row" style="margin-bottom:6px;"><span>Additional</span><span class="text-right">+ {{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_cgst'}}{{#unless invoice.is_igst}}{{#if invoice.cgst_total}}<div class="row" style="margin-bottom:6px;"><span>CGST</span><span class="text-right">{{formatCurrency invoice.cgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
+        {{#ifSetting 'show_sgst'}}{{#unless invoice.is_igst}}{{#if invoice.sgst_total}}<div class="row" style="margin-bottom:6px;"><span>SGST</span><span class="text-right">{{formatCurrency invoice.sgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
+        {{#ifSetting 'show_igst'}}{{#if invoice.is_igst}}{{#if invoice.igst_total}}<div class="row" style="margin-bottom:6px;"><span>IGST</span><span class="text-right">{{formatCurrency invoice.igst_total}}</span></div>{{/if}}{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_cess'}}{{#if invoice.cess_total}}<div class="row" style="margin-bottom:6px;"><span>CESS</span><span class="text-right">{{formatCurrency invoice.cess_total}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_tax_total'}}{{#if invoice.tax_total}}<div class="row" style="margin-bottom:6px;"><span>Tax Total</span><span class="text-right">{{formatCurrency invoice.tax_total}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_round_off'}}{{#if invoice.round_off}}<div class="row" style="margin-bottom:6px;"><span>Round Off</span><span class="text-right">{{formatCurrency invoice.round_off}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_grand_total'}}<div class="row" style="font-weight:700; margin-bottom:6px;"><span>Grand Total</span><span class="text-right">{{formatCurrency invoice.grand_total}}</span></div>{{/ifSetting}}
+        {{#ifSetting 'show_amount_in_words'}}{{#if invoice.amount_in_words}}<div class="row" style="font-size:11px; color:#475569;"><span>In Words</span><span class="text-right" style="max-width:160px;">{{invoice.amount_in_words}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_paid_amount'}}{{#if invoice.paid_amount}}<div class="row" style="color:#16a34a;"><span>Paid</span><span class="text-right">- {{formatCurrency invoice.paid_amount}}</span></div>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_balance_amount'}}{{#if invoice.balance_amount}}<div class="row" style="font-weight:700; color:#dc2626;"><span>Balance</span><span class="text-right">{{formatCurrency invoice.balance_amount}}</span></div>{{/if}}{{/ifSetting}}
+      </div>
+    </div>
+
+    <div class="footer">
+      {{#ifSetting 'show_qr_code'}}{{#if invoice.qr_code_url}}<img src="{{invoice.qr_code_url}}" style="height:70px; width:70px;" />{{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_signature'}}
+        <div style="text-align:right; margin-top:12px;">
+          {{#if business.signature_url}}<img src="{{business.signature_url}}" style="max-height:50px; max-width:140px; object-fit:contain;" />{{/if}}
+          {{#ifSetting 'show_authorized_signatory'}}<div style="font-weight:600;">Authorized Signatory</div>{{/ifSetting}}
+        </div>
+      {{/ifSetting}}
+    </div>
+  </div>
+</body>
+</html>
+

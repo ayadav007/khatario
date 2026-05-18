@@ -1,0 +1,7 @@
+{
+  "id": "payment_receipt",
+  "name": "Standard Payment Receipt",
+  "thumbnail": "/templates/payment_receipt.png",
+  "type": "receipt"
+}
+

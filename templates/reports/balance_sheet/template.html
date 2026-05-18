@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 40px; color: #333; font-size: 12px; line-height: 1.5; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
+    .title { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+    .subtitle { font-size: 14px; color: #666; }
+    .business-info { margin-bottom: 20px; text-align: center; }
+    .report-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-weight: bold; }
+    
+    .section-title { background: #f3f4f6; padding: 8px 12px; font-size: 16px; font-weight: bold; border-top: 2px solid #333; margin-top: 20px; }
+    .subsection-title { padding: 6px 12px; font-size: 14px; font-weight: bold; border-bottom: 1px solid #eee; color: #444; }
+    
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+    .label { width: 70%; }
+    .amount { width: 30%; text-align: right; font-family: monospace; font-size: 13px; }
+    .total-row { font-weight: bold; border-top: 1px solid #333; border-bottom: 2px solid #333; background: #fafafa; }
+    .grand-total-row { font-size: 15px; font-weight: bold; background: #eee; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    
+    .negative { color: #dc2626; }
+    .balanced-status { margin-top: 30px; padding: 15px; border-radius: 5px; text-align: center; font-weight: bold; }
+    .balanced { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .not-balanced { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    
+    .footer { margin-top: 50px; border-top: 1px solid #eee; padding-top: 20px; font-size: 10px; color: #999; text-align: center; }
+    @media print {
+      body { padding: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">BALANCE SHEET</div>
+    <div class="subtitle">As on {{data.as_on_date}}</div>
+  </div>
+
+  <div class="business-info">
+    {{#if business.logo_url}}
+    <div style="margin-bottom: 12px;">
+      <img src="{{business.logo_url}}" alt="" style="max-height: 64px; max-width: 220px; object-fit: contain;" />
+    </div>
+    {{/if}}
+    <div style="font-size: 18px; font-weight: bold;">{{business.name}}</div>
+    <div>{{business.address}}, {{business.city}}</div>
+    {{#if business.gstin}}<div>GSTIN: {{business.gstin}}</div>{{/if}}
+  </div>
+
+  <!-- ASSETS -->
+  <div class="section-title">ASSETS</div>
+  
+  <div class="subsection-title">Current Assets</div>
+  <table>
+    {{#if data.assets.current.inventory}}
+    <tr>
+      <td class="label">Inventory (Closing Stock)</td>
+      <td class="amount">₹ {{data.assets.current.inventory}}</td>
+    </tr>
+    {{/if}}
+    {{#if data.assets.current.receivables}}
+    <tr>
+      <td class="label">Accounts Receivable</td>
+      <td class="amount">₹ {{data.assets.current.receivables}}</td>
+    </tr>
+    {{/if}}
+    {{#each data.assets.current.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount">₹ {{this.balance}}</td>
+    </tr>
+    {{/each}}
+    <tr class="total-row">
+      <td class="label">Total Current Assets</td>
+      <td class="amount">₹ {{data.assets.current.total}}</td>
+    </tr>
+  </table>
+
+  <div class="subsection-title">Fixed Assets</div>
+  <table>
+    {{#if data.assets.fixed.gross_block}}
+    <tr>
+      <td class="label">Gross Block</td>
+      <td class="amount">₹ {{data.assets.fixed.gross_block}}</td>
+    </tr>
+    <tr>
+      <td class="label">Less: Accumulated Depreciation</td>
+      <td class="amount negative">({{data.assets.fixed.accumulated_depreciation}})</td>
+    </tr>
+    <tr class="total-row">
+      <td class="label">Net Block</td>
+      <td class="amount">₹ {{data.assets.fixed.net_block}}</td>
+    </tr>
+    {{else}}
+    {{#each data.assets.fixed.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount">₹ {{this.balance}}</td>
+    </tr>
+    {{/each}}
+    {{/if}}
+    <tr class="total-row">
+      <td class="label">Total Fixed Assets</td>
+      <td class="amount">₹ {{data.assets.fixed.total}}</td>
+    </tr>
+  </table>
+
+  <tr class="grand-total-row">
+    <td style="padding: 12px;">TOTAL ASSETS</td>
+    <td class="amount" style="padding: 12px;">₹ {{data.assets.total}}</td>
+  </tr>
+
+  <!-- LIABILITIES & EQUITY -->
+  <div class="section-title">LIABILITIES & EQUITY</div>
+  
+  <div class="subsection-title">Current Liabilities</div>
+  <table>
+    {{#if data.liabilities.current.payables}}
+    <tr>
+      <td class="label">Accounts Payable</td>
+      <td class="amount">₹ {{data.liabilities.current.payables}}</td>
+    </tr>
+    {{/if}}
+    {{#each data.liabilities.current.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount">₹ {{this.balance}}</td>
+    </tr>
+    {{/each}}
+    <tr class="total-row">
+      <td class="label">Total Current Liabilities</td>
+      <td class="amount">₹ {{data.liabilities.current.total}}</td>
+    </tr>
+  </table>
+
+  <div class="subsection-title">Equity</div>
+  <table>
+    {{#each data.equity.capital.accounts}}
+    <tr>
+      <td class="label"><span style="color:#888; font-size:10px;">{{this.account_code}}</span> {{this.account_name}}</td>
+      <td class="amount">₹ {{this.balance}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td class="label">Retained Earnings (P&L A/c)</td>
+      <td class="amount">₹ {{data.equity.retained_earnings_amount}}</td>
+    </tr>
+    <tr class="total-row">
+      <td class="label">Total Equity</td>
+      <td class="amount">₹ {{data.equity.total}}</td>
+    </tr>
+  </table>
+
+  <tr class="grand-total-row">
+    <td style="padding: 12px;">TOTAL LIABILITIES & EQUITY</td>
+    <td class="amount" style="padding: 12px;">₹ {{data.total_liabilities_and_equity}}</td>
+  </tr>
+
+  <div class="balanced-status {{#if data.is_balanced}}balanced{{else}}not-balanced{{/if}}">
+    {{#if data.is_balanced}}
+      Balance Sheet is Balanced
+    {{else}}
+      Balance Sheet is NOT Balanced (Difference: ₹ {{data.difference}})
+    {{/if}}
+  </div>
+
+  <div class="footer">
+    This is a computer generated financial statement.<br>
+    Generated on {{generated_at}}
+  </div>
+</body>
+</html>
+

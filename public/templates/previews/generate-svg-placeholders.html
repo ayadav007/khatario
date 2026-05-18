@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Template Preview Placeholders</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .template-preview { width: 600px; height: 848px; background: white; margin: 20px auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    button { padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 10px; }
+    button:hover { background: #1d4ed8; }
+    #output { margin: 20px; padding: 20px; background: white; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Template Preview Placeholder Generator</h1>
+  <p>This creates SVG placeholder images for templates. Right-click each preview below and "Save Image As..."</p>
+  
+  <div id="previews"></div>
+  
+  <script>
+    const templates = [
+      { id: 'gst_standard', name: 'GST Standard', color: '#2563eb', type: 'Tax Invoice' },
+      { id: 'modern', name: 'Modern', color: '#7c3aed', type: 'Tax Invoice' },
+      { id: 'classic', name: 'Classic', color: '#059669', type: 'Tax Invoice' },
+      { id: 'elegant', name: 'Elegant', color: '#dc2626', type: 'Tax Invoice' },
+      { id: 'minimal', name: 'Minimal', color: '#64748b', type: 'Tax Invoice' },
+      { id: 'composition_standard', name: 'Composition Standard', color: '#f59e0b', type: 'Bill of Supply' },
+      { id: 'composition_modern', name: 'Composition Modern', color: '#f59e0b', type: 'Bill of Supply' },
+      { id: 'tax_exempt', name: 'Tax Exempt', color: '#10b981', type: 'Bill of Supply' },
+      { id: 'credit_standard', name: 'Credit Note', color: '#ef4444', type: 'Credit Note' },
+      { id: 'debit_standard', name: 'Debit Note', color: '#f97316', type: 'Debit Note' },
+      { id: 'challan_standard', name: 'Delivery Challan', color: '#06b6d4', type: 'Delivery Challan' }
+    ];
+    
+    function createPreviewSVG(template) {
+      return `
+<svg width="600" height="848" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="600" height="848" fill="#ffffff"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="600" height="120" fill="${template.color}" opacity="0.1"/>
+  <line x1="40" y1="120" x2="560" y2="120" stroke="${template.color}" stroke-width="3"/>
+  
+  <!-- Company Name -->
+  <text x="40" y="50" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="${template.color}">
+    Digitable
+  </text>
+  <text x="40" y="75" font-family="Arial" font-size="12" fill="#64748b">
+    123 Business Park, Mumbai - 400093
+  </text>
+  <text x="40" y="95" font-family="Arial" font-size="11" fill="#64748b">
+    GSTIN: 27AABCU9603R1ZM | PAN: AABCU9603R
+  </text>
+  
+  <!-- Invoice Type -->
+  <text x="560" y="50" font-family="Arial" font-size="24" font-weight="bold" fill="${template.color}" text-anchor="end">
+    ${template.type.toUpperCase()}
+  </text>
+  <text x="560" y="75" font-family="Arial" font-size="12" fill="#64748b" text-anchor="end">
+    ${template.name}
+  </text>
+  
+  <!-- Bill To Section -->
+  <rect x="40" y="150" width="250" height="100" fill="#f8fafc" rx="8"/>
+  <rect x="40" y="150" width="4" height="100" fill="${template.color}"/>
+  <text x="50" y="175" font-family="Arial" font-size="11" font-weight="bold" fill="#64748b">
+    BILL TO:
+  </text>
+  <text x="50" y="195" font-family="Arial" font-size="13" font-weight="bold" fill="#1e293b">
+    XYZ Enterprises Pvt. Ltd.
+  </text>
+  <text x="50" y="212" font-family="Arial" font-size="11" fill="#64748b">
+    456 Business Park, Gurugram
+  </text>
+  <text x="50" y="227" font-family="Arial" font-size="11" fill="#64748b">
+    GSTIN: 06ABCDE1234F1Z5
+  </text>
+  
+  <!-- Invoice Details -->
+  <rect x="310" y="150" width="250" height="100" fill="#f8fafc" rx="8"/>
+  <rect x="310" y="150" width="4" height="100" fill="${template.color}"/>
+  <text x="320" y="175" font-family="Arial" font-size="11" font-weight="bold" fill="#64748b">
+    INVOICE DETAILS:
+  </text>
+  <text x="320" y="195" font-family="Arial" font-size="11" fill="#1e293b">
+    <tspan font-weight="bold">Invoice #:</tspan> INV-2026-001
+  </text>
+  <text x="320" y="212" font-family="Arial" font-size="11" fill="#1e293b">
+    <tspan font-weight="bold">Date:</tspan> 02-Jan-2026
+  </text>
+  <text x="320" y="227" font-family="Arial" font-size="11" fill="#1e293b">
+    <tspan font-weight="bold">Due Date:</tspan> 16-Jan-2026
+  </text>
+  
+  <!-- Table Header -->
+  <rect x="40" y="280" width="520" height="35" fill="${template.color}"/>
+  <text x="50" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white">#</text>
+  <text x="80" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white">ITEM DESCRIPTION</text>
+  <text x="300" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white">HSN</text>
+  <text x="360" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white" text-anchor="end">QTY</text>
+  <text x="420" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white" text-anchor="end">RATE</text>
+  <text x="550" y="302" font-family="Arial" font-size="10" font-weight="bold" fill="white" text-anchor="end">AMOUNT</text>
+  
+  <!-- Table Rows -->
+  ${[0, 1, 2].map((i) => `
+    <rect x="40" y="${325 + i * 45}" width="520" height="40" fill="${i % 2 === 0 ? '#ffffff' : '#f8fafc'}"/>
+    <line x1="40" y1="${365 + i * 45}" x2="560" y2="${365 + i * 45}" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="50" y="${350 + i * 45}" font-family="Arial" font-size="10" fill="#334155">${i + 1}</text>
+    <text x="80" y="${345 + i * 45}" font-family="Arial" font-size="11" font-weight="bold" fill="#1e293b">Premium Product ${i + 1}</text>
+    <text x="80" y="${358 + i * 45}" font-family="Arial" font-size="9" fill="#64748b">High quality industrial grade</text>
+    <text x="300" y="${350 + i * 45}" font-family="Arial" font-size="10" fill="#334155">27101990</text>
+    <text x="360" y="${350 + i * 45}" font-family="Arial" font-size="10" fill="#334155" text-anchor="end">${50 - i * 15} Ltr</text>
+    <text x="420" y="${350 + i * 45}" font-family="Arial" font-size="10" fill="#334155" text-anchor="end">₹${450 + i * 70}.00</text>
+    <text x="550" y="${350 + i * 45}" font-family="Arial" font-size="10" font-weight="bold" fill="#1e293b" text-anchor="end">₹${23895 - i * 3000}.00</text>
+  `).join('')}
+  
+  <!-- Totals -->
+  <rect x="350" y="500" width="210" height="35" fill="#f8fafc" rx="4"/>
+  <text x="360" y="522" font-family="Arial" font-size="12" fill="#64748b">Subtotal:</text>
+  <text x="550" y="522" font-family="Arial" font-size="12" fill="#1e293b" text-anchor="end">₹59,020.00</text>
+  
+  ${!template.id.includes('composition') ? `
+    <rect x="350" y="545" width="210" height="30" fill="#f8fafc" rx="4"/>
+    <text x="360" y="564" font-family="Arial" font-size="11" fill="#64748b">CGST (9%):</text>
+    <text x="550" y="564" font-family="Arial" font-size="11" fill="#1e293b" text-anchor="end">₹4,771.80</text>
+    
+    <rect x="350" y="583" width="210" height="30" fill="#f8fafc" rx="4"/>
+    <text x="360" y="602" font-family="Arial" font-size="11" fill="#64748b">SGST (9%):</text>
+    <text x="550" y="602" font-family="Arial" font-size="11" fill="#1e293b" text-anchor="end">₹4,771.80</text>
+  ` : ''}
+  
+  <rect x="350" y="${template.id.includes('composition') ? '555' : '623'}" width="210" height="45" fill="${template.color}" rx="6"/>
+  <text x="360" y="${template.id.includes('composition') ? '585' : '653'}" font-family="Arial" font-size="14" font-weight="bold" fill="white">Grand Total:</text>
+  <text x="550" y="${template.id.includes('composition') ? '585' : '653'}" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="end">₹68,563.60</text>
+  
+  ${template.id.includes('composition') ? `
+    <!-- Composition Disclaimer -->
+    <rect x="40" y="620" width="520" height="50" fill="#fef3c7" rx="6"/>
+    <rect x="40" y="620" width="4" height="50" fill="#f59e0b"/>
+    <text x="50" y="645" font-family="Arial" font-size="11" font-weight="bold" fill="#92400e">
+      📋 Composition Taxable Person - Not eligible to collect tax on supplies
+    </text>
+  ` : ''}
+  
+  <!-- Footer -->
+  <line x1="40" y1="720" x2="560" y2="720" stroke="#e2e8f0" stroke-width="2"/>
+  
+  <text x="40" y="745" font-family="Arial" font-size="10" font-weight="bold" fill="#64748b">BANK DETAILS</text>
+  <text x="40" y="765" font-family="Arial" font-size="9" fill="#64748b">HDFC Bank | A/c: 50200012345678</text>
+  <text x="40" y="780" font-family="Arial" font-size="9" fill="#64748b">IFSC: HDFC0001234</text>
+  
+  <text x="300" y="745" font-family="Arial" font-size="10" font-weight="bold" fill="#64748b">TERMS & CONDITIONS</text>
+  <text x="300" y="765" font-family="Arial" font-size="9" fill="#64748b">Payment within 14 days from invoice date</text>
+  
+  <!-- Signature -->
+  <line x1="420" y1="810" x2="540" y2="810" stroke="#1e293b" stroke-width="2"/>
+  <text x="480" y="828" font-family="Arial" font-size="10" font-weight="bold" fill="#1e293b" text-anchor="middle">Authorized Signatory</text>
+  
+  <!-- Watermark -->
+  <text x="300" y="835" font-family="Arial" font-size="8" fill="#cbd5e1" text-anchor="middle">
+    ${template.name} Template Preview
+  </text>
+</svg>
+      `.trim();
+    }
+    
+    // Generate previews
+    templates.forEach(template => {
+      const svg = createPreviewSVG(template);
+      const container = document.createElement('div');
+      container.innerHTML = `
+        <h3>${template.name} (${template.type})</h3>
+        <div style="display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 20px;">
+          ${svg}
+        </div>
+        <div>
+          <button onclick="downloadSVG('${template.id}', \`${svg.replace(/`/g, '\\`')}\`)">
+            Download ${template.id}.svg
+          </button>
+        </div>
+      `;
+      document.getElementById('previews').appendChild(container);
+    });
+    
+    function downloadSVG(filename, svgContent) {
+      const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename + '.svg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert('Downloaded ' + filename + '.svg - Convert to PNG using an online tool or Inkscape');
+    }
+  </script>
+</body>
+</html>
+
