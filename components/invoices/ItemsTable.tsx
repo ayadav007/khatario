@@ -3,7 +3,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 
 // InvoiceItemRow interface (matching parent definition)
 interface InvoiceItemRow {
@@ -62,8 +62,11 @@ interface ItemsTableProps {
   // Warehouse ID for warehouse-specific stock
   warehouseId?: string;
 
-  /** Table (default) or stacked cards for mobile invoice composer */
-  layout?: 'table' | 'cards';
+  /** Table (default), stacked cards, or Billbok-style compact rows + edit sheet */
+  layout?: 'table' | 'cards' | 'compact';
+  /** Recalculate row totals when editing in compact edit sheet */
+  recalculateRow?: (row: InvoiceItemRow, skipDiscountRecalc?: boolean) => InvoiceItemRow;
+  onReplaceRow?: (index: number, row: InvoiceItemRow) => void;
 }
 
 const ItemsTable = React.memo(function ItemsTable({
@@ -82,7 +85,13 @@ const ItemsTable = React.memo(function ItemsTable({
   totalTax = 0,
   grandTotal = 0,
   layout = 'table',
+  recalculateRow,
+  onReplaceRow,
 }: ItemsTableProps) {
+  const [editIndex, setEditIndex] = React.useState<number | null>(null);
+  const [editDraft, setEditDraft] = React.useState<InvoiceItemRow | null>(null);
+  const [editTab, setEditTab] = React.useState<'price' | 'other'>('price');
+
   // POS Mode: Simplified table (Item Name, Qty, Price, Tax, Total)
   // Invoice Mode: Full table (includes HSN, Discount)
   
@@ -116,6 +125,233 @@ const ItemsTable = React.memo(function ItemsTable({
   /** Bordered inputs — text-sm matches header scale; min-w-0 works inside table-fixed cells. */
   const tableFieldBase =
     'box-border w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium tabular-nums text-text-primary outline-none placeholder:text-text-muted focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900/30';
+
+  if (layout === 'compact' && !posMode) {
+    const gstOptions = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28];
+    const openEdit = (i: number) => {
+      setEditDraft({ ...rows[i] });
+      setEditTab('price');
+      setEditIndex(i);
+    };
+    const patchDraft = (partial: Partial<InvoiceItemRow>, skipDisc = false) => {
+      if (!recalculateRow || editDraft === null) return;
+      setEditDraft((prev) =>
+        prev ? recalculateRow({ ...prev, ...partial, priceUserOverride: true }, skipDisc) : prev
+      );
+    };
+    const applyEdit = () => {
+      if (editIndex === null || !editDraft || !onReplaceRow) return;
+      onReplaceRow(editIndex, editDraft);
+      setEditIndex(null);
+      setEditDraft(null);
+    };
+
+    return (
+      <>
+        <div className="bg-surface rounded-lg border border-border shadow-sm overflow-hidden">
+          <div className="p-3 border-b border-border bg-gray-50 dark:bg-slate-800">
+            <h3 className="text-sm font-semibold text-text-primary">Items ({rows.filter((r) => r.itemId).length})</h3>
+          </div>
+          <div className="divide-y divide-border">
+            {rows.filter((r) => r.itemId || r.name).length === 0 ? (
+              <p className="text-center text-text-muted text-sm py-6 px-3">No items yet. Search or scan to add.</p>
+            ) : (
+              rows.map((row, i) => {
+                if (!row.itemId && !row.name) return null;
+                const unit = row.unit || 'PCS';
+                return (
+                  <div key={i} className="px-3 py-3 flex gap-3 items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-text-primary truncate">{row.name || 'Item'}</p>
+                      <p className="text-xs text-text-secondary mt-0.5">
+                        Qty × Rate · {row.quantity} {unit} × ₹{Number(row.price).toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                      <span className="font-semibold text-text-primary tabular-nums">₹{row.total.toFixed(2)}</span>
+                      {!isFinal && (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(i)}
+                          className="text-xs font-semibold text-primary-600 border border-primary-300 rounded-full px-3 py-0.5"
+                        >
+                          EDIT
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {!isFinal && (
+            <div className="p-3 border-t border-border bg-gray-50 dark:bg-slate-800">
+              <button type="button" onClick={onAddRow} className="flex items-center gap-2 text-primary-600 text-sm font-medium w-full justify-center py-2">
+                <Plus className="w-4 h-4" /> Add line
+              </button>
+            </div>
+          )}
+        </div>
+        {editIndex !== null && editDraft && recalculateRow && onReplaceRow && (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-[60] bg-black/40 animate-in fade-in duration-200"
+              aria-label="Close"
+              onClick={() => {
+                setEditIndex(null);
+                setEditDraft(null);
+              }}
+            />
+            <div className="fixed inset-x-0 bottom-0 z-[61] flex max-h-[50vh] flex-col rounded-t-2xl border border-border bg-background shadow-[0_-8px_30px_rgba(0,0,0,0.12)] animate-in slide-in-from-bottom duration-300">
+              <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-border" aria-hidden />
+              <div className="flex items-center gap-2 border-b border-border px-3 py-3 bg-surface shrink-0">
+            <button type="button" onClick={() => { setEditIndex(null); setEditDraft(null); }} className="p-2 -ml-1 text-text-secondary" aria-label="Back">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="flex-1 text-base font-semibold text-text-primary truncate pr-2">{editDraft.name || 'Edit item'}</h2>
+            {!isFinal && (
+              <button
+                type="button"
+                onClick={() => { onRemoveRow(editIndex!); setEditIndex(null); setEditDraft(null); }}
+                className="text-xs font-bold text-red-600 border border-red-300 rounded px-2 py-1"
+              >
+                DEL
+              </button>
+            )}
+          </div>
+          <div className="flex border-b border-border shrink-0">
+            <button
+              type="button"
+              onClick={() => setEditTab('price')}
+              className={`flex-1 py-2.5 text-sm font-medium ${editTab === 'price' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-text-secondary'}`}
+            >
+              Price & Discount
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditTab('other')}
+              className={`flex-1 py-2.5 text-sm font-medium ${editTab === 'other' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-text-secondary'}`}
+            >
+              Other Details
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
+            {editTab === 'price' ? (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase">Price (ex tax)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    value={Number(editDraft.price).toFixed(2)}
+                    onChange={(e) => patchDraft({ price: Number(e.target.value) })}
+                    className={`${tableFieldBase} mt-1 text-right`}
+                    disabled={isFinal}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-text-secondary uppercase">Qty</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editDraft.quantity}
+                      onChange={(e) => patchDraft({ quantity: Number(e.target.value) })}
+                      className={`${tableFieldBase} mt-1 text-right`}
+                      disabled={isFinal}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-text-secondary uppercase">Unit</label>
+                    <input value={editDraft.unit || 'PCS'} readOnly className={`${tableFieldBase} mt-1 bg-gray-50`} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-text-secondary uppercase">Disc %</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={editDraft.discountPercent}
+                      onChange={(e) => patchDraft({ discountPercent: Number(e.target.value), discountAmount: 0 })}
+                      className={`${tableFieldBase} mt-1 text-right`}
+                      disabled={isFinal}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-text-secondary uppercase">Disc ₹</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={editDraft.discountAmount}
+                      onChange={(e) => patchDraft({ discountAmount: Number(e.target.value), discountPercent: 0 }, true)}
+                      className={`${tableFieldBase} mt-1 text-right`}
+                      disabled={isFinal}
+                    />
+                  </div>
+                </div>
+                {documentType !== 'bill_of_supply' && (
+                  <div>
+                    <label className="text-xs font-semibold text-text-secondary uppercase">GST %</label>
+                    <select
+                      value={editDraft.taxPercent}
+                      onChange={(e) => patchDraft({ taxPercent: Number(e.target.value) })}
+                      className={`${tableFieldBase} mt-1`}
+                      disabled={isFinal}
+                    >
+                      {gstOptions.map((g) => (
+                        <option key={g} value={g}>{g}%</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase">HSN / SAC</label>
+                  <input
+                    value={editDraft.hsnSac}
+                    onChange={(e) => patchDraft({ hsnSac: e.target.value }, true)}
+                    className={`${tableFieldBase} mt-1`}
+                    disabled={isFinal}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-text-secondary uppercase">Free qty</label>
+                  <input
+                    type="number"
+                    value={editDraft.freeQty}
+                    onChange={(e) => patchDraft({ freeQty: Number(e.target.value) })}
+                    className={`${tableFieldBase} mt-1 text-right`}
+                    disabled={isFinal}
+                  />
+                </div>
+              </>
+            )}
+            <div className="rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 p-3 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-text-secondary">Taxable</span><span className="tabular-nums">₹{editDraft.taxableValue.toFixed(2)}</span></div>
+              {documentType !== 'bill_of_supply' && (
+                <div className="flex justify-between"><span className="text-text-secondary">Tax</span><span className="tabular-nums">₹{editDraft.taxAmount.toFixed(2)}</span></div>
+              )}
+              <div className="flex justify-between font-semibold text-text-primary pt-1 border-t border-border">
+                <span>Line total</span><span className="tabular-nums">₹{editDraft.total.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+          <div className="p-4 border-t border-border bg-surface shrink-0">
+            <Button type="button" variant="primary" className="w-full" onClick={applyEdit} disabled={isFinal}>
+              Done
+            </Button>
+          </div>
+        </div>
+          </>
+        )}
+      </>
+    );
+  }
 
   if (layout === 'cards' && !posMode) {
     return (

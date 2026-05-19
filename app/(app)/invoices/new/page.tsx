@@ -45,6 +45,7 @@ import ActionsBar from '@/components/invoices/ActionsBar';
 import CustomerSection from '@/components/invoices/CustomerSection';
 import ItemsTable from '@/components/invoices/ItemsTable';
 import { MobileItemPickerPanel } from '@/components/invoices/MobileItemPickerPanel';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
 
@@ -541,6 +542,22 @@ function NewInvoiceContent() {
       prevSearchParamsRef.current = currentSearch;
     }
   }, [pathname, searchParams, isDirty, savedInvoiceId, router]);
+
+  // Mobile browser back: keep user on page until they confirm leaving unsaved draft
+  useEffect(() => {
+    if (!invoiceMobileLayout || posMode || !isDirty || savedInvoiceId) return;
+    const pushGuard = () => {
+      window.history.pushState({ invoiceDraftGuard: true }, '', window.location.href);
+    };
+    pushGuard();
+    const onPopState = () => {
+      pushGuard();
+      setPendingNavigation(null);
+      setShowNavigationWarning(true);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [invoiceMobileLayout, posMode, isDirty, savedInvoiceId]);
   
   type DocumentType = 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply';
   const allowedDocTypes: DocumentType[] = ['tax_invoice', 'proforma_invoice', 'bill_of_supply'];
@@ -1888,7 +1905,10 @@ function NewInvoiceContent() {
       const successMessage = documentType === 'proforma_invoice' 
         ? (targetStatus === 'final' ? 'Estimate Sent!' : 'Draft Saved')
         : (targetStatus === 'draft' ? 'Draft Saved' : 'Invoice Finalized!');
-      setToastMessage({ message: successMessage, type: 'success' });
+      // No top-right toast when generating/finalizing a tax invoice (mobile redirects to view).
+      if (targetStatus === 'draft' || documentType === 'proforma_invoice') {
+        setToastMessage({ message: successMessage, type: 'success' });
+      }
       
       // Display stock warnings for proforma invoices (if any)
       
@@ -2248,6 +2268,48 @@ function NewInvoiceContent() {
 
   const showMobileInvoiceUi = invoiceMobileLayout && !posMode;
 
+  const handleConfirmLeavePage = useCallback(() => {
+    let targetDocType: DocumentType | null = null;
+    if (pendingNavigation) {
+      try {
+        const url = new URL(pendingNavigation, window.location.origin);
+        const typeParam = url.searchParams.get('type');
+        if (typeParam && allowedDocTypes.includes(typeParam as DocumentType)) {
+          targetDocType = typeParam as DocumentType;
+        }
+      } catch {
+        // ignore invalid URL
+      }
+    }
+    if (targetDocType && targetDocType !== documentType) {
+      performDocumentTypeChange(targetDocType);
+    } else {
+      resetFormForNewInvoice();
+    }
+    setShowNavigationWarning(false);
+    const target = pendingNavigation;
+    setPendingNavigation(null);
+    if (target) {
+      router.push(target);
+    } else {
+      router.back();
+    }
+  }, [pendingNavigation, documentType, performDocumentTypeChange, resetFormForNewInvoice, router]);
+
+  const tryBlockNavigation = useCallback((targetUrl: string | null = null) => {
+    if (isDirty && !savedInvoiceId) {
+      setPendingNavigation(targetUrl);
+      setShowNavigationWarning(true);
+      return false;
+    }
+    return true;
+  }, [isDirty, savedInvoiceId]);
+
+  const handleComposerBack = useCallback(() => {
+    if (!tryBlockNavigation(null)) return;
+    router.back();
+  }, [tryBlockNavigation, router]);
+
   // Early returns
   if (!canCreate) return <AccessDenied module="invoices" action="create" details={reason} code="INVOICE_CREATE_DENIED" />;
 
@@ -2512,66 +2574,6 @@ function NewInvoiceContent() {
         </div>
       )}
 
-      {/* Navigation Warning Modal */}
-      {showNavigationWarning && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-          <div className="bg-surface rounded-lg border border-border p-6 max-w-md w-full mx-4 text-text-primary shadow-xl">
-            <h3 className="text-lg font-semibold mb-2">Unsaved Changes</h3>
-            <p className="text-text-secondary mb-4">
-              You have unsaved changes on this invoice. Are you sure you want to leave? 
-              Your customer and items data will be lost.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowNavigationWarning(false);
-                  setPendingNavigation(null);
-                }}
-                className="px-4 py-2 border border-border rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                Stay on Page
-              </button>
-              <button
-                onClick={() => {
-                  
-                  // Determine target document type from pendingNavigation URL
-                  let targetDocType: DocumentType | null = null;
-                  if (pendingNavigation) {
-                    try {
-                      const url = new URL(pendingNavigation, window.location.origin);
-                      const typeParam = url.searchParams.get('type');
-                      if (typeParam && ['tax_invoice', 'proforma_invoice', 'bill_of_supply'].includes(typeParam)) {
-                        targetDocType = typeParam as DocumentType;
-                      }
-                    } catch (e) {
-                      // Invalid URL, ignore
-                    }
-                  }
-                  
-                  
-                  // If document type is changing, use performDocumentTypeChange; otherwise use resetFormForNewInvoice
-                  if (targetDocType && targetDocType !== documentType) {
-                    // Reset form and update document type
-                    performDocumentTypeChange(targetDocType);
-                  } else {
-                    // Just reset form (document type stays the same)
-                    resetFormForNewInvoice();
-                  }
-                  
-                  setShowNavigationWarning(false);
-                  if (pendingNavigation) {
-                    router.push(pendingNavigation);
-                  }
-                  setPendingNavigation(null);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                Leave Page
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -2825,7 +2827,25 @@ function NewInvoiceContent() {
             )}
           </div>
         </div>
-        <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setShowMobileItemPicker(true)} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={false} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} layout="cards" />
+        <ItemsTable
+          rows={rows}
+          onUpdateRow={updateRow}
+          onItemSelect={handleItemSelect}
+          onAddRow={() => setShowMobileItemPicker(true)}
+          onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))}
+          isFinal={isFinal}
+          documentType={documentType}
+          itemInputRefs={itemInputRefs.current}
+          onAddNewItem={() => setCreateItemModalOpen(true)}
+          posMode={false}
+          subtotal={subtotal}
+          totalTax={totalTax}
+          grandTotal={grandTotal}
+          warehouseId={selectedWarehouseId}
+          layout="compact"
+          recalculateRow={calculateRow}
+          onReplaceRow={(idx, row) => setRows((prev) => { const next = [...prev]; next[idx] = row; return next; })}
+        />
         <Card padding="md">
           <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Notes / Terms</label>
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
@@ -2838,9 +2858,6 @@ function NewInvoiceContent() {
             </div>
           )}
         </div>
-        {documentType !== 'proforma_invoice' && (
-          <Button variant="secondary" className="w-full h-12" onClick={() => setPaymentModalOpen(true)}><CreditCard className="w-4 h-4 mr-2" />{recordPayment ? `Payment: ₹${totalPaid.toFixed(2)}` : 'Record payment'}</Button>
-        )}
         {isFinal && (
           <div className="flex gap-2">
             <Button variant="secondary" className="flex-1" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
@@ -2867,6 +2884,36 @@ function NewInvoiceContent() {
   return (
     <>
       {toastMessage && <Toast message={toastMessage.message} type={toastMessage.type} onClose={() => setToastMessage(null)} />}
+      {showNavigationWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+          <div className="bg-surface rounded-lg border border-border p-6 max-w-md w-full mx-4 text-text-primary shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">Unsaved changes</h3>
+            <p className="text-text-secondary mb-4">
+              You have unsaved changes on this invoice. Are you sure you want to leave without saving?
+              Your customer and item data will be lost.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNavigationWarning(false);
+                  setPendingNavigation(null);
+                }}
+                className="px-4 py-2 border border-border rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                Stay on page
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLeavePage}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Leave without saving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showResetConfirm && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-center">
@@ -2930,26 +2977,25 @@ function NewInvoiceContent() {
           className="max-w-[1600px] mx-auto space-y-3 md:space-y-4 -mt-2 md:-mt-1"
         >
           {!posMode && (
-            <div className="flex items-center justify-between mb-0 mt-0">
-              <div className="flex items-center gap-2">
-                <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-full md:hidden">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-xl md:text-2xl font-bold text-text-primary leading-tight py-0 my-0">
-                  {(() => {
-                    // Prioritize URL param, then state, then initialDocType
-                    const urlType = searchParams.get('type') as DocumentType | null;
-                    const docType = (urlType && allowedDocTypes.includes(urlType)) 
-                      ? urlType 
-                      : (documentType || initialDocType);
-                    return isEditMode 
-                      ? (docType === 'proforma_invoice' ? 'Edit Estimate' : `Edit ${DOCUMENT_TYPE_NAMES[docType]}`)
-                      : (docType === 'proforma_invoice' ? 'New Estimate' : `New ${DOCUMENT_TYPE_NAMES[docType]}`);
-                  })()}
-                </h1>
-              </div>
-              {savedStatus && <StatusBadge status={savedStatus} />}
-            </div>
+            <MobileDuplicatePageChrome
+              className="mb-0 mt-0"
+              onBack={handleComposerBack}
+              title={(() => {
+                const urlType = searchParams.get('type') as DocumentType | null;
+                const docType =
+                  urlType && allowedDocTypes.includes(urlType)
+                    ? urlType
+                    : documentType || initialDocType;
+                return isEditMode
+                  ? docType === 'proforma_invoice'
+                    ? 'Edit Estimate'
+                    : `Edit ${DOCUMENT_TYPE_NAMES[docType]}`
+                  : docType === 'proforma_invoice'
+                    ? 'New Estimate'
+                    : `New ${DOCUMENT_TYPE_NAMES[docType]}`;
+              })()}
+              trailing={savedStatus ? <StatusBadge status={savedStatus} /> : undefined}
+            />
           )}
           {showMobileInvoiceUi ? renderMobileComposer() : renderDesktopForm()}
         </div>

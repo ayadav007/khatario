@@ -35,6 +35,7 @@ import {
 import { CreateSupplierModal } from '@/components/modals/CreateSupplierModal';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import {
   inclusiveLineTotal,
   inclusiveLineTotalWithDiscountAmount,
@@ -2034,15 +2035,12 @@ export default function NewPurchasePage() {
   return (
     <>
     <div className="w-full min-w-0 max-w-none space-y-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-full md:hidden">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-xl md:text-2xl font-bold text-text-primary">New Purchase</h1>
-          </div>
-          {formData.status && <StatusBadge status={formData.status} className="hidden md:flex" />}
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-4"
+          title="New Purchase"
+          onBack={() => router.back()}
+          trailing={formData.status ? <StatusBadge status={formData.status} className="hidden md:flex" /> : undefined}
+        />
 
         {isMobile && business?.id ? (
           <MobileNewPurchaseScrollForm
