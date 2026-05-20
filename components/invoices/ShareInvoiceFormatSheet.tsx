@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, FileText, Image as ImageIcon, Link2, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   canUseNativeInvoiceShare,
   shareInvoiceNative,
@@ -28,6 +29,7 @@ export function ShareInvoiceFormatSheet({
   userId,
   onFallbackModal,
 }: ShareInvoiceFormatSheetProps) {
+  const { user } = useAuth();
   const [loadingFormat, setLoadingFormat] = useState<InvoiceShareFormat | null>(null);
 
   if (!open) return null;
@@ -41,12 +43,13 @@ export function ShareInvoiceFormatSheet({
 
     setLoadingFormat(format);
     try {
+      const effectiveUserId = userId ?? user?.id;
       const result = await shareInvoiceNative({
         invoiceId,
         invoiceNumber,
         businessName,
         format,
-        userId,
+        userId: effectiveUserId,
       });
       if (result === 'modal') {
         onClose();

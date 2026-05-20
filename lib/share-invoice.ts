@@ -27,11 +27,12 @@ export async function fetchInvoiceShareUrl(invoiceId: string): Promise<string> {
 async function fetchInvoiceFileBlob(
   invoiceId: string,
   format: 'pdf' | 'image',
-  userId: string
+  userId?: string
 ): Promise<Blob> {
   const path = format === 'pdf' ? 'pdf' : 'image';
+  const qs = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
   const res = await fetch(
-    `/api/invoices/${invoiceId}/${path}?user_id=${encodeURIComponent(userId)}`,
+    `/api/invoices/${invoiceId}/${path}${qs}`,
     { credentials: 'include' }
   );
   if (!res.ok) {
@@ -140,10 +141,6 @@ export async function shareInvoiceNative(options: {
     if (options.format === 'link') {
       const linkText = `${text}\n${shareUrl}`;
       return await shareLinkOnly(title, linkText, shareUrl);
-    }
-
-    if (!options.userId) {
-      return 'modal';
     }
 
     const blob = await fetchInvoiceFileBlob(

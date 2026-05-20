@@ -6,6 +6,8 @@ import { Calendar, Loader2 } from 'lucide-react';
 import { Chip } from '@/components/ui/Chip';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
+import { useToastContext } from '@/contexts/ToastContext';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 import {
   customerStatementSummary,
   customerVoucherLabel,
@@ -74,6 +76,7 @@ export function CustomerLedgerView({
   /** Optional branch filter; pass 'ALL' to omit */
   branchId?: string | null;
 }) {
+  const toast = useToastContext();
   const [preset, setPreset] = useState<LedgerRangePreset>('current_month');
   const range = useMemo(() => rangeForPreset(preset), [preset]);
 
@@ -82,6 +85,99 @@ export function CustomerLedgerView({
   const [closing, setClosing] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
+
+  function buildStatementPdfUrl() {
+    const sp = new URLSearchParams({
+      business_id: businessId,
+      party_type: 'customer',
+      party_id: customerId,
+      user_id: userId,
+      from_date: range.from_date || '',
+      to_date: range.to_date || '',
+    });
+    if (branchId && branchId !== 'ALL') sp.set('branch_id', branchId);
+    return `/api/reports/party/statement/pdf?${sp.toString()}`;
+  }
+
+  async function downloadStatementPdf() {
+    if (!range.from_date || !range.to_date) {
+      toast.warning('Select a date range to download statement');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const url = buildStatementPdfUrl();
+      // Works well on web; on native shells it will still open a viewer/downloader.
+      window.open(url, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function shareStatementPdf() {
+    if (!range.from_date || !range.to_date) {
+      toast.warning('Select a date range to share statement');
+      return;
+    }
+    setSharing(true);
+    try {
+      const url = buildStatementPdfUrl();
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as any)?.error || 'Failed to generate statement PDF');
+      }
+      const blob = await res.blob();
+
+      if (isCapacitorNative()) {
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.includes(',') ? result.split(',')[1] : result);
+          };
+          reader.onerror = () => reject(new Error('Could not read statement'));
+          reader.readAsDataURL(blob);
+        });
+
+        const filename = `statement-${customerId}-${range.from_date}-${range.to_date}.pdf`;
+        await Filesystem.writeFile({
+          path: filename,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        const result = await Filesystem.getUri({ path: filename, directory: Directory.Cache });
+
+        await Share.share({
+          title: 'Customer statement',
+          text: 'Customer statement PDF',
+          files: [result.uri],
+          dialogTitle: 'Share statement',
+        });
+        return;
+      }
+
+      const file = new File([blob], `statement-${range.from_date}-${range.to_date}.pdf`, {
+        type: 'application/pdf',
+      });
+      if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: 'Customer statement', files: [file] });
+        return;
+      }
+
+      // Fallback: open download in a new tab
+      window.open(url, '_blank');
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not share statement');
+    } finally {
+      setSharing(false);
+    }
+  }
 
   useEffect(() => {
     if (!businessId || !userId || !customerId) return;
@@ -293,11 +389,21 @@ export function CustomerLedgerView({
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button variant="secondary" className="flex-1" disabled>
-              Download
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => void downloadStatementPdf()}
+              disabled={downloading || sharing || loading}
+            >
+              {downloading ? 'Downloading…' : 'Download'}
             </Button>
-            <Button variant="primary" className="flex-1" disabled>
-              Share
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={() => void shareStatementPdf()}
+              disabled={downloading || sharing || loading}
+            >
+              {sharing ? 'Sharing…' : 'Share'}
             </Button>
           </div>
           <p className="text-[11px] text-text-muted">
