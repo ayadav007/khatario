@@ -26,6 +26,10 @@ import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useDateRange } from '@/contexts/DateRangeContext';
 import { CustomizableDashboard } from '@/components/dashboard/CustomizableDashboard';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
+import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
+import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
+import { canUseNativeInvoiceShare } from '@/lib/share-invoice';
 
 function DashboardPage() {
   const { business, user, loading: authLoading } = useAuth();
@@ -36,6 +40,18 @@ function DashboardPage() {
   const [selectedCard, setSelectedCard] = useState<'sales' | 'purchases' | 'receivables' | 'payables' | null>(null);
   const [cardDetails, setCardDetails] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [shareModalInvoice, setShareModalInvoice] = useState<any>(null);
+  const [shareFormatInvoice, setShareFormatInvoice] = useState<any>(null);
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState<any>(null);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+
+  const openShareForInvoice = (invoice: { id: string; invoice_number: string }) => {
+    if (canUseNativeInvoiceShare()) {
+      setShareFormatInvoice(invoice);
+    } else {
+      setShareModalInvoice(invoice);
+    }
+  };
   
   // Initialize with default "today" range to prevent double-load
   const getDefaultDateRange = () => {
@@ -96,7 +112,7 @@ function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId]);
+  }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId, dashboardRefreshKey]);
 
   if (loading) {
     return (
@@ -220,6 +236,7 @@ function DashboardPage() {
   ];
 
   return (
+    <>
     <div className="space-y-3 md:space-y-6">
         <ListPageHeader
           title="Dashboard"
@@ -489,12 +506,24 @@ function DashboardPage() {
                           View
                         </Button>
                       </Link>
-                      <Button variant="ghost" size="sm" className="w-full gap-1 text-[10px] px-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full gap-1 text-[10px] px-1"
+                        onClick={() => openShareForInvoice(invoice)}
+                      >
                         <Share2 className="w-3 h-3" />
                         Share
                       </Button>
-                      {invoice.payment_status !== 'paid' && (
-                        <Button variant="ghost" size="sm" className="w-full gap-1 text-[10px] px-1">
+                      {invoice.status === 'final' && invoice.payment_status !== 'paid' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="w-full gap-1 text-[10px] px-1"
+                          onClick={() => setPaymentModalInvoice(invoice)}
+                        >
                           <CreditCard className="w-3 h-3" />
                           Pay
                         </Button>
@@ -521,13 +550,17 @@ function DashboardPage() {
             <div className="space-y-3">
               {data?.lowStockItems?.length > 0 ? (
                 data.lowStockItems.map((item: any) => (
-                  <Link 
+                  <div
                     key={item.id}
-                    href={`/items/${item.id}`}
-                    className="block rounded-xl border border-border p-4 transition-all hover:bg-slate-100/90 dark:hover:bg-slate-800/70 active:scale-[0.98]"
+                    className="rounded-xl border border-border p-4 transition-all hover:bg-slate-100/90 dark:hover:bg-slate-800/70"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-bold text-text-primary">{item.name}</p>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <Link
+                        href={`/items/${item.id}`}
+                        className="min-w-0 font-bold text-text-primary hover:underline"
+                      >
+                        {item.name}
+                      </Link>
                       <Chip
                         variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'}
                       >
@@ -536,9 +569,14 @@ function DashboardPage() {
                     </div>
                     <div className="flex justify-between items-center text-xs text-text-secondary">
                       <p>Minimum Stock: {item.min_stock} {item.unit}</p>
-                      <span className="text-primary-500 font-medium">Update Stock →</span>
+                      <Link
+                        href={`/inventory-adjustments/new?item_id=${encodeURIComponent(item.id)}`}
+                        className="link-primary shrink-0 font-medium"
+                      >
+                        Update Stock →
+                      </Link>
                     </div>
-                  </Link>
+                  </div>
                 ))
               ) : (
                 <div className="text-center py-8 text-text-secondary text-sm border border-dashed border-border rounded-xl">
@@ -557,6 +595,49 @@ function DashboardPage() {
           />
         </div>
       </div>
+
+      {shareFormatInvoice && (
+        <ShareInvoiceFormatSheet
+          open
+          invoiceId={shareFormatInvoice.id}
+          invoiceNumber={shareFormatInvoice.invoice_number}
+          businessName={business?.name}
+          userId={user?.id}
+          onClose={() => setShareFormatInvoice(null)}
+          onFallbackModal={() => {
+            setShareModalInvoice(shareFormatInvoice);
+            setShareFormatInvoice(null);
+          }}
+        />
+      )}
+
+      {shareModalInvoice && (
+        <ShareInvoiceModal
+          invoiceId={shareModalInvoice.id}
+          invoiceNumber={shareModalInvoice.invoice_number}
+          customerEmail={shareModalInvoice.customer_email}
+          customerPhone={shareModalInvoice.customer_phone}
+          onClose={() => setShareModalInvoice(null)}
+        />
+      )}
+
+      {paymentModalInvoice && (
+        <RecordPaymentModal
+          invoiceId={paymentModalInvoice.id}
+          invoiceNumber={paymentModalInvoice.invoice_number}
+          grandTotal={Number(paymentModalInvoice.grand_total || 0)}
+          paidAmount={Number(paymentModalInvoice.paid_amount || 0)}
+          balanceAmount={Number(
+            paymentModalInvoice.balance_amount ?? paymentModalInvoice.grand_total ?? 0
+          )}
+          onSuccess={() => {
+            setPaymentModalInvoice(null);
+            setDashboardRefreshKey((k) => k + 1);
+          }}
+          onClose={() => setPaymentModalInvoice(null)}
+        />
+      )}
+    </>
   );
 }
 

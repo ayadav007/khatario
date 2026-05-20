@@ -62,7 +62,7 @@ export default function BluetoothPrinterDiagnosticsPage() {
           href="/settings/bluetooth-printer"
           className="text-sm text-text-secondary hover:underline inline-flex items-center gap-1 mb-2"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to Bluetooth printer
+          <ArrowLeft className="w-4 h-4" /> Back to Print & devices
         </Link>
         <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3">
           <Activity className="w-6 h-6 text-text-muted" />

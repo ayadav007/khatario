@@ -365,7 +365,8 @@ export async function POST(request: NextRequest) {
       request_id,
       // Estimates/Quotations fields for proforma invoices
       expiry_date,
-      estimate_status
+      estimate_status,
+      custom_fields,
     } = body;
 
     const actorUserId = getUserIdFromRequest(request, body);
@@ -1571,6 +1572,21 @@ export async function POST(request: NextRequest) {
     const invoice = invoiceRes.rows[0];
     
     // Invoice created successfully
+
+    if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
+      const { saveInvoiceCustomFields } = await import('@/lib/custom-fields-persist');
+      const cfResult = await saveInvoiceCustomFields(
+        business_id,
+        invoice.id,
+        custom_fields,
+        client
+      );
+      if (!cfResult.ok) {
+        await client.query('ROLLBACK');
+        client.release();
+        return NextResponse.json({ error: cfResult.error }, { status: 400 });
+      }
+    }
 
     // Track items that have stock deducted for low stock checking
     const stockDeductedItems: Array<{ item_id: string; business_id: string }> = [];

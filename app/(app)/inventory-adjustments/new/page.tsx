@@ -3,12 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
-import { ArrowLeft, Loader2, AlertCircle, Info, CheckCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Info, CheckCircle } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -48,6 +49,7 @@ interface ItemInfo {
 
 export default function NewInventoryAdjustmentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { business, user } = useAuth();
   const [loading, setLoading] = useState(false);
   
@@ -129,6 +131,31 @@ export default function NewInventoryAdjustmentPage() {
       variant_id: ''
     }));
   };
+
+  useEffect(() => {
+    const itemId = searchParams.get('item_id');
+    if (!itemId || !business?.id || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/items/${itemId}?business_id=${business.id}&user_id=${user.id}`,
+          { credentials: 'include' }
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data.item && !cancelled) {
+          handleItemSelect(data.item);
+        }
+      } catch {
+        /* optional preload */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, business?.id, user?.id]);
 
   const handleVariantSelect = (variant: any) => {
     if (!selectedItem) return;
@@ -354,23 +381,11 @@ export default function NewInventoryAdjustmentPage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">New Inventory Adjustment</h1>
-              <p className="text-sm text-gray-600 mt-1">Adjust inventory quantity or value</p>
-            </div>
-          </div>
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title="New adjustment"
+          description="Adjust inventory quantity or value"
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Form */}

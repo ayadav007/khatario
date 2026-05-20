@@ -20,22 +20,20 @@ import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Bluetooth,
-  Plus,
   Printer,
   Trash2,
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  ArrowLeft,
   Star,
   TestTube2,
   Activity,
 } from 'lucide-react';
-import { BleVsClassicHelp } from '@/components/printer/BleVsClassicHelp';
+import { PrintSettingsPanel } from '@/components/printer/PrintSettingsPanel';
 import {
   PRINTER_ANDROID_APP_NOTE,
-  PRINTER_BLE_SUPPORT_SUMMARY,
   PRINTER_NOT_SUPPORTED_BROWSER,
+  PRINTER_THERMAL_CLASSIC_NOTE,
 } from '@/lib/printer/copy';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -43,10 +41,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { PRINTER_PROFILES } from '@/lib/bluetooth/printer-profiles';
-import type {
-  PrinterProfileId,
-  SavedBluetoothPrinter,
-} from '@/lib/bluetooth/types';
+import type { SavedBluetoothPrinter } from '@/lib/bluetooth/types';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
 import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -56,9 +51,6 @@ export default function BluetoothPrinterSettingsPage() {
   const { hasFeature, loading: featuresLoading } = useFeatureRegistry();
   const bt = useBluetoothPrinter();
 
-  const [selectedProfile, setSelectedProfile] = useState<PrinterProfileId | ''>(
-    ''
-  );
   const [testingId, setTestingId] = useState<string | null>(null);
 
   const hasAccess = hasFeature('barcode_thermal_printer');
@@ -82,15 +74,6 @@ export default function BluetoothPrinterSettingsPage() {
   // --------------------------------------------------------------------
   // Actions
   // --------------------------------------------------------------------
-
-  async function handlePair() {
-    const printer = await bt.pair(selectedProfile || undefined);
-    if (printer) {
-      toast.success(`Paired ${printer.name}`);
-    } else if (bt.error) {
-      toast.error(bt.error);
-    }
-  }
 
   function handleForget(printer: SavedBluetoothPrinter) {
     if (
@@ -132,102 +115,26 @@ export default function BluetoothPrinterSettingsPage() {
   // --------------------------------------------------------------------
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-      <div>
-        <Link href="/settings" className="text-sm text-text-secondary hover:underline inline-flex items-center gap-1 mb-2">
-          <ArrowLeft className="w-4 h-4" /> Back to settings
-        </Link>
-        <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3">
-          <Bluetooth className="w-6 h-6 text-primary-600" />
-          Bluetooth Printer
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Pair a thermal receipt or label printer and print directly from this
-          device. Pairings are stored on this device only — each tablet or
-          phone pairs independently.
-        </p>
-        <p className="text-sm text-text-secondary mt-2">{PRINTER_BLE_SUPPORT_SUMMARY}</p>
-        <div className="mt-2">
-          <BleVsClassicHelp />
-        </div>
-        <Link
-          href="/settings/bluetooth-printer/diagnostics"
-          className="text-sm text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 mt-3"
-        >
-          <Activity className="w-4 h-4" />
-          Printer diagnostics
-        </Link>
-      </div>
-
+    <div className={SETTINGS_CONTENT_WIDTH}>
       <SupportBanner supported={bt.supported} isNative={bt.isNative} />
-
-      <Card padding="md">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-          <div className="flex-1">
-            <label className="text-sm font-medium text-text-primary block mb-1">
-              Printer type (optional)
-            </label>
-            <p className="text-xs text-text-secondary mb-2">
-              Picking a specific model narrows the scan to matching devices.
-              Leave as "Auto-detect" if you're unsure — most 58/80mm BLE
-              printers will work.
-            </p>
-            <select
-              value={selectedProfile}
-              onChange={(e) =>
-                setSelectedProfile((e.target.value as PrinterProfileId) || '')
-              }
-              className="w-full border border-border rounded-lg bg-surface text-text-primary px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              disabled={!bt.supported}
-            >
-              <option value="">Auto-detect (any BLE printer)</option>
-              {PRINTER_PROFILES.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <Button
-            onClick={handlePair}
-            disabled={!bt.supported || bt.status === 'scanning'}
-            className="bg-primary-600 hover:bg-primary-700 whitespace-nowrap"
-          >
-            {bt.status === 'scanning' ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Searching...
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4 mr-2" />
-                Pair new printer
-              </>
-            )}
-          </Button>
-        </div>
-      </Card>
-
-      <Card padding="md">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Paired printers</h2>
-          <span className="text-xs text-text-secondary">
-            {bt.savedPrinters.length}{' '}
-            {bt.savedPrinters.length === 1 ? 'printer' : 'printers'}
-          </span>
-        </div>
-
-        {bt.savedPrinters.length === 0 ? (
-          <div className="text-center text-text-secondary py-10">
-            <Printer className="w-10 h-10 mx-auto mb-3 text-text-muted" />
-            <p className="font-medium mb-1">No printers paired yet</p>
-            <p className="text-sm">
-              Click "Pair new printer" to add your first one.
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-gray-100">
+      <PrintSettingsPanel
+        testing={testingId !== null}
+        onTestPrint={async () => {
+          const p = bt.activePrinter || bt.savedPrinters[0];
+          if (p) await handleTest(p);
+        }}
+      />
+      <Link
+        href="/settings/bluetooth-printer/diagnostics"
+        className="text-sm text-primary-600 hover:text-primary-700 inline-flex items-center gap-1 mt-4 block"
+      >
+        <Activity className="w-4 h-4" />
+        Printer diagnostics
+      </Link>
+      {bt.savedPrinters.length > 0 && (
+        <Card padding="md" className="mt-6">
+          <h2 className="text-lg font-semibold mb-3">Saved printers</h2>
+          <ul className="divide-y divide-border">
             {bt.savedPrinters.map((printer) => (
               <PrinterRow
                 key={printer.id}
@@ -240,15 +147,12 @@ export default function BluetoothPrinterSettingsPage() {
               />
             ))}
           </ul>
-        )}
-      </Card>
-
-      <HelpCard />
+        </Card>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -267,10 +171,10 @@ function SupportBanner({
           <div>
             <p className="font-medium text-green-800">
               {isNative
-                ? 'Android app — BLE printing available'
+                ? 'Android app — Classic Bluetooth (SPP) thermal printing'
                 : 'Browser — BLE printing available'}
             </p>
-            <p className="text-text-secondary mt-0.5">{PRINTER_BLE_SUPPORT_SUMMARY}</p>
+            <p className="text-text-secondary mt-0.5">{PRINTER_THERMAL_CLASSIC_NOTE}</p>
             {!isNative && (
               <p className="text-text-secondary mt-1 text-xs">{PRINTER_ANDROID_APP_NOTE}</p>
             )}

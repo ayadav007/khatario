@@ -4,10 +4,12 @@ import { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { ArrowLeft, Download, Edit, Loader2, Printer } from 'lucide-react';
+import { Download, Edit, Loader2, Printer } from 'lucide-react';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { PurchasePaymentModal } from '@/components/modals/PurchasePaymentModal';
 import { PrintLabelsModal } from '@/components/purchases/PrintLabelsModal';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
@@ -20,6 +22,10 @@ function PurchaseDetailContent() {
   const { business, user } = useAuth();
   
   const [purchase, setPurchase] = useState<any>(null);
+
+  useMobileHeaderTitleOverride(
+    purchase?.bill_number ? `Bill ${purchase.bill_number}` : null
+  );
   const [loading, setLoading] = useState(true);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -88,25 +94,18 @@ function PurchaseDetailContent() {
   return (
     
       <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => router.push('/purchases')}>
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Purchase Bill {purchase.bill_number}
-              </h1>
-              <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                <span>{purchase.supplier_name || 'Cash Purchase'}</span>
-                <span>•</span>
-                <span>{purchase.bill_date ? new Date(purchase.bill_date).toLocaleDateString() : 'No Date'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={`Purchase bill ${purchase.bill_number}`}
+          description={
+            <>
+              {purchase.supplier_name || 'Cash Purchase'}
+              {' • '}
+              {purchase.bill_date ? new Date(purchase.bill_date).toLocaleDateString() : 'No date'}
+            </>
+          }
+          trailing={
+            <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => router.push(`/purchases/${purchaseId}/edit`)}>
               <Edit className="w-4 h-4 mr-2" />
               Edit
@@ -130,8 +129,9 @@ function PurchaseDetailContent() {
                 Print Labels
               </Button>
             )}
-          </div>
-        </div>
+            </div>
+          }
+        />
 
         {showLabelsModal && business?.id && (
           <PrintLabelsModal

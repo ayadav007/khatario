@@ -1,7 +1,6 @@
 /**
- * Production mobile: TopBar already shows the route title — hide duplicate
- * in-page back arrow + heading on composer/form screens.
+ * Mobile TopBar shows the route title — hide duplicate in-page back + heading on composers.
  */
 export function hideMobileDuplicatePageChrome(): boolean {
-  return process.env.NODE_ENV === 'production';
+  return true;
 }

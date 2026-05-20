@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { PageToolbar, PageToolbarChip } from '@/components/layout/PageToolbar';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { Card } from '@/components/ui/Card';
 import { clsx } from 'clsx';
@@ -284,23 +285,17 @@ export default function EstimatesPage() {
   const isDetailOpen = selectedEstimateId !== null;
 
   const statusFilterRow = (
-    <div className="flex space-x-2 overflow-x-auto">
+    <PageToolbar>
       {['', 'draft', 'sent', 'accepted', 'rejected', 'expired', 'converted'].map((status) => (
-        <button
+        <PageToolbarChip
           key={status}
-          type="button"
+          active={statusFilter === status}
           onClick={() => setStatusFilter(status)}
-          className={clsx(
-            'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition',
-            statusFilter === status
-              ? 'bg-primary-600 text-white'
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-          )}
         >
           {status === '' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
-        </button>
+        </PageToolbarChip>
       ))}
-    </div>
+    </PageToolbar>
   );
 
   const toolbar = (
@@ -505,10 +500,10 @@ export default function EstimatesPage() {
           <button
             type="button"
             onClick={() => router.push('/invoices/new?type=proforma_invoice')}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
+            className="hidden md:flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
           >
             <Plus className="w-5 h-5" />
-            <span className="hidden md:inline">New Estimate</span>
+            <span>New Estimate</span>
           </button>
         }
       />

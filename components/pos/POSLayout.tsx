@@ -484,7 +484,7 @@ export function POSLayout({
                   !bluetooth.supported
                     ? 'Bluetooth not supported in this browser'
                     : bluetooth.pairedCount === 0
-                      ? 'Pair a printer in Settings → Bluetooth Printer first'
+                      ? 'Pair a printer in Settings → Print & devices first'
                       : 'Automatically send receipt to the default Bluetooth printer after each save'
                 }
               >
@@ -515,7 +515,7 @@ export function POSLayout({
                   !bluetooth.supported
                     ? 'Bluetooth not supported in this browser'
                     : bluetooth.pairedCount === 0
-                      ? 'Pair a printer in Settings → Bluetooth Printer first'
+                      ? 'Pair a printer in Settings → Print & devices first'
                       : 'Print this order to the Bluetooth printer without saving'
                 }
               >
@@ -535,7 +535,7 @@ export function POSLayout({
               )}
               {bluetooth.supported && bluetooth.pairedCount === 0 && (
                 <p className="text-[11px] text-gray-500 text-center">
-                  Pair a printer in Settings → Bluetooth Printer
+                  Pair a printer in Settings → Print & devices
                 </p>
               )}
             </div>

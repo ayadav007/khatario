@@ -15,6 +15,7 @@ export type ItemLite = {
   unit?: string;
   gst_included?: boolean;
   current_stock?: number;
+  image_url?: string | null;
   has_variants?: boolean;
   variants?: any[];
   variantId?: string;
@@ -40,6 +41,27 @@ function avatarClass(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i)) % AVATAR_PALETTES.length;
   return AVATAR_PALETTES[h];
+}
+
+function ItemPickerThumb({ item }: { item: ItemLite }) {
+  const letter = (item.name || '?').trim().charAt(0).toUpperCase();
+  if (item.image_url) {
+    return (
+      <img
+        src={item.image_url}
+        alt=""
+        className="h-11 w-11 shrink-0 rounded-xl border border-border object-cover"
+      />
+    );
+  }
+  return (
+    <div
+      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${avatarClass(item.id)}`}
+      aria-hidden
+    >
+      {letter}
+    </div>
+  );
 }
 
 /** Search API may return parent + variants JSON — flatten to one row per sellable line. */
@@ -194,6 +216,7 @@ function VariantSheet({
                 key={v.id}
                 className="flex items-center gap-3 py-3 border-b border-border last:border-0"
               >
+                <ItemPickerThumb item={row} />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-text-primary text-sm">{row.variantName || 'Variant'}</p>
                   <p className="text-xs text-text-muted mt-0.5">
@@ -415,7 +438,6 @@ export function MobileItemPickerPanel({
             {listRows.map((item) => {
               const k = makeKey(item);
               const qty = picked[k]?.qty ?? 0;
-              const letter = (item.name || '?').trim().charAt(0).toUpperCase();
               const price = Number(item.selling_price ?? 0);
               const unit = item.unit || 'PCS';
               const stock = item.current_stock;
@@ -423,11 +445,7 @@ export function MobileItemPickerPanel({
 
               return (
                 <li key={k} className="flex items-start gap-3 px-3 py-3 bg-white">
-                  <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${avatarClass(item.id)}`}
-                  >
-                    {letter}
-                  </div>
+                  <ItemPickerThumb item={item} />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-text-primary text-[15px] leading-snug">{item.name}</p>
                     {item.code && item.code !== item.name && (

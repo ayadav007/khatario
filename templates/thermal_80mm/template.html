@@ -8,13 +8,13 @@
     .meta { font-size: 0.9em; margin-bottom: 10px; }
     .divider { border-top: 1px dashed #000; margin: 5px 0; }
     .row { display: flex; justify-content: space-between; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    th { text-align: left; border-bottom: 1px dashed #000; padding: 2px 0; }
-    td { padding: 2px 0; vertical-align: top; }
-    .qty { width: 15%; text-align: center; }
-    .price { width: 25%; text-align: right; }
-    .amt { width: 25%; text-align: right; }
-    .item { width: 35%; }
+    .thermal-item { margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dotted #999; }
+    .thermal-item-name { font-weight: bold; word-break: break-word; line-height: 1.25; }
+    .thermal-item-row { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; margin-top: 2px; font-size: 0.95em; }
+    .thermal-item-row span { white-space: nowrap; }
+    .thermal-item-amt { font-weight: bold; margin-left: auto; }
+    .thermal-item-meta { font-size: 0.85em; margin-top: 1px; color: #333; }
+    .thermal-muted { font-weight: normal; font-size: 0.9em; }
     .totals { margin-top: 5px; text-align: right; }
     .footer { text-align: center; margin-top: 15px; font-size: 0.8em; }
   </style>
@@ -38,6 +38,7 @@
     {{#ifSetting 'show_invoice_number'}}<div class="row"><span>Inv No: {{invoice.invoice_number}}</span>{{#ifSetting 'show_invoice_date'}}<span>{{invoice.invoice_date}}</span>{{/ifSetting}}</div>{{/ifSetting}}
     {{#ifSetting 'show_invoice_type'}}{{#if invoice.invoice_type}}<div>Type: {{invoice.invoice_type}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div>Due: {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
+        {{> custom-invoice-meta}}
     {{#ifSetting 'show_po_number'}}{{#if invoice.po_number}}<div>PO: {{invoice.po_number}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_reference_number'}}{{#if invoice.reference_number}}<div>Ref: {{invoice.reference_number}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
@@ -68,48 +69,7 @@
 
   <div class="divider"></div>
 
-  <table>
-    <thead>
-      <tr>
-        {{#ifSetting 'show_serial_number'}}<th style="width:8%;">#</th>{{/ifSetting}}
-        {{#ifSetting 'show_item_name'}}<th class="item" style="width:30%;">Item</th>{{/ifSetting}}
-        {{#ifSetting 'show_hsn'}}<th class="price" style="width:22%;">HSN</th>{{/ifSetting}}
-        {{#ifSetting 'show_unit'}}<th style="width:10%;">Unit</th>{{/ifSetting}}
-        {{#ifSetting 'show_quantity'}}<th class="qty" style="width:18%;">Qty</th>{{/ifSetting}}
-        {{#ifSetting 'show_rate'}}<th class="price" style="width:15%;">Rate</th>{{/ifSetting}}
-        {{#ifSetting 'show_discount_percent'}}<th style="width:10%;">Disc%</th>{{/ifSetting}}
-        {{#ifSetting 'show_discount_amount'}}<th style="width:12%;">Disc</th>{{/ifSetting}}
-        {{#ifSetting 'show_tax_rate'}}<th style="width:10%;">Tax%</th>{{/ifSetting}}
-        {{#ifSetting 'show_tax_amount'}}<th style="width:12%;">Tax</th>{{/ifSetting}}
-        {{#ifSetting 'show_line_total'}}<th class="amt" style="width:15%;">Amt</th>{{/ifSetting}}
-      </tr>
-    </thead>
-    <tbody>
-      {{#each items}}
-      <tr>
-        {{#ifSetting 'show_serial_number'}}<td>{{this.index}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_item_name'}}
-        <td class="item">
-          {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width:20px; height:20px; object-fit:cover; margin-right:4px; vertical-align:middle;" />{{/if}}{{/ifSetting}}
-          {{this.item_name}}{{#if this.variant_name}} - {{this.variant_name}}{{/if}}
-          {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<br>Batch: {{this.batch_number}}{{/if}}{{/ifSetting}}
-          {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<br>Exp: {{this.expiry_date}}{{/if}}{{/ifSetting}}
-        </td>
-        {{/ifSetting}}
-        {{#ifSetting 'show_hsn'}}<td class="price">{{this.hsn_sac}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_unit'}}<td>{{this.unit}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_quantity'}}<td class="qty">{{this.quantity}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_rate'}}<td class="price">{{formatCurrency this.unit_price}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_discount_percent'}}<td>{{#if this.discount_percent}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_discount_amount'}}<td>{{#if this.discount_amount}}{{formatCurrency this.discount_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_tax_rate'}}<td>{{this.tax_rate}}%</td>{{/ifSetting}}
-        {{#ifSetting 'show_tax_amount'}}<td>{{formatCurrency this.tax_amount}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_line_total'}}<td class="amt">{{formatCurrency this.line_total}}</td>{{/ifSetting}}
-      </tr>
-      {{/each}}
-    </tbody>
-  </table>
-
+  {{> thermal-items}}
   <div class="divider"></div>
 
   <div class="totals">

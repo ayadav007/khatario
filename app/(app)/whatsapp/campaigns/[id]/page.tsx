@@ -8,8 +8,9 @@ import { Chip } from '@/components/ui/Chip';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSubscriptionCheck } from '@/hooks/useSubscriptionCheck';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { 
-  ArrowLeft,
   Loader2, 
   Lock, 
   Play, 
@@ -88,6 +89,8 @@ export default function CampaignDetailPage() {
   const { business } = useAuth();
   const { hasFeature, loading: subscriptionLoading } = useSubscriptionCheck(business?.id);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+
+  useMobileHeaderTitleOverride(campaign?.name);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -278,21 +281,12 @@ export default function CampaignDetailPage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.push('/whatsapp/campaigns')}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
-              <p className="text-gray-600 text-sm mt-1">
-                Created {format(new Date(campaign.created_at), 'dd MMM yyyy, HH:mm')}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={campaign.name}
+          description={`Created ${format(new Date(campaign.created_at), 'dd MMM yyyy, HH:mm')}`}
+          trailing={
+            <div className="hidden md:flex items-center gap-2">
             <Chip variant={
               campaign.status === 'running' ? 'success' :
               campaign.status === 'completed' ? 'default' :
@@ -325,7 +319,30 @@ export default function CampaignDetailPage() {
                 </Button>
               </>
             )}
-          </div>
+            </div>
+          }
+        />
+        <div className="flex md:hidden flex-wrap items-center gap-2">
+            <Chip variant={
+              campaign.status === 'running' ? 'success' :
+              campaign.status === 'completed' ? 'default' :
+              campaign.status === 'paused' ? 'warning' :
+              campaign.status === 'failed' ? 'error' : 'default'
+            } className="capitalize">
+              {campaign.status}
+            </Chip>
+            {campaign.status === 'draft' && (
+              <Button onClick={() => handleCampaignAction('start')} disabled={processing} className="flex-1">
+                {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Start
+              </Button>
+            )}
+            {campaign.status === 'running' && (
+              <Button onClick={() => handleCampaignAction('pause')} disabled={processing} className="flex-1">
+                {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                Pause
+              </Button>
+            )}
         </div>
 
         {/* Summary Cards */}

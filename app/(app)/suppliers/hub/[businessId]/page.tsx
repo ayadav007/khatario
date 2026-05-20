@@ -6,7 +6,6 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
-  ArrowLeft,
   Building2,
   Loader2,
   Link2,
@@ -14,6 +13,8 @@ import {
   Send,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { Button } from '@/components/ui/Button';
@@ -63,6 +64,8 @@ export default function SupplierHubProfilePage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useMobileHeaderTitleOverride(data?.business.name);
 
   const { status: authStatus } = useAuthorizationGuard({
     resource: 'purchases',
@@ -145,12 +148,6 @@ export default function SupplierHubProfilePage() {
   if (!data) {
     return (
       <div className="space-y-4">
-        <Link href="/suppliers/hub">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Hub
-          </Button>
-        </Link>
         <Card padding="lg">Listing not found or not visible.</Card>
       </div>
     );
@@ -161,19 +158,23 @@ export default function SupplierHubProfilePage() {
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      <Link href="/suppliers/hub">
-        <Button variant="ghost" size="sm">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Hub
-        </Button>
-      </Link>
+      <MobileDuplicatePageChrome
+        className="mb-0"
+        title={data.business.name}
+        description={
+          <>
+            {[data.business.city, data.business.state].filter(Boolean).join(', ')}
+            {data.business.gstin ? ` · ${data.business.gstin}` : ''}
+          </>
+        }
+      />
 
       <Card padding="md">
         <div className="flex items-start gap-3">
           <Building2 className="w-8 h-8 text-primary-500 shrink-0" />
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-text-primary">{data.business.name}</h1>
-            <p className="text-sm text-text-secondary mt-1">
+            <h2 className="text-xl font-bold text-text-primary hidden md:block">{data.business.name}</h2>
+            <p className="text-sm text-text-secondary mt-1 hidden md:block">
               {[data.business.city, data.business.state].filter(Boolean).join(', ')}
               {data.business.gstin ? ` · ${data.business.gstin}` : ''}
             </p>

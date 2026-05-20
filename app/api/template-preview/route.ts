@@ -1,171 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import Handlebars from 'handlebars';
-import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
+import { renderTemplatePreviewHtml } from '@/lib/template-preview-render';
+import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';
 
-// Register Handlebars helpers
-Handlebars.registerHelper('ifSetting', function(this: any, settingName: string, options: any) {
-  // Safety check: ensure options.fn exists (block helper requirement)
-  if (!options || typeof options.fn !== 'function') {
-    console.error('[ifSetting] Error: options.fn is not a function. Setting:', settingName, 'Options:', options);
-    return '';
-  }
-  
-  // Access settings from root context
-  const root = options.data?.root || options.data || this;
-  const settings = root?.settings || {};
-  const settingValue = settings[settingName];
-  
-  // Explicit false means hide
-  if (settingValue === false) {
-    return options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '';
-  }
-  
-  // Explicit true means show
-  if (settingValue === true) {
-    return options.fn(this);
-  }
-  
-  // If undefined, default to showing (for backward compatibility)
-  // But this should ideally never happen if settings are properly initialized
-  return options.fn(this);
-});
+registerGlobalInvoiceHandlebarsHelpers();
 
-Handlebars.registerHelper('ifEqual', function(this: any, arg1: any, arg2: any, options: any) {
-  return (arg1 == arg2) ? options.fn(this) : options.inverse(this);
-});
-
-Handlebars.registerHelper('or', function(this: any) {
-  return Array.prototype.slice.call(arguments, 0, -1).some(Boolean);
-});
-
-Handlebars.registerHelper('and', function(this: any) {
-  return Array.prototype.slice.call(arguments, 0, -1).every(Boolean);
-});
-
-Handlebars.registerHelper('and', function(this: any) {
-  return Array.prototype.slice.call(arguments, 0, -1).every(Boolean);
-});
-
-Handlebars.registerHelper('formatCurrency', function(this: any, value: any) {
-  if (!value && value !== 0) return '0.00';
-  return parseFloat(value).toFixed(2);
-});
-
-Handlebars.registerHelper('formatNumber', function(this: any, value: any) {
-  if (!value && value !== 0) return '0';
-  return parseFloat(value).toFixed(2);
-});
-
-Handlebars.registerHelper('add', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) + parseFloat(b || 0);
-});
-
-Handlebars.registerHelper('sum', function(this: any) {
-  const args = Array.prototype.slice.call(arguments, 0, -1);
-  return args.reduce((sum, val) => sum + parseFloat(val || 0), 0);
-});
-
-// Helper to calculate dynamic colspan for item table totals
-// Counts visible columns and returns (total - 1) to align with the last column
-Handlebars.registerHelper('itemTableColspan', function(this: any, ...args: any[]) {
-  // Last argument is always the options object for Handlebars helpers
-  const options = args[args.length - 1];
-  
-  // Access root context
-  const root = options?.data?.root || options?.data || this;
-  const settings = root?.settings || {};
-  const invoice = root?.invoice || {};
-  
-  let count = 0;
-  
-  // Count visible columns (default to true if not explicitly false)
-  // Each column is counted individually, regardless of tax type
-  if (settings.show_serial_number !== false) count++;
-  if (settings.show_item_name !== false) count++;
-  if (settings.show_hsn !== false) count++;
-  if (settings.show_quantity !== false) count++;
-  if (settings.show_rate !== false) count++;
-  if (settings.show_discount_percent !== false) count++;
-  if (settings.show_discount_amount !== false) count++;
-  
-  // Tax columns: always count as 1 column each (Tax % and Tax are separate columns)
-  // The template shows them as single columns, not split by CGST/SGST
-  if (settings.show_tax_rate !== false) count++;
-  if (settings.show_tax_amount !== false) count++;
-  
-  if (settings.show_line_total !== false) count++;
-  
-  // Debug logging
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[itemTableColspan] Column count:', count, 'colspan:', Math.max(1, count - 1), {
-      show_serial_number: settings.show_serial_number,
-      show_item_name: settings.show_item_name,
-      show_hsn: settings.show_hsn,
-      show_quantity: settings.show_quantity,
-      show_rate: settings.show_rate,
-      show_discount_percent: settings.show_discount_percent,
-      show_discount_amount: settings.show_discount_amount,
-      show_tax_rate: settings.show_tax_rate,
-      show_tax_amount: settings.show_tax_amount,
-      show_line_total: settings.show_line_total
-    });
-  }
-  
-  // Return (total - 1) to span all columns except the last one (Total)
-  return Math.max(1, count - 1);
-});
-
-Handlebars.registerHelper('multiply', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) * parseFloat(b || 0);
-});
-
-Handlebars.registerHelper('subtract', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) - parseFloat(b || 0);
-});
-
-Handlebars.registerHelper('divide', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) / parseFloat(b || 1);
-});
-
-Handlebars.registerHelper('gt', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) > parseFloat(b || 0);
-});
-
-Handlebars.registerHelper('lt', function(this: any, a: any, b: any) {
-  return parseFloat(a || 0) < parseFloat(b || 0);
-});
-
-Handlebars.registerHelper('eq', function(this: any, a: any, b: any) {
-  return a == b;
-});
-
-Handlebars.registerHelper('ne', function(this: any, a: any, b: any) {
-  return a != b;
-});
-
-Handlebars.registerHelper('not', function(this: any, value: any) {
-  return !value;
-});
-
-Handlebars.registerHelper('json', function(this: any, context: any) {
-  return JSON.stringify(context);
-});
-
-Handlebars.registerHelper('uppercase', function(this: any, str: any) {
-  return str ? str.toString().toUpperCase() : '';
-});
-
-Handlebars.registerHelper('lowercase', function(this: any, str: any) {
-  return str ? str.toString().toLowerCase() : '';
-});
-
-Handlebars.registerHelper('abs', function(this: any, value: any) {
-  return Math.abs(parseFloat(value || 0));
-});
-
-// Sample data generator
 function getSampleData(templateId: string) {
   const isComposition = templateId.includes('composition');
   const isGstDetailed = templateId === 'gst_detailed';
@@ -418,184 +256,62 @@ export async function GET(request: NextRequest) {
     if (!templateId) {
       return new NextResponse('template_id parameter is required', { status: 400 });
     }
-    
-    // Fetch business logo and bank details if business_id is provided
-    let businessLogoUrl: string | null = null;
-    let bankDetails: {
-      bank_name: string | null;
-      account_number: string | null;
-      ifsc_code: string | null;
-      branch_name: string | null;
-    } | null = null;
-    
-    if (businessId) {
-      try {
-        const { queryOne } = await import('@/lib/db');
-        
-        // Fetch business logo
-        const business = await queryOne<{ logo_url: string | null }>(
-          'SELECT logo_url FROM businesses WHERE id = $1',
-          [businessId]
-        );
-        if (business) {
-          businessLogoUrl = business.logo_url;
-          console.log('[Preview] Business logo URL:', businessLogoUrl || 'Not set');
-        }
-        
-        // Fetch bank details from bank_accounts table
-        const bankAccount = await queryOne<{
-          bank_name: string;
-          account_number: string;
-          ifsc_code: string | null;
-          branch_name: string | null;
-        }>(
-          `SELECT bank_name, account_number, ifsc_code, branch_name
-           FROM bank_accounts
-           WHERE business_id = $1 AND is_active = true
-           ORDER BY created_at ASC
-           LIMIT 1`,
-          [businessId]
-        );
-        
-        if (bankAccount) {
-          bankDetails = {
-            bank_name: bankAccount.bank_name || null,
-            account_number: bankAccount.account_number || null,
-            ifsc_code: bankAccount.ifsc_code || null,
-            branch_name: bankAccount.branch_name || null
-          };
-          console.log('[Preview] Bank details found:', bankDetails);
-        } else {
-          console.log('[Preview] No active bank account found for business');
-        }
-      } catch (error) {
-        console.error('[Preview] Error fetching business data:', error);
-        // Continue without logo/bank details - not critical
-      }
-    }
 
-    // Parse custom settings if provided
-    let customSettings = null;
+    let customSettings: Record<string, unknown> | null = null;
     if (customSettingsParam) {
       try {
         customSettings = JSON.parse(decodeURIComponent(customSettingsParam));
-        console.log('[Preview] Received custom settings:', customSettings ? 'Yes' : 'No');
       } catch (e) {
         console.error('[Preview] Failed to parse settings JSON:', e);
-        console.log('[Preview] Settings param:', customSettingsParam?.substring(0, 100));
       }
     }
 
-    // Map template ID to path
-    const templatePaths: Record<string, string> = {
-      'gst_standard': 'templates/gst_standard/template.html',
-      'modern': 'templates/modern/template.html',
-      'classic': 'templates/classic/template.html',
-      'elegant': 'templates/elegant/template.html',
-      'minimal': 'templates/minimal/template.html',
-      'business_pro': 'templates/business_pro/template.html',
-      'tally_style': 'templates/tally_style/template.html',
-      'export_invoice': 'templates/export_invoice/template.html',
-      'gst_detailed': 'templates/gst_detailed/template.html',
-      'composition_standard': 'templates/bill_of_supply/composition_standard/template.html',
-      'composition_modern': 'templates/bill_of_supply/composition_modern/template.html',
-      'tax_exempt': 'templates/bill_of_supply/tax_exempt/template.html',
-      'credit_standard': 'templates/credit_note/standard/template.html',
-      'debit_standard': 'templates/debit_note/standard/template.html',
-      'challan_standard': 'templates/delivery_challan/standard/template.html',
-      'payment_receipt': 'templates/payment_receipt/template.html',
-      'thermal_58mm': 'templates/thermal_58mm/template.html',
-      'thermal_80mm': 'templates/thermal_80mm/template.html',
-    };
-
-    const templatePath = templatePaths[templateId];
-    if (!templatePath) {
-      return new NextResponse(`Template "${templateId}" not found`, { status: 404 });
-    }
-
-    // Read template file
-    const fullPath = path.join(process.cwd(), templatePath);
-    if (!fs.existsSync(fullPath)) {
-      return new NextResponse(`Template file not found: ${templatePath}`, { status: 404 });
-    }
-
-    const templateHtml = fs.readFileSync(fullPath, 'utf-8');
-
-    // Compile with Handlebars
-    const template = Handlebars.compile(templateHtml);
-
-    // Get sample data
-    const sampleData = getSampleData(templateId);
-    
-    // CRITICAL: Merge settings properly with defaults
-    // 1. Start with template-specific defaults
-    const defaults = getDefaultTemplateSettings(templateId);
-    
-    // 2. Merge with custom settings from query param
-    let finalSettings = defaults;
-    if (customSettings) {
-      finalSettings = mergeTemplateSettings(customSettings, defaults);
-      console.log('[Preview] Custom settings merged:', Object.keys(customSettings).length, 'settings');
-    } else {
-      console.log('[Preview] Using default settings for template:', templateId);
-    }
-    
-    // 3. Ensure all boolean values are explicitly set (not undefined)
-    // This prevents the ifSetting helper from defaulting incorrectly
-    Object.keys(finalSettings).forEach((key: string) => {
-      if (key.startsWith('show_') && (finalSettings as any)[key] === undefined) {
-        (finalSettings as any)[key] = (defaults as any)[key] !== undefined ? (defaults as any)[key] : true;
-      }
+    const html = await renderTemplatePreviewHtml({
+      templateId,
+      businessId,
+      customSettings,
+      getSampleData,
     });
-    
-    // Override logo_url with actual business logo if available
-    if (businessLogoUrl) {
-      (sampleData.business as any).logo_url = businessLogoUrl;
-      console.log('[Preview] Using business logo:', businessLogoUrl);
-    } else if (businessId) {
-      console.log('[Preview] Business has no logo set');
-    }
-    
-    // Override bank details with actual bank account data if available
-    if (bankDetails) {
-      // Normalize null to undefined at the boundary
-      sampleData.business.bank_name = bankDetails.bank_name ?? '';
-      sampleData.business.account_number = bankDetails.account_number ?? '';
-      sampleData.business.ifsc_code = bankDetails.ifsc_code ?? '';
-      sampleData.business.branch_name = bankDetails.branch_name ?? '';
-      console.log('[Preview] Using bank details from database:', bankDetails);
-    }
-    
-    // 4. Apply final settings to data object
-    const data = {
-      ...sampleData,
-      settings: finalSettings
-    };
-    
-    // Log critical settings for debugging
-    console.log('[Preview] Final settings:', {
-      primary_color: finalSettings.primary_color,
-      text_color: finalSettings.text_color,
-      table_header_color: finalSettings.table_header_color,
-      font_family: finalSettings.font_family,
-      font_size: finalSettings.font_size,
-      show_logo: finalSettings.show_logo,
-      show_bank_details: finalSettings.show_bank_details,
-      show_bank_name: finalSettings.show_bank_name,
-      settingsCount: Object.keys(finalSettings).length
-    });
-    
-    const renderedHtml = template(data);
 
-    // Return HTML for iframe
-    return new NextResponse(renderedHtml, {
-      headers: {
-        'Content-Type': 'text/html',
-      },
+    return new NextResponse(html, {
+      headers: { 'Content-Type': 'text/html' },
     });
   } catch (error) {
     console.error('Error rendering template:', error);
-    return new NextResponse('Error rendering template', { status: 500 });
+    const message = error instanceof Error ? error.message : 'Error rendering template';
+    return new NextResponse(message, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/template-preview
+ * Body: { template_id, business_id?, settings? } — used by customize drawer (avoids URL length limits).
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const templateId = body.template_id as string | undefined;
+    const businessId = (body.business_id as string | undefined) ?? null;
+    const customSettings = (body.settings as Record<string, unknown> | undefined) ?? null;
+
+    if (!templateId) {
+      return new NextResponse('template_id is required', { status: 400 });
+    }
+
+    const html = await renderTemplatePreviewHtml({
+      templateId,
+      businessId,
+      customSettings,
+      getSampleData,
+    });
+
+    return new NextResponse(html, {
+      headers: { 'Content-Type': 'text/html' },
+    });
+  } catch (error) {
+    console.error('Error rendering template (POST):', error);
+    const message = error instanceof Error ? error.message : 'Error rendering template';
+    return new NextResponse(message, { status: 500 });
   }
 }
 

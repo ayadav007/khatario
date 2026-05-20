@@ -167,6 +167,7 @@ export async function POST(request: NextRequest) {
       opening_stock = 0,
       min_stock = 0,
       default_supplier_id,
+      category_id,
       has_variants = false,
       variants = [],
       image_url,
@@ -183,6 +184,7 @@ export async function POST(request: NextRequest) {
       weight_barcode_mode = 'weight',
       /** null = inherit business default; boolean = override */
       allow_sale_when_out_of_stock,
+      custom_fields,
       created_by, // User ID who created the item
     } = body;
 
@@ -293,27 +295,63 @@ export async function POST(request: NextRequest) {
         ? null
         : Boolean(allow_sale_when_out_of_stock);
 
+    const { resolveItemCategoryId } = await import('@/lib/item-category');
+    const resolvedCategoryId = await resolveItemCategoryId(business_id, category_id);
+    if (category_id && resolvedCategoryId === null) {
+      return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
+    }
+
     const item = await queryOne<Item>(`
       INSERT INTO items (
-        business_id, name, code, barcode, barcode_type, unit, selling_price, purchase_price, 
+        business_id, category_id, name, code, barcode, barcode_type, unit, selling_price, purchase_price, 
         tax_rate, hsn_sac, item_type, opening_stock, current_stock, min_stock, 
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
         is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28)
       RETURNING *
     `, [
-      business_id, name, code || null, normalizedBarcode, finalBarcodeType, unit, 
-      finalSellingPrice, purchase_price, tax_rate, hsn_sac || null, item_type, 
-      finalOpeningStock, finalOpeningStock, finalMinStock,
-      default_supplier_id || null, has_variants, image_url, gst_included || false, mrp || null,
-      fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
-      !!is_weighed, normalizedPlu, normalizedWeightMode, oversellOverride
+      business_id,
+      resolvedCategoryId ?? null,
+      name,
+      code || null,
+      normalizedBarcode,
+      finalBarcodeType,
+      unit,
+      finalSellingPrice,
+      purchase_price,
+      tax_rate,
+      hsn_sac || null,
+      item_type,
+      finalOpeningStock,
+      finalOpeningStock,
+      finalMinStock,
+      default_supplier_id || null,
+      has_variants,
+      image_url,
+      gst_included || false,
+      mrp || null,
+      fssai_licence_no || null,
+      net_quantity || null,
+      country_of_origin || null,
+      brand || null,
+      !!is_weighed,
+      normalizedPlu,
+      normalizedWeightMode,
+      oversellOverride,
     ]);
 
     if (!item) throw new Error('Failed to create item');
+
+    if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
+      const { saveItemCustomFields } = await import('@/lib/custom-fields-persist');
+      const cfResult = await saveItemCustomFields(business_id, item.id, custom_fields);
+      if (!cfResult.ok) {
+        return NextResponse.json({ error: cfResult.error }, { status: 400 });
+      }
+    }
 
     // Handle Variants
     if (has_variants && variants.length > 0) {

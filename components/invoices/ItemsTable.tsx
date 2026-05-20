@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
@@ -152,11 +153,9 @@ const ItemsTable = React.memo(function ItemsTable({
           <div className="p-3 border-b border-border bg-gray-50 dark:bg-slate-800">
             <h3 className="text-sm font-semibold text-text-primary">Items ({rows.filter((r) => r.itemId).length})</h3>
           </div>
-          <div className="divide-y divide-border">
-            {rows.filter((r) => r.itemId || r.name).length === 0 ? (
-              <p className="text-center text-text-muted text-sm py-6 px-3">No items yet. Search or scan to add.</p>
-            ) : (
-              rows.map((row, i) => {
+          {rows.filter((r) => r.itemId || r.name).length > 0 ? (
+            <div className="divide-y divide-border">
+              {rows.map((row, i) => {
                 if (!row.itemId && !row.name) return null;
                 const unit = row.unit || 'PCS';
                 return (
@@ -181,13 +180,18 @@ const ItemsTable = React.memo(function ItemsTable({
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          ) : null}
           {!isFinal && (
-            <div className="p-3 border-t border-border bg-gray-50 dark:bg-slate-800">
+            <div
+              className={clsx(
+                'p-3 bg-gray-50 dark:bg-slate-800',
+                rows.filter((r) => r.itemId || r.name).length > 0 && 'border-t border-border'
+              )}
+            >
               <button type="button" onClick={onAddRow} className="flex items-center gap-2 text-primary-600 text-sm font-medium w-full justify-center py-2">
-                <Plus className="w-4 h-4" /> Add line
+                <Plus className="w-4 h-4" /> Add item
               </button>
             </div>
           )}

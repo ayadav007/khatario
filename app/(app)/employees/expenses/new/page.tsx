@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, UploadCloud, X, Receipt } from 'lucide-react';
+import { Loader2, UploadCloud, X, Receipt } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -187,16 +188,9 @@ export default function NewExpensePage() {
   return (
     
       <div className="space-y-6">
-        <Link href="/employees/expenses">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Expenses
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome title="Submit expense" description="Record a reimbursable expense" />
 
         <Card padding="md">
-          <h1 className="text-2xl font-bold text-text-primary mb-6">Submit Expense</h1>
-
           {errors.general && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
               {errors.general}

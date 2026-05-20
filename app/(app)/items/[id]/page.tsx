@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { BatchManager } from '@/components/inventory/BatchManager';
 import { SerialManager } from '@/components/inventory/SerialManager';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { format } from 'date-fns';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 
@@ -310,6 +312,8 @@ export default function ItemDetailPage() {
     }
   }, [itemId, business?.id, fetchItem]);
 
+  useMobileHeaderTitleOverride(item?.name);
+
   if (loading) {
     return (
       
@@ -333,37 +337,29 @@ export default function ItemDetailPage() {
     );
   }
 
+  const itemSubtitle = [
+    item.code ? `Code: ${item.code}` : null,
+    item.barcode ? `Barcode: ${item.barcode}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Breadcrumbs */}
         <Breadcrumbs customLabels={{ [`/items/${itemId}`]: item?.name || 'Item Details' }} />
-        
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => router.push('/items')}>
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{item.name}</h1>
-              <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                {item.code && <span>Code: {item.code}</span>}
-                {item.barcode && (
-                  <>
-                    <span>•</span>
-                    <span>Barcode: {item.barcode}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
 
-          <Button variant="secondary" onClick={() => router.push(`/items/new?edit=${itemId}`)}>
-            <Edit className="w-4 h-4 mr-2" />
-            Edit Item
-          </Button>
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={item.name}
+          description={itemSubtitle || undefined}
+          trailing={
+            <Button variant="secondary" onClick={() => router.push(`/items/new?edit=${itemId}`)}>
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Item
+            </Button>
+          }
+        />
 
         {/* Tabs */}
         <Card padding="none">

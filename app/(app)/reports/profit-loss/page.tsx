@@ -12,6 +12,7 @@ import { buildApiUrl, forPdfPrintInBrowser } from '@/lib/api-helpers';
 import { format } from 'date-fns';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { AccessDenied } from '@/components/common/AccessDenied';
+import { MobileReportHeader } from '@/components/layout/MobileReportHeader';
 
 interface PnLAccount {
   id: string;
@@ -222,30 +223,29 @@ function ProfitLossPage() {
 
   return (
     
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Profit & Loss Statement</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              {format(new Date(data.period.from_date), 'dd MMM yyyy')} to {format(new Date(data.period.to_date), 'dd MMM yyyy')}
-            </p>
-          </div>
-          <div className="flex gap-2 no-print">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handlePrint}
-              title="Opens the PDF in a tab for printing (Ctrl+P). Use Download PDF to save the file."
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              Print
-            </Button>
-            <Button onClick={handleDownloadPdf} isLoading={downloading}>
-              <Download className="w-4 h-4 mr-2" />
-              Download PDF
-            </Button>
-          </div>
-        </div>
+      <div className="space-y-4 md:space-y-6">
+        <MobileReportHeader
+          title="Profit & Loss Statement"
+          subtitle={`${format(new Date(data.period.from_date), 'dd MMM yyyy')} to ${format(new Date(data.period.to_date), 'dd MMM yyyy')}`}
+          actions={
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handlePrint}
+                title="Opens the PDF in a tab for printing (Ctrl+P). Use Download PDF to save the file."
+              >
+                <Printer className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Print</span>
+              </Button>
+              <Button size="sm" onClick={handleDownloadPdf} isLoading={downloading}>
+                <Download className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Download PDF</span>
+              </Button>
+            </>
+          }
+        />
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

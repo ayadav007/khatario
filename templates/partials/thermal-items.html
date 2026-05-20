@@ -1,0 +1,26 @@
+{{#each items}}
+<div class="thermal-item">
+  <div class="thermal-item-name">
+    {{#ifSetting 'show_serial_number'}}{{this.index}}. {{/ifSetting}}{{this.item_name}}{{#if this.variant_name}} <span class="thermal-muted">({{this.variant_name}})</span>{{/if}}
+  </div>
+  {{> custom-item-lines}}
+  {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<div class="thermal-item-meta">Batch: {{this.batch_number}}</div>{{/if}}{{/ifSetting}}
+  {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<div class="thermal-item-meta">Exp: {{this.expiry_date}}</div>{{/if}}{{/ifSetting}}
+  <div class="thermal-item-row">
+    {{#ifSetting 'show_quantity'}}
+      <span>{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</span>
+    {{/ifSetting}}
+    {{#ifSetting 'show_rate'}}
+      <span>@ {{formatCurrency this.unit_price}}</span>
+    {{/ifSetting}}
+    {{#ifSetting 'show_line_total'}}
+      <span class="thermal-item-amt">{{formatCurrency this.line_total}}</span>
+    {{/ifSetting}}
+  </div>
+  {{#ifSetting 'show_hsn'}}{{#if this.hsn_sac}}<div class="thermal-item-meta">HSN: {{this.hsn_sac}}</div>{{/if}}{{/ifSetting}}
+  {{#ifSetting 'show_discount_percent'}}{{#if this.discount_percent}}<div class="thermal-item-meta">Disc: {{this.discount_percent}}%{{#ifSetting 'show_discount_amount'}}{{#if this.discount_amount}} ({{formatCurrency this.discount_amount}}){{/if}}{{/ifSetting}}</div>{{/if}}{{/ifSetting}}
+  {{#ifSetting 'show_discount_amount'}}{{#unless this.discount_percent}}{{#if this.discount_amount}}<div class="thermal-item-meta">Disc: -{{formatCurrency this.discount_amount}}</div>{{/if}}{{/unless}}{{/ifSetting}}
+  {{#ifSetting 'show_tax_rate'}}{{#if this.tax_rate}}<div class="thermal-item-meta">Tax {{this.tax_rate}}%{{#ifSetting 'show_tax_amount'}}{{#if this.tax_amount}} · {{formatCurrency this.tax_amount}}{{/if}}{{/ifSetting}}</div>{{/if}}{{/ifSetting}}
+  {{#ifSetting 'show_tax_amount'}}{{#unless this.tax_rate}}<div class="thermal-item-meta">Tax: {{formatCurrency this.tax_amount}}</div>{{/unless}}{{/ifSetting}}
+</div>
+{{/each}}

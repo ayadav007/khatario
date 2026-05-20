@@ -233,6 +233,7 @@
         <p>Terms of Delivery: {{invoice.terms_of_delivery}}</p>
       {{/if}}
     {{/ifSetting}}
+        {{> custom-invoice-meta}}
   </div>
   
   <div class="main">
@@ -300,6 +301,7 @@
                 {{/if}}
               {{/ifSetting}}
               <strong>{{this.item_name}}</strong>
+              {{> custom-item-lines}}
               {{#if this.variant_name}}<br><small style="color: #666; font-weight: normal;">Variant: {{this.variant_name}}</small>{{/if}}
               {{#if this.variant_attributes}}
                 <br><small style="color: #666;">

@@ -100,7 +100,7 @@ const articles: HowToArticle[] = [
       { type: 'h2', text: 'Templates, invoice design, and printing' },
       {
         type: 'p',
-        text: 'Under Settings → Templates & printing and Settings → Invoice design, adjust columns, terms, and layout. If you use barcode labels, configure label templates and (where available) printer settings in the same area.',
+        text: 'Under Settings → Templates & printing and Settings → Templates & printing, adjust columns, terms, and layout. If you use barcode labels, configure label templates and (where available) printer settings in the same area.',
       },
       { type: 'h2', text: 'Number series' },
       {
@@ -406,6 +406,75 @@ const articles: HowToArticle[] = [
         src: '/help/how-to/items-warehouses-and-inventory.png',
         alt: 'Items list, warehouse, and stock transfer',
         caption: 'Inventory and locations',
+      },
+      {
+        type: 'tip',
+        text: 'To sell a kit as one line on invoices (for example Hair Oil + biscuits together), see the guide “Bundle (combo) items”.',
+      },
+    ],
+  },
+  {
+    slug: 'bundle-combo-items',
+    title: 'Bundle (combo) items',
+    description:
+      'Sell one SKU on invoices while stock is reduced from each component item (kit / combo products).',
+    category: 'Purchases, stock & items',
+    updatedAt: '2026-05-19',
+    sections: [
+      {
+        type: 'p',
+        text: 'A bundle (combo) is a single item you add on invoices, made up of other goods items. Customers see one line; your stock is updated on each component when the bundle is sold.',
+      },
+      { type: 'h2', text: 'When to use a bundle' },
+      {
+        type: 'ul',
+        items: [
+          'You sell a fixed kit (for example Hair Oil + Parle-G) at one price.',
+          'You want one product name on the bill instead of listing every piece separately.',
+          'You still need each component’s stock to go down correctly.',
+        ],
+      },
+      { type: 'h2', text: 'How to set one up' },
+      {
+        type: 'ol',
+        items: [
+          'Go to Inventory → Items → Add item (or edit an existing goods item).',
+          'Set Item type to Goods (bundles are not used for services).',
+          'Open the section Bundle (combo) and check This item is a bundle.',
+          'For each row, pick a component item and enter Qty — how many units of that item are used per 1 bundle sold.',
+          'Use + Add component for more lines. Set the bundle selling price and save.',
+        ],
+      },
+      { type: 'h2', text: 'What each field means' },
+      {
+        type: 'ul',
+        items: [
+          'Component item: a normal goods product (not another bundle, not a variant parent). The dropdown shows current stock for planning.',
+          'Qty: units of that component consumed for every 1 bundle sold. Qty 2 on Hair Oil means selling 3 bundles deducts 6 Hair Oil.',
+          'Estimated cost: sum of each component’s purchase price × qty. This is a hint only; you set the bundle selling price yourself.',
+          'Margin vs selling price: compares estimated cost to your selling price. A negative % means the bundle price is below combined purchase cost on paper.',
+          'You can create up to N bundles with current stock: for each component, floor(stock ÷ qty per bundle), then the smallest number wins. Example: stock 41 and 34.9 with qty 1 each → up to 34 bundles before Parle-G runs out.',
+        ],
+      },
+      { type: 'h2', text: 'What happens when you sell' },
+      {
+        type: 'p',
+        text: 'On a tax invoice you add the bundle SKU like any other goods line. When the invoice is saved or finalized, Khatario does not reduce stock on the bundle row itself (bundle opening stock stays 0). Instead it deducts invoice quantity × component qty from each linked item, using the same stock rules as a normal sale (branch/warehouse, batches, or serials if those apply to the component).',
+      },
+      { type: 'h2', text: 'Rules and limits' },
+      {
+        type: 'ul',
+        items: [
+          'Goods only — not for service items.',
+          'A bundle cannot also use product variants; turn variants off to configure a bundle.',
+          'Components cannot be bundles or variant-parent items. Nested bundles are blocked.',
+          'You need at least one component with item and quantity greater than 0 before saving.',
+          'Bundle lines on invoices cannot use a variant on the bundle SKU.',
+        ],
+      },
+      {
+        type: 'tip',
+        text: 'Use estimated cost and margin hints when pricing so kits stay profitable. If “up to N bundles” is 0, restock the limiting component before selling the combo.',
       },
     ],
   },

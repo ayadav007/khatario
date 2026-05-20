@@ -36,6 +36,8 @@ const COLUMN_ICONS: Record<string, LucideIcon> = {
   users: Users,
   general: LayoutGrid,
   customization: Palette,
+  'sales-billing': Palette,
+  'inventory-items': LayoutGrid,
   tax: FileSpreadsheet,
   accounting: BookMarked,
   hr: CalendarRange,

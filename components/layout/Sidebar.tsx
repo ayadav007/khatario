@@ -838,7 +838,6 @@ export const Sidebar: React.FC = () => {
             collapsible: true,
             subItems: [
               { href: '/settings/tax', label: 'Tax & GST Settings', icon: CreditCard, module: 'settings' },
-              { href: '/settings/gst-config', label: 'GST Configuration', icon: CreditCard, module: 'settings' },
             ]
           },
           {
@@ -863,19 +862,26 @@ export const Sidebar: React.FC = () => {
         collapsible: true,
         subItems: [
           {
-            label: 'General',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/features', label: 'UI Features', icon: Settings, module: 'settings' },
-              { href: '/settings/backup', label: 'Backup & Restore', icon: Database, module: 'settings' },
-            ]
-          },
-          {
-            label: 'Customization',
+            label: 'Sales & billing',
             collapsible: true,
             subItems: [
               { href: '/settings/templates', label: 'Templates & Printing', icon: FileText, module: 'settings' },
-              { href: '/settings/invoice', label: 'Invoice Design', icon: FileText, module: 'settings' },
+              ...(hasFeature('barcode_thermal_printer') ? [{
+                href: '/settings/bluetooth-printer',
+                label: 'Print & Devices',
+                icon: Bluetooth,
+                module: 'settings',
+                featureKey: 'barcode_thermal_printer',
+              }] : []),
+              { href: '/settings/custom-fields', label: 'Custom Fields', icon: FileText, module: 'settings' },
+              { href: '/settings/number-series', label: 'Transaction Number Series', icon: Hash, module: 'settings' },
+            ]
+          },
+          {
+            label: 'Inventory & items',
+            collapsible: true,
+            subItems: [
+              { href: '/settings/business#bp-features', label: 'Item Defaults', icon: Package, module: 'settings' },
               ...(hasFeature('barcode_label_templates') ? [{
                 href: '/settings/label-templates',
                 label: 'Label Templates',
@@ -883,15 +889,15 @@ export const Sidebar: React.FC = () => {
                 module: 'settings',
                 featureKey: 'barcode_label_templates',
               }] : []),
-              ...(hasFeature('barcode_thermal_printer') ? [{
-                href: '/settings/bluetooth-printer',
-                label: 'Bluetooth Printer',
-                icon: Bluetooth,
-                module: 'settings',
-                featureKey: 'barcode_thermal_printer',
-              }] : []),
-              { href: '/settings/number-series', label: 'Transaction Number Series', icon: Hash, module: 'settings' },
-              { href: '/settings/signature', label: 'Digital Signature', icon: FileText, module: 'settings' },
+            ]
+          },
+          {
+            label: 'General',
+            collapsible: true,
+            subItems: [
+              { href: '/settings/features', label: 'UI Features', icon: Settings, module: 'settings' },
+              { href: '/settings/backup', label: 'Backup & Restore', icon: Database, module: 'settings' },
+              { href: '/settings/automation', label: 'Workflow Automation', icon: Settings, module: 'settings' },
             ]
           },
           {

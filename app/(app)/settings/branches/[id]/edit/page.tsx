@@ -8,8 +8,8 @@ import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPa
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -172,19 +172,10 @@ export default function EditBranchPage() {
 
   return (
     <FormPageContainer className="py-6 space-y-6">
-        <div className="mb-2">
-          <Link
-            href="/settings/branches"
-            className="inline-flex items-center space-x-2 text-text-secondary hover:text-text-primary mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Branches</span>
-          </Link>
-          <h1 className="text-2xl font-bold text-text-primary">Edit Branch</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Update branch information and settings
-          </p>
-        </div>
+        <MobileDuplicatePageChrome
+          title="Edit branch"
+          description="Update branch information and settings"
+        />
 
         <FormCard>
         <form onSubmit={handleSubmit}>

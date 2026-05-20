@@ -147,7 +147,7 @@ export function PrintLabelsModal({
         }
         if (bt.savedPrinters.length === 0) {
           toast.error(
-            'No Bluetooth printer paired. Go to Settings → Bluetooth Printer to pair one first.'
+            'No Bluetooth printer paired. Go to Settings → Print & devices to pair one first.'
           );
           return;
         }

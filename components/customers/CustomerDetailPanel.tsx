@@ -29,6 +29,7 @@ import {
   PARTY_BALANCE_COLUMN_HEADER,
 } from '@/lib/party-balance-ui';
 import { CustomerPortalAccessCard } from '@/components/customers/CustomerPortalAccessCard';
+import { CustomerLedgerView } from '@/components/customers/CustomerLedgerView';
 
 interface CustomerDetailPanelProps {
   customerId: string;
@@ -37,7 +38,7 @@ interface CustomerDetailPanelProps {
   sendingReminder?: boolean;
 }
 
-type TabId = 'overview' | 'transactions' | 'history';
+type TabId = 'overview' | 'transactions' | 'ledger' | 'history';
 
 interface Transaction {
   type: 'invoice' | 'payment';
@@ -75,7 +76,7 @@ export function CustomerDetailPanel({
   sendingReminder,
 }: CustomerDetailPanelProps) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { business, user } = useAuth();
   const [customer, setCustomer] = useState<any>(null);
   const [transactions, setTransactions] = useState<Transaction[] | null>(null);
   const [totalReceivable, setTotalReceivable] = useState<number>(0);
@@ -142,6 +143,7 @@ export function CustomerDetailPanel({
     () => [
       { id: 'overview', label: 'Overview', icon: ClipboardList },
       { id: 'transactions', label: 'Transactions', icon: Receipt },
+      { id: 'ledger', label: 'Ledger', icon: FileText },
       { id: 'history', label: 'History', icon: HistoryIcon },
     ],
     []
@@ -623,6 +625,16 @@ export function CustomerDetailPanel({
           )}
         </div>
       )}
+
+      {activeTab === 'ledger' && business?.id && user?.id ? (
+        <div className="p-4 md:p-6">
+          <CustomerLedgerView
+            businessId={business.id}
+            userId={user.id}
+            customerId={customerId}
+          />
+        </div>
+      ) : null}
     </DetailPanelShell>
   );
 }

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Edit, Loader2, FileText, Lock, Unlock } from 'lucide-react';
+import { Edit, Loader2, FileText, Lock, Unlock } from 'lucide-react';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 interface JournalLine {
   account_code: string;
@@ -27,6 +29,8 @@ export default function JournalEntryDetailPage() {
   const toast = useToastContext();
   const voucherId = params.id as string;
   const [entry, setEntry] = useState<any>(null);
+
+  useMobileHeaderTitleOverride(entry?.voucher_number);
   const [lines, setLines] = useState<JournalLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [locking, setLocking] = useState(false);
@@ -138,16 +142,13 @@ export default function JournalEntryDetailPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href="/journal-entries">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Journal Entries
-            </Button>
-          </Link>
-          <div className="flex gap-2">
-            {entry.is_locked ? (
-              <>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title="Journal entry"
+          description={`Voucher: ${entry.voucher_number}`}
+          trailing={
+            <div className="flex gap-2">
+              {entry.is_locked ? (
                 <Button variant="secondary" onClick={handleUnlock} disabled={locking}>
                   {locking ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -156,33 +157,33 @@ export default function JournalEntryDetailPage() {
                   )}
                   Unlock Entry
                 </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="secondary" onClick={handleLock} disabled={locking}>
-                  {locking ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Lock className="w-4 h-4 mr-2" />
-                  )}
-                  Lock Entry
-                </Button>
-                <Link href={`/journal-entries/${voucherId}/edit`}>
-                  <Button>
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit Entry
+              ) : (
+                <>
+                  <Button variant="secondary" onClick={handleLock} disabled={locking}>
+                    {locking ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Lock className="w-4 h-4 mr-2" />
+                    )}
+                    Lock Entry
                   </Button>
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
+                  <Link href={`/journal-entries/${voucherId}/edit`}>
+                    <Button>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit Entry
+                    </Button>
+                  </Link>
+                </>
+              )}
+            </div>
+          }
+        />
 
         <Card>
           <div className="space-y-6">
             <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-text-primary">Journal Entry</h1>
+              <div className="flex items-center gap-3 hidden md:flex">
+                <h2 className="text-xl font-bold text-text-primary">Journal Entry</h2>
                 {entry.is_locked && (
                   <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-medium flex items-center gap-1">
                     <Lock className="w-3 h-3" />

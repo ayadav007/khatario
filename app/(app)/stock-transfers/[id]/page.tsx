@@ -4,9 +4,11 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Package, CheckCircle, Clock, XCircle, AlertCircle, Truck, Loader2 } from 'lucide-react';
+import { Package, CheckCircle, Clock, XCircle, AlertCircle, Truck, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -60,6 +62,10 @@ export default function ViewTransferPage() {
   const toast = useToastContext();
   const { canModify } = usePermissions();
   const [transfer, setTransfer] = useState<Transfer | null>(null);
+
+  useMobileHeaderTitleOverride(
+    transfer?.transfer_number ? `Transfer ${transfer.transfer_number}` : null
+  );
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -227,27 +233,17 @@ export default function ViewTransferPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Link
-            href="/stock-transfers"
-            className="p-2 hover:bg-gray-100 rounded-lg transition"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Transfer {transfer.transfer_number}</h1>
-            <p className="text-gray-600 text-sm mt-1">
-              Created on {new Date(transfer.created_at).toLocaleDateString()} by {transfer.created_by_name}
-            </p>
-          </div>
-        </div>
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
-          <StatusIcon className="w-4 h-4 mr-1" />
-          {statusInfo.label}
-        </span>
-      </div>
+      <MobileDuplicatePageChrome
+        className="mb-0"
+        title={`Transfer ${transfer.transfer_number}`}
+        description={`Created ${new Date(transfer.created_at).toLocaleDateString()} by ${transfer.created_by_name}`}
+        trailing={
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
+            <StatusIcon className="w-4 h-4 mr-1" />
+            {statusInfo.label}
+          </span>
+        }
+      />
 
       {/* Transfer Details */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">

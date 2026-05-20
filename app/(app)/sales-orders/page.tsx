@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { PageToolbar, PageToolbarChip } from '@/components/layout/PageToolbar';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface SalesOrder {
@@ -91,33 +92,28 @@ export default function SalesOrdersPage() {
             <button
               type="button"
               onClick={() => router.push('/sales-orders/new')}
-              className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
+              className="hidden md:flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
             >
               <Plus className="w-5 h-5" />
-              <span className="hidden md:inline">New Sales Order</span>
+              <span>New Sales Order</span>
             </button>
           }
         />
 
-        {/* Filters */}
-        <div className="flex space-x-2 overflow-x-auto">
+        <PageToolbar>
           {['', 'draft', 'confirmed', 'partially_fulfilled', 'fulfilled', 'cancelled'].map((status) => (
-            <button
+            <PageToolbarChip
               key={status}
+              active={statusFilter === status}
               onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
-                statusFilter === status
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-              }`}
             >
-              {status === '' ? 'All' : status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-            </button>
+              {status === '' ? 'All' : status.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+            </PageToolbarChip>
           ))}
-        </div>
+        </PageToolbar>
 
-        {/* Info Banner */}
-        <div className="bg-slate-50 border border-primary-200 rounded-lg p-4 dark:border-primary-700 dark:bg-slate-900/40">
+        {/* Info Banner — desktop only; saves mobile vertical space */}
+        <div className="hidden md:block bg-slate-50 border border-border rounded-lg p-4 dark:bg-slate-900/40">
           <div className="flex items-start space-x-3">
             <Package className="w-5 h-5 text-primary-600 mt-0.5 dark:text-primary-400" />
             <div>

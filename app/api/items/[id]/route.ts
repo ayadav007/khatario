@@ -145,6 +145,7 @@ export async function PATCH(
       min_stock,
       description,
       default_supplier_id,
+      category_id,
       image_url,
       has_variants,
       is_bundle: patchIsBundle,
@@ -249,20 +250,44 @@ export async function PATCH(
           ? null
           : Boolean(allow_sale_when_out_of_stock);
     const patchOversellPolicy = Object.prototype.hasOwnProperty.call(body, 'allow_sale_when_out_of_stock');
+    const patchCategory = Object.prototype.hasOwnProperty.call(body, 'category_id');
+    let resolvedCategoryForPatch: string | null | undefined;
+    if (patchCategory) {
+      const { resolveItemCategoryId } = await import('@/lib/item-category');
+      resolvedCategoryForPatch = await resolveItemCategoryId(businessId, category_id);
+      if (category_id && resolvedCategoryForPatch === null) {
+        return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
+      }
+    }
+
+    const buildOptionalUpdate = (startIndex: number) => {
+      const parts: string[] = [];
+      const extra: unknown[] = [];
+      let idx = startIndex;
+      if (patchCategory) {
+        parts.push(`, category_id = $${idx}`);
+        extra.push(resolvedCategoryForPatch ?? null);
+        idx += 1;
+      }
+      if (patchOversellPolicy) {
+        parts.push(`, allow_sale_when_out_of_stock = $${idx}`);
+        extra.push(oversellOverride);
+      }
+      return { sql: parts.join(''), params: extra };
+    };
 
     // Build UPDATE query dynamically based on whether barcode is being updated
     let updateQuery: string;
     let updateParams: any[];
     
     if (barcode !== undefined) {
+      const optional = buildOptionalUpdate(26);
       updateQuery = `UPDATE items 
        SET name = $3, code = $4, barcode = $5, barcode_type = $6, unit = $7, selling_price = $8, purchase_price = $9,
            tax_rate = $10, hsn_sac = $11, item_type = $12, min_stock = $13, description = $14,
            default_supplier_id = $15, image_url = $16, has_variants = $17, gst_included = $18,
            fssai_licence_no = $19, net_quantity = $20, country_of_origin = $21, brand = $22,
-           is_weighed = $23, plu_code = $24, weight_barcode_mode = $25${
-             patchOversellPolicy ? ', allow_sale_when_out_of_stock = $26' : ''
-           },
+           is_weighed = $23, plu_code = $24, weight_barcode_mode = $25${optional.sql},
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2
        RETURNING *`;
@@ -273,17 +298,16 @@ export async function PATCH(
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
         !!is_weighed, normalizedPlu ?? null, normalizedWeightMode,
-        ...(patchOversellPolicy ? [oversellOverride] : []),
+        ...optional.params,
       ];
     } else {
+      const optional = buildOptionalUpdate(24);
       updateQuery = `UPDATE items 
        SET name = $3, code = $4, unit = $5, selling_price = $6, purchase_price = $7,
            tax_rate = $8, hsn_sac = $9, item_type = $10, min_stock = $11, description = $12,
            default_supplier_id = $13, image_url = $14, has_variants = $15, gst_included = $16,
            fssai_licence_no = $17, net_quantity = $18, country_of_origin = $19, brand = $20,
-           is_weighed = $21, plu_code = $22, weight_barcode_mode = $23${
-             patchOversellPolicy ? ', allow_sale_when_out_of_stock = $24' : ''
-           },
+           is_weighed = $21, plu_code = $22, weight_barcode_mode = $23${optional.sql},
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2
        RETURNING *`;
@@ -294,7 +318,7 @@ export async function PATCH(
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
         !!is_weighed, normalizedPlu ?? null, normalizedWeightMode,
-        ...(patchOversellPolicy ? [oversellOverride] : []),
+        ...optional.params,
       ];
     }
 
@@ -302,6 +326,18 @@ export async function PATCH(
 
     if (!item) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
+      const { saveItemCustomFields } = await import('@/lib/custom-fields-persist');
+      const cfResult = await saveItemCustomFields(
+        businessId,
+        itemId,
+        body.custom_fields
+      );
+      if (!cfResult.ok) {
+        return NextResponse.json({ error: cfResult.error }, { status: 400 });
+      }
     }
 
     // Bundle (combo): clear or replace components

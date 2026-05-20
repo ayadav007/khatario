@@ -3,13 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Edit, Loader2, FileText } from 'lucide-react';
+import { Edit, Loader2, FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Account } from '@/types/database';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -18,6 +20,8 @@ export default function AccountDetailPage() {
   const accountId = params.id as string;
   const [account, setAccount] = useState<Account & { account_group_name: string; current_balance?: number } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useMobileHeaderTitleOverride(account?.account_name);
 
   useEffect(() => {
     if (accountId && business?.id) {
@@ -68,53 +72,51 @@ export default function AccountDetailPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href="/accounts">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Accounts
-            </Button>
-          </Link>
-          {!account.is_system && (
-            <div className="flex items-center gap-2">
-              <Link href={`/accounts/${accountId}/edit`}>
-                <Button>
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Account
-                </Button>
-              </Link>
-              <DeleteAction
-                entityName="account"
-                variant="deactivate"
-                confirmMessage="This account will be deactivated. Existing transactions will remain intact."
-                disabled={!account.is_active}
-                disabledTooltip="Account is already inactive"
-                deleteFn={async () => {
-                  if (!business?.id || !user?.id) throw new Error('Missing business/user context');
-                  const res = await fetch(
-                    `/api/accounts/${accountId}?business_id=${business.id}&user_id=${user.id}`,
-                    {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ is_active: false }),
-                    }
-                  );
-                  const data = await res.json().catch(() => ({}));
-                  if (!res.ok) throw new Error(data?.error || 'Failed to deactivate account');
-                }}
-                onSuccess={async () => {
-                  await fetchAccount();
-                }}
-              />
-            </div>
-          )}
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={account.account_name}
+          description={`Account Code: ${account.account_code}`}
+          trailing={
+            !account.is_system ? (
+              <div className="flex items-center gap-2">
+                <Link href={`/accounts/${accountId}/edit`}>
+                  <Button>
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Account
+                  </Button>
+                </Link>
+                <DeleteAction
+                  entityName="account"
+                  variant="deactivate"
+                  confirmMessage="This account will be deactivated. Existing transactions will remain intact."
+                  disabled={!account.is_active}
+                  disabledTooltip="Account is already inactive"
+                  deleteFn={async () => {
+                    if (!business?.id || !user?.id) throw new Error('Missing business/user context');
+                    const res = await fetch(
+                      `/api/accounts/${accountId}?business_id=${business.id}&user_id=${user.id}`,
+                      {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_active: false }),
+                      }
+                    );
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data?.error || 'Failed to deactivate account');
+                  }}
+                  onSuccess={async () => {
+                    await fetchAccount();
+                  }}
+                />
+              </div>
+            ) : undefined
+          }
+        />
 
         <Card>
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">{account.account_name}</h1>
-              <p className="text-sm text-text-secondary mt-1">Account Code: {account.account_code}</p>
+            <div className="hidden md:block">
+              <p className="text-sm text-text-secondary">Account Code: {account.account_code}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, Calendar, AlertCircle } from 'lucide-react';
+import { Loader2, Calendar, AlertCircle } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -237,16 +238,9 @@ export default function NewLeaveRequestPage() {
   return (
     
       <div className="space-y-6">
-        <Link href="/employees/leaves">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Leaves
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome title="Request leave" description="Submit a leave application" />
 
         <Card padding="md">
-          <h1 className="text-2xl font-bold text-text-primary mb-6">Request Leave</h1>
-
           {errors.general && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
               {errors.general}

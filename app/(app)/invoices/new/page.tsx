@@ -33,8 +33,16 @@ import { InvoicePaymentModal } from '@/components/modals/InvoicePaymentModal';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { CreateCustomerModal } from '@/components/modals/CreateCustomerModal';
 import { CreateItemModal } from '@/components/modals/CreateItemModal';
+import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
+import { useCustomFieldDefinitions, parseItemCustomFieldsFromApi } from '@/components/custom-fields/CustomFieldsManager';
+import type { CustomFieldValues } from '@/types/custom-fields';
+import {
+  isThermalTemplateId,
+  thermalPreviewIframeWidthClass,
+} from '@/lib/thermal-preview';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { getPosMode, getPosAutoBluetoothPrint, setPosAutoBluetoothPrint } from '@/lib/pos-settings';
+import { registerMobileBackInterceptor } from '@/lib/navigation/mobile-back-registry';
 import { POSLayout } from '@/components/pos/POSLayout';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
@@ -284,6 +292,7 @@ function NewInvoiceContent() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
+  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
   const [isExport, setIsExport] = useState(false);
   const [exportType, setExportType] = useState<'wp' | 'wop'>('wop');
   const [portCode, setPortCode] = useState('');
@@ -313,6 +322,8 @@ function NewInvoiceContent() {
   const [dispatchedThrough, setDispatchedThrough] = useState('');
   const [destination, setDestination] = useState('');
   const [termsOfDelivery, setTermsOfDelivery] = useState('');
+  const { definitions: invoiceCustomFieldDefs } = useCustomFieldDefinitions('invoice');
+  const [invoiceCustomFieldValues, setInvoiceCustomFieldValues] = useState<CustomFieldValues>({});
   const [enableRoundOff, setEnableRoundOff] = useState(false);
   const [attachments, setAttachments] = useState<Array<{ id: string; name: string; url: string; size?: number }>>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
@@ -543,20 +554,20 @@ function NewInvoiceContent() {
     }
   }, [pathname, searchParams, isDirty, savedInvoiceId, router]);
 
-  // Mobile browser back: keep user on page until they confirm leaving unsaved draft
+  // Mobile / Android back: confirm before leaving an unsaved draft
   useEffect(() => {
-    if (!invoiceMobileLayout || posMode || !isDirty || savedInvoiceId) return;
-    const pushGuard = () => {
-      window.history.pushState({ invoiceDraftGuard: true }, '', window.location.href);
-    };
-    pushGuard();
-    const onPopState = () => {
-      pushGuard();
+    if (!invoiceMobileLayout || posMode) return;
+    return registerMobileBackInterceptor(() => {
+      if (!isDirty || savedInvoiceId) return 'pass';
+      try {
+        window.history.pushState({ invoiceDraftGuard: true }, '', window.location.href);
+      } catch {
+        // ignore
+      }
       setPendingNavigation(null);
       setShowNavigationWarning(true);
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+      return 'handled';
+    });
   }, [invoiceMobileLayout, posMode, isDirty, savedInvoiceId]);
   
   type DocumentType = 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply';
@@ -1179,10 +1190,11 @@ function NewInvoiceContent() {
       dispatchedThrough,
       destination,
       termsOfDelivery,
+      invoiceCustomFieldValues,
       enableRoundOff,
       attachments,
     };
-  }, [rows, customerId, selectedCustomer, customerPhone, invoiceDate, dueDate, invoiceNumber, invoicePrefix, placeOfSupply, billingAddress, shippingAddress, notes, extraCharges, payments, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments]);
+  }, [rows, customerId, selectedCustomer, customerPhone, invoiceDate, dueDate, invoiceNumber, invoicePrefix, placeOfSupply, billingAddress, shippingAddress, notes, extraCharges, payments, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, invoiceCustomFieldValues, enableRoundOff, attachments]);
 
   // Restore invoice state from parked bill
   const restoreInvoiceState = useCallback((state: any) => {
@@ -1228,6 +1240,7 @@ function NewInvoiceContent() {
     if (state.dispatchedThrough !== undefined) setDispatchedThrough(state.dispatchedThrough);
     if (state.destination !== undefined) setDestination(state.destination);
     if (state.termsOfDelivery !== undefined) setTermsOfDelivery(state.termsOfDelivery);
+    if (state.invoiceCustomFieldValues) setInvoiceCustomFieldValues(state.invoiceCustomFieldValues);
     if (state.enableRoundOff !== undefined) setEnableRoundOff(state.enableRoundOff);
     if (state.attachments) setAttachments(state.attachments);
   }, []);
@@ -1364,7 +1377,7 @@ function NewInvoiceContent() {
     }
     if (bt.savedPrinters.length === 0) {
       toastCtx.error(
-        'No Bluetooth printer paired. Go to Settings → Bluetooth Printer to pair one.'
+        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
       );
       return;
     }
@@ -1480,7 +1493,8 @@ function NewInvoiceContent() {
           other_references: otherReferences || undefined, 
           dispatched_through: dispatchedThrough || undefined, 
           destination: destination || undefined, 
-          terms_of_delivery: termsOfDelivery || undefined, 
+          terms_of_delivery: termsOfDelivery || undefined,
+          custom_fields: invoiceCustomFieldValues,
           enable_round_off: enableRoundOff, 
           attachments: attachments.map(a => ({ id: a.id, name: a.name, url: a.url })), 
           notes, 
@@ -1856,7 +1870,8 @@ function NewInvoiceContent() {
         other_references: otherReferences || undefined, 
         dispatched_through: dispatchedThrough || undefined, 
         destination: destination || undefined, 
-        terms_of_delivery: termsOfDelivery || undefined, 
+        terms_of_delivery: termsOfDelivery || undefined,
+        custom_fields: invoiceCustomFieldValues,
         enable_round_off: enableRoundOff, 
         attachments: attachments.map(a => ({ id: a.id, name: a.name, url: a.url })), 
         notes, 
@@ -1984,7 +1999,12 @@ function NewInvoiceContent() {
       const items = rows.map((r, i) => ({ index: i + 1, item_name: r.name, quantity: r.quantity, unit: r.unit, unit_price: r.price.toFixed(2), discount_percent: r.discountPercent, discount_amount: r.discountAmount.toFixed(2), tax_rate: r.taxPercent, cgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), sgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), igst_rate: (isExport || !isIntraState ? r.taxPercent : 0).toFixed(2), tax_amount: r.taxAmount.toFixed(2), cgst_amount: r.cgstAmount.toFixed(2), sgst_amount: r.sgstAmount.toFixed(2), igst_amount: r.igstAmount.toFixed(2), taxable_value: (r.quantity * r.price - (r.quantity * r.price * (r.discountPercent || 0)) / 100).toFixed(2), hsn_sac: r.hsnSac, line_total: r.total.toFixed(2) }));
       const data = { business: { id: business?.id || '', name: business?.name || '', address: business?.address || '', city: business?.city || '', state: business?.state || '', state_code: business?.state_code || getStateCode(business?.state || ''), pincode: business?.pincode || '', phone: business?.phone || '', email: business?.email || '', gstin: business?.gstin || '', logo_url: business?.logo_url || null }, customer: selectedCustomer ? { name: selectedCustomer.name, address: billingAddress || selectedCustomer.address, phone: selectedCustomer.phone, gstin: selectedCustomer.gstin, state: selectedCustomer.state } : { name: '', address: '', state: '' }, invoice: { invoice_number: invoiceNumber || 'PREVIEW', invoice_date: format(new Date(invoiceDate), 'dd-MM-yyyy'), due_date: format(new Date(dueDate || invoiceDate), 'dd-MM-yyyy'), invoice_title: title, document_type: effDoc, is_export: isExport, is_igst: isExport || !isIntraState, place_of_supply: placeOfSupply, subtotal: subtotal.toFixed(2), discount_total: rows.reduce((s, r) => s + r.discountAmount, 0).toFixed(2), additional_charges: totalExtraCharges.toFixed(2), tax_total: totalTax.toFixed(2), grand_total: grandTotal.toFixed(2), amount_in_words: engineNumberToWords(grandTotal), billing_address: billingAddress, shipping_address: shippingAddress }, items, settings: templateSettings || {} };
       const res = await fetch('/api/invoices/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: isExport ? 'export_invoice' : (invoiceTemplate || null), data }) });
-      if (res.ok) { const resp = await res.json(); setPreviewHtml(resp.html || ''); setPreviewModalOpen(true); }
+      if (res.ok) {
+        const resp = await res.json();
+        setPreviewHtml(resp.html || '');
+        setPreviewTemplateId(resp.templateId || (isExport ? 'export_invoice' : invoiceTemplate) || null);
+        setPreviewModalOpen(true);
+      }
     } catch (e) { console.error(e); } finally { setPreviewLoading(false); }
   }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, templateSettings, documentType, placeOfSupply, isIntraState, invoicePrefix]);
 
@@ -2099,6 +2119,7 @@ function NewInvoiceContent() {
             fetchDocumentSeries(newDocType as DocumentType);
           }
           setBillingAddress(inv.billing_address || ''); setShippingAddress(inv.shipping_address || ''); setNotes(inv.notes || ''); setIsExport(!!inv.is_export);
+          setInvoiceCustomFieldValues(parseItemCustomFieldsFromApi(inv));
           if (inv.is_export) { setExportType(inv.export_type); setPortCode(inv.port_code); setShippingBillNumber(inv.shipping_bill_number); setShippingBillDate(inv.shipping_bill_date?.split('T')[0] || ''); }
           if (inv.items) {
             setRows(inv.items.map((i: any) => ({ itemId: i.item_id || '', variantId: i.variant_id || undefined, variantName: i.variant_name || undefined, name: i.item_name || '', quantity: Number(i.quantity || 1), freeQty: 0, unit: i.unit || 'PCS', price: Number(i.unit_price || 0), discountPercent: Number(i.discount_percent || 0), discountAmount: Number(i.discount_amount || 0), taxPercent: Number(i.tax_rate || 0), taxAmount: Number(i.tax_amount || 0), hsnSac: i.hsn_sac || '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!i.gst_included, priceUserOverride: true })));
@@ -2420,6 +2441,19 @@ function NewInvoiceContent() {
               placeholder="Optional"
             />
           </div>
+          {invoiceCustomFieldDefs.length > 0 && !isFinal && (
+            <div className="w-full col-span-full pt-2 border-t border-border mt-2">
+              <p className="text-xs font-semibold uppercase text-text-secondary mb-2">Custom invoice fields</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <CustomFieldValuesForm
+                  definitions={invoiceCustomFieldDefs}
+                  values={invoiceCustomFieldValues}
+                  onChange={setInvoiceCustomFieldValues}
+                  disabled={isFinal}
+                />
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-[92px] lg:w-[120px] min-w-0">
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">Prefix</label>
@@ -2868,10 +2902,7 @@ function NewInvoiceContent() {
       {!isFinal && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))] px-3 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           <div className="max-w-[1600px] mx-auto space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="secondary" className="h-11" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
-              <Button variant="secondary" className="h-11" onClick={() => handleSave('draft')} isLoading={loading} disabled={!isSeriesResolved}>Save draft</Button>
-            </div>
+            <Button variant="secondary" className="h-11 w-full" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
             <Button variant="primary" className="w-full h-12 font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved}><Send className="w-5 h-5 mr-2" /> Generate</Button>
             <p className="text-[10px] text-center text-text-muted">Generate finalizes the document for GST.</p>
             <Button variant="ghost" className="w-full h-10 text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
@@ -3002,10 +3033,49 @@ function NewInvoiceContent() {
       </POSLayout>
       {previewModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setPreviewModalOpen(false); }}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] h-[95vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b flex-shrink-0"><h2 className="text-xl font-bold">Preview</h2><button onClick={() => setPreviewModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5" /></button></div>
-            <div className="flex-1 overflow-hidden p-0 bg-gray-50 dark:bg-slate-900"><iframe srcDoc={previewHtml} className="w-full h-full border-0" title="Invoice Preview" /></div>
-            <div className="p-4 border-t flex justify-end flex-shrink-0"><Button variant="secondary" onClick={() => setPreviewModalOpen(false)}>Close</Button></div>
+          <div
+            className={`bg-white rounded-lg shadow-xl flex flex-col ${
+              isThermalTemplateId(previewTemplateId)
+                ? 'max-w-fit max-h-[95vh] w-auto'
+                : 'w-full max-w-[95vw] h-[95vh]'
+            }`}
+          >
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0 gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Preview</h2>
+                {isThermalTemplateId(previewTemplateId) && (
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {previewTemplateId === 'thermal_58mm' ? '58mm' : '80mm'} thermal — preview matches print width
+                  </p>
+                )}
+              </div>
+              <button type="button" onClick={() => setPreviewModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full shrink-0" aria-label="Close preview">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div
+              className={`flex-1 overflow-auto bg-gray-200 dark:bg-slate-800 ${
+                isThermalTemplateId(previewTemplateId) ? 'flex justify-center items-start py-4 px-3' : ''
+              }`}
+            >
+              <iframe
+                srcDoc={previewHtml}
+                title="Invoice Preview"
+                className={`border-0 bg-transparent ${
+                  isThermalTemplateId(previewTemplateId)
+                    ? `${thermalPreviewIframeWidthClass(previewTemplateId)} min-h-[120px]`
+                    : 'w-full min-h-[70vh]'
+                }`}
+                style={
+                  isThermalTemplateId(previewTemplateId)
+                    ? { height: 'calc(95vh - 140px)', maxHeight: 'calc(95vh - 140px)' }
+                    : undefined
+                }
+              />
+            </div>
+            <div className="p-4 border-t flex justify-end flex-shrink-0">
+              <Button variant="secondary" onClick={() => setPreviewModalOpen(false)}>Close</Button>
+            </div>
           </div>
         </div>
       )}

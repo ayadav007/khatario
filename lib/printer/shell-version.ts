@@ -8,8 +8,8 @@
  * and capacitor.config.ts → plugins.KhatarioShell.
  */
 
-export const APP_SHELL_VERSION_CODE = 1;
-export const APP_SHELL_VERSION_NAME = '1.0.0';
+export const APP_SHELL_VERSION_CODE = 2;
+export const APP_SHELL_VERSION_NAME = '1.1.0';
 
 export type ShellVersionInfo = {
   versionCode: number;

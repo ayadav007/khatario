@@ -229,6 +229,7 @@
           {{#ifSetting 'show_terms_of_delivery'}}
             {{#if invoice.terms_of_delivery}}<div>Terms of Delivery: {{invoice.terms_of_delivery}}</div>{{/if}}
           {{/ifSetting}}
+          {{> custom-invoice-meta}}
         </div>
       </div>
     </div>
@@ -381,6 +382,7 @@
                 {{/if}}
               {{/ifSetting}}
               <strong>{{this.item_name}}</strong>
+              {{> custom-item-lines}}
               {{#if this.variant_name}}<br><span style="font-size: 10px; color: #666; font-weight: normal;">Variant: {{this.variant_name}}</span>{{/if}}
               {{#if this.variant_attributes}}<br><span style="font-size: 10px; color: #666;">{{#each this.variant_attributes}}{{@key}}: {{this}}{{#unless @last}} | {{/unless}}{{/each}}</span>{{/if}}
               {{#if this.description}}<br><span style="font-size: 10px; color: #666;">{{this.description}}</span>{{/if}}

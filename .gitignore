@@ -41,6 +41,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# WhatsApp runtime stores (never commit)
+whatsapp-data/*.json
+
 # Serwist / PWA (generated at build)
 public/sw.js
 public/sw.js.map

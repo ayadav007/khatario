@@ -4,13 +4,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { ArrowLeft, Edit, Loader2, User, Briefcase, Building, Calendar, Phone, Mail, CreditCard, FileText, DollarSign, AlertCircle, Camera, CheckCircle } from 'lucide-react';
+import { Edit, Loader2, User, Briefcase, Building, Calendar, Phone, Mail, CreditCard, FileText, DollarSign, AlertCircle, Camera, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Employee, EmployeeDocument } from '@/types/database';
 import { format } from 'date-fns';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -32,6 +34,8 @@ export default function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<EmployeeWithUser | null>(null);
   const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useMobileHeaderTitleOverride(employee?.user_name);
 
   useEffect(() => {
     if (employeeId && business?.id) {
@@ -92,13 +96,40 @@ export default function EmployeeDetailPage() {
   return (
     
       <div className="space-y-6">
-        {/* Back Button */}
-        <Link href="/employees">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Employees
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={employee.user_name}
+          description={employee.employee_code ? `Code: ${employee.employee_code}` : undefined}
+          trailing={
+            <div className="flex gap-2">
+              <Link href={`/employees/${employeeId}/edit`}>
+                <Button variant="ghost" size="sm">
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+              </Link>
+              <DeleteAction
+                entityName="employee"
+                variant="deactivate"
+                confirmMessage="This employee will be deactivated. Existing records will remain intact."
+                disabled={!employee.is_active || !employee.user_is_active}
+                disabledTooltip="Employee is already inactive"
+                deleteFn={async () => {
+                  if (!business?.id || !user?.id) throw new Error('Missing business/user context');
+                  const res = await fetch(
+                    `/api/employees/${employeeId}?business_id=${business.id}&user_id=${user.id}`,
+                    { method: 'DELETE' }
+                  );
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(data?.error || 'Failed to deactivate employee');
+                }}
+                onSuccess={async () => {
+                  await fetchEmployeeData();
+                }}
+              />
+            </div>
+          }
+        />
 
         {/* Employee Header */}
         <Card padding="md">
@@ -116,7 +147,7 @@ export default function EmployeeDetailPage() {
                 </div>
               )}
               <div>
-                <h1 className="text-2xl font-bold text-text-primary mb-2">{employee.user_name}</h1>
+                <h2 className="text-xl font-bold text-text-primary mb-2 hidden md:block">{employee.user_name}</h2>
                 <div className="flex items-center gap-2 mb-2">
                   <Chip className={getStatusColor()}>
                     {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
@@ -145,33 +176,6 @@ export default function EmployeeDetailPage() {
                   )}
                 </p>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <Link href={`/employees/${employeeId}/edit`}>
-                <Button variant="ghost" size="sm">
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-              </Link>
-              <DeleteAction
-                entityName="employee"
-                variant="deactivate"
-                confirmMessage="This employee will be deactivated. Existing records will remain intact."
-                disabled={!employee.is_active || !employee.user_is_active}
-                disabledTooltip="Employee is already inactive"
-                deleteFn={async () => {
-                  if (!business?.id || !user?.id) throw new Error('Missing business/user context');
-                  const res = await fetch(
-                    `/api/employees/${employeeId}?business_id=${business.id}&user_id=${user.id}`,
-                    { method: 'DELETE' }
-                  );
-                  const data = await res.json().catch(() => ({}));
-                  if (!res.ok) throw new Error(data?.error || 'Failed to deactivate employee');
-                }}
-                onSuccess={async () => {
-                  await fetchEmployeeData();
-                }}
-              />
             </div>
           </div>
 

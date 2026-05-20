@@ -18,6 +18,7 @@ import LeadProfileCard from '@/components/customers/LeadProfileCard';
 import { CustomerPortalAccessCard } from '@/components/customers/CustomerPortalAccessCard';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { CustomerLedgerView } from '@/components/customers/CustomerLedgerView';
 import { customerBalanceCardTitle } from '@/lib/party-balance-ui';
 import {
   csvEscape,
@@ -122,18 +123,6 @@ function statusToneClass(tone: 'success' | 'warning' | 'error' | 'info') {
   }
 }
 
-interface LedgerRow {
-  id: string | null;
-  reference_number: string;
-  transaction_date: string;
-  transaction_type: string;
-  description: string;
-  debit: number | string;
-  credit: number | string;
-  running_balance: number;
-  is_virtual?: boolean;
-}
-
 export default function CustomerDetailPage({ params }: { params: { id: string } }) {
   const { business, user } = useAuth();
   const { currentBranchId, isLoading: branchLoading } = useBranch();
@@ -146,14 +135,17 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const [loading, setLoading] = useState(true);
   const [loadingLeadProfile, setLoadingLeadProfile] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
-  const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([]);
-  const [ledgerClosing, setLedgerClosing] = useState<number | null>(null);
-  const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [exportingStatement, setExportingStatement] = useState(false);
   const [txRangePreset, setTxRangePreset] = useState<TxRangePreset>('365');
 
   useMobileHeaderTitleOverride(customer?.name);
+
+  const tabLabels: Record<typeof activeTab, string> = {
+    summary: 'Overview',
+    transactions: 'Transactions',
+    ledger: 'Ledger',
+    documents: 'History',
+  };
 
   useEffect(() => {
     const fetchCustomerData = async () => {
@@ -207,54 +199,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     fetchLeadProfile();
   }, [customer?.phone, business?.id]);
 
-  useEffect(() => {
-    if (activeTab !== 'ledger' || !business?.id || !user?.id || branchLoading) return;
-    let cancelled = false;
-    (async () => {
-      setLedgerLoading(true);
-      setLedgerError(null);
-      try {
-        const sp = new URLSearchParams({
-          business_id: business.id,
-          party_id: params.id,
-          party_type: 'customer',
-          user_id: user.id,
-        });
-        if (currentBranchId && currentBranchId !== 'ALL') {
-          sp.set('branch_id', currentBranchId);
-        }
-        const res = await fetch(`/api/reports/party/ledger?${sp.toString()}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          const msg =
-            typeof data?.error === 'string'
-              ? data.error
-              : data?.message || 'Could not load ledger';
-          const detail = typeof data?.details === 'string' ? data.details : '';
-          setLedgerError(detail ? `${msg} — ${detail}` : msg);
-          setLedgerRows([]);
-          setLedgerClosing(null);
-          return;
-        }
-        setLedgerRows(Array.isArray(data.transactions) ? data.transactions : []);
-        setLedgerClosing(
-          typeof data.closing_balance === 'number' ? data.closing_balance : null
-        );
-      } catch {
-        if (!cancelled) {
-          setLedgerError('Could not load ledger');
-          setLedgerRows([]);
-          setLedgerClosing(null);
-        }
-      } finally {
-        if (!cancelled) setLedgerLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, business?.id, user?.id, params.id, currentBranchId, branchLoading]);
+  // Ledger fetching is handled inside <CustomerLedgerView />.
 
   const filteredTransactions = useMemo(
     () => transactions.filter((tx) => transactionInRange(tx, txRangePreset)),
@@ -288,8 +233,6 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   }
 
   const lastInvoice = transactions.find(t => t.type === 'invoice');
-  const ledgerSummary =
-    typeof ledgerClosing === 'number' ? customerStatementSummary(ledgerClosing) : null;
 
   async function fetchStatementForExport() {
     const { from_date, to_date } = getDefaultCustomerStatementPeriod();
@@ -378,19 +321,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         {/* Breadcrumbs */}
         <Breadcrumbs customLabels={{ [`/customers/${params.id}`]: customer?.name || 'Customer Details' }} />
         
-        {/* Back Button */}
-        <Link href="/customers">
-          <Button variant="ghost" size="sm" className="hidden md:inline-flex">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Customers
-          </Button>
-        </Link>
-
         {/* Customer Header */}
         <Card padding="md">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6 mb-6">
             <div className="min-w-0 w-full sm:flex-1">
-              <h1 className="text-xl sm:text-2xl font-bold text-text-primary mb-2 break-words">
+              <h1 className="list-page-h1 mb-2 break-words">
                 {customer.name}
               </h1>
               <p className="text-text-secondary flex items-center gap-2">
@@ -515,7 +450,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tabLabels[tab]}
                 </button>
               ))}
             </div>
@@ -698,149 +633,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
             )}
 
             {activeTab === 'ledger' && (
-              <div className="space-y-4">
-                <p className="text-xs text-text-muted md:text-sm">
-                  Debit increases amount due; credit is payment received. Balance matches your account summary when
-                  periods align.
-                </p>
-                {ledgerSummary && !ledgerLoading && !ledgerError && (
-                  <div className="rounded-xl border border-border bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                        Party ledger (running)
-                      </p>
-                      <p className="text-sm text-text-secondary mt-1">All periods · branch access</p>
-                    </div>
-                    <div className="text-right sm:text-right">
-                      <p className="text-xs text-text-muted">{ledgerSummary.title}</p>
-                      <p className="text-xl font-bold text-text-primary tabular-nums">
-                        ₹{' '}
-                        {ledgerSummary.amount.toLocaleString('en-IN', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        })}
-                      </p>
-                      <p className="text-[11px] text-text-muted mt-0.5">{ledgerSummary.subtitle}</p>
-                    </div>
-                  </div>
-                )}
-                {ledgerLoading && (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-                  </div>
-                )}
-                {!ledgerLoading && ledgerError && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                    <p className="font-medium">Ledger could not be loaded</p>
-                    <p className="mt-1 text-amber-800/90">{ledgerError}</p>
-                    <p className="mt-3 text-amber-800/80">
-                      You can still use the <strong>Transactions</strong> tab for invoice and payment lines.
-                    </p>
-                    <Button variant="secondary" size="sm" className="mt-3" onClick={() => setActiveTab('transactions')}>
-                      Open Transactions
-                    </Button>
-                  </div>
-                )}
-                {!ledgerLoading && !ledgerError && ledgerRows.length === 0 && (
-                  <div className="text-center py-10 text-text-secondary">No ledger entries in this period.</div>
-                )}
-                {!ledgerLoading && !ledgerError && ledgerRows.length > 0 && (
-                  <>
-                    <div className="md:hidden space-y-3">
-                      {ledgerRows.map((row, idx) => {
-                        const dr = Number(row.debit || 0);
-                        const cr = Number(row.credit || 0);
-                        return (
-                          <div
-                            key={`${row.reference_number}-${row.transaction_date}-${idx}`}
-                            className="rounded-xl border border-border bg-surface p-4 space-y-2"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-xs text-text-muted flex items-center gap-1">
-                                  <Calendar className="w-3.5 h-3.5 shrink-0" />
-                                  {format(new Date(row.transaction_date), 'dd MMM yyyy')}
-                                </p>
-                                <p className="font-mono text-xs text-text-secondary mt-1 truncate">
-                                  {row.reference_number}
-                                </p>
-                                <p className="text-sm text-text-primary mt-1">{row.description}</p>
-                              </div>
-                              <Chip variant="default" className="shrink-0 text-[10px]">
-                                {customerVoucherLabel(row.transaction_type)}
-                              </Chip>
-                            </div>
-                            <div className="flex justify-between gap-4 text-sm pt-2 border-t border-border">
-                              <span className="text-text-muted">
-                                Dr{' '}
-                                <span className="font-medium text-text-primary tabular-nums">
-                                  {dr > 0 ? formatLedgerInr(dr) : '—'}
-                                </span>
-                              </span>
-                              <span className="text-text-muted">
-                                Cr{' '}
-                                <span className="font-medium text-emerald-700 tabular-nums">
-                                  {cr > 0 ? formatLedgerInr(cr) : '—'}
-                                </span>
-                              </span>
-                            </div>
-                            <p className="text-right text-sm font-semibold tabular-nums">
-                              Balance {formatLedgerInr(row.running_balance)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="hidden md:block overflow-x-auto">
-                      <table className="table w-full min-w-[720px]">
-                        <thead>
-                          <tr className="table-header bg-slate-100">
-                            <th className="table-cell text-left">Date</th>
-                            <th className="table-cell text-left">Voucher</th>
-                            <th className="table-cell text-left">Reference</th>
-                            <th className="table-cell text-left">Particulars</th>
-                            <th className="table-cell text-right">Debit</th>
-                            <th className="table-cell text-right">Credit</th>
-                            <th className="table-cell text-right">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ledgerRows.map((row, idx) => {
-                            const dr = Number(row.debit || 0);
-                            const cr = Number(row.credit || 0);
-                            return (
-                              <tr
-                                key={`${row.reference_number}-${row.transaction_date}-${idx}`}
-                                className="hover:bg-slate-50 transition-colors"
-                              >
-                                <td className="table-cell text-left whitespace-nowrap">
-                                  {format(new Date(row.transaction_date), 'dd MMM yyyy')}
-                                </td>
-                                <td className="table-cell text-left">
-                                  <Chip variant="default" className="text-[10px]">
-                                    {customerVoucherLabel(row.transaction_type)}
-                                  </Chip>
-                                </td>
-                                <td className="table-cell text-left font-mono text-sm">{row.reference_number}</td>
-                                <td className="table-cell text-left text-sm max-w-[220px]">{row.description}</td>
-                                <td className="table-cell text-right tabular-nums">
-                                  {dr > 0 ? formatLedgerInr(dr) : '—'}
-                                </td>
-                                <td className="table-cell text-right tabular-nums text-emerald-700">
-                                  {cr > 0 ? formatLedgerInr(cr) : '—'}
-                                </td>
-                                <td className="table-cell text-right font-medium tabular-nums">
-                                  {formatLedgerInr(row.running_balance)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
+              <CustomerLedgerView
+                businessId={business!.id}
+                userId={user!.id}
+                customerId={customer.id}
+                branchId={currentBranchId}
+              />
             )}
             
             {activeTab === 'summary' && (

@@ -1,9 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Mail, MessageCircle, Link as LinkIcon, Download, Check, Loader2 } from 'lucide-react';
+import {
+  X,
+  Mail,
+  MessageCircle,
+  Link as LinkIcon,
+  Download,
+  Check,
+  Loader2,
+  FileText,
+  Image as ImageIcon,
+} from 'lucide-react';
+import {
+  canUseNativeInvoiceShare,
+  shareInvoiceNative,
+  type InvoiceShareFormat,
+} from '@/lib/share-invoice';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 interface ShareInvoiceModalProps {
   invoiceId: string;
@@ -33,6 +49,8 @@ export function ShareInvoiceModal({
   const [publicShareUrl, setPublicShareUrl] = useState<string | null>(null);
   const [linkLoading, setLinkLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [nativeFormatLoading, setNativeFormatLoading] = useState<InvoiceShareFormat | null>(null);
+  const showNativeShare = canUseNativeInvoiceShare();
 
   const resolvePublicUrl = useCallback(async (): Promise<string | null> => {
     if (publicShareUrl) return publicShareUrl;
@@ -173,7 +191,11 @@ export function ShareInvoiceModal({
       toast.warning(linkError || 'Share link not available');
       return;
     }
-    await navigator.clipboard.writeText(shareUrl);
+    const ok = await copyTextToClipboard(shareUrl);
+    if (!ok) {
+      toast.error('Could not copy link. Try Download PDF or share via WhatsApp.');
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -182,6 +204,20 @@ export function ShareInvoiceModal({
     window.open(`/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`, '_blank');
   }
 
+  async function handleNativeShare(format: InvoiceShareFormat) {
+    setNativeFormatLoading(format);
+    try {
+      await shareInvoiceNative({
+        invoiceId,
+        invoiceNumber,
+        businessName: business?.name,
+        format,
+        userId: user?.id,
+      });
+    } finally {
+      setNativeFormatLoading(null);
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -210,6 +246,34 @@ export function ShareInvoiceModal({
 
         {/* Share Options */}
         <div className="space-y-3">
+          {showNativeShare && (
+            <div className="space-y-2 rounded-lg border-2 border-gray-200 p-3">
+              <p className="text-sm font-semibold text-gray-900 px-1">Share with apps</p>
+              <p className="text-xs text-gray-500 px-1 mb-2">WhatsApp, Gmail, Drive — attach PDF or image</p>
+              {(
+                [
+                  { format: 'pdf' as const, label: 'PDF attachment', icon: FileText, color: 'text-red-600' },
+                  { format: 'image' as const, label: 'Image attachment', icon: ImageIcon, color: 'text-blue-600' },
+                  { format: 'link' as const, label: 'Link only', icon: LinkIcon, color: 'text-purple-600' },
+                ] as const
+              ).map(({ format, label, icon: Icon, color }) => (
+                <button
+                  key={format}
+                  type="button"
+                  onClick={() => void handleNativeShare(format)}
+                  disabled={nativeFormatLoading !== null || linkLoading}
+                  className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition disabled:opacity-60"
+                >
+                  <Icon className={`w-5 h-5 shrink-0 ${color}`} />
+                  <span className="flex-1 text-left text-sm font-medium text-gray-900">{label}</span>
+                  {nativeFormatLoading === format && (
+                    <Loader2 className="w-4 h-4 animate-spin text-primary-600" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Email */}
           <button
             onClick={handleEmailSend}

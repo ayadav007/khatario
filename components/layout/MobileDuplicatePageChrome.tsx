@@ -7,17 +7,20 @@ import { hideMobileDuplicatePageChrome } from '@/lib/mobile-page-chrome';
 
 type MobileDuplicatePageChromeProps = {
   title: React.ReactNode;
+  /** Shown under the title on desktop; hidden on mobile when TopBar carries context. */
+  description?: React.ReactNode;
   onBack?: () => void;
   trailing?: React.ReactNode;
   className?: string;
 };
 
 /**
- * Page-level mobile header (back + h1). Hidden in production below md — TopBar shows context.
- * Desktop always shows the h1.
+ * Page-level mobile header (back + h1). Hidden below md — TopBar shows route context.
+ * Desktop always shows the h1 (and optional description).
  */
 export function MobileDuplicatePageChrome({
   title,
+  description,
   onBack,
   trailing,
   className,
@@ -25,8 +28,20 @@ export function MobileDuplicatePageChrome({
   const hideOnMobile = hideMobileDuplicatePageChrome();
 
   return (
-    <div className={clsx('flex items-center justify-between gap-2', className)}>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div
+      className={clsx(
+        hideOnMobile ? 'hidden md:flex' : 'flex',
+        description ? 'flex-col gap-1' : 'flex-row items-center justify-between gap-2',
+        'w-full',
+        className
+      )}
+    >
+      <div
+        className={clsx(
+          'flex min-w-0 flex-1 items-center gap-2',
+          description && 'w-full justify-between'
+        )}
+      >
         {!hideOnMobile && onBack ? (
           <button
             type="button"
@@ -39,14 +54,17 @@ export function MobileDuplicatePageChrome({
         ) : null}
         <h1
           className={clsx(
-            'my-0 py-0 text-xl font-bold leading-tight text-text-primary md:text-2xl',
-            hideOnMobile && 'hidden md:block'
+            'my-0 py-0 leading-tight text-text-primary',
+            hideOnMobile ? 'list-page-h1' : 'text-xl font-bold md:text-2xl'
           )}
         >
           {title}
         </h1>
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
       </div>
-      {trailing ? <div className="shrink-0">{trailing}</div> : null}
+      {description ? (
+        <p className="text-sm text-text-secondary">{description}</p>
+      ) : null}
     </div>
   );
 }

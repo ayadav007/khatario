@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, Calendar, Clock } from 'lucide-react';
+import { Loader2, Calendar, Clock } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -122,16 +123,9 @@ export default function MarkAttendancePage() {
   return (
     
       <div className="space-y-6">
-        <Link href="/employees/attendance">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Attendance
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome title="Mark attendance" description="Record check-in or check-out" />
 
         <Card padding="md">
-          <h1 className="text-2xl font-bold text-text-primary mb-6">Mark Attendance</h1>
-
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

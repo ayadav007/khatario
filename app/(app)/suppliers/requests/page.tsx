@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 
 interface RequestRow {
   id: string;
@@ -314,15 +315,16 @@ export default function SupplierRequestsPage() {
     return (
     
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Requests to Fulfill</h1>
-            <p className="text-sm text-gray-600">Respond to customer quantity requests and forward shortages upstream.</p>
-          </div>
-          <Button variant="secondary" onClick={() => router.push('/suppliers')}>
-            Back to Suppliers
-          </Button>
-            </div>
+        <ListPageHeader
+          title="Requests to fulfill"
+          description="Respond to customer quantity requests and forward shortages upstream."
+          actions={
+            <Button variant="secondary" onClick={() => router.push('/suppliers')}>
+              All suppliers
+            </Button>
+          }
+          showActionsOnMobile
+        />
 
         <Card padding="md">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">

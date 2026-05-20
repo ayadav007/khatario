@@ -176,6 +176,7 @@
               {{#ifSetting 'show_invoice_number'}}<div><b>No:</b> {{invoice.invoice_number}}</div>{{/ifSetting}}
               {{#ifSetting 'show_invoice_date'}}<div><b>Date:</b> {{invoice.invoice_date}}</div>{{/ifSetting}}
               {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div><b>Due Date:</b> {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
+        {{> custom-invoice-meta}}
               {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><b>Place Of Supply:</b> {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
             </div>
           </td>

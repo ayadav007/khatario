@@ -10,14 +10,13 @@ import {
   Printer,
   CheckSquare,
   Square,
-  ArrowLeft,
   Loader2,
   Minus,
   Plus,
   Bluetooth,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 
@@ -248,7 +247,7 @@ export default function BulkBarcodePrintPage() {
         }
         if (bt.savedPrinters.length === 0) {
           toast.error(
-            'No Bluetooth printer paired. Go to Settings → Bluetooth Printer to pair one first.'
+            'No Bluetooth printer paired. Go to Settings → Print & devices to pair one first.'
           );
           return;
         }
@@ -340,23 +339,10 @@ export default function BulkBarcodePrintPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <Link href="/items">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Items
-              </Button>
-            </Link>
-          </div>
-          <h1 className="text-2xl font-bold text-text-primary">Print Labels</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Generate scannable barcode labels for items and their variants.
-            Set per-row copies, choose a sheet layout, and print.
-          </p>
-        </div>
-      </div>
+      <MobileDuplicatePageChrome
+        title="Print labels"
+        description="Generate scannable barcode labels for items and variants. Set copies, layout, and print."
+      />
 
       <Card padding="md">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

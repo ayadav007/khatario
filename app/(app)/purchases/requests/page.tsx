@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 
 interface RequestRow {
   id: string;
@@ -441,15 +442,16 @@ function PurchaseRequestsContent() {
   return (
     
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Purchase Requests</h1>
-            <p className="text-sm text-gray-600">Request quantities from suppliers and link documents.</p>
-          </div>
-          <Button variant="secondary" onClick={() => router.push('/purchases')}>
-            Back to Purchases
-          </Button>
-        </div>
+        <ListPageHeader
+          title="Purchase requests"
+          description="Request quantities from suppliers and link documents."
+          actions={
+            <Button variant="secondary" onClick={() => router.push('/purchases')}>
+              All purchases
+            </Button>
+          }
+          showActionsOnMobile
+        />
 
         <Card padding="md" className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">New Request</h2>

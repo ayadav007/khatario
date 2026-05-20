@@ -8,7 +8,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
-import { Search, Plus, Trash2, Save, X, Loader2, ArrowLeft } from 'lucide-react';
+import { Search, Plus, Trash2, Save, X, Loader2 } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -413,40 +414,40 @@ export default function NewSalesOrderPage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push('/sales-orders')}
-              className="flex items-center space-x-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back</span>
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">New Sales Order</h1>
-              <p className="text-gray-600 text-sm mt-1">Create a new sales order</p>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title="New sales order"
+          description="Create a new sales order"
+          trailing={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => handleSave('draft')}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span className="ml-2">Save Draft</span>
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => handleSave('confirmed')}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span className="ml-2">Confirm Order</span>
+              </Button>
             </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="secondary"
-              onClick={() => handleSave('draft')}
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span className="ml-2">Save Draft</span>
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => handleSave('confirmed')}
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span className="ml-2">Confirm Order</span>
-            </Button>
-          </div>
+          }
+        />
+        <div className="flex md:hidden items-center gap-2">
+          <Button variant="secondary" onClick={() => handleSave('draft')} disabled={loading} className="flex-1">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span className="ml-2">Draft</span>
+          </Button>
+          <Button variant="primary" onClick={() => handleSave('confirmed')} disabled={loading} className="flex-1">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            <span className="ml-2">Confirm</span>
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

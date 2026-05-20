@@ -252,6 +252,7 @@
           <div style="font-size: 10px;"></div>
         </td>
       {{/ifSetting}}
+        {{> custom-invoice-meta}}
     </tr>
   </table>
 
@@ -277,7 +278,8 @@
         {{#ifSetting 'show_serial_number'}}<td class="text-center">{{this.index}}</td>{{/ifSetting}}
         <td>
           {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width: 30px; height: 30px; object-fit: cover; vertical-align: middle; margin-right: 6px;" />{{/if}}{{/ifSetting}}
-          <div class="value">{{this.item_name}}</div>
+          <div class="value">{{this.item_name}}
+              {{> custom-item-lines}}</div>
           {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<small>Batch: {{this.batch_number}}</small>{{/if}}{{/ifSetting}}
           {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<small>Expiry: {{this.expiry_date}}</small>{{/if}}{{/ifSetting}}
         </td>

@@ -51,7 +51,7 @@ export const PRINTER_TRANSPORT_CATALOG: Record<PrinterTransport, PrinterCapabili
     label: 'Android app (Classic Bluetooth / SPP)',
     description:
       'ESC/POS over Bluetooth Classic serial (RFCOMM). Common on budget Indian thermal printers.',
-    implemented: false,
+    implemented: true,
     requiresNativeApp: true,
     supportsAutoReconnect: true,
     supportsBackgroundPrinting: false,

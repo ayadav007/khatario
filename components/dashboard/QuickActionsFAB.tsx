@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/Button';
 import { FileText, Package, Users, ShoppingCart, Plus, X } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { clsx } from 'clsx';
 
 interface QuickAction {
   label: string;
@@ -18,25 +17,25 @@ const quickActions: QuickAction[] = [
     label: 'New Invoice',
     href: '/invoices/new',
     icon: FileText,
-    color: 'bg-primary-500 hover:bg-primary-600',
+    color: 'bg-primary-500',
   },
   {
     label: 'New Purchase',
     href: '/purchases/new',
     icon: ShoppingCart,
-    color: 'bg-green-500 hover:bg-green-600',
+    color: 'bg-green-600',
   },
   {
     label: 'New Customer',
     href: '/customers/new',
     icon: Users,
-    color: 'bg-purple-500 hover:bg-purple-600',
+    color: 'bg-purple-600',
   },
   {
     label: 'New Item',
     href: '/items/new',
     icon: Package,
-    color: 'bg-orange-500 hover:bg-orange-600',
+    color: 'bg-orange-500',
   },
 ];
 
@@ -45,7 +44,6 @@ export const QuickActionsFAB: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -69,47 +67,47 @@ export const QuickActionsFAB: React.FC = () => {
       ref={containerRef}
       className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-3 lg:bottom-6 lg:right-6"
     >
-      {/* Action Buttons */}
       {isOpen && (
-        <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="flex flex-col items-end gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
           {quickActions.map((action, index) => {
             const Icon = action.icon;
             return (
-              <Link
+              <button
                 key={action.href}
-                href={action.href}
+                type="button"
                 onClick={() => handleActionClick(action.href)}
-                className="flex items-center gap-3 group"
+                className="flex items-center gap-2.5 touch-manipulation"
                 style={{ animationDelay: `${index * 50}ms` }}
               >
-                <span className="bg-surface text-text-primary border border-border px-3 py-2 rounded-lg shadow-lg text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <span className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text-primary shadow-md whitespace-nowrap">
                   {action.label}
                 </span>
-                <button
-                  className={`${action.color} w-14 h-14 rounded-full flex items-center justify-center text-white shadow-lg hover:shadow-xl transition-all transform hover:scale-110`}
-                  aria-label={action.label}
+                <span
+                  className={clsx(
+                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-lg transition-transform active:scale-95',
+                    action.color
+                  )}
+                  aria-hidden
                 >
-                  <Icon className="w-6 h-6" />
-                </button>
-              </Link>
+                  <Icon className="h-5 w-5" />
+                </span>
+              </button>
             );
           })}
         </div>
       )}
 
-      {/* Main Toggle Button */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-lg hover:shadow-xl transition-all transform ${
-          isOpen ? 'bg-red-500 hover:bg-red-600 rotate-45' : 'bg-primary-500 hover:bg-primary-600 rotate-0'
-        }`}
-        aria-label={isOpen ? 'Close actions' : 'Open quick actions'}
-      >
-        {isOpen ? (
-          <X className="w-7 h-7" />
-        ) : (
-          <Plus className="w-7 h-7" />
+        className={clsx(
+          'flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition-all active:scale-95',
+          isOpen ? 'bg-red-600' : 'bg-primary-500'
         )}
+        aria-label={isOpen ? 'Close quick actions' : 'Quick actions'}
+        aria-expanded={isOpen}
+      >
+        {isOpen ? <X className="h-7 w-7" /> : <Plus className="h-7 w-7" />}
       </button>
     </div>
   );

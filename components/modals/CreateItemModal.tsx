@@ -66,6 +66,7 @@ export function CreateItemModal({
   const [barcodeValid, setBarcodeValid] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -86,6 +87,7 @@ export function CreateItemModal({
     opening_stock: '',
     min_stock: '',
     description: '',
+    category_id: '',
     default_supplier_id: '',
     image_url: '',
     gst_included: false,
@@ -116,6 +118,7 @@ export function CreateItemModal({
         opening_stock: '',
         min_stock: '',
         description: '',
+        category_id: '',
         default_supplier_id: '',
         image_url: '',
         gst_included: false,
@@ -130,6 +133,12 @@ export function CreateItemModal({
       // Load suppliers
       if (business?.id) {
         fetchSuppliers();
+        if (user?.id) {
+          fetch(`/api/categories?business_id=${business.id}&user_id=${user.id}`)
+            .then((res) => res.json())
+            .then((data) => setCategories(data.categories || []))
+            .catch(() => setCategories([]));
+        }
         
         // Check subscription limits ONCE when modal opens
         if (!hasCheckedLimitsRef.current) {
@@ -266,6 +275,7 @@ export function CreateItemModal({
         hsn_sac: formData.hsn_sac || null,
         min_stock: formData.item_type === 'service' ? 0 : (Number(formData.min_stock) || 0),
         description: formData.description || null,
+        category_id: formData.category_id || null,
         default_supplier_id: formData.default_supplier_id || null,
         image_url: formData.image_url,
         has_variants: false,
@@ -400,6 +410,25 @@ export function CreateItemModal({
 
               <div className="md:col-span-2">
                 <Input label="Item Name" name="name" value={formData.name} onChange={handleChange} required placeholder="e.g. Parle-G Biscuit" />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-secondary mb-1">
+                  Category (optional)
+                </label>
+                <select
+                  name="category_id"
+                  value={formData.category_id}
+                  onChange={handleChange}
+                  className="input w-full"
+                >
+                  <option value="">No category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               
               <Input label="Item Code (Optional)" name="code" value={formData.code} onChange={handleChange} placeholder="P001" />

@@ -4,11 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, Download, Calendar } from 'lucide-react';
+import { Loader2, Download, Calendar } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { format } from 'date-fns';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 interface ReconciliationEntry {
   id: string;
@@ -40,6 +41,10 @@ export default function AccountReconciliationPage() {
   const [entries, setEntries] = useState<ReconciliationEntry[]>([]);
   const [summary, setSummary] = useState<ReconciliationSummary | null>(null);
   const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useMobileHeaderTitleOverride(
+    account?.account_name ? `${account.account_name} — Reconciliation` : null
+  );
 
   useEffect(() => {
     if (accountId && business?.id) {
@@ -81,26 +86,18 @@ export default function AccountReconciliationPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href={`/accounts/${accountId}`}>
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Account
-            </Button>
-          </Link>
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title="Account reconciliation"
+          description={
+            account
+              ? `${account.account_name} (${account.account_code})`
+              : undefined
+          }
+        />
 
         <Card>
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">
-                Account Reconciliation
-              </h1>
-              <p className="text-sm text-text-secondary mt-1">
-                {account?.account_name} ({account?.account_code})
-              </p>
-            </div>
-
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-text-secondary" />

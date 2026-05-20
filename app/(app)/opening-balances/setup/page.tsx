@@ -10,8 +10,8 @@ import { ArrowLeft, Loader2, ArrowRight, ArrowLeft as ArrowLeftIcon, Check } fro
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Account, Customer, Supplier } from '@/types/database';
-import Link from 'next/link';
 import { format } from 'date-fns';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 
 interface OpeningBalance {
   entity_type: 'account' | 'customer' | 'supplier';
@@ -452,16 +452,10 @@ export default function OpeningBalanceSetupPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href="/accounts">
-            <Button variant="ghost" size="sm">
-              <ArrowLeftIcon className="w-4 h-4 mr-2" />
-              Back to Accounts
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold text-text-primary">Opening Balance Setup</h1>
-          <div></div>
-        </div>
+        <MobileDuplicatePageChrome
+          title="Opening balance setup"
+          description="Enter opening balances for accounts, parties, and suppliers"
+        />
 
         <Card>
           {/* Step Indicator */}

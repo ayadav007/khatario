@@ -4,8 +4,9 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Building2, Loader2, Search, Store } from 'lucide-react';
+import { Building2, Loader2, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { Button } from '@/components/ui/Button';
@@ -82,24 +83,10 @@ export default function SuppliersHubPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <Link href="/suppliers">
-        <Button variant="ghost" size="sm">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Suppliers
-        </Button>
-      </Link>
-
-      <div className="flex items-start gap-3">
-        <div className="p-3 bg-slate-50 rounded-xl">
-          <Store className="w-7 h-7 text-primary-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Suppliers Hub</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Discover businesses that opted in to the directory. Request a connection before trading.
-          </p>
-        </div>
-      </div>
+      <ListPageHeader
+        title="Suppliers hub"
+        description="Discover businesses that opted in to the directory. Request a connection before trading."
+      />
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />

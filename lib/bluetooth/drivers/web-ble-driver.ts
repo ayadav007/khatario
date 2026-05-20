@@ -247,7 +247,7 @@ export class WebBleDriver implements BluetoothPrinterDriver {
 
     if (!device) {
       throw new Error(
-        'Printer is not authorized in this browser session. Open Settings → Bluetooth Printer and pair it again.'
+        'Printer is not authorized in this browser session. Open Settings → Print & devices and pair it again.'
       );
     }
 

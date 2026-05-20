@@ -3,6 +3,8 @@ import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import * as db from '@/lib/db';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
+import { finalizePrintHtml } from '@/lib/pdf-generator';
+import { injectThermalScreenPreviewCss } from '@/lib/thermal-preview';
 
 export async function POST(request: NextRequest) {
   try {
@@ -205,10 +207,13 @@ export async function POST(request: NextRequest) {
     try {
       const renderer = new InvoiceRenderer();
       let html = await renderer.renderHtml(templateId, renderData);
-      if (data.business?.id) {
-        const { maybeAppendKhatarioPrintFooter } = await import('@/lib/print-branding');
-        html = await maybeAppendKhatarioPrintFooter(html, data.business.id);
-      }
+      html = await finalizePrintHtml(
+        html,
+        templateId,
+        finalSettings,
+        data.business?.id || ''
+      );
+      html = injectThermalScreenPreviewCss(html, templateId);
 
       // Return template info for debugging
       return NextResponse.json({ 

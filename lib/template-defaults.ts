@@ -54,6 +54,8 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     defaultTableHeaderColor = '#4A90E2';
   }
 
+  const isThermal = templateId === 'thermal_58mm' || templateId === 'thermal_80mm';
+
   return {
     template_id: templateId,
     
@@ -88,7 +90,7 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     
     // Party Information - Standard fields shown
     show_bill_to: true,
-    show_ship_to: isExportTemplate ? true : false, // Export invoices should show ship_to by default
+    show_ship_to: isExportTemplate ? true : isThermal ? false : false,
     show_customer_name: true,
     show_customer_address: true,
     show_customer_phone: false,
@@ -103,15 +105,15 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     show_customer_balance: false, // Customer outstanding balance (disabled by default)
     
     // Items Table Columns - Essential columns shown
-    show_serial_number: true,
+    show_serial_number: !isThermal,
     show_item_name: true,
-    show_hsn: true,
+    show_hsn: !isThermal,
     show_unit: true,
     show_quantity: true,
     show_rate: true,
     show_discount_percent: false,
-    show_discount_amount: true,
-    show_tax_rate: true,
+    show_discount_amount: !isThermal,
+    show_tax_rate: !isThermal,
     show_tax_amount: true,
     show_line_total: true,
     show_item_image: false,

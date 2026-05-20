@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Handlebars from 'handlebars';
 import { Invoice, Business, Customer } from '@/types/database';
+import { registerInvoiceHandlebarsPartials } from './handlebars-invoice-partials';
 
 // Define types for data injection
 interface RenderData {
@@ -21,6 +22,7 @@ export class InvoiceRenderer {
   constructor() {
     this.templateDir = path.join(process.cwd(), 'templates');
     this.registerHelpers();
+    registerInvoiceHandlebarsPartials();
   }
 
   private registerHelpers() {
@@ -150,18 +152,17 @@ export class InvoiceRenderer {
       return Math.max(0, a - b);
     });
 
-    // Helper for logical OR
-    Handlebars.registerHelper('or', function(this: any, ...args: any[]) {
-      // Remove the last argument (options object)
+    // Block helpers — must call options.fn/inverse, not return bare boolean
+    Handlebars.registerHelper('or', function (this: unknown, ...args: unknown[]) {
+      const options = args[args.length - 1] as Handlebars.HelperOptions;
       const values = args.slice(0, -1);
-      return values.some(v => v);
+      return values.some((v) => !!v) ? options.fn(this) : options.inverse(this);
     });
 
-    // Helper for logical AND
-    Handlebars.registerHelper('and', function(this: any, ...args: any[]) {
-      // Remove the last argument (options object)
+    Handlebars.registerHelper('and', function (this: unknown, ...args: unknown[]) {
+      const options = args[args.length - 1] as Handlebars.HelperOptions;
       const values = args.slice(0, -1);
-      return values.every(v => v);
+      return values.every((v) => !!v) ? options.fn(this) : options.inverse(this);
     });
 
     // Helper to calculate dynamic colspan for item table totals

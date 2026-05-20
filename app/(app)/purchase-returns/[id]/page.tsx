@@ -5,9 +5,11 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { format } from 'date-fns';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { Card } from '@/components/ui/Card';
@@ -78,6 +80,8 @@ export default function PurchaseReturnDetailPage() {
   });
 
   const [data, setData] = useState<PurchaseReturnDetail | null>(null);
+
+  useMobileHeaderTitleOverride(data?.return_number);
   const [loading, setLoading] = useState(true);
   const [savingRefund, setSavingRefund] = useState(false);
   const [refundForm, setRefundForm] = useState({
@@ -197,26 +201,24 @@ export default function PurchaseReturnDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/purchase-returns')}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">{data.return_number}</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              {data.supplier_name || 'Supplier'}
-              <span className="mx-2">·</span>
-              {format(new Date(data.return_date), 'dd MMM yyyy')}
-            </p>
-          </div>
-        </div>
-        <span
-          className={`px-3 py-1 text-sm font-medium rounded-full border capitalize ${statusClass(data.refund_status)}`}
-        >
-          {data.refund_status}
-        </span>
-      </div>
+      <MobileDuplicatePageChrome
+        className="mb-0"
+        title={data.return_number}
+        description={
+          <>
+            {data.supplier_name || 'Supplier'}
+            <span className="mx-2">·</span>
+            {format(new Date(data.return_date), 'dd MMM yyyy')}
+          </>
+        }
+        trailing={
+          <span
+            className={`px-3 py-1 text-sm font-medium rounded-full border capitalize ${statusClass(data.refund_status)}`}
+          >
+            {data.refund_status}
+          </span>
+        }
+      />
 
       <Card padding="md">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

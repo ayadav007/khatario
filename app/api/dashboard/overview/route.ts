@@ -393,7 +393,7 @@ export async function GET(request: NextRequest) {
     const [recentInvoices, lowStockItems, overdueInvoices, dueTomorrow, dueIn3Days, draftCountRow] =
       await Promise.all([
       queryRows(
-        `SELECT i.*, c.name as customer_name 
+        `SELECT i.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone
          FROM invoices i
          LEFT JOIN customers c ON i.customer_id = c.id AND c.deleted_at IS NULL
          WHERE i.business_id = $1

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { format } from 'date-fns';
 
 interface Adjustment {
@@ -79,6 +81,8 @@ export default function AdjustmentDetailPage() {
     }
   };
 
+  useMobileHeaderTitleOverride(adjustment?.adjustment_number);
+
   const reasonCodeLabels: Record<string, string> = {
     STOCK_TAKE: 'Stock Take',
     DAMAGE: 'Damage',
@@ -117,25 +121,11 @@ export default function AdjustmentDetailPage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{adjustment.adjustment_number}</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                {format(new Date(adjustment.adjustment_date), 'dd MMMM yyyy')}
-              </p>
-            </div>
-          </div>
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={adjustment.adjustment_number}
+          description={format(new Date(adjustment.adjustment_date), 'dd MMMM yyyy')}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Details */}

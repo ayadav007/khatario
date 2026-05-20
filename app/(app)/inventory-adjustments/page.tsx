@@ -11,6 +11,7 @@ import { Plus, Search, Filter, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 
 interface Adjustment {
   id: string;
@@ -142,19 +143,18 @@ export default function InventoryAdjustmentsPage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inventory Adjustments</h1>
-            <p className="text-sm text-gray-600 mt-1">Manage quantity and value adjustments</p>
-          </div>
-          <Link href="/inventory-adjustments/new">
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              New Adjustment
-            </Button>
-          </Link>
-        </div>
+        <ListPageHeader
+          title="Adjustments"
+          description="Manage quantity and value adjustments"
+          actions={
+            <Link href="/inventory-adjustments/new">
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                New Adjustment
+              </Button>
+            </Link>
+          }
+        />
 
         {/* Filters */}
         <Card>

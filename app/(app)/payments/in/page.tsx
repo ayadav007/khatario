@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Plus, Search, Calendar, User, ArrowLeft, Printer, Loader2, Download } from 'lucide-react';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { PaymentDetailPanel } from '@/components/payments/PaymentDetailPanel';
 import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
@@ -327,31 +328,18 @@ export default function PaymentInPage() {
   return (
     
       <div className="space-y-6 pb-4">
-        {/* Header: Back only on md+ (mobile uses bottom nav / system back) */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3 min-w-0">
-            <Button
-              variant="ghost"
-              className="hidden md:inline-flex shrink-0 -ml-2"
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-text-primary">Payment In</h1>
-              <p className="text-text-secondary text-sm mt-1">
-                Money received from customers — with or without a specific invoice.
-              </p>
-            </div>
-          </div>
-          {!showForm && (
-            <Button className="w-full sm:w-auto shrink-0" onClick={() => setShowForm(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Record payment
-            </Button>
-          )}
-        </div>
+        <ListPageHeader
+          title="Payment in"
+          description="Money received from customers — with or without a specific invoice."
+          actions={
+            !showForm ? (
+              <Button className="w-full sm:w-auto shrink-0" onClick={() => setShowForm(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Record payment
+              </Button>
+            ) : undefined
+          }
+        />
 
         {/* Payment Form */}
         {showForm && (

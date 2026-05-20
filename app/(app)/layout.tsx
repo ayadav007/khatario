@@ -20,6 +20,7 @@ import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
+import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 
 /**
  * Persistent layout for main app routes
@@ -74,6 +75,7 @@ function AppRouteLayoutInner({
     return (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <MobileBackNavigation />
         <div className="h-screen w-screen overflow-hidden bg-background">
           <DynamicTitle />
           <main className="h-full w-full">
@@ -89,6 +91,7 @@ function AppRouteLayoutInner({
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <MobileBackNavigation />
         <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
           <DynamicTitle />
           <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
@@ -100,7 +103,11 @@ function AppRouteLayoutInner({
               sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
             )}
           >
-            {!isFullWidthPage && <TopBar showDateRange={showDateRange} />}
+            {!isFullWidthPage && (
+              <Suspense fallback={null}>
+                <TopBar showDateRange={showDateRange} />
+              </Suspense>
+            )}
             {!isFullWidthPage && <SubscriptionBanner />}
             {!isFullWidthPage && <ShellVersionBanner />}
             {!isFullWidthPage && <ProfileCompletionBanner />}

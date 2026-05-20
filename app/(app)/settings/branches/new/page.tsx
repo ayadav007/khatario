@@ -11,8 +11,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
@@ -147,19 +147,10 @@ export default function NewBranchPage() {
 
   return (
     <FormPageContainer className="py-6 space-y-6">
-        <div className="mb-2">
-          <Link
-            href="/settings/branches"
-            className="inline-flex items-center space-x-2 text-text-secondary hover:text-text-primary mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Branches</span>
-          </Link>
-          <h1 className="text-2xl font-bold text-text-primary">Create New Branch</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Add a new branch office for accounting and compliance purposes
-          </p>
-        </div>
+        <MobileDuplicatePageChrome
+          title="Create branch"
+          description="Add a new branch office for accounting and compliance purposes"
+        />
 
         <FormCard>
         <form onSubmit={handleSubmit}>

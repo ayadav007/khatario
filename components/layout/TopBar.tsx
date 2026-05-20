@@ -15,17 +15,25 @@ import {
   Tags,
   Warehouse,
   MessageSquare,
+  ArrowLeft,
+  Plus,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { SubscriptionBadge } from './SubscriptionBadge';
 
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { getMobileRouteTitle } from '@/lib/mobile-route-title';
+import {
+  getMobileBackHref,
+  getMobileListCreateAction,
+  isMobileNestedRoute,
+} from '@/lib/mobile-navigation';
 import {
   getMobileQuickSettings,
   type MobileQuickSettingsKind,
 } from '@/lib/mobile-quick-settings';
+import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
 import { useMobileHeaderTitleContext } from '@/contexts/MobileHeaderTitleContext';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
@@ -303,6 +311,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [dateRange, setDateRange] = useState<string>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -310,6 +319,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(undefined);
   const [userRole, setUserRole] = useState<string>('');
+  const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const branchSelectorRefMobile = useRef<HTMLDivElement>(null);
   const branchSelectorRefDesktop = useRef<HTMLDivElement>(null);
@@ -334,10 +344,13 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const displayBusinessName = businessName || business?.name || 'My Business';
   const mobileHeaderCtx = useMobileHeaderTitleContext();
-  const mobileRouteTitle = getMobileRouteTitle(pathname);
+  const mobileRouteTitle = getMobileRouteTitle(pathname, searchParams);
   const mobileCenterLabel =
     mobileHeaderCtx?.overrideTitle ?? mobileRouteTitle ?? displayBusinessName;
   const mobileQuickSettings = getMobileQuickSettings(pathname);
+  const showMobileBack = isMobileNestedRoute(pathname);
+  const mobileBackHref = getMobileBackHref(pathname);
+  const mobileListCreate = getMobileListCreateAction(pathname);
 
   useEffect(() => {
     if (!showDateRange) return;
@@ -438,17 +451,28 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Mobile: canonical chrome — brand | business name | notifications + settings */}
       <div className="sticky top-0 z-40 bg-surface pt-[env(safe-area-inset-top,0px)] lg:hidden">
         <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-          <Link
-            href="/dashboard"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
-            aria-label="Home"
-          >
-            {business?.logo_url ? (
-              <img src={business.logo_url} alt="" className="h-8 w-8 object-contain" />
-            ) : (
-              <FileText className="h-6 w-6" />
-            )}
-          </Link>
+          {showMobileBack ? (
+            <button
+              type="button"
+              onClick={() => router.push(mobileBackHref)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </button>
+          ) : (
+            <Link
+              href="/dashboard"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
+              aria-label="Home"
+            >
+              {business?.logo_url ? (
+                <img src={business.logo_url} alt="" className="h-8 w-8 object-contain" />
+              ) : (
+                <FileText className="h-6 w-6" />
+              )}
+            </Link>
+          )}
           <p
             className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-text-primary"
             title={mobileCenterLabel}
@@ -457,15 +481,37 @@ export const TopBar: React.FC<TopBarProps> = ({
           </p>
           <div className="flex shrink-0 items-center gap-1">
             {mobileHeaderCtx?.rightAccessory}
+            {mobileListCreate ? (
+              <Link
+                href={mobileListCreate.href}
+                className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
+                aria-label={mobileListCreate.ariaLabel}
+                title={mobileListCreate.ariaLabel}
+              >
+                <Plus className="h-5 w-5" />
+              </Link>
+            ) : null}
             {business?.id && <NotificationCenter businessId={business.id} />}
-            <Link
-              href={mobileQuickSettings.href}
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-              aria-label={mobileQuickSettings.ariaLabel}
-              title={mobileQuickSettings.ariaLabel}
-            >
-              <MobileQuickSettingsIcon kind={mobileQuickSettings.kind} />
-            </Link>
+            {mobileQuickSettings.moduleMenu ? (
+              <button
+                type="button"
+                onClick={() => setModuleSettingsOpen(true)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-label={mobileQuickSettings.ariaLabel}
+                title={mobileQuickSettings.ariaLabel}
+              >
+                <MobileQuickSettingsIcon kind={mobileQuickSettings.kind} />
+              </button>
+            ) : (
+              <Link
+                href={mobileQuickSettings.href}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-label={mobileQuickSettings.ariaLabel}
+                title={mobileQuickSettings.ariaLabel}
+              >
+                <MobileQuickSettingsIcon kind={mobileQuickSettings.kind} />
+              </Link>
+            )}
           </div>
         </div>
 
@@ -654,6 +700,14 @@ export const TopBar: React.FC<TopBarProps> = ({
           </div>
         </div>
       </header>
+
+      {mobileQuickSettings.moduleMenu ? (
+        <ModuleSettingsSheet
+          open={moduleSettingsOpen}
+          onClose={() => setModuleSettingsOpen(false)}
+          menu={mobileQuickSettings.moduleMenu}
+        />
+      ) : null}
     </>
   );
 };

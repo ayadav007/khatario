@@ -3,7 +3,10 @@
  */
 
 export const PRINTER_BLE_SUPPORT_SUMMARY =
-  'Bluetooth printing currently supports BLE-compatible printers. Classic Bluetooth (SPP-only) printers are not yet supported.';
+  'Bluetooth printing supports Classic Bluetooth (SPP) thermal printers in the Android app. BLE-only printers can use advanced pairing below.';
+
+export const PRINTER_THERMAL_CLASSIC_NOTE =
+  'Pair your printer in phone Settings → Bluetooth, then tap Connect device here.';
 
 export const PRINTER_ANDROID_APP_NOTE =
   'For reliable Bluetooth printing on Android, use the Khatario Android app. Browser/PWA support depends on Chrome and BLE-capable printers.';

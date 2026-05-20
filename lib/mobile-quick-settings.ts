@@ -1,87 +1,37 @@
 /**
- * Mobile top bar: right-hand “quick settings” target should match the current
- * section (invoice → print/templates, items → labels, etc.), not always generic Settings.
+ * Mobile top bar: contextual settings (sheet) or fallback Settings hub link.
  */
-export type MobileQuickSettingsKind =
-  | 'app'
-  | 'invoice_print'
-  | 'items_labels'
-  | 'organization'
-  | 'warehouses'
-  | 'whatsapp';
+
+import {
+  getModuleSettingsMenu,
+  type ModuleSettingsIconKind,
+  type ModuleSettingsMenu,
+} from '@/lib/module-settings';
+
+export type MobileQuickSettingsKind = ModuleSettingsIconKind;
 
 export function getMobileQuickSettings(pathname: string | null): {
   href: string;
   ariaLabel: string;
   kind: MobileQuickSettingsKind;
+  /** When set, TopBar opens a module settings sheet instead of navigating directly. */
+  moduleMenu: ModuleSettingsMenu | null;
 } {
-  if (!pathname) {
-    return { href: '/settings', ariaLabel: 'Settings', kind: 'app' };
-  }
-  const p = pathname.replace(/\/$/, '') || '/';
+  const menu = getModuleSettingsMenu(pathname);
 
-  if (p.startsWith('/settings')) {
-    return { href: '/settings', ariaLabel: 'Settings', kind: 'app' };
-  }
-
-  if (p.startsWith('/whatsapp')) {
+  if (menu) {
     return {
-      href: '/settings/whatsapp',
-      ariaLabel: 'WhatsApp settings',
-      kind: 'whatsapp',
+      href: menu.entries[0]?.href ?? '/settings',
+      ariaLabel: menu.ariaLabel,
+      kind: menu.iconKind,
+      moduleMenu: menu,
     };
   }
 
-  if (
-    p.startsWith('/invoices') ||
-    p.startsWith('/sales-orders') ||
-    p.startsWith('/credit-notes') ||
-    p.startsWith('/debit-notes') ||
-    p.startsWith('/estimates') ||
-    p.startsWith('/delivery-challans')
-  ) {
-    return {
-      href: '/settings/templates',
-      ariaLabel: 'Invoice templates and printing',
-      kind: 'invoice_print',
-    };
-  }
-
-  if (p.startsWith('/items')) {
-    return {
-      href: '/settings/label-templates',
-      ariaLabel: 'Label templates',
-      kind: 'items_labels',
-    };
-  }
-
-  if (p.startsWith('/customers') || p.startsWith('/suppliers')) {
-    return {
-      href: '/settings/business',
-      ariaLabel: 'Business profile',
-      kind: 'organization',
-    };
-  }
-
-  if (
-    p.startsWith('/purchases') ||
-    p.startsWith('/stock-transfers') ||
-    p.startsWith('/inventory-adjustments')
-  ) {
-    return {
-      href: '/settings/warehouses',
-      ariaLabel: 'Warehouses and locations',
-      kind: 'warehouses',
-    };
-  }
-
-  if (p.startsWith('/employees')) {
-    return { href: '/settings/users', ariaLabel: 'Users and access', kind: 'organization' };
-  }
-
-  if (p.startsWith('/reports')) {
-    return { href: '/settings', ariaLabel: 'Settings', kind: 'app' };
-  }
-
-  return { href: '/settings', ariaLabel: 'Settings', kind: 'app' };
+  return {
+    href: '/settings',
+    ariaLabel: 'Settings',
+    kind: 'app',
+    moduleMenu: null,
+  };
 }

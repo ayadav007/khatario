@@ -11,7 +11,10 @@
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.1.3",
     "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.3.1",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-dropdown-menu": "^2.0.6",
     "@radix-ui/react-select": "^2.0.0",
@@ -96,7 +99,7 @@
     "start:lan": "cross-env HOST=0.0.0.0 node server.js --production",
     "start:http": "next start",
     "lint": "next lint",
-    "check": "npm run check:ui-primary",
+    "check": "npm run check:ui-primary && npm run check:mobile-chrome",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -132,6 +135,7 @@
     "cap:add:android": "cap add android",
     "audit:mobile-ux": "node scripts/mobile-ux-page-audit.cjs",
     "check:ui-primary": "node scripts/check-raw-primary-ui.mjs",
+    "check:mobile-chrome": "node scripts/check-mobile-page-chrome.mjs",
     "migrate:ui-primary-bg": "node scripts/migrate-primary-backgrounds.mjs",
     "migrate:ui-primary-gradients": "node scripts/migrate-primary-gradients.mjs"
   }

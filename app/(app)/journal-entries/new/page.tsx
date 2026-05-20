@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, Plus, X, AlertCircle } from 'lucide-react';
+import { Loader2, Plus, X, AlertCircle } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -354,16 +355,13 @@ export default function NewJournalEntryPage() {
   return (
     
       <div className="space-y-6">
-        <Link href="/journal-entries">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Journal Entries
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title="New journal entry"
+          description="Record debits and credits"
+        />
 
         <Card padding="md">
-          <h1 className="text-2xl font-bold text-text-primary mb-6">New Journal Entry</h1>
-
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Template Selection */}
             <div>

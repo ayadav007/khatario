@@ -545,20 +545,21 @@ function InvoicesPageContent() {
         <ListPageHeader
           title="Invoices"
           description="Create and manage your invoices"
+          showActionsOnMobile
           actions={
             <>
               <button
                 onClick={() => setShowMobileSearch(true)}
-                className="p-2 bg-white border border-gray-200 rounded-lg md:hidden text-text-secondary"
+                className="p-2 bg-white border border-border rounded-lg md:hidden text-text-secondary"
                 type="button"
                 aria-label="Filters"
               >
                 <Filter className="w-5 h-5" />
               </button>
-              <Link href="/invoices/new">
+              <Link href="/invoices/new" className="hidden md:inline-flex">
                 <Button className="h-10 px-4">
-                  <Plus className="w-4 h-4 md:mr-2" />
-                  <span className="hidden md:inline">New Invoice</span>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Invoice
                 </Button>
               </Link>
             </>

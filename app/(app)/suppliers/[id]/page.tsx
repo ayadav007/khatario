@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { ArrowLeft, MessageCircle, FileText, Loader2, Edit } from 'lucide-react';
+import { MessageCircle, FileText, Loader2, Edit } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
@@ -15,6 +15,8 @@ import { useEntityRecord } from '@/hooks/useEntityRecord';
 import { useToastContext } from '@/contexts/ToastContext';
 import { supplierBalanceCardTitle } from '@/lib/party-balance-ui';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 interface Supplier {
   id: string;
@@ -66,6 +68,8 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
     responseKey: 'supplier',
   });
 
+  useMobileHeaderTitleOverride(supplier?.name);
+
   useEffect(() => {
     if (!params.id) return;
     fetch(`/api/suppliers/${params.id}?user_id=${user?.id}`)
@@ -101,19 +105,17 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
   return (
     
       <div className="space-y-6">
-        {/* Back Button */}
-        <Link href="/suppliers">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Suppliers
-          </Button>
-        </Link>
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={supplier.name}
+          description={supplier.phone || undefined}
+        />
 
         {/* Supplier Header */}
         <Card padding="md">
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-text-primary mb-2">{supplier.name}</h1>
+              <h2 className="text-xl font-bold text-text-primary mb-2 hidden md:block">{supplier.name}</h2>
               {supplier.phone && (
                 <p className="text-text-secondary flex items-center gap-2">
                   <span>{supplier.phone}</span>

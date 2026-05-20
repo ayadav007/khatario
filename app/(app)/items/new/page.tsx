@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { FormSection } from '@/components/ui/FormSection';
 import { Input } from '@/components/ui/Input';
@@ -19,12 +20,24 @@ import { validateBarcode, normalizeBarcode, detectBarcodeType, generateRandomBar
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { Item } from '@/types/database';
+import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import {
+  useCustomFieldDefinitions,
+  parseItemCustomFieldsFromApi,
+} from '@/components/custom-fields/CustomFieldsManager';
+import type { CustomFieldValues } from '@/types/custom-fields';
 
 interface Supplier {
   id: string;
   name: string;
   phone?: string;
   email?: string;
+}
+
+interface ItemCategory {
+  id: string;
+  name: string;
 }
 
 export default function NewItemPage() {
@@ -39,6 +52,7 @@ export default function NewItemPage() {
   const [loading, setLoading] = useState(false);
   const [loadingItem, setLoadingItem] = useState(isEditMode);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -60,6 +74,7 @@ export default function NewItemPage() {
     opening_stock: '',
     min_stock: '',
     description: '',
+    category_id: '',
     default_supplier_id: '',
     image_url: '',
     has_variants: false,
@@ -81,6 +96,8 @@ export default function NewItemPage() {
   });
 
   const [businessDefaultAllowOversell, setBusinessDefaultAllowOversell] = useState(false);
+  const { definitions: itemCustomFieldDefs } = useCustomFieldDefinitions('item');
+  const [itemCustomFieldValues, setItemCustomFieldValues] = useState<CustomFieldValues>({});
 
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [barcodeValid, setBarcodeValid] = useState(false);
@@ -273,6 +290,9 @@ export default function NewItemPage() {
   useEffect(() => {
     if (business?.id) {
       fetchSuppliers();
+      if (user?.id) {
+        fetchCategories();
+      }
 
       fetch(`/api/settings/item-sales-stock?business_id=${business.id}`)
         .then((res) => res.json())
@@ -310,7 +330,7 @@ export default function NewItemPage() {
         checkLimits();
       }
     }
-  }, [business, isEditMode]);
+  }, [business, isEditMode, user?.id]);
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;
@@ -343,6 +363,19 @@ export default function NewItemPage() {
     }
   }
 
+  async function fetchCategories() {
+    if (!business?.id || !user?.id) return;
+    try {
+      const response = await fetch(
+        `/api/categories?business_id=${business.id}&user_id=${user.id}`
+      );
+      const data = await response.json();
+      setCategories(data.categories || []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  }
+
   // Load item data if editing
   useEffect(() => {
     if (isEditMode && editId && business?.id) {
@@ -355,6 +388,8 @@ export default function NewItemPage() {
             const item = data.item;
             const loadedVariants = data.variants || [];
             
+            setItemCustomFieldValues(parseItemCustomFieldsFromApi(item));
+
             setFormData({
               name: item.name || '',
               code: item.code || '',
@@ -369,6 +404,7 @@ export default function NewItemPage() {
               opening_stock: item.current_stock?.toString() || '',
               min_stock: item.min_stock?.toString() || '',
               description: item.description || '',
+              category_id: item.category_id || '',
               default_supplier_id: item.default_supplier_id || '',
               image_url: item.image_url || '',
               has_variants: item.has_variants || false,
@@ -711,6 +747,7 @@ export default function NewItemPage() {
         hsn_sac: formData.hsn_sac || null,
         min_stock: (formData.item_type === 'service' || formData.has_variants || formData.is_bundle) ? 0 : (Number(formData.min_stock) || 0),
         description: formData.description || null,
+        category_id: formData.category_id || null,
         default_supplier_id: formData.default_supplier_id || null,
         image_url: formData.image_url,
         has_variants: formData.has_variants && !goodsBundle,
@@ -730,6 +767,7 @@ export default function NewItemPage() {
 
       const payload: Record<string, unknown> = {
         ...basePayload,
+        custom_fields: itemCustomFieldValues,
         business_id: business.id,
         created_by: user?.id, // Required for authorization
         opening_stock: (formData.item_type === 'service' || formData.has_variants || formData.is_bundle) ? 0 : (Number(formData.opening_stock) || 0),
@@ -746,6 +784,7 @@ export default function NewItemPage() {
 
       const patchPayload: Record<string, unknown> = {
         ...basePayload,
+        custom_fields: itemCustomFieldValues,
         updated_by: user?.id,
         opening_stock: (formData.item_type === 'service' || formData.has_variants || formData.is_bundle) ? 0 : (Number(formData.opening_stock) || 0),
         variants: formData.has_variants && !formData.is_bundle ? variants : [],
@@ -894,11 +933,10 @@ export default function NewItemPage() {
   return (
     <>
     <div className="w-full min-w-0 max-w-none">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-text-primary">
-            {isEditMode ? 'Edit Item' : 'Add New Item'}
-          </h1>
-        </div>
+        <MobileDuplicatePageChrome
+          className="mb-0 md:mb-6"
+          title={isEditMode ? 'Edit item' : 'Create item'}
+        />
 
         <Card className="p-6 sm:p-8 lg:p-10">
           {loadingItem ? (
@@ -959,6 +997,29 @@ export default function NewItemPage() {
                       required
                       placeholder="e.g. Parle-G Biscuit"
                     />
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        Category (optional)
+                      </label>
+                      <select
+                        name="category_id"
+                        value={formData.category_id}
+                        onChange={handleChange}
+                        className="input w-full max-w-md"
+                      >
+                        <option value="">No category</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-text-muted mt-1">
+                        <Link href="/items/categories" className="link-primary">
+                          Manage categories
+                        </Link>
+                      </p>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
                       <div className="lg:col-span-4">
                         <Input
@@ -1453,6 +1514,19 @@ export default function NewItemPage() {
                       )}
                     </div>
                   </div>
+                </FormSection>
+              )}
+
+              {itemCustomFieldDefs.length > 0 && (
+                <FormSection
+                  title="Custom fields"
+                  description="Extra details for this item. Configure fields in Settings → Custom fields."
+                >
+                  <CustomFieldValuesForm
+                    definitions={itemCustomFieldDefs}
+                    values={itemCustomFieldValues}
+                    onChange={setItemCustomFieldValues}
+                  />
                 </FormSection>
               )}
 

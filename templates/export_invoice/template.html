@@ -442,6 +442,7 @@
             </div>
           {{/if}}
         {{/ifSetting}}
+        {{> custom-invoice-meta}}
       </div>
     </div>
     
@@ -682,7 +683,8 @@
         {{#each items}}
         <tr>
           <td class="text-center">{{this.index}}</td>
-          <td>{{this.item_name}}{{#if this.description}}<br><small style="color: #666;">{{this.description}}</small>{{/if}}</td>
+          <td>{{this.item_name}}
+              {{> custom-item-lines}}{{#if this.description}}<br><small style="color: #666;">{{this.description}}</small>{{/if}}</td>
           <td class="text-center">{{this.hsn_sac}}</td>
           <td class="text-center">{{this.quantity}}</td>
           <td class="text-right">{{formatCurrency this.unit_price}}</td>

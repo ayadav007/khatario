@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
 import { LandingFinalCta } from '@/components/marketing/landing/LandingFinalCta';
 import { LandingFooter } from '@/components/marketing/landing/LandingFooter';
@@ -19,13 +23,22 @@ import { LandingWhoItsFor } from '@/components/marketing/landing/LandingWhoItsFo
 import { LandingScrollTrialModal } from '@/components/marketing/landing/LandingScrollTrialModal';
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const [isNativeApp] = useState(() => isCapacitorNative());
   const [plans, setPlans] = useState<LandingPricingPlan[]>([]);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!isNativeApp || authLoading) return;
+    router.replace(user ? '/dashboard' : '/login');
+  }, [isNativeApp, authLoading, user, router]);
+
+  useEffect(() => {
+    if (isNativeApp) return;
     void fetchPlans();
-  }, []);
+  }, [isNativeApp]);
 
   async function fetchPlans() {
     try {
@@ -37,6 +50,14 @@ export default function LandingPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (isNativeApp) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" aria-label="Loading" />
+      </div>
+    );
   }
 
   return (

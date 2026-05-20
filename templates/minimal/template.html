@@ -78,6 +78,7 @@
         {{#ifSetting 'show_dispatched_through'}}{{#if invoice.dispatched_through}}<div>Dispatched Through: {{invoice.dispatched_through}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_destination'}}{{#if invoice.destination}}<div>Destination: {{invoice.destination}}</div>{{/if}}{{/ifSetting}}
         {{#ifSetting 'show_terms_of_delivery'}}{{#if invoice.terms_of_delivery}}<div>Terms of Delivery: {{invoice.terms_of_delivery}}</div>{{/if}}{{/ifSetting}}
+        {{> custom-invoice-meta}}
       </div>
     </div>
 
@@ -105,6 +106,7 @@
             <td>
               {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width:34px; height:34px; object-fit:cover; margin-right:6px; vertical-align:middle;" />{{/if}}{{/ifSetting}}
               <strong>{{this.item_name}}</strong>
+              {{> custom-item-lines}}
               {{#if this.variant_name}}<br><small style="color:#6b7280; font-weight: normal;">Variant: {{this.variant_name}}</small>{{/if}}
               {{#if this.variant_attributes}}<br><small style="color:#6b7280;">{{#each this.variant_attributes}}{{@key}}: {{this}}{{#unless @last}} | {{/unless}}{{/each}}</small>{{/if}}
               {{#if this.description}}<br><small style="color:#6b7280;">{{this.description}}</small>{{/if}}

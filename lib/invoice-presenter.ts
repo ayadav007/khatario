@@ -1,5 +1,7 @@
 import { getDocumentRule } from './invoice-config';
 import * as db from './db';
+import { enrichInvoiceRenderData } from './custom-fields-render';
+import { parseCustomFieldValues } from './custom-fields';
 
 interface RenderData {
   invoice: any;
@@ -278,9 +280,10 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   }));
 
   // 7. Final Data Assembly
-  return {
+  const assembled = {
     invoice: {
       ...invoice,
+      custom_fields: parseCustomFieldValues(rawInvoice.custom_fields),
       invoice_title: invoiceTitle,
       invoice_date: formatDate(invoice.invoice_date),
       due_date: (invoice.due_date || invoice.expected_delivery_date) ? formatDate(invoice.due_date || invoice.expected_delivery_date) : '',
@@ -344,7 +347,14 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       opening_balance: openingBalance.toFixed(2),
       balance_due: balanceDue.toFixed(2)
     },
-    items: processedItems,
-    settings: effectiveSettings || {}
+    items: processedItems.map((item: Record<string, unknown>) => ({
+      ...item,
+      item_custom_fields: parseCustomFieldValues(
+        item.item_custom_fields ?? item.custom_fields
+      ),
+    })),
+    settings: effectiveSettings || {},
   };
+
+  return enrichInvoiceRenderData(assembled);
 }

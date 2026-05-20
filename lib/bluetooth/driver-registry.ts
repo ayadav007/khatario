@@ -11,22 +11,12 @@ import type { BluetoothPrinterDriver, BluetoothDriverKind } from './types';
 import type { DriverDescriptor } from './drivers/registry-types';
 import { driverKindToTransport } from '@/lib/printer/capabilities';
 
+import { isCapacitorNative } from '@/lib/capacitor/platform';
+
+export { isCapacitorNative };
+
 let cached: BluetoothPrinterDriver | null = null;
 let cachedKind: BluetoothDriverKind | null = null;
-
-export function isCapacitorNative(): boolean {
-  if (typeof window === 'undefined') return false;
-  const cap = (window as any).Capacitor;
-  if (!cap) return false;
-  if (typeof cap.isNativePlatform === 'function') {
-    return !!cap.isNativePlatform();
-  }
-  if (typeof cap.getPlatform === 'function') {
-    const p = cap.getPlatform();
-    return p === 'android' || p === 'ios';
-  }
-  return false;
-}
 
 function hasWebBluetoothApi(): boolean {
   if (typeof window === 'undefined') return false;
@@ -35,6 +25,18 @@ function hasWebBluetoothApi(): boolean {
 }
 
 const DRIVER_DESCRIPTORS: DriverDescriptor[] = [
+  {
+    transport: 'android-spp',
+    priority: 5,
+    matchesRuntime: () => isCapacitorNative(),
+    load: async () => {
+      const mod = await import(
+        /* webpackChunkName: "capacitor-spp-driver" */
+        './drivers/capacitor-spp'
+      );
+      return mod.createCapacitorSppDriver();
+    },
+  },
   {
     transport: 'android-ble',
     priority: 10,
@@ -63,15 +65,6 @@ const DRIVER_DESCRIPTORS: DriverDescriptor[] = [
 
 /** Placeholders — not selected by getDriver(); exposed for diagnostics / future wiring. */
 const PLACEHOLDER_DESCRIPTORS: DriverDescriptor[] = [
-  {
-    transport: 'android-spp',
-    priority: 100,
-    matchesRuntime: () => isCapacitorNative(),
-    load: async () => {
-      const mod = await import('./drivers/capacitor-spp');
-      return mod.createCapacitorSppDriver();
-    },
-  },
   {
     transport: 'tcp',
     priority: 101,
@@ -104,9 +97,31 @@ export function isBluetoothSupported(): boolean {
 
 export function getActiveDriverKind(): BluetoothDriverKind | null {
   if (cachedKind) return cachedKind;
-  if (isCapacitorNative()) return 'capacitor-ble';
+  if (isCapacitorNative()) return 'capacitor-spp';
   if (hasWebBluetoothApi()) return 'web-ble';
   return null;
+}
+
+const driverCacheByKind = new Map<BluetoothDriverKind, BluetoothPrinterDriver>();
+
+/** Load driver for a saved printer record (SPP vs BLE). */
+export async function getDriverForPrinter(
+  printer: { driver: BluetoothDriverKind }
+): Promise<BluetoothPrinterDriver> {
+  const kind = printer.driver;
+  const existing = driverCacheByKind.get(kind);
+  if (existing) return existing;
+
+  const transport = driverKindToTransport(kind);
+  const desc = getImplementedDescriptors().find((d) => d.transport === transport);
+  if (desc && desc.matchesRuntime()) {
+    const driver = await desc.load();
+    if (driver.isSupported()) {
+      driverCacheByKind.set(kind, driver);
+      return driver;
+    }
+  }
+  return getDriver();
 }
 
 export function getActiveTransport(): PrinterTransport | null {
@@ -161,8 +176,12 @@ export function resetDriver(): void {
   if (cached) {
     cached.disconnect().catch(() => {});
   }
+  for (const d of driverCacheByKind.values()) {
+    d.disconnect().catch(() => {});
+  }
   cached = null;
   cachedKind = null;
+  driverCacheByKind.clear();
 }
 
 /** Summary for diagnostics UI. */

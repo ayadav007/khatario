@@ -1,10 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, type LegacyRef } from 'react';
+import Link from 'next/link';
 import { X, Save, RotateCcw, Palette, Type, Layout, FileText, Image as ImageIcon, Undo2, Redo2, Monitor, Smartphone, Loader2, Lock, Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { CustomFieldsTemplateLayout } from '@/components/custom-fields/CustomFieldsTemplateLayout';
+import {
+  getTemplatePreviewSpec,
+  type TemplatePreviewSpec,
+} from '@/lib/template-screen-preview';
 
 interface TemplateSettings {
   primary_color?: string;
@@ -18,6 +24,8 @@ interface TemplateSettings {
   margin_right?: number;
   margin_bottom?: number;
   margin_left?: number;
+  page_size?: string;
+  orientation?: string;
   show_logo?: boolean;
   show_business_name?: boolean;
   show_business_address?: boolean;
@@ -142,10 +150,12 @@ const DEFAULT_SETTINGS: TemplateSettings = {
   accent_color: '#FF6B6B',
   font_family: 'Inter',
   font_size: 12,
-  margin_top: 40,
-  margin_right: 40,
-  margin_bottom: 40,
-  margin_left: 40,
+  margin_top: 10,
+  margin_right: 10,
+  margin_bottom: 10,
+  margin_left: 10,
+  page_size: 'A4',
+  orientation: 'portrait',
   show_logo: true,
   show_business_name: true,
   show_business_address: true,
@@ -234,45 +244,91 @@ const TABS: { id: TabId; label: string; icon: any; free: boolean }[] = [
 const MAX_HISTORY = 40;
 
 /**
- * Width-based scaling: the iframe fills the available width like a real
- * sheet of paper, and the container scrolls vertically for long invoices.
+ * Preview at true paper width (A4/A5). The whole document is scaled down to fit
+ * the panel — same as a thumbnail. PDF/print still paginates; nothing is clipped.
  */
-function PreviewFrame({ iframeRef, previewMode, previewLoading, onLoad }: {
+function PreviewFrame({
+  iframeRef,
+  previewMode,
+  previewLoading,
+  previewSpec,
+  onLoad,
+}: {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   previewMode: 'desktop' | 'mobile';
   previewLoading: boolean;
+  previewSpec: TemplatePreviewSpec;
   onLoad: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.7);
+  const [contentH, setContentH] = useState(previewSpec.heightPx);
+  const [contentW, setContentW] = useState(previewSpec.widthPx);
 
-  const iframeW = previewMode === 'mobile' ? 375 : 1050;
-  const iframeH = 1485;
+  const iframeW =
+    previewMode === 'mobile'
+      ? Math.min(375, previewSpec.widthPx)
+      : previewSpec.widthPx;
+
+  useEffect(() => {
+    setContentH(previewSpec.heightPx);
+    setContentW(iframeW);
+  }, [previewSpec.heightPx, previewSpec.widthPx, previewLoading, iframeW]);
+
+  const measureContent = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument?.documentElement) return;
+    const doc = iframe.contentDocument;
+    const w = Math.max(
+      doc.documentElement.scrollWidth,
+      doc.body?.scrollWidth ?? 0,
+      iframeW
+    );
+    const h = Math.max(
+      doc.documentElement.scrollHeight,
+      doc.body?.scrollHeight ?? 0,
+      previewSpec.heightPx
+    );
+    setContentW(w);
+    setContentH(h + 8);
+  }, [iframeRef, iframeW, previewSpec.heightPx]);
+
+  const recomputeScale = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const { width: cw, height: ch } = el.getBoundingClientRect();
+    const padding = 40;
+    const sw = (cw - padding) / contentW;
+    const sh = (ch - padding) / contentH;
+    const s = Math.min(sw, sh, 1);
+    setScale(Math.max(0.28, s));
+  }, [contentW, contentH]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-
-    const compute = () => {
-      const { width: cw } = el.getBoundingClientRect();
-      const padding = 48;
-      const s = Math.min((cw - padding) / iframeW, 1);
-      setScale(Math.max(0.35, s));
-    };
-
-    compute();
-    const ro = new ResizeObserver(compute);
+    recomputeScale();
+    const ro = new ResizeObserver(recomputeScale);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [previewMode, iframeW]);
+  }, [previewMode, recomputeScale]);
 
-  const scaledW = iframeW * scale;
-  const scaledH = iframeH * scale;
+  const handleIframeLoad = () => {
+    measureContent();
+    requestAnimationFrame(() => {
+      measureContent();
+      recomputeScale();
+    });
+    onLoad();
+  };
+
+  const scaledW = contentW * scale;
+  const scaledH = contentH * scale;
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto overflow-x-hidden relative"
+      className="flex-1 overflow-hidden relative flex items-center justify-center"
       style={{ background: '#e5e7eb' }}
     >
       {previewLoading && (
@@ -281,7 +337,7 @@ function PreviewFrame({ iframeRef, previewMode, previewLoading, onLoad }: {
         </div>
       )}
       <div
-        className="mx-auto my-6"
+        className="shrink-0 overflow-hidden"
         style={{
           width: scaledW,
           height: scaledH,
@@ -290,15 +346,17 @@ function PreviewFrame({ iframeRef, previewMode, previewLoading, onLoad }: {
         <iframe
           ref={iframeRef as LegacyRef<HTMLIFrameElement>}
           className="border-0 bg-white rounded-lg"
+          scrolling="no"
           style={{
-            width: iframeW,
-            height: iframeH,
+            width: contentW,
+            height: contentH,
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
+            overflow: 'hidden',
             boxShadow: '0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)',
           }}
           title="Template Preview"
-          onLoad={onLoad}
+          onLoad={handleIframeLoad}
         />
       </div>
     </div>
@@ -387,9 +445,9 @@ export default function CustomizeTemplateDrawer({
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [uploadingSignature, setUploadingSignature] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
-  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const isThermalTemplate =
+    templateId === 'thermal_58mm' || templateId === 'thermal_80mm';
 
   // Undo/redo
   const [history, setHistory] = useState<TemplateSettings[]>([]);
@@ -399,6 +457,12 @@ export default function CustomizeTemplateDrawer({
   // Preview debounce
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
+
+  const previewSpec = useMemo(
+    () => getTemplatePreviewSpec(templateId, settings as Record<string, unknown>),
+    [templateId, settings]
+  );
 
   const isModified = useMemo(() => {
     return JSON.stringify(settings) !== JSON.stringify(savedSettings);
@@ -455,66 +519,90 @@ export default function CustomizeTemplateDrawer({
     })();
   }, [isOpen, business?.id]);
 
-  const handleImageUpload = async (file: File, type: 'logo' | 'signature') => {
-    const setter = type === 'logo' ? setUploadingLogo : setUploadingSignature;
-    setter(true);
+  const handleLogoUpload = async (file: File) => {
+    setUploadingLogo(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('type', type);
+      formData.append('type', 'logo');
 
       const uploadRes = await fetch('/api/upload/image', { method: 'POST', body: formData });
       if (!uploadRes.ok) throw new Error('Upload failed');
       const { url } = await uploadRes.json();
 
-      // Save to business profile
       const saveRes = await fetch(`/api/business/${business!.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(type === 'logo' ? { logo_url: url } : { signature_url: url }),
+        body: JSON.stringify({ logo_url: url }),
       });
       if (!saveRes.ok) throw new Error('Save failed');
 
-      if (type === 'logo') setLogoUrl(url);
-      else setSignatureUrl(url);
-
-      toast.success(`${type === 'logo' ? 'Logo' : 'Signature'} uploaded successfully!`);
+      setLogoUrl(url);
+      toast.success('Logo uploaded successfully!');
     } catch {
-      toast.error(`Failed to upload ${type}. Please try again.`);
+      toast.error('Failed to upload logo. Please try again.');
     } finally {
-      setter(false);
+      setUploadingLogo(false);
     }
   };
 
-  const handleRemoveImage = async (type: 'logo' | 'signature') => {
+  const handleRemoveLogo = async () => {
     try {
       await fetch(`/api/business/${business!.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(type === 'logo' ? { logo_url: null } : { signature_url: null }),
+        body: JSON.stringify({ logo_url: null }),
       });
-      if (type === 'logo') setLogoUrl(null);
-      else setSignatureUrl(null);
-      toast.success(`${type === 'logo' ? 'Logo' : 'Signature'} removed.`);
+      setLogoUrl(null);
+      toast.success('Logo removed.');
     } catch {
-      toast.error(`Failed to remove ${type}.`);
+      toast.error('Failed to remove logo.');
     }
   };
 
-  // Debounced preview update
+  // Debounced preview update (POST — full settings, print pipeline + screen CSS)
   useEffect(() => {
     if (!isOpen || !business?.id) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     setPreviewLoading(true);
-    debounceRef.current = setTimeout(() => {
-      if (iframeRef.current) {
-        const settingsParam = encodeURIComponent(JSON.stringify(settings));
-        iframeRef.current.src = `/api/template-preview?template_id=${templateId}&business_id=${business.id}&settings=${settingsParam}`;
+    debounceRef.current = setTimeout(async () => {
+      previewAbortRef.current?.abort();
+      const ac = new AbortController();
+      previewAbortRef.current = ac;
+
+      try {
+        const res = await fetch('/api/template-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_id: templateId,
+            business_id: business.id,
+            settings,
+          }),
+          signal: ac.signal,
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        const html = await res.text();
+        if (iframeRef.current && !ac.signal.aborted) {
+          iframeRef.current.srcdoc = html;
+        }
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.error('[Template preview]', err);
+          setPreviewLoading(false);
+        }
       }
     }, 400);
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      previewAbortRef.current?.abort();
+    };
   }, [settings, templateId, isOpen, business?.id]);
 
   const pushHistory = useCallback((newSettings: TemplateSettings) => {
@@ -746,7 +834,7 @@ export default function CustomizeTemplateDrawer({
                         Change
                       </button>
                       <button
-                        onClick={() => handleRemoveImage('logo')}
+                        onClick={() => handleRemoveLogo()}
                         className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
                         title="Remove logo"
                       >
@@ -778,63 +866,32 @@ export default function CustomizeTemplateDrawer({
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleImageUpload(file, 'logo');
+                      if (file) handleLogoUpload(file);
                       e.target.value = '';
                     }}
                   />
                 </div>
 
-                {/* Signature Upload */}
                 <div>
-                  <h3 className="text-sm font-bold text-gray-900 mb-3">Signature Image</h3>
-                  <p className="text-xs text-gray-500 mb-3">Digital signature shown on invoices. Max 2 MB, JPEG/PNG.</p>
+                  <h3 className="text-sm font-bold text-gray-900 mb-2">Digital signature</h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Upload once in business profile. Use the toggle below to show or hide it on this template.
+                  </p>
                   {signatureUrl ? (
-                    <div className="relative w-full border border-gray-200 rounded-lg p-3 bg-gray-50 flex items-center gap-4">
-                      <img src={signatureUrl} alt="Signature" className="h-12 max-w-[200px] object-contain rounded" />
-                      <div className="flex-1" />
-                      <button
-                        onClick={() => signatureInputRef.current?.click()}
-                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-                      >
-                        Change
-                      </button>
-                      <button
-                        onClick={() => handleRemoveImage('signature')}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
-                        title="Remove signature"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    <img
+                      src={signatureUrl}
+                      alt="Signature preview"
+                      className="h-12 max-w-[200px] object-contain rounded border border-gray-200 bg-gray-50 p-2 mb-2"
+                    />
                   ) : (
-                    <button
-                      onClick={() => signatureInputRef.current?.click()}
-                      disabled={uploadingSignature}
-                      className="w-full border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 hover:bg-slate-50/30 transition group"
-                    >
-                      {uploadingSignature ? (
-                        <Loader2 className="w-6 h-6 animate-spin text-primary-500 mx-auto" />
-                      ) : (
-                        <>
-                          <Upload className="w-6 h-6 text-gray-400 group-hover:text-primary-500 mx-auto mb-2" />
-                          <p className="text-sm font-medium text-gray-600 group-hover:text-primary-600">
-                            Click to upload signature
-                          </p>
-                        </>
-                      )}
-                    </button>
+                    <p className="text-sm text-gray-500 mb-2">No signature uploaded yet.</p>
                   )}
-                  <input
-                    ref={signatureInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageUpload(file, 'signature');
-                      e.target.value = '';
-                    }}
-                  />
+                  <Link
+                    href="/settings/business#bp-signature"
+                    className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                  >
+                    Manage signature in Business profile →
+                  </Link>
                 </div>
 
                 {/* Toggle visibility */}
@@ -906,19 +963,55 @@ export default function CustomizeTemplateDrawer({
 
             {activeTab === 'layout' && (
               <div className="space-y-5">
-                <p className="text-sm text-gray-600">Adjust page margins (in pixels)</p>
+                {isThermalTemplate ? (
+                  <p className="text-sm text-gray-600 rounded-lg border border-border bg-gray-50 dark:bg-slate-800/50 p-3">
+                    Paper width is fixed by this thermal template (58mm or 80mm). To change roll size, activate a
+                    different template under Settings → Templates &amp; printing.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">Paper size</label>
+                      <select
+                        value={settings.page_size || 'A4'}
+                        onChange={(e) => handleSettingChange('page_size', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="A4">A4 (standard)</option>
+                        <option value="A5">A5 (compact — shorter page)</option>
+                        <option value="Letter">Letter (US)</option>
+                        <option value="Legal">Legal</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">Orientation</label>
+                      <select
+                        value={settings.orientation || 'portrait'}
+                        onChange={(e) => handleSettingChange('orientation', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+                <p className="text-sm text-gray-600">
+                  Page margins (mm) — shown in live preview and applied when you print or download PDF.
+                  Long invoices continue on extra pages in the PDF. The live preview zooms the whole page to fit on screen — it does not change your font size or margins for print.
+                </p>
                 <div className="grid grid-cols-2 gap-4">
                   {(['top', 'right', 'bottom', 'left'] as const).map(side => {
                     const key = `margin_${side}` as keyof TemplateSettings;
                     return (
                       <div key={side}>
                         <label className="block text-sm font-semibold text-gray-700 mb-1.5 capitalize">
-                          {side} ({settings[key] as number}px)
+                          {side} ({settings[key] as number} mm)
                         </label>
                         <input
-                          type="range" min="0" max="100" step="5"
+                          type="range" min="3" max="25" step="1"
                           value={settings[key] as number}
-                          onChange={(e) => handleSettingChange(key, parseInt(e.target.value))}
+                          onChange={(e) => handleSettingChange(key, parseInt(e.target.value, 10))}
                           className="w-full"
                         />
                       </div>
@@ -961,6 +1054,11 @@ export default function CustomizeTemplateDrawer({
                   { key: 'show_destination', label: 'Destination' },
                   { key: 'show_terms_of_delivery', label: 'Terms of Delivery' },
                 ]} settings={settings} onChange={handleSettingChange} />
+
+                <CustomFieldsTemplateLayout
+                  settings={settings as Record<string, unknown>}
+                  onChange={(next) => setSettings(next as TemplateSettings)}
+                />
 
                 <FieldToggleGroup title="Customer Information" color="#3b82f6" fields={[
                   { key: 'show_bill_to', label: 'Bill To Section' },
@@ -1113,7 +1211,12 @@ export default function CustomizeTemplateDrawer({
         >
           {/* Preview header */}
           <div className="flex items-center justify-between px-4 sm:px-5 py-2 sm:py-2.5 bg-white border-b border-gray-200 shrink-0">
-            <h3 className="text-sm font-semibold text-gray-700">Live preview</h3>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700">Live preview</h3>
+              <p className="text-xs text-gray-500">
+                {previewSpec.pageLabel} — zoomed to fit panel; print uses your typography and adds pages if needed
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <div className="flex bg-gray-100 rounded-lg p-0.5">
                 <button
@@ -1139,11 +1242,11 @@ export default function CustomizeTemplateDrawer({
             </div>
           </div>
 
-          {/* Preview — width-scaled, scrollable for long invoices */}
           <PreviewFrame
             iframeRef={iframeRef}
             previewMode={previewMode}
             previewLoading={previewLoading}
+            previewSpec={previewSpec}
             onLoad={() => setPreviewLoading(false)}
           />
         </div>
@@ -1151,3 +1254,4 @@ export default function CustomizeTemplateDrawer({
     </div>
   );
 }
+

@@ -1,20 +1,26 @@
-'use client';
+﻿'use client';
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Package, Loader2, Pencil, Filter, X, Eye, Tag, Printer } from 'lucide-react';
+import { Search, Plus, Package, Loader2, Pencil, Filter, X, Tag, Printer, Tags, ChevronDown } from 'lucide-react';
+import { ItemMobileCard } from '@/components/items/ItemMobileCard';
+import { AdjustItemStockSheet } from '@/components/items/AdjustItemStockSheet';
 
 import Link from 'next/link';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { PageToolbar } from '@/components/layout/PageToolbar';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { ItemDetailPanel } from '@/components/items/ItemDetailPanel';
+import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
+import { getModuleSettingsMenu } from '@/lib/module-settings';
 import { useAuth } from '@/contexts/AuthContext';
 import { Item } from '@/types/database';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { useEntityList } from '@/hooks/useEntityList';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -24,20 +30,30 @@ import { DeleteAction } from '@/components/common/DeleteAction';
 
 const PAGE_SIZE = 50;
 
+type ItemCategory = { id: string; name: string };
+
 function ItemsPage() {
   const { business, user } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const toast = useToastContext();
   const { canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
   const canDeleteItems = !permissionsLoading && (canDelete('items') || isPrimaryAdmin);
+  const moduleSettingsMenu = getModuleSettingsMenu(pathname);
   const [search, setSearch] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'goods' | 'service'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [page, setPage] = useState(1);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [deleteModalItem, setDeleteModalItem] = useState<Item | null>(null);
+  const [adjustStockItem, setAdjustStockItem] = useState<Item | null>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: allItems, loading, refresh } = useEntityList<Item>({
     apiUrl: '/api/items',
@@ -59,6 +75,9 @@ function ItemsPage() {
     if (typeFilter !== 'all') {
       list = list.filter((i) => i.item_type === typeFilter);
     }
+    if (categoryFilter !== 'all') {
+      list = list.filter((i) => i.category_id === categoryFilter);
+    }
     return list.filter((item) => {
       if (stockFilter === 'all') return true;
       if (item.item_type === 'service') return false;
@@ -66,7 +85,67 @@ function ItemsPage() {
       if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock) && Number(item.current_stock) > 0;
       return true;
     });
-  }, [allItems, search, typeFilter, stockFilter]);
+  }, [allItems, search, typeFilter, stockFilter, categoryFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, stockFilter, categoryFilter]);
+
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/categories?business_id=${encodeURIComponent(business.id)}&user_id=${encodeURIComponent(user.id)}`,
+          { credentials: 'include' }
+        );
+        const data = await res.json();
+        if (!cancelled && res.ok && Array.isArray(data.categories)) {
+          setCategories(data.categories.map((c: ItemCategory) => ({ id: c.id, name: c.name })));
+        }
+      } catch {
+        /* non-blocking */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id, user?.id]);
+
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      const t = window.setTimeout(() => mobileSearchInputRef.current?.focus(), 50);
+      return () => window.clearTimeout(t);
+    }
+  }, [mobileSearchOpen]);
+
+  const toggleLowStock = useCallback(() => {
+    setStockFilter((prev) => (prev === 'low' ? 'all' : 'low'));
+    if (typeFilter === 'service') setTypeFilter('goods');
+  }, [typeFilter]);
+
+  const mobileHeaderSearchAccessory = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setMobileSearchOpen((open) => !open)}
+        className={clsx(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors touch-manipulation',
+          mobileSearchOpen
+            ? 'bg-slate-100 text-text-primary dark:bg-slate-800'
+            : 'text-text-secondary hover:bg-slate-50 hover:text-text-primary dark:hover:bg-slate-800'
+        )}
+        aria-label={mobileSearchOpen ? 'Close search' : 'Search items'}
+        aria-expanded={mobileSearchOpen}
+      >
+        {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+      </button>
+    ),
+    [mobileSearchOpen]
+  );
+
+  useMobileHeaderRightAccessory(mobileHeaderSearchAccessory);
 
   const paginatedItems = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -93,6 +172,16 @@ function ItemsPage() {
 
   const requestDeleteItem = (item: Item) => {
     setDeleteModalItem(item);
+  };
+
+  const handleAdjustStock = (item: Item) => {
+    const hasVariants = !!(item as { has_variants?: boolean }).has_variants;
+    const isBundle = !!(item as Item & { is_bundle?: boolean }).is_bundle;
+    if (hasVariants || isBundle) {
+      router.push(`/inventory-adjustments/new?item_id=${encodeURIComponent(item.id)}`);
+      return;
+    }
+    setAdjustStockItem(item);
   };
 
   const isDetailOpen = selectedItemId !== null;
@@ -122,6 +211,19 @@ function ItemsPage() {
               <option value="all">All Types</option>
               <option value="goods">Goods</option>
               <option value="service">Services</option>
+            </select>
+
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="input w-auto text-sm max-w-[10rem]"
+            >
+              <option value="all">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
             </select>
 
             <select
@@ -158,18 +260,6 @@ function ItemsPage() {
           </div>
         </div>
       </Card>
-
-      {/* Mobile Search */}
-      <div className="md:hidden relative mb-3">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
-        <input
-          type="text"
-          placeholder="Name, code, or HSN"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="input pl-10 w-full h-12 rounded-xl"
-        />
-      </div>
     </>
   );
 
@@ -242,14 +332,14 @@ function ItemsPage() {
                   </div>
                   <div className="text-xs text-text-secondary truncate">
                     {item.code && <span>{item.code}</span>}
-                    {item.code && item.barcode && <span> • </span>}
+                    {item.code && item.barcode && <span> â€¢ </span>}
                     {item.barcode && <span className="font-mono">{item.barcode}</span>}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-semibold text-text-primary">
                     {item.selling_price != null
-                      ? `₹${Number(item.selling_price).toLocaleString('en-IN')}`
+                      ? `â‚¹${Number(item.selling_price).toLocaleString('en-IN')}`
                       : '-'}
                   </div>
                 </div>
@@ -265,7 +355,7 @@ function ItemsPage() {
             disabled={page === 1}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            ‹ Prev
+            â€¹ Prev
           </button>
           <span className="text-text-secondary">
             {page} / {totalPages}
@@ -275,14 +365,14 @@ function ItemsPage() {
             disabled={page === totalPages}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            Next ›
+            Next â€º
           </button>
         </div>
       )}
     </Card>
   );
 
-  // Full list (table + mobile cards) — original experience when no detail panel is open
+  // Full list (table + mobile cards) â€” original experience when no detail panel is open
   const fullList = (
     <Card padding="none" className="overflow-hidden">
       {loading ? (
@@ -373,7 +463,7 @@ function ItemsPage() {
                           )}
                         </td>
                         <td className="table-cell text-right py-4 px-6 font-bold text-text-primary">
-                          {item.selling_price !== null ? `₹ ${Number(item.selling_price).toLocaleString('en-IN')}` : '-'}
+                          {item.selling_price !== null ? `â‚¹ ${Number(item.selling_price).toLocaleString('en-IN')}` : '-'}
                         </td>
                         <td className="table-cell text-center py-4 px-6 text-text-secondary">{item.tax_rate}%</td>
                         <td className="table-cell text-center py-4 px-6">
@@ -435,155 +525,20 @@ function ItemsPage() {
           </div>
 
           {/* Mobile Card View */}
-          <div className="md:hidden divide-y divide-border">
+          <div className="space-y-2 bg-gray-50/80 p-2 md:hidden dark:bg-slate-950/40">
             {paginatedItems.length > 0 ? (
-              paginatedItems.map((item) => {
-                const stock = Number(item.current_stock);
-                const minStock = Number(item.min_stock);
-                let stockStatus = 'success';
-                if (stock <= 0) stockStatus = 'error';
-                else if (stock <= minStock) stockStatus = 'warning';
-
-                return (
-                  <div
-                    key={item.id}
-                    className="p-4 bg-surface active:bg-slate-50 dark:active:bg-slate-800/90 transition-colors"
-                    onClick={() => setSelectedItemId(item.id)}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 relative">
-                          {item.image_url ? (
-                            <img src={item.image_url} alt={item.name} className="w-12 h-12 object-cover rounded-xl border border-border" />
-                          ) : (
-                            <div className={`w-12 h-12 ${item.item_type === 'service' ? 'bg-slate-100 text-primary-700' : 'bg-slate-100 text-primary-700'} rounded-xl flex items-center justify-center`}>
-                              {item.item_type === 'service' ? <Tag className="w-6 h-6" /> : <Package className="w-6 h-6" />}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-text-primary">{item.name}</p>
-                            {(item as Item & { is_bundle?: boolean }).is_bundle && (
-                              <span className="text-[8px] uppercase bg-blue-50 text-blue-800 px-1 py-0.5 rounded font-bold tracking-wider border border-blue-200">
-                                Bundle
-                              </span>
-                            )}
-                            {(item as any).has_variants && (
-                              <span className="text-[8px] uppercase bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-bold tracking-wider">Variants</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            {item.item_type === 'service' ? (
-                              <span className="text-[10px] uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold tracking-wider">Service</span>
-                            ) : (
-                              <span className="text-[10px] uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold tracking-wider">Goods</span>
-                            )}
-                            {item.code && <span className="text-[10px] text-text-muted">Code: {item.code}</span>}
-                            {item.barcode && (
-                              <span className="text-[10px] text-text-muted font-mono">Barcode: {item.barcode}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-text-primary">
-                          {item.selling_price !== null ? `₹ ${Number(item.selling_price).toLocaleString('en-IN')}` : '-'}
-                        </p>
-                        <p className="text-[10px] text-text-muted font-medium">Price</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between py-3 border-t border-dashed border-border">
-                      <div>
-                        <p className="text-[10px] text-text-muted mb-0.5 uppercase tracking-wider font-medium">Stock Status</p>
-                        {item.item_type === 'service' ? (
-                          <span className="text-xs text-text-muted italic">No inventory</span>
-                        ) : (
-                          <Chip variant={stockStatus as any} className="text-[10px] h-5">
-                            {stock} {item.unit}
-                          </Chip>
-                        )}
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[10px] text-text-muted mb-0.5 uppercase tracking-wider font-medium">Barcode</p>
-                        {item.barcode ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-xs font-mono font-semibold">{item.barcode}</span>
-                            {(item as any).barcode_type && (
-                              <span className="text-[9px] text-text-muted">{(item as any).barcode_type}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-text-muted">-</span>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-text-muted mb-0.5 uppercase tracking-wider font-medium">Tax Rate</p>
-                        <p className="text-xs font-semibold">{item.tax_rate}% GST</p>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`grid gap-2 mt-3 pt-3 border-t border-border ${
-                        canDeleteItems ? 'grid-cols-3' : 'grid-cols-2'
-                      }`}
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedItemId(item.id);
-                        }}
-                        className="flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-text-secondary hover:bg-slate-100/80 dark:hover:bg-slate-800 rounded-xl border border-border"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/items/new?edit=${item.id}`);
-                        }}
-                        className="flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-primary-600 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/35 hover:bg-slate-100 dark:hover:bg-primary-900/45 rounded-xl border border-primary-100 dark:border-primary-800"
-                      >
-                        <Pencil className="w-4 h-4" />
-                        Edit
-                      </button>
-                      <span onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
-                        <DeleteAction
-                          entityName="Item"
-                          variant="delete"
-                          disabled={!canDeleteItems || !!(item as any).deleted_at}
-                          disabledTooltip={
-                            !canDeleteItems
-                              ? "You don't have permission to delete items"
-                              : 'Item is already deleted'
-                          }
-                          successMessage="Item deleted successfully"
-                          confirmMessage={`Remove "${item.name}" from your catalog? It will no longer appear in the item list; past invoices and records stay unchanged.`}
-                          deleteFn={async () => {
-                            if (!business?.id || !user?.id) throw new Error('Missing business/user context');
-                            const res = await fetch(`/api/items/${item.id}`, {
-                              method: 'DELETE',
-                              credentials: 'include',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ business_id: business.id, user_id: user.id }),
-                            });
-                            const data = await res.json().catch(() => ({}));
-                            if (!res.ok) throw new Error(data.error || 'Failed to delete item');
-                          }}
-                          onSuccess={async () => {
-                            if (selectedItemId === item.id) setSelectedItemId(null);
-                            refresh();
-                          }}
-                        />
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
+              paginatedItems.map((item) => (
+                <ItemMobileCard
+                  key={item.id}
+                  item={item}
+                  onOpen={() => setSelectedItemId(item.id)}
+                  onAdjustStock={() => handleAdjustStock(item)}
+                />
+              ))
             ) : (
-              <div className="text-center py-12 text-text-secondary">No items found.</div>
+              <div className="rounded-xl border border-border bg-white py-12 text-center text-text-secondary dark:bg-surface">
+                No items found.
+              </div>
             )}
           </div>
         </>
@@ -622,31 +577,100 @@ function ItemsPage() {
       <ListPageHeader
         title="Items"
         description="Manage your inventory and products"
+        showActionsOnMobile
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => setShowMobileFilters(true)}
-              className="p-2 bg-surface border border-border rounded-lg md:hidden text-text-secondary"
-              aria-label="Filters"
-            >
-              <Filter className="w-5 h-5" />
-            </button>
+            {moduleSettingsMenu ? (
+              <button
+                type="button"
+                onClick={() => setModuleSettingsOpen(true)}
+                className="hidden md:flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-label={moduleSettingsMenu.ariaLabel}
+                title={moduleSettingsMenu.ariaLabel}
+              >
+                <Tags className="h-5 w-5" />
+              </button>
+            ) : null}
             <Link href="/items/barcodes">
               <Button variant="secondary" className="h-10 px-4">
                 <Printer className="w-4 h-4 md:mr-2" />
                 <span className="hidden md:inline">Print Barcodes</span>
               </Button>
             </Link>
-            <Link href="/items/new">
+            <Link href="/items/new" className="hidden md:inline-flex">
               <Button className="h-10 px-4">
-                <Plus className="w-4 h-4 md:mr-2" />
-                <span className="hidden md:inline">Add Item</span>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Item
               </Button>
             </Link>
           </>
         }
       />
+
+      {mobileSearchOpen ? (
+        <div className="md:hidden -mt-1 border-b border-border bg-surface px-4 py-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            <input
+              ref={mobileSearchInputRef}
+              type="search"
+              placeholder="Name, code, or HSN"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input h-10 w-full rounded-lg pl-10 pr-9 text-sm"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-text-muted hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <PageToolbar className="md:hidden">
+        <button
+          type="button"
+          onClick={toggleLowStock}
+          className={clsx(
+            'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+            stockFilter === 'low'
+              ? 'border-slate-300 bg-slate-100 text-text-primary dark:border-slate-600 dark:bg-slate-800'
+              : 'border-border bg-white text-text-secondary dark:bg-surface'
+          )}
+        >
+          Low Stock
+        </button>
+        <div className="relative shrink-0">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="appearance-none rounded-full border border-border bg-white py-1.5 pl-3 pr-8 text-xs font-medium text-text-secondary dark:bg-surface"
+            aria-label="Filter by category"
+          >
+            <option value="all">Select Category</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowMobileFilters(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-secondary dark:bg-surface"
+        >
+          <Filter className="h-3.5 w-3.5" />
+          Filter By
+        </button>
+      </PageToolbar>
 
       {/* Hidden file input for import */}
       <input
@@ -721,6 +745,22 @@ function ItemsPage() {
             </div>
 
             <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="input w-full text-sm"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-2">Item Type</label>
                 <div className="flex flex-col gap-2">
@@ -848,6 +888,21 @@ function ItemsPage() {
           }}
         />
       )}
+
+      {moduleSettingsMenu ? (
+        <ModuleSettingsSheet
+          open={moduleSettingsOpen}
+          onClose={() => setModuleSettingsOpen(false)}
+          menu={moduleSettingsMenu}
+        />
+      ) : null}
+
+      <AdjustItemStockSheet
+        item={adjustStockItem}
+        open={!!adjustStockItem}
+        onClose={() => setAdjustStockItem(null)}
+        onSuccess={refresh}
+      />
     </div>
   );
 }

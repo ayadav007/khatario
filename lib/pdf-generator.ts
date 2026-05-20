@@ -104,6 +104,7 @@ export async function generateDocumentHtml(
           ii.*, 
           COALESCE(ii.item_name, i.name) as item_name, 
           COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          i.custom_fields as item_custom_fields,
           iv.variant_name,
           iv.attributes as variant_attributes
          FROM ${itemTable} ii
@@ -114,7 +115,8 @@ export async function generateDocumentHtml(
       : `SELECT 
           ii.*, 
           COALESCE(ii.item_name, i.name) as item_name, 
-          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac
+          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          i.custom_fields as item_custom_fields
          FROM ${itemTable} ii
          LEFT JOIN items i ON ii.item_id = i.id
          WHERE ii.${idColumn} = $1
@@ -445,4 +447,35 @@ export async function generateDocumentPdf(documentId: string, table: DocumentTab
 // Legacy wrapper for backward compatibility
 export async function generateInvoicePdf(invoiceId: string) {
   return generateDocumentPdf(invoiceId, 'invoices');
+}
+
+/** Full-page PNG of the invoice (for native share as image). */
+export async function generateDocumentPng(documentId: string, table: DocumentTable = 'invoices') {
+  const { html, templateId, settings, businessId } = await generateDocumentHtml(documentId, table);
+  const htmlForPrint = await finalizePrintHtml(html, templateId, settings, businessId);
+
+  const browser = await puppeteer.launch(
+    getPuppeteerLaunchOptions({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
+    })
+  );
+  const page = await browser.newPage();
+  await page.setContent(htmlForPrint, { waitUntil: 'domcontentloaded' });
+  await page.emulateMediaType('print');
+  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+
+  const pngBuffer = await page.screenshot({ type: 'png', fullPage: true });
+  await browser.close();
+
+  return Buffer.from(pngBuffer);
+}
+
+export async function generateInvoicePng(invoiceId: string) {
+  return generateDocumentPng(invoiceId, 'invoices');
 }

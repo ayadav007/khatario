@@ -4,11 +4,12 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
@@ -200,20 +201,10 @@ export default function ReceiveTransferPage() {
 
   return (
     <FormPageContainer className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <Link
-          href={`/stock-transfers/${transferId}`}
-          className="p-2 hover:bg-surface rounded-lg transition border border-border"
-        >
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Receive Transfer</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Transfer {transfer.transfer_number} from {transfer.from_warehouse_name} to {transfer.to_warehouse_name}
-          </p>
-        </div>
-      </div>
+      <MobileDuplicatePageChrome
+        title="Receive transfer"
+        description={`${transfer.transfer_number}: ${transfer.from_warehouse_name} → ${transfer.to_warehouse_name}`}
+      />
 
       <FormCard>
       <form onSubmit={handleSubmit}>

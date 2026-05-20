@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, FileText, Package, Users, MoreHorizontal, Plus } from 'lucide-react';
+import { Home, FileText, Package, Users, MoreHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 
@@ -50,24 +50,9 @@ export const BottomNav: React.FC = () => {
     },
   ];
 
-  // Hide global invoice FAB where the screen has its own primary action (dashboard quick actions, payment flows, statement view)
-  const showGlobalInvoiceFab =
-    pathname !== '/dashboard' &&
-    !pathname?.startsWith('/payments') &&
-    !pathname?.startsWith('/purchases/scan-record') &&
-    !/\/customers\/[^/]+\/statement$/.test(pathname || '');
-
   return (
     <>
-      {/* Floating Action Button - Hidden on desktop (lg); hidden on dashboard (quick-actions FAB there) */}
-      {showGlobalInvoiceFab && (
-        <Link
-          href="/invoices/new"
-          className="fixed bottom-20 right-4 md:right-6 z-40 w-14 h-14 bg-primary-500 text-white rounded-full shadow-large flex items-center justify-center hover:bg-primary-600 transition-colors lg:hidden active:scale-95"
-        >
-          <Plus className="w-6 h-6" />
-        </Link>
-      )}
+      {/* Quick-actions + FAB lives on dashboard only (QuickActionsFAB) */}
 
       {/* Bottom Navigation - Hidden on desktop (lg) */}
       <nav className="fixed bottom-0 left-0 right-0 h-16 bg-surface border-t border-border flex items-center justify-around z-30 lg:hidden">

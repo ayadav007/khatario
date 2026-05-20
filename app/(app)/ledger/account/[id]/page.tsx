@@ -4,11 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2, FileText, Download, Printer } from 'lucide-react';
+import { Loader2, FileText, Download, Printer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 interface LedgerEntry {
   id: string;
@@ -28,6 +30,8 @@ export default function AccountLedgerPage() {
   const { business } = useAuth();
   const accountId = params.id as string;
   const [account, setAccount] = useState<any>(null);
+
+  useMobileHeaderTitleOverride(account?.account_name);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingBalance, setOpeningBalance] = useState(0);
@@ -150,34 +154,32 @@ export default function AccountLedgerPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href="/ledger">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Ledger
-            </Button>
-          </Link>
-          <div className="flex gap-2">
-            <Link href={`/accounts/${accountId}`}>
-              <Button variant="ghost" size="sm">
-                View Account
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={account.account_name}
+          description={`${account.account_code} • ${account.account_group_name}`}
+          trailing={
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/accounts/${accountId}`}>
+                <Button variant="ghost" size="sm">
+                  View Account
+                </Button>
+              </Link>
+              <Button variant="secondary" size="sm" onClick={handlePrintStatement} isLoading={printing} disabled={downloading}>
+                <Printer className="w-4 h-4 mr-2" />
+                Print Statement
               </Button>
-            </Link>
-            <Button variant="secondary" size="sm" onClick={handlePrintStatement} isLoading={printing} disabled={downloading}>
-              <Printer className="w-4 h-4 mr-2" />
-              Print Statement
-            </Button>
-            <Button variant="secondary" size="sm" onClick={handleDownloadStatement} isLoading={downloading} disabled={printing}>
-              <Download className="w-4 h-4 mr-2" />
-              Download Statement
-            </Button>
-          </div>
-        </div>
+              <Button variant="secondary" size="sm" onClick={handleDownloadStatement} isLoading={downloading} disabled={printing}>
+                <Download className="w-4 h-4 mr-2" />
+                Download Statement
+              </Button>
+            </div>
+          }
+        />
 
         <Card>
           <div className="space-y-4">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">{account.account_name}</h1>
+            <div className="hidden md:block">
               <p className="text-sm text-text-secondary mt-1">
                 Account Code: {account.account_code} • {account.account_group_name}
               </p>

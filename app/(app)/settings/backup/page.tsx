@@ -11,6 +11,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
 
 interface BackupHistory {
   id: string;
@@ -370,13 +371,10 @@ export default function BackupRestorePage() {
 
   return (
     <div className={`${WIDE_PAGE_CONTENT_CLASS} space-y-6 p-4 sm:p-6`}>
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Backup & Restore</h1>
-        <p className="text-text-secondary text-sm mt-1">
-          Keep your data safe with automated backups and cloud storage
-        </p>
-      </div>
+      <ListPageHeader
+        title="Backup & restore"
+        description="Keep your data safe with automated backups and cloud storage"
+      />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

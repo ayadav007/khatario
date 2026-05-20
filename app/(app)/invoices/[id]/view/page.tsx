@@ -2,15 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import {
-  ArrowLeft,
-  Download,
-  Loader2,
-  Printer,
-  Share2,
-  Pencil,
-  MessageCircle,
-} from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Printer, Share2, Pencil } from 'lucide-react';
+import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
@@ -25,6 +18,65 @@ type InvoiceSummary = {
   customer_phone?: string;
   document_type?: string;
 };
+
+/** A4-ish preview scaled to fit a phone-width card */
+const PREVIEW_PAGE_W = 794;
+const PREVIEW_PAGE_H = 1123;
+const PREVIEW_CARD_W = 280;
+const PREVIEW_SCALE = PREVIEW_CARD_W / PREVIEW_PAGE_W;
+const PREVIEW_CARD_H = Math.round(PREVIEW_PAGE_H * PREVIEW_SCALE);
+
+function MinifiedInvoicePreview({ html }: { html: string }) {
+  if (!html) {
+    return (
+      <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
+        Preview unavailable
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative mx-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md"
+      style={{ width: PREVIEW_CARD_W, height: PREVIEW_CARD_H }}
+    >
+      <iframe
+        srcDoc={html}
+        title="Invoice preview"
+        className="absolute left-0 top-0 border-0 pointer-events-none"
+        style={{
+          width: PREVIEW_PAGE_W,
+          height: PREVIEW_PAGE_H,
+          transform: `scale(${PREVIEW_SCALE})`,
+          transformOrigin: '0 0',
+        }}
+      />
+    </div>
+  );
+}
+
+function PostGenerateAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof Printer;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center gap-2 min-w-[72px] touch-manipulation"
+    >
+      <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-primary-200 bg-white text-primary-600 shadow-sm dark:border-primary-800 dark:bg-surface">
+        <Icon className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+      </span>
+      <span className="text-sm font-medium text-primary-700 dark:text-primary-300">{label}</span>
+    </button>
+  );
+}
 
 export default function PublicInvoiceViewPage() {
   const params = useParams();
@@ -78,12 +130,14 @@ export default function PublicInvoiceViewPage() {
     load();
   }, [load]);
 
+  const pdfUrl = `/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`;
+
   const handleDownload = () => {
-    window.open(`/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`, '_blank');
+    window.open(pdfUrl, '_blank');
   };
 
   const handlePrint = () => {
-    window.open(`/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`, '_blank');
+    window.open(pdfUrl, '_blank');
   };
 
   const paymentLabel = (() => {
@@ -101,122 +155,139 @@ export default function PublicInvoiceViewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-slate-950">
         <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Mobile post-generate chrome */}
-      <div className="lg:hidden sticky top-0 z-20 bg-white border-b border-gray-200 px-2 py-2 flex items-center gap-2 safe-area-pt">
-        <button
-          type="button"
-          onClick={() => router.push('/invoices')}
-          className="p-2 rounded-full hover:bg-gray-100"
-          aria-label="Back"
-        >
-          <ArrowLeft className="w-5 h-5 text-primary-600" />
-        </button>
-        <h1 className="flex-1 text-sm font-semibold text-gray-900 truncate">
-          {fromGenerate ? 'Invoice created' : 'Invoice'}
-        </h1>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="shrink-0 text-xs"
-          onClick={() => router.push(editHref)}
-        >
-          <Pencil className="w-3.5 h-3.5 mr-1" />
-          Edit
-        </Button>
-      </div>
-
-      <div className="max-w-4xl mx-auto px-3 py-4 lg:px-4 lg:py-8">
-        {/* Desktop toolbar */}
-        <div className="hidden lg:flex mb-4 justify-end gap-2">
-          <Button variant="secondary" onClick={handleDownload}>
-            <Download className="w-4 h-4 mr-2" />
-            Download PDF
-          </Button>
-        </div>
-
-        {/* Summary — mobile */}
-        {invoice && (
-          <div className="lg:hidden mb-3 rounded-xl bg-white border border-gray-200 p-4 shadow-sm">
-            <div className="text-sm text-gray-600 truncate">
-              {invoice.customer_name || 'Customer'}
-              {invoice.customer_phone ? (
-                <span className="block text-xs text-gray-500 mt-0.5">{invoice.customer_phone}</span>
+    <div className="min-h-screen bg-gray-100 dark:bg-slate-950">
+      {/* ——— Mobile: post-generate style ——— */}
+      <div className="lg:hidden min-h-screen flex flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+        <header className="sticky top-0 z-20 border-b border-border bg-surface px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+          <div className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/invoices')}
+              className="mt-0.5 rounded-full p-2 hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Back to invoices"
+            >
+              <ArrowLeft className="h-5 w-5 text-primary-600" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-bold text-text-primary leading-tight">
+                {fromGenerate ? 'Invoice created' : 'Invoice'}
+              </h1>
+              {invoice?.invoice_number ? (
+                <p className="text-sm text-text-secondary mt-0.5">#{invoice.invoice_number}</p>
               ) : null}
             </div>
-            <div className="flex items-end justify-between mt-3 gap-2">
-              <div>
-                <div className="text-2xl font-bold text-gray-900">₹{grand.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                <span
-                  className={`inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded ${
-                    paymentLabel === 'Paid'
-                      ? 'bg-green-100 text-green-800'
-                      : paymentLabel === 'Partial'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-orange-100 text-orange-800'
-                  }`}
-                >
-                  {paymentLabel}
-                </span>
-              </div>
-              {invoice.customer_phone && (
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`Invoice ${invoice.invoice_number || ''} — ₹${grand.toFixed(2)}. View: ${typeof window !== 'undefined' ? window.location.origin : ''}/invoices/${invoiceId}/view`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-sm font-medium text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-200"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  WhatsApp
-                </a>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => router.push(editHref)}
+              className="shrink-0 rounded-lg border border-border bg-surface p-2 text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800"
+              aria-label="Edit invoice"
+            >
+              <Pencil className="h-5 w-5" />
+            </button>
           </div>
-        )}
+        </header>
 
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
-          <iframe srcDoc={html} className="w-full min-h-[70vh] lg:h-[842px] border-0" title="Invoice Preview" />
+        <div className="flex-1 overflow-y-auto">
+          {/* Minified document preview */}
+          <div className="bg-slate-200/70 dark:bg-slate-900/50 px-4 py-6 flex justify-center">
+            <MinifiedInvoicePreview html={html} />
+          </div>
+
+          {invoice ? (
+            <div className="mx-4 -mt-2 rounded-xl border border-border bg-surface p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Customer</p>
+              <p className="mt-1 font-semibold text-text-primary truncate">
+                {invoice.customer_name || 'Walk-in customer'}
+              </p>
+              {invoice.customer_phone ? (
+                <p className="text-sm text-text-secondary mt-0.5">{invoice.customer_phone}</p>
+              ) : null}
+              <div className="mt-3 flex items-end justify-between gap-3 border-t border-border pt-3">
+                <div>
+                  <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-slate-50">
+                    ₹{grand.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                  <span
+                    className={clsx(
+                      'mt-1 inline-block text-xs font-semibold px-2 py-0.5 rounded',
+                      paymentLabel === 'Paid'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300'
+                        : paymentLabel === 'Partial'
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                          : 'bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300'
+                    )}
+                  >
+                    {paymentLabel}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Print · Download · Share — below preview, always visible */}
+          <div className="px-6 pt-8 pb-2 flex items-center justify-center gap-6 sm:gap-10">
+            <PostGenerateAction icon={Printer} label="Print" onClick={handlePrint} />
+            <PostGenerateAction icon={Download} label="Download" onClick={handleDownload} />
+            <PostGenerateAction icon={Share2} label="Share" onClick={() => setShareOpen(true)} />
+          </div>
+
+          <div className="px-4 pt-4 pb-6">
+            <Button
+              variant="primary"
+              className="w-full h-12 text-base font-semibold rounded-xl"
+              onClick={() => router.push('/invoices')}
+            >
+              Done
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Mobile bottom dock */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-3 py-2 pb-[max(12px,env(safe-area-inset-bottom))] flex items-center gap-2 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
-        <button
-          type="button"
-          onClick={handlePrint}
-          className="flex flex-col items-center justify-center flex-1 py-1 text-gray-700"
-        >
-          <Printer className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Print</span>
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="flex flex-col items-center justify-center flex-1 py-1 text-gray-700"
-        >
-          <Download className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Download</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setShareOpen(true)}
-          className="flex flex-col items-center justify-center flex-1 py-1 text-gray-700"
-        >
-          <Share2 className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Share</span>
-        </button>
-        <Button variant="primary" className="flex-[1.4] h-11 font-semibold" onClick={() => router.push('/invoices')}>
-          Done
-        </Button>
+      {/* ——— Desktop ——— */}
+      <div className="hidden lg:block">
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-bold text-text-primary">
+                {fromGenerate ? 'Invoice created' : 'Invoice'}
+                {invoice?.invoice_number ? ` #${invoice.invoice_number}` : ''}
+              </h1>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={handlePrint}>
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="secondary" onClick={handleDownload}>
+                <Download className="w-4 h-4 mr-2" />
+                Download PDF
+              </Button>
+              <Button variant="secondary" onClick={() => setShareOpen(true)}>
+                <Share2 className="w-4 h-4 mr-2" />
+                Share
+              </Button>
+              <Button variant="primary" onClick={() => router.push('/invoices')}>
+                Done
+              </Button>
+            </div>
+          </div>
+
+          <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
+            <iframe
+              srcDoc={html}
+              className="w-full h-[842px] border-0"
+              title="Invoice Preview"
+            />
+          </div>
+        </div>
       </div>
-      <div className="lg:hidden h-24" />
 
       {shareOpen && invoiceId && (
         <ShareInvoiceModal

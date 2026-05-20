@@ -12,7 +12,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { ArrowLeft, Loader2, User, Briefcase, Building, Calendar, DollarSign, Phone, Mail, CreditCard, FileText, AlertCircle } from 'lucide-react';
+import { Loader2, User, Briefcase, Building, Calendar, DollarSign, Phone, Mail, CreditCard, FileText, AlertCircle } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import Link from 'next/link';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
@@ -216,21 +217,10 @@ export default function NewEmployeePage() {
   return (
     
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/employees">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">Add New Employee</h1>
-              <p className="text-sm text-text-secondary mt-1">Create a new employee record</p>
-            </div>
-          </div>
-        </div>
+        <MobileDuplicatePageChrome
+          title="New employee"
+          description="Create a new employee record"
+        />
 
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

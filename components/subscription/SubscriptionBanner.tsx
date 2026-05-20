@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Clock, X, ArrowRight, Shield } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { getSubscriptionBannerPlacement } from '@/lib/mobile-navigation';
+import { clsx } from 'clsx';
 
 interface SubscriptionStatus {
   plan_id: string;
@@ -18,6 +21,8 @@ type BannerType = 'trial_ending' | 'trial_expired' | 'grace_expiring' | 'grace_e
 
 export function SubscriptionBanner() {
   const { business } = useAuth();
+  const pathname = usePathname();
+  const placement = getSubscriptionBannerPlacement(pathname);
   const [dismissed, setDismissed] = useState(false);
   const [bannerType, setBannerType] = useState<BannerType>(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
@@ -27,8 +32,8 @@ export function SubscriptionBanner() {
     if (!business?.id) return;
 
     fetch(`/api/subscriptions/current?business_id=${business.id}`)
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         const sub = data.subscription;
         if (!sub) return;
 
@@ -37,7 +42,9 @@ export function SubscriptionBanner() {
         if (sub.cancel_at_period_end && sub.end_date) {
           const end = new Date(sub.end_date);
           if (end > now) {
-            setCancelDate(end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+            setCancelDate(
+              end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+            );
             setBannerType('cancelled');
             return;
           }
@@ -73,37 +80,61 @@ export function SubscriptionBanner() {
       .catch(() => {});
   }, [business?.id]);
 
-  if (dismissed || !bannerType) return null;
+  if (placement === 'hidden' || dismissed || !bannerType) return null;
 
-  const configs: Record<NonNullable<BannerType>, {
-    bg: string; border: string; text: string; icon: React.ReactNode; message: string; cta: string;
-  }> = {
+  /** Compact strip on non-dashboard routes; full strip on dashboard only */
+  if (placement === 'compact' && bannerType !== 'trial_ending' && bannerType !== 'grace_expiring') {
+    return null;
+  }
+
+  const configs: Record<
+    NonNullable<BannerType>,
+    {
+      bg: string;
+      border: string;
+      text: string;
+      icon: React.ReactNode;
+      message: string;
+      cta: string;
+    }
+  > = {
     trial_ending: {
-      bg: 'bg-yellow-50', border: 'border-yellow-300', text: 'text-yellow-800',
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-300',
+      text: 'text-yellow-800',
       icon: <Clock className="w-4 h-4" />,
       message: `Your trial ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Upgrade to keep full access.`,
       cta: 'Upgrade Now',
     },
     trial_expired: {
-      bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-800',
+      bg: 'bg-orange-50',
+      border: 'border-orange-300',
+      text: 'text-orange-800',
       icon: <AlertTriangle className="w-4 h-4" />,
-      message: 'Your trial has expired. A 7-day grace period has started. Upgrade now to avoid restrictions.',
+      message:
+        'Your trial has expired. A 7-day grace period has started. Upgrade now to avoid restrictions.',
       cta: 'Upgrade Now',
     },
     grace_expiring: {
-      bg: 'bg-orange-50', border: 'border-orange-400', text: 'text-orange-900',
+      bg: 'bg-orange-50',
+      border: 'border-orange-400',
+      text: 'text-orange-900',
       icon: <AlertTriangle className="w-4 h-4" />,
       message: `Grace period: ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining. After this, your account will be restricted to the free plan.`,
       cta: 'Upgrade Now',
     },
     grace_expired: {
-      bg: 'bg-red-50', border: 'border-red-300', text: 'text-red-800',
+      bg: 'bg-red-50',
+      border: 'border-red-300',
+      text: 'text-red-800',
       icon: <Shield className="w-4 h-4" />,
       message: 'Your account has been restricted to the free plan. Upgrade to restore full access.',
       cta: 'Upgrade',
     },
     cancelled: {
-      bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-800',
+      bg: 'bg-blue-50',
+      border: 'border-blue-300',
+      text: 'text-blue-800',
       icon: <Clock className="w-4 h-4" />,
       message: `Your subscription will end on ${cancelDate}. You have full access until then.`,
       cta: 'Reactivate',
@@ -111,26 +142,51 @@ export function SubscriptionBanner() {
   };
 
   const config = configs[bannerType];
+  const isCompact = placement === 'compact';
 
   return (
-    <div className={`${config.bg} ${config.border} border-b px-4 py-2.5`}>
-      <div className="flex items-center justify-between max-w-7xl mx-auto">
-        <div className={`flex items-center gap-2 ${config.text} text-sm`}>
+    <div
+      className={clsx(
+        config.bg,
+        config.border,
+        'border-b',
+        isCompact ? 'px-3 py-1.5 lg:hidden' : 'px-4 py-2.5'
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 max-w-7xl mx-auto">
+        <div
+          className={clsx(
+            'flex min-w-0 items-center gap-1.5',
+            config.text,
+            isCompact ? 'text-xs' : 'text-sm'
+          )}
+        >
           {config.icon}
-          <span className="font-medium">{config.message}</span>
+          <span className="font-medium truncate">
+            {isCompact
+              ? `Trial ends in ${daysRemaining}d — upgrade to keep access`
+              : config.message}
+          </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2">
           <Link
             href="/settings/subscription"
-            className={`${config.text} text-sm font-semibold hover:underline flex items-center gap-1`}
+            className={clsx(
+              config.text,
+              'font-semibold hover:underline flex items-center gap-0.5 whitespace-nowrap',
+              isCompact ? 'text-xs' : 'text-sm'
+            )}
           >
-            {config.cta} <ArrowRight className="w-3.5 h-3.5" />
+            {config.cta}
+            {!isCompact && <ArrowRight className="w-3.5 h-3.5" />}
           </Link>
           <button
+            type="button"
             onClick={() => setDismissed(true)}
-            className={`${config.text} opacity-60 hover:opacity-100`}
+            className={clsx(config.text, 'opacity-60 hover:opacity-100 p-0.5')}
+            aria-label="Dismiss"
           >
-            <X className="w-4 h-4" />
+            <X className={isCompact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
           </button>
         </div>
       </div>

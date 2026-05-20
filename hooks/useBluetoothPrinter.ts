@@ -24,9 +24,18 @@ import { useLayoutData } from '@/contexts/LayoutDataContext';
 import {
   getActiveTransport,
   getDriver,
+  getDriverForPrinter,
   isBluetoothSupported,
   isCapacitorNative,
 } from '@/lib/bluetooth/driver-registry';
+import type { BondedBluetoothDevice } from '@/lib/bluetooth/native/khatario-bluetooth-spp';
+import {
+  ensureSppPermissions,
+  isSppPluginAvailable,
+  listBondedBluetoothDevices,
+  openAndroidBluetoothSettings,
+} from '@/lib/bluetooth/native/khatario-bluetooth-spp';
+import { createCapacitorSppDriver } from '@/lib/bluetooth/drivers/capacitor-spp';
 import type { PrinterTransport } from '@/lib/printer/capabilities';
 import {
   listSavedPrinters,
@@ -42,7 +51,7 @@ import type {
   SavedBluetoothPrinter,
   PrinterLanguage,
 } from '@/lib/bluetooth/types';
-import { getProfile } from '@/lib/bluetooth/printer-profiles';
+import { getProfile, guessProfileFromName } from '@/lib/bluetooth/printer-profiles';
 import {
   buildLabelEscPos,
   type BuildLabelEscPosArgs,
@@ -70,6 +79,17 @@ export interface UseBluetoothPrinterResult {
   savedPrinters: SavedBluetoothPrinter[];
   /** Currently-connected printer, if any. */
   activePrinter: SavedBluetoothPrinter | null;
+  /** True when Android Classic Bluetooth (SPP) plugin is available. */
+  supportsClassicBluetooth: boolean;
+  /** Bonded devices from phone Settings (Android app only). */
+  listBondedDevices(): Promise<BondedBluetoothDevice[]>;
+  /** Connect a bonded device by MAC address (BillBook-style picker). */
+  connectBondedDevice(
+    device: BondedBluetoothDevice,
+    profileId?: PrinterProfileId
+  ): Promise<SavedBluetoothPrinter | null>;
+  /** Open Android system Bluetooth settings. */
+  openBluetoothSettings(): Promise<void>;
   /** Trigger the OS picker to pair a new printer. */
   pair(profileId?: PrinterProfileId): Promise<SavedBluetoothPrinter | null>;
   /** Forget a printer (removes from localStorage + disconnects if active). */
@@ -177,7 +197,7 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     async (printer: SavedBluetoothPrinter): Promise<void> => {
       setStatus('connecting');
       setError(null);
-      const driver = await getDriver();
+      const driver = await getDriverForPrinter(printer);
       await driver.connect(printer);
       setActivePrinter(printer);
       setStatus('connected');
@@ -191,7 +211,7 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       bytes: Uint8Array,
       language: PrinterLanguage
     ): Promise<void> => {
-      const driver = await getDriver();
+      const driver = await getDriverForPrinter(printer);
       setStatus('connecting');
       await driver.connect(printer);
       setActivePrinter(printer);
@@ -213,6 +233,65 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
   // ---------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------
+
+  const supportsClassicBluetooth = isNative && isSppPluginAvailable();
+
+  const listBondedDevices = useCallback(async () => {
+    if (!supportsClassicBluetooth) return [];
+    return listBondedBluetoothDevices();
+  }, [supportsClassicBluetooth]);
+
+  const openBluetoothSettings = useCallback(async () => {
+    if (!supportsClassicBluetooth) return;
+    await openAndroidBluetoothSettings();
+  }, [supportsClassicBluetooth]);
+
+  const connectBondedDevice = useCallback<
+    UseBluetoothPrinterResult['connectBondedDevice']
+  >(
+    async (device, profileId) => {
+      if (!businessId) {
+        setError('No active business');
+        return null;
+      }
+      if (!supportsClassicBluetooth) {
+        setError('Classic Bluetooth is only available in the Android app');
+        return null;
+      }
+      try {
+        setStatus('connecting');
+        setError(null);
+        const ok = await ensureSppPermissions();
+        if (!ok) {
+          setError('Bluetooth permissions not granted');
+          setStatus('error');
+          return null;
+        }
+        const spp = createCapacitorSppDriver();
+        const resolvedProfile =
+          profileId || guessProfileFromName(device.name);
+        const printer: SavedBluetoothPrinter = {
+          id: device.address,
+          name: device.name || 'Bluetooth printer',
+          driver: 'capacitor-spp',
+          profileId: resolvedProfile,
+          paperWidthMm: getProfile(resolvedProfile).paperWidthMm,
+          lastUsedAt: Date.now(),
+        };
+        await spp.connect(printer);
+        savePrinter(businessId, printer);
+        setActivePrinter(printer);
+        setStatus('connected');
+        refreshList();
+        return printer;
+      } catch (err: any) {
+        setStatus('error');
+        setError(err?.message || 'Connection failed');
+        return null;
+      }
+    },
+    [businessId, supportsClassicBluetooth, refreshList]
+  );
 
   const pair = useCallback<UseBluetoothPrinterResult['pair']>(
     async (profileId) => {
@@ -252,7 +331,7 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       if (!businessId) return;
       removePrinter(businessId, printerId);
       if (activePrinter?.id === printerId) {
-        getDriver()
+        getDriverForPrinter(activePrinter)
           .then((d) => d.disconnect())
           .catch(() => {
             /* best-effort */
@@ -281,11 +360,16 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
   const disconnect = useCallback<
     UseBluetoothPrinterResult['disconnect']
   >(async () => {
-    const driver = await getDriver();
-    await driver.disconnect();
+    if (activePrinter) {
+      const driver = await getDriverForPrinter(activePrinter);
+      await driver.disconnect();
+    } else {
+      const driver = await getDriver();
+      await driver.disconnect();
+    }
     setActivePrinter(null);
     setStatus(supported ? 'idle' : 'not-supported');
-  }, [supported]);
+  }, [supported, activePrinter]);
 
   const setPreferred = useCallback<
     UseBluetoothPrinterResult['setPreferred']
@@ -412,6 +496,10 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       error,
       savedPrinters,
       activePrinter,
+      supportsClassicBluetooth,
+      listBondedDevices,
+      connectBondedDevice,
+      openBluetoothSettings,
       pair,
       forget,
       connect,
@@ -431,6 +519,10 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       error,
       savedPrinters,
       activePrinter,
+      supportsClassicBluetooth,
+      listBondedDevices,
+      connectBondedDevice,
+      openBluetoothSettings,
       pair,
       forget,
       connect,

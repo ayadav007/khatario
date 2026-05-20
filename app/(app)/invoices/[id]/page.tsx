@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { ArrowLeft, Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail } from 'lucide-react';
+import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail } from 'lucide-react';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
@@ -26,6 +26,8 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { invoicePayloadToReceipt } from '@/lib/bluetooth/invoice-payload-to-receipt';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -39,6 +41,10 @@ export default function InvoiceDetailPage() {
   const [btPrinting, setBtPrinting] = useState(false);
 
   const [invoice, setInvoice] = useState<any>(null);
+
+  useMobileHeaderTitleOverride(
+    invoice?.invoice_number ? `Invoice ${invoice.invoice_number}` : null
+  );
   const [payments, setPayments] = useState<any[]>([]);
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
@@ -226,7 +232,7 @@ export default function InvoiceDetailPage() {
     }
     if (bt.savedPrinters.length === 0) {
       toast.error(
-        'No Bluetooth printer paired. Go to Settings → Bluetooth Printer to pair one.'
+        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
       );
       return;
     }
@@ -307,7 +313,7 @@ export default function InvoiceDetailPage() {
         !bt.supported
           ? 'Bluetooth not supported in this browser'
           : bt.savedPrinters.length === 0
-            ? 'Pair a printer in Settings → Bluetooth Printer'
+            ? 'Pair a printer in Settings → Print & devices'
             : 'Print receipt to Bluetooth printer'
       }
     >
@@ -353,41 +359,36 @@ export default function InvoiceDetailPage() {
         {/* Breadcrumbs */}
         <Breadcrumbs customLabels={{ [`/invoices/${invoiceId}`]: invoice?.invoice_number || 'Invoice Details' }} />
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => router.push('/invoices')}>
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-text-primary">
-                  Invoice {invoice.invoice_number}
-                </h1>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusBadge()}`}>
-                  {status.toUpperCase()}
+        <MobileDuplicatePageChrome
+          className="mb-0"
+          title={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>Invoice {invoice.invoice_number}</span>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusBadge()}`}>
+                {status.toUpperCase()}
+              </span>
+              {isCancelled && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200 dark:bg-red-950/45 dark:text-red-300 dark:border-red-800 inline-flex items-center gap-1">
+                  <XCircle className="w-3 h-3" />
+                  CANCELLED
                 </span>
-                {isCancelled && (
-                  <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200 dark:bg-red-950/45 dark:text-red-300 dark:border-red-800 flex items-center gap-1">
-                    <XCircle className="w-3 h-3" />
-                    CANCELLED
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-text-secondary mt-1 flex-wrap">
-                <span>{invoice.customer?.name || 'Cash Sale'}</span>
-                <span>•</span>
-                <span>{invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No Date'}</span>
-                <span>•</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getPaymentBadge()}`}>
-                  {paymentStatus?.replace('_', ' ')}
-                </span>
-              </div>
-            </div>
-          </div>
+              )}
+            </span>
+          }
+          description={
+            <>
+              {invoice.customer?.name || 'Cash Sale'}
+              {' • '}
+              {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No date'}
+              {' • '}
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getPaymentBadge()}`}>
+                {paymentStatus?.replace('_', ' ')}
+              </span>
+            </>
+          }
+        />
 
-          {/* Action Buttons - Conditional based on status */}
-          <div className="flex flex-wrap gap-2">
+        <div className="hidden md:flex flex-wrap gap-2">
             {isDraft && (
               <>
                 <Button variant="secondary" onClick={() => router.push(`/invoices/${invoiceId}/edit`)}>
@@ -486,7 +487,56 @@ export default function InvoiceDetailPage() {
                 </Button>
               </>
             )}
-          </div>
+        </div>
+        <div className="flex md:hidden flex-wrap gap-2">
+            {isDraft && (
+              <>
+                <Button variant="secondary" onClick={() => router.push(`/invoices/${invoiceId}/edit`)}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+                {creditMetrics?.projected && creditMetrics.projected.credit_status === 'OVER_LIMIT' && !creditApproval ? (
+                  <Button variant="primary" onClick={handleRequestApproval} disabled={requestingApproval} className="flex-1">
+                    {requestingApproval ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
+                    <span className="ml-2">Approve</span>
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={handleFinalize} className="flex-1">
+                    <Send className="w-4 h-4" />
+                    <span className="ml-2">Finalize</span>
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={() => setPaymentModalOpen(true)} className="flex-1">
+                  <CreditCard className="w-4 h-4" />
+                  <span className="ml-2">Pay</span>
+                </Button>
+                {bluetoothPrintButton}
+              </>
+            )}
+            {isFinal && paymentStatus !== 'paid' && (
+              <Button variant="primary" onClick={() => setPaymentModalOpen(true)} className="flex-1">
+                <CreditCard className="w-4 h-4" />
+                <span className="ml-2">Pay</span>
+              </Button>
+            )}
+            {isFinal && (
+              <>
+                <Button variant="secondary" onClick={() => setShareModalOpen(true)} className="flex-1">
+                  <Share2 className="w-4 h-4" />
+                  <span className="ml-2">Share</span>
+                </Button>
+                <Button variant="secondary" onClick={() => window.open(`/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`, '_blank')} className="flex-1">
+                  <Download className="w-4 h-4" />
+                  <span className="ml-2">PDF</span>
+                </Button>
+              </>
+            )}
+            {isProforma && (
+              <Button variant="primary" onClick={handleConvertToTaxInvoice} disabled={converting} className="flex-1">
+                {converting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span className="ml-2">Convert</span>
+              </Button>
+            )}
         </div>
 
         {/* PHASE 6: Credit Warning Banner */}

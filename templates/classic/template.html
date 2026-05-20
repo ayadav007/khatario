@@ -334,6 +334,7 @@
             Terms of Delivery: {{invoice.terms_of_delivery}}<br>
           {{/if}}
         {{/ifSetting}}
+        {{> custom-invoice-meta}}
         {{#if invoice.is_export}}
           {{#ifSetting 'show_invoice_currency'}}
             {{#if invoice.invoice_currency}}
@@ -431,6 +432,7 @@
                 {{/if}}
               {{/ifSetting}}
               <strong>{{this.item_name}}</strong>
+              {{> custom-item-lines}}
               {{#if this.variant_name}}<br><small style="color: #666; font-weight: normal;">Variant: {{this.variant_name}}</small>{{/if}}
               {{#if this.variant_attributes}}<br><small style="color: #666;">{{#each this.variant_attributes}}{{@key}}: {{this}}{{#unless @last}} | {{/unless}}{{/each}}</small>{{/if}}
               {{#ifSetting 'show_batch_number'}}

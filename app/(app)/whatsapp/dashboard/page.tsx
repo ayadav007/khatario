@@ -8,7 +8,8 @@ import { AgentPerformance } from '@/components/whatsapp/dashboard/AgentPerforman
 import { CampaignPerformance } from '@/components/whatsapp/dashboard/CampaignPerformance';
 import { BotVsHuman } from '@/components/whatsapp/dashboard/BotVsHuman';
 import { useAuth } from '@/contexts/AuthContext';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 
@@ -81,21 +82,10 @@ export default function WhatsAppDashboardPage() {
   return (
     
       <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/whatsapp/conversations">
-              <Button variant="secondary" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Conversations
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">WhatsApp CRM Dashboard</h1>
-              <p className="text-sm text-gray-600 mt-1">Overview of your WhatsApp conversations and performance</p>
-            </div>
-          </div>
-        </div>
+        <MobileDuplicatePageChrome
+          title="WhatsApp CRM dashboard"
+          description="Overview of your WhatsApp conversations and performance"
+        />
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">

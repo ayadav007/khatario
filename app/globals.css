@@ -55,6 +55,42 @@
     animation: landing-hero-word-enter-up 480ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 
+  /** Marketing mobile nav — overlay + slide-down panel */
+  @keyframes marketing-nav-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes marketing-nav-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(-0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-marketing-nav-backdrop-in {
+    animation: marketing-nav-backdrop-in 0.2s ease-out forwards;
+  }
+
+  .animate-marketing-nav-panel-in {
+    animation: marketing-nav-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-marketing-nav-backdrop-in,
+    .animate-marketing-nav-panel-in {
+      animation: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .landing-hero-word-exit-down,
     .landing-hero-word-enter-up {

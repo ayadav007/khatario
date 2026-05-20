@@ -10,6 +10,7 @@
  * Configuration values come from environment variables set at build time:
  *   - CAP_SERVER_URL      : Public HTTPS URL of your Next.js deploy.
  *                           Example: https://app.khatario.com
+ *                           (Native shell appends /login on cold start.)
  *   - CAP_ALLOW_CLEARTEXT : "true" to allow plain http:// for dev. Never in prod.
  *   - CAP_ANDROID_SCHEME  : "https" (default) or "http" for Capacitor's
  *                           internal scheme. Leave default unless debugging.
@@ -21,8 +22,10 @@
  */
 
 import type { CapacitorConfig } from '@capacitor/cli';
+import { resolveCapacitorServerUrl } from './lib/capacitor/server-url';
 
-const serverUrl = process.env.CAP_SERVER_URL || 'https://app.khatario.com';
+/** Cold-starts on /login in the native shell (not marketing /). */
+const serverUrl = resolveCapacitorServerUrl(process.env.CAP_SERVER_URL);
 const allowCleartext = process.env.CAP_ALLOW_CLEARTEXT === 'true';
 const androidScheme = process.env.CAP_ANDROID_SCHEME || 'https';
 
@@ -66,8 +69,8 @@ const config: CapacitorConfig = {
      * Bump versionCode when native plugins or permissions change; sync android/app/build.gradle.
      */
     KhatarioShell: {
-      versionCode: 1,
-      versionName: '1.0.0',
+      versionCode: 2,
+      versionName: '1.1.0',
     },
   },
 };
