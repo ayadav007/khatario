@@ -205,15 +205,26 @@ export function ShareInvoiceModal({
   }
 
   async function handleNativeShare(format: InvoiceShareFormat) {
+    if (!user?.id) {
+      toast.warning('Session not ready. Please try again.');
+      return;
+    }
     setNativeFormatLoading(format);
     try {
-      await shareInvoiceNative({
+      const result = await shareInvoiceNative({
         invoiceId,
         invoiceNumber,
         businessName: business?.name,
         format,
-        userId: user?.id,
+        userId: user.id,
+        businessId: business?.id,
       });
+      if (result === 'shared' || result === 'cancelled') {
+        onClose();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not share invoice';
+      toast.error(message);
     } finally {
       setNativeFormatLoading(null);
     }

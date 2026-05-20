@@ -13,6 +13,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { format } from 'date-fns';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
+import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
+import { canUseNativeInvoiceShare } from '@/lib/share-invoice';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { SyncStatusBadge } from '@/components/ui/SyncStatusBadge';
@@ -31,7 +33,21 @@ function InvoicesPageContent() {
   const { business, user, isPrimaryAdmin } = useAuth();
   const { currentBranchId, isLoading: branchLoading } = useBranch();
   const [shareModalInvoice, setShareModalInvoice] = useState<any>(null);
+  const [shareFormatInvoice, setShareFormatInvoice] = useState<any>(null);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<any>(null);
+
+  const openShareForInvoice = (invoice: {
+    id: string;
+    invoice_number: string;
+    customer_email?: string;
+    customer_phone?: string;
+  }) => {
+    if (canUseNativeInvoiceShare()) {
+      setShareFormatInvoice(invoice);
+    } else {
+      setShareModalInvoice(invoice);
+    }
+  };
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<
@@ -403,7 +419,7 @@ function InvoicesPageContent() {
                               title="Share Invoice"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setShareModalInvoice(invoice);
+                                openShareForInvoice(invoice);
                               }}
                             >
                               <Share2 className="w-4 h-4" />
@@ -483,7 +499,7 @@ function InvoicesPageContent() {
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          setShareModalInvoice(invoice);
+                          openShareForInvoice(invoice);
                         }}
                         className="flex items-center justify-center gap-1 py-2 px-1 text-[10px] font-semibold text-text-secondary hover:bg-slate-100/90 dark:hover:bg-slate-800 rounded-lg border border-border transition-colors"
                       >
@@ -625,7 +641,23 @@ function InvoicesPageContent() {
         />
       </div>
 
-      {/* Share Modal */}
+      {shareFormatInvoice && (
+        <ShareInvoiceFormatSheet
+          open
+          invoiceId={shareFormatInvoice.id}
+          invoiceNumber={shareFormatInvoice.invoice_number}
+          businessName={business?.name}
+          userId={user?.id}
+          businessId={business?.id}
+          onClose={() => setShareFormatInvoice(null)}
+          onFallbackModal={() => {
+            setShareModalInvoice(shareFormatInvoice);
+            setShareFormatInvoice(null);
+          }}
+        />
+      )}
+
+      {/* Share Modal (web fallback) */}
       {shareModalInvoice && (
         <ShareInvoiceModal
           invoiceId={shareModalInvoice.id}

@@ -603,6 +603,7 @@ function DashboardPage() {
           invoiceNumber={shareFormatInvoice.invoice_number}
           businessName={business?.name}
           userId={user?.id}
+          businessId={business?.id}
           onClose={() => setShareFormatInvoice(null)}
           onFallbackModal={() => {
             setShareModalInvoice(shareFormatInvoice);

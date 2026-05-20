@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
 import { useToastContext } from '@/contexts/ToastContext';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import { shareFileBlobNative, shareFileBlobWeb } from '@/lib/share-native-pdf';
 import {
   customerStatementSummary,
   customerVoucherLabel,
@@ -132,43 +133,25 @@ export function CustomerLedgerView({
       const blob = await res.blob();
 
       if (isCapacitorNative()) {
-        const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
-
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            resolve(result.includes(',') ? result.split(',')[1] : result);
-          };
-          reader.onerror = () => reject(new Error('Could not read statement'));
-          reader.readAsDataURL(blob);
-        });
-
         const filename = `statement-${customerId}-${range.from_date}-${range.to_date}.pdf`;
-        await Filesystem.writeFile({
-          path: filename,
-          data: base64,
-          directory: Directory.Cache,
-        });
-        const result = await Filesystem.getUri({ path: filename, directory: Directory.Cache });
-
-        await Share.share({
+        await shareFileBlobNative({
+          blob,
+          filename,
           title: 'Customer statement',
           text: 'Customer statement PDF',
-          files: [result.uri],
           dialogTitle: 'Share statement',
         });
         return;
       }
 
-      const file = new File([blob], `statement-${range.from_date}-${range.to_date}.pdf`, {
-        type: 'application/pdf',
+      const filename = `statement-${range.from_date}-${range.to_date}.pdf`;
+      const shared = await shareFileBlobWeb({
+        blob,
+        filename,
+        title: 'Customer statement',
+        mime: 'application/pdf',
       });
-      if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: 'Customer statement', files: [file] });
-        return;
-      }
+      if (shared) return;
 
       // Fallback: open download in a new tab
       window.open(url, '_blank');

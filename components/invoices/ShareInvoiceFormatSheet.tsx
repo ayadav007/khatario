@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { X, FileText, Image as ImageIcon, Link2, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToastContext } from '@/contexts/ToastContext';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 import {
   canUseNativeInvoiceShare,
   shareInvoiceNative,
@@ -16,7 +18,8 @@ export interface ShareInvoiceFormatSheetProps {
   invoiceNumber: string;
   businessName?: string;
   userId?: string;
-  /** When native share is unavailable or file generation fails */
+  businessId?: string;
+  /** When native share is unavailable (web only) */
   onFallbackModal: () => void;
 }
 
@@ -27,9 +30,11 @@ export function ShareInvoiceFormatSheet({
   invoiceNumber,
   businessName,
   userId,
+  businessId,
   onFallbackModal,
 }: ShareInvoiceFormatSheetProps) {
-  const { user } = useAuth();
+  const { user, business } = useAuth();
+  const toast = useToastContext();
   const [loadingFormat, setLoadingFormat] = useState<InvoiceShareFormat | null>(null);
 
   if (!open) return null;
@@ -44,19 +49,28 @@ export function ShareInvoiceFormatSheet({
     setLoadingFormat(format);
     try {
       const effectiveUserId = userId ?? user?.id;
+      const effectiveBusinessId = businessId ?? business?.id;
+      if (!effectiveUserId) {
+        toast.error('Session not ready. Please wait a moment and try again.');
+        return;
+      }
       const result = await shareInvoiceNative({
         invoiceId,
         invoiceNumber,
         businessName,
         format,
         userId: effectiveUserId,
+        businessId: effectiveBusinessId,
       });
-      if (result === 'modal') {
+      if (result === 'modal' && !isCapacitorNative()) {
         onClose();
         onFallbackModal();
-      } else if (result === 'shared') {
+      } else if (result === 'shared' || result === 'cancelled') {
         onClose();
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not share invoice';
+      toast.error(message);
     } finally {
       setLoadingFormat(null);
     }
