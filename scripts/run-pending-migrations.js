@@ -14,31 +14,10 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-
-function loadEnvFiles() {
-  const root = path.join(__dirname, '..');
-  for (const file of ['.env', '.env.production', '.env.local']) {
-    require('dotenv').config({ path: path.join(root, file) });
-  }
-}
+const { loadEnvFiles, getMigrationDbConfig, describeMigrationDb, isLikelyAppOnlyDbUser } = require('./db-config');
 
 function getDbConfig() {
-  if (process.env.DATABASE_URL) {
-    return { connectionString: process.env.DATABASE_URL };
-  }
-
-  return {
-    host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10),
-    database:
-      process.env.DB_NAME ||
-      process.env.POSTGRES_DB ||
-      process.env.POSTGRES_DATABASE ||
-      'khatario',
-    user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
-    password: String(process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? ''),
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  };
+  return getMigrationDbConfig();
 }
 
 const SKIP_FILES = new Set(['000_run_all_gst_migrations.sql']);
@@ -171,10 +150,17 @@ async function main() {
 
   try {
     console.log('Connecting to database...');
-    if (dbConfig.connectionString) {
-      console.log('Using DATABASE_URL');
-    } else {
-      console.log(`Host: ${dbConfig.host}, DB: ${dbConfig.database}, User: ${dbConfig.user}`);
+    console.log(`Migration DB: ${describeMigrationDb(dbConfig)}`);
+    if (isLikelyAppOnlyDbUser(dbConfig)) {
+      console.error('');
+      console.error('❌ Migrations need DDL rights (CREATE TABLE). Your app DB user cannot run migrations.');
+      console.error('   Add to .env.production (postgres superuser — deploy only, not exposed to the app):');
+      console.error('   MIGRATION_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/khatario');
+      console.error('');
+      console.error('   Or grant schema rights once as postgres:');
+      console.error('   sudo -u postgres psql -d khatario -c "GRANT ALL ON SCHEMA public TO khatario_user;"');
+      console.error('');
+      process.exit(1);
     }
 
     await ensureLogTable(client);

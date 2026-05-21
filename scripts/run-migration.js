@@ -1,34 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-
-function loadEnvFiles() {
-  const root = path.join(__dirname, '..');
-  const files = ['.env', '.env.production', '.env.local'];
-  for (const file of files) {
-    require('dotenv').config({ path: path.join(root, file) });
-  }
-}
+const { loadEnvFiles, getMigrationDbConfig, describeMigrationDb } = require('./db-config');
 
 function getDbConfig() {
-  if (process.env.DATABASE_URL) {
-    return { connectionString: process.env.DATABASE_URL };
-  }
-
-  const password = process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? '';
-
-  return {
-    host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10),
-    database:
-      process.env.DB_NAME ||
-      process.env.POSTGRES_DB ||
-      process.env.POSTGRES_DATABASE ||
-      'khatario',
-    user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
-    password: String(password),
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  };
+  return getMigrationDbConfig();
 }
 
 loadEnvFiles();
@@ -46,11 +22,7 @@ async function runMigration(migrationFile) {
 
   try {
     console.log('Connecting to database...');
-    if (dbConfig.connectionString) {
-      console.log('Using DATABASE_URL');
-    } else {
-      console.log(`Host: ${dbConfig.host}, DB: ${dbConfig.database}, User: ${dbConfig.user}`);
-    }
+    console.log(`Migration DB: ${describeMigrationDb(dbConfig)}`);
     await pool.query('SELECT NOW()');
     console.log('Connected successfully!');
 
