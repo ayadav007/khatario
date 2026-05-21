@@ -37,7 +37,7 @@ export function ScanLoadingScreen({ startedAt }: Props) {
   const seconds = (elapsed / 1000).toFixed(1);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background px-8">
+    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background px-8">
       {/* Animated icon */}
       <div className="mb-8 flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
         <svg

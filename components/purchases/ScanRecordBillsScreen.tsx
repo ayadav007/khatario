@@ -472,8 +472,8 @@ export function ScanRecordBillsScreen() {
         )}
       </section>
 
-      {/* Fixed above bottom nav (nav is h-16 z-30) — was bottom-0 z-30 so nav drew on top and hid taps */}
-      <div className="pointer-events-none fixed bottom-16 left-0 right-0 z-50 flex gap-3 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm lg:static lg:z-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-6 lg:shadow-none lg:backdrop-blur-none">
+      {/* Fixed above bottom nav — hidden while any scan overlay is active */}
+      <div className={`pointer-events-none fixed bottom-16 left-0 right-0 z-50 flex gap-3 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm lg:static lg:z-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-6 lg:shadow-none lg:backdrop-blur-none ${scanPhase.type !== 'idle' ? 'hidden lg:flex' : ''}`}>
         <div className="pointer-events-auto flex min-w-0 flex-1 gap-3">
           <Button
             type="button"

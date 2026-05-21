@@ -62,7 +62,7 @@ export function ScanSuccessScreen({ elapsedMs, itemCount, onDismiss }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-background"
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center overflow-hidden bg-background"
       onClick={onDismiss}
     >
       {/* Confetti */}
