@@ -115,6 +115,8 @@ Environment variables (all optional; have sensible defaults):
 | Var | Default | Description |
 | --- | --- | --- |
 | `CAP_SERVER_URL` | `https://app.khatario.com` | HTTPS URL the WebView loads on launch |
+
+**Staging vs production:** Production is not live yet. Use `npm run cap:android:staging:install` or see **`docs/SERVER_INFRASTRUCTURE.md`** — do not rely on the default URL while on staging.
 | `CAP_ALLOW_CLEARTEXT` | `false` | Allow plain `http://` (dev only) |
 | `CAP_ANDROID_SCHEME` | `https` | Internal Capacitor scheme; leave default |
 

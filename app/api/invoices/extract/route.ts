@@ -15,7 +15,7 @@ import {
 } from '@/lib/services/invoice-extract/confidence';
 import type { ExtractionPipelineResult } from '@/lib/services/invoice-extract/pipeline/extractionPipelineTypes';
 import { pipelineFromLlmContent } from '@/lib/services/invoice-extract/pipeline/llmExtractParse';
-import { GoogleVisionGroqProvider } from '@/lib/services/invoice-extract/providers';
+import { GoogleVisionGroqProvider, GeminiVisionProvider } from '@/lib/services/invoice-extract/providers';
 import {
   insertInvoiceLearningEvent,
   mergeLearningInsertPayload,
@@ -35,6 +35,7 @@ const IMAGE_MIME_TYPES = new Set([
 ]);
 
 const googleVisionGroqProvider = new GoogleVisionGroqProvider();
+const geminiVisionProvider = new GeminiVisionProvider();
 
 async function extractWithGoogleVisionThenGroqText(
   file: File,
@@ -42,6 +43,14 @@ async function extractWithGoogleVisionThenGroqText(
   businessId: string,
 ): Promise<ExtractionPipelineResult> {
   return googleVisionGroqProvider.extract({ file, includeDebug, businessId });
+}
+
+async function extractWithGeminiVision(
+  file: File,
+  includeDebug: boolean,
+  businessId: string,
+): Promise<ExtractionPipelineResult> {
+  return geminiVisionProvider.extract({ file, includeDebug, businessId });
 }
 
 async function extractWithVision(file: File, includeDebug: boolean): Promise<ExtractionPipelineResult> {
@@ -198,17 +207,21 @@ export async function POST(request: NextRequest) {
     );
 
     const extractionMode = process.env.EXTRACTION_MODE || 'vision';
-    const visionProvider = (process.env.INVOICE_VISION_PROVIDER || 'groq').toLowerCase().trim();
+    const visionProvider = (process.env.INVOICE_VISION_PROVIDER || 'gemini').toLowerCase().trim();
     const googleVisionKey = process.env.GOOGLE_VISION_API_KEY;
     const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     const useGoogleVisionPipeline =
       visionProvider === 'google' && Boolean(googleVisionKey) && Boolean(groqKey);
+    const useGeminiVisionPipeline =
+      visionProvider === 'gemini' && Boolean(geminiKey);
     const useGroqVisionPipeline =
-      visionProvider !== 'google' && Boolean(groqKey);
+      visionProvider === 'groq' && Boolean(groqKey);
 
     const canUseVision =
-      IMAGE_MIME_TYPES.has(file.type) && (useGoogleVisionPipeline || useGroqVisionPipeline);
+      IMAGE_MIME_TYPES.has(file.type) &&
+      (useGoogleVisionPipeline || useGeminiVisionPipeline || useGroqVisionPipeline);
     const useVision = (extractionMode === 'vision' || extractionMode === 'auto') && canUseVision;
 
     if (visionProvider === 'google' && IMAGE_MIME_TYPES.has(file.type) && !useGoogleVisionPipeline) {
@@ -216,13 +229,28 @@ export async function POST(request: NextRequest) {
         '[invoices/extract] INVOICE_VISION_PROVIDER=google but GOOGLE_VISION_API_KEY and GROQ_API_KEY are both required; falling back to OCR service or non-vision path.'
       );
     }
+    if (visionProvider === 'gemini' && !geminiKey) {
+      console.warn('[invoices/extract] INVOICE_VISION_PROVIDER=gemini but GEMINI_API_KEY is not set; falling back.');
+    }
 
     const includeDebug = invoiceExtractDebugEnabled();
     let extraction: ExtractionPipelineResult;
 
     if (useVision) {
       try {
-        if (useGoogleVisionPipeline) {
+        if (useGeminiVisionPipeline) {
+          try {
+            extraction = await extractWithGeminiVision(file, includeDebug, businessId);
+          } catch (geminiError: any) {
+            // Gemini failed (quota, rate limit, network) — fall back to Groq vision if available
+            if (groqKey) {
+              console.warn(`[invoices/extract] Gemini failed (${geminiError.message?.slice(0, 120)}); falling back to Groq vision.`);
+              extraction = await extractWithVision(file, includeDebug);
+            } else {
+              throw geminiError;
+            }
+          }
+        } else if (useGoogleVisionPipeline) {
           extraction = await extractWithGoogleVisionThenGroqText(file, includeDebug, businessId);
         } else {
           extraction = await extractWithVision(file, includeDebug);

@@ -1,5 +1,12 @@
 [byterover-mcp]
 
+## Infrastructure & deploy
+
+Before VPS deploy, nginx changes, or Android APK builds, read **`docs/SERVER_INFRASTRUCTURE.md`**.
+
+- Staging (current): `https://staging.khatario.com` — use `npm run cap:android:staging:install` for phone builds.
+- Production (`app.khatario.com`) is **not live yet** — do not default Capacitor builds to it.
+
 [byterover-mcp]
 
 You are given two tools from Byterover MCP server, including

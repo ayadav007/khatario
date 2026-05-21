@@ -49,6 +49,13 @@ import { validateGstExtractAgainstOcr } from '@/lib/services/invoice-extract/gst
 import type { FullTextAnnotation } from '@/lib/services/invoice-extract/vision-types';
 import { repairExtractSectionsDeterministic } from '@/lib/services/invoice-extract/repair/sectionRepairEngine';
 import { pipelineFromLlmContent } from '@/lib/services/invoice-extract/pipeline/llmExtractParse';
+import { reconstructItemTableFromAnnotation } from '@/lib/services/invoice-extract/ocrTableReconstructor';
+import {
+  extractHsnRateAnnotations,
+  extractStandaloneRateAnnotation,
+  formatHsnRateHintBlock,
+  applyHsnRateAnnotationsToExtract,
+} from '@/lib/services/invoice-extract/hsnRateAnnotationExtractor';
 import type {
   ExtractionPipelineResult,
   InvoiceExtractDebugPayload,
@@ -202,11 +209,22 @@ export async function runGoogleVisionGroqTextPipeline(
     adaptiveHints = formatAdaptiveHintBlock(buildLayoutHints(known, strategy));
   }
 
+  const spatialTable = reconstructItemTableFromAnnotation(fullTextAnnotation, ocrText);
+
+  // Deterministic HSN→rate annotations extracted from OCR (e.g. "HSN 61119090, 5.0% IGST")
+  const hsnAnnotations = extractHsnRateAnnotations(clipped);
+  const standaloneRate = hsnAnnotations.length === 0 ? extractStandaloneRateAnnotation(clipped) : null;
+  const hsnRateHintBlock = formatHsnRateHintBlock(hsnAnnotations, standaloneRate);
+
   const userPrompt =
     `Raw OCR from the invoice (Google Cloud Vision DOCUMENT_TEXT_DETECTION). ` +
     `Line order may be imperfect; use labels (GSTIN, Bill No, HSN, CGST, SGST, IGST, Grand Total), numbers, and Indian invoice conventions.\n\n` +
     `--- OCR START ---\n${clipped}\n--- OCR END ---\n` +
-    (adaptiveHints.trim() ? `\n${adaptiveHints}\n` : '\n') +
+    (spatialTable
+      ? `\n${spatialTable}\n\nIMPORTANT: The table above was reconstructed from spatial bounding-box data and has correct column alignment. When extracting line items, prefer the table above for Qty, Rate, Discount, Taxable, CGST, SGST, IGST, and Total values. Use the flat OCR text only for supplier/header/footer fields not present in the table.\n`
+      : '\n') +
+    (hsnRateHintBlock.trim() ? `\n${hsnRateHintBlock}\n` : '') +
+    (adaptiveHints.trim() ? `\n${adaptiveHints}\n` : '') +
     (supplierAwareHintBlock.trim() ? `\n${supplierAwareHintBlock}\n` : '') +
     VISION_PROMPT.replace('from this invoice image', 'from the OCR text above');
 
@@ -220,6 +238,7 @@ export async function runGoogleVisionGroqTextPipeline(
       model: textModel,
       messages: [{ role: 'user', content: userPrompt }],
       temperature: 0,
+      response_format: { type: 'json_object' },
     }),
     signal: AbortSignal.timeout(120_000),
   });
@@ -241,6 +260,16 @@ export async function runGoogleVisionGroqTextPipeline(
 
   const repaired = repairExtractSectionsDeterministic(data);
   data = repaired.patched;
+
+  // Deterministic HSN-rate override + marketplace column-swap repair
+  const { patched: hsnPatched, notes: hsnNotes } = applyHsnRateAnnotationsToExtract(
+    data,
+    hsnAnnotations,
+    standaloneRate,
+    clipped,
+  );
+  data = hsnPatched;
+  const allRepairNotes = [...(repaired.notes ?? []), ...hsnNotes];
 
   let ocrGstSummary: ExtractionPipelineResult['ocrGstSummary'] | undefined;
   let learningSnapshot: ExtractionLearningSnapshotPayload | undefined;
@@ -284,7 +313,8 @@ export async function runGoogleVisionGroqTextPipeline(
         ocr_preprocess: preprocessSummary ?? null,
         layout_strategy: layoutStrategyLabel,
         layout_adaptive_hint_lines: adaptiveHints.split('\n').filter(Boolean).slice(0, 20),
-        deterministic_repairs: repaired.notes,
+        spatial_table_injected: spatialTable != null,
+        deterministic_repairs: allRepairNotes,
         raw_ocr_text:
           ocrText.length > MAX_DEBUG_OCR_CHARS ? ocrText.slice(0, MAX_DEBUG_OCR_CHARS) : ocrText,
         raw_ocr_truncated: ocrText.length > MAX_DEBUG_OCR_CHARS,
@@ -321,7 +351,7 @@ export async function runGoogleVisionGroqTextPipeline(
         learningSnapshot,
         gstPropagation,
         spatialDocument,
-        repairNotes: repaired.notes,
+        repairNotes: allRepairNotes,
         layoutStrategy: layoutStrategyLabel,
       };
     }
@@ -335,7 +365,7 @@ export async function runGoogleVisionGroqTextPipeline(
       learningSnapshot,
       gstPropagation,
       spatialDocument,
-      repairNotes: repaired.notes,
+      repairNotes: allRepairNotes,
       layoutStrategy: layoutStrategyLabel,
     };
   }
@@ -356,7 +386,7 @@ export async function runGoogleVisionGroqTextPipeline(
     processingTimeMs,
     learningSnapshot,
     spatialDocument,
-    repairNotes: repaired.notes,
+    repairNotes: allRepairNotes,
     layoutStrategy: layoutStrategyLabel,
   };
 
@@ -370,7 +400,7 @@ export async function runGoogleVisionGroqTextPipeline(
       pipeline: 'google-vision+groq-text',
       layout_strategy: layoutStrategyLabel,
       layout_adaptive_hint_lines: adaptiveHints.split('\n').filter(Boolean).slice(0, 20),
-      deterministic_repairs: repaired.notes,
+      deterministic_repairs: allRepairNotes,
       raw_ocr_text: raw,
       raw_ocr_truncated: fullLen > MAX_DEBUG_OCR_CHARS,
       raw_ocr_full_length: fullLen,

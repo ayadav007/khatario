@@ -18,6 +18,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { postInvoiceExtract } from '@/lib/invoice-extract-client';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY } from '@/lib/purchase-scan-constants';
 import { useToastContext } from '@/contexts/ToastContext';
+import { DocumentCropScreen } from '@/components/purchases/scan-flow/DocumentCropScreen';
+import { ScanPreviewScreen } from '@/components/purchases/scan-flow/ScanPreviewScreen';
+import { ScanLoadingScreen } from '@/components/purchases/scan-flow/ScanLoadingScreen';
+import { ScanSuccessScreen } from '@/components/purchases/scan-flow/ScanSuccessScreen';
 
 type JobRow = {
   id: string;
@@ -30,6 +34,13 @@ type JobRow = {
 };
 
 type Filter = 'all' | 'incomplete' | 'completed';
+
+type ScanPhase =
+  | { type: 'idle' }
+  | { type: 'cropping'; rawFile: File }
+  | { type: 'preview'; pages: File[] }
+  | { type: 'processing'; pages: File[]; startedAt: number }
+  | { type: 'success'; elapsedMs: number; itemCount: number; result: unknown };
 
 function vendorLabel(job: JobRow): string {
   const d = job.extraction_data as Record<string, unknown> | null;
@@ -89,7 +100,7 @@ export function ScanRecordBillsScreen() {
   });
   const [filter, setFilter] = useState<Filter>('all');
   const [pdfBusy, setPdfBusy] = useState(false);
-  const [cameraBusy, setCameraBusy] = useState(false);
+  const [scanPhase, setScanPhase] = useState<ScanPhase>({ type: 'idle' });
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const loadJobs = useCallback(async () => {
@@ -191,7 +202,7 @@ export function ScanRecordBillsScreen() {
     cameraInputRef.current?.click();
   };
 
-  const handleCameraFileChange: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+  const handleCameraFileChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !business?.id) return;
@@ -205,18 +216,66 @@ export function ScanRecordBillsScreen() {
       toast.error('Image too large. Maximum size is 10MB');
       return;
     }
+    // Enter crop flow instead of directly uploading
+    setScanPhase({ type: 'cropping', rawFile: file });
+  };
 
-    setCameraBusy(true);
+  // Crop confirmed → go to preview
+  const handleCropDone = (croppedFile: File) => {
+    setScanPhase({ type: 'preview', pages: [croppedFile] });
+  };
+
+  // Add extra page in preview
+  const handleAddPage = (file: File) => {
+    setScanPhase(prev =>
+      prev.type === 'preview'
+        ? { ...prev, pages: [...prev.pages, file] }
+        : prev,
+    );
+  };
+
+  // Remove page in preview
+  const handleRemovePage = (index: number) => {
+    setScanPhase(prev => {
+      if (prev.type !== 'preview') return prev;
+      const pages = prev.pages.filter((_, i) => i !== index);
+      return pages.length === 0 ? { type: 'idle' } : { ...prev, pages };
+    });
+  };
+
+  // Proceed from preview → start extraction
+  const handleProceed = useCallback(async () => {
+    if (scanPhase.type !== 'preview' || !business?.id) return;
+    const pages = scanPhase.pages;
+    const startedAt = Date.now();
+    setScanPhase({ type: 'processing', pages, startedAt });
+
+    // For now, send the first page (multi-page merge can come later)
+    const file = pages[0];
     try {
       const result = await postInvoiceExtract(file, business.id);
-      await onExtractSuccess(result);
-      toast.success('Bill extracted — opening purchase form');
+      const elapsedMs = Date.now() - startedAt;
+      const itemCount =
+        (result as any)?.gst_extraction?.items?.length ??
+        (result as any)?.data?.items?.length ?? 3;
+      setScanPhase({ type: 'success', elapsedMs, itemCount, result });
     } catch (err) {
+      setScanPhase({ type: 'idle' });
       toast.error(err instanceof Error ? err.message : 'Extraction failed');
-    } finally {
-      setCameraBusy(false);
     }
-  };
+  }, [scanPhase, business?.id, toast]);
+
+  // Dismiss success → navigate
+  const handleSuccessDismiss = useCallback(async () => {
+    if (scanPhase.type !== 'success') return;
+    const { result } = scanPhase;
+    setScanPhase({ type: 'idle' });
+    try {
+      await onExtractSuccess(result);
+    } catch {
+      toast.error('Could not open purchase form — try again');
+    }
+  }, [scanPhase, onExtractSuccess, toast]);
 
   const scrollToGallery = () => {
     document.getElementById('scan-gallery-section')?.scrollIntoView({ behavior: 'smooth' });
@@ -224,7 +283,36 @@ export function ScanRecordBillsScreen() {
 
   return (
     <div className="relative min-h-[70vh] pb-[10rem] max-lg:pb-[calc(10rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
-      {/* Hidden capture input: opens system camera on mobile (no intermediate "Scan bill" UI) */}
+
+      {/* ── Scan flow overlays ───────────────────────────────────── */}
+      {scanPhase.type === 'cropping' && (
+        <DocumentCropScreen
+          imageFile={scanPhase.rawFile}
+          onCrop={handleCropDone}
+          onRetake={() => { setScanPhase({ type: 'idle' }); openDeviceCamera(); }}
+        />
+      )}
+      {scanPhase.type === 'preview' && (
+        <ScanPreviewScreen
+          pages={scanPhase.pages}
+          onAddPage={handleAddPage}
+          onRemovePage={handleRemovePage}
+          onProceed={handleProceed}
+          onBack={() => setScanPhase({ type: 'idle' })}
+        />
+      )}
+      {scanPhase.type === 'processing' && (
+        <ScanLoadingScreen startedAt={scanPhase.startedAt} />
+      )}
+      {scanPhase.type === 'success' && (
+        <ScanSuccessScreen
+          elapsedMs={scanPhase.elapsedMs}
+          itemCount={scanPhase.itemCount}
+          onDismiss={handleSuccessDismiss}
+        />
+      )}
+
+      {/* Hidden capture input: opens system camera on mobile */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -391,7 +479,7 @@ export function ScanRecordBillsScreen() {
             type="button"
             variant="secondary"
             className="min-h-12 flex-1 gap-2 border border-border bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-800"
-            disabled={pdfBusy || cameraBusy}
+            disabled={pdfBusy || scanPhase.type !== 'idle'}
             onClick={handlePdfPick}
           >
             {pdfBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileText className="h-5 w-5" />}
@@ -401,10 +489,10 @@ export function ScanRecordBillsScreen() {
             type="button"
             variant="primary"
             className="min-h-12 flex-1 gap-2 shadow-md"
-            disabled={pdfBusy || cameraBusy}
+            disabled={pdfBusy || scanPhase.type !== 'idle'}
             onClick={openDeviceCamera}
           >
-            {cameraBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+            <Camera className="h-5 w-5" />
             Open camera
           </Button>
         </div>

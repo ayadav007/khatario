@@ -76,9 +76,21 @@ Set price_mode to match the document; use null only if impossible.
 - If supplier_gstin state code (first 2 digits) ≠ buyer_gstin state code and invoice shows IGST → tax_type 'igst'.
 - If same state or invoice shows CGST+SGST columns → 'cgst_sgst'.
 
-## LINE ITEMS — E‑COMMERCE
+## LINE ITEMS — MARKETPLACE / E-COMMERCE (Myntra, Meesho, Flipkart, Amazon, Ajio, etc.)
+
+Indian marketplace invoices have a **Gross Amount → Discount → Taxable Amount → IGST/Tax → Case Total** column structure. Rules:
+
+- **line_total = Case Total Amount / Net Payable / Total column** (the LAST numeric column). Do NOT use Gross Amount / MRP as line_total.
+- **taxable_value = Taxable Amount / Taxable Value / Assessable Value** column. Never back-calculate from Gross Amount.
+- **discount_amount = Discount column** value (absolute rupees). This is the trade discount off MRP.
+- **gst_rate** = derive from the HSN-line "X% IGST" annotation OR from (IGST amount / Taxable Amount) × 100, snapped to nearest standard slab. Do NOT derive from Gross Amount.
+- **igst_amount = IGST column** printed value (e.g. 24.38). Do NOT confuse the Taxable Amount (e.g. 487.62) with the IGST amount.
+- **grand_total = invoice footer Total / Net Payable** (e.g. 512.00), NOT the Gross Amount (e.g. 2299.00).
+- **subtotal = sum of Taxable Amount column**, not sum of Gross Amount column.
+
+**Critical check:** On these invoices, Gross Amount ≠ line_total. Always verify: taxable_value + IGST amount ≈ Case Total Amount. If (taxable + igst) ≠ Case Total but (taxable + igst) ≈ Case Total → correct. If Gross Amount ≫ Case Total → there is a trade discount; capture it in discount_amount.
+
 One items[] row per TABLE row. Do not merge Exchange Discount into product row.
-Product: discount_amount from Discount column (absolute); line_total from Total column; gst_rate from tax column.
 Exchange row: line_total negative (e.g. -10000), gst_rate 0, discount_amount null or 0.
 
 ## LINE ITEMS — RETAIL (DMart-style)
