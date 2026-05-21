@@ -18,6 +18,20 @@ cd "$ROOT"
 
 trap 'echo "❌ Deploy failed at line $LINENO" >&2' ERR
 
+# Never edit deploy scripts on the VPS. chmod +x / CRLF drift makes git pull fail.
+restore_deploy_scripts() {
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+  for f in scripts/deploy-vps.sh scripts/install-git-deploy-hook.sh; do
+    if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+      git restore --source=HEAD --staged --worktree "$f" 2>/dev/null \
+        || git checkout HEAD -- "$f" 2>/dev/null \
+        || true
+    fi
+  done
+}
+
 NO_PULL=false
 for arg in "$@"; do
   if [[ "$arg" == "--no-pull" ]]; then NO_PULL=true; fi
@@ -53,8 +67,11 @@ echo "=========================================="
 echo ""
 
 if [[ "$NO_PULL" == false ]]; then
+  restore_deploy_scripts
   echo ">> git pull origin $GIT_BRANCH"
-  git pull origin "$GIT_BRANCH"
+  git fetch origin "$GIT_BRANCH"
+  git merge --ff-only "origin/$GIT_BRANCH"
+  restore_deploy_scripts
   echo ""
 fi
 
