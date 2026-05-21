@@ -1300,11 +1300,11 @@ export function transformExtractToPurchaseReviewFormat(
           discount_amount: 0,
           discount_on_tax_inclusive: false,
           tax_rate: taxRate,
-          tax_mode: 'exclusive',
+          tax_mode: 'exclusive' as InvoicePriceMode,
           taxable_value: item.taxable_value,
-          cgst_amount: item.cgst_amount,
-          sgst_amount: item.sgst_amount,
-          igst_amount: item.igst_amount,
+          cgst_amount: item.cgst_amount ?? undefined,
+          sgst_amount: item.sgst_amount ?? undefined,
+          igst_amount: item.igst_amount ?? undefined,
         };
       }
     }
