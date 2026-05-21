@@ -2,33 +2,35 @@
 # Deploy Khatario on VPS after git pull / PR merge.
 #
 # Usage (on VPS):
-#   ./scripts/deploy-vps.sh
-#   ./scripts/deploy-vps.sh --no-pull    # skip git pull (already pulled)
+#   bash scripts/deploy-vps.sh
+#   bash scripts/deploy-vps.sh --no-pull
 #
-# Optional env (.env.production) — read safely, not sourced:
-#   PM2_APP_NAME=khatario
+# Optional in .env.production:
+#   PM2_APP_NAME=khatario-staging
 #   PM2_WORKER_NAME=todo-reminder-worker
 #   GIT_BRANCH=main
 #   MIGRATION_BASELINE=239
 
-set -euo pipefail
+set -eo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+trap 'echo "❌ Deploy failed at line $LINENO" >&2' ERR
 
 NO_PULL=false
 for arg in "$@"; do
   if [[ "$arg" == "--no-pull" ]]; then NO_PULL=true; fi
 done
 
-# Read a single KEY=VALUE from env files without sourcing (avoids bash parsing errors).
+# Read KEY=VALUE without sourcing (safe for encryption keys / special chars).
 read_env_var() {
   local file="$1"
   local key="$2"
   if [[ ! -f "$file" ]]; then
     return 0
   fi
-  grep -E "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/^["'\''"]//;s/["'\''"]$//' | tr -d '\r'
+  grep -E "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/^["'\''"]//;s/["'\''"]$//' | tr -d '\r' || true
 }
 
 ENV_FILE=".env.production"
@@ -39,13 +41,14 @@ fi
 PM2_APP_NAME="$(read_env_var "$ENV_FILE" PM2_APP_NAME)"
 PM2_WORKER_NAME="$(read_env_var "$ENV_FILE" PM2_WORKER_NAME)"
 GIT_BRANCH="$(read_env_var "$ENV_FILE" GIT_BRANCH)"
-PM2_APP_NAME="${PM2_APP_NAME:-khatario}"
+PM2_APP_NAME="${PM2_APP_NAME:-khatario-staging}"
 PM2_WORKER_NAME="${PM2_WORKER_NAME:-todo-reminder-worker}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 
 echo ""
 echo "=========================================="
 echo "  Khatario deploy — $(date -Iseconds)"
+echo "  PM2 app: $PM2_APP_NAME"
 echo "=========================================="
 echo ""
 
@@ -71,11 +74,11 @@ echo ">> npm run build"
 npm run build
 echo ""
 
-echo ">> pm2 restart $PM2_APP_NAME"
+echo ">> pm2 restart $PM2_APP_NAME --update-env"
 if command -v pm2 >/dev/null 2>&1; then
   pm2 restart "$PM2_APP_NAME" --update-env || pm2 start npm --name "$PM2_APP_NAME" -- start
   if pm2 describe "$PM2_WORKER_NAME" >/dev/null 2>&1; then
-    echo ">> pm2 restart $PM2_WORKER_NAME"
+    echo ">> pm2 restart $PM2_WORKER_NAME --update-env"
     pm2 restart "$PM2_WORKER_NAME" --update-env
   fi
   pm2 save
