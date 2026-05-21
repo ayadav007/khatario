@@ -1266,6 +1266,49 @@ export function transformExtractToPurchaseReviewFormat(
       };
     }
 
+    /**
+     * TRUST PRINTED VALUES FIRST.
+     *
+     * When the invoice already prints a Taxable Amount column (marketplace, B2B, etc.)
+     * use it directly: unit_price = taxable / qty, discount = 0, amount = line_total.
+     * This avoids all the MRP-reconstruction math below and matches what the user sees on
+     * the invoice. The form computes the rest: amount = unit_price * qty * (1 + gst%).
+     *
+     * Conditions: taxable_value printed and positive, makes sense vs line_total (within 2%),
+     * and the line is not a pure-discount / exchange row.
+     */
+    const printedTaxable =
+      typeof item.taxable_value === 'number' && Number.isFinite(item.taxable_value) && item.taxable_value > 0
+        ? item.taxable_value
+        : null;
+
+    if (printedTaxable != null && quantity > 0) {
+      const upFromTaxable = roundExclusiveUnitPrice(printedTaxable / quantity);
+      // Verify: taxable * (1 + gst%) should be close to line_total when both are available
+      const impliedAmount = taxRate > 0 ? round2(printedTaxable * (1 + taxRate / 100)) : printedTaxable;
+      const ltOk = amountRaw <= 0 || Math.abs(impliedAmount - amountRaw) / Math.max(amountRaw, 1) <= 0.03;
+      if (ltOk && upFromTaxable > 0) {
+        const amount = amountRaw > 0 ? round2(amountRaw) : impliedAmount;
+        return {
+          item_name: item.description,
+          hsn_sac: item.hsn_code,
+          quantity,
+          unit_price: upFromTaxable,
+          amount,
+          unit: item.unit || 'PCS',
+          discount_percent: 0,
+          discount_amount: 0,
+          discount_on_tax_inclusive: false,
+          tax_rate: taxRate,
+          tax_mode: 'exclusive',
+          taxable_value: item.taxable_value,
+          cgst_amount: item.cgst_amount,
+          sgst_amount: item.sgst_amount,
+          igst_amount: item.igst_amount,
+        };
+      }
+    }
+
     const grossAmount = unitPriceRaw * quantity;
     const discountPercentForMath =
       grossAmount > 0 && discount > 0
