@@ -156,12 +156,70 @@ export function repairGSTSection(extract: IndianGstInvoiceExtract): {
   return { patched: out, notes };
 }
 
+/**
+ * Fixes the case where the LLM extracted `rate = taxable_value` (post-discount) while also
+ * extracting `discount_amount` from the invoice's Discount column. This makes the discount
+ * impossible (discount ≥ rate), resulting in zero taxable in the form.
+ *
+ * Common on marketplace invoices (Myntra, Flipkart, Amazon) where columns are:
+ * Gross Amount → Discount → Taxable Amount → Tax → Case Total.
+ *
+ * When detected, two repairs are attempted in priority order:
+ * 1. If line_total and gst_rate are available, reconstruct rate as the ex-GST gross
+ *    (line_total + discount) / qty / (1 + gst/100) and set discount_on_tax_inclusive = true.
+ *    This preserves the full MRP → discount → net flow in the form.
+ * 2. Otherwise, simply clear discount_amount so the rate (which equals the taxable value)
+ *    is used directly with no double-deduction.
+ */
+export function repairImpossibleDiscounts(extract: IndianGstInvoiceExtract): {
+  patched: IndianGstInvoiceExtract;
+  notes: string[];
+} {
+  const notes: string[] = [];
+  const out = cloneExtract(extract);
+  const items = out.items ?? [];
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]!;
+    const disc = it.discount_amount ?? 0;
+    const rate = it.rate ?? 0;
+    const qty = it.qty ?? 1;
+
+    if (disc <= 0 || rate <= 0 || disc < rate * qty) continue;
+
+    // Discount ≥ rate × qty — impossible. LLM set rate = taxable (post-discount).
+    const lt = it.line_total;
+    const gst = it.gst_rate;
+
+    if (lt != null && Number.isFinite(lt) && lt > 0 && gst != null && gst > 0) {
+      // Reconstruct exclusive gross MRP: (net_incl + discount_incl) / qty / (1 + gst%)
+      const grossExcl = (lt + disc) / qty / (1 + gst / 100);
+      it.rate = round2(grossExcl);
+      it.discount_on_tax_inclusive = true;
+      notes.push(
+        `line ${i + 1}: impossible discount (${disc} ≥ ${round2(rate * qty)}); reconstructed gross ex-GST rate ${round2(grossExcl)} from line_total+discount, set discount_on_tax_inclusive=true`,
+      );
+    } else {
+      // Fallback: rate already reflects post-discount taxable — just drop the discount
+      it.discount_amount = null;
+      notes.push(
+        `line ${i + 1}: impossible discount (${disc} ≥ ${round2(rate * qty)}); cleared discount_amount (rate appears to be post-discount taxable)`,
+      );
+    }
+  }
+
+  return { patched: out, notes };
+}
+
 export function repairExtractSectionsDeterministic(extract: IndianGstInvoiceExtract): {
   patched: IndianGstInvoiceExtract;
   notes: string[];
 } {
   let cur = extract;
   const notes: string[] = [];
+  const d = repairImpossibleDiscounts(cur);
+  cur = d.patched;
+  notes.push(...d.notes);
   const t = repairTotalsSection(cur);
   cur = t.patched;
   notes.push(...t.notes);
