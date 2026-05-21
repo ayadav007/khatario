@@ -2189,6 +2189,12 @@ export async function processIncomingMessage(
   const botTypingSettings = await getBotTypingSettings(businessId);
 
   try {
+    // Skip bot/auto-reply if we already processed this WhatsApp message id (retries / duplicate events).
+    const existingMsg = await queryOne<{ id: string }>(
+      `SELECT id FROM whatsapp_conversation_messages WHERE message_id = $1 AND business_id = $2 LIMIT 1`,
+      [messageId, businessId]
+    );
+
     // Store the incoming message first
     const { conversationId, customerId } = await storeIncomingMessage(
       businessId,
@@ -2205,6 +2211,11 @@ export async function processIncomingMessage(
       sourceTimestampSec,
       originalWaTimestampSec
     );
+
+    if (existingMsg) {
+      console.log('[CRM] Duplicate message_id — stored/updated only, skipping bot reply:', messageId);
+      return { shouldStore: true };
+    }
     
     // Extract normalized phone for state / bot rules (groups may use participant or 'unknown')
     let normalizedFrom = extractPhoneFromJid(fromJid);
@@ -2755,25 +2766,16 @@ export async function processIncomingMessage(
           });
           
           if (normalizedAllowedPhones.length === 0) {
-            console.log('[CRM] 🤖 Dev mode: No allowed phones configured, skipping AI response');
-            return {
-              response:
-                'Thanks for your message. Our WhatsApp assistant is in test mode — please ask your admin to add this number to approved test numbers, or contact us directly.',
-              shouldStore: true
-            };
+            console.log('[CRM] 🤖 Dev mode: No allowed phones configured — message stored, no auto-reply sent');
+            return { shouldStore: true };
           }
 
           if (!normalizedAllowedPhones.includes(normalizedPhone)) {
-            console.log('[CRM] 🤖 Dev mode: Phone not in allowed list, skipping AI response:', {
+            console.log('[CRM] 🤖 Dev mode: Phone not in allowed list — message stored, no auto-reply sent:', {
               phone: normalizedPhone,
               allowedPhones: normalizedAllowedPhones,
-              comparison: `Looking for "${normalizedPhone}" in [${normalizedAllowedPhones.join(', ')}]`
             });
-            return {
-              response:
-                'Thanks for your message. Our WhatsApp assistant is in test mode and only replies from approved numbers. Please contact us directly if you need help.',
-              shouldStore: true
-            };
+            return { shouldStore: true };
           }
           
           console.log('[CRM] 🤖 Dev mode: Phone is allowed, proceeding with AI response');

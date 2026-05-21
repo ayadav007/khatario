@@ -193,7 +193,7 @@ export default function CustomersPage() {
           placeholder="Name or phone"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="input pl-10 w-full h-12 rounded-xl"
+          className="input pl-10 w-full h-10 rounded-xl"
         />
       </div>
     </>
@@ -287,7 +287,7 @@ export default function CustomersPage() {
   );
 
   const fullList = (
-    <Card padding="none" className="overflow-hidden">
+    <>
       {loading ? (
         <div className="p-8 flex justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
@@ -295,7 +295,8 @@ export default function CustomersPage() {
       ) : (
         <>
           {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto">
+          <Card padding="none" className="overflow-hidden hidden md:block">
+            <div className="overflow-x-auto">
             <table className="table w-full">
               <thead>
                 <tr className="table-header border-b border-border">
@@ -375,70 +376,81 @@ export default function CustomersPage() {
                 )}
               </tbody>
             </table>
-          </div>
+            </div>
+          </Card>
 
-          {/* Mobile Card View */}
-          <div className="md:hidden divide-y divide-border">
+          {/* Mobile Card View — individual compact cards with gap (no outer list shell) */}
+          <div className="md:hidden space-y-2">
             {paginatedCustomers.length > 0 ? (
               paginatedCustomers.map((customer) => {
                 const balance = Number(customer.current_balance ?? customer.opening_balance ?? 0);
                 return (
                   <div
                     key={customer.id}
-                    className="p-4 bg-surface transition-colors duration-150 ease-out hover:bg-slate-100/80 dark:hover:bg-slate-800/85 active:bg-slate-50 dark:active:bg-slate-800/90"
+                    className="rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
                     onClick={() => setSelectedCustomerId(customer.id)}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800/40 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center font-bold">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800/40 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center font-semibold text-xs shrink-0">
                           {customer.name.charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <p className="font-bold text-text-primary">{customer.name}</p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-text-primary truncate leading-snug">
+                            {customer.name}
+                          </p>
                           {customer.phone && (
-                            <div className="flex items-center gap-1 text-xs text-text-muted">
-                              <Phone className="w-3 h-3" />
-                              <span>{customer.phone}</span>
+                            <div className="flex items-center gap-1 text-xs text-text-muted mt-0.5">
+                              <Phone className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{customer.phone}</span>
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-text-muted mb-1 font-medium uppercase tracking-wider">
+                      <div className="text-right shrink-0">
+                        <p className="text-[9px] text-text-muted font-medium uppercase tracking-wide">
                           {PARTY_BALANCE_COLUMN_HEADER}
                         </p>
                         <p
-                          className={`font-bold ${
-                            balance > 0 ? 'text-amber-600 dark:text-amber-400' : balance < 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-text-muted'
+                          className={`text-sm font-semibold leading-tight ${
+                            balance > 0
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : balance < 0
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : 'text-text-muted'
                           }`}
                         >
-                          ₹ {balance.toLocaleString('en-IN')}
+                          ₹{balance.toLocaleString('en-IN')}
                         </p>
-                        <p className="text-[9px] text-text-muted mt-0.5">{customerBalanceHint(balance)}</p>
+                        <p className="text-[9px] text-text-muted leading-none mt-0.5">
+                          {customerBalanceHint(balance)}
+                        </p>
                       </div>
                     </div>
 
-                    <div className={`grid gap-2 mt-4 ${balance > 0 && customer.phone ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <div
+                      className={`grid gap-1.5 mt-2 ${balance > 0 && customer.phone ? 'grid-cols-3' : 'grid-cols-2'}`}
+                    >
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedCustomerId(customer.id);
                         }}
-                        className="flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-text-secondary hover:bg-slate-100/80 dark:hover:bg-slate-800 rounded-xl border border-border"
+                        className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-text-secondary rounded-lg border border-border hover:bg-slate-50 dark:hover:bg-slate-800/60"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5" />
                         View
                       </button>
                       {balance > 0 && customer.phone && (
                         <button
                           onClick={(e) => handleSendReminder(customer.id, e)}
                           disabled={sendingReminder === customer.id}
-                          className="flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/35 hover:bg-green-100 dark:hover:bg-green-950/50 rounded-xl border border-green-100 dark:border-green-900 disabled:opacity-50"
+                          className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/35 rounded-lg border border-green-200 dark:border-green-900 disabled:opacity-50"
                         >
                           {sendingReminder === customer.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
-                            <MessageCircle className="w-4 h-4" />
+                            <MessageCircle className="w-3.5 h-3.5" />
                           )}
                           Remind
                         </button>
@@ -448,9 +460,9 @@ export default function CustomersPage() {
                           e.stopPropagation();
                           router.push(`/customers/${customer.id}/edit`);
                         }}
-                        className="flex items-center justify-center gap-2 py-2.5 text-xs font-semibold text-primary-600 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/35 hover:bg-slate-100 dark:hover:bg-primary-900/45 rounded-xl border border-primary-100 dark:border-primary-800"
+                        className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-primary-700 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/30 rounded-lg border border-border dark:border-primary-800/60"
                       >
-                        <Edit className="w-4 h-4" />
+                        <Edit className="w-3.5 h-3.5" />
                         Edit
                       </button>
                     </div>
@@ -458,16 +470,14 @@ export default function CustomersPage() {
                 );
               })
             ) : (
-              <div className="text-center py-12 text-text-secondary border-t border-border">
-                No customers found.
-              </div>
+              <div className="text-center py-10 text-sm text-text-secondary">No customers found.</div>
             )}
           </div>
         </>
       )}
 
       {totalPages > 1 && (
-        <div className="flex justify-between items-center p-4 border-t border-border">
+        <div className="flex justify-between items-center p-3 md:p-4 mt-2 md:mt-0 rounded-xl md:rounded-none border border-border md:border-0 md:border-t bg-surface md:bg-transparent">
           <p className="text-sm text-text-secondary">
             Page {page} of {totalPages} ({filteredCustomers.length} customers)
           </p>
@@ -491,7 +501,7 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
-    </Card>
+    </>
   );
 
   return (

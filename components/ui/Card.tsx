@@ -7,8 +7,8 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   hover?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ 
-  children, 
+export const Card: React.FC<CardProps> = ({
+  children,
   className,
   padding = 'md',
   hover = false,
@@ -16,10 +16,9 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   const paddingClasses = {
     none: '',
-    /** Mobile-dense spacing; widen from sm / md breakpoints */
-    sm: 'p-3 sm:p-4',
-    md: 'p-4 sm:p-5 md:p-6',
-    lg: 'p-4 sm:p-6 md:p-8',
+    sm: 'p-card-sm',
+    md: 'p-card-md md:p-card-lg',
+    lg: 'p-card-lg md:p-card-xl',
   };
 
   return (
@@ -36,4 +35,3 @@ export const Card: React.FC<CardProps> = ({
     </div>
   );
 };
-

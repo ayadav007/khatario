@@ -2,118 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
 
 /**
  * GET /api/admin/subscriptions/plans
  * Fetch all subscription plans
  *
- * Intentionally unauthenticated: used by marketing landing, in-app upgrade UI, and settings.
- * Merges Feature Registry and Limits Registry data with JSONB for display
+ * Public read (marketing landing, upgrade UI). POST requires platform admin.
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const plans = await db.queryRows(`
-      SELECT 
-        id,
-        name,
-        display_name,
-        description,
-        price_monthly,
-        price_yearly,
-        currency,
-        features,
-        is_active,
-        sort_order,
-        created_at,
-        updated_at
-      FROM subscription_plans
-      WHERE is_active = true
-      ORDER BY sort_order ASC
-    `);
-
-    // Merge registry data with JSONB for each plan
-    const plansWithRegistry = await Promise.all(
-      plans.map(async (plan: any) => {
-        // Parse features JSONB if it's a string
-        const features = typeof plan.features === 'string' 
-          ? JSON.parse(plan.features) 
-          : plan.features;
-
-        // Try to fetch from Feature Registry
-        try {
-          const enabledFeatures = await db.query(`
-            SELECT feature_id 
-            FROM subscription_plan_features 
-            WHERE plan_id = $1 AND enabled = true
-          `, [plan.id]);
-
-          if (enabledFeatures.rows.length > 0) {
-            // Merge registry features into JSONB structure
-            if (!features.features) features.features = {};
-            
-            // Get feature labels from platform_features for display
-            const featureDetails = await db.query(`
-              SELECT id, label 
-              FROM platform_features 
-              WHERE id = ANY($1::text[])
-            `, [enabledFeatures.rows.map((r: any) => r.feature_id)]);
-            
-            // Update features object
-            enabledFeatures.rows.forEach((row: any) => {
-              features.features[row.feature_id] = true;
-            });
-          }
-        } catch (error) {
-          // If registry tables don't exist yet, use JSONB only
-          console.warn('Feature Registry not available, using JSONB:', error);
-        }
-
-        // Try to fetch from Limits Registry
-        try {
-          const planLimits = await db.query(`
-            SELECT limit_key, limit_value 
-            FROM subscription_plan_limits 
-            WHERE plan_id = $1
-          `, [plan.id]);
-
-          if (planLimits.rows.length > 0) {
-            // Merge registry limits into JSONB structure
-            if (!features.limits) features.limits = {};
-            
-            planLimits.rows.forEach((row: any) => {
-              // Map registry limit_key to JSONB structure
-              const jsonbKeyMap: Record<string, string> = {
-                'max_invoices_per_month': 'max_invoices_per_month',
-                'max_customers': 'max_customers',
-                'max_items': 'max_items',
-                'max_users': 'max_users',
-                'max_whatsapp_per_day': 'max_whatsapp_per_day',
-              };
-              
-              const jsonbKey = jsonbKeyMap[row.limit_key] || row.limit_key;
-              if (jsonbKey) {
-                features.limits[jsonbKey] = row.limit_value;
-              }
-            });
-          }
-        } catch (error) {
-          // If registry tables don't exist yet, use JSONB only
-          console.warn('Limits Registry not available, using JSONB:', error);
-        }
-
-        return {
-          ...plan,
-          features
-        };
-      })
-    );
-
+    const plansWithRegistry = await listActiveSubscriptionPlans();
     return NextResponse.json({ plans: plansWithRegistry });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('Error fetching subscription plans:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch subscription plans', details: error.message },
-      { status: 500 }
+      { error: 'Failed to fetch subscription plans', details: message },
+      { status: 500 },
     );
   }
 }

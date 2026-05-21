@@ -655,7 +655,11 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
 
   async function fetchAvailablePlans() {
     try {
-      const response = await fetch('/api/admin/subscriptions/plans');
+      const response = await fetch('/api/subscriptions/plans');
+      if (!response.ok) {
+        console.error('Error fetching plans:', response.status);
+        return;
+      }
       const data = await response.json();
       setAvailablePlans(data.plans || []);
     } catch (error) {

@@ -22,7 +22,11 @@ export function FormCard({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <Card className={clsx('p-6 sm:p-8 lg:p-10', className)}>{children}</Card>;
+  return (
+    <Card padding="none" className={clsx('p-card-md md:p-card-lg lg:p-card-xl', className)}>
+      {children}
+    </Card>
+  );
 }
 
 export { FormSection } from '@/components/ui/FormSection';

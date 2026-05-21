@@ -31,6 +31,7 @@ import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useDateRange } from '@/contexts/DateRangeContext';
 import { CustomizableDashboard } from '@/components/dashboard/CustomizableDashboard';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
@@ -291,7 +292,7 @@ function DashboardPage() {
 
   return (
     <>
-      <div className="space-y-3 md:space-y-6">
+      <div className={STACK_PAGE_CLASS}>
         <ListPageHeader
           title="Dashboard"
           description={`Welcome back, ${user?.name ?? 'there'}! Here's what's happening today.`}
@@ -305,7 +306,7 @@ function DashboardPage() {
         />
 
         {data ? (
-          <div className="space-y-2 md:space-y-4">
+          <div className={STACK_SECTION_CLASS}>
             <ReceivablesCard total={receivablesTotal} aging={receivablesAging} />
             <PayablesCard total={payablesTotal} aging={payablesAging} />
           </div>
@@ -342,7 +343,7 @@ function DashboardPage() {
         {data && <PendingActionsButton data={data} />}
 
         {/* Charts Row - Two equal columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-section md:gap-stack-page">
           {/* Cash Flow Chart */}
           {business?.id && (
             <CashFlowChart businessId={business.id} />
@@ -355,7 +356,7 @@ function DashboardPage() {
         </div>
 
         {/* Main Content Row - Recent Invoices and Low Stock */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-page">
           {/* Recent Invoices - Takes 2 columns */}
           <Card className="lg:col-span-2 overflow-hidden" padding="none">
             <div className="flex items-center justify-between px-4 pt-3 pb-2 md:mb-4 md:px-6 md:pt-6 md:pb-0">

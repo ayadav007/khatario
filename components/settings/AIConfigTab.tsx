@@ -317,7 +317,7 @@ export default function AIConfigTab({ businessId }: AIConfigTabProps) {
                   <div>
                     <div className="font-medium">Development</div>
                     <div className="text-xs text-text-secondary">
-                      Only respond to allowed phone numbers (for testing)
+                      Only respond to allowed phone numbers (for testing). Other numbers are stored in CRM but not auto-replied.
                     </div>
                   </div>
                 </label>

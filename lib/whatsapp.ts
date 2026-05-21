@@ -506,6 +506,8 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
     }
     
     const messages = m.messages || [];
+    /** Baileys: `notify` = live message; `append` = history sync — never auto-reply to history. */
+    const allowBotReplyForBatch = (m.type || 'notify') === 'notify';
     
     for (const msg of messages) {
       try {
@@ -846,7 +848,9 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
 
             console.log('[WA] 📥 Enqueue incoming (messages.upsert, bot in worker):', {
               businessId,
-              messageId
+              messageId,
+              upsertType: m.type || 'notify',
+              enableBotReply: allowBotReplyForBatch
             });
 
             await addWhatsAppMessageJob({
@@ -856,7 +860,7 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
               messageId,
               conversationId: convKey,
               timestamp: Date.now(),
-              enableBotReply: true,
+              enableBotReply: allowBotReplyForBatch,
               senderJid,
               businessPhone,
               messageText,
@@ -1425,7 +1429,7 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
                   messageId,
                   conversationId: convKeySet,
                   timestamp: Date.now(),
-                  enableBotReply: true,
+                  enableBotReply: false,
                   senderJid,
                   businessPhone,
                   messageText,

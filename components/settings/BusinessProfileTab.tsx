@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
@@ -15,6 +14,7 @@ import { INDIAN_STATES } from '@/lib/gst-utils';
 import { clsx } from 'clsx';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { ManualPaymentMethodsSettings } from '@/components/settings/manual-payments/ManualPaymentMethodsSettings';
 
 export const BusinessProfileTab: React.FC = () => {
@@ -780,7 +780,7 @@ export const BusinessProfileTab: React.FC = () => {
   }
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
+    <div className={`${SETTINGS_CONTENT_WIDTH} ${STACK_PAGE_CLASS}`}>
       {/* Guided Completion Banner — info semantics (blue) per color rules */}
       {highlightedField && nextFieldName && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
@@ -826,12 +826,12 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       )}
       
-      <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
-        <div className="min-w-0 space-y-6">
+      <form onSubmit={handleSubmit} className={STACK_PAGE_CLASS}>
+      <div className="grid grid-cols-1 gap-stack-page xl:grid-cols-2 xl:items-start">
+        <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
       {/* Basic Information */}
-      <Card padding="lg" data-tour="bp-basic">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">
+      <section data-tour="bp-basic">
+        <h3 className="settings-section-title">
           {branch && activeBranchCount > 1 ? 'Branch' : 'Business'} Information
         </h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -876,12 +876,12 @@ export const BusinessProfileTab: React.FC = () => {
             />
           </div>
         </div>
-      </Card>
+      </section>
 
       {/* Business Type & Industry */}
-      <Card padding="lg" data-tour="bp-type">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Business Type & Industry</h3>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+      <section data-tour="bp-type">
+        <h3 className="settings-section-title">Business Type & Industry</h3>
+        <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Business Type</label>
@@ -959,11 +959,11 @@ export const BusinessProfileTab: React.FC = () => {
           </p>
         </div>
         </div>
-      </Card>
+      </section>
 
       {/* Product Features */}
-      <Card padding="lg" data-tour="bp-features">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Product Features</h3>
+      <section data-tour="bp-features">
+        <h3 className="settings-section-title">Product Features</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
             <div className="flex-1">
@@ -1108,10 +1108,10 @@ export const BusinessProfileTab: React.FC = () => {
             onClose={() => setShowWarehouseUpgradePrompt(false)}
           />
         )}
-      </Card>
+      </section>
 
       {/* POS Mode */}
-      <Card id="pos-mode" padding="md" data-tour="bp-pos" className="scroll-mt-24">
+      <section id="pos-mode" data-tour="bp-pos" className="scroll-mt-24">
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <h4 className="font-medium text-text-primary mb-1">POS Mode</h4>
@@ -1139,14 +1139,14 @@ export const BusinessProfileTab: React.FC = () => {
             </button>
           </div>
         </div>
-      </Card>
+      </section>
 
         </div>
-        <div className="min-w-0 space-y-6">
+        <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
       {/* Address */}
-      <Card padding="lg" data-tour="bp-address">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Business Address</h3>
-        <div className="space-y-4">
+      <section data-tour="bp-address">
+        <h3 className="settings-section-title">Business Address</h3>
+        <div className={STACK_SECTION_CLASS}>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Input
             label="Address Line 1"
@@ -1215,12 +1215,12 @@ export const BusinessProfileTab: React.FC = () => {
             />
           </div>
         </div>
-      </Card>
+      </section>
 
       {/* GST & Tax Details */}
-      <Card padding="lg" data-tour="bp-gst">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">GST & Tax Information</h3>
-        <div className="space-y-4">
+      <section data-tour="bp-gst">
+        <h3 className="settings-section-title">GST & Tax Information</h3>
+        <div className={STACK_SECTION_CLASS}>
           {/* GST Registration Type */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
@@ -1294,11 +1294,11 @@ export const BusinessProfileTab: React.FC = () => {
             </div>
           )}
         </div>
-      </Card>
+      </section>
 
       {/* Export & Banking Details */}
-      <Card padding="lg" data-tour="bp-export">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Export & Banking Details</h3>
+      <section data-tour="bp-export">
+        <h3 className="settings-section-title">Export & Banking Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
             label="IEC Code (Import Export Code)"
@@ -1320,14 +1320,14 @@ export const BusinessProfileTab: React.FC = () => {
         <p className="text-xs text-text-muted mt-2">
           IEC Code is mandatory for exporters. SWIFT Code is required for international wire transfers.
         </p>
-      </Card>
+      </section>
 
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+      <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
       {/* Logo */}
-      <Card padding="lg" data-tour="bp-logo">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Business Logo</h3>
-        <div className="space-y-4">
+      <section data-tour="bp-logo">
+        <h3 className="settings-section-title">Business Logo</h3>
+        <div className={STACK_SECTION_CLASS}>
           {formData.logo_url && (
             <div className="mb-4">
               <img
@@ -1376,12 +1376,12 @@ export const BusinessProfileTab: React.FC = () => {
             Upload an image file (JPEG, PNG, GIF, WebP) up to 2MB. Logo will be displayed on invoices.
           </p>
         </div>
-      </Card>
+      </section>
 
       {/* Signature */}
-      <Card padding="lg" data-tour="bp-signature">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Authorized Signature</h3>
-        <div className="space-y-4">
+      <section data-tour="bp-signature">
+        <h3 className="settings-section-title">Authorized Signature</h3>
+        <div className={STACK_SECTION_CLASS}>
           {formData.signature_url && (
             <div className="mb-4 p-4 bg-gray-50 dark:bg-slate-800/50 border border-border rounded-lg inline-block">
               <img
@@ -1427,7 +1427,7 @@ export const BusinessProfileTab: React.FC = () => {
             Upload your signature image. This will be displayed on invoices as authorized signatory.
           </p>
         </div>
-      </Card>
+      </section>
       </div>
 
         </div>
@@ -1442,12 +1442,12 @@ export const BusinessProfileTab: React.FC = () => {
       </div>
       </form>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+      <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
       {/* Bank Accounts Section - Outside main form to avoid nested forms */}
-      <Card padding="lg" data-tour="bp-banks">
+      <section data-tour="bp-banks">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-text-primary">Bank Accounts</h3>
+            <h3 className="settings-section-title mb-0">Bank Accounts</h3>
             <p className="text-sm text-text-secondary mt-1">
               Manage bank accounts that will appear on your invoices and documents
             </p>
@@ -1656,7 +1656,7 @@ export const BusinessProfileTab: React.FC = () => {
         <p className="text-xs text-text-muted mt-4">
           💡 The first active bank account will be automatically used on your invoices and documents.
         </p>
-      </Card>
+      </section>
 
       <ManualPaymentMethodsSettings
         businessId={business?.id ?? null}

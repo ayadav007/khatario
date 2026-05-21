@@ -97,6 +97,45 @@
       animation: none;
     }
   }
+
+  /** Main app content padding (pairs with BottomNav on mobile). */
+  .app-main-padding {
+    padding-left: var(--space-page-x);
+    padding-right: var(--space-page-x);
+    padding-top: var(--space-page-y);
+    padding-bottom: var(--space-page-bottom);
+  }
+
+  .app-main-padding-compact {
+    padding-left: var(--space-page-x);
+    padding-right: var(--space-page-x);
+    padding-top: var(--space-page-y-compact);
+    padding-bottom: var(--space-page-bottom);
+  }
+
+  .space-y-stack-page > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--space-stack-page);
+  }
+
+  .space-y-stack-section > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--space-stack-section);
+  }
+
+  .space-y-stack-tight > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--space-stack-tight);
+  }
+
+  .gap-stack-page {
+    gap: var(--space-stack-page);
+  }
+
+  .gap-stack-section {
+    gap: var(--space-stack-section);
+  }
+
+  .gap-stack-tight {
+    gap: var(--space-stack-tight);
+  }
 }
 
 @layer base {
@@ -109,6 +148,83 @@
     --color-text-secondary: #64748b;
     --color-text-muted: #94a3b8;
     --color-border: #e2e8f0;
+
+    /* Typography scale (desktop default). Tailwind text-* uses these via tailwind.config.js */
+    --text-xs: 12px;
+    --text-xs-lh: 16px;
+    --text-sm: 14px;
+    --text-sm-lh: 20px;
+    --text-base: 16px;
+    --text-base-lh: 24px;
+    --text-lg: 18px;
+    --text-lg-lh: 28px;
+    --text-xl: 20px;
+    --text-xl-lh: 28px;
+    --text-2xl: 24px;
+    --text-2xl-lh: 32px;
+    --text-3xl: 30px;
+    --text-3xl-lh: 36px;
+
+    /* Spacing scale (desktop). Tailwind page-x, stack-*, card-* map here. */
+    --space-page-x: 24px;
+    --space-page-y: 24px;
+    --space-page-y-compact: 12px;
+    --space-page-bottom: 24px;
+    --space-stack-page: 24px;
+    --space-stack-section: 16px;
+    --space-stack-tight: 12px;
+    --space-card-sm: 16px;
+    --space-card-md: 20px;
+    --space-card-lg: 24px;
+    --space-card-xl: 32px;
+    --space-form-header-x: 20px;
+    --space-form-header-y: 14px;
+    --space-form-body-x: 24px;
+    --space-form-body-y: 20px;
+    --space-input-x: 16px;
+    --space-input-y: 10px;
+    --space-table-cell-x: 16px;
+    --space-table-cell-y: 12px;
+  }
+
+  /* Mobile: denser type + tighter spacing; touch targets unchanged. */
+  @media (max-width: 767px) {
+    :root {
+      --text-xs: 12px;
+      --text-xs-lh: 16px;
+      --text-sm: 13px;
+      --text-sm-lh: 18px;
+      --text-base: 14px;
+      --text-base-lh: 20px;
+      --text-lg: 16px;
+      --text-lg-lh: 22px;
+      --text-xl: 18px;
+      --text-xl-lh: 24px;
+      --text-2xl: 20px;
+      --text-2xl-lh: 28px;
+      --text-3xl: 24px;
+      --text-3xl-lh: 30px;
+
+      --space-page-x: 16px;
+      --space-page-y: 12px;
+      --space-page-y-compact: 8px;
+      --space-page-bottom: 5rem;
+      --space-stack-page: 12px;
+      --space-stack-section: 10px;
+      --space-stack-tight: 8px;
+      --space-card-sm: 10px;
+      --space-card-md: 12px;
+      --space-card-lg: 16px;
+      --space-card-xl: 20px;
+      --space-form-header-x: 12px;
+      --space-form-header-y: 10px;
+      --space-form-body-x: 12px;
+      --space-form-body-y: 12px;
+      --space-input-x: 12px;
+      --space-input-y: 8px;
+      --space-table-cell-x: 8px;
+      --space-table-cell-y: 6px;
+    }
   }
 
   .dark {
@@ -128,11 +244,24 @@
   html {
     overflow-x: hidden;
     max-width: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   body {
-    @apply bg-background text-text-primary antialiased;
+    @apply bg-background text-text-primary text-base antialiased;
     overflow-x: hidden;
     max-width: 100%;
+  }
+
+  /* 16px inputs on mobile prevents iOS focus zoom; body/list text stays 14px via tokens. */
+  @media (max-width: 767px) {
+    .input,
+    input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
+    select,
+    textarea {
+      font-size: 16px;
+      line-height: 24px;
+    }
   }
 
   /* Hide number input spinners for all browsers */
@@ -189,13 +318,23 @@
    * Use with <FormSection /> from @/components/ui/FormSection.
    */
   .form-page-shell {
-    @apply w-full max-w-none space-y-4 md:space-y-6;
+    @apply w-full max-w-none;
+  }
+
+  .form-page-shell > :not([hidden]) ~ :not([hidden]) {
+    margin-top: var(--space-stack-section);
+  }
+
+  @media (min-width: 768px) {
+    .form-page-shell > :not([hidden]) ~ :not([hidden]) {
+      margin-top: var(--space-stack-page);
+    }
   }
 
   .form-section-header {
-    @apply border-b border-border bg-white border-l-2 border-l-primary-500
-           px-3 py-2.5 md:px-5 md:py-3.5;
+    @apply border-b border-border bg-white border-l-2 border-l-primary-500;
     @apply dark:border-border-dark dark:bg-slate-900/40;
+    padding: var(--space-form-header-y) var(--space-form-header-x);
   }
 
   .form-section-title {
@@ -207,8 +346,17 @@
   }
 
   .form-section-body {
-    @apply px-3 py-3 md:px-6 md:py-5 bg-background;
-    @apply dark:bg-slate-900/30;
+    padding: var(--space-form-body-y) var(--space-form-body-x);
+    @apply bg-background dark:bg-slate-900/30;
+  }
+
+  /** Settings / profile pages — mobile-first type scale (uses --text-* tokens). */
+  .settings-page-title {
+    @apply text-xl font-bold md:text-2xl text-text-primary;
+  }
+
+  .settings-section-title {
+    @apply text-base font-semibold md:text-lg text-text-primary mb-3 md:mb-4;
   }
 
   /**
@@ -232,12 +380,13 @@
   }
   
   .input {
-    @apply w-full min-h-10 px-3 py-2 rounded-input border border-border
-           text-sm md:text-base leading-normal touch-manipulation
+    @apply w-full min-h-10 rounded-input border border-border
+           text-base leading-normal touch-manipulation
            bg-surface text-text-primary placeholder-text-muted
            dark:bg-surface-dark dark:border-border-dark
            focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
-           transition-all duration-200 md:min-h-11 md:px-4 md:py-2.5;
+           transition-all duration-200 md:min-h-11;
+    padding: var(--space-input-y) var(--space-input-x);
   }
   
   .button-primary {
@@ -312,8 +461,8 @@
   }
   
   .table-cell {
-    @apply px-3 py-2 border-b border-border text-xs text-text-primary
-           md:px-4 md:py-3 md:text-sm;
+    @apply border-b border-border text-xs text-text-primary md:text-sm;
+    padding: var(--space-table-cell-y) var(--space-table-cell-x);
   }
 }
 

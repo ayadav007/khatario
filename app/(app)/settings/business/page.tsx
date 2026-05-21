@@ -8,6 +8,7 @@ import { BusinessProfileTour } from '@/components/onboarding/BusinessProfileTour
 import Link from 'next/link';
 import { ChevronRight, Building } from 'lucide-react';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { STACK_PAGE_CLASS } from '@/lib/page-layout';
 
 export default function BusinessSettingsPage() {
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function BusinessSettingsPage() {
   }, []);
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
+    <div className={`${SETTINGS_CONTENT_WIDTH} ${STACK_PAGE_CLASS}`}>
       <Suspense fallback={null}>
         <BusinessProfileTour />
       </Suspense>
@@ -35,13 +36,13 @@ export default function BusinessSettingsPage() {
       </div>
 
       {/* Header — tour anchor */}
-      <div className="flex items-center gap-3" data-tour="bp-intro">
-        <div className="p-3 bg-teal-100 rounded-xl">
-          <Building className="w-6 h-6 text-teal-600" />
+      <div className="flex items-center gap-2.5 md:gap-3" data-tour="bp-intro">
+        <div className="p-2 md:p-3 bg-teal-100 rounded-xl shrink-0">
+          <Building className="w-5 h-5 md:w-6 md:h-6 text-teal-600" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Business Profile</h1>
-          <p className="text-sm text-text-secondary">Configure your company details, GSTIN, and logo</p>
+        <div className="min-w-0">
+          <h1 className="settings-page-title">Business Profile</h1>
+          <p className="text-sm text-text-secondary mt-0.5">Configure your company details, GSTIN, and logo</p>
         </div>
       </div>
 

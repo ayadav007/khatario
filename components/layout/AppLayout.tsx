@@ -9,6 +9,7 @@ import { PromotionModal } from '../promotions/PromotionModal';
 import { useLayout } from '@/contexts/LayoutContext';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
+import { APP_MAIN_PADDING_CLASS } from '@/lib/page-layout';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -62,7 +63,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         {/* TopBar & PromotionBanner: rendered by app/(app)/layout.tsx to prevent duplication */}
         <main className={clsx(
           "min-w-0",
-          isFullWidthPage ? "h-screen" : "p-4 lg:p-6 pb-20 lg:pb-6"
+          isFullWidthPage ? "h-screen" : APP_MAIN_PADDING_CLASS
         )}>
           {children}
         </main>

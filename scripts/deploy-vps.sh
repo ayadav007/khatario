@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Deploy Khatario on VPS after git pull / PR merge.
 #
-# Usage (on VPS):
+# Usage (on VPS) — always use bash, do NOT chmod +x:
 #   bash scripts/deploy-vps.sh
 #   bash scripts/deploy-vps.sh --no-pull
+#
+# One-time on VPS (optional, ignores executable-bit noise in git status):
+#   git config core.fileMode false
 #
 # Optional in .env.production:
 #   PM2_APP_NAME=khatario-staging

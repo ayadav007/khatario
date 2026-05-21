@@ -6,9 +6,10 @@ import { getUserIdFromRequest, assertUserSessionVersionMatches } from '@/lib/aut
 import { clearSessionCookie } from '@/lib/jwt';
 import { mergePortalTheme } from '@/lib/portal-theme';
 import {
-  getEffectivePlanId,
+  getDisplayPlanId,
   shouldShowTrialBadge,
 } from '@/lib/subscription/effective-plan';
+import { shouldOfferTrialExtension, TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
 
 /** Invalid JWT session: clear httpOnly cookies so the client cannot keep navigating with a ghost tenant. */
 function jsonSessionInvalid(
@@ -154,11 +155,15 @@ export async function GET(request: NextRequest) {
         trial_end_date: string | null;
         end_date: string | null;
         grace_period_end: string | null;
+        trial_extension_granted: boolean;
+        trial_extension_declined_at: string | null;
         plan_display_name: string;
         features: unknown;
       }>(
         `SELECT bs.plan_id, bs.status, bs.trial_end_date::text, bs.end_date::text,
-                bs.grace_period_end::text, sp.display_name as plan_display_name, sp.features
+                bs.grace_period_end::text,
+                bs.trial_extension_granted, bs.trial_extension_declined_at::text,
+                sp.display_name as plan_display_name, sp.features
          FROM business_subscriptions bs
          JOIN subscription_plans sp ON bs.plan_id = sp.id
          WHERE bs.business_id = $1
@@ -170,7 +175,7 @@ export async function GET(request: NextRequest) {
       );
 
       if (subRow) {
-        const effectivePlanId = getEffectivePlanId(subRow);
+        const effectivePlanId = getDisplayPlanId(subRow);
         let displayName = subRow.plan_display_name;
         if (effectivePlanId !== subRow.plan_id) {
           const eff = await queryOne<{ display_name: string }>(
@@ -189,6 +194,13 @@ export async function GET(request: NextRequest) {
           plan_display_name: displayName,
           features: subRow.features,
           show_trial_badge: shouldShowTrialBadge(subRow),
+          show_trial_extension_modal: shouldOfferTrialExtension({
+            plan_id: subRow.plan_id,
+            trial_end_date: subRow.trial_end_date,
+            trial_extension_granted: subRow.trial_extension_granted,
+            trial_extension_declined_at: subRow.trial_extension_declined_at,
+          }),
+          trial_extension_days: TRIAL_EXTENSION_DAYS,
           stored_plan_id: subRow.plan_id,
         };
       }

@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { clsx } from 'clsx';
@@ -30,10 +29,10 @@ export function ManualPaymentMethodsSettings(props: {
   } = usePaymentMethods({ businessId });
 
   return (
-    <Card padding="lg" className={className}>
+    <section className={className}>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-text-primary">
+          <h3 className="settings-section-title mb-0">
             Payment Methods (UPI, etc.)
           </h3>
           <p className="text-sm text-text-secondary mt-1">
@@ -285,7 +284,7 @@ export function ManualPaymentMethodsSettings(props: {
           ))}
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 

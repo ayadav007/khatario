@@ -10,11 +10,16 @@ import { PromotionModal } from '@/components/promotions/PromotionModal';
 import { ProductTour } from '@/components/onboarding/ProductTour';
 import { ProfileCompletionBanner } from '@/components/layout/ProfileCompletionBanner';
 import { SubscriptionBanner } from '@/components/subscription/SubscriptionBanner';
+import { TrialExtensionModal } from '@/components/subscription/TrialExtensionModal';
 import { ShellVersionBanner } from '@/components/printer/ShellVersionBanner';
 import { useLayout } from '@/contexts/LayoutContext';
 import { FeatureUpgradeModalProvider } from '@/contexts/FeatureUpgradeModalContext';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
+import {
+  APP_MAIN_PADDING_CLASS,
+  APP_MAIN_PADDING_COMPACT_CLASS,
+} from '@/lib/page-layout';
 import { getPosMode } from '@/lib/pos-settings';
 import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
@@ -82,6 +87,7 @@ function AppRouteLayoutInner({
             {children}
           </main>
           <PromotionModal />
+          <TrialExtensionModal />
         </div>
       </MobileHeaderTitleProvider>
     );
@@ -119,8 +125,8 @@ function AppRouteLayoutInner({
                   isFullWidthPage
                     ? 'h-screen'
                     : isInvoiceComposer
-                      ? 'px-4 lg:px-6 pt-2 lg:pt-3 pb-20 lg:pb-6'
-                      : 'p-4 lg:p-6 pb-20 lg:pb-6'
+                      ? APP_MAIN_PADDING_COMPACT_CLASS
+                      : APP_MAIN_PADDING_CLASS
                 )}
               >
                 {children}
@@ -131,6 +137,7 @@ function AppRouteLayoutInner({
           {!isFullWidthPage && <BottomNav />}
           <PromotionModal />
           <ProductTour />
+          <TrialExtensionModal />
         </div>
       </MobileHeaderTitleProvider>
     </TodoScheduleRailProvider>

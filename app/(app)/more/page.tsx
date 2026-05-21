@@ -123,58 +123,58 @@ export default function MorePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-5rem)] pb-6">
+    <div className="flex flex-col min-h-[calc(100vh-5rem)] pb-stack-section">
       {!menuReady ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-text-muted">
+        <div className="flex flex-col items-center justify-center py-12 gap-stack-tight text-text-muted">
           <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
           <p className="text-sm">Loading menu…</p>
         </div>
       ) : (
         <>
-          <div className="pt-4">
-            <h2 className="text-lg font-bold text-text-primary mb-3">My Business</h2>
+          <div>
+            <h2 className="text-lg font-bold text-text-primary mb-2">My Business</h2>
 
-            <div className="rounded-2xl border border-border bg-surface overflow-hidden divide-y divide-border shadow-sm">
+            <div className="divide-y divide-border border-y border-border">
               {sections.map((section) => {
                 const Icon = SECTION_ICONS[section.title] || FileText;
                 const iconRound = sectionIconBg(section.title);
                 const expanded = openSection === section.title;
 
                 return (
-                  <div key={section.title} className="bg-white dark:bg-surface">
+                  <div key={section.title}>
                     <button
                       type="button"
                       onClick={() => toggleSection(section.title)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-slate-50/60 transition-colors"
+                      className="w-full flex items-center gap-3 py-2.5 text-left transition-colors active:bg-slate-50/60 dark:active:bg-slate-800/40"
                       aria-expanded={expanded}
                     >
                       <div
                         className={clsx(
-                          'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
-                          iconRound
+                          'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
+                          iconRound,
                         )}
                       >
-                        <Icon className="w-5 h-5" />
+                        <Icon className="w-4 h-4" />
                       </div>
-                      <span className="flex-1 font-semibold text-text-primary text-[15px]">
+                      <span className="flex-1 font-semibold text-text-primary text-sm leading-snug">
                         {section.title}
                       </span>
                       {expanded ? (
-                        <ChevronUp className="w-5 h-5 text-text-muted shrink-0" />
+                        <ChevronUp className="w-4 h-4 text-text-muted shrink-0" />
                       ) : (
-                        <ChevronRight className="w-5 h-5 text-text-muted shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />
                       )}
                     </button>
 
                     {expanded && (
-                      <ul className="border-t border-border bg-gray-50/80 dark:bg-black/20">
+                      <ul className="divide-y divide-border border-t border-border">
                         {section.items.map((item) => (
                           <li key={`${section.title}-${item.href}-${item.label}`}>
                             <Link
                               href={item.href}
-                              className="flex items-center justify-between pl-14 pr-4 py-3 border-b border-border last:border-b-0 active:bg-slate-100/50"
+                              className="flex items-center justify-between pl-11 pr-0 py-2 active:bg-slate-50/80 dark:active:bg-slate-800/40"
                             >
-                              <span className="text-[15px] text-text-primary pr-2">
+                              <span className="text-sm leading-snug text-text-primary pr-2">
                                 {item.label}
                                 {item.isLocked ? (
                                   <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">
@@ -182,7 +182,7 @@ export default function MorePage() {
                                   </span>
                                 ) : null}
                               </span>
-                              <ChevronRight className="w-4 h-4 text-text-muted shrink-0 opacity-60" />
+                              <ChevronRight className="w-3.5 h-3.5 text-text-muted shrink-0 opacity-60" />
                             </Link>
                           </li>
                         ))}
@@ -197,13 +197,13 @@ export default function MorePage() {
           <button
             type="button"
             onClick={logout}
-            className="w-full py-3.5 mt-6 bg-rose-50 text-rose-600 font-semibold rounded-xl border border-rose-100 flex items-center justify-center gap-2 active:bg-rose-100 transition-colors"
+            className="w-full py-2.5 mt-4 bg-rose-50 text-rose-600 font-semibold text-sm rounded-xl border border-rose-100 flex items-center justify-center gap-2 active:bg-rose-100 transition-colors"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-4 h-4" />
             Log out
           </button>
 
-          <p className="text-center text-[10px] text-text-muted uppercase tracking-widest mt-6">
+          <p className="text-center text-[10px] text-text-muted uppercase tracking-widest mt-4">
             Khatario
           </p>
         </>

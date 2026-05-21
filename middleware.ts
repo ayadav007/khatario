@@ -101,6 +101,11 @@ export async function middleware(request: NextRequest) {
   if (isStaticAsset(pathname)) return NextResponse.next();
   if (isPublicPath(pathname)) return NextResponse.next();
 
+  /** Public plan catalog (GET only) — landing page + in-app upgrade before platform-admin gate */
+  if (pathname === '/api/admin/subscriptions/plans' && request.method === 'GET') {
+    return NextResponse.next();
+  }
+
   if (isPlatformAdminProtectedPath(pathname)) {
     const platformPayload = await getPlatformSessionFromRequest(request);
     if (platformPayload) {

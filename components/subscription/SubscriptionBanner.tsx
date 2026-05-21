@@ -7,6 +7,10 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSubscriptionBannerPlacement } from '@/lib/mobile-navigation';
 import { clsx } from 'clsx';
+import {
+  parseLocalDateOnly,
+  startOfLocalToday,
+} from '@/lib/subscription/date-only';
 
 interface SubscriptionStatus {
   plan_id: string;
@@ -50,6 +54,10 @@ export function SubscriptionBanner() {
           }
         }
 
+        if (sub.show_trial_extension_modal) {
+          return;
+        }
+
         if (sub.grace_period_end) {
           const graceEnd = new Date(sub.grace_period_end);
           if (graceEnd > now) {
@@ -66,11 +74,20 @@ export function SubscriptionBanner() {
         }
 
         if (sub.trial_end_date) {
-          const trialEnd = new Date(sub.trial_end_date);
-          const days = Math.ceil((trialEnd.getTime() - now.getTime()) / 86400000);
+          const trialEnd = parseLocalDateOnly(sub.trial_end_date);
+          if (!trialEnd) return;
 
-          if (days <= 0) {
-            setBannerType('trial_expired');
+          const today = startOfLocalToday();
+          const msPerDay = 86400000;
+          const days = Math.ceil((trialEnd.getTime() - today.getTime()) / msPerDay);
+
+          if (days < 0) {
+            if (!sub.show_trial_extension_modal) {
+              setBannerType('trial_expired');
+            }
+          } else if (days === 0) {
+            setDaysRemaining(0);
+            setBannerType('trial_ending');
           } else if (days <= 7) {
             setDaysRemaining(days);
             setBannerType('trial_ending');
@@ -112,7 +129,7 @@ export function SubscriptionBanner() {
       text: 'text-orange-800',
       icon: <AlertTriangle className="w-4 h-4" />,
       message:
-        'Your trial has expired. A 7-day grace period has started. Upgrade now to avoid restrictions.',
+        'Your trial has expired. You are on the Free plan — upgrade anytime to restore full access.',
       cta: 'Upgrade Now',
     },
     grace_expiring: {

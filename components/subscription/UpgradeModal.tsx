@@ -106,7 +106,7 @@ export function UpgradeModal({
 
   async function fetchPlans() {
     try {
-      const response = await fetch('/api/admin/subscriptions/plans');
+      const response = await fetch('/api/subscriptions/plans');
       if (response.ok) {
         const data = await response.json();
         const availablePlans = (data.plans || []).filter((p: SubscriptionPlan) => p.id !== 'free');

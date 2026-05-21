@@ -237,9 +237,7 @@ export async function sendTrialExpiringEmail(
 }
 
 /**
- * Send an email when a trial has just expired and the grace period has started.
- *
- * @param businessId - The business ID
+ * Send an email when a trial has just expired (extend-or-free modal in app).
  */
 export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
   try {
@@ -254,11 +252,11 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
       <p>Hi,</p>
       <p>The free trial for <strong>${recipients.businessName}</strong> on Khatario has ended.</p>
       <div class="highlight">
-        <strong>Grace Period (7 days)</strong><br/>
-        Your account is now in a 7-day grace period. During this time your data is safe, but some premium features will be restricted.
-        If you do not upgrade within 7 days your account will be downgraded to the Free plan.
+        <strong>One-time extension available</strong><br/>
+        Log in to Khatario to get 7 more days of full access (one time only), or continue on the Free plan.
+        Your data remains safe either way.
       </div>
-      <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription">Upgrade Now</a></p>
+      <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard">Open Khatario</a></p>
       <p>Need help choosing a plan? Reply to this email and we'll guide you.</p>
       <p>Best regards,<br/><strong>The Khatario Team</strong></p>
     `);
@@ -266,9 +264,8 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
     const text = [
       `Hi,`,
       `The free trial for ${recipients.businessName} on Khatario has ended.`,
-      `You have a 7-day grace period. Your data is safe, but premium features will be restricted.`,
-      `Upgrade before the grace period ends to keep full access.`,
-      `Upgrade: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription`,
+      `Log in to get a one-time 7-day extension or continue on the Free plan.`,
+      `Open app: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard`,
       `Best regards, The Khatario Team`,
     ].join('\n\n');
 

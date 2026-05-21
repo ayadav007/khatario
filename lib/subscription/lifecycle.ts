@@ -390,10 +390,9 @@ const GRACE_DAYS = 7;
 /**
  * Check whether a business's trial has expired.
  *
- * Trial duration is {@link TRIAL_DAYS} days from signup. After the trial
- * expires the business enters a {@link GRACE_DAYS}-day grace window. Once
- * the grace window elapses the business is downgraded to the free plan by
- * the batch processor ({@link processExpiredSubscriptions}).
+ * Trial duration is {@link TRIAL_DAYS} days from signup. After expiry the tenant may
+ * use a one-time in-app extension ({@link TRIAL_EXTENSION_DAYS} days). Until they extend
+ * or choose Free, entitlements follow the free plan while the extend modal is offered.
  *
  * @param businessId - Business UUID
  * @returns Trial status including days remaining and grace period info
@@ -424,10 +423,8 @@ export async function checkTrialExpiry(
   const daysRemaining = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
 
   const isExpired = now > trialEnd;
-  const graceEndsAt = new Date(
-    trialEnd.getTime() + GRACE_DAYS * 24 * 60 * 60 * 1000,
-  );
-  const isInGracePeriod = isExpired && now <= graceEndsAt;
+  const graceEndsAt = null;
+  const isInGracePeriod = false;
 
   return { isExpired, daysRemaining, graceEndsAt, isInGracePeriod };
 }
@@ -480,7 +477,7 @@ async function downgradeToFree(
  * Batch-process expired subscriptions. Designed to be invoked by a cron job.
  *
  * Handles four scenarios:
- * 1. **Expired trials past grace** — trial ended > 7 days ago → downgrade to free
+ * 1. **Extended trials expired** — one-time extension used and `trial_end_date` passed → free
  * 2. **Scheduled cancellations** — `cancel_at_period_end = true` and `end_date` in
  *    the past → set status to cancelled, downgrade to free
  * 3. **Lapsed renewals** — active subscription past `end_date` without
@@ -498,7 +495,7 @@ export async function processExpiredSubscriptions(): Promise<ExpiredSubscription
     graceExpired: 0,
   };
 
-  // 1. Trials past grace — includes status=trial and stale plan_id=trial rows
+  // 1. Trials where the one-time extension was used and has now expired
   const expiredTrials = await queryRows<{
     business_id: string;
     plan_id: string;
@@ -506,19 +503,10 @@ export async function processExpiredSubscriptions(): Promise<ExpiredSubscription
     `SELECT business_id, plan_id
      FROM business_subscriptions
      WHERE plan_id = 'trial'
-       AND (
-         (status = 'trial'
-          AND trial_end_date IS NOT NULL
-          AND trial_end_date < CURRENT_DATE - INTERVAL '7 days')
-         OR (
-           end_date IS NOT NULL
-           AND end_date < CURRENT_DATE
-           AND (
-             grace_period_end IS NOT NULL AND grace_period_end < CURRENT_DATE
-             OR grace_period_end IS NULL AND end_date < CURRENT_DATE - INTERVAL '7 days'
-           )
-         )
-       )`,
+       AND trial_extension_granted = true
+       AND trial_end_date IS NOT NULL
+       AND trial_end_date < CURRENT_DATE
+       AND trial_extension_declined_at IS NULL`,
   );
 
   for (const row of expiredTrials) {
