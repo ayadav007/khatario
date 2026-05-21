@@ -6,6 +6,7 @@ import { Info, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { getChartPalette } from '@/lib/chartTheme';
+import { useDashboardChartHeight } from '@/hooks/useDashboardChartHeight';
 
 interface CashFlowMonth {
   month: string;
@@ -46,6 +47,7 @@ interface CashFlowChartProps {
 export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
   const { isDarkMode } = useDarkMode();
   const chartColors = getChartPalette(isDarkMode);
+  const plotHeight = useDashboardChartHeight(150, 240);
   const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
@@ -88,7 +90,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
   const renderChart = () => {
     if (!data || data.months.length === 0) {
       return (
-        <div className="h-64 flex items-center justify-center text-text-muted">
+        <div className="flex h-36 items-center justify-center text-sm text-text-muted md:h-48">
           <p>No data available</p>
         </div>
       );
@@ -108,10 +110,10 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
     const adjustedMax = maxValue + padding;
     const adjustedRange = adjustedMax - adjustedMin;
 
-    const height = 300;
+    const height = plotHeight;
     const width = 800;
-    const chartPadding = 60;
-    const bottomPadding = series.length > 7 ? 40 : 30;
+    const chartPadding = plotHeight < 200 ? 44 : 52;
+    const bottomPadding = series.length > 7 ? 32 : 22;
     const chartWidth = width - chartPadding * 2;
     const chartHeight = height - chartPadding - bottomPadding;
 
@@ -287,9 +289,9 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
 
   if (loading) {
     return (
-      <Card padding="md">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+      <Card padding="sm" className="md:!p-5">
+        <div className="flex h-36 items-center justify-center md:h-48">
+          <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
         </div>
       </Card>
     );
@@ -300,12 +302,14 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
   const closingDate = `31/03/${(selectedYear || 0) + 1}`;
 
   return (
-    <Card padding="md" className="border border-border h-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold text-text-primary">Cash Flow</h3>
-          <div className="relative group">
-            <Info className="w-4 h-4 text-text-muted cursor-help" />
+    <Card padding="sm" className="h-full border border-border md:!p-5">
+      <div className="mb-2 flex items-center justify-between gap-2 md:mb-3">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
+            Cash Flow
+          </h3>
+          <div className="relative group shrink-0">
+            <Info className="h-3.5 w-3.5 cursor-help text-text-muted md:h-4 md:w-4" />
             <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
               <p className="font-semibold mb-2">Cash Flow Calculation:</p>
               <ul className="space-y-1 list-disc list-inside">
@@ -322,7 +326,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         <select
           value={selectedYear || ''}
           onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-          className="text-sm bg-surface text-text-primary border border-border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
         >
           {getAvailableYears().map(year => (
             <option key={year} value={year}>
@@ -332,7 +336,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         </select>
       </div>
 
-      <div className="border-t border-border pt-4 mb-6">
+      <div className="border-t border-border pt-2 md:pt-3">
         {renderChart()}
         {data && data.months.length > 1 && (() => {
           const closings = data.months.map((m) => m.closing);
@@ -340,7 +344,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
           const maxC = Math.max(...closings);
           const flat = Math.abs(maxC - minC) < 0.01;
           return flat ? (
-            <p className="text-xs text-text-muted mt-2 px-1">
+            <p className="mt-1.5 px-1 text-[10px] text-text-muted md:mt-2 md:text-xs">
               The line shows <strong>cash at each month-end</strong> (opening + in − out, month by month). If
               it looks flat, your receipts and payments are mostly in <strong>one</strong> month, so the
               balance does not change in other months. Hover a point to see the amount for that month.
@@ -350,10 +354,12 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
       </div>
 
       {/* Summary Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border">
-        <div className="flex flex-col relative group">
-          <p className="text-xs text-text-secondary mb-1">Cash as on {openingDate}</p>
-          <p className="text-lg font-bold text-text-primary cursor-help">
+      <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 md:grid-cols-4 md:gap-3 md:pt-3">
+        <div className="group relative flex flex-col">
+          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">
+            Cash as on {openingDate}
+          </p>
+          <p className="cursor-help text-sm font-bold tabular-nums text-text-primary md:text-base">
             ₹{(data?.summary.opening_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
@@ -366,9 +372,9 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         </div>
         
         {/* Incoming with breakdown tooltip */}
-        <div className="flex flex-col relative group">
-          <p className="text-xs text-text-secondary mb-1">Incoming</p>
-          <p className="text-lg font-bold text-green-600 cursor-help">
+        <div className="group relative flex flex-col">
+          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">Incoming</p>
+          <p className="cursor-help text-sm font-bold tabular-nums text-green-600 md:text-base">
             <span className="text-green-600">+</span> ₹{(data?.summary.total_incoming || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           {data?.summary.breakdown && (
@@ -390,9 +396,9 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         </div>
 
         {/* Outgoing with breakdown tooltip */}
-        <div className="flex flex-col relative group">
-          <p className="text-xs text-text-secondary mb-1">Outgoing</p>
-          <p className="text-lg font-bold text-red-600 cursor-help">
+        <div className="group relative flex flex-col">
+          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">Outgoing</p>
+          <p className="cursor-help text-sm font-bold tabular-nums text-red-600 md:text-base">
             <span className="text-red-600">-</span> ₹{(data?.summary.total_outgoing || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           {data?.summary.breakdown && (
@@ -420,9 +426,11 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         </div>
 
         {/* Closing Balance with calculation tooltip */}
-        <div className="flex flex-col relative group">
-          <p className="text-xs text-text-secondary mb-1">Cash as on {closingDate}</p>
-          <p className="text-lg font-bold text-gray-900 cursor-help">
+        <div className="group relative flex flex-col">
+          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">
+            Cash as on {closingDate}
+          </p>
+          <p className="cursor-help text-sm font-bold tabular-nums text-gray-900 md:text-base">
             <span className="text-text-secondary">=</span> ₹{(data?.summary.closing_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
           <div className="absolute left-0 bottom-full mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">

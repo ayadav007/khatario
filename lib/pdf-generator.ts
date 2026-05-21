@@ -8,6 +8,7 @@ import { injectPrintHtmlEnhancements, resolvePrintConfig } from '@/lib/print-con
 import { validateAndSanitizeTemplate } from '@/lib/template-validator';
 import { compressThermalContent } from '@/lib/content-compressor';
 import { optimizeForThermal } from '@/lib/thermal-transformer';
+import { hasTableColumn } from '@/lib/schema-columns';
 
 export type DocumentTable = 
   | 'invoices' 
@@ -99,12 +100,17 @@ export async function generateDocumentHtml(
       throw new Error('Document not found');
     }
 
+    const itemsHaveCustomFields = await hasTableColumn('items', 'custom_fields');
+    const itemCustomFieldsSelect = itemsHaveCustomFields
+      ? 'i.custom_fields as item_custom_fields'
+      : `'{}'::jsonb as item_custom_fields`;
+
     const itemsQuery = hasVariants 
       ? `SELECT 
           ii.*, 
           COALESCE(ii.item_name, i.name) as item_name, 
           COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
-          i.custom_fields as item_custom_fields,
+          ${itemCustomFieldsSelect},
           iv.variant_name,
           iv.attributes as variant_attributes
          FROM ${itemTable} ii
@@ -116,7 +122,7 @@ export async function generateDocumentHtml(
           ii.*, 
           COALESCE(ii.item_name, i.name) as item_name, 
           COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
-          i.custom_fields as item_custom_fields
+          ${itemCustomFieldsSelect}
          FROM ${itemTable} ii
          LEFT JOIN items i ON ii.item_id = i.id
          WHERE ii.${idColumn} = $1

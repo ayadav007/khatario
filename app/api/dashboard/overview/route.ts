@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({
             sales: 0,
             purchases: 0,
+            collection: 0,
             cogs: 0,
             profit: 0,
             receivables: { total: 0, aging: { current: 0, days_1_15: 0, days_16_30: 0, days_31_45: 0, days_45_plus: 0 } },
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           sales: 0,
           purchases: 0,
+          collection: 0,
           cogs: 0,
           profit: 0,
           receivables: { total: 0, aging: { current: 0, days_1_15: 0, days_16_30: 0, days_31_45: 0, days_45_plus: 0 } },
@@ -161,8 +163,25 @@ export async function GET(request: NextRequest) {
       cogsParams.push(accessibleBranchIds);
     }
 
-    // 1–3. Sales, Purchases, COGS in parallel (independent queries, same filters as before)
-    const [salesRes, purchasesRes, cogsRes] = await Promise.all([
+    // Collection (customer payments received in period)
+    let collectionDateFilter = '';
+    let collectionParams: any[] = [businessId];
+    let collectionParamIndex = 2;
+    if (startDate && endDate) {
+      collectionDateFilter = `AND payment_date >= $${collectionParamIndex} AND payment_date <= $${collectionParamIndex + 1}`;
+      collectionParams.push(startDate, endDate);
+      collectionParamIndex += 2;
+    } else {
+      collectionDateFilter = `AND payment_date = CURRENT_DATE`;
+    }
+    const collectionBranchFilter =
+      accessibleBranchIds.length > 0 ? `AND branch_id = ANY($${collectionParamIndex}::uuid[])` : '';
+    if (accessibleBranchIds.length > 0) {
+      collectionParams.push(accessibleBranchIds);
+    }
+
+    // 1–4. Sales, Purchases, COGS, Collection in parallel
+    const [salesRes, purchasesRes, cogsRes, collectionRes] = await Promise.all([
       queryOne<{ total: number }>(
         `SELECT COALESCE(SUM(grand_total), 0) as total 
          FROM invoices 
@@ -194,6 +213,16 @@ export async function GET(request: NextRequest) {
            AND i.id IS NOT NULL
            ${cogsBranchFilter}`,
         cogsParams
+      ),
+      queryOne<{ total: number }>(
+        `SELECT COALESCE(SUM(ABS(amount)), 0) as total
+         FROM payments
+         WHERE business_id = $1
+           AND deleted_at IS NULL
+           AND type = 'receivable'
+           ${collectionDateFilter}
+           ${collectionBranchFilter}`,
+        collectionParams
       ),
     ]);
 
@@ -451,12 +480,14 @@ export async function GET(request: NextRequest) {
 
     const sales = Number(salesRes?.total || 0);
     const purchases = Number(purchasesRes?.total || 0);
+    const collection = Number(collectionRes?.total || 0);
     const cogs = Number(cogsRes?.total || 0);
     const profit = sales - cogs; // Gross Profit = Sales - COGS
 
     const result = {
       sales,
       purchases,
+      collection,
       cogs,
       profit,
       receivables: {

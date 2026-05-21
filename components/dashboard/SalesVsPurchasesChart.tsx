@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { BarChart3 } from 'lucide-react';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { getChartPalette } from '@/lib/chartTheme';
+import { useDashboardChartHeight } from '@/hooks/useDashboardChartHeight';
 
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -24,6 +25,7 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
   const router = useRouter();
   const { isDarkMode } = useDarkMode();
   const chartColors = getChartPalette(isDarkMode);
+  const plotHeight = useDashboardChartHeight(150, 240);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d' | 'custom'>('30d');
@@ -102,7 +104,7 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
   const renderBarChart = () => {
     if (chartData.length === 0) {
       return (
-        <div className="flex items-center justify-center h-64 text-text-muted">
+        <div className="flex h-36 items-center justify-center text-sm text-text-muted md:h-48">
           <p>No data available</p>
         </div>
       );
@@ -122,8 +124,8 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
     );
 
     const width = 800;
-    const height = 300;
-    const padding = 50; // Increased padding for Y-axis labels
+    const height = plotHeight;
+    const padding = plotHeight < 200 ? 40 : 48;
     const chartWidth = width - padding * 2;
     const chartHeight = height - padding * 2;
     const barWidth = Math.max(30, Math.min(60, (chartWidth / chartData.length) * 0.6));
@@ -270,25 +272,39 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
 
   if (loading) {
     return (
-      <Card padding="md" className="h-full">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+      <Card padding="sm" className="h-full md:!p-5">
+        <div className="flex h-36 items-center justify-center md:h-48">
+          <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
         </div>
       </Card>
     );
   }
 
   return (
-    <Card padding="md" className="h-full border border-border">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-primary-500" />
-          <h3 className="text-lg font-semibold text-text-primary">Sales vs Purchases</h3>
+    <Card padding="sm" className="h-full border border-border md:!p-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 md:mb-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="flex items-center gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5 shrink-0 text-text-muted md:h-4 md:w-4" />
+            <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
+              Sales vs Purchases
+            </h3>
+          </div>
+          <div className="flex items-center gap-2.5 text-[10px] text-text-secondary md:text-xs">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm bg-green-500" />
+              Sales
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm bg-red-500" />
+              Purchases
+            </span>
+          </div>
         </div>
         <select
           value={selectedPeriod}
           onChange={(e) => setSelectedPeriod(e.target.value as any)}
-          className="text-sm bg-surface text-text-primary border border-border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
         >
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
@@ -297,18 +313,7 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
         </select>
       </div>
 
-      <div className="mb-4 flex items-center gap-4 text-sm text-text-primary">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-green-500 rounded"></div>
-          <span>Sales</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-red-500 rounded"></div>
-          <span>Purchases</span>
-        </div>
-      </div>
-
-      <div className="border-t border-border pt-4">
+      <div className="border-t border-border pt-2 md:pt-3">
         {renderBarChart()}
       </div>
     </Card>

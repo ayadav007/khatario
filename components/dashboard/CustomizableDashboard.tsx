@@ -47,6 +47,7 @@ export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddWidget, setShowAddWidget] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [widgetsLoaded, setWidgetsLoaded] = useState(false);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
 
   const isWidgetAvailable = (w: AvailableWidget) =>
@@ -78,6 +79,8 @@ export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
       }
     } catch (error) {
       console.error('Failed to load widgets:', error);
+    } finally {
+      setWidgetsLoaded(true);
     }
   };
 
@@ -197,50 +200,77 @@ export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
 
 
 
+  if (widgetsLoaded && widgets.length === 0 && !isEditMode && !showAddWidget) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-background/80 px-3 py-2 md:hidden dark:bg-slate-900/40">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Layout className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+          <p className="truncate text-xs text-text-secondary">No dashboard widgets</p>
+        </div>
+        <Button
+          type="button"
+          onClick={() => setIsEditMode(true)}
+          variant="secondary"
+          size="sm"
+          className="h-8 shrink-0 px-2.5 text-xs"
+        >
+          Customize
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-2 md:space-y-4">
       {/* Dashboard Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Layout className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-          <h2 className="text-xl font-bold text-text-primary">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Layout className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400 md:h-5 md:w-5" />
+          <h2 className="truncate text-sm font-semibold text-text-primary md:text-base">
             My Dashboard
           </h2>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-1.5 md:gap-2">
           {!isEditMode ? (
             <Button
               onClick={() => setIsEditMode(true)}
               variant="secondary"
-              className="flex items-center gap-2"
+              size="sm"
+              className="h-8 gap-1 px-2.5 text-xs md:h-9 md:px-3 md:text-sm"
             >
-              <Edit className="w-4 h-4" />
-              <span>Customize</span>
+              <Edit className="h-3.5 w-3.5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Customize</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
           ) : (
             <>
               <Button
                 onClick={() => setShowAddWidget(true)}
                 variant="secondary"
-                className="flex items-center gap-2"
+                size="sm"
+                className="h-8 gap-1 px-2 text-xs md:h-9 md:px-3 md:text-sm"
               >
-                <Plus className="w-4 h-4" />
-                <span>Add Widget</span>
+                <Plus className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Add Widget</span>
+                <span className="sm:hidden">Add</span>
               </Button>
               <Button
                 onClick={saveWidgets}
                 disabled={loading}
-                className="flex items-center gap-2"
+                size="sm"
+                className="h-8 gap-1 px-2 text-xs md:h-9 md:px-3 md:text-sm"
               >
-                <Save className="w-4 h-4" />
-                <span>{loading ? 'Saving...' : 'Save Layout'}</span>
+                <Save className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span>{loading ? '…' : 'Save'}</span>
               </Button>
               <button
+                type="button"
                 onClick={() => setIsEditMode(false)}
-                className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded text-text-secondary"
+                className="rounded p-1.5 text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-label="Cancel edit"
               >
-                <X className="w-5 h-5" />
+                <X className="h-4 w-4 md:h-5 md:w-5" />
               </button>
             </>
           )}
@@ -270,15 +300,15 @@ export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
         ))}
       </div>
 
-      {/* Empty State */}
+      {/* Empty State — desktop only (mobile uses compact bar above) */}
       {widgets.length === 0 && (
-        <div className="text-center py-12 bg-background/80 dark:bg-slate-900/40 rounded-lg border border-dashed border-border">
-          <Layout className="w-16 h-16 mx-auto text-text-muted mb-4" />
-          <h3 className="text-lg font-semibold text-text-primary mb-2">
+        <div className="hidden rounded-lg border border-dashed border-border bg-background/80 py-6 text-center dark:bg-slate-900/40 md:block md:py-8">
+          <Layout className="mx-auto mb-2 h-10 w-10 text-text-muted md:mb-3 md:h-12 md:w-12" />
+          <h3 className="mb-1 text-sm font-semibold text-text-primary md:text-base">
             No widgets yet
           </h3>
-          <p className="text-text-secondary mb-4">
-            Click "Customize" to add widgets to your dashboard
+          <p className="text-xs text-text-secondary md:text-sm">
+            Click Customize to add widgets to your dashboard
           </p>
         </div>
       )}

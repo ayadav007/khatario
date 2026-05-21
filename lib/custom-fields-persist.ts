@@ -7,19 +7,69 @@ import {
 } from '@/lib/custom-fields';
 import type { CustomFieldEntityType, CustomFieldValues } from '@/types/custom-fields';
 
+let customFieldDefinitionsAvailable: boolean | null = null;
+
+function isCustomFieldsUnavailableError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: string }).code;
+  return code === '42501' || code === '42P01';
+}
+
+/** True when custom_field_definitions exists and the app DB user can read it. */
+async function canUseCustomFieldDefinitions(client?: PoolClient): Promise<boolean> {
+  if (customFieldDefinitionsAvailable !== null) {
+    return customFieldDefinitionsAvailable;
+  }
+
+  const sql = `SELECT 1 FROM custom_field_definitions LIMIT 1`;
+  try {
+    if (client) {
+      await client.query(sql);
+    } else {
+      await queryOne(sql, []);
+    }
+    customFieldDefinitionsAvailable = true;
+  } catch (error) {
+    if (isCustomFieldsUnavailableError(error)) {
+      console.warn(
+        '[custom-fields] custom_field_definitions unavailable; skipping custom field persistence.',
+        (error as { message?: string }).message
+      );
+      customFieldDefinitionsAvailable = false;
+    } else {
+      throw error;
+    }
+  }
+
+  return customFieldDefinitionsAvailable;
+}
+
 async function loadDefinitions(
   businessId: string,
   entityType: CustomFieldEntityType,
   client?: PoolClient
 ) {
-  const sql = `SELECT * FROM custom_field_definitions
-    WHERE business_id = $1 AND entity_type = $2
-    ORDER BY sort_order, label`;
-  const params = [businessId, entityType];
-  const rows = client
-    ? (await client.query(sql, params)).rows
-    : await queryRows(sql, params);
-  return rows.map((r) => normalizeDefinitionRow(r as Record<string, unknown>));
+  if (!(await canUseCustomFieldDefinitions(client))) {
+    return [];
+  }
+
+  try {
+    const sql = `SELECT * FROM custom_field_definitions
+      WHERE business_id = $1 AND entity_type = $2
+      ORDER BY sort_order, label`;
+    const params = [businessId, entityType];
+    const rows = client
+      ? (await client.query(sql, params)).rows
+      : await queryRows(sql, params);
+    return rows.map((r) => normalizeDefinitionRow(r as Record<string, unknown>));
+  } catch (error) {
+    if (isCustomFieldsUnavailableError(error)) {
+      customFieldDefinitionsAvailable = false;
+      console.warn('[custom-fields] Failed to load definitions; continuing without custom fields.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function saveItemCustomFields(
@@ -28,6 +78,10 @@ export async function saveItemCustomFields(
   rawValues: unknown,
   client?: PoolClient
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canUseCustomFieldDefinitions(client))) {
+    return { ok: true };
+  }
+
   const definitions = await loadDefinitions(businessId, 'item', client);
   const values = parseCustomFieldValues(rawValues);
   const validated = validateCustomFieldValues(definitions, values);
@@ -50,6 +104,10 @@ export async function saveInvoiceCustomFields(
   rawValues: unknown,
   client?: PoolClient
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canUseCustomFieldDefinitions(client))) {
+    return { ok: true };
+  }
+
   const definitions = await loadDefinitions(businessId, 'invoice', client);
   const values = parseCustomFieldValues(rawValues);
   const validated = validateCustomFieldValues(definitions, values);
@@ -70,15 +128,27 @@ export async function fetchDefinitionsForBusiness(
   businessId: string,
   entityType?: CustomFieldEntityType
 ) {
-  const params: unknown[] = [businessId];
-  let sql = `SELECT * FROM custom_field_definitions WHERE business_id = $1`;
-  if (entityType) {
-    sql += ` AND entity_type = $2`;
-    params.push(entityType);
+  if (!(await canUseCustomFieldDefinitions())) {
+    return [];
   }
-  sql += ` ORDER BY entity_type, sort_order, label`;
-  const rows = await queryRows(sql, params);
-  return rows.map((r) => normalizeDefinitionRow(r as Record<string, unknown>));
+
+  try {
+    const params: unknown[] = [businessId];
+    let sql = `SELECT * FROM custom_field_definitions WHERE business_id = $1`;
+    if (entityType) {
+      sql += ` AND entity_type = $2`;
+      params.push(entityType);
+    }
+    sql += ` ORDER BY entity_type, sort_order, label`;
+    const rows = await queryRows(sql, params);
+    return rows.map((r) => normalizeDefinitionRow(r as Record<string, unknown>));
+  } catch (error) {
+    if (isCustomFieldsUnavailableError(error)) {
+      customFieldDefinitionsAvailable = false;
+      return [];
+    }
+    throw error;
+  }
 }
 
 export type { CustomFieldValues };

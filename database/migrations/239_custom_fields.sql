@@ -29,3 +29,5 @@ ALTER TABLE invoices
 COMMENT ON TABLE custom_field_definitions IS 'User-defined fields for items and invoice metadata';
 COMMENT ON COLUMN items.custom_fields IS 'Values keyed by custom_field_definitions.field_key';
 COMMENT ON COLUMN invoices.custom_fields IS 'Per-invoice values for invoice entity custom fields';
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE custom_field_definitions TO PUBLIC;
