@@ -5,7 +5,7 @@
 #   ./scripts/deploy-vps.sh
 #   ./scripts/deploy-vps.sh --no-pull    # skip git pull (already pulled)
 #
-# Optional env (.env.production):
+# Optional env (.env.production) — read safely, not sourced:
 #   PM2_APP_NAME=khatario
 #   PM2_WORKER_NAME=todo-reminder-worker
 #   GIT_BRANCH=main
@@ -21,19 +21,24 @@ for arg in "$@"; do
   if [[ "$arg" == "--no-pull" ]]; then NO_PULL=true; fi
 done
 
-# Load production env for migrations + PM2
-if [[ -f .env.production ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env.production
-  set +a
-elif [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
+# Read a single KEY=VALUE from env files without sourcing (avoids bash parsing errors).
+read_env_var() {
+  local file="$1"
+  local key="$2"
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+  grep -E "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/^["'\''"]//;s/["'\''"]$//' | tr -d '\r'
+}
+
+ENV_FILE=".env.production"
+if [[ ! -f "$ENV_FILE" ]]; then
+  ENV_FILE=".env"
 fi
 
+PM2_APP_NAME="$(read_env_var "$ENV_FILE" PM2_APP_NAME)"
+PM2_WORKER_NAME="$(read_env_var "$ENV_FILE" PM2_WORKER_NAME)"
+GIT_BRANCH="$(read_env_var "$ENV_FILE" GIT_BRANCH)"
 PM2_APP_NAME="${PM2_APP_NAME:-khatario}"
 PM2_WORKER_NAME="${PM2_WORKER_NAME:-todo-reminder-worker}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
