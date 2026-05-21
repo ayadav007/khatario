@@ -151,17 +151,6 @@ async function main() {
   try {
     console.log('Connecting to database...');
     console.log(`Migration DB: ${describeMigrationDb(dbConfig)}`);
-    if (isLikelyAppOnlyDbUser(dbConfig)) {
-      console.error('');
-      console.error('❌ Migrations need DDL rights (CREATE TABLE). Your app DB user cannot run migrations.');
-      console.error('   Add to .env.production (postgres superuser — deploy only, not exposed to the app):');
-      console.error('   MIGRATION_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/khatario');
-      console.error('');
-      console.error('   Or grant schema rights once as postgres:');
-      console.error('   sudo -u postgres psql -d khatario -c "GRANT ALL ON SCHEMA public TO khatario_user;"');
-      console.error('');
-      process.exit(1);
-    }
 
     await ensureLogTable(client);
 
@@ -281,6 +270,19 @@ async function main() {
     console.log('  SELECT migration_name, success, executed_at FROM schema_migrations ORDER BY executed_at DESC LIMIT 20;');
 
     if (failed > 0) process.exit(1);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Fatal:', message);
+    if (/permission denied for schema public/i.test(message) && isLikelyAppOnlyDbUser(dbConfig)) {
+      console.error('');
+      console.error('Your app DB user cannot CREATE tables. Fix one of:');
+      console.error('  1) Add to .env.production:');
+      console.error('     MIGRATION_DATABASE_URL=postgresql://postgres:PASSWORD@127.0.0.1:5432/khatario');
+      console.error('  2) Or grant rights once:');
+      console.error('     sudo -u postgres psql -d khatario -f database/scripts/grant-app-user-migrations.sql');
+      console.error('');
+    }
+    process.exit(1);
   } finally {
     client.release();
     await pool.end();
