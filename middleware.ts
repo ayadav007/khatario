@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { shouldRotateTokens } from './lib/jwt';
 import { getPlatformSessionFromRequest } from './lib/platform-jwt';
+import { LOCAL_SESSION_COOKIE } from './lib/auth/local-session-cookie';
 
 function forwardSetCookies(from: Response, to: NextResponse): void {
   const list = from.headers.getSetCookie?.() ?? [];
@@ -96,6 +97,16 @@ function isStaticAsset(pathname: string): boolean {
   );
 }
 
+/** Allow app-shell GET/RSC when JWT expired but device has a cached offline session. */
+function allowOfflineAppShellNavigation(request: NextRequest): boolean {
+  if (request.method !== 'GET') return false;
+  if (request.cookies.get(LOCAL_SESSION_COOKIE)?.value !== '1') return false;
+  const rsc = request.headers.get('RSC');
+  const nextRouter = request.headers.get('Next-Router-State-Tree');
+  const accept = request.headers.get('accept') ?? '';
+  return rsc === '1' || !!nextRouter || accept.includes('text/html');
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -135,6 +146,9 @@ export async function middleware(request: NextRequest) {
         { status: 401 }
       );
     }
+    if (allowOfflineAppShellNavigation(request)) {
+      return NextResponse.next();
+    }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
@@ -146,6 +160,9 @@ export async function middleware(request: NextRequest) {
         { error: 'Authentication required', code: 'UNAUTHENTICATED' },
         { status: 401 }
       );
+    }
+    if (allowOfflineAppShellNavigation(request)) {
+      return NextResponse.next();
     }
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
@@ -189,6 +206,11 @@ export async function middleware(request: NextRequest) {
           { error: 'Authentication required', code: 'UNAUTHENTICATED' },
           { status: 401 }
         );
+        forwardSetCookies(refreshRes, res);
+        return res;
+      }
+      if (allowOfflineAppShellNavigation(request)) {
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         forwardSetCookies(refreshRes, res);
         return res;
       }

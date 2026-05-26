@@ -15,10 +15,15 @@ import {
   readBrowserOnline,
   setAppOnlineState,
 } from '@/lib/network/offline-state';
+import {
+  markCapacitorNetworkReady,
+} from '@/lib/auth/should-trust-cached-session';
 
 export interface NetworkStatusContextValue {
   isOnline: boolean;
   isOffline: boolean;
+  /** False on native until Capacitor Network reports status (avoids auth race). */
+  networkReady: boolean;
   lastChangedAt?: number;
 }
 
@@ -27,6 +32,10 @@ const NetworkStatusContext = createContext<NetworkStatusContextValue | undefined
 );
 
 function resolveInitialOnline(): boolean {
+  if (isCapacitorNative()) {
+    setAppOnlineState(false);
+    return false;
+  }
   return readBrowserOnline();
 }
 
@@ -36,6 +45,7 @@ export function NetworkStatusProvider({
   children: React.ReactNode;
 }) {
   const [isOnline, setIsOnline] = useState(resolveInitialOnline);
+  const [networkReady, setNetworkReady] = useState(!isCapacitorNative());
   const [lastChangedAt, setLastChangedAt] = useState<number | undefined>();
   const isOnlineRef = useRef(isOnline);
 
@@ -73,10 +83,14 @@ export function NetworkStatusProvider({
         .then(({ Network }) => Network.getStatus())
         .then((status) => {
           if (cancelled) return;
+          markCapacitorNetworkReady();
+          setNetworkReady(true);
           applyOnlineState(status.connected, 'capacitor-initial');
         })
         .catch((error) => {
           console.warn('[NetworkStatus] Capacitor Network.getStatus failed:', error);
+          markCapacitorNetworkReady();
+          setNetworkReady(true);
         });
 
       void import('@capacitor/network')
@@ -111,9 +125,10 @@ export function NetworkStatusProvider({
     () => ({
       isOnline,
       isOffline: !isOnline,
+      networkReady,
       lastChangedAt,
     }),
-    [isOnline, lastChangedAt]
+    [isOnline, networkReady, lastChangedAt]
   );
 
   return (

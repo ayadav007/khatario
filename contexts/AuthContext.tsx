@@ -5,11 +5,11 @@ import { useRouter, usePathname } from 'next/navigation';
 import { User, Business } from '@/types/database';
 import { clearAllBranchStorage } from '@/lib/branch-storage';
 import { mergePortalTheme, type PortalTheme } from '@/lib/portal-theme';
-import { isAppOffline } from '@/lib/network/offline-state';
-
-function isClientOffline(): boolean {
-  return isAppOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
-}
+import { markLocalSessionCookie } from '@/lib/auth/local-session-cookie';
+import { shouldTrustCachedSession } from '@/lib/auth/should-trust-cached-session';
+import { NETWORK_RECONNECT_EVENT } from '@/lib/network/events';
+import { useNetworkStatusContext } from '@/contexts/NetworkStatusContext';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 
 /** Legacy unscoped key — migrated away on successful session fetch to prevent cross-business bleed. */
 const PORTAL_THEME_LEGACY_KEY = 'portalTheme';
@@ -65,6 +65,8 @@ interface AuthContextType {
   login: (userData: any) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
+  /** Restore session from localStorage (offline escape hatch). */
+  restoreCachedSession: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -81,11 +83,13 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   logout: () => {},
   refresh: async () => {},
+  restoreCachedSession: () => false,
 });
 
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { networkReady } = useNetworkStatusContext();
   const [user, setUser] = useState<User | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
   const [branch, setBranch] = useState<any | null>(null);
@@ -148,6 +152,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
     }
+    if (storedUser) {
+      markLocalSessionCookie(true);
+    }
   };
 
   const clearLocalState = () => {
@@ -169,12 +176,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('permissions');
     localStorage.removeItem('isPrimaryAdmin');
     removeAllPortalThemeStorageKeys();
+    markLocalSessionCookie(false);
   };
+
+  const restoreCachedSession = useCallback((): boolean => {
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) return false;
+    loadFromCache();
+    setLoading(false);
+    return true;
+  }, []);
 
   /** After /api/auth/session returns 401 (orphan tenant, deleted user, etc.) */
   const redirectToLoginAfterSessionFailure = useCallback(
     async (res: Response, generationAtStart: number) => {
       if (generationAtStart !== sessionGenerationRef.current) {
+        return;
+      }
+      if (shouldTrustCachedSession()) {
+        restoreCachedSession();
         return;
       }
       let reason = 'session_invalid';
@@ -225,7 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       router.replace(`/login?reason=${reason}`);
     },
-    [router, pathname]
+    [router, pathname, restoreCachedSession]
   );
 
   /**
@@ -275,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('isPrimaryAdmin', JSON.stringify(data.isPrimaryAdmin || false));
         return true;
       } else if (res.status === 401 || res.status === 404) {
-        if (isClientOffline()) {
+        if (shouldTrustCachedSession()) {
           loadFromCache();
           return false;
         }
@@ -302,6 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!pathname) return;
+    if (isCapacitorNative() && !networkReady) return;
 
     const initAuth = async () => {
       const storedUser = localStorage.getItem('user');
@@ -309,8 +330,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (storedUser) {
         // Show cached data immediately while fetching fresh session
         loadFromCache();
-        if (isClientOffline()) {
-          // Do not hit /api/auth/session on every route while offline — stale JWT must not logout.
+        if (shouldTrustCachedSession()) {
+          // Do not hit /api/auth/session while offline — stale JWT must not logout.
           setLoading(false);
           return;
         }
@@ -361,6 +382,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } else if (res.status === 401 || res.status === 404) {
+            if (shouldTrustCachedSession()) {
+              setLoading(false);
+              return;
+            }
             const generationAtStart = sessionGenerationRef.current;
             await redirectToLoginAfterSessionFailure(res, generationAtStart);
             if (generationAtStart === sessionGenerationRef.current) {
@@ -373,7 +398,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setLoading(false);
-        const isOffline = isClientOffline();
+        const isOffline = shouldTrustCachedSession();
         const isPublicPage =
           pathname === '/' ||
           pathname.startsWith('/login') ||
@@ -387,7 +412,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initAuth();
-  }, [pathname, router]);
+  }, [pathname, router, networkReady]);
+
+  useEffect(() => {
+    const onReconnect = () => {
+      if (localStorage.getItem('user')) {
+        void fetchSession();
+      }
+    };
+    window.addEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
+    return () => window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
+  }, []);
 
   const login = async (data: any) => {
     // Invalidate any in-flight session check (e.g. initAuth with a stale cookie).
@@ -462,7 +497,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refresh = useCallback(async () => {
-    if (user) await fetchSession();
+    if (user && !shouldTrustCachedSession()) await fetchSession();
   }, [user?.id]);
 
   const value = useMemo(() => ({
@@ -479,7 +514,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     refresh,
-  }), [user, business, branch, branches, activeBranchCount, permissions, isPrimaryAdmin, subscription, portalTheme, loading, refresh]);
+    restoreCachedSession,
+  }), [user, business, branch, branches, activeBranchCount, permissions, isPrimaryAdmin, subscription, portalTheme, loading, refresh, restoreCachedSession]);
 
   return (
     <AuthContext.Provider value={value}>

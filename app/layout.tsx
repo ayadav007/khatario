@@ -74,8 +74,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${dmSans.variable} ${sourceSans3.variable}`}>
       <body className="font-sans antialiased">
+        <NetworkStatusProvider>
         <AuthProvider>
-          <NetworkStatusProvider>
           <BranchProvider>
             <LayoutDataProvider>
                 <LayoutProvider>
@@ -92,8 +92,8 @@ export default function RootLayout({
                 </LayoutProvider>
             </LayoutDataProvider>
           </BranchProvider>
-          </NetworkStatusProvider>
         </AuthProvider>
+        </NetworkStatusProvider>
       </body>
     </html>
   );
