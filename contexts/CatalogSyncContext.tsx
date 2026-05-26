@@ -38,6 +38,9 @@ const CatalogSyncContext = createContext<CatalogSyncContextValue | undefined>(
   undefined
 );
 
+/** Minimum gap between automatic background delta syncs (ms). */
+const MIN_AUTO_DELTA_MS = 60_000;
+
 export function CatalogSyncProvider({ children }: { children: React.ReactNode }) {
   const { business, user } = useAuth();
   const { currentBranchId } = useBranch();
@@ -47,9 +50,16 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
   const [progress, setProgress] = useState<CatalogSyncProgress | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const syncingRef = useRef(false);
+  const lastAutoSyncAtRef = useRef(0);
+  const bootScopeKeyRef = useRef<string | null>(null);
 
-  const scope: TenantScope | null =
-    business?.id && user?.id ? { businessId: business.id, userId: user.id } : null;
+  const scope: TenantScope | null = useMemo(
+    () =>
+      business?.id && user?.id
+        ? { businessId: business.id, userId: user.id }
+        : null,
+    [business?.id, user?.id]
+  );
 
   const stockScope = useMemo(
     () => ({
@@ -68,33 +78,50 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
     } catch {
       setStatus(null);
     }
-  }, [scope?.businessId, scope?.userId]);
+  }, [scope]);
 
   const runSync = useCallback(
-    async (mode: 'full' | 'delta') => {
+    async (mode: 'full' | 'delta', options?: { manual?: boolean }) => {
       if (!scope || !user?.id || !isOnline || syncingRef.current) return;
+
+      const now = Date.now();
+      if (
+        !options?.manual &&
+        mode === 'delta' &&
+        now - lastAutoSyncAtRef.current < MIN_AUTO_DELTA_MS
+      ) {
+        return;
+      }
+
       syncingRef.current = true;
       setIsSyncing(true);
       setLastError(null);
       setProgress({ phase: 'idle', itemsSynced: 0, customersSynced: 0 });
+
       try {
-        const options = {
+        const syncOptions = {
           scope,
           userId: user.id,
           stockScope,
           onProgress: setProgress,
         };
         if (mode === 'full') {
-          await runFullCatalogSync(options);
+          await runFullCatalogSync(syncOptions);
         } else {
-          await runDeltaCatalogSync(options);
+          await runDeltaCatalogSync(syncOptions);
         }
         await refreshStatus();
+        setProgress(null);
+        if (!options?.manual) {
+          lastAutoSyncAtRef.current = Date.now();
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Catalog sync failed';
         setLastError(message);
         setProgress((p) =>
-          p ? { ...p, phase: 'error', message } : { phase: 'error', itemsSynced: 0, customersSynced: 0, message }
+          p
+            ? { ...p, phase: 'error', message }
+            : { phase: 'error', itemsSynced: 0, customersSynced: 0, message }
         );
       } finally {
         syncingRef.current = false;
@@ -104,34 +131,55 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
     [scope, user?.id, isOnline, stockScope, refreshStatus]
   );
 
+  const runSyncRef = useRef(runSync);
+  runSyncRef.current = runSync;
+
   const triggerFullSync = useCallback(async () => {
-    await runSync('full');
+    await runSync('full', { manual: true });
   }, [runSync]);
 
   const triggerDeltaSync = useCallback(async () => {
-    await runSync('delta');
+    await runSync('delta', { manual: true });
   }, [runSync]);
 
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
 
+  /** One automatic sync per tenant when coming online — not on every render. */
   useEffect(() => {
     if (!scope || !isOnline || !user?.id) return;
+    const bootKey = `${scope.businessId}:${scope.userId}`;
+    if (bootScopeKeyRef.current === bootKey) return;
+    bootScopeKeyRef.current = bootKey;
+
     void (async () => {
       const current = await getCatalogStatus(scope);
-      await runSync(current.ready ? 'delta' : 'full');
+      await runSyncRef.current(current.ready ? 'delta' : 'full');
     })();
-  }, [scope?.businessId, scope?.userId, user?.id, isOnline, runSync]);
+  }, [scope?.businessId, scope?.userId, user?.id, isOnline]);
+
+  useEffect(() => {
+    if (!scope) {
+      bootScopeKeyRef.current = null;
+    }
+  }, [scope?.businessId, scope?.userId]);
 
   useEffect(() => {
     if (!scope || !isOnline) return;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const onReconnect = () => {
-      void runSync('delta');
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        void runSyncRef.current('delta');
+      }, 2000);
     };
     window.addEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
-    return () => window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
-  }, [scope?.businessId, scope?.userId, isOnline, runSync]);
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
+    };
+  }, [scope?.businessId, scope?.userId, isOnline]);
 
   const value = useMemo(
     () => ({
