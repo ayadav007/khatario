@@ -1863,7 +1863,13 @@ function NewInvoiceContent() {
   }, [grandTotal, totalPaid, selectedCustomer, customerId, creditMetrics?.current, rows]);
 
   const handleSave = useCallback(async (targetStatus: 'draft' | 'final') => {
-    if (!isSeriesResolved) {
+    const canFinalizeOffline =
+      canQueueOffline &&
+      targetStatus === 'final' &&
+      documentType !== 'proforma_invoice' &&
+      !savedInvoiceId;
+
+    if (!isSeriesResolved && !canFinalizeOffline) {
       setToastMessage({ message: 'Document number is not ready. Please wait...', type: 'error' });
       return;
     }
@@ -1958,6 +1964,48 @@ function NewInvoiceContent() {
       };
       // PHASE 2: Construct full invoice number from prefix + number
       const fullInvoiceNumber = invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber;
+
+      if (canFinalizeOffline) {
+        const { invoice_number: _omit, ...offlinePayload } = {
+          ...payload,
+          invoice_number: fullInvoiceNumber,
+        } as Record<string, unknown> & { invoice_number?: string };
+        const offlineResult = await queueSalesFinalize({
+          payload: offlinePayload,
+          stockLines: rows
+            .filter((r) => r.itemId)
+            .map((r) => ({
+              itemId: r.itemId!,
+              quantity: r.quantity,
+              variantId: r.variantId || null,
+              locationId: selectedWarehouseId || null,
+            })),
+          customerId: customerId || null,
+          balanceDue: balance,
+        });
+
+        if (offlineResult.queued && offlineResult.displayInvoiceNumber) {
+          setOfflineSyncPending(true);
+          setOfflineDisplayNumber(offlineResult.displayInvoiceNumber);
+          setSavedStatus('final');
+          setIsDirty(false);
+          if (offlineResult.stockWarnings?.length) {
+            toastCtx.warning(offlineResult.stockWarnings[0]);
+          }
+          toastCtx.success(
+            `Invoice ${offlineResult.displayInvoiceNumber} saved offline — will sync automatically`
+          );
+          setTimeout(() => {
+            resetIdempotency();
+            setOfflineSyncPending(false);
+            setOfflineDisplayNumber(null);
+            resetFormForNewInvoice();
+            setLoading(false);
+          }, 500);
+          return;
+        }
+      }
+
       // Existing drafts must use POST with id — PATCH /api/invoices/[id] only supports proforma estimate_status.
       const res = await fetch('/api/invoices', {
         method: 'POST',
@@ -2053,7 +2101,7 @@ function NewInvoiceContent() {
       setToastMessage({ message: errorMsg, type: 'error' }); 
       hotToast.error(errorMsg, { duration: 8000 });
     } finally { setLoading(false); }
-  }, [business?.id, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId]);
+  }, [business?.id, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx]);
 
   const handlePreview = useCallback(async () => {
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) { setToastMessage({ message: 'Add items', type: 'error' }); return; }
@@ -2970,7 +3018,7 @@ function NewInvoiceContent() {
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))] px-3 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           <div className="max-w-[1600px] mx-auto space-y-2">
             <Button variant="secondary" className="h-11 w-full" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
-            <Button variant="primary" className="w-full h-12 font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved}><Send className="w-5 h-5 mr-2" /> Generate</Button>
+            <Button variant="primary" className="w-full h-12 font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="w-5 h-5 mr-2" /> Generate</Button>
             <p className="text-[10px] text-center text-text-muted">Generate finalizes the document for GST.</p>
             <Button variant="ghost" className="w-full h-10 text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
           </div>

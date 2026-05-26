@@ -5,6 +5,11 @@ import { useRouter, usePathname } from 'next/navigation';
 import { User, Business } from '@/types/database';
 import { clearAllBranchStorage } from '@/lib/branch-storage';
 import { mergePortalTheme, type PortalTheme } from '@/lib/portal-theme';
+import { isAppOffline } from '@/lib/network/offline-state';
+
+function isClientOffline(): boolean {
+  return isAppOffline() || (typeof navigator !== 'undefined' && !navigator.onLine);
+}
 
 /** Legacy unscoped key — migrated away on successful session fetch to prevent cross-business bleed. */
 const PORTAL_THEME_LEGACY_KEY = 'portalTheme';
@@ -270,6 +275,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('isPrimaryAdmin', JSON.stringify(data.isPrimaryAdmin || false));
         return true;
       } else if (res.status === 401 || res.status === 404) {
+        if (isClientOffline()) {
+          loadFromCache();
+          return false;
+        }
         await redirectToLoginAfterSessionFailure(res, generationAtStart);
         return false;
       } else {
@@ -300,15 +309,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (storedUser) {
         // Show cached data immediately while fetching fresh session
         loadFromCache();
-        const isOffline =
-          typeof navigator !== 'undefined' && navigator.onLine === false;
-        if (isOffline) {
-          // Avoid waiting for session fetch timeout on cold-start offline bootstrap
+        if (isClientOffline()) {
+          // Do not hit /api/auth/session on every route while offline — stale JWT must not logout.
           setLoading(false);
-          void fetchSession();
-        } else {
-          await fetchSession();
+          return;
         }
+        await fetchSession();
       } else {
         // No cached user - try fetching session (cookie may still be valid)
         const generationAtStart = sessionGenerationRef.current;
@@ -367,8 +373,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setLoading(false);
-        const isOffline =
-          typeof navigator !== 'undefined' && navigator.onLine === false;
+        const isOffline = isClientOffline();
         const isPublicPage =
           pathname === '/' ||
           pathname.startsWith('/login') ||
