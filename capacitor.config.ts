@@ -77,8 +77,8 @@ const config: CapacitorConfig = {
      * Bump versionCode when native plugins or permissions change; sync android/app/build.gradle.
      */
     KhatarioShell: {
-      versionCode: 4,
-      versionName: '1.2.1',
+      versionCode: 5,
+      versionName: '1.2.2',
     },
   },
 };

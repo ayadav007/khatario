@@ -15,7 +15,7 @@ describe('resolveCapacitorServerUrl', () => {
 describe('resolveOfflineBootstrapUrl', () => {
   it('targets cached dashboard with bootstrap query param', () => {
     expect(resolveOfflineBootstrapUrl('https://staging.khatario.com')).toBe(
-      `https://staging.khatario.com/dashboard?${OFFLINE_BOOTSTRAP_PARAM}=1`
+      `https://staging.khatario.com/login?${OFFLINE_BOOTSTRAP_PARAM}=1`
     );
   });
 });

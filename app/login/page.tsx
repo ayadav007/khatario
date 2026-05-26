@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -10,7 +10,9 @@ import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, user, loading: authLoading } = useAuth();
+  const isOfflineBootstrap = searchParams.get('khatario_offline_bootstrap') === '1';
 
   // Redirect to dashboard if already logged in (e.g. restored from offline auth)
   useEffect(() => {
@@ -99,6 +101,19 @@ export default function LoginPage() {
       }
     }
   };
+
+  if (isOfflineBootstrap && authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center" padding="lg">
+          <p className="text-text-primary font-medium">Opening Khatario offline…</p>
+          <p className="mt-2 text-sm text-text-secondary">
+            Restoring your last session from this device.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
