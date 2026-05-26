@@ -17,7 +17,7 @@ export async function executePurchaseFinalizeReplay(
   client: PoolClient,
   ctx: IdempotentReplayContext
 ): Promise<ReplayExecutorResult> {
-  const payload = ctx.requestPayload as CreatePurchaseInput & {
+  const payload = ctx.requestPayload as unknown as CreatePurchaseInput & {
     status?: string;
     business_id?: string;
     created_by?: string;

@@ -71,7 +71,7 @@ async function authorizeReplayAction(
     return;
   }
   if (actionType === 'stock.adjust') {
-    await authorize(userId, 'stock', 'adjust', { businessId });
+    await authorize(userId, 'stock', 'adjust_quantity', { businessId });
   }
 }
 

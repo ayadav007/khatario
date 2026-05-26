@@ -249,8 +249,12 @@ async function deductGoodsStockForLine(
       );
     } catch (e) {
       if (e instanceof InvoiceBundleStockError) {
+        const message =
+          typeof e.body?.error === 'string'
+            ? e.body.error
+            : 'Insufficient bundle stock';
         throw new InvoiceCreateServiceError(
-          e.body?.error ?? 'Insufficient bundle stock',
+          message,
           e.statusCode,
           'STOCK_INSUFFICIENT',
           e.body as Record<string, unknown>
