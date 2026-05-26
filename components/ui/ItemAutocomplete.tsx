@@ -5,6 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Camera } from 'lucide-react';
 import { BarcodeScanner } from './BarcodeScanner';
 import { normalizeBarcode } from '@/lib/barcode-validator';
+import { searchOfflineItems } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 import toast from 'react-hot-toast';
 
 interface ItemVariant {
@@ -64,7 +66,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   className,
   warehouseId
 }) => {
-  const { business } = useAuth();
+  const { business, user } = useAuth();
   const [query, setQuery] = useState(value || '');
   const [results, setResults] = useState<ItemSearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -221,6 +223,28 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
     }
 
     try {
+      let foundItems: ItemSearchResult[] = [];
+      if (user?.id) {
+        const offlineItems = await searchOfflineItems(
+          { businessId: business.id, userId: user.id },
+          trimmed,
+          { warehouseId, limit: 50 }
+        );
+        if (offlineItems != null) {
+          foundItems = offlineItems as ItemSearchResult[];
+        } else if (isAppOffline()) {
+          setResults([]);
+          if (autoSelect) {
+            toast.error(
+              'Offline catalog not ready. Open the app online once to download items.',
+              { duration: 4000 }
+            );
+          }
+          return;
+        }
+      }
+
+      if (foundItems.length === 0 && !isAppOffline()) {
       const warehouseParam = warehouseId ? `&warehouse_id=${warehouseId}` : '';
       const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}`;
       const res = await fetch(searchUrl, { signal: controller.signal });
@@ -233,7 +257,9 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
       }
 
       const data = await res.json();
-      const foundItems: ItemSearchResult[] = data.items || [];
+      foundItems = data.items || [];
+      }
+
       setResults(foundItems);
       
       if (autoSelect) {

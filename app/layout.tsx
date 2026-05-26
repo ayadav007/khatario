@@ -29,6 +29,7 @@ import { DarkModeProvider } from "@/contexts/DarkModeContext";
 import { DateRangeProvider } from "@/contexts/DateRangeContext";
 import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegistration";
 import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
+import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
@@ -82,10 +83,12 @@ export default function RootLayout({
                   <ToastProvider>
                     <DarkModeProvider>
                       <OfflineSyncProvider>
+                      <CatalogSyncProvider>
                       <DateRangeProvider>
                         <ServiceWorkerRegistration />
                         {children}
                       </DateRangeProvider>
+                      </CatalogSyncProvider>
                       </OfflineSyncProvider>
                     </DarkModeProvider>
                   </ToastProvider>

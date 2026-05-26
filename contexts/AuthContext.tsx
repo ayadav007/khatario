@@ -104,6 +104,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   /** Bumped on login/logout so stale in-flight /api/auth/session calls cannot revoke a new session. */
   const sessionGenerationRef = useRef(0);
+  const authBootstrappedRef = useRef(false);
+
+  if (
+    typeof window !== 'undefined' &&
+    localStorage.getItem('user')
+  ) {
+    markLocalSessionCookie(true);
+  }
 
   const loadFromCache = () => {
     const storedUser = localStorage.getItem('user');
@@ -183,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) return false;
     loadFromCache();
+    markLocalSessionCookie(true);
     setLoading(false);
     return true;
   }, []);
@@ -243,7 +252,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      router.replace(`/login?reason=${reason}`);
+      const redirect = encodeURIComponent(p || '/dashboard');
+      router.replace(`/login?reason=${reason}&redirect=${redirect}`);
     },
     [router, pathname, restoreCachedSession]
   );
@@ -299,6 +309,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           loadFromCache();
           return false;
         }
+        // Expired JWT while app shell still has cached user — keep offline navigation working.
+        if (localStorage.getItem('user')) {
+          let hardLogout = false;
+          try {
+            const body = await res.clone().json();
+            hardLogout =
+              body?.code === 'BUSINESS_NOT_FOUND' || body?.code === 'USER_NOT_FOUND';
+          } catch {
+            loadFromCache();
+            return false;
+          }
+          if (!hardLogout) {
+            loadFromCache();
+            return false;
+          }
+        }
         await redirectToLoginAfterSessionFailure(res, generationAtStart);
         return false;
       } else {
@@ -323,6 +349,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!pathname) return;
     if (isCapacitorNative() && !networkReady) return;
+    if (authBootstrappedRef.current) return;
+    authBootstrappedRef.current = true;
 
     const initAuth = async () => {
       const storedUser = localStorage.getItem('user');
@@ -413,6 +441,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initAuth();
   }, [pathname, router, networkReady]);
+
+  useEffect(() => {
+    if (user) return;
+    if (typeof window !== 'undefined' && localStorage.getItem('user')) return;
+    authBootstrappedRef.current = false;
+  }, [user]);
 
   useEffect(() => {
     const onReconnect = () => {

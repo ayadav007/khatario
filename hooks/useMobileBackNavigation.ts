@@ -55,6 +55,7 @@ export function useMobileBackNavigation() {
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const historySeedRef = useRef<string | null>(null);
+  const ignorePopstateUntilRef = useRef(0);
 
   useEffect(() => {
     if (!shouldHandleMobileBack()) return;
@@ -66,6 +67,7 @@ export function useMobileBackNavigation() {
     const seedKey = pathname ?? '';
     if (historySeedRef.current === seedKey) return;
     historySeedRef.current = seedKey;
+    ignorePopstateUntilRef.current = Date.now() + 600;
 
     try {
       window.history.pushState({ khatarioMobileBack: true }, '', window.location.href);
@@ -78,6 +80,7 @@ export function useMobileBackNavigation() {
     if (!shouldHandleMobileBack()) return;
 
     const onPopState = () => {
+      if (Date.now() < ignorePopstateUntilRef.current) return;
       performMobileBack(router, pathnameRef.current);
     };
 

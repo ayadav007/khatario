@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, Loader2, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { findOfflineItemByBarcode } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 import toast from 'react-hot-toast';
 
 interface ItemSearchResult {
@@ -34,6 +36,7 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
   onClose,
   businessId
 }) => {
+  const { user } = useAuth();
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastScannedItem, setLastScannedItem] = useState<string | null>(null);
@@ -84,6 +87,18 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
   // Search for item by barcode
   const searchItemByBarcode = async (barcode: string): Promise<ItemSearchResult | null> => {
     try {
+      if (user?.id && isAppOffline()) {
+        const offlineItem = await findOfflineItemByBarcode(
+          { businessId, userId: user.id },
+          barcode
+        );
+        if (offlineItem) {
+          return offlineItem as ItemSearchResult;
+        }
+        toast.error('Item not found in offline catalog.', { duration: 2500 });
+        return null;
+      }
+
       const res = await fetch(`/api/items/search?business_id=${businessId}&q=${encodeURIComponent(barcode)}`);
       if (res.ok) {
         const data = await res.json();

@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Search, ScanLine, Plus, Minus, Loader2, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { browseOfflineItems, searchOfflineItems } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 
 export type ItemLite = {
   id: string;
@@ -285,24 +287,49 @@ export function MobileItemPickerPanel({
     if (q.trim().length >= 1) return;
     let cancelled = false;
     setBrowseLoading(true);
-    fetch(
-      `/api/items?business_id=${encodeURIComponent(businessId)}&user_id=${encodeURIComponent(userId)}&limit=120&page=1`
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        const raw = data.items || [];
-        const mapped: ItemLite[] = raw.map((it: any) =>
-          it.has_variants ? { ...it, _pickerNeedsVariant: true } : it
+
+    const loadBrowse = async () => {
+      if (isAppOffline()) {
+        const offlineRows = await browseOfflineItems(
+          { businessId, userId },
+          { warehouseId, branchId, limit: 120 }
         );
-        setListRows(mapped);
-      })
-      .catch(() => {
-        if (!cancelled) setListRows([]);
-      })
-      .finally(() => {
-        if (!cancelled) setBrowseLoading(false);
-      });
+        if (cancelled) return;
+        if (offlineRows != null) {
+          const mapped: ItemLite[] = offlineRows.map((it) => {
+            const row: ItemLite = {
+              ...it,
+              selling_price: it.selling_price ?? undefined,
+            };
+            return it.has_variants ? { ...row, _pickerNeedsVariant: true } : row;
+          });
+          setListRows(mapped);
+          setBrowseLoading(false);
+          return;
+        }
+      }
+
+      fetch(
+        `/api/items?business_id=${encodeURIComponent(businessId)}&user_id=${encodeURIComponent(userId)}&limit=120&page=1`
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          const raw = data.items || [];
+          const mapped: ItemLite[] = raw.map((it: any) =>
+            it.has_variants ? { ...it, _pickerNeedsVariant: true } : it
+          );
+          setListRows(mapped);
+        })
+        .catch(() => {
+          if (!cancelled) setListRows([]);
+        })
+        .finally(() => {
+          if (!cancelled) setBrowseLoading(false);
+        });
+    };
+
+    void loadBrowse();
     return () => {
       cancelled = true;
     };
@@ -315,6 +342,18 @@ export function MobileItemPickerPanel({
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
+        if (isAppOffline()) {
+          const offlineRows = await searchOfflineItems(
+            { businessId, userId: userId! },
+            trimmed,
+            { warehouseId, branchId, limit: 80 }
+          );
+          if (offlineRows != null) {
+            setListRows(flattenSearchItems(offlineRows));
+            return;
+          }
+        }
+
         const uid = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
         const wh = warehouseId ? `&warehouse_id=${encodeURIComponent(warehouseId)}` : '';
         const br =

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { STACK_PAGE_CLASS } from '@/lib/page-layout';
 import { formatLastSyncedLabel } from '@/lib/sync-timestamp';
 import { safeJsonParse } from '@/lib/api-utils';
+import { useCatalogSync } from '@/contexts/CatalogSyncContext';
 
 interface ServerReplayHistory {
   logs: OfflineReplayLogRow[];
@@ -61,6 +62,14 @@ export default function OfflineSyncDebugPage() {
   const { business, user } = useAuth();
   const { connectivity, pendingActionCount, triggerSync, isSyncing } =
     useOfflineSync();
+  const {
+    status: catalogStatus,
+    isSyncing: isCatalogSyncing,
+    progress: catalogProgress,
+    lastError: catalogError,
+    triggerFullSync,
+    triggerDeltaSync,
+  } = useCatalogSync();
   const { metrics } = useSyncDiagnostics();
   const [queue, setQueue] = useState<OfflineAction[]>([]);
   const [logs, setLogs] = useState<SyncLogEntry[]>([]);
@@ -142,6 +151,44 @@ export default function OfflineSyncDebugPage() {
           >
             {isSyncing ? 'Syncing…' : 'Sync now'}
           </Button>
+        </section>
+
+        <section className="rounded-lg border border-border bg-surface p-4">
+          <h2 className="font-semibold text-text-primary">Offline catalog</h2>
+          <p className="mt-1 text-sm text-text-secondary">
+            Local item and customer search for billing without network.
+          </p>
+          <ul className="mt-3 space-y-1 text-sm text-text-secondary">
+            <li>Ready: {catalogStatus?.ready ? 'Yes' : 'No'}</li>
+            <li>Items cached: {catalogStatus?.itemCount ?? 0}</li>
+            <li>Customers cached: {catalogStatus?.customerCount ?? 0}</li>
+            <li>
+              Last full sync:{' '}
+              {catalogStatus?.lastFullSyncAt
+                ? formatLastSyncedLabel(catalogStatus.lastFullSyncAt)
+                : '—'}
+            </li>
+            {catalogProgress?.message && (
+              <li className="text-text-primary">{catalogProgress.message}</li>
+            )}
+            {catalogError && <li className="text-red-600">{catalogError}</li>}
+          </ul>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => void triggerDeltaSync()}
+              disabled={isCatalogSyncing}
+            >
+              {isCatalogSyncing ? 'Syncing catalog…' : 'Delta sync catalog'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void triggerFullSync()}
+              disabled={isCatalogSyncing}
+            >
+              Full re-download
+            </Button>
+          </div>
         </section>
 
         <section className="rounded-lg border border-border bg-surface p-4">

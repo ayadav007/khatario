@@ -57,6 +57,8 @@ import { MobileItemPickerPanel } from '@/components/invoices/MobileItemPickerPan
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
+import { searchOfflineCustomers } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
@@ -114,6 +116,17 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
     setIsSearching(true);
     const timeout = setTimeout(async () => {
       try {
+        if (isAppOffline() && user?.id) {
+          const offline = await searchOfflineCustomers(
+            { businessId: business.id, userId: user.id },
+            query
+          );
+          if (offline != null) {
+            cacheRef.current.set(cacheKey, offline as Customer[]);
+            setSearchResults(offline as Customer[]);
+            return;
+          }
+        }
         const res = await fetch(`/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user?.id}`);
         if (res.ok) { const data = await res.json(); const result = data.customers || []; cacheRef.current.set(cacheKey, result); setSearchResults(result); }
       } catch (err) { console.error(err); setSearchResults([]); } finally { setIsSearching(false); }
