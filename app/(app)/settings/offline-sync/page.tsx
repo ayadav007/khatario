@@ -20,6 +20,8 @@ import { STACK_PAGE_CLASS } from '@/lib/page-layout';
 import { formatLastSyncedLabel } from '@/lib/sync-timestamp';
 import { safeJsonParse } from '@/lib/api-utils';
 import { useCatalogSync } from '@/contexts/CatalogSyncContext';
+import { getActiveCatalogBackend, getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 
 interface ServerReplayHistory {
   logs: OfflineReplayLogRow[];
@@ -78,6 +80,15 @@ export default function OfflineSyncDebugPage() {
     null
   );
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [catalogStorageBackend, setCatalogStorageBackend] = useState<
+    'sqlite' | 'indexeddb' | null
+  >(null);
+
+  useEffect(() => {
+    void getCatalogRepository().then(() => {
+      setCatalogStorageBackend(getActiveCatalogBackend());
+    });
+  }, [catalogStatus?.itemCount, catalogStatus?.customerCount, isCatalogSyncing]);
 
   const refreshLocal = useCallback(async () => {
     if (!business?.id || !user?.id) return;
@@ -131,6 +142,15 @@ export default function OfflineSyncDebugPage() {
     queue.filter((a) => a.status === 'manual_review').length +
     (serverHistory?.metrics.manualReview ?? 0);
 
+  const catalogStorageLabel =
+    catalogStorageBackend === 'sqlite'
+      ? 'SQLite (phone app)'
+      : catalogStorageBackend === 'indexeddb' && isCapacitorNative()
+        ? 'IndexedDB (SQLite unavailable — using browser storage)'
+        : catalogStorageBackend === 'indexeddb'
+          ? 'IndexedDB (web browser)'
+          : 'Detecting…';
+
   return (
     <div className={STACK_PAGE_CLASS}>
       <h1 className="list-page-h1">Offline sync</h1>
@@ -159,6 +179,7 @@ export default function OfflineSyncDebugPage() {
             Local item and customer search for billing without network.
           </p>
           <ul className="mt-3 space-y-1 text-sm text-text-secondary">
+            <li>Storage: {catalogStorageLabel}</li>
             <li>Ready: {catalogStatus?.ready ? 'Yes' : 'No'}</li>
             <li>Items cached: {catalogStatus?.itemCount ?? 0}</li>
             <li>Customers cached: {catalogStatus?.customerCount ?? 0}</li>
@@ -171,7 +192,16 @@ export default function OfflineSyncDebugPage() {
             {catalogProgress?.message && (
               <li className="text-text-primary">{catalogProgress.message}</li>
             )}
-            {catalogError && <li className="text-red-600">{catalogError}</li>}
+            {catalogError && (
+              <li className="text-red-600">
+                {catalogError}
+                {catalogError.includes('SQLite') && (
+                  <span className="block mt-1 text-text-secondary">
+                    Tap Full re-download again — the app will use IndexedDB instead.
+                  </span>
+                )}
+              </li>
+            )}
           </ul>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button

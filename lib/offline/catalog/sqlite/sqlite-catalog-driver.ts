@@ -29,31 +29,56 @@ import {
 type SqlRow = Record<string, unknown>;
 
 let schemaReady = false;
+let connectionReady = false;
 let initFailed = false;
+let initPromise: Promise<boolean> | null = null;
+
+function isAlreadyConnectedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /already exists|already open|duplicate/i.test(msg);
+}
 
 async function ensureSqliteReady(): Promise<boolean> {
   if (!isCapacitorNative() || typeof window === 'undefined') return false;
   if (initFailed) return false;
-  try {
-    await CapacitorSQLite.createConnection({
-      database: CATALOG_SQLITE_DB,
-      version: 1,
-      encrypted: false,
-    });
-    await CapacitorSQLite.open({ database: CATALOG_SQLITE_DB });
-    if (!schemaReady) {
-      await CapacitorSQLite.execute({
-        database: CATALOG_SQLITE_DB,
-        statements: CATALOG_SQLITE_SCHEMA,
-      });
-      schemaReady = true;
+  if (connectionReady && schemaReady) return true;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      if (!connectionReady) {
+        try {
+          await CapacitorSQLite.createConnection({
+            database: CATALOG_SQLITE_DB,
+            version: 1,
+            encrypted: false,
+          });
+        } catch (err) {
+          if (!isAlreadyConnectedError(err)) throw err;
+        }
+        await CapacitorSQLite.open({ database: CATALOG_SQLITE_DB });
+        connectionReady = true;
+      }
+      if (!schemaReady) {
+        await CapacitorSQLite.execute({
+          database: CATALOG_SQLITE_DB,
+          statements: CATALOG_SQLITE_SCHEMA,
+        });
+        schemaReady = true;
+      }
+      return true;
+    } catch (err) {
+      initFailed = true;
+      connectionReady = false;
+      schemaReady = false;
+      console.warn('[CatalogSQLite] init failed, falling back to IndexedDB', err);
+      return false;
+    } finally {
+      initPromise = null;
     }
-    return true;
-  } catch (err) {
-    initFailed = true;
-    console.warn('[CatalogSQLite] init failed, falling back to IndexedDB', err);
-    return false;
-  }
+  })();
+
+  return initPromise;
 }
 
 async function readMeta(sk: string, key: string): Promise<string | null> {
@@ -376,5 +401,11 @@ export async function isSqliteCatalogAvailable(): Promise<boolean> {
 
 export function resetSqliteCatalogInit(): void {
   schemaReady = false;
+  connectionReady = false;
   initFailed = false;
+  initPromise = null;
+}
+
+export function isSqliteCatalogInitFailed(): boolean {
+  return initFailed;
 }

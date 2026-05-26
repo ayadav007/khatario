@@ -1,6 +1,7 @@
 import type { TenantScope } from '@/lib/offline/types';
 import { isAppOffline } from '@/lib/network/offline-state';
-import { getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import type { CatalogRepository } from '@/lib/offline/catalog/catalog-repository';
+import { withCatalogRepository } from '@/lib/offline/catalog/catalog-service';
 import {
   mapApiCustomerToCatalog,
   mapApiItemToCatalog,
@@ -35,7 +36,13 @@ export async function runCatalogSync(options: CatalogSyncOptions): Promise<void>
   if (isAppOffline()) {
     throw new Error('Catalog sync requires network');
   }
-  const repo = await getCatalogRepository();
+  return withCatalogRepository((repo) => runCatalogSyncWithRepo(repo, options));
+}
+
+async function runCatalogSyncWithRepo(
+  repo: CatalogRepository,
+  options: CatalogSyncOptions
+): Promise<void> {
   const { scope, userId, stockScope, signal } = options;
   const now = Date.now();
   let itemsSynced = 0;
@@ -152,12 +159,13 @@ export async function runCatalogSync(options: CatalogSyncOptions): Promise<void>
 export async function runDeltaCatalogSync(
   options: Omit<CatalogSyncOptions, 'itemsUpdatedAfter' | 'customersUpdatedAfter'>
 ): Promise<void> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(options.scope);
-  return runCatalogSync({
-    ...options,
-    itemsUpdatedAfter: isoFromMs(status.lastItemsDeltaAt),
-    customersUpdatedAfter: isoFromMs(status.lastCustomersDeltaAt),
+  return withCatalogRepository(async (repo) => {
+    const status = await repo.getStatus(options.scope);
+    return runCatalogSyncWithRepo(repo, {
+      ...options,
+      itemsUpdatedAfter: isoFromMs(status.lastItemsDeltaAt),
+      customersUpdatedAfter: isoFromMs(status.lastCustomersDeltaAt),
+    });
   });
 }
 
