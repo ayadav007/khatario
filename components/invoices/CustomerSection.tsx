@@ -2,8 +2,11 @@
 
 import React from 'react';
 import { Customer } from '@/types/database';
+import { searchCatalogCustomersLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChevronDown } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface CustomerAutocompleteProps {
   customers: Customer[];
@@ -59,6 +62,20 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
     setIsSearching(true);
     const timeout = setTimeout(async () => {
       try {
+        if (isAppOffline() && user?.id) {
+          const offline = await searchCatalogCustomersLocal(
+            { businessId: business.id, userId: user.id },
+            query
+          );
+          if (offline != null) {
+            cacheRef.current.set(cacheKey, offline as Customer[]);
+            setSearchResults(offline as Customer[]);
+            return;
+          }
+          toast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
+          setSearchResults([]);
+          return;
+        }
         const res = await fetch(`/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user?.id}`);
         if (res.ok) {
           const data = await res.json();

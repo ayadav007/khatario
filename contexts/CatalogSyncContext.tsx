@@ -47,7 +47,6 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
   const [progress, setProgress] = useState<CatalogSyncProgress | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const syncingRef = useRef(false);
-  const bootSyncKeyRef = useRef<string | null>(null);
 
   const scope: TenantScope | null =
     business?.id && user?.id ? { businessId: business.id, userId: user.id } : null;
@@ -119,9 +118,6 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!scope || !isOnline || !user?.id) return;
-    const bootKey = `${scope.businessId}:${scope.userId}`;
-    if (bootSyncKeyRef.current === bootKey) return;
-    bootSyncKeyRef.current = bootKey;
     void (async () => {
       const current = await getCatalogStatus(scope);
       await runSync(current.ready ? 'delta' : 'full');

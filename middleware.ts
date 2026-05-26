@@ -97,6 +97,25 @@ function isStaticAsset(pathname: string): boolean {
   );
 }
 
+/** Allow read-only catalog sync APIs when JWT expired but local session cookie is set. */
+function tryOfflineCatalogApiPassthrough(request: NextRequest): NextResponse | null {
+  if (request.method !== 'GET') return null;
+  if (request.cookies.get(LOCAL_SESSION_COOKIE)?.value !== '1') return null;
+  const { pathname, searchParams } = request.nextUrl;
+  if (!pathname.startsWith('/api/offline-sync/catalog/')) return null;
+  const userId = searchParams.get('user_id');
+  const businessId = searchParams.get('business_id');
+  if (!userId || !businessId) return null;
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(businessId) || !uuidRe.test(userId)) return null;
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-authenticated-user-id', userId);
+  requestHeaders.set('x-authenticated-business-id', businessId);
+  requestHeaders.set('x-offline-catalog-session', '1');
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 /** Allow app-shell GET/RSC when JWT expired but device has a cached offline session. */
 function allowOfflineAppShellNavigation(request: NextRequest): boolean {
   if (request.method !== 'GET') return false;
@@ -141,6 +160,8 @@ export async function middleware(request: NextRequest) {
 
   if (!payload) {
     if (pathname.startsWith('/api/')) {
+      const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
+      if (catalogPassthrough) return catalogPassthrough;
       return NextResponse.json(
         { error: 'Authentication required', code: 'UNAUTHENTICATED' },
         { status: 401 }
@@ -202,6 +223,11 @@ export async function middleware(request: NextRequest) {
 
     if (!refreshRes.ok) {
       if (pathname.startsWith('/api/')) {
+        const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
+        if (catalogPassthrough) {
+          forwardSetCookies(refreshRes, catalogPassthrough);
+          return catalogPassthrough;
+        }
         const res = NextResponse.json(
           { error: 'Authentication required', code: 'UNAUTHENTICATED' },
           { status: 401 }

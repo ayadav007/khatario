@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Camera } from 'lucide-react';
 import { BarcodeScanner } from './BarcodeScanner';
 import { normalizeBarcode } from '@/lib/barcode-validator';
-import { searchOfflineItems } from '@/lib/offline/catalog/client-search';
+import { searchOfflineItems, searchCatalogItemsLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
 import toast from 'react-hot-toast';
 
@@ -235,29 +235,38 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         } else if (isAppOffline()) {
           setResults([]);
           if (autoSelect) {
-            toast.error(
-              'Offline catalog not ready. Open the app online once to download items.',
-              { duration: 4000 }
-            );
+            toast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
           }
           return;
         }
       }
 
       if (foundItems.length === 0 && !isAppOffline()) {
-      const warehouseParam = warehouseId ? `&warehouse_id=${warehouseId}` : '';
-      const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}`;
-      const res = await fetch(searchUrl, { signal: controller.signal });
-      if (!res.ok) {
-        setResults([]);
-        if (autoSelect) {
-          toast.error('Failed to search for item. Please try again.', { duration: 3000 });
+        const warehouseParam = warehouseId ? `&warehouse_id=${warehouseId}` : '';
+        const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}`;
+        const res = await fetch(searchUrl, { signal: controller.signal });
+        if (!res.ok) {
+          if (user?.id) {
+            const fallback = await searchCatalogItemsLocal(
+              { businessId: business.id, userId: user.id },
+              trimmed,
+              { warehouseId, limit: 50 }
+            );
+            if (fallback?.length) {
+              foundItems = fallback as ItemSearchResult[];
+            }
+          }
+          if (foundItems.length === 0) {
+            setResults([]);
+            if (autoSelect) {
+              toast.error('Failed to search for item. Please try again.', { duration: 3000 });
+            }
+            return;
+          }
+        } else {
+          const data = await res.json();
+          foundItems = data.items || [];
         }
-        return;
-      }
-
-      const data = await res.json();
-      foundItems = data.items || [];
       }
 
       setResults(foundItems);

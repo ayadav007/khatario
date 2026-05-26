@@ -148,7 +148,7 @@ function purchaseLineFromCatalogPick(raw: Record<string, unknown>): PurchaseItem
 export default function NewPurchasePage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { business, user } = useAuth();
+  const { business, user, loading: sessionLoading } = useAuth();
   const { currentBranchId } = useBranch();
   const { warehousesEnabled } = useLayoutData();
   const { canAdd, loading: permissionsLoading } = usePermissions();
@@ -160,7 +160,7 @@ export default function NewPurchasePage() {
   const { allowed: canCreate, loading: authLoading, reason } = useAuthorizationGuard({
     resource: 'purchases',
     action: 'create',
-    skipCheck: !user?.id || !business?.id
+    skipCheck: !user?.id || sessionLoading,
   });
   
   // ALL HOOKS MUST BE DECLARED BEFORE ANY CONDITIONAL RETURNS
@@ -1097,6 +1097,22 @@ export default function NewPurchasePage() {
     ) : null;
 
   // After all hooks: gate render when user cannot create purchases
+  if (sessionLoading || authLoading || permissionsLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
+      </div>
+    );
+  }
+
+  if (!business?.id || !user?.id) {
+    return (
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-text-secondary">
+        <p>Session data is still loading. If this persists offline, open the app once while online.</p>
+      </div>
+    );
+  }
+
   if (!canCreate) {
     return (
       <AccessDenied

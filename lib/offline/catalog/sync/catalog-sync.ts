@@ -110,7 +110,7 @@ export async function runCatalogSync(options: CatalogSyncOptions): Promise<void>
   while (true) {
     if (signal?.aborted) throw new Error('Catalog sync aborted');
     const url =
-      `/api/customers?business_id=${encodeURIComponent(scope.businessId)}` +
+      `/api/offline-sync/catalog/customers?business_id=${encodeURIComponent(scope.businessId)}` +
       `&user_id=${encodeURIComponent(userId)}&page=${page}&limit=${CATALOG_SYNC_PAGE_SIZE}${customersDelta}`;
     const res = await fetch(url, { credentials: 'include', signal });
     if (!res.ok) {

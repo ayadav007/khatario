@@ -22,17 +22,25 @@ export default function PurchaseSelectItemPage() {
 }
 
 function PurchaseSelectItemGate() {
-  const { user, business } = useAuth();
+  const { user, business, loading: sessionLoading } = useAuth();
   const { allowed, loading, reason } = useAuthorizationGuard({
     resource: 'purchases',
     action: 'create',
-    skipCheck: !user?.id || !business?.id,
+    skipCheck: !user?.id || sessionLoading,
   });
 
-  if (loading) {
+  if (sessionLoading || loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
+      </div>
+    );
+  }
+
+  if (!business?.id || !user?.id) {
+    return (
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 px-4 text-center text-sm text-text-secondary">
+        <p>Session data is still loading. If this persists offline, open the app once while online.</p>
       </div>
     );
   }

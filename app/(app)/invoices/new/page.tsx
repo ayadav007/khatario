@@ -58,6 +58,7 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
 import { searchOfflineCustomers } from '@/lib/offline/catalog/client-search';
+import { OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
 
 const INDIAN_STATES = [
@@ -126,6 +127,8 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
             setSearchResults(offline as Customer[]);
             return;
           }
+          toast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
+          return;
         }
         const res = await fetch(`/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user?.id}`);
         if (res.ok) { const data = await res.json(); const result = data.customers || []; cacheRef.current.set(cacheKey, result); setSearchResults(result); }

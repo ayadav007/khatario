@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { normalizeBarcode } from '@/lib/barcode-validator';
+import { browseCatalogItemsLocal, searchCatalogItemsLocal } from '@/lib/offline/catalog/client-search';
+import { isAppOffline } from '@/lib/network/offline-state';
 import { PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
 type ItemRow = {
@@ -65,10 +67,32 @@ export function PurchaseItemPickerScreen() {
   const itemTypeParam = kind === 'service' ? 'service' : 'goods';
 
   const fetchList = useCallback(async () => {
-    if (!business?.id) return;
+    if (!business?.id || !user?.id) return;
     setLoading(true);
     try {
       const trimmed = q.trim();
+      const scope = { businessId: business.id, userId: user.id };
+      const stockOpts = {
+        warehouseId: warehouseId || undefined,
+        limit: 80,
+      };
+
+      if (isAppOffline()) {
+        const offlineItems = trimmed.length >= 1
+          ? await searchCatalogItemsLocal(scope, trimmed, stockOpts)
+          : await browseCatalogItemsLocal(scope, {
+              ...stockOpts,
+              limit: 80,
+            });
+        if (offlineItems != null) {
+          const filtered = offlineItems.filter((it) =>
+            itemTypeParam === 'service' ? it.item_type === 'service' : it.item_type !== 'service'
+          );
+          setItems(filtered as ItemRow[]);
+          return;
+        }
+      }
+
       const wh = warehouseId ? `&warehouse_id=${encodeURIComponent(warehouseId)}` : '';
       let url: string;
       if (trimmed.length >= 1) {
@@ -80,11 +104,17 @@ export function PurchaseItemPickerScreen() {
       const data = await res.json();
       setItems(Array.isArray(data.items) ? data.items : []);
     } catch {
-      setItems([]);
+      if (business?.id && user?.id && isAppOffline()) {
+        const scope = { businessId: business.id, userId: user.id };
+        const offlineItems = await browseCatalogItemsLocal(scope, { limit: 80 });
+        setItems((offlineItems ?? []) as ItemRow[]);
+      } else {
+        setItems([]);
+      }
     } finally {
       setLoading(false);
     }
-  }, [business?.id, q, warehouseId, itemTypeParam]);
+  }, [business?.id, user?.id, q, warehouseId, itemTypeParam]);
 
   useEffect(() => {
     const t = setTimeout(() => {
