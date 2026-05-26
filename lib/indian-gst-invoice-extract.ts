@@ -13,6 +13,13 @@ import {
 import { getStateCode } from '@/lib/gst-utils';
 import { applyNumericOcrReconciliationToExtract } from '@/lib/services/invoice-extract/numericReconciliationEngine';
 import type { NumericReconciliationDebug } from '@/lib/services/invoice-extract/numericReconciliationEngine';
+import {
+  applyExclusiveSemanticsFromPrintedEvidence,
+  extractHasPrintedTax,
+  lineHasPrintedTax,
+  matchesExclusivePosPattern,
+  reconcilePriceModeFromEvidence,
+} from '@/lib/services/invoice-extract/priceModeReconciliationEngine';
 import { roundExclusiveUnitPrice, roundRetailQty } from '@/lib/numeric-precision';
 
 // --- Canonical extraction types (LLM target + internal pipeline) ---
@@ -632,22 +639,7 @@ export function detectTaxType(e: IndianGstInvoiceExtract): InvoiceTaxType {
 }
 
 export function detectPriceMode(e: IndianGstInvoiceExtract): InvoicePriceMode {
-  const inferred = inferPriceModeFromTotals(e);
-  const grand = e.grand_total ?? 0;
-  const tol = Math.max(1.5, grand * 0.02);
-  const sub = e.subtotal ?? 0;
-  const tax = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
-  const ro = e.round_off ?? 0;
-  const lineSum = e.items.reduce((s, it) => s + (it.line_total ?? 0), 0);
-  const exclusiveFit = grand > 0 ? Math.abs(sub + tax + ro - grand) : Infinity;
-  const inclusiveFit = grand > 0 ? Math.abs(lineSum + ro - grand) : Infinity;
-
-  if (e.price_mode === 'exclusive' && exclusiveFit <= tol) return 'exclusive';
-  if (e.price_mode === 'inclusive' && inclusiveFit <= tol) return 'inclusive';
-  if (e.price_mode === 'inclusive' && exclusiveFit <= tol) return 'exclusive';
-  if (e.price_mode === 'exclusive' && inclusiveFit <= tol && exclusiveFit > tol) return 'inclusive';
-
-  return inferred;
+  return reconcilePriceModeFromEvidence(e).priceMode;
 }
 
 function inferPriceModeFromTotals(e: IndianGstInvoiceExtract): InvoicePriceMode {
@@ -920,7 +912,13 @@ export function normalizeIndianGstInvoiceExtract(
   preferTaxableSubtotalFromGrand(e);
 
   e.tax_type = detectTaxType(e);
-  e.price_mode = detectPriceMode(e);
+
+  const priceRecon = reconcilePriceModeFromEvidence(e);
+  e.price_mode = priceRecon.priceMode;
+
+  if (e.price_mode === 'exclusive' && matchesExclusivePosPattern(e)) {
+    applyExclusiveSemanticsFromPrintedEvidence(e);
+  }
 
   /** Exclusive header but line discount applied to tax-inclusive gross (MRP column) — infer when numbers match. */
   if (e.price_mode === 'exclusive') {
@@ -978,8 +976,18 @@ export function normalizeIndianGstInvoiceExtract(
     const lt = it.line_total;
     const g = it.gst_rate ?? 0;
     let taxable_value = it.taxable_value;
-    if (taxable_value == null && lt != null && lt > 0 && g > 0) {
-      taxable_value = round2(lt / (1 + g / 100));
+    /** Printed tax dominates reverse GST — never back out when line/footer tax is explicit. */
+    if (taxable_value == null && lt != null && lt > 0 && g > 0 && !lineHasPrintedTax(it)) {
+      if (e.price_mode === 'exclusive') {
+        const base = (it.qty ?? 1) * (it.rate ?? 0);
+        if (base > 0.01 && Math.abs(base - lt) <= Math.max(0.05, lt * 0.012)) {
+          taxable_value = round2(lt);
+        } else {
+          taxable_value = round2(lt / (1 + g / 100));
+        }
+      } else {
+        taxable_value = round2(lt / (1 + g / 100));
+      }
     }
     return { ...it, taxable_value };
   });
@@ -1101,14 +1109,12 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
   /** Footer SGST≠CGST (or OCR line splits): roll up rupee columns without forcing ½/½ split. */
   const usePrintedLineSplitsCgst =
     taxType === 'cgst_sgst' &&
-    priceMode === 'exclusive' &&
     e.items.some(
       (it) => Math.abs(it.cgst_amount ?? 0) > 0.015 || Math.abs(it.sgst_amount ?? 0) > 0.015,
     );
 
   const usePrintedLineSplitsIg =
     taxType === 'igst' &&
-    priceMode === 'exclusive' &&
     e.items.some((it) => Math.abs(it.igst_amount ?? 0) > 0.015);
 
   for (const it of e.items) {
@@ -1145,6 +1151,24 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
     if (r <= 0) {
       taxable = lt;
       tax = 0;
+    } else if (lineHasPrintedTax(it)) {
+      const cgP2 = Math.abs(it.cgst_amount ?? 0) > 0.005 ? round2(it.cgst_amount!) : 0;
+      const sgP2 = Math.abs(it.sgst_amount ?? 0) > 0.005 ? round2(it.sgst_amount!) : 0;
+      const igP2 = Math.abs(it.igst_amount ?? 0) > 0.005 ? round2(it.igst_amount!) : 0;
+      const printedTaxLine = round2(cgP2 + sgP2 + igP2);
+      const tvRaw = it.taxable_value;
+      if (tvRaw != null && tvRaw > 0.01) {
+        taxable = round2(tvRaw);
+      } else if (priceMode === 'exclusive' && printedTaxLine > 0.01 && lt > printedTaxLine) {
+        taxable = round2(lt - printedTaxLine);
+      } else {
+        const base = (it.qty ?? 1) * (it.rate ?? 0);
+        taxable =
+          base > 0.01 && Math.abs(base - lt) <= Math.max(0.05, Math.abs(lt) * 0.012)
+            ? round2(lt)
+            : round2(lt - printedTaxLine);
+      }
+      tax = printedTaxLine > 0.01 ? printedTaxLine : round2(lt - taxable);
     } else {
       const tvRaw = it.taxable_value;
       const derivedTaxable = round2(lt / (1 + r / 100));
@@ -1156,6 +1180,13 @@ export function recomputeGstSummaryFromAuthoritativeLines(e: IndianGstInvoiceExt
         Math.abs(round2(tvRaw) * (1 + r / 100) - lt) <= tol
       ) {
         taxable = round2(tvRaw);
+      } else if (
+        priceMode === 'exclusive' &&
+        (it.qty ?? 0) > 0 &&
+        (it.rate ?? 0) > 0 &&
+        Math.abs((it.qty ?? 1) * (it.rate ?? 0) - lt) <= tol
+      ) {
+        taxable = round2(lt);
       } else {
         taxable = derivedTaxable;
       }

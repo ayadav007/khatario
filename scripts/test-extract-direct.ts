@@ -158,9 +158,14 @@ const sub = e.subtotal ?? 0;
 const tax = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
 const ro = e.round_off ?? 0;
 const computed = Math.round((sub + tax + ro) * 100) / 100;
-const ok = Math.abs(computed - grand) <= Math.max(2, grand * 0.01);
+const delta = Math.abs(computed - grand);
+const tol =
+  grand > 0 && grand < 500
+    ? Math.max(0.06, grand * 0.002)
+    : Math.max(0.25, grand * 0.008);
+const ok = grand <= 0 || delta <= tol;
 console.log(
-  `    ₹${sub.toFixed(2)} (taxable) + ₹${tax.toFixed(2)} (tax) + ₹${ro.toFixed(2)} (ro) = ₹${computed.toFixed(2)}  vs grand ₹${grand.toFixed(2)}  ${ok ? '✅ OK' : '❌ MISMATCH'}`,
+  `    ₹${sub.toFixed(2)} (taxable) + ₹${tax.toFixed(2)} (tax) + ₹${ro.toFixed(2)} (ro) = ₹${computed.toFixed(2)}  vs grand ₹${grand.toFixed(2)}  ${ok ? '✅ OK' : `❌ MISMATCH (Δ ₹${delta.toFixed(2)})`}`,
 );
 
 // Expected values from the invoice image

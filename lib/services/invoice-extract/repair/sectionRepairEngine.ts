@@ -14,6 +14,13 @@ import {
   recomputeGstSummaryFromAuthoritativeLines,
   applyConsolidatedForeignTaxSplit,
 } from '@/lib/indian-gst-invoice-extract';
+import {
+  applyExclusiveSemanticsFromPrintedEvidence,
+  extractHasPrintedTax,
+  lineHasPrintedTax,
+  matchesExclusivePosPattern,
+  reconcilePriceModeFromEvidence,
+} from '@/lib/services/invoice-extract/priceModeReconciliationEngine';
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -87,6 +94,12 @@ export function repairLineItems(extract: IndianGstInvoiceExtract): {
   const notes: string[] = [];
   const out = cloneExtract(extract);
   const items = out.items ?? [];
+
+  /** Printed tax + POS exclusive pattern: do not rewrite line totals toward qty×rate. */
+  if (matchesExclusivePosPattern(out) || extractHasPrintedTax(out)) {
+    return { patched: out, notes };
+  }
+
   const headerPm = linePriceMode(out.price_mode);
 
   for (let i = 0; i < items.length; i++) {
@@ -121,6 +134,9 @@ export function repairLineItems(extract: IndianGstInvoiceExtract): {
     const err = lineInclusiveTotalError(ctx);
     const tol = defaultLineTotalTolerance(lt);
     if (err <= tol) continue;
+
+    /** Never overwrite lines that already carry printed CGST/SGST/IGST splits. */
+    if (lineHasPrintedTax(it)) continue;
 
     const fixed = expectedInclusiveLineTotal(ctx);
     if (Number.isFinite(fixed) && Math.abs(fixed - lt) / Math.max(lt, 1) < 0.08) {
@@ -217,6 +233,23 @@ export function repairExtractSectionsDeterministic(extract: IndianGstInvoiceExtr
 } {
   let cur = extract;
   const notes: string[] = [];
+
+  const recon = reconcilePriceModeFromEvidence(cur);
+  cur = {
+    ...cur,
+    price_mode: recon.priceMode,
+  };
+  if (recon.priceMode === 'exclusive' && matchesExclusivePosPattern(cur)) {
+    applyExclusiveSemanticsFromPrintedEvidence(cur);
+    notes.push(
+      `price_mode: reconciled to exclusive (ex ${recon.exclusiveScore} vs inc ${recon.inclusiveScore})`,
+    );
+  } else if (recon.priceMode !== cur.price_mode) {
+    notes.push(
+      `price_mode: reconciled to ${recon.priceMode} (ex ${recon.exclusiveScore} vs inc ${recon.inclusiveScore})`,
+    );
+  }
+
   const d = repairImpossibleDiscounts(cur);
   cur = d.patched;
   notes.push(...d.notes);
