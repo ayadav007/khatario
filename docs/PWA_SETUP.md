@@ -1,65 +1,54 @@
 # PWA (Progressive Web App) Setup
 
-Khatario is configured as a Progressive Web App, allowing users to install it on their devices and use it offline (with limitations).
+Khatario supports installable PWA behavior and offline app-shell caching on the **web deploy** (staging/production).
 
-## What's Included
+## What's included
 
-- **Service Worker** (`app/sw.ts`) – Caches assets and pages for offline use
-- **Web App Manifest** (`app/manifest.json`) – Defines app name, icons, theme colors, display mode
-- **Offline Fallback** (`app/offline/page.tsx`) – Shown when the user is offline and requests a page not in cache
-- **PWA Icons** (`public/icons/`) – 192x192 and 512x512 PNG icons for install prompts
+| Asset | Purpose |
+|-------|---------|
+| `public/sw.js` | App-shell service worker (static assets + navigation fallback) |
+| `app/manifest.json` | Install prompt metadata |
+| `app/offline/page.tsx` | Offline navigation fallback |
+| `components/system/ServiceWorkerRegistration.tsx` | Registers SW on remote origin |
 
-## How to Use
+**Android cold-start offline** uses Capacitor `errorPath` — see **`docs/COLD_START_OFFLINE.md`**.
 
-### Install the App
+## Install the app
 
-1. Open Khatario in Chrome, Edge, or Safari on your device
-2. On **desktop**: Look for the install icon (⊕) in the address bar
-3. On **mobile**: Use "Add to Home Screen" from the browser menu
-4. The app will open in standalone mode (no browser UI)
+1. Open Khatario in Chrome, Edge, or Safari
+2. **Desktop:** install icon in the address bar
+3. **Mobile:** “Add to Home Screen”
 
-### Regenerate Icons
-
-If you want to customize the app icon:
+## Regenerate icons
 
 ```bash
 npm run pwa:icons
 ```
 
-This generates new icons from the script. To use your own logo, edit `scripts/generate-pwa-icons.js` to use your image path instead of the SVG.
+## Service worker behavior
 
-### Build
+Registered automatically on `staging.khatario.com` / `app.khatario.com` (not on Capacitor local error pages).
 
-The service worker is generated during `npm run build`. Output files:
+| Resource | Strategy |
+|----------|----------|
+| `/api/*` | Network only |
+| `/_next/static/*` | Cache-first |
+| HTML pages | Network-first → cache → `/offline` |
 
-- `public/sw.js` – Service worker
-- `public/sw.js.map` – Source map
-- Precache manifest (injected into sw.js)
-
-## Features
-
-| Feature | Status |
-|---------|--------|
-| Install to home screen | ✅ |
-| Standalone display mode | ✅ |
-| Offline fallback page | ✅ |
-| Asset caching (JS, CSS, images) | ✅ |
-| Runtime caching for API calls | ✅ (Network-first) |
-| Theme color / splash screen | ✅ |
+After changing `public/sw.js`, bump the `CACHE_VERSION` constant and redeploy.
 
 ## Requirements
 
-- **HTTPS** – PWAs require a secure context (localhost works for development)
-- **Modern browser** – Chrome, Edge, Safari, Firefox (with varying support)
-
-## Customization
-
-- **Manifest**: Edit `app/manifest.json` for name, colors, icons
-- **Theme color**: Update `themeColor` in manifest and `viewport.themeColor` in `app/layout.tsx`
-- **Offline page**: Customize `app/offline/page.tsx`
+- **HTTPS** (localhost OK for dev)
+- At least **one online visit** before offline shell cache is populated
 
 ## Troubleshooting
 
-- **Install prompt not showing**: Ensure you're on HTTPS and have visited the site at least twice
-- **Offline not working**: The service worker registers on first visit; refresh to activate
-- **Old cache**: Clear site data or use DevTools → Application → Service Workers → Unregister
+- **Install prompt missing:** HTTPS + two visits required
+- **Offline not working:** Check DevTools → Application → Service Workers
+- **Stale cache:** Use `public/clear-cache.html` or clear site data
+
+## Related
+
+- `docs/COLD_START_OFFLINE.md` — full offline architecture
+- `docs/SERVER_INFRASTRUCTURE.md` — staging vs production URLs

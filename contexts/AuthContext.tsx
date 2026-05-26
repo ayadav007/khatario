@@ -300,7 +300,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (storedUser) {
         // Show cached data immediately while fetching fresh session
         loadFromCache();
-        await fetchSession();
+        const isOffline =
+          typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (isOffline) {
+          // Avoid waiting for session fetch timeout on cold-start offline bootstrap
+          setLoading(false);
+          void fetchSession();
+        } else {
+          await fetchSession();
+        }
       } else {
         // No cached user - try fetching session (cookie may still be valid)
         const generationAtStart = sessionGenerationRef.current;
@@ -355,18 +363,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } catch {
-          // Network error - treat as unauthenticated
+          // Network error without cached user — stay on page (offline bootstrap may still load shell)
         }
 
         setLoading(false);
+        const isOffline =
+          typeof navigator !== 'undefined' && navigator.onLine === false;
         const isPublicPage =
           pathname === '/' ||
           pathname.startsWith('/login') ||
           pathname.startsWith('/signup') ||
           pathname.startsWith('/book-demo') ||
           pathname.startsWith('/admin') ||
-          pathname.startsWith('/attendance');
-        if (!isPublicPage) router.push('/login');
+          pathname.startsWith('/attendance') ||
+          pathname === '/offline';
+        if (!isPublicPage && !isOffline) router.push('/login');
       }
     };
 
@@ -416,6 +427,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { clearAllCapabilitySnapshots } = await import('@/lib/capability-snapshot');
       clearAllCapabilitySnapshots();
+    } catch {
+      // Non-blocking
+    }
+
+    try {
+      const { clearAllDashboardSnapshots } = await import('@/lib/dashboard-snapshot');
+      clearAllDashboardSnapshots();
+    } catch {
+      // Non-blocking
+    }
+
+    try {
+      const { clearOfflineTenantData } = await import(
+        '@/lib/offline/migration/migrate-local-storage'
+      );
+      if (business?.id && user?.id) {
+        await clearOfflineTenantData({
+          businessId: business.id,
+          userId: user.id,
+        });
+      }
     } catch {
       // Non-blocking
     }

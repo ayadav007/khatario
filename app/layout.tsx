@@ -20,12 +20,15 @@ const sourceSans3 = Source_Sans_3({
   display: "swap",
 });
 import { AuthProvider } from "@/contexts/AuthContext";
+import { NetworkStatusProvider } from "@/contexts/NetworkStatusContext";
 import { BranchProvider } from "@/contexts/BranchContext";
 import { LayoutProvider } from "@/contexts/LayoutContext";
 import { LayoutDataProvider } from "@/contexts/LayoutDataContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { DarkModeProvider } from "@/contexts/DarkModeContext";
 import { DateRangeProvider } from "@/contexts/DateRangeContext";
+import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegistration";
+import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
@@ -72,19 +75,24 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${dmSans.variable} ${sourceSans3.variable}`}>
       <body className="font-sans antialiased">
         <AuthProvider>
+          <NetworkStatusProvider>
           <BranchProvider>
             <LayoutDataProvider>
                 <LayoutProvider>
                   <ToastProvider>
                     <DarkModeProvider>
+                      <OfflineSyncProvider>
                       <DateRangeProvider>
+                        <ServiceWorkerRegistration />
                         {children}
                       </DateRangeProvider>
+                      </OfflineSyncProvider>
                     </DarkModeProvider>
                   </ToastProvider>
                 </LayoutProvider>
             </LayoutDataProvider>
           </BranchProvider>
+          </NetworkStatusProvider>
         </AuthProvider>
       </body>
     </html>

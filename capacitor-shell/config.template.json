@@ -1,0 +1,6 @@
+{
+  "serverUrl": "https://staging.khatario.com/login",
+  "bootstrapUrl": "https://staging.khatario.com/dashboard?khatario_offline_bootstrap=1",
+  "environment": "staging",
+  "generatedAt": ""
+}

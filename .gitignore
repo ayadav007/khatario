@@ -44,8 +44,10 @@ pnpm-debug.log*
 # WhatsApp runtime stores (never commit)
 whatsapp-data/*.json
 
-# Serwist / PWA (generated at build)
-public/sw.js
+# Capacitor shell (generated at cap sync)
+capacitor-shell/config.json
+
+# Serwist / PWA (generated at build — hand-maintained sw.js is committed)
 public/sw.js.map
 public/swe-worker-*.js
 public/swe-worker-*.js.map

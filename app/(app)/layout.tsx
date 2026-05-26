@@ -26,6 +26,8 @@ import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
+import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
+import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 
 /**
  * Persistent layout for main app routes
@@ -82,6 +84,8 @@ function AppRouteLayoutInner({
         <PortalThemeSync />
         <MobileBackNavigation />
         <div className="h-screen w-screen overflow-hidden bg-background">
+          <NetworkStatusBanner />
+          <SyncStatusBanner />
           <DynamicTitle />
           <main className="h-full w-full">
             {children}
@@ -99,6 +103,8 @@ function AppRouteLayoutInner({
         <PortalThemeSync />
         <MobileBackNavigation />
         <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
+          <NetworkStatusBanner />
+          <SyncStatusBanner />
           <DynamicTitle />
           <Suspense fallback={<div className="w-64 h-screen bg-background animate-pulse" />}>
             <Sidebar />

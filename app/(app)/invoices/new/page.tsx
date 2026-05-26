@@ -27,6 +27,7 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useOfflineSalesFinalize } from '@/hooks/useOfflineSalesFinalize';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { InvoicePaymentModal } from '@/components/modals/InvoicePaymentModal';
@@ -242,6 +243,8 @@ function NewInvoiceContent() {
   const { business, user } = useAuth();
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const toastCtx = useToastContext();
+  const { canQueueOffline, queueSalesFinalize, resetIdempotency } =
+    useOfflineSalesFinalize();
   const bt = useBluetoothPrinter();
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
@@ -349,6 +352,8 @@ function NewInvoiceContent() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [savedStatus, setSavedStatus] = useState<'draft' | 'final' | null>(null);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
+  const [offlineSyncPending, setOfflineSyncPending] = useState(false);
+  const [offlineDisplayNumber, setOfflineDisplayNumber] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isInvoiceLocked, setIsInvoiceLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
@@ -1533,6 +1538,68 @@ function NewInvoiceContent() {
         // PHASE 2: Construct full invoice number from prefix + number
         const fullInvoiceNumber = invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber;
         const requestPayload = { ...payload, invoice_number: fullInvoiceNumber };
+
+        if (canQueueOffline) {
+          const { invoice_number: _omit, ...offlinePayload } = requestPayload as Record<
+            string,
+            unknown
+          > & { invoice_number?: string };
+          const offlineResult = await queueSalesFinalize({
+            payload: offlinePayload,
+            stockLines: rows
+              .filter((r) => r.itemId)
+              .map((r) => ({
+                itemId: r.itemId!,
+                quantity: r.quantity,
+                variantId: r.variantId || null,
+                locationId: selectedWarehouseId || null,
+              })),
+            customerId: customerId || null,
+            balanceDue: balance,
+          });
+
+          if (offlineResult.queued && offlineResult.displayInvoiceNumber) {
+            if (loadingTimeout) clearTimeout(loadingTimeout);
+            setOfflineSyncPending(true);
+            setOfflineDisplayNumber(offlineResult.displayInvoiceNumber);
+            setSavedStatus('final');
+
+            if (offlineResult.stockWarnings?.length) {
+              toastCtx.warning(offlineResult.stockWarnings[0]);
+            }
+
+            toastCtx.success(
+              `Invoice ${offlineResult.displayInvoiceNumber} saved offline — will sync automatically`
+            );
+
+            const useBluetooth =
+              canBtPrint &&
+              getPosAutoBluetoothPrint() &&
+              bt.supported &&
+              bt.savedPrinters.length > 0;
+
+            if (useBluetooth) {
+              try {
+                const receipt = buildReceiptFromState(offlineResult.displayInvoiceNumber);
+                await bt.printReceipt(receipt);
+              } catch (btErr: unknown) {
+                toastCtx.warning(
+                  (btErr as Error)?.message || 'Bluetooth print failed for offline bill'
+                );
+              }
+            }
+
+            setTimeout(() => {
+              resetIdempotency();
+              setOfflineSyncPending(false);
+              setOfflineDisplayNumber(null);
+              startNewBill();
+              setLoading(false);
+            }, 500);
+            return;
+          }
+        }
+
         console.log('[POS] ========== PAYLOAD BEING SENT TO API ==========');
         console.log('[POS] Full payload:', JSON.stringify(requestPayload, null, 2));
         console.log('[POS] Payload summary:', {
@@ -2973,6 +3040,8 @@ function NewInvoiceContent() {
         }}
         onPrintBill={handlePrintBill}
         isPrinting={loading}
+        offlinePending={offlineSyncPending}
+        offlineInvoiceLabel={offlineDisplayNumber}
         onParkBill={() => {
           // Park bill clears the screen - handled in POSLayout
         }}

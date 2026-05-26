@@ -71,15 +71,20 @@ export function CreateSupplierModal({
 
     setLoading(true);
     try {
+      const phoneDigits = formData.phone.replace(/\D/g, '');
+      const phonePayload =
+        phoneDigits.length >= 8 && phoneDigits.length <= 15 ? phoneDigits : null;
+
       const res = await fetch('/api/suppliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           business_id: business.id,
           name,
-          phone: formData.phone.replace(/\D/g, '') || null,
+          phone: phonePayload,
           email: formData.email.trim() || null,
-          gstin: formData.gstin.trim() || null,
+          gstin: formData.gstin.trim().toUpperCase() || null,
           opening_balance: 0,
           opening_balance_type: 'credit',
           created_by_user_id: user.id,
@@ -93,7 +98,9 @@ export function CreateSupplierModal({
       }
       const supplier = data?.supplier as Supplier | undefined;
       if (supplier) {
-        toast.success('Supplier created');
+        toast.success(
+          data?.deduplicated ? 'Using existing supplier' : 'Supplier created'
+        );
         onSuccess(supplier);
         onClose();
       } else {

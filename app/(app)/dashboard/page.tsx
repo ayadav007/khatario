@@ -36,6 +36,16 @@ import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
 import { canUseNativeInvoiceShare } from '@/lib/share-invoice';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import {
+  loadDashboardSnapshot,
+  saveDashboardSnapshot,
+} from '@/lib/dashboard-snapshot';
+import {
+  loadDashboardCache,
+  saveDashboardCache,
+} from '@/lib/offline/repositories/entity-cache-repository';
+import { markAppSynced } from '@/lib/sync-timestamp';
 
 function DashboardPage() {
   const { business, user, loading: authLoading } = useAuth();
@@ -51,7 +61,18 @@ function DashboardPage() {
   const [shareModalInvoice, setShareModalInvoice] = useState<any>(null);
   const [shareFormatInvoice, setShareFormatInvoice] = useState<any>(null);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<any>(null);
+  const { isOffline, isOnline, lastChangedAt } = useNetworkStatus();
+  const prevOnlineRef = useRef(isOnline);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const wasOffline = !prevOnlineRef.current;
+    prevOnlineRef.current = isOnline;
+
+    if (isOnline && wasOffline) {
+      setDashboardRefreshKey((key) => key + 1);
+    }
+  }, [isOnline, lastChangedAt]);
 
   const openShareForInvoice = (invoice: { id: string; invoice_number: string }) => {
     if (canUseNativeInvoiceShare()) {
@@ -73,6 +94,27 @@ function DashboardPage() {
   
   const [dateRange, setDateRange] = useState<{ start: string; end: string; label: string }>(getDefaultDateRange());
   const dateRangeRef = useRef<string>(`${getDefaultDateRange().start}-${getDefaultDateRange().end}`);
+  const dateRangeKey = `${dateRange.start}-${dateRange.end}`;
+
+  useEffect(() => {
+    if (!business?.id || !user?.id || !isOffline) return;
+    void (async () => {
+      const idb = await loadDashboardCache(
+        { businessId: business.id, userId: user.id },
+        dateRangeKey
+      );
+      if (idb?.data) {
+        setData(idb.data);
+        setLoading(false);
+        return;
+      }
+      const cached = loadDashboardSnapshot(business.id, user.id, dateRangeKey);
+      if (cached?.data) {
+        setData(cached.data);
+      }
+      setLoading(false);
+    })();
+  }, [business?.id, user?.id, isOffline, dateRangeKey]);
 
   const handleDateRangeChange = useCallback((range: { start: string; end: string; label: string }) => {
     const rangeKey = `${range.start}-${range.end}`;
@@ -99,6 +141,10 @@ function DashboardPage() {
         setLoading(false);
         return;
       }
+      if (isOffline) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         const params: Record<string, string> = {
@@ -111,6 +157,13 @@ function DashboardPage() {
         if (res.ok) {
           const result = await res.json();
           setData(result);
+          saveDashboardSnapshot(business.id, user.id, dateRangeKey, result);
+          void saveDashboardCache(
+            { businessId: business.id, userId: user.id },
+            dateRangeKey,
+            result
+          );
+          markAppSynced();
         }
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error);
@@ -120,9 +173,9 @@ function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId, dashboardRefreshKey]);
+  }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId, dashboardRefreshKey, isOffline, dateRangeKey]);
 
-  if (loading) {
+  if (loading && !isOffline && !data) {
     return (
       
         <div className="flex items-center justify-center h-[calc(100vh-100px)]">

@@ -50,6 +50,9 @@ interface POSLayoutProps {
   itemCount: number;
   // Loading state
   isPrinting?: boolean;
+  /** Offline bill queued — show TMP number + sync pending badge */
+  offlinePending?: boolean;
+  offlineInvoiceLabel?: string | null;
   // Item rows for calculating total quantity (POS mode summary)
   itemRows?: Array<{ itemId?: string; name?: string; quantity?: number }>;
   // Bluetooth printing (optional – all props must be provided together)
@@ -94,6 +97,8 @@ export function POSLayout({
   itemSearchInputRef,
   itemCount,
   isPrinting = false,
+  offlinePending = false,
+  offlineInvoiceLabel = null,
   itemRows = [],
   bluetooth,
 }: POSLayoutProps) {
@@ -321,7 +326,14 @@ export function POSLayout({
         <div className="flex items-center gap-6">
           <div>
             <div className="text-[10px] text-gray-500 uppercase">Invoice</div>
-            <div className="font-bold text-sm text-gray-900">{invoiceNumber || 'New'}</div>
+            <div className="font-bold text-sm text-gray-900">
+              {offlineInvoiceLabel || invoiceNumber || 'New'}
+            </div>
+            {offlinePending && (
+              <div className="mt-0.5 text-[10px] font-medium text-amber-700">
+                Offline · sync pending
+              </div>
+            )}
           </div>
           <div>
             <div className="text-[10px] text-gray-500 uppercase">Date</div>

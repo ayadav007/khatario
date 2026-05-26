@@ -176,9 +176,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // AUTHORIZATION: Check create permission (suppliers are part of purchases module)
+    // AUTHORIZATION: supplier create (not purchase create — avoids purchase-only PBAC side effects)
     try {
-      await authorize(createdByUserId, 'purchases', 'create', { businessId: business_id });
+      await authorize(createdByUserId, 'suppliers', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -230,6 +230,38 @@ export async function POST(request: NextRequest) {
 
     const phoneNorm = normalizePhoneOrNull(phone);
 
+    const gstinNorm =
+      gstin && typeof gstin === 'string' && gstin.trim()
+        ? gstin.trim().toUpperCase()
+        : null;
+
+    if (gstinNorm) {
+      const existingGstin = await db.queryOne<Supplier>(
+        `SELECT * FROM suppliers
+         WHERE business_id = $1 AND deleted_at IS NULL AND is_active = true
+           AND gstin IS NOT NULL AND UPPER(TRIM(gstin)) = $2
+         LIMIT 1`,
+        [business_id, gstinNorm]
+      );
+      if (existingGstin) {
+        return NextResponse.json(
+          {
+            supplier: existingGstin,
+            deduplicated: true,
+            message: 'Existing supplier with this GSTIN returned.',
+          },
+          { status: 200 }
+        );
+      }
+    }
+
+    const gstinStatePrefix =
+      gstinNorm && gstinNorm.length >= 2 && /^\d{2}$/.test(gstinNorm.slice(0, 2))
+        ? gstinNorm.slice(0, 2)
+        : null;
+    const finalStateCodeResolved =
+      finalStateCode || gstinStatePrefix || null;
+
     const supplier = await db.queryOne<Supplier>(`
       INSERT INTO suppliers (
         business_id, name, phone, email, address,
@@ -242,7 +274,7 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `, [
       business_id, name, phoneNorm, email, address,
-      city, state, finalStateCode || null, pincode, gstin,
+      city, state, finalStateCodeResolved, pincode, gstinNorm,
       opening_balance, opening_balance_type,
       linked_business_id || null,
       linked_business_id ? business_id : null, // Set requester if linking
@@ -335,8 +367,24 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[SupplierAPI] ERROR creating supplier:', error?.message);
     console.error('[SupplierAPI] Stack:', error?.stack);
+
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        {
+          error: 'A supplier with this GSTIN or name already exists for your business.',
+          code: 'DUPLICATE_SUPPLIER',
+          details: error?.message,
+        },
+        { status: 409 }
+      );
+    }
+
+    const detail = error?.message || 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to create supplier', details: error?.message || 'Unknown error' },
+      {
+        error: `Failed to create supplier: ${detail}`,
+        details: detail,
+      },
       { status: 500 }
     );
   }

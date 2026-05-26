@@ -34,6 +34,9 @@ import {
 } from '@/components/purchases/MobileNewPurchaseScrollForm';
 import { CreateSupplierModal } from '@/components/modals/CreateSupplierModal';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useOptimisticMutation } from '@/hooks/useOptimisticMutation';
+import { useOfflineSync } from '@/contexts/OfflineSyncContext';
+import { canQueueOfflineActions } from '@/lib/offline/connectivity/state-machine';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import {
@@ -150,6 +153,8 @@ export default function NewPurchasePage() {
   const { warehousesEnabled } = useLayoutData();
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const toast = useToastContext();
+  const { mutate: queueOfflineAction } = useOptimisticMutation();
+  const { connectivity } = useOfflineSync();
   
   // Check authorization before rendering form
   const { allowed: canCreate, loading: authLoading, reason } = useAuthorizationGuard({
@@ -200,6 +205,7 @@ export default function NewPurchasePage() {
     } | null;
     savePingSent: boolean;
   }>({ jobId: null, reviewBefore: null, savePingSent: false });
+  const offlineFinalizeKeyRef = useRef<string | null>(null);
 
   /**
    * True only after invoice extract supplied a supplier identity (name/GSTIN) that did not match
@@ -1192,6 +1198,35 @@ export default function NewPurchasePage() {
         place_of_supply_state_code: formData.place_of_supply_state_code || business.state_code,
         created_by: user?.id,
       };
+
+      if (canQueueOfflineActions(connectivity.state)) {
+        if (status === 'draft') {
+          toast.warning('Saving a draft requires an internet connection.');
+          setLoading(false);
+          return;
+        }
+
+        if (!offlineFinalizeKeyRef.current) {
+          offlineFinalizeKeyRef.current =
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? `purchase.finalize:${business.id}:${crypto.randomUUID()}`
+              : `purchase.finalize:${business.id}:${Date.now()}`;
+        }
+
+        const { queued } = await queueOfflineAction({
+          type: 'purchase.finalize',
+          payload,
+          idempotencyKey: offlineFinalizeKeyRef.current,
+        });
+
+        if (queued) {
+          toast.success(
+            'Purchase saved offline. It will finalize and update stock when you reconnect.'
+          );
+          router.push('/purchases');
+          return;
+        }
+      }
 
       const response = await fetch('/api/purchases', {
         method: 'POST',

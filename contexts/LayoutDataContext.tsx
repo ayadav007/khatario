@@ -10,6 +10,9 @@ import {
   type CapabilitySnapshot,
 } from '@/lib/capability-snapshot';
 import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
+import { isAppOffline } from '@/lib/network/offline-state';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { markAppSynced } from '@/lib/sync-timestamp';
 
 /** Server upserts re-fire `created_at`; fetch-only fallback is gated (first list paint skipped) + `shownReminderIds`. */
 const TODO_REMINDER_RECENT_AGE_MS = 10 * 60 * 1000;
@@ -139,7 +142,7 @@ async function fetchWithDedup<T>(
   params?: Record<string, string>,
   options?: RequestInit
 ): Promise<T> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (isAppOffline()) {
     throw new Error('Offline');
   }
   const cacheKey = getCacheKey(endpoint, params);
@@ -196,6 +199,8 @@ async function fetchWithDedup<T>(
 
 export function LayoutDataProvider({ children }: { children: React.ReactNode }) {
   const { business, user } = useAuth();
+  const { isOnline, lastChangedAt } = useNetworkStatus();
+  const prevOnlineRef = useRef(isOnline);
   const [data, setData] = useState<LayoutData>({
     subscription: null,
     addons: [],
@@ -812,6 +817,7 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
           timestamp: Date.now(),
         };
         saveCapabilitySnapshot(snapshot);
+        markAppSynced();
 
         setData((prev) => ({
           ...prev,
@@ -850,6 +856,32 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
       }
     });
   }, [business?.id, user?.id, fetchSubscription, fetchNotifications, fetchBadgeCounts, fetchWarehousesSetting]);
+
+  // Lightweight refresh after reconnect (notifications, badges, subscription, settings).
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+
+    const wasOffline = !prevOnlineRef.current;
+    prevOnlineRef.current = isOnline;
+
+    if (!isOnline || !wasOffline) return;
+
+    void Promise.allSettled([
+      fetchSubscription(),
+      fetchNotifications(true),
+      fetchBadgeCounts(true),
+      fetchWarehousesSetting(true),
+    ]);
+  }, [
+    isOnline,
+    lastChangedAt,
+    business?.id,
+    user?.id,
+    fetchSubscription,
+    fetchNotifications,
+    fetchBadgeCounts,
+    fetchWarehousesSetting,
+  ]);
 
   // PHASE 3: SSE EventSource listener for real-time notifications
   const sseRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

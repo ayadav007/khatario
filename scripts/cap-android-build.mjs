@@ -45,6 +45,12 @@ console.log(`CAP_SERVER_URL=${serverUrl}\n`);
 
 const env = { ...process.env, CAP_SERVER_URL: serverUrl };
 
+execSync('node scripts/write-capacitor-shell-config.mjs', {
+  cwd: root,
+  stdio: 'inherit',
+  env,
+});
+
 execSync('npx cap sync android', { cwd: root, stdio: 'inherit', env });
 
 const configPath = join(root, 'android/app/src/main/assets/capacitor.config.json');
@@ -60,7 +66,15 @@ if (existsSync(configPath)) {
     console.error(`   actual:   ${actual}`);
     process.exit(1);
   }
+  const errorPath = config?.server?.errorPath ?? '(missing)';
+  if (errorPath !== 'offline.html') {
+    console.error(`\n❌ capacitor.config.json errorPath mismatch:`);
+    console.error(`   expected: offline.html`);
+    console.error(`   actual:   ${errorPath}`);
+    process.exit(1);
+  }
   console.log(`✓ Verified server.url → ${actual}`);
+  console.log(`✓ Verified server.errorPath → ${errorPath}`);
 }
 
 if (shouldInstall) {

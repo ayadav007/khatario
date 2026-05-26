@@ -27,6 +27,7 @@ const PUBLIC_PATHS = new Set([
   '/auth/impersonate',
   /** Razorpay Payment Link `callback_url` lands here (customer has no Khatario session) */
   '/pay/complete',
+  '/offline',
 ]);
 
 function isCustomerSurfacePath(pathname: string): boolean {

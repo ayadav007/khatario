@@ -43,6 +43,11 @@ const config: CapacitorConfig = {
   webDir: 'capacitor-shell',
   server: {
     url: serverUrl,
+    /**
+     * Local branded page when remote server.url is unreachable (cold-start offline).
+     * See capacitor-shell/offline.html and docs/COLD_START_OFFLINE.md
+     */
+    errorPath: 'offline.html',
     cleartext: allowCleartext,
     androidScheme,
   },
@@ -72,8 +77,8 @@ const config: CapacitorConfig = {
      * Bump versionCode when native plugins or permissions change; sync android/app/build.gradle.
      */
     KhatarioShell: {
-      versionCode: 2,
-      versionName: '1.1.0',
+      versionCode: 4,
+      versionName: '1.2.1',
     },
   },
 };

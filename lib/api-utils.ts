@@ -52,14 +52,26 @@ export function getApiErrorMessage(
 
   if (
     data.code === 'DUPLICATE_CUSTOMER' ||
+    data.code === 'DUPLICATE_SUPPLIER' ||
     data.code === 'OPENING_BALANCE_LOCKED' ||
     data.code === 'INVALID_PHONE'
   ) {
     return (data.error as string) || fallback;
   }
 
-  return (data.error as string) || (data.message as string) || fallback;
+  const base = (data.error as string) || (data.message as string);
+  const details = typeof data.details === 'string' ? data.details.trim() : '';
+  if (base) {
+    if (details && !base.includes(details)) {
+      return `${base} (${details})`;
+    }
+    return base;
+  }
+  if (details) return details;
+  return fallback;
 }
+
+export { isLikelyNetworkFetchError, shouldSuppressOfflineToast } from '@/lib/network/errors';
 
 /**
  * Check if an error response indicates the feature is not available on the plan.

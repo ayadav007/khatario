@@ -86,7 +86,9 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Android builds
 
-The APK is a **thin Capacitor shell** — it loads the remote web app via `server.url`. Web content updates on deploy; **rebuild the APK only when** native plugins, permissions, or `CAP_SERVER_URL` change.
+The APK is a **thin Capacitor shell** — it loads the remote web app via `server.url`. Web content updates on deploy; **rebuild the APK only when** native plugins, permissions, `server.errorPath`, or `CAP_SERVER_URL` change.
+
+**Cold-start offline:** When the device has no network, Capacitor shows bundled `offline.html` instead of the Android “Webpage not available” error. See **`docs/COLD_START_OFFLINE.md`**.
 
 ### Use these scripts (do not rely on defaults)
 
@@ -106,6 +108,7 @@ Check `android/app/src/main/assets/capacitor.config.json`:
 
 - Staging: `"url": "https://staging.khatario.com/login"`
 - Production: `"url": "https://app.khatario.com/login"`
+- Both: `"errorPath": "offline.html"`
 
 ### Manual (PowerShell on Windows)
 
