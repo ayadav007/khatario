@@ -127,7 +127,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
             setSearchResults(offline as Customer[]);
             return;
           }
-          toast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
+          hotToast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
           return;
         }
         const res = await fetch(`/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user?.id}`);
