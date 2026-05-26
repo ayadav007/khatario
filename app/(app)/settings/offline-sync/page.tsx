@@ -133,9 +133,9 @@ export default function OfflineSyncDebugPage() {
 
   return (
     <div className={STACK_PAGE_CLASS}>
-      <h1 className="list-page-h1">Offline sync diagnostics</h1>
+      <h1 className="list-page-h1">Offline sync</h1>
       <p className="mt-1 text-sm text-text-secondary">
-        Local queue, server replay registry, and reconciliation log.
+        Download items and customers for offline billing, and view queue diagnostics.
       </p>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">

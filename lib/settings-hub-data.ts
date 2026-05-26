@@ -388,6 +388,22 @@ export const SETTINGS_HUB_SECTIONS: SettingsHubSection[] = [
 
           { href: '/settings/backup', label: 'Backup & restore', module: 'settings', searchKeywords: ['export', 'download data'] },
 
+          {
+            href: '/settings/offline-sync',
+            label: 'Offline sync',
+            module: 'settings',
+            searchKeywords: [
+              'offline',
+              'catalog',
+              'sync',
+              'download',
+              'items',
+              'customers',
+              'cache',
+              'airplane',
+            ],
+          },
+
           { href: '/settings/automation', label: 'Workflow automation', module: 'settings' },
 
         ],

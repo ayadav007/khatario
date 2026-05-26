@@ -222,7 +222,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/settings', label: 'Settings', module: 'settings' },
       { href: '/settings/users', label: 'Manage Users', module: 'settings' },
       { href: '/settings/backup', label: 'Backup & restore', module: 'settings' },
-      { href: '/settings/backup', label: 'Backup & Restore', module: 'settings' },
+      { href: '/settings/offline-sync', label: 'Offline sync', module: 'settings' },
     ],
     ctx
   );

@@ -148,6 +148,7 @@ export function getMobileRouteTitle(
 
   // —— Settings ——
   if (p === '/settings/backup') return 'Backup & restore';
+  if (p === '/settings/offline-sync') return 'Offline sync';
   if (p === '/settings/custom-fields') return 'Custom fields';
   if (p === '/settings/branches/new') return 'Create branch';
   if (p.startsWith('/settings/branches/') && p.endsWith('/edit')) return 'Edit branch';

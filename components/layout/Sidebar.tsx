@@ -897,6 +897,7 @@ export const Sidebar: React.FC = () => {
             subItems: [
               { href: '/settings/features', label: 'UI Features', icon: Settings, module: 'settings' },
               { href: '/settings/backup', label: 'Backup & Restore', icon: Database, module: 'settings' },
+              { href: '/settings/offline-sync', label: 'Offline sync', icon: RefreshCw, module: 'settings' },
               { href: '/settings/automation', label: 'Workflow Automation', icon: Settings, module: 'settings' },
             ]
           },
