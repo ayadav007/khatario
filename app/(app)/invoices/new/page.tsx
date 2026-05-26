@@ -57,8 +57,7 @@ import { MobileItemPickerPanel } from '@/components/invoices/MobileItemPickerPan
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
-import { searchOfflineCustomers } from '@/lib/offline/catalog/client-search';
-import { OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
+import { searchCustomersForBilling, listCatalogCustomersLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
 
 const INDIAN_STATES = [
@@ -106,8 +105,15 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const { business, user } = useAuth();
   const cacheRef = useRef<Map<string, Customer[]>>(new Map());
+  const [catalogBrowse, setCatalogBrowse] = useState<Customer[]>([]);
   const selectedCustomer = customers.find(c => c.id === value) || searchResults.find(c => c.id === value);
   useEffect(() => { if (selectedCustomer) setQuery(selectedCustomer.name); }, [selectedCustomer]);
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    void listCatalogCustomersLocal({ businessId: business.id, userId: user.id }, 50).then((rows) => {
+      if (rows?.length) setCatalogBrowse(rows as Customer[]);
+    });
+  }, [business?.id, user?.id]);
   useEffect(() => {
     if (searchTimeout) clearTimeout(searchTimeout);
     if (!query.trim() || !business?.id) { setSearchResults([]); return; }
@@ -117,28 +123,34 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
     setIsSearching(true);
     const timeout = setTimeout(async () => {
       try {
-        if (isAppOffline() && user?.id) {
-          const offline = await searchOfflineCustomers(
-            { businessId: business.id, userId: user.id },
-            query
-          );
-          if (offline != null) {
-            cacheRef.current.set(cacheKey, offline as Customer[]);
-            setSearchResults(offline as Customer[]);
-            return;
-          }
+        const scope = { businessId: business.id, userId: user!.id };
+        const fromCatalog = await searchCustomersForBilling(scope, query);
+        if (fromCatalog != null) {
+          cacheRef.current.set(cacheKey, fromCatalog as Customer[]);
+          setSearchResults(fromCatalog as Customer[]);
+          return;
+        }
+        if (isAppOffline()) {
           hotToast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
+          setSearchResults([]);
           return;
         }
         const res = await fetch(`/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user?.id}`);
         if (res.ok) { const data = await res.json(); const result = data.customers || []; cacheRef.current.set(cacheKey, result); setSearchResults(result); }
+        else {
+          const fallback = await searchCustomersForBilling(scope, query);
+          if (fallback?.length) {
+            cacheRef.current.set(cacheKey, fallback as Customer[]);
+            setSearchResults(fallback as Customer[]);
+          }
+        }
       } catch (err) { console.error(err); setSearchResults([]); } finally { setIsSearching(false); }
     }, 200);
     setSearchTimeout(timeout);
     return () => { if (timeout) clearTimeout(timeout); };
   }, [query, business?.id, user?.id]);
   useEffect(() => { cacheRef.current.clear(); }, [business?.id]);
-  const filtered = query.trim().length >= 2 ? searchResults : (query === '' ? customers.slice(0, 20) : customers.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()) || c.company_name?.toLowerCase().includes(query.toLowerCase()) || c.phone?.includes(query)).slice(0, 20));
+  const filtered = query.trim().length >= 2 ? searchResults : (query === '' ? catalogBrowse.slice(0, 20) : customers.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()) || c.company_name?.toLowerCase().includes(query.toLowerCase()) || c.phone?.includes(query)).slice(0, 20));
   return (
     <div className="relative w-full">
         <div className="relative">

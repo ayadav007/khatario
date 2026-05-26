@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildApiUrl } from '@/lib/api-helpers';
+import { isAppOffline } from '@/lib/network/offline-state';
+import {
+  browseCatalogItemsLocal,
+  listCatalogCustomersLocal,
+} from '@/lib/offline/catalog/client-search';
+import {
+  catalogCustomerToListCustomer,
+  catalogItemToListItem,
+} from '@/lib/offline/catalog/catalog-to-entity';
 
 const EMPTY_QUERY_PARAMS: Record<string, string | number | boolean | null | undefined> = {};
 
@@ -46,6 +55,26 @@ export function useEntityList<T = Record<string, unknown>>(
     setSyncing(true);
     setError(null);
     try {
+      if (isAppOffline() && userId) {
+        const scope = { businessId, userId };
+        if (apiUrl.includes('/api/items')) {
+          const catalogItems = await browseCatalogItemsLocal(scope, { limit: 20_000 });
+          if (catalogItems != null) {
+            const list = catalogItems.map((row) => catalogItemToListItem(row, businessId)) as T[];
+            setData(filter ? list.filter(filter) : list);
+            return;
+          }
+        }
+        if (apiUrl.includes('/api/customers')) {
+          const catalogCustomers = await listCatalogCustomersLocal(scope, 20_000);
+          if (catalogCustomers != null) {
+            const list = catalogCustomers.map(catalogCustomerToListCustomer) as T[];
+            setData(filter ? list.filter(filter) : list);
+            return;
+          }
+        }
+      }
+
       const url = buildApiUrl(apiUrl, {
         business_id: businessId,
         ...queryParams,
@@ -59,6 +88,27 @@ export function useEntityList<T = Record<string, unknown>>(
       const list = Array.isArray(rows) ? (rows as T[]) : [];
       setData(filter ? list.filter(filter) : list);
     } catch (err) {
+      if (userId) {
+        const scope = { businessId, userId };
+        if (apiUrl.includes('/api/items')) {
+          const catalogItems = await browseCatalogItemsLocal(scope, { limit: 20_000 });
+          if (catalogItems != null) {
+            const list = catalogItems.map((row) => catalogItemToListItem(row, businessId)) as T[];
+            setData(filter ? list.filter(filter) : list);
+            setError(null);
+            return;
+          }
+        }
+        if (apiUrl.includes('/api/customers')) {
+          const catalogCustomers = await listCatalogCustomersLocal(scope, 20_000);
+          if (catalogCustomers != null) {
+            const list = catalogCustomers.map(catalogCustomerToListCustomer) as T[];
+            setData(filter ? list.filter(filter) : list);
+            setError(null);
+            return;
+          }
+        }
+      }
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setSyncing(false);

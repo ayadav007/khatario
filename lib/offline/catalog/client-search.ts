@@ -62,6 +62,18 @@ export async function listCatalogCustomersLocal(
   return repo.listCustomers(scope, limit);
 }
 
+/**
+ * Customer search for billing: use local catalog whenever it is populated,
+ * regardless of online/offline (Wi‑Fi without internet still needs the cache).
+ */
+export async function searchCustomersForBilling(
+  scope: TenantScope,
+  query: string,
+  limit = 20
+): Promise<CatalogCustomer[] | null> {
+  return searchCatalogCustomersLocal(scope, query, limit);
+}
+
 export async function getCatalogStatus(scope: TenantScope): Promise<CatalogStatus> {
   const repo = await getCatalogRepository();
   return repo.getStatus(scope);
@@ -101,7 +113,7 @@ export async function searchOfflineCustomers(
   limit = 20
 ): Promise<CatalogCustomer[] | null> {
   if (!preferOfflineCatalog()) return null;
-  return searchCatalogCustomersLocal(scope, query, limit);
+  return searchCustomersForBilling(scope, query, limit);
 }
 
 export const OFFLINE_CATALOG_EMPTY_HINT =

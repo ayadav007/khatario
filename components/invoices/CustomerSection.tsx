@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Customer } from '@/types/database';
-import { searchCatalogCustomersLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
+import { searchCustomersForBilling, listCatalogCustomersLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChevronDown } from 'lucide-react';
@@ -25,6 +25,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
   const [isSearching, setIsSearching] = React.useState(false);
   const [searchTimeout, setSearchTimeout] = React.useState<NodeJS.Timeout | null>(null);
   const cacheRef = React.useRef<Map<string, Customer[]>>(new Map());
+  const [catalogBrowse, setCatalogBrowse] = React.useState<Customer[]>([]);
   const { business, user } = useAuth();
   
   const selectedCustomer = customers.find(c => c.id === value) || searchResults.find(c => c.id === value);
@@ -34,6 +35,13 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
         setQuery(selectedCustomer.name);
     }
   }, [selectedCustomer]);
+
+  React.useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    void listCatalogCustomersLocal({ businessId: business.id, userId: user.id }, 50).then((rows) => {
+      if (rows?.length) setCatalogBrowse(rows as Customer[]);
+    });
+  }, [business?.id, user?.id]);
 
   // Debounced server-side search - start searching after 1 character for faster results
   React.useEffect(() => {
@@ -62,16 +70,14 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
     setIsSearching(true);
     const timeout = setTimeout(async () => {
       try {
-        if (isAppOffline() && user?.id) {
-          const offline = await searchCatalogCustomersLocal(
-            { businessId: business.id, userId: user.id },
-            query
-          );
-          if (offline != null) {
-            cacheRef.current.set(cacheKey, offline as Customer[]);
-            setSearchResults(offline as Customer[]);
-            return;
-          }
+        const scope = { businessId: business.id, userId: user!.id };
+        const fromCatalog = await searchCustomersForBilling(scope, query);
+        if (fromCatalog != null) {
+          cacheRef.current.set(cacheKey, fromCatalog as Customer[]);
+          setSearchResults(fromCatalog as Customer[]);
+          return;
+        }
+        if (isAppOffline()) {
           toast.error(OFFLINE_CATALOG_EMPTY_HINT, { duration: 5000 });
           setSearchResults([]);
           return;
@@ -82,6 +88,12 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
           const result = data.customers || [];
           cacheRef.current.set(cacheKey, result);
           setSearchResults(result);
+        } else {
+          const fallback = await searchCustomersForBilling(scope, query);
+          if (fallback?.length) {
+            cacheRef.current.set(cacheKey, fallback as Customer[]);
+            setSearchResults(fallback as Customer[]);
+          }
         }
       } catch (err) {
         console.error('Error searching customers:', err);
@@ -95,7 +107,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
     return () => {
       if (timeout) clearTimeout(timeout);
     };
-  }, [query, business?.id]);
+  }, [query, business?.id, user?.id]);
 
   // Clear cache when business changes
   React.useEffect(() => {
@@ -107,7 +119,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
   const filtered = query.trim().length >= 2 
     ? searchResults 
     : (query === '' 
-        ? customers.slice(0, 20) // Show first 20 for quick access
+        ? (catalogBrowse.length > 0 ? catalogBrowse.slice(0, 20) : customers.slice(0, 20))
         : customers.filter((c) => 
             c.name.toLowerCase().includes(query.toLowerCase()) || 
             c.company_name?.toLowerCase().includes(query.toLowerCase()) ||

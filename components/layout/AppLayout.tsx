@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { BottomNav } from './BottomNav';
+import { MobileNavPrefetch } from './MobileNavPrefetch';
 import { DynamicTitle } from './DynamicTitle';
 import { PromotionModal } from '../promotions/PromotionModal';
 import { useLayout } from '@/contexts/LayoutContext';
@@ -69,6 +70,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </main>
       </div>
       {!isFullWidthPage && <BottomNav />}
+      <MobileNavPrefetch />
       <PromotionModal />
     </div>
   );

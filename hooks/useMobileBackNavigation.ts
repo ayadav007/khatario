@@ -81,7 +81,16 @@ export function useMobileBackNavigation() {
 
     const onPopState = () => {
       if (Date.now() < ignorePopstateUntilRef.current) return;
-      performMobileBack(router, pathnameRef.current);
+      const path = pathnameRef.current;
+      if (isMobileBackRoot(path)) {
+        try {
+          window.history.pushState({ khatarioMobileBack: true }, '', window.location.href);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      performMobileBack(router, path);
     };
 
     window.addEventListener('popstate', onPopState);
