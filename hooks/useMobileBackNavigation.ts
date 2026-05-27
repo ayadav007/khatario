@@ -106,7 +106,13 @@ export function useMobileBackNavigation() {
     void import('@capacitor/app')
       .then(({ App }) =>
         App.addListener('backButton', () => {
-          performMobileBack(router, pathnameRef.current);
+          const path = pathnameRef.current;
+          // On root tabs (Dashboard, Invoices, etc.) → close the app
+          if (isMobileBackRoot(path)) {
+            void App.exitApp();
+            return;
+          }
+          performMobileBack(router, path);
         })
       )
       .then((handle) => {
