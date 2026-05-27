@@ -74,6 +74,51 @@ async function loadCustomers(scope: TenantScope): Promise<CatalogCustomer[]> {
   return rows.map((row) => row.customer);
 }
 
+async function loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSearchResult[]> {
+  const db = await getCatalogIdb();
+  const idx = db.transaction('items').store.index('by-tenant');
+  const range = IDBKeyRange.only([scope.businessId, scope.userId]);
+  const byId = new Map<string, CatalogItemSearchResult>();
+  let cursor = await idx.openCursor(range);
+  while (cursor) {
+    byId.set(cursor.value.item.id, cursor.value.item);
+    cursor = await cursor.continue();
+  }
+  return Array.from(byId.values());
+}
+
+async function resolveBrowsableItems(
+  scope: TenantScope,
+  options?: CatalogSearchOptions
+): Promise<CatalogItemSearchResult[]> {
+  const scopeKey = stockScopeKey({
+    warehouseId: options?.warehouseId,
+    branchId: options?.branchId,
+  });
+  let items = await loadItemsForScope(scope, scopeKey);
+  if (items.length === 0 && scopeKey !== 'default') {
+    items = await loadItemsForScope(scope, 'default');
+  }
+  if (items.length === 0) {
+    const stockScopeRaw = await readMeta(scope, META_STOCK_SCOPE);
+    if (stockScopeRaw) {
+      try {
+        const parsed = JSON.parse(stockScopeRaw) as CatalogStockScope;
+        const metaKey = stockScopeKey(parsed);
+        if (metaKey !== scopeKey && metaKey !== 'default') {
+          items = await loadItemsForScope(scope, metaKey);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (items.length === 0) {
+    items = await loadAllItemsForTenant(scope);
+  }
+  return items;
+}
+
 export class IdbCatalogDriver implements CatalogRepository {
   async upsertItems(
     scope: TenantScope,
@@ -125,18 +170,7 @@ export class IdbCatalogDriver implements CatalogRepository {
     query: string,
     options?: CatalogSearchOptions
   ): Promise<CatalogItemSearchResult[]> {
-    const scopeKey = stockScopeKey({
-      warehouseId: options?.warehouseId,
-      branchId: options?.branchId,
-    });
-    const items = await loadItemsForScope(scope, scopeKey);
-    if (items.length === 0 && scopeKey !== 'default') {
-      return searchCatalogItems(
-        await loadItemsForScope(scope, 'default'),
-        query,
-        options?.limit ?? 50
-      );
-    }
+    const items = await resolveBrowsableItems(scope, options);
     return searchCatalogItems(items, query, options?.limit ?? 50);
   }
 
@@ -144,14 +178,7 @@ export class IdbCatalogDriver implements CatalogRepository {
     scope: TenantScope,
     options?: CatalogSearchOptions
   ): Promise<CatalogItemSearchResult[]> {
-    const scopeKey = stockScopeKey({
-      warehouseId: options?.warehouseId,
-      branchId: options?.branchId,
-    });
-    let items = await loadItemsForScope(scope, scopeKey);
-    if (items.length === 0 && scopeKey !== 'default') {
-      items = await loadItemsForScope(scope, 'default');
-    }
+    const items = await resolveBrowsableItems(scope, options);
     return items
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, options?.limit ?? 120);
@@ -162,14 +189,7 @@ export class IdbCatalogDriver implements CatalogRepository {
     barcode: string,
     options?: CatalogStockScope
   ): Promise<CatalogItemSearchResult | null> {
-    const scopeKey = stockScopeKey({
-      warehouseId: options?.warehouseId,
-      branchId: options?.branchId,
-    });
-    let items = await loadItemsForScope(scope, scopeKey);
-    if (items.length === 0 && scopeKey !== 'default') {
-      items = await loadItemsForScope(scope, 'default');
-    }
+    const items = await resolveBrowsableItems(scope, options);
     const match = findByBarcode(items, barcode);
     if (!match) return null;
     if (match.variant) {

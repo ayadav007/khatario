@@ -47,8 +47,11 @@ whatsapp-data/*.json
 # Capacitor shell (generated at cap sync)
 capacitor-shell/config.json
 
-# Serwist / PWA (generated at build — hand-maintained sw.js is committed)
+# PWA service worker — generated at build by @ducanh2912/next-pwa, do not commit
+public/sw.js
 public/sw.js.map
+public/fallback-*.js
+public/fallback-*.js.map
 public/swe-worker-*.js
 public/swe-worker-*.js.map
 public/workbox-*.js

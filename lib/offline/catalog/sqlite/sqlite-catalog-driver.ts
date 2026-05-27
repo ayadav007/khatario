@@ -146,104 +146,85 @@ export class SqliteCatalogDriver implements CatalogRepository {
     const sk = scopeKey(scope.businessId, scope.userId);
     const scopeKeyVal = stockScopeKey(stockScope);
     const now = new Date().toISOString();
-
-    // Wrap in a transaction so a mid-batch crash never leaves a partial catalog.
-    await CapacitorSQLite.beginTransaction({ database: CATALOG_SQLITE_DB });
-    try {
-      for (const item of items) {
-        await CapacitorSQLite.run({
-          database: CATALOG_SQLITE_DB,
-          statement: `INSERT INTO catalog_items (
-            row_id, business_id, user_id, item_id, stock_scope_key,
-            name, code, barcode, unit, item_type, selling_price, purchase_price,
-            tax_rate, hsn_sac, current_stock, image_url, has_variants, gst_included,
-            is_bundle, variants_json, search_text, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(row_id) DO UPDATE SET
-            name = excluded.name,
-            code = excluded.code,
-            barcode = excluded.barcode,
-            unit = excluded.unit,
-            item_type = excluded.item_type,
-            selling_price = excluded.selling_price,
-            purchase_price = excluded.purchase_price,
-            tax_rate = excluded.tax_rate,
-            hsn_sac = excluded.hsn_sac,
-            current_stock = excluded.current_stock,
-            image_url = excluded.image_url,
-            has_variants = excluded.has_variants,
-            gst_included = excluded.gst_included,
-            is_bundle = excluded.is_bundle,
-            variants_json = excluded.variants_json,
-            search_text = excluded.search_text,
-            updated_at = excluded.updated_at`,
-          values: [
-            itemRowId(scope.businessId, scope.userId, item.id, scopeKeyVal),
-            scope.businessId,
-            scope.userId,
-            item.id,
-            scopeKeyVal,
-            item.name,
-            item.code ?? null,
-            item.barcode ?? null,
-            item.unit,
-            item.item_type ?? null,
-            item.selling_price,
-            item.purchase_price ?? null,
-            item.tax_rate,
-            item.hsn_sac ?? null,
-            item.current_stock,
-            item.image_url ?? null,
-            item.has_variants ? 1 : 0,
-            item.gst_included ? 1 : 0,
-            item.is_bundle ? 1 : 0,
-            item.variants?.length ? JSON.stringify(item.variants) : null,
-            buildItemSearchText(item),
-            now,
-          ],
-        });
-      }
-      await CapacitorSQLite.commitTransaction({ database: CATALOG_SQLITE_DB });
-    } catch (err) {
-      await CapacitorSQLite.rollbackTransaction({ database: CATALOG_SQLITE_DB });
-      throw err;
+    for (const item of items) {
+      await CapacitorSQLite.run({
+        database: CATALOG_SQLITE_DB,
+        statement: `INSERT INTO catalog_items (
+          row_id, business_id, user_id, item_id, stock_scope_key,
+          name, code, barcode, unit, item_type, selling_price, purchase_price,
+          tax_rate, hsn_sac, current_stock, image_url, has_variants, gst_included,
+          is_bundle, variants_json, search_text, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(row_id) DO UPDATE SET
+          name = excluded.name,
+          code = excluded.code,
+          barcode = excluded.barcode,
+          unit = excluded.unit,
+          item_type = excluded.item_type,
+          selling_price = excluded.selling_price,
+          purchase_price = excluded.purchase_price,
+          tax_rate = excluded.tax_rate,
+          hsn_sac = excluded.hsn_sac,
+          current_stock = excluded.current_stock,
+          image_url = excluded.image_url,
+          has_variants = excluded.has_variants,
+          gst_included = excluded.gst_included,
+          is_bundle = excluded.is_bundle,
+          variants_json = excluded.variants_json,
+          search_text = excluded.search_text,
+          updated_at = excluded.updated_at`,
+        values: [
+          itemRowId(scope.businessId, scope.userId, item.id, scopeKeyVal),
+          scope.businessId,
+          scope.userId,
+          item.id,
+          scopeKeyVal,
+          item.name,
+          item.code ?? null,
+          item.barcode ?? null,
+          item.unit,
+          item.item_type ?? null,
+          item.selling_price,
+          item.purchase_price ?? null,
+          item.tax_rate,
+          item.hsn_sac ?? null,
+          item.current_stock,
+          item.image_url ?? null,
+          item.has_variants ? 1 : 0,
+          item.gst_included ? 1 : 0,
+          item.is_bundle ? 1 : 0,
+          item.variants?.length ? JSON.stringify(item.variants) : null,
+          buildItemSearchText(item),
+          now,
+        ],
+      });
     }
-
     await writeMeta(sk, 'stockScope', JSON.stringify(stockScope));
   }
 
   async upsertCustomers(scope: TenantScope, customers: CatalogCustomer[]): Promise<void> {
     await this.ready();
     const now = new Date().toISOString();
-
-    // Wrap in a transaction so a mid-batch crash never leaves a partial catalog.
-    await CapacitorSQLite.beginTransaction({ database: CATALOG_SQLITE_DB });
-    try {
-      for (const customer of customers) {
-        await CapacitorSQLite.run({
-          database: CATALOG_SQLITE_DB,
-          statement: `INSERT INTO catalog_customers (
-            row_id, business_id, user_id, customer_id, payload_json, search_text, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(row_id) DO UPDATE SET
-            payload_json = excluded.payload_json,
-            search_text = excluded.search_text,
-            updated_at = excluded.updated_at`,
-          values: [
-            customerRowId(scope.businessId, scope.userId, customer.id),
-            scope.businessId,
-            scope.userId,
-            customer.id,
-            JSON.stringify(customer),
-            buildCustomerSearchText(customer),
-            now,
-          ],
-        });
-      }
-      await CapacitorSQLite.commitTransaction({ database: CATALOG_SQLITE_DB });
-    } catch (err) {
-      await CapacitorSQLite.rollbackTransaction({ database: CATALOG_SQLITE_DB });
-      throw err;
+    for (const customer of customers) {
+      await CapacitorSQLite.run({
+        database: CATALOG_SQLITE_DB,
+        statement: `INSERT INTO catalog_customers (
+          row_id, business_id, user_id, customer_id, payload_json, search_text, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(row_id) DO UPDATE SET
+          payload_json = excluded.payload_json,
+          search_text = excluded.search_text,
+          updated_at = excluded.updated_at`,
+        values: [
+          customerRowId(scope.businessId, scope.userId, customer.id),
+          scope.businessId,
+          scope.userId,
+          customer.id,
+          JSON.stringify(customer),
+          buildCustomerSearchText(customer),
+          now,
+        ],
+      });
     }
   }
 
@@ -262,9 +243,30 @@ export class SqliteCatalogDriver implements CatalogRepository {
     return (result.values ?? []).map((row) => rowToItem(row as SqlRow));
   }
 
-  async searchItems(
+  /** All cached items for tenant, deduped by item id (multiple stock scopes). */
+  private async loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSearchResult[]> {
+    await this.ready();
+    const result = await CapacitorSQLite.query({
+      database: CATALOG_SQLITE_DB,
+      statement: `SELECT * FROM catalog_items
+        WHERE business_id = ? AND user_id = ?
+        ORDER BY name ASC`,
+      values: [scope.businessId, scope.userId],
+    });
+    const byId = new Map<string, CatalogItemSearchResult>();
+    for (const row of result.values ?? []) {
+      const item = rowToItem(row as SqlRow);
+      byId.set(item.id, item);
+    }
+    return Array.from(byId.values());
+  }
+
+  /**
+   * Resolve items for list/search: requested scope → default → last sync scope → all rows.
+   * Sync often stores under wh:/br: keys while list pages read with scope "default".
+   */
+  private async resolveBrowsableItems(
     scope: TenantScope,
-    query: string,
     options?: CatalogSearchOptions
   ): Promise<CatalogItemSearchResult[]> {
     const scopeKeyVal = stockScopeKey({
@@ -275,6 +277,33 @@ export class SqliteCatalogDriver implements CatalogRepository {
     if (items.length === 0 && scopeKeyVal !== 'default') {
       items = await this.loadItems(scope, 'default');
     }
+    if (items.length === 0) {
+      const sk = scopeKey(scope.businessId, scope.userId);
+      const stockScopeRaw = await readMeta(sk, 'stockScope');
+      if (stockScopeRaw) {
+        try {
+          const parsed = JSON.parse(stockScopeRaw) as CatalogStockScope;
+          const metaKey = stockScopeKey(parsed);
+          if (metaKey !== scopeKeyVal && metaKey !== 'default') {
+            items = await this.loadItems(scope, metaKey);
+          }
+        } catch {
+          /* ignore bad meta */
+        }
+      }
+    }
+    if (items.length === 0) {
+      items = await this.loadAllItemsForTenant(scope);
+    }
+    return items;
+  }
+
+  async searchItems(
+    scope: TenantScope,
+    query: string,
+    options?: CatalogSearchOptions
+  ): Promise<CatalogItemSearchResult[]> {
+    const items = await this.resolveBrowsableItems(scope, options);
     return searchCatalogItems(items, query, options?.limit ?? 50);
   }
 
@@ -282,14 +311,7 @@ export class SqliteCatalogDriver implements CatalogRepository {
     scope: TenantScope,
     options?: CatalogSearchOptions
   ): Promise<CatalogItemSearchResult[]> {
-    const scopeKeyVal = stockScopeKey({
-      warehouseId: options?.warehouseId,
-      branchId: options?.branchId,
-    });
-    let items = await this.loadItems(scope, scopeKeyVal);
-    if (items.length === 0 && scopeKeyVal !== 'default') {
-      items = await this.loadItems(scope, 'default');
-    }
+    const items = await this.resolveBrowsableItems(scope, options);
     return items.slice(0, options?.limit ?? 120);
   }
 
@@ -298,20 +320,19 @@ export class SqliteCatalogDriver implements CatalogRepository {
     barcode: string,
     options?: CatalogStockScope
   ): Promise<CatalogItemSearchResult | null> {
-    await this.ready();
-    const scopeKeyVal = stockScopeKey(options ?? {});
-
-    // Try the specific stock scope first, then fall back to 'default'.
-    for (const sk of scopeKeyVal !== 'default' ? [scopeKeyVal, 'default'] : ['default']) {
-      const result = await CapacitorSQLite.query({
-        database: CATALOG_SQLITE_DB,
-        statement: `SELECT * FROM catalog_items
-          WHERE business_id = ? AND user_id = ? AND stock_scope_key = ? AND barcode = ?
-          LIMIT 1`,
-        values: [scope.businessId, scope.userId, sk, barcode],
-      });
-      const rows = result.values ?? [];
-      if (rows.length > 0) return rowToItem(rows[0] as SqlRow);
+    const items = await this.resolveBrowsableItems(scope, options);
+    const normalized = barcode.trim().toLowerCase();
+    const exact = items.find(
+      (it) => it.barcode && it.barcode.trim().toLowerCase() === normalized
+    );
+    if (exact) return exact;
+    if (items.some((it) => it.variants?.length)) {
+      for (const it of items) {
+        const variant = it.variants?.find(
+          (v) => v.barcode && v.barcode.trim().toLowerCase() === normalized
+        );
+        if (variant) return { ...it, ...variant, id: it.id };
+      }
     }
     return null;
   }
