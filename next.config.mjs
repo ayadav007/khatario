@@ -14,6 +14,13 @@ const withPWA = withPWAInit({
     // Take over immediately — new SW activates without waiting for old tabs to close
     skipWaiting: true,
     clientsClaim: true,
+    // Pre-warm the dashboard into the SW cache during install so it is
+    // available on cold-start offline even before the user has navigated there.
+    // revision: null → SW treats it as opaque (always re-fetches on install).
+    additionalManifestEntries: [
+      { url: '/dashboard', revision: null },
+      { url: '/login', revision: null },
+    ],
     runtimeCaching: [
       // ── Static Next.js assets — immutable (hash-versioned), cache forever ─
       {

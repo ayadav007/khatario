@@ -4,7 +4,7 @@
  * When online, probes the server and opens the normal login URL.
  */
 (function () {
-  var DEFAULT_SERVER = 'https://staging.khatario.com/login';
+  var DEFAULT_SERVER = 'https://staging.khatario.com';
   var BOOTSTRAP_PARAM = 'khatario_offline_bootstrap';
   var serverUrl = DEFAULT_SERVER;
   var bootstrapUrl = '';
@@ -29,12 +29,12 @@
   function resolveBootstrapUrl(fromServerUrl) {
     try {
       var url = new URL(fromServerUrl);
-      url.pathname = '/login';
-      url.search = BOOTSTRAP_PARAM + '=1';
+      url.pathname = '/dashboard';
+      url.search = '';
       return url.href;
     } catch (e) {
-      var base = String(fromServerUrl || '').replace(/\/login\/?$/, '');
-      return base + '/login?' + BOOTSTRAP_PARAM + '=1';
+      var base = String(fromServerUrl || '').replace(/\/(login|dashboard)\/?$/, '');
+      return base + '/dashboard';
     }
   }
 
