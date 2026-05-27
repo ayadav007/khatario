@@ -269,6 +269,11 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         }
       }
 
+      // Offline + catalog populated but item not in catalog — let the user know
+      if (foundItems.length === 0 && isAppOffline() && autoSelect) {
+        toast.error(`"${trimmed}" not found in offline catalog.`, { duration: 3000 });
+      }
+
       setResults(foundItems);
       
       if (autoSelect) {

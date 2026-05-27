@@ -8,7 +8,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { normalizeBarcode } from '@/lib/barcode-validator';
 import { browseCatalogItemsLocal, searchCatalogItemsLocal } from '@/lib/offline/catalog/client-search';
-import { isAppOffline } from '@/lib/network/offline-state';
 import { PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
 type ItemRow = {
@@ -77,22 +76,21 @@ export function PurchaseItemPickerScreen() {
         limit: 80,
       };
 
-      if (isAppOffline()) {
-        const offlineItems = trimmed.length >= 1
-          ? await searchCatalogItemsLocal(scope, trimmed, stockOpts)
-          : await browseCatalogItemsLocal(scope, {
-              ...stockOpts,
-              limit: 80,
-            });
-        if (offlineItems != null) {
-          const filtered = offlineItems.filter((it) =>
-            itemTypeParam === 'service' ? it.item_type === 'service' : it.item_type !== 'service'
-          );
-          setItems(filtered as ItemRow[]);
-          return;
-        }
+      // Always try catalog first — works whenever catalog is populated,
+      // not just when the device reports no link.
+      const catalogItems = trimmed.length >= 1
+        ? await searchCatalogItemsLocal(scope, trimmed, stockOpts)
+        : await browseCatalogItemsLocal(scope, { ...stockOpts, limit: 80 });
+
+      if (catalogItems != null) {
+        const filtered = catalogItems.filter((it) =>
+          itemTypeParam === 'service' ? it.item_type === 'service' : it.item_type !== 'service'
+        );
+        setItems(filtered as ItemRow[]);
+        return;
       }
 
+      // Catalog not populated — fall back to API
       const wh = warehouseId ? `&warehouse_id=${encodeURIComponent(warehouseId)}` : '';
       let url: string;
       if (trimmed.length >= 1) {
@@ -104,10 +102,11 @@ export function PurchaseItemPickerScreen() {
       const data = await res.json();
       setItems(Array.isArray(data.items) ? data.items : []);
     } catch {
-      if (business?.id && user?.id && isAppOffline()) {
+      // API failed — try catalog one more time as last resort
+      if (business?.id && user?.id) {
         const scope = { businessId: business.id, userId: user.id };
-        const offlineItems = await browseCatalogItemsLocal(scope, { limit: 80 });
-        setItems((offlineItems ?? []) as ItemRow[]);
+        const fallback = await browseCatalogItemsLocal(scope, { limit: 80 });
+        setItems((fallback ?? []) as ItemRow[]);
       } else {
         setItems([]);
       }

@@ -9,14 +9,25 @@ import type {
   CatalogStockScope,
 } from '@/lib/offline/catalog/types';
 
+/** True when the device has no link at all (airplane mode / no Wi-Fi). */
 export function preferOfflineCatalog(): boolean {
   return isAppOffline();
 }
 
-async function catalogReady(scope: TenantScope): Promise<boolean> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  return status.ready;
+/**
+ * True whenever the local catalog is populated — regardless of whether the
+ * device reports a network link.  Use this as the read gate so catalog data
+ * is served on captive Wi-Fi, metered connections, or any situation where
+ * `isAppOffline()` is false but the API is unreachable.
+ */
+export async function preferCatalogForScope(scope: TenantScope): Promise<boolean> {
+  try {
+    const repo = await getCatalogRepository();
+    const status = await repo.getStatus(scope);
+    return status.ready;
+  } catch {
+    return false;
+  }
 }
 
 /** Search local catalog regardless of online/offline flag (when populated). */
@@ -79,40 +90,55 @@ export async function getCatalogStatus(scope: TenantScope): Promise<CatalogStatu
   return repo.getStatus(scope);
 }
 
+/**
+ * Search items from the local catalog whenever it is populated.
+ * Returns null only when the catalog has never been synced (not ready).
+ * Does NOT require the device to be fully offline — works on captive Wi-Fi too.
+ */
 export async function searchOfflineItems(
   scope: TenantScope,
   query: string,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  if (!preferOfflineCatalog()) return null;
+  if (!(await preferCatalogForScope(scope))) return null;
   return searchCatalogItemsLocal(scope, query, options);
 }
 
+/**
+ * Browse items from the local catalog whenever it is populated.
+ * Returns null only when the catalog has never been synced (not ready).
+ */
 export async function browseOfflineItems(
   scope: TenantScope,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  if (!preferOfflineCatalog()) return null;
+  if (!(await preferCatalogForScope(scope))) return null;
   return browseCatalogItemsLocal(scope, options);
 }
 
+/**
+ * Find an item by barcode in the local catalog whenever it is populated.
+ * Returns null when catalog is not ready.
+ */
 export async function findOfflineItemByBarcode(
   scope: TenantScope,
   barcode: string,
   stockScope?: CatalogStockScope
 ): Promise<CatalogItemSearchResult | null> {
-  if (!preferOfflineCatalog()) return null;
+  if (!(await preferCatalogForScope(scope))) return null;
   const repo = await getCatalogRepository();
-  if (!(await catalogReady(scope))) return null;
   return repo.findItemByBarcode(scope, barcode, stockScope);
 }
 
+/**
+ * Customer search for flows other than billing (e.g. payments, expenses).
+ * Uses local catalog whenever it is populated, same as `searchCustomersForBilling`.
+ */
 export async function searchOfflineCustomers(
   scope: TenantScope,
   query: string,
   limit = 20
 ): Promise<CatalogCustomer[] | null> {
-  if (!preferOfflineCatalog()) return null;
   return searchCustomersForBilling(scope, query, limit);
 }
 

@@ -1897,6 +1897,15 @@ function NewInvoiceContent() {
       documentType !== 'proforma_invoice' &&
       !savedInvoiceId;
 
+    // Draft saves always require a live API connection — queue only supports finals.
+    if (targetStatus === 'draft' && canQueueOffline) {
+      setToastMessage({
+        message: 'Draft saves require internet. Your items are safe — tap Finalize to save offline.',
+        type: 'error',
+      });
+      return;
+    }
+
     if (!isSeriesResolved && !canFinalizeOffline) {
       setToastMessage({ message: 'Document number is not ready. Please wait...', type: 'error' });
       return;
@@ -2210,6 +2219,20 @@ function NewInvoiceContent() {
       console.log('[Invoice Init] Initializing with branch:', { currentBranchId, businessId: business.id });
       const editId = searchParams.get('edit');
       let custData: any[] = [];
+
+      // Pre-populate customer list from local catalog immediately — this makes the
+      // customer dropdown available even before the API responds (or if offline).
+      if (user?.id) {
+        const localCusts = await listCatalogCustomersLocal(
+          { businessId: business.id, userId: user.id },
+          500
+        );
+        if (localCusts?.length) {
+          custData = localCusts as any[];
+          setCustomers(custData);
+        }
+      }
+
       const [limitRes, tempRes, custRes] = await Promise.allSettled([fetch(`/api/subscriptions/check-limit?business_id=${business.id}&limit_type=invoices`), fetch(`/api/template-assignments?business_id=${business.id}`), fetch(`/api/customers?business_id=${business.id}&limit=500&user_id=${user?.id}`)]);
       if (!editId && limitRes.status === 'fulfilled' && limitRes.value.ok) { const data = await limitRes.value.json(); setLimitInfo({ current: data.current, limit: data.limit }); if (!data.allowed) setShowUpgradePrompt(true); }
       setLimitCheckDone(true);
@@ -2222,7 +2245,12 @@ function NewInvoiceContent() {
           if (assignment.settings) setTemplateSettings(typeof assignment.settings === 'string' ? JSON.parse(assignment.settings) : assignment.settings); 
         } 
       }
-      if (custRes.status === 'fulfilled' && custRes.value.ok) { const data = await custRes.value.json(); custData = data.customers || []; }
+      if (custRes.status === 'fulfilled' && custRes.value.ok) {
+        const data = await custRes.value.json();
+        const apiCusts = data.customers || [];
+        // API data is fresher — overwrite catalog prefill only when API returns results
+        if (apiCusts.length > 0) custData = apiCusts;
+      }
       setCustomers(custData);
       if (editId) {
         const res = await fetch(`/api/invoices/${editId}?user_id=${user?.id}`);

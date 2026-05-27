@@ -5,7 +5,6 @@ import { ArrowLeft, Search, ScanLine, Plus, Minus, Loader2, ChevronDown } from '
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { browseOfflineItems, searchOfflineItems } from '@/lib/offline/catalog/client-search';
-import { isAppOffline } from '@/lib/network/offline-state';
 
 export type ItemLite = {
   id: string;
@@ -289,26 +288,26 @@ export function MobileItemPickerPanel({
     setBrowseLoading(true);
 
     const loadBrowse = async () => {
-      if (isAppOffline()) {
-        const offlineRows = await browseOfflineItems(
-          { businessId, userId },
-          { warehouseId, branchId, limit: 120 }
-        );
-        if (cancelled) return;
-        if (offlineRows != null) {
-          const mapped: ItemLite[] = offlineRows.map((it) => {
-            const row: ItemLite = {
-              ...it,
-              selling_price: it.selling_price ?? undefined,
-            };
-            return it.has_variants ? { ...row, _pickerNeedsVariant: true } : row;
-          });
-          setListRows(mapped);
-          setBrowseLoading(false);
-          return;
-        }
+      // Try catalog first — works whenever catalog is populated (not just when offline)
+      const offlineRows = await browseOfflineItems(
+        { businessId, userId },
+        { warehouseId, branchId, limit: 120 }
+      );
+      if (cancelled) return;
+      if (offlineRows != null) {
+        const mapped: ItemLite[] = offlineRows.map((it) => {
+          const row: ItemLite = {
+            ...it,
+            selling_price: it.selling_price ?? undefined,
+          };
+          return it.has_variants ? { ...row, _pickerNeedsVariant: true } : row;
+        });
+        setListRows(mapped);
+        setBrowseLoading(false);
+        return;
       }
 
+      // Catalog not populated — fall back to API
       fetch(
         `/api/items?business_id=${encodeURIComponent(businessId)}&user_id=${encodeURIComponent(userId)}&limit=120&page=1`
       )
@@ -342,18 +341,18 @@ export function MobileItemPickerPanel({
     const t = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        if (isAppOffline()) {
-          const offlineRows = await searchOfflineItems(
-            { businessId, userId: userId! },
-            trimmed,
-            { warehouseId, branchId, limit: 80 }
-          );
-          if (offlineRows != null) {
-            setListRows(flattenSearchItems(offlineRows));
-            return;
-          }
+        // Try catalog first — works whenever catalog is populated (not just when offline)
+        const offlineRows = await searchOfflineItems(
+          { businessId, userId: userId! },
+          trimmed,
+          { warehouseId, branchId, limit: 80 }
+        );
+        if (offlineRows != null) {
+          setListRows(flattenSearchItems(offlineRows));
+          return;
         }
 
+        // Catalog not populated — fall back to API
         const uid = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
         const wh = warehouseId ? `&warehouse_id=${encodeURIComponent(warehouseId)}` : '';
         const br =
@@ -365,7 +364,15 @@ export function MobileItemPickerPanel({
           const data = await res.json();
           const flat = flattenSearchItems(data.items || []);
           setListRows(flat);
-        } else setListRows([]);
+        } else {
+          // API failed — try catalog as last resort
+          const fallback = await searchOfflineItems(
+            { businessId, userId: userId! },
+            trimmed,
+            { warehouseId, branchId, limit: 80 }
+          );
+          setListRows(fallback != null ? flattenSearchItems(fallback) : []);
+        }
       } catch {
         setListRows([]);
       } finally {
