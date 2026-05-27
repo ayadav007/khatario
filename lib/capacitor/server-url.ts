@@ -18,22 +18,20 @@ export function resolveCapacitorServerUrl(raw?: string): string {
   }
 }
 
-/** Query param set when Capacitor errorPath redirects into the cached remote app. */
-export const OFFLINE_BOOTSTRAP_PARAM = 'khatario_offline_bootstrap';
-
 /**
- * Target for cold-start offline bootstrap — cached login shell on the remote origin.
- * Login is SW-precached (public); AuthContext restores session and routes to dashboard.
+ * Target for cold-start offline bootstrap.
+ * /dashboard is SW-precached; AuthContext restores session from localStorage
+ * and hydrates from IndexedDB without network access.
  */
 export function resolveOfflineBootstrapUrl(raw?: string): string {
-  const loginUrl = resolveCapacitorServerUrl(raw);
+  const serverUrl = resolveCapacitorServerUrl(raw);
   try {
-    const url = new URL(loginUrl);
-    url.pathname = '/login';
-    url.search = `${OFFLINE_BOOTSTRAP_PARAM}=1`;
+    const url = new URL(serverUrl);
+    url.pathname = '/dashboard';
+    url.search = '';
     return url.href;
   } catch {
-    const base = loginUrl.replace(/\/login\/?$/, '');
-    return `${base}/login?${OFFLINE_BOOTSTRAP_PARAM}=1`;
+    const base = serverUrl.replace(/\/(login|dashboard)\/?$/, '');
+    return `${base}/dashboard`;
   }
 }

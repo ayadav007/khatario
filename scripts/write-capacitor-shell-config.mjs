@@ -32,12 +32,12 @@ const serverUrl = resolveServerUrl(raw);
 const bootstrapUrl = (() => {
   try {
     const url = new URL(serverUrl);
-    url.pathname = '/login';
-    url.search = 'khatario_offline_bootstrap=1';
+    url.pathname = '/dashboard';
+    url.search = '';
     return url.href;
   } catch {
-    const base = serverUrl.replace(/\/login\/?$/, '');
-    return `${base}/login?khatario_offline_bootstrap=1`;
+    const base = serverUrl.replace(/\/(login|dashboard)\/?$/, '');
+    return `${base}/dashboard`;
   }
 })();
 const environment = serverUrl.includes('staging') ? 'staging' : 'production';

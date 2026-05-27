@@ -1,188 +1,63 @@
 /**
- * Capacitor errorPath fallback — no Capacitor plugins (plain WebView page).
- * On cold start offline, redirects into the cached remote app (service worker).
- * When online, probes the server and opens the normal login URL.
+ * Capacitor errorPath handler — loaded from APK assets when the remote server
+ * is unreachable. Immediately redirects to the cached dashboard (served by the
+ * service worker from a prior online session). No manual buttons needed.
+ *
+ * If the redirect fails (first install, never opened, truly offline) the parent
+ * HTML reveals a minimal "connect to internet" message after a timeout.
  */
 (function () {
   var DEFAULT_SERVER = 'https://staging.khatario.com';
-  var BOOTSTRAP_PARAM = 'khatario_offline_bootstrap';
-  var serverUrl = DEFAULT_SERVER;
-  var bootstrapUrl = '';
-  var checking = false;
-  var bootstrapAttempted = false;
-  var root = document.getElementById('root');
-  var statusEl = document.getElementById('status');
-  var retryBtn = document.getElementById('retry');
-  var bootstrapBtn = document.getElementById('bootstrap');
+  var shown = false;
 
-  function setStatus(text) {
-    if (statusEl) statusEl.textContent = text || '';
+  function show() {
+    if (shown) return;
+    shown = true;
+    var spinner = document.getElementById('spinner');
+    var msg = document.getElementById('offline-msg');
+    if (spinner) spinner.style.display = 'none';
+    if (msg) msg.style.display = 'flex';
   }
 
-  function setChecking(active) {
-    checking = active;
-    if (root) root.classList.toggle('checking', active);
-    if (retryBtn) retryBtn.disabled = active;
-    if (bootstrapBtn) bootstrapBtn.disabled = active;
+  function go(url) {
+    try { window.location.replace(url); } catch (_) {}
   }
 
-  function resolveBootstrapUrl(fromServerUrl) {
+  function getBootstrapUrl(cfg) {
+    if (cfg && cfg.bootstrapUrl) return cfg.bootstrapUrl;
+    var serverUrl = (cfg && cfg.serverUrl) ? cfg.serverUrl : DEFAULT_SERVER;
     try {
-      var url = new URL(fromServerUrl);
-      url.pathname = '/dashboard';
-      url.search = '';
-      return url.href;
-    } catch (e) {
-      var base = String(fromServerUrl || '').replace(/\/(login|dashboard)\/?$/, '');
-      return base + '/dashboard';
+      var u = new URL(serverUrl);
+      u.pathname = '/dashboard';
+      u.search = '';
+      return u.href;
+    } catch (_) {
+      return DEFAULT_SERVER + '/dashboard';
     }
   }
 
-  /** Immediate redirect before async config load (cold start offline). */
-  function bootstrapImmediately() {
-    if (navigator.onLine) return;
-    var target = resolveBootstrapUrl(serverUrl);
-    window.location.replace(target);
-  }
+  // ── Immediate redirect ─────────────────────────────────────────────────────
+  // The service worker (registered on a prior online session) intercepts this
+  // navigation and serves the cached dashboard shell without network access.
+  // navigator.onLine is intentionally NOT checked — Android WebView often
+  // reports online=true even when the actual server is unreachable.
+  go(DEFAULT_SERVER + '/dashboard');
 
-  function loadConfig() {
-    return fetch('config.json', { cache: 'no-store' })
-      .then(function (res) {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then(function (cfg) {
-        if (cfg && cfg.bootstrapUrl) {
-          bootstrapUrl = cfg.bootstrapUrl;
-        }
-        if (cfg && cfg.serverUrl) {
-          serverUrl = cfg.serverUrl;
-        }
-        if (!bootstrapUrl) {
-          bootstrapUrl = resolveBootstrapUrl(serverUrl);
-        }
-      })
-      .catch(function () {
-        bootstrapUrl = resolveBootstrapUrl(serverUrl);
-      });
-  }
+  // ── Config-aware redirect ──────────────────────────────────────────────────
+  // Load the baked-in config.json (staging vs. production URL). The fetch
+  // callback is a no-op if the page already navigated away above.
+  fetch('config.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return {}; })
+    .then(function (cfg) { go(getBootstrapUrl(cfg)); });
 
-  function probeServer(timeoutMs) {
-    return new Promise(function (resolve) {
-      var done = false;
-      var timer = setTimeout(function () {
-        if (done) return;
-        done = true;
-        resolve(false);
-      }, timeoutMs);
+  // ── First-time offline fallback ────────────────────────────────────────────
+  // If we're still on this page after 2.5 s the redirect failed (no service
+  // worker cache yet — user has never opened the app online on this device).
+  setTimeout(show, 2500);
 
-      try {
-        var url = new URL(serverUrl);
-        var probe = url.origin + '/manifest.json';
-        fetch(probe, { method: 'GET', cache: 'no-store', mode: 'cors' })
-          .then(function (res) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            resolve(res.ok);
-          })
-          .catch(function () {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            resolve(false);
-          });
-      } catch (e) {
-        if (!done) {
-          done = true;
-          clearTimeout(timer);
-          resolve(false);
-        }
-      }
-    });
-  }
-
-  function redirectToApp() {
-    setStatus('Connected — opening Khatario…');
-    window.location.replace(serverUrl);
-  }
-
-  function tryBootstrapCachedApp(source) {
-    if (!bootstrapUrl || bootstrapAttempted) return false;
-    bootstrapAttempted = true;
-    setStatus(
-      source === 'auto'
-        ? 'Opening offline app…'
-        : 'Opening cached app — billing works offline after your first online sign-in.'
-    );
-    window.location.replace(bootstrapUrl);
-    return true;
-  }
-
-  function showOfflineFallback() {
-    if (root) root.classList.remove('checking');
-    setStatus(
-      bootstrapAttempted
-        ? 'No cached app yet. Open Khatario once online, then offline billing works.'
-        : 'Still offline. Open the cached app or reconnect and try again.'
-    );
-  }
-
-  function tryConnect(source) {
-    if (checking) return;
-    setChecking(true);
-
-    loadConfig().then(function () {
-      if (!navigator.onLine) {
-        setChecking(false);
-        if (source === 'manual' && tryBootstrapCachedApp('manual')) {
-          return;
-        }
-        showOfflineFallback();
-        return;
-      }
-
-      setStatus('Checking connection…');
-      probeServer(8000).then(function (ok) {
-        setChecking(false);
-        if (ok) {
-          redirectToApp();
-        } else {
-          setStatus(
-            source === 'auto'
-              ? 'Waiting for connection…'
-              : 'Could not reach Khatario. Try again shortly.'
-          );
-        }
-      });
-    });
-  }
-
-  if (retryBtn) {
-    retryBtn.addEventListener('click', function () {
-      tryConnect('manual');
-    });
-  }
-
-  if (bootstrapBtn) {
-    bootstrapBtn.addEventListener('click', function () {
-      bootstrapAttempted = false;
-      tryBootstrapCachedApp('manual');
-    });
-  }
-
+  // ── Auto-retry when connectivity returns ───────────────────────────────────
   window.addEventListener('online', function () {
-    tryConnect('auto');
+    go(DEFAULT_SERVER + '/dashboard');
   });
-
-  loadConfig().finally(function () {
-    if (!navigator.onLine) {
-      tryBootstrapCachedApp('auto');
-      return;
-    }
-    tryConnect('boot');
-  });
-
-  bootstrapImmediately();
 })();
-
