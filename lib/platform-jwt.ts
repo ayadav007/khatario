@@ -36,6 +36,9 @@ export async function signPlatformAccessToken(payload: {
 export async function verifyPlatformAccessToken(
   token: string
 ): Promise<PlatformSessionPayload | null> {
+  if (typeof token !== 'string' || token.length < 10 || !token.includes('.')) {
+    return null;
+  }
   try {
     const { payload } = await jwtVerify(token, getSecret());
     const p = payload as PlatformSessionPayload;

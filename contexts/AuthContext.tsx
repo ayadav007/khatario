@@ -473,20 +473,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('businessId', data.user.business_id);
     if (data.business) localStorage.setItem('business', JSON.stringify(data.business));
     if (data.branch) localStorage.setItem('branch', JSON.stringify(data.branch));
+    markLocalSessionCookie(true);
+    setLoading(false);
 
     // Ensure the browser has applied Set-Cookie from the login POST before the next API call.
     await router.refresh();
 
-    // Fetch full session data (permissions, branches, subscription)
+    // Hydrate full session (permissions, branches, subscription). On Capacitor WebView
+    // cookies may not be attached to the very next fetch — do not block navigation.
     const sessionOk = await fetchSession();
     if (loginGeneration !== sessionGenerationRef.current) {
       return;
     }
-    if (!sessionOk) {
-      return;
-    }
 
     router.replace('/dashboard');
+
+    if (!sessionOk) {
+      window.setTimeout(() => {
+        if (loginGeneration === sessionGenerationRef.current) {
+          void fetchSession();
+        }
+      }, 400);
+    }
   };
 
   const logout = async () => {

@@ -66,6 +66,9 @@ export async function signToken(payload: {
 }
 
 export async function verifyToken(token: string): Promise<SessionPayload | null> {
+  if (typeof token !== 'string' || token.length < 10 || !token.includes('.')) {
+    return null;
+  }
   try {
     const { payload } = await jwtVerify(token, getSecret());
     return payload as SessionPayload;

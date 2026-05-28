@@ -78,6 +78,13 @@ export default function LoginPage() {
         const data = await res.json();
 
         if (!res.ok) {
+          if (res.status === 429 && typeof data.retryAfterMs === 'number') {
+            const mins = Math.max(1, Math.ceil(data.retryAfterMs / 60000));
+            throw new Error(
+              data.error ||
+                `Too many login attempts. Please wait about ${mins} minute(s) and try again.`
+            );
+          }
           throw new Error(data.error || 'Login failed');
         }
 
