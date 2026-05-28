@@ -64,6 +64,7 @@ export const BottomNav: React.FC = () => {
             <Link
               key={item.href}
               href={item.href}
+              replace
               className={clsx(
                 'flex flex-col items-center justify-center gap-1 flex-1 h-full relative',
                 'transition-colors active:bg-slate-50',

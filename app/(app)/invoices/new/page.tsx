@@ -392,6 +392,8 @@ function NewInvoiceContent() {
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const prevPathnameRef = useRef(pathname);
+  /** Set to true during "Leave page" confirm so the mobile-back interceptor passes through. */
+  const confirmingLeaveRef = useRef(false);
 
   // Read POS mode from localStorage on mount and when it changes
   useEffect(() => {
@@ -591,11 +593,16 @@ function NewInvoiceContent() {
   useEffect(() => {
     if (!invoiceMobileLayout || posMode) return;
     return registerMobileBackInterceptor(() => {
-      if (!isDirty || savedInvoiceId) return 'pass';
-      try {
-        window.history.pushState({ invoiceDraftGuard: true }, '', window.location.href);
-      } catch {
-        // ignore
+      // Pass through when clean, saved, or mid-confirm navigation
+      if (!isDirty || savedInvoiceId || confirmingLeaveRef.current) return 'pass';
+      // Push a guard state only if we are not already sitting on one
+      // (prevents accumulation when user dismisses the dialog multiple times)
+      if (window.history.state?.invoiceDraftGuard !== true) {
+        try {
+          window.history.pushState({ invoiceDraftGuard: true }, '', window.location.href);
+        } catch {
+          // ignore
+        }
       }
       setPendingNavigation(null);
       setShowNavigationWarning(true);
@@ -2481,6 +2488,9 @@ function NewInvoiceContent() {
     setShowNavigationWarning(false);
     const target = pendingNavigation;
     setPendingNavigation(null);
+    // Allow the next back press / popstate to pass through the draft interceptor
+    confirmingLeaveRef.current = true;
+    window.setTimeout(() => { confirmingLeaveRef.current = false; }, 1000);
     if (target) {
       router.push(target);
     } else {
@@ -3100,6 +3110,10 @@ function NewInvoiceContent() {
                 onClick={() => {
                   setShowNavigationWarning(false);
                   setPendingNavigation(null);
+                  // Pop the guard state that was pushed when the warning appeared
+                  if (window.history.state?.invoiceDraftGuard === true) {
+                    window.history.go(-1);
+                  }
                 }}
                 className="px-4 py-2 border border-border rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
               >

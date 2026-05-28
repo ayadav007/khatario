@@ -435,7 +435,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           pathname.startsWith('/admin') ||
           pathname.startsWith('/attendance') ||
           pathname === '/offline';
-        if (!isPublicPage && !isOffline) router.push('/login');
+        if (!isPublicPage && !isOffline) router.replace('/login');
       }
     };
 
@@ -486,7 +486,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    router.push('/dashboard');
+    router.replace('/dashboard');
   };
 
   const logout = async () => {
@@ -527,7 +527,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     clearLocalState();
-    router.push('/login');
+    router.replace('/login');
   };
 
   const refresh = useCallback(async () => {
