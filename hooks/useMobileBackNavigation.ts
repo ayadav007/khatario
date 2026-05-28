@@ -5,7 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
 import {
   getMobileBackFallback,
-  isMobileBackRoot,
+  isAppExitRoot,
+  isBottomNavTab,
+  isNonHomeBottomNavTab,
 } from '@/lib/navigation/mobile-back-fallback';
 import { runMobileBackInterceptors } from '@/lib/navigation/mobile-back-registry';
 
@@ -94,7 +96,7 @@ export function useMobileBackNavigation() {
   // ── Push sentinel on route change ──────────────────────────────────────────
   useEffect(() => {
     if (!shouldHandleMobileBack()) return;
-    if (isMobileBackRoot(pathname)) {
+    if (isBottomNavTab(pathname)) {
       historySeedRef.current = null;
       return;
     }
@@ -118,13 +120,16 @@ export function useMobileBackNavigation() {
     const onPopState = () => {
       if (Date.now() < ignorePopstateUntilRef.current) return;
       const path = pathnameRef.current;
-      if (isMobileBackRoot(path)) {
-        // Prevent browser from navigating away from a root tab.
+      if (isAppExitRoot(path)) {
         try {
           window.history.pushState({ khatarioMobileBack: true }, '', window.location.href);
         } catch {
           /* ignore */
         }
+        return;
+      }
+      if (isNonHomeBottomNavTab(path)) {
+        router.replace('/dashboard');
         return;
       }
       performMobileBack(router, path);
@@ -153,15 +158,21 @@ export function useMobileBackNavigation() {
               historyLength: window.history.length,
               historyState: window.history.state,
               isSentinel: currentStateIsSentinel(),
-              isRoot: isMobileBackRoot(path),
+              isExitRoot: isAppExitRoot(path),
             });
           }
 
-          // ── Root screen → minimize app (send to background) ──────────────
-          if (isMobileBackRoot(path)) {
+          // ── Home only → minimize app ─────────────────────────────────────
+          if (isAppExitRoot(path)) {
             void App.minimizeApp().catch(() => {
               void App.exitApp();
             });
+            return;
+          }
+
+          // ── Other bottom tabs (Invoices, Items, …) → Home ────────────────
+          if (isNonHomeBottomNavTab(path)) {
+            router.replace('/dashboard');
             return;
           }
 
