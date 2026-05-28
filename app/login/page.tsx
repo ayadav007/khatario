@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -10,18 +10,18 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { login, user, loading: authLoading } = useAuth();
   const { isOffline } = useNetworkStatus();
   const redirectTarget = searchParams.get('redirect') || '/dashboard';
 
-  // State-driven: if AuthContext already restored a cached session, go to dashboard.
+  // Already signed in (cached session or cookie) → go to app.
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(redirectTarget.startsWith('/') ? redirectTarget : '/dashboard');
+      const target = redirectTarget.startsWith('/') ? redirectTarget : '/dashboard';
+      window.location.replace(target);
     }
-  }, [user, authLoading, router, redirectTarget]);
+  }, [user, authLoading, redirectTarget]);
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');

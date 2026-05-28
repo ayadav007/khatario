@@ -461,10 +461,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (data: any) => {
     // Invalidate any in-flight session check (e.g. initAuth with a stale cookie).
     sessionGenerationRef.current += 1;
-    const loginGeneration = sessionGenerationRef.current;
+    authBootstrappedRef.current = true;
 
-    // The server already set the JWT cookie in the response.
-    // We just store user data in state + localStorage for UI rendering.
+    // The server already set the JWT cookie in the login POST response.
     setUser(data.user);
     if (data.business) setBusiness(data.business);
     if (data.branch) setBranch(data.branch);
@@ -476,25 +475,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     markLocalSessionCookie(true);
     setLoading(false);
 
-    // Ensure the browser has applied Set-Cookie from the login POST before the next API call.
-    await router.refresh();
-
-    // Hydrate full session (permissions, branches, subscription). On Capacitor WebView
-    // cookies may not be attached to the very next fetch — do not block navigation.
-    const sessionOk = await fetchSession();
-    if (loginGeneration !== sessionGenerationRef.current) {
-      return;
-    }
-
-    router.replace('/dashboard');
-
-    if (!sessionOk) {
-      window.setTimeout(() => {
-        if (loginGeneration === sessionGenerationRef.current) {
-          void fetchSession();
-        }
-      }, 400);
-    }
+    // Full navigation — router.replace() after async fetchSession often leaves the
+    // login page mounted (web + Capacitor). Dashboard initAuth hydrates the session.
+    window.location.replace('/dashboard');
   };
 
   const logout = async () => {
