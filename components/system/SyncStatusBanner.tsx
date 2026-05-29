@@ -1,10 +1,9 @@
 'use client';
 
-import { Loader2, CloudOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useOfflineSync } from '@/contexts/OfflineSyncContext';
 import { connectivityLabel } from '@/lib/offline/connectivity/state-machine';
-import { formatLastSyncedLabel } from '@/lib/sync-timestamp';
 
 /**
  * Network-aware sync status strip (queue counts, sync progress, reconnect).
@@ -14,20 +13,19 @@ export function SyncStatusBanner() {
     connectivity,
     pendingActionCount,
     failedActionCount,
-    lastSuccessfulSyncAt,
     isSyncing,
     triggerSync,
   } = useOfflineSync();
 
+  const isOffline = connectivity.state === 'offline';
+
+  // Offline connectivity uses NetworkStatusBanner only — avoid duplicate strips.
+  if (isOffline) return null;
+
   const showBanner =
-    connectivity.state !== 'online' ||
-    pendingActionCount > 0 ||
-    failedActionCount > 0;
+    pendingActionCount > 0 || failedActionCount > 0;
 
   if (!showBanner) return null;
-
-  const lastSync = formatLastSyncedLabel(lastSuccessfulSyncAt);
-  const isOffline = connectivity.state === 'offline';
 
   return (
     <div
@@ -35,19 +33,15 @@ export function SyncStatusBanner() {
       aria-live="polite"
       className={clsx(
         'border-b px-4 py-2',
-        isOffline
-          ? 'border-amber-200 bg-amber-50 text-amber-900'
-          : failedActionCount > 0
-            ? 'border-red-200 bg-red-50 text-red-900'
-            : 'border-blue-200 bg-blue-50 text-blue-900'
+        failedActionCount > 0
+          ? 'border-red-200 bg-red-50 text-red-900'
+          : 'border-blue-200 bg-blue-50 text-blue-900'
       )}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           {isSyncing ? (
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-          ) : isOffline ? (
-            <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
           ) : failedActionCount > 0 ? (
             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
           ) : (
@@ -60,15 +54,11 @@ export function SyncStatusBanner() {
             <p className="text-xs leading-snug opacity-90">
               {pendingActionCount > 0
                 ? `${pendingActionCount} action${pendingActionCount === 1 ? '' : 's'} queued`
-                : failedActionCount > 0
-                  ? `${failedActionCount} action${failedActionCount === 1 ? '' : 's'} need attention (failed or manual review)`
-                  : lastSync
-                    ? `Last sync ${lastSync}`
-                    : 'Changes will sync when online'}
+                : `${failedActionCount} action${failedActionCount === 1 ? '' : 's'} need attention (failed or manual review)`}
             </p>
           </div>
         </div>
-        {!isOffline && (pendingActionCount > 0 || failedActionCount > 0) && (
+        {(pendingActionCount > 0 || failedActionCount > 0) && (
           <button
             type="button"
             onClick={() => void triggerSync()}

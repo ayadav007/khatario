@@ -30,6 +30,7 @@ import { DateRangeProvider } from "@/contexts/DateRangeContext";
 import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegistration";
 import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
 import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
+import { OfflineBannerProvider } from "@/contexts/OfflineBannerContext";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
@@ -77,6 +78,7 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${dmSans.variable} ${sourceSans3.variable}`}>
       <body className="font-sans antialiased">
         <NetworkStatusProvider>
+        <OfflineBannerProvider>
         <AuthProvider>
           <BranchProvider>
             <LayoutDataProvider>
@@ -97,6 +99,7 @@ export default function RootLayout({
             </LayoutDataProvider>
           </BranchProvider>
         </AuthProvider>
+        </OfflineBannerProvider>
         </NetworkStatusProvider>
       </body>
     </html>

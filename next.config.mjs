@@ -20,6 +20,10 @@ const withPWA = withPWAInit({
     additionalManifestEntries: [
       { url: '/dashboard', revision: null },
       { url: '/login', revision: null },
+      { url: '/items', revision: null },
+      { url: '/customers', revision: null },
+      { url: '/invoices', revision: null },
+      { url: '/more', revision: null },
     ],
     runtimeCaching: [
       // ── Static Next.js assets — immutable (hash-versioned), cache forever ─

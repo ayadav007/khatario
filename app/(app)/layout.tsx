@@ -27,6 +27,7 @@ import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
+import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 
@@ -84,6 +85,7 @@ function AppRouteLayoutInner({
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
         <MobileBackNavigation />
+        <LastRouteTracker />
         <div className="h-screen w-screen overflow-hidden bg-background">
           <NetworkStatusBanner />
           <SyncStatusBanner />
@@ -104,6 +106,7 @@ function AppRouteLayoutInner({
         <PortalThemeSync />
         <MobileBackNavigation />
         <PullToRefresh />
+        <LastRouteTracker />
         <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
           <NetworkStatusBanner />
           <SyncStatusBanner />

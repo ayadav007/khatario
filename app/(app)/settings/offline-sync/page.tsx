@@ -22,6 +22,10 @@ import { safeJsonParse } from '@/lib/api-utils';
 import { useCatalogSync } from '@/contexts/CatalogSyncContext';
 import { getActiveCatalogBackend, getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import {
+  getInvoiceListCacheStatus,
+  INVOICE_LIST_CACHE_MAX,
+} from '@/lib/offline/invoices/invoice-list-cache';
 
 interface ServerReplayHistory {
   logs: OfflineReplayLogRow[];
@@ -83,6 +87,15 @@ export default function OfflineSyncDebugPage() {
   const [catalogStorageBackend, setCatalogStorageBackend] = useState<
     'sqlite' | 'indexeddb' | null
   >(null);
+  const [invoiceCacheCount, setInvoiceCacheCount] = useState(0);
+
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    void getInvoiceListCacheStatus({
+      businessId: business.id,
+      userId: user.id,
+    }).then((s) => setInvoiceCacheCount(s.count));
+  }, [business?.id, user?.id, catalogProgress?.phase, isCatalogSyncing]);
 
   useEffect(() => {
     void getCatalogRepository().then(() => {
@@ -176,13 +189,16 @@ export default function OfflineSyncDebugPage() {
         <section className="rounded-lg border border-border bg-surface p-4">
           <h2 className="font-semibold text-text-primary">Offline catalog</h2>
           <p className="mt-1 text-sm text-text-secondary">
-            Local item and customer search for billing without network.
+            Local items, parties, and recent invoices for offline use.
           </p>
           <ul className="mt-3 space-y-1 text-sm text-text-secondary">
             <li>Storage: {catalogStorageLabel}</li>
             <li>Ready: {catalogStatus?.ready ? 'Yes' : 'No'}</li>
             <li>Items cached: {catalogStatus?.itemCount ?? 0}</li>
-            <li>Customers cached: {catalogStatus?.customerCount ?? 0}</li>
+            <li>Parties cached: {catalogStatus?.customerCount ?? 0}</li>
+            <li>
+              Invoices cached: {invoiceCacheCount} (max {INVOICE_LIST_CACHE_MAX})
+            </li>
             <li>
               Last full sync:{' '}
               {catalogStatus?.lastFullSyncAt

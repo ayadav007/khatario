@@ -15,6 +15,7 @@ import {
   CATALOG_MAX_ITEMS,
   CATALOG_SYNC_PAGE_SIZE,
 } from '@/lib/offline/catalog/types';
+import { runInvoiceListSync } from '@/lib/offline/invoices/invoice-list-sync';
 
 export interface CatalogSyncOptions {
   scope: TenantScope;
@@ -47,12 +48,14 @@ async function runCatalogSyncWithRepo(
   const now = Date.now();
   let itemsSynced = 0;
   let customersSynced = 0;
+  let invoicesSynced = 0;
 
   const report = (phase: CatalogSyncProgress['phase'], message?: string) => {
     options.onProgress?.({
       phase,
       itemsSynced,
       customersSynced,
+      invoicesSynced,
       message,
     });
   };
@@ -144,6 +147,21 @@ async function runCatalogSyncWithRepo(
     }
     if (batch.length < CATALOG_SYNC_PAGE_SIZE) break;
     page += 1;
+  }
+
+  report('invoices', 'Syncing recent invoices…');
+  try {
+    invoicesSynced = await runInvoiceListSync({
+      scope,
+      userId,
+      branchId: stockScope.branchId ?? null,
+      signal,
+    });
+    report('invoices', `Invoices ${invoicesSynced} cached`);
+  } catch (err) {
+    // Invoice list cache is optional — catalog items/customers still usable offline.
+    const message = err instanceof Error ? err.message : 'Invoice cache failed';
+    report('invoices', message);
   }
 
   const isFull = !options.itemsUpdatedAfter && !options.customersUpdatedAfter;

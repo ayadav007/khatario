@@ -12,6 +12,7 @@ import {
   catalogCustomerToListCustomer,
   catalogItemToListItem,
 } from '@/lib/offline/catalog/catalog-to-entity';
+import { loadInvoiceListCache } from '@/lib/offline/invoices/invoice-list-cache';
 
 const EMPTY_QUERY_PARAMS: Record<string, string | number | boolean | null | undefined> = {};
 
@@ -86,6 +87,14 @@ export function useEntityList<T = Record<string, unknown>>(
             setLoading(false);
             hadLocalData = true;
           }
+        } else if (apiUrl.includes('/api/invoices')) {
+          const local = await loadInvoiceListCache(scope);
+          if (local != null) {
+            setData(filter ? (local.filter(filter) as T[]) : (local as T[]));
+            setFromCache(true);
+            setLoading(false);
+            hadLocalData = true;
+          }
         }
       }
 
@@ -136,6 +145,15 @@ export function useEntityList<T = Record<string, unknown>>(
           if (local != null) {
             const list = local.map(catalogCustomerToListCustomer) as T[];
             setData(filter ? (list.filter(filter) as T[]) : list);
+            setFromCache(true);
+            setError(null);
+            return;
+          }
+        }
+        if (apiUrl.includes('/api/invoices')) {
+          const local = await loadInvoiceListCache(scope);
+          if (local != null) {
+            setData(filter ? (local.filter(filter) as T[]) : (local as T[]));
             setFromCache(true);
             setError(null);
             return;

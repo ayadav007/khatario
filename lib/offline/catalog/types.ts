@@ -70,9 +70,10 @@ export interface CatalogSearchOptions extends CatalogStockScope {
 }
 
 export interface CatalogSyncProgress {
-  phase: 'idle' | 'items' | 'customers' | 'done' | 'error';
+  phase: 'idle' | 'items' | 'customers' | 'invoices' | 'done' | 'error';
   itemsSynced: number;
   customersSynced: number;
+  invoicesSynced?: number;
   totalItems?: number;
   totalCustomers?: number;
   message?: string;

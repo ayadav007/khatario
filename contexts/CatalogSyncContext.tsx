@@ -96,7 +96,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
       syncingRef.current = true;
       setIsSyncing(true);
       setLastError(null);
-      setProgress({ phase: 'idle', itemsSynced: 0, customersSynced: 0 });
+      setProgress({ phase: 'idle', itemsSynced: 0, customersSynced: 0, invoicesSynced: 0 });
 
       try {
         const syncOptions = {
@@ -121,7 +121,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
         setProgress((p) =>
           p
             ? { ...p, phase: 'error', message }
-            : { phase: 'error', itemsSynced: 0, customersSynced: 0, message }
+            : { phase: 'error', itemsSynced: 0, customersSynced: 0, invoicesSynced: 0, message }
         );
       } finally {
         syncingRef.current = false;

@@ -6,10 +6,15 @@ import { usePathname } from 'next/navigation';
 import { Home, FileText, Package, Users, MoreHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
+import { isOfflineCapable } from '@/lib/offline/offline-capable-routes';
 
 export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { badgeCounts, refreshBadgeCounts } = useLayoutData();
+  const { isOffline } = useNetworkStatus();
+  const { flashBlockedFeature } = useOfflineBanner();
 
   useEffect(() => {
     // Refresh counts every 10 minutes on mobile (where BottomNav is visible)
@@ -65,6 +70,12 @@ export const BottomNav: React.FC = () => {
               key={item.href}
               href={item.href}
               replace
+              onClick={(e) => {
+                if (!isOffline) return;
+                if (isOfflineCapable(item.href)) return;
+                e.preventDefault();
+                flashBlockedFeature();
+              }}
               className={clsx(
                 'flex flex-col items-center justify-center gap-1 flex-1 h-full relative',
                 'transition-colors active:bg-slate-50',
