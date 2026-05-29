@@ -316,8 +316,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           let hardLogout = false;
           try {
             const body = await res.clone().json();
+            // SESSION_REVOKED = single-device session bumped by a newer login
+            // (another device / rebuild). The cached token is permanently dead,
+            // so force a clean re-login instead of trapping the user on an empty
+            // shell where every API returns 401.
             hardLogout =
-              body?.code === 'BUSINESS_NOT_FOUND' || body?.code === 'USER_NOT_FOUND';
+              body?.code === 'BUSINESS_NOT_FOUND' ||
+              body?.code === 'USER_NOT_FOUND' ||
+              body?.code === 'SESSION_REVOKED';
           } catch {
             loadFromCache();
             return false;
