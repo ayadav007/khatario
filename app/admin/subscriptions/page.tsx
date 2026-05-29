@@ -178,7 +178,7 @@ export default function AdminSubscriptionsPage() {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Billing</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Price</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Start Date</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">End Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Plan end</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
                 </tr>
               </thead>
@@ -224,14 +224,23 @@ export default function AdminSubscriptionsPage() {
                       </div>
                     </td>
 
-                    {/* End Date */}
+                    {/* Plan end: paid → end_date; trial → trial_end_date; free → none */}
                     <td className="py-4 px-4">
                       {sub.end_date ? (
                         <span className="text-sm text-gray-600">
                           {new Date(sub.end_date).toLocaleDateString()}
                         </span>
+                      ) : sub.trial_ends_at ? (
+                        <span className="text-sm text-gray-600">
+                          {new Date(sub.trial_ends_at.includes('T') ? sub.trial_ends_at : `${sub.trial_ends_at}T12:00:00`).toLocaleDateString()}
+                          <span className="block text-xs text-gray-400">Trial</span>
+                        </span>
+                      ) : sub.plan_code === 'free' ? (
+                        <span className="text-sm text-gray-400" title="Free plan has no expiry">
+                          No expiry
+                        </span>
                       ) : (
-                        <span className="text-sm text-gray-400">-</span>
+                        <span className="text-sm text-gray-400">—</span>
                       )}
                     </td>
 
