@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
 import { BusinessAdminPanel } from '@/components/admin/BusinessAdminPanel';
+import { SubscriptionTrialHistory } from '@/components/admin/SubscriptionTrialHistory';
 
 interface BusinessDetail {
   id: string;
@@ -302,9 +303,12 @@ export default function BusinessDetailPage({ params }: { params: { id: string } 
         </div>
       </div>
 
-      <div className="mt-8">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Platform operations</h2>
-        <BusinessAdminPanel
+      <div className="mt-8 space-y-8">
+        <SubscriptionTrialHistory businessId={business.id} />
+
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Platform operations</h2>
+          <BusinessAdminPanel
           businessId={business.id}
           businessName={business.name}
           platformSuspendedAt={business.platform_suspended_at}
@@ -314,6 +318,7 @@ export default function BusinessDetailPage({ params }: { params: { id: string } 
           trialEndDate={business.trial_end_date}
           onUpdated={fetchBusiness}
         />
+        </div>
       </div>
     </div>
   );
