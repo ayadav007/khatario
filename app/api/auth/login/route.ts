@@ -4,6 +4,8 @@ import { User, Business } from '@/types/database';
 import bcrypt from 'bcryptjs';
 import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { hasFeatureAccess } from '@/lib/subscription/feature-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,7 +110,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const allowMultidevice = user.allow_multidevice_sync === true;
+    // Multi-device login is a per-plan feature (Admin → Plans → Features).
+    // When the business's plan does not grant it (default, incl. Free / no
+    // subscription), we bump auth_session_version so a new login invalidates
+    // tokens on other devices (single-device policy).
+    const allowMultidevice = user.business_id
+      ? await hasFeatureAccess(user.business_id, FeatureKeys.MULTIDEVICE_LOGIN)
+      : false;
 
     let sessionVersion: number;
     if (!allowMultidevice) {

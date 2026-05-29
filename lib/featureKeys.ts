@@ -165,6 +165,8 @@ export const SettingsFeatures = {
   BACKUP_RESTORE: 'backup_restore',
   /** POS Mode - Retail billing interface */
   POS_MODE: 'settings_pos_mode',
+  /** Concurrent multi-device login (off = single-device, new login signs out others) */
+  MULTIDEVICE_LOGIN: 'settings_multidevice_login',
 } as const;
 
 /**
@@ -308,6 +310,7 @@ export const CanonicalToLegacyMap: Record<FeatureKey, string[]> = {
   [SettingsFeatures.MULTI_WAREHOUSE]: ['settings_multi_warehouse'],
   [SettingsFeatures.BACKUP_RESTORE]: ['settings_backup'],
   [SettingsFeatures.POS_MODE]: ['settings_pos_mode'],
+  [SettingsFeatures.MULTIDEVICE_LOGIN]: [],
   
   [IntegrationFeatures.WHATSAPP_BOT]: ['integration_whatsapp_bot', 'whatsapp_bot'],
   [IntegrationFeatures.WHATSAPP_MANUAL]: ['integration_whatsapp_manual'],
