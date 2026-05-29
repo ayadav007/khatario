@@ -16,11 +16,43 @@ export default function LoginPage() {
   const redirectTarget = searchParams.get('redirect') || '/dashboard';
 
   // Already signed in (cached session or cookie) → go to app.
+  //
+  // Guard against a redirect loop: a data-preserving reinstall can leave a stale
+  // cached `user` in local storage while the auth cookie is dead. That makes this
+  // effect push to /dashboard, which fails to authenticate and bounces back to
+  // /login → full-page reload loop (no chance to type). We allow exactly ONE
+  // redirect attempt; if we land back on /login within a short window, the
+  // session is invalid, so we stay put and let the user sign in again.
   useEffect(() => {
-    if (!authLoading && user) {
-      const target = redirectTarget.startsWith('/') ? redirectTarget : '/dashboard';
-      window.location.replace(target);
+    if (authLoading || !user) return;
+
+    const FLAG = 'khatario_login_redirect_ts';
+    const now = Date.now();
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem(FLAG) || '0');
+    } catch {
+      /* sessionStorage unavailable */
     }
+
+    if (last && now - last < 8000) {
+      // We just redirected to the app and came right back → dead session.
+      try {
+        sessionStorage.removeItem(FLAG);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    try {
+      sessionStorage.setItem(FLAG, String(now));
+    } catch {
+      /* ignore */
+    }
+
+    const target = redirectTarget.startsWith('/') ? redirectTarget : '/dashboard';
+    window.location.replace(target);
   }, [user, authLoading, redirectTarget]);
 
   const [phone, setPhone] = useState('');
