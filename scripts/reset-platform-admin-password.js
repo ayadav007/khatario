@@ -13,8 +13,18 @@
  */
 
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+
+const root = path.join(__dirname, '..');
+// VPS uses .env.production; load it first so it wins over any local .env defaults.
+for (const name of ['.env.production', '.env']) {
+  const envPath = path.join(root, name);
+  if (fs.existsSync(envPath)) {
+    require('dotenv').config({ path: envPath });
+  }
+}
 
 const email = (process.argv[2] || 'admin@khatario.com').toLowerCase().trim();
 const password = process.argv[3];
@@ -25,13 +35,29 @@ if (!password || password.length < 6) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'khatario_db',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'admin',
-});
+function getPoolConfig() {
+  const url =
+    process.env.MIGRATION_DATABASE_URL ||
+    process.env.DATABASE_URL_MIGRATE ||
+    process.env.DATABASE_URL;
+  if (url) {
+    return { connectionString: url };
+  }
+  return {
+    host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10),
+    database:
+      process.env.DB_NAME ||
+      process.env.POSTGRES_DB ||
+      process.env.POSTGRES_DATABASE ||
+      'khatario',
+    user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
+    password: String(process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? ''),
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  };
+}
+
+const pool = new Pool(getPoolConfig());
 
 async function main() {
   const hash = await bcrypt.hash(password, 10);
