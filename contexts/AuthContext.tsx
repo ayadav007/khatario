@@ -410,6 +410,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
           } else if (res.status === 401 || res.status === 404) {
+            const p = pathname || '';
+            const isPublicPage =
+              p === '/' ||
+              p.startsWith('/login') ||
+              p.startsWith('/signup') ||
+              p.startsWith('/book-demo') ||
+              p.startsWith('/admin') ||
+              p.startsWith('/attendance') ||
+              p === '/offline';
+
+            // No cached user on a public page is the normal logged-out state.
+            // Redirecting /login -> /login?reason=... causes a navigation loop
+            // that remounts the form and clears typed phone numbers.
+            if (isPublicPage) {
+              setLoading(false);
+              return;
+            }
             if (shouldTrustCachedSession()) {
               setLoading(false);
               return;
