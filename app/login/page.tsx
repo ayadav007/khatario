@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -29,6 +29,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -134,11 +135,20 @@ export default function LoginPage() {
 
           <div className={step === 'phone' ? 'block' : 'hidden'}>
             <Input
+              inputRef={phoneInputRef}
               type="tel"
               label="Phone Number"
               placeholder="Enter your phone number"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              inputMode="numeric"
+              autoComplete="tel"
+              enterKeyHint="next"
+              pattern="[0-9]*"
+              maxLength={15}
+              onPointerDown={() => {
+                phoneInputRef.current?.focus();
+              }}
             />
           </div>
 

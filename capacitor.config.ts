@@ -53,7 +53,9 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: allowCleartext,
-    captureInput: true,
+    // Let Android WebView handle focus/keyboard directly. captureInput can
+    // swallow text entry on some devices when loading a remote server.url.
+    captureInput: false,
     webContentsDebuggingEnabled:
       process.env.NODE_ENV !== 'production',
   },
