@@ -47,6 +47,13 @@ export function useEntityList<T = Record<string, unknown>>(
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  const applyList = useCallback(
+    (list: T[]) => {
+      setData(filter ? list.filter(filter) : list);
+    },
+    [filter]
+  );
+
   const refresh = useCallback(async () => {
     if (!businessId) {
       setData([]);
@@ -90,7 +97,7 @@ export function useEntityList<T = Record<string, unknown>>(
         } else if (apiUrl.includes('/api/invoices')) {
           const local = await loadInvoiceListCache(scope);
           if (local != null) {
-            setData(filter ? (local.filter(filter) as T[]) : (local as T[]));
+            applyList(local as T[]);
             setFromCache(true);
             setLoading(false);
             hadLocalData = true;
@@ -120,7 +127,7 @@ export function useEntityList<T = Record<string, unknown>>(
         json?.items ??
         [];
       const list = Array.isArray(rows) ? (rows as T[]) : [];
-      setData(filter ? (list.filter(filter) as T[]) : list);
+      applyList(list);
       setFromCache(false);
       hadLocalData = true;
     } catch (err) {
@@ -153,7 +160,7 @@ export function useEntityList<T = Record<string, unknown>>(
         if (apiUrl.includes('/api/invoices')) {
           const local = await loadInvoiceListCache(scope);
           if (local != null) {
-            setData(filter ? (local.filter(filter) as T[]) : (local as T[]));
+            applyList(local as T[]);
             setFromCache(true);
             setError(null);
             return;
@@ -168,7 +175,7 @@ export function useEntityList<T = Record<string, unknown>>(
       setSyncing(false);
       setLoading(false);
     }
-  }, [apiUrl, businessId, userId, queryParams, responseKey, filter]);
+  }, [apiUrl, businessId, userId, queryParams, responseKey, filter, applyList]);
 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
