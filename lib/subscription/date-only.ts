@@ -1,7 +1,19 @@
-/** Parse `YYYY-MM-DD` (or ISO string) as local calendar midnight — not UTC. */
-export function parseLocalDateOnly(value: string | null | undefined): Date | null {
+/** Parse `YYYY-MM-DD` (or ISO string) as local calendar midnight — not UTC.
+ *
+ * Accepts `Date` too: node-pg returns `DATE`/`timestamp` columns as JS `Date`
+ * objects (not strings), so callers that pass a raw DB value (e.g. an uncast
+ * `trial_end_date`) would otherwise hit `value.slice is not a function`. */
+export function parseLocalDateOnly(
+  value: string | Date | number | null | undefined
+): Date | null {
   if (!value) return null;
-  const part = value.slice(0, 10);
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    // Normalize to local calendar midnight, dropping any time-of-day.
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const str = typeof value === 'string' ? value : String(value);
+  const part = str.slice(0, 10);
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(part);
   if (!match) {
     const d = new Date(value);
