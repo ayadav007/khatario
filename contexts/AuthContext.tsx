@@ -248,7 +248,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (p.startsWith('/login')) {
-        router.replace(`/login?reason=${reason}`);
+        // Already on the login page — never self-navigate. router.replace to the
+        // same route remounts the form (clearing typed input) and can produce a
+        // refresh loop on native WebViews. Logged-out state is already applied.
         return;
       }
 
