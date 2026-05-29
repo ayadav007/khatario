@@ -15,6 +15,7 @@ import {
   readBrowserOnline,
   setAppOnlineState,
 } from '@/lib/network/offline-state';
+import { probeServerReachable } from '@/lib/network/connectivity-probe';
 import {
   markCapacitorNetworkReady,
 } from '@/lib/auth/should-trust-cached-session';
@@ -32,11 +33,24 @@ const NetworkStatusContext = createContext<NetworkStatusContextValue | undefined
 );
 
 function resolveInitialOnline(): boolean {
-  if (isCapacitorNative()) {
-    setAppOnlineState(false);
-    return false;
-  }
+  const hint = readBrowserOnline();
+  setAppOnlineState(hint);
+  return hint;
+}
+
+/** Capacitor Network plugin can report offline while the WebView still has internet. */
+function reconcileNativeOnline(capacitorConnected: boolean): boolean {
+  if (capacitorConnected) return true;
   return readBrowserOnline();
+}
+
+async function confirmOnlineWithProbe(
+  applyOnlineState: (online: boolean, source: string) => void
+): Promise<void> {
+  const reachable = await probeServerReachable();
+  if (reachable) {
+    applyOnlineState(true, 'server-probe');
+  }
 }
 
 export function NetworkStatusProvider({
@@ -81,22 +95,32 @@ export function NetworkStatusProvider({
     if (isCapacitorNative()) {
       void import('@capacitor/network')
         .then(({ Network }) => Network.getStatus())
-        .then((status) => {
+        .then(async (status) => {
           if (cancelled) return;
           markCapacitorNetworkReady();
           setNetworkReady(true);
-          applyOnlineState(status.connected, 'capacitor-initial');
+          const online = reconcileNativeOnline(status.connected);
+          applyOnlineState(online, 'capacitor-initial');
+          if (!online) {
+            await confirmOnlineWithProbe(applyOnlineState);
+          }
         })
         .catch((error) => {
           console.warn('[NetworkStatus] Capacitor Network.getStatus failed:', error);
           markCapacitorNetworkReady();
           setNetworkReady(true);
+          applyOnlineState(readBrowserOnline(), 'capacitor-error-fallback');
+          void confirmOnlineWithProbe(applyOnlineState);
         });
 
       void import('@capacitor/network')
         .then(({ Network }) =>
           Network.addListener('networkStatusChange', (status) => {
-            applyOnlineState(status.connected, 'capacitor-change');
+            const online = reconcileNativeOnline(status.connected);
+            applyOnlineState(online, 'capacitor-change');
+            if (!online) {
+              void confirmOnlineWithProbe(applyOnlineState);
+            }
           })
         )
         .then((handle) => {
