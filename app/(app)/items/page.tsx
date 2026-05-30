@@ -27,6 +27,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { clsx } from 'clsx';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 
 const PAGE_SIZE = 50;
 
@@ -605,6 +606,12 @@ function ItemsPage() {
             </Link>
           </>
         }
+      />
+
+      <SubscriptionUsageBanner
+        businessId={business?.id}
+        variant="inline"
+        highlightLimit="items"
       />
 
       {mobileSearchOpen ? (

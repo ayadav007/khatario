@@ -4,11 +4,17 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Check, Crown, Sparkles, Zap, Loader2 } from 'lucide-react';
 import { UpgradeModal } from './UpgradeModal';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   getFeatureDisplayName,
   getFeatureUpgradePitch,
 } from '@/lib/feature-upgrade-labels';
 import { formatPlanLabel } from '@/lib/format-plan-label';
+import {
+  USAGE_LIMIT_SHORT_LABELS,
+  formatPlanLimit,
+  isUsageNudgeLimitType,
+} from '@/lib/subscription/usage-labels';
 
 interface UpgradePromptProps {
   limitType?: 'invoices' | 'customers' | 'items' | 'users' | 'whatsapp' | 'feature';
@@ -34,6 +40,14 @@ interface RequiredPlan {
   planLabel?: string;
   priceMonthly: number;
   allPlansWithFeature: RequiredPlanRow[];
+}
+
+interface LimitRecommendedPlan {
+  planId: string;
+  planDisplayName: string;
+  planLabel: string;
+  priceMonthly: number;
+  planLimit: number;
 }
 
 // Plan icon/color mapping (static config)
@@ -69,11 +83,14 @@ export function UpgradePrompt({
   onPurchaseSuccess,
 }: UpgradePromptProps) {
   const router = useRouter();
+  const { business } = useAuth();
   const [requiredPlan, setRequiredPlan] = useState<RequiredPlan | null>(null);
+  const [limitRecommendedPlan, setLimitRecommendedPlan] =
+    useState<LimitRecommendedPlan | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // Plan labels + pricing come from GET /api/subscriptions/feature-plan (server builds payload via {@link getFeatureAccessInfo})
+  // Feature → lowest plan that includes the feature
   useEffect(() => {
     setRequiredPlan(null);
     if (!featureKey || limitType !== 'feature') return;
@@ -102,6 +119,36 @@ export function UpgradePrompt({
     };
   }, [featureKey, limitType]);
 
+  // Quantity limit → lowest paid plan with enough headroom
+  useEffect(() => {
+    setLimitRecommendedPlan(null);
+    if (limitType === 'feature' || !business?.id || currentCount === undefined) return;
+
+    let cancelled = false;
+    setLoadingPlan(true);
+
+    fetch(
+      `/api/subscriptions/limit-plan?business_id=${encodeURIComponent(business.id)}&limit_type=${limitType}&current=${currentCount}`,
+      { credentials: 'include' },
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.recommendedPlan) {
+          setLimitRecommendedPlan(data.recommendedPlan);
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching limit plan recommendation:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPlan(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [limitType, business?.id, currentCount]);
+
   const displayName =
     featureName || getFeatureDisplayName(featureKey ?? undefined);
 
@@ -112,7 +159,11 @@ export function UpgradePrompt({
     ? requiredPlan.planLabel ??
       formatPlanLabel(requiredPlan.planDisplayName)
     : '';
-  const planInfo = requiredPlan ? PLAN_CONFIG[requiredPlan.planId] : null;
+  const limitTierLabel = limitRecommendedPlan?.planLabel ?? '';
+  const heroPlanId =
+    limitType === 'feature' ? requiredPlan?.planId : limitRecommendedPlan?.planId;
+  const heroLabel = limitType === 'feature' ? lowestTierLabel : limitTierLabel;
+  const planInfo = heroPlanId ? PLAN_CONFIG[heroPlanId] : null;
 
   const messages: Omit<
     Record<
@@ -201,6 +252,16 @@ export function UpgradePrompt({
       ? featureUIMessage
       : messages[limitType as keyof typeof messages];
 
+  const limitBenefits =
+    limitType !== 'feature' &&
+    limitRecommendedPlan &&
+    isUsageNudgeLimitType(limitType)
+      ? [
+          `${limitRecommendedPlan.planLabel} — ₹${limitRecommendedPlan.priceMonthly}/month (${formatPlanLimit(limitRecommendedPlan.planLimit, limitType)} ${USAGE_LIMIT_SHORT_LABELS[limitType]})`,
+          ...resolvedMessage.benefits,
+        ]
+      : resolvedMessage.benefits;
+
   function handleComparePlans() {
     onClose();
     router.push('/settings/subscription');
@@ -239,7 +300,7 @@ export function UpgradePrompt({
 
         {/* Dynamic Plan Badge & Icon */}
         <div className="flex flex-col items-center mb-6">
-          {requiredPlan && lowestTierLabel && (
+          {requiredPlan && lowestTierLabel && limitType === 'feature' && (
             <div
               className={`${
                 planInfo?.color ?? 'bg-primary-600 text-white'
@@ -249,6 +310,18 @@ export function UpgradePrompt({
                 <Crown className="w-4 h-4 flex-shrink-0" />
               )}
               <span className="font-semibold">{lowestTierLabel} required</span>
+            </div>
+          )}
+          {limitRecommendedPlan && limitType !== 'feature' && heroLabel && (
+            <div
+              className={`${
+                planInfo?.color ?? 'bg-primary-600 text-white'
+              } px-4 py-2 rounded-full flex items-center space-x-2 mb-4 shadow-lg`}
+            >
+              {planInfo?.icon ?? (
+                <Crown className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span className="font-semibold">Recommended: {heroLabel}</span>
             </div>
           )}
           
@@ -278,7 +351,12 @@ export function UpgradePrompt({
               )}
             </div>
           ) : (
-            <p className="text-gray-600 text-lg">{resolvedMessage.description}</p>
+            <p className="text-gray-600 text-lg">
+              {resolvedMessage.description}
+              {limitRecommendedPlan &&
+                isUsageNudgeLimitType(limitType) &&
+                ` We recommend ${limitRecommendedPlan.planLabel} for ${formatPlanLimit(limitRecommendedPlan.planLimit, limitType)} ${USAGE_LIMIT_SHORT_LABELS[limitType]}.`}
+            </p>
           )}
         </div>
 
@@ -304,7 +382,7 @@ export function UpgradePrompt({
         <div className="mb-6 bg-gray-50 dark:bg-slate-800/60 border border-border rounded-xl p-6">
           <p className="text-sm font-semibold text-gray-700 mb-4 text-center">Upgrade to unlock:</p>
           <ul className="space-y-3">
-            {resolvedMessage.benefits.map((benefit, index) => (
+            {limitBenefits.map((benefit, index) => (
               <li key={index} className="flex items-start text-sm text-gray-700">
                 <div className="bg-green-500 rounded-full p-0.5 mr-3 mt-0.5">
                   <Check className="w-4 h-4 text-white" />
@@ -363,6 +441,11 @@ export function UpgradePrompt({
           currentCount={currentCount}
           limit={limit}
           featureName={featureName || displayName}
+          initialPlanId={
+            limitType === 'feature'
+              ? requiredPlan?.planId
+              : limitRecommendedPlan?.planId
+          }
           onClose={handleModalClose}
           onUpgradeSuccess={handleUpgradeSuccess}
         />

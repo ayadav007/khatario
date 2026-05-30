@@ -27,6 +27,7 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { InvoiceDetailPanel } from '@/components/invoices/InvoiceDetailPanel';
 import { clsx } from 'clsx';
+import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 
 function InvoicesPageContent() {
   const searchParams = useSearchParams();
@@ -580,6 +581,12 @@ function InvoicesPageContent() {
               </Link>
             </>
           }
+        />
+
+        <SubscriptionUsageBanner
+          businessId={business?.id}
+          variant="inline"
+          highlightLimit="invoices"
         />
 
         {showMobileFilters && (

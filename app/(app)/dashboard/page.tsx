@@ -46,6 +46,7 @@ import {
   saveDashboardCache,
 } from '@/lib/offline/repositories/entity-cache-repository';
 import { markAppSynced } from '@/lib/sync-timestamp';
+import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 
 function DashboardPage() {
   const { business, user, loading: authLoading } = useAuth();
@@ -350,6 +351,8 @@ function DashboardPage() {
           title="Dashboard"
           description={`Welcome back, ${user?.name ?? 'there'}! Here's what's happening today.`}
         />
+
+        <SubscriptionUsageBanner businessId={business?.id} variant="dashboard" />
 
         <QuickActionsFAB />
 

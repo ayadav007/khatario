@@ -24,6 +24,7 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { CustomerDetailPanel } from '@/components/customers/CustomerDetailPanel';
 import { clsx } from 'clsx';
+import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 
 const PAGE_SIZE = 50;
 
@@ -528,6 +529,12 @@ export default function CustomersPage() {
               </Link>
             </>
           }
+        />
+
+        <SubscriptionUsageBanner
+          businessId={business?.id}
+          variant="inline"
+          highlightLimit="customers"
         />
 
         {/* Mobile Filter Bottom Sheet */}

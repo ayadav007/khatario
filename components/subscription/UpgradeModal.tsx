@@ -33,6 +33,8 @@ interface UpgradeModalProps {
   currentCount?: number;
   limit?: number;
   featureName?: string;
+  /** Pre-select a plan in the upgrade grid (e.g. limit recommendation). */
+  initialPlanId?: string;
   onClose: () => void;
   onUpgradeSuccess?: () => void;
 }
@@ -42,6 +44,7 @@ export function UpgradeModal({
   currentCount,
   limit,
   featureName,
+  initialPlanId,
   onClose,
   onUpgradeSuccess,
 }: UpgradeModalProps) {
@@ -58,8 +61,8 @@ export function UpgradeModal({
   const [couponLoading, setCouponLoading] = useState(false);
 
   useEffect(() => {
-    fetchPlans();
-  }, []);
+    void fetchPlans();
+  }, [initialPlanId]);
 
   useEffect(() => {
     setCouponApplied(false);
@@ -114,10 +117,12 @@ export function UpgradeModal({
           isPurchasableUpgradePlan(p.id),
         );
         setPlans(availablePlans);
-        
-        // Auto-select the first plan (usually Professional)
+
         if (availablePlans.length > 0) {
-          setSelectedPlanId(availablePlans[0].id);
+          const preferred = initialPlanId
+            ? availablePlans.find((p: SubscriptionPlan) => p.id === initialPlanId)
+            : null;
+          setSelectedPlanId(preferred?.id ?? availablePlans[0].id);
         }
       }
     } catch (error) {
