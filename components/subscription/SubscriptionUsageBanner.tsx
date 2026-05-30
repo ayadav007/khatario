@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, TrendingUp, X } from 'lucide-react';
@@ -85,7 +86,7 @@ function UsageRowContent({
   );
 }
 
-export function SubscriptionUsageBanner({
+function SubscriptionUsageBannerInner({
   businessId,
   variant = 'dashboard',
   highlightLimit,
@@ -245,3 +246,9 @@ export function SubscriptionUsageBanner({
     </div>
   );
 }
+
+/** Client-only: fetches live usage limits (must not SSR). */
+export const SubscriptionUsageBanner = dynamic(
+  () => Promise.resolve({ default: SubscriptionUsageBannerInner }),
+  { ssr: false },
+);

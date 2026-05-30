@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { Item } from '@/types/database';
-import { checkLimit } from '@/lib/subscription';
+import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
@@ -78,19 +78,6 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
-  const limitCheck = await checkLimit(business_id, 'items');
-  if (!limitCheck.allowed) {
-    return NextResponse.json(
-      {
-        error: limitCheck.message || 'Item limit reached',
-        limit: limitCheck.limit,
-        current: limitCheck.current,
-        code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
-      },
-      { status: 403 }
-    );
-  }
-
   for (const c of bundle_components) {
     const q = Number(c.quantity);
     if (!c.item_id || !(q > 0)) {
@@ -128,6 +115,20 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    const limitCheck = await checkLimitInTransaction(client, business_id, 'items');
+    if (!limitCheck.allowed) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: limitCheck.message || 'Item limit reached',
+          limit: limitCheck.limit,
+          current: limitCheck.current,
+          code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+        },
+        { status: 403 },
+      );
+    }
 
     if (normalizedBarcode) {
       const existing = await client.query(

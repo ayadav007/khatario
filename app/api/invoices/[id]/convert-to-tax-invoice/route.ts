@@ -5,6 +5,11 @@ import {
   getUserIdFromRequest,
   requirePortalSession,
 } from '@/lib/auth-helpers';
+import {
+  enforceAccess,
+  enforceAccessErrorResponse,
+} from '@/lib/enforce-access';
+import { FeatureKeys } from '@/lib/featureKeys';
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +26,14 @@ export async function POST(
     if (!businessScope) {
       return NextResponse.json(
         { error: 'business_id is required' },
+        { status: 400 }
+      );
+    }
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'user_id is required for authorization' },
         { status: 400 }
       );
     }
@@ -58,6 +71,23 @@ export async function POST(
     await client.query('BEGIN');
     
     try {
+      try {
+        await enforceAccess({
+          businessId: proformaData.business_id,
+          userId,
+          feature: FeatureKeys.INVOICE_CREATION,
+          limitType: 'invoices',
+          poolClient: client,
+        });
+      } catch (e) {
+        const res = enforceAccessErrorResponse(e);
+        if (res) {
+          await client.query('ROLLBACK');
+          return res;
+        }
+        throw e;
+      }
+
       // Get next invoice number for tax invoice
       const nextNumRes = await client.query(
         `SELECT next_tax_invoice_number, invoice_prefix
@@ -190,7 +220,7 @@ export async function POST(
       
       // Mark proforma as converted (update lifecycle status and add note)
       // Get user ID from request body, headers, or use invoice's created_by
-      const userId = getUserIdFromRequest(request, body) || proformaData.created_by;
+      const actorUserId = getUserIdFromRequest(request, body) || userId || proformaData.created_by;
       
       await client.query(
         `UPDATE invoices 
@@ -206,7 +236,7 @@ export async function POST(
       await client.query(
         `INSERT INTO proforma_lifecycle_timeline (invoice_id, status, notes, created_by)
          VALUES ($1, 'converted_to_tax_invoice', $2, $3)`,
-        [proformaId, `Converted to Tax Invoice: ${invoiceNumber}`, userId]
+        [proformaId, `Converted to Tax Invoice: ${invoiceNumber}`, actorUserId]
       );
       
       await client.query('COMMIT');

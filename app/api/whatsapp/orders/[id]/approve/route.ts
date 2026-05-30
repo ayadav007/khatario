@@ -69,6 +69,21 @@ export async function POST(
 
     const today = new Date().toISOString().split('T')[0];
 
+    const { checkLimitInTransaction } = await import('@/lib/subscription');
+    const limitCheck = await checkLimitInTransaction(client, business_id, 'invoices');
+    if (!limitCheck.allowed) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: limitCheck.message || 'Invoice limit reached',
+          code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          current: limitCheck.current,
+          limit: limitCheck.limit,
+        },
+        { status: 403 },
+      );
+    }
+
     // Create invoice
     const invoiceRes = await client.query(
       `INSERT INTO invoices (

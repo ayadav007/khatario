@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { checkLimit, type LimitCheckType } from '@/lib/subscription';
+import { notifyUsageThresholdIfNeeded } from '@/lib/subscription/usage-threshold-notify';
 
 /**
  * GET /api/subscriptions/check-limit
@@ -19,6 +20,15 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await checkLimit(tenant.businessId, limitType);
+
+    void notifyUsageThresholdIfNeeded(
+      tenant.businessId,
+      limitType,
+      result.current,
+      result.limit,
+    ).catch((err) => {
+      console.error('[check-limit] usage threshold notify failed:', err);
+    });
 
     return NextResponse.json(result);
   } catch (error: any) {

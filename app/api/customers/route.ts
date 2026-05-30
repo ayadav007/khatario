@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryRows, queryOne } from '@/lib/db';
+import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { Customer } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
@@ -241,25 +241,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    try {
-      await enforceAccess({
-        businessId: business_id,
-        userId: created_by,
-        feature: FeatureKeys.CUSTOMER_MANAGEMENT,
-        limitType: 'customers',
-      });
-    } catch (e) {
-      const res = enforceAccessErrorResponse(e);
-      if (res) return res;
-      throw e;
-    }
-
-    // Use billing_address if provided, else address, else null
     const finalBillingAddress = billing_address || address || null;
-    // Use shipping_address if provided, else address, else null
     const finalShippingAddress = shipping_address || address || null;
 
-    // Helper function to get state code if not provided
     const getStateCode = (stateName: string): string => {
       if (!stateName) return '';
       const name = stateName.trim().toLowerCase();
@@ -273,17 +257,16 @@ export async function POST(request: NextRequest) {
         'nagaland': '13', 'arunachal pradesh': '12', 'goa': '30', 'sikkim': '11',
         'andaman and nicobar islands': '35', 'chandigarh': '04',
         'dadra and nagar haveli and daman and diu': '26', 'jammu and kashmir': '01',
-        'ladakh': '38', 'lakshadweep': '31', 'puducherry': '34'
+        'ladakh': '38', 'lakshadweep': '31', 'puducherry': '34',
       };
       return map[name] || '';
     };
 
-    // Use provided state_code or calculate from state name
     const finalStateCode = state_code || (state ? getStateCode(state) : null);
 
     const sql = `
       INSERT INTO customers (
-        business_id, name, company_name, phone, email, address, billing_address, shipping_address, 
+        business_id, name, company_name, phone, email, address, billing_address, shipping_address,
         city, state, state_code, pincode, shipping_city, shipping_state, shipping_pincode,
         country, gstin, opening_balance, opening_balance_type, credit_limit, credit_days
       )
@@ -291,39 +274,70 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `;
 
-    const customer = await queryOne<Customer>(sql, [
-      business_id,
-      name,
-      company_name || null,
-      phoneNorm,
-      emailNorm,
-      address || null,
-      finalBillingAddress,
-      finalShippingAddress,
-      city || null,
-      state || null,
-      finalStateCode || null,
-      pincode || null,
-      shipping_city || null,
-      shipping_state || null,
-      shipping_pincode || null,
-      country || 'India',
-      gstin || null,
-      opening_balance,
-      opening_balance_type,
-      credit_limit,
-      creditDays,
-    ]);
+    const pool = getPool();
+    const client = await pool.connect();
+    let customer: Customer | null = null;
 
-    if (!customer) {
-      return NextResponse.json(
-        { error: 'Failed to create customer' },
-        { status: 500 }
-      );
+    try {
+      await client.query('BEGIN');
+
+      try {
+        await enforceAccess({
+          businessId: business_id,
+          userId: created_by,
+          feature: FeatureKeys.CUSTOMER_MANAGEMENT,
+          limitType: 'customers',
+          poolClient: client,
+        });
+      } catch (e) {
+        await client.query('ROLLBACK');
+        const res = enforceAccessErrorResponse(e);
+        if (res) return res;
+        throw e;
+      }
+
+      const insertResult = await client.query<Customer>(sql, [
+          business_id,
+          name,
+          company_name || null,
+          phoneNorm,
+          emailNorm,
+          address || null,
+          finalBillingAddress,
+          finalShippingAddress,
+          city || null,
+          state || null,
+          finalStateCode || null,
+          pincode || null,
+          shipping_city || null,
+          shipping_state || null,
+          shipping_pincode || null,
+          country || 'India',
+          gstin || null,
+          opening_balance,
+          opening_balance_type,
+          credit_limit,
+          creditDays,
+        ]);
+
+        customer = insertResult.rows[0] ?? null;
+        if (!customer) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Failed to create customer' },
+            { status: 500 }
+          );
+        }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
     }
 
-    // PHASE 2: Post opening balance to ledger (if opening_balance > 0)
-    if (opening_balance > 0) {
+    if (opening_balance > 0 && customer) {
       try {
         const { postOpeningBalanceLedgerEntry } = await import('@/lib/ledger-utils');
         await postOpeningBalanceLedgerEntry({
@@ -335,8 +349,6 @@ export async function POST(request: NextRequest) {
           openingBalanceType: opening_balance_type,
         });
       } catch (ledgerError: any) {
-        // Log error but don't fail customer creation
-        // Opening balance is stored in customer record, ledger entry is supplementary
         console.error('Error posting opening balance ledger entry for customer:', ledgerError);
       }
     }

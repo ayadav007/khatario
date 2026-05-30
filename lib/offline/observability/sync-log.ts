@@ -59,13 +59,15 @@ async function trimLogs(db: Awaited<ReturnType<typeof getOfflineDb>>): Promise<v
 
 export async function listSyncLogs(limit = 100): Promise<SyncLogEntry[]> {
   const db = await getOfflineDb();
-  const idx = db.transaction(OFFLINE_STORES.logs).store.index('by-time');
+  const tx = db.transaction(OFFLINE_STORES.logs, 'readonly');
+  const idx = tx.store.index('by-time');
   const rows: SyncLogEntry[] = [];
   let cursor = await idx.openCursor(null, 'prev');
   while (cursor && rows.length < limit) {
     rows.push(cursor.value);
     cursor = await cursor.continue();
   }
+  await tx.done;
   return rows;
 }
 

@@ -34,8 +34,8 @@ export function usagePercent(current: number, max: number): number {
   return Math.min(Math.round((current / max) * 100), 100);
 }
 
-/** Show nudge when at or above this usage ratio (matches Settings subscription tab). */
-export const USAGE_NUDGE_THRESHOLD_PERCENT = 70;
+/** Show nudge when at or above this usage ratio (aligned with usage warning emails at 80%). */
+export const USAGE_NUDGE_THRESHOLD_PERCENT = 80;
 
 export function shouldShowUsageNudge(current: number, max: number): boolean {
   if (max === -1) return false;

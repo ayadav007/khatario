@@ -22,7 +22,7 @@ export function useSubscriptionUsage(
   types: UsageNudgeLimitType[] = USAGE_NUDGE_LIMIT_TYPES,
 ) {
   const [rows, setRows] = useState<SubscriptionUsageRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!businessId) {

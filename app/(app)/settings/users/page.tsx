@@ -16,6 +16,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
 
 interface UserData {
@@ -367,6 +368,12 @@ export default function ManageUsersPage() {
             Add New User
           </Button>
         </div>
+
+        <SubscriptionUsageBanner
+          businessId={business?.id}
+          variant="inline"
+          highlightLimit="users"
+        />
 
         {/* Users List */}
         <Card padding="none">

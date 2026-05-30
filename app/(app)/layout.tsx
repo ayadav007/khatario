@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { BottomNav } from '@/components/layout/BottomNav';
@@ -30,6 +31,14 @@ import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
+
+const GlobalSubscriptionUsageStrip = dynamic(
+  () =>
+    import('@/components/subscription/GlobalSubscriptionUsageStrip').then((m) => ({
+      default: m.GlobalSubscriptionUsageStrip,
+    })),
+  { ssr: false },
+);
 
 /**
  * Persistent layout for main app routes
@@ -126,6 +135,7 @@ function AppRouteLayoutInner({
               </Suspense>
             )}
             {!isFullWidthPage && <SubscriptionBanner />}
+            {!isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
             {!isFullWidthPage && <ShellVersionBanner />}
             {!isFullWidthPage && <ProfileCompletionBanner />}
             <PromotionBanner />

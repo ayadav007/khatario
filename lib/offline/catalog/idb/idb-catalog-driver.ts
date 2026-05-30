@@ -50,7 +50,8 @@ async function loadItemsForScope(
   scopeKey: string
 ): Promise<CatalogItemSearchResult[]> {
   const db = await getCatalogIdb();
-  const idx = db.transaction('items').store.index('by-tenant-scope');
+  const tx = db.transaction('items', 'readonly');
+  const idx = tx.store.index('by-tenant-scope');
   const range = IDBKeyRange.only([scope.businessId, scope.userId, scopeKey]);
   const rows: CatalogItemRow[] = [];
   let cursor = await idx.openCursor(range);
@@ -58,12 +59,14 @@ async function loadItemsForScope(
     rows.push(cursor.value);
     cursor = await cursor.continue();
   }
+  await tx.done;
   return rows.map((row) => row.item);
 }
 
 async function loadCustomers(scope: TenantScope): Promise<CatalogCustomer[]> {
   const db = await getCatalogIdb();
-  const idx = db.transaction('customers').store.index('by-tenant');
+  const tx = db.transaction('customers', 'readonly');
+  const idx = tx.store.index('by-tenant');
   const range = IDBKeyRange.only([scope.businessId, scope.userId]);
   const rows: CatalogCustomerRow[] = [];
   let cursor = await idx.openCursor(range);
@@ -71,12 +74,14 @@ async function loadCustomers(scope: TenantScope): Promise<CatalogCustomer[]> {
     rows.push(cursor.value);
     cursor = await cursor.continue();
   }
+  await tx.done;
   return rows.map((row) => row.customer);
 }
 
 async function loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSearchResult[]> {
   const db = await getCatalogIdb();
-  const idx = db.transaction('items').store.index('by-tenant');
+  const tx = db.transaction('items', 'readonly');
+  const idx = tx.store.index('by-tenant');
   const range = IDBKeyRange.only([scope.businessId, scope.userId]);
   const byId = new Map<string, CatalogItemSearchResult>();
   let cursor = await idx.openCursor(range);
@@ -84,6 +89,7 @@ async function loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSea
     byId.set(cursor.value.item.id, cursor.value.item);
     cursor = await cursor.continue();
   }
+  await tx.done;
   return Array.from(byId.values());
 }
 
@@ -221,21 +227,32 @@ export class IdbCatalogDriver implements CatalogRepository {
 
   async getStatus(scope: TenantScope): Promise<CatalogStatus> {
     const db = await getCatalogIdb();
-    const idxItems = db.transaction('items').store.index('by-tenant');
-    const idxCustomers = db.transaction('customers').store.index('by-tenant');
     const itemRange = IDBKeyRange.only([scope.businessId, scope.userId]);
+
     let itemCount = 0;
-    let cursor = await idxItems.openCursor(itemRange);
-    while (cursor) {
-      itemCount += 1;
-      cursor = await cursor.continue();
+    {
+      const tx = db.transaction('items', 'readonly');
+      const idx = tx.store.index('by-tenant');
+      let cursor = await idx.openCursor(itemRange);
+      while (cursor) {
+        itemCount += 1;
+        cursor = await cursor.continue();
+      }
+      await tx.done;
     }
+
     let customerCount = 0;
-    let customerCursor = await idxCustomers.openCursor(itemRange);
-    while (customerCursor) {
-      customerCount += 1;
-      customerCursor = await customerCursor.continue();
+    {
+      const tx = db.transaction('customers', 'readonly');
+      const idx = tx.store.index('by-tenant');
+      let cursor = await idx.openCursor(itemRange);
+      while (cursor) {
+        customerCount += 1;
+        cursor = await cursor.continue();
+      }
+      await tx.done;
     }
+
     const stockScopeRaw = await readMeta(scope, META_STOCK_SCOPE);
     let stockScope: CatalogStockScope = {};
     if (stockScopeRaw) {

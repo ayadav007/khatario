@@ -52,7 +52,8 @@ export class EntityCacheRepository {
     limit = 50
   ): Promise<CachedEntityRecord<T>[]> {
     const db = await getOfflineDb();
-    const idx = db.transaction(OFFLINE_STORES.entities).store.index('by-kind');
+    const tx = db.transaction(OFFLINE_STORES.entities, 'readonly');
+    const idx = tx.store.index('by-kind');
     const range = IDBKeyRange.only([
       scope.businessId,
       scope.userId,
@@ -64,6 +65,7 @@ export class EntityCacheRepository {
       rows.push(cursor.value as CachedEntityRecord<T>);
       cursor = await cursor.continue();
     }
+    await tx.done;
     return rows;
   }
 

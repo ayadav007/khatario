@@ -292,6 +292,12 @@ export async function createInterBranchInvoice(params: {
   try {
     await client.query('BEGIN');
 
+    const { checkLimitInTransaction } = await import('@/lib/subscription');
+    const limitCheck = await checkLimitInTransaction(client, params.businessId, 'invoices');
+    if (!limitCheck.allowed) {
+      throw new Error(limitCheck.message || 'Invoice limit reached');
+    }
+
     // Get branch details
     const fromBranch = await db.queryOne<BranchInfo>(`
       SELECT id, name, gstin, state_code, state, business_id

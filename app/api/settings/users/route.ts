@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
-import { query, queryOne, queryRows } from '@/lib/db';
-import { checkLimit } from '@/lib/subscription';
+import { query, queryOne, queryRows, getPool } from '@/lib/db';
+import { checkLimitInTransaction } from '@/lib/subscription';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
@@ -157,21 +157,6 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // Check subscription limits before creating user
-    const limitCheck = await checkLimit(business_id, 'users');
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        { 
-          error: limitCheck.message || 'User limit reached',
-          limit: limitCheck.limit,
-          current: limitCheck.current,
-          code: 'SUBSCRIPTION_LIMIT_EXCEEDED'
-        },
-        { status: 403 }
-      );
-    }
-
-    // Check if phone already exists
     const existingUser = await queryOne(
       'SELECT id FROM users WHERE phone = $1',
       [phoneNorm]
@@ -184,7 +169,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if email already exists (if provided)
     if (email) {
       const existingEmail = await queryOne(
         'SELECT id FROM users WHERE email = $1',
@@ -199,7 +183,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verify role belongs to the business
     const role = await queryOne(
       'SELECT id, role_key FROM user_roles WHERE id = $1 AND business_id = $2',
       [role_id, business_id]
@@ -212,7 +195,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user management is enabled
     const settings = await queryOne(
       'SELECT user_management_enabled FROM business_settings WHERE business_id = $1',
       [business_id]
@@ -225,27 +207,81 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create user
-    // Hash password before storing
-    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
-    const newUser = await queryOne(`
-      INSERT INTO users (
-        business_id, name, email, phone, password_hash, role_id,
-        is_primary_admin, allow_multidevice_sync, is_active
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-      RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
-                allow_multidevice_sync, is_active, created_at
-    `, [
-      business_id,
-      name,
-      email || null,
-      phoneNorm,
-      passwordHash,
-      role_id,
-      role.role_key === 'primary_admin',
-      allow_multidevice_sync || false
-    ]);
+    const pool = getPool();
+    const client = await pool.connect();
+    let newUser: {
+      id: string;
+      business_id: string;
+      name: string;
+      email: string | null;
+      phone: string;
+      role_id: string;
+      is_primary_admin: boolean;
+      allow_multidevice_sync: boolean;
+      is_active: boolean;
+      created_at: string;
+    } | null = null;
+
+    try {
+      await client.query('BEGIN');
+
+      const limitCheck = await checkLimitInTransaction(client, business_id, 'users');
+      if (!limitCheck.allowed) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: limitCheck.message || 'User limit reached',
+            limit: limitCheck.limit,
+            current: limitCheck.current,
+            code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          },
+          { status: 403 },
+        );
+      }
+
+      const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+      const insertResult = await client.query(`
+        INSERT INTO users (
+          business_id, name, email, phone, password_hash, role_id,
+          is_primary_admin, allow_multidevice_sync, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
+                  allow_multidevice_sync, is_active, created_at
+      `, [
+        business_id,
+        name,
+        email || null,
+        phoneNorm,
+        passwordHash,
+        role_id,
+        role.role_key === 'primary_admin',
+        allow_multidevice_sync || false,
+      ]);
+
+      newUser = insertResult.rows[0] ?? null;
+      if (!newUser) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Failed to create user' },
+          { status: 500 },
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    if (!newUser) {
+      return NextResponse.json(
+        { error: 'Failed to create user' },
+        { status: 500 },
+      );
+    }
 
     // Assign user to branch
     if (branch_id) {

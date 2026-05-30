@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows, queryOne, query } from '@/lib/db';
+import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { seedOpeningStockLayers } from '@/lib/seed-opening-stock-layers';
 import { Item } from '@/types/database';
-import { checkLimit } from '@/lib/subscription';
+import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
@@ -267,23 +267,6 @@ export async function POST(request: NextRequest) {
       ? (selling_price !== undefined && selling_price !== null && selling_price !== '' ? Number(selling_price) : null)
       : (Number(selling_price) || 0);
 
-    // Check subscription limits before creating item
-    const limitCheck = await checkLimit(business_id, 'items');
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        { 
-          error: limitCheck.message || 'Item limit reached',
-          limit: limitCheck.limit,
-          current: limitCheck.current,
-          code: 'SUBSCRIPTION_LIMIT_EXCEEDED'
-        },
-        { status: 403 }
-      );
-    }
-
-    // Weighed-item sanity: PLU must be 4-5 digits, weight barcode mode must
-    // be one of the known values. We coerce rather than fail here so the
-    // form can keep old rows (which won't ship is_weighed) working.
     const normalizedPlu = plu_code
       ? String(plu_code).replace(/\D/g, '').slice(0, 5) || null
       : null;
@@ -301,7 +284,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
 
-    const item = await queryOne<Item>(`
+    const pool = getPool();
+    const client = await pool.connect();
+    let item: Item | null = null;
+
+    try {
+      await client.query('BEGIN');
+
+      const limitCheck = await checkLimitInTransaction(client, business_id, 'items');
+      if (!limitCheck.allowed) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: limitCheck.message || 'Item limit reached',
+            limit: limitCheck.limit,
+            current: limitCheck.current,
+            code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          },
+          { status: 403 },
+        );
+      }
+
+      const insertResult = await client.query<Item>(`
       INSERT INTO items (
         business_id, category_id, name, code, barcode, barcode_type, unit, selling_price, purchase_price, 
         tax_rate, hsn_sac, item_type, opening_stock, current_stock, min_stock, 
@@ -342,6 +346,20 @@ export async function POST(request: NextRequest) {
       normalizedWeightMode,
       oversellOverride,
     ]);
+
+      item = insertResult.rows[0] ?? null;
+      if (!item) {
+        await client.query('ROLLBACK');
+        throw new Error('Failed to create item');
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
 
     if (!item) throw new Error('Failed to create item');
 

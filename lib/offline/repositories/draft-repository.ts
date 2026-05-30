@@ -44,7 +44,8 @@ export class DraftRepository {
 
   async list(scope: TenantScope): Promise<FormDraftRecord[]> {
     const db = await getOfflineDb();
-    const idx = db.transaction(OFFLINE_STORES.drafts).store.index('by-tenant');
+    const tx = db.transaction(OFFLINE_STORES.drafts, 'readonly');
+    const idx = tx.store.index('by-tenant');
     const range = IDBKeyRange.only([scope.businessId, scope.userId]);
     const rows: FormDraftRecord[] = [];
     let cursor = await idx.openCursor(range);
@@ -52,6 +53,7 @@ export class DraftRepository {
       rows.push(cursor.value);
       cursor = await cursor.continue();
     }
+    await tx.done;
     return rows;
   }
 }

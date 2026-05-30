@@ -12,8 +12,6 @@ export function PromotionBanner() {
   const router = useRouter();
   const pathname = usePathname();
   const { business } = useAuth();
-
-  if (shouldHideGlobalBanners(pathname)) return null;
   const { promotions, refreshPromotion } = useLayoutData();
   const [promo, setPromo] = useState<Promotion | null>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -88,7 +86,7 @@ export function PromotionBanner() {
     }
   };
 
-  if (!isVisible || !promo) return null;
+  if (shouldHideGlobalBanners(pathname) || !isVisible || !promo) return null;
 
   return (
     <div
