@@ -11,6 +11,11 @@ export function isTrialPlanId(planId: string | null | undefined): boolean {
   return planId === TRIAL_PLAN_ID;
 }
 
+/** Paid plans selectable in upgrade/checkout UI (signup-only trial and free excluded). */
+export function isPurchasableUpgradePlan(planId: string): boolean {
+  return planId !== 'free' && planId !== TRIAL_PLAN_ID;
+}
+
 /**
  * Include Trial in the Change Plan grid only when it is the user's current plan
  * (so they see "Current Plan" — not as a selectable destination for others).

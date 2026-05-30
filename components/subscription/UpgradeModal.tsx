@@ -5,6 +5,7 @@ import { X, Check, Loader2, TrendingUp, Tag } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
+import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
 
 interface SubscriptionPlan {
   id: string;
@@ -109,7 +110,9 @@ export function UpgradeModal({
       const response = await fetch('/api/subscriptions/plans');
       if (response.ok) {
         const data = await response.json();
-        const availablePlans = (data.plans || []).filter((p: SubscriptionPlan) => p.id !== 'free');
+        const availablePlans = (data.plans || []).filter((p: SubscriptionPlan) =>
+          isPurchasableUpgradePlan(p.id),
+        );
         setPlans(availablePlans);
         
         // Auto-select the first plan (usually Professional)
