@@ -6,7 +6,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { TrendingUp, TrendingDown, Loader2, DollarSign, Wallet } from 'lucide-react';
+import { TrendingUp, TrendingDown, Loader2, IndianRupee, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -17,6 +17,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { GSTStatusIndicator } from '@/components/ui/GSTStatusIndicator';
 import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
 import { SalesVsPurchasesChart } from '@/components/dashboard/SalesVsPurchasesChart';
+import { SalesInsightsCard } from '@/components/dashboard/SalesInsightsCard';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
@@ -176,7 +177,7 @@ function DashboardPage() {
     fetchDashboardData();
   }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId, dashboardRefreshKey, isOffline, dateRangeKey]);
 
-  if (loading && !isOffline && !data) {
+  if (loading && !data) {
     return (
       
         <div className="flex items-center justify-center h-[calc(100vh-100px)]">
@@ -301,7 +302,7 @@ function DashboardPage() {
       id: 'profit',
       title: `${periodPrefix} Profit`,
       value: formatInr(profit),
-      icon: DollarSign,
+      icon: IndianRupee,
       iconColor: profit >= 0 ? 'text-violet-700 dark:text-violet-200' : 'text-red-600 dark:text-red-300',
       valueColor: profit >= 0 ? 'text-violet-700 dark:text-violet-300' : 'text-red-600 dark:text-red-400',
       iconWellClassName:
@@ -360,6 +361,10 @@ function DashboardPage() {
           items={financialSnapshotItems}
           onItemClick={handleKpiClick}
         />
+
+        {business?.id && (
+          <SalesInsightsCard businessId={business.id} dateRange={dateRange} />
+        )}
 
         {data ? (
           <div className={STACK_SECTION_CLASS}>
