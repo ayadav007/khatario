@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { TodoReminderPopup } from '@/components/notifications/TodoReminderPopup';
 import {
@@ -1011,21 +1011,35 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
     setActiveTodoReminders((prev) => prev.filter((r) => r.id !== reminderId));
   }, []);
 
+  const contextValue = useMemo<LayoutDataContextType>(
+    () => ({
+      ...data,
+      loading,
+      snapshotLoaded,
+      refreshSubscription: fetchSubscription,
+      refreshNotifications,
+      refreshBadgeCounts,
+      refreshPromotion: fetchPromotion,
+      refreshWarehouses,
+      markNotificationAsRead,
+      markAllNotificationsAsRead,
+    }),
+    [
+      data,
+      loading,
+      snapshotLoaded,
+      fetchSubscription,
+      refreshNotifications,
+      refreshBadgeCounts,
+      fetchPromotion,
+      refreshWarehouses,
+      markNotificationAsRead,
+      markAllNotificationsAsRead,
+    ]
+  );
+
   return (
-    <LayoutDataContext.Provider
-      value={{
-        ...data,
-        loading,
-        snapshotLoaded,
-        refreshSubscription: fetchSubscription,
-        refreshNotifications,
-        refreshBadgeCounts,
-        refreshPromotion: fetchPromotion,
-        refreshWarehouses: refreshWarehouses,
-        markNotificationAsRead,
-        markAllNotificationsAsRead,
-      }}
-    >
+    <LayoutDataContext.Provider value={contextValue}>
       {children}
       {/* Render todo reminder popups */}
       {activeTodoReminders.length > 0 && (

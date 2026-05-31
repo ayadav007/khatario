@@ -105,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Bumped on login/logout so stale in-flight /api/auth/session calls cannot revoke a new session. */
   const sessionGenerationRef = useRef(0);
   const authBootstrappedRef = useRef(false);
-  const sessionValidationInFlightRef = useRef(false);
 
   if (
     typeof window !== 'undefined' &&
@@ -483,44 +482,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
     return () => window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
   }, []);
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const validateLiveSession = () => {
-      if (sessionValidationInFlightRef.current) return;
-      if (shouldTrustCachedSession()) return;
-
-      sessionValidationInFlightRef.current = true;
-      void fetchSession().finally(() => {
-        sessionValidationInFlightRef.current = false;
-      });
-    };
-
-    const handleFocus = () => validateLiveSession();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        validateLiveSession();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        validateLiveSession();
-      }
-    }, 30_000);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.clearInterval(interval);
-    };
-    // fetchSession intentionally uses current auth state; this effect is keyed by the signed-in user.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
 
   const login = async (data: any) => {
     // Invalidate any in-flight session check (e.g. initAuth with a stale cookie).
