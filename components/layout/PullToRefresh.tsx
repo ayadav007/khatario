@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import { MOBILE_BOTTOM_NAV_SELECTOR } from '@/lib/mobile-navigation';
 
 const THRESHOLD = 72;   // px to pull before releasing triggers refresh
 const MAX_PULL = 100;   // max visual stretch in px
@@ -48,8 +49,14 @@ export function PullToRefresh() {
   useEffect(() => {
     if (!isCapacitorNative()) return;
 
+    const touchOnBottomNav = (e: TouchEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return false;
+      return !!target.closest(MOBILE_BOTTOM_NAV_SELECTOR);
+    };
+
     const onTouchStart = (e: TouchEvent) => {
-      if (refreshingRef.current) return;
+      if (refreshingRef.current || touchOnBottomNav(e)) return;
       const scrollTop =
         document.documentElement.scrollTop || document.body.scrollTop;
       if (scrollTop !== 0) return;
@@ -58,6 +65,11 @@ export function PullToRefresh() {
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if (touchOnBottomNav(e)) {
+        pullingRef.current = false;
+        setPullY(0);
+        return;
+      }
       if (!pullingRef.current || refreshingRef.current) return;
       const dy = e.touches[0].clientY - startYRef.current;
       if (dy <= 0) {
