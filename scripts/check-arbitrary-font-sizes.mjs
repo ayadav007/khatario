@@ -11,7 +11,7 @@ const ARBITRARY_FONT = /text-\[\d+(?:\.\d+)?px\]/g;
 
 /** Paths that intentionally mimic external UIs or print/PDF pixel layouts */
 const ALLOWLIST = [
-  'components/whatsapp/conversations/',
+  'components/whatsapp/campaigns/WhatsAppPreview',
   'components/invoices/extraction-debug/',
   'components/labels/',
   'components/templates/TemplatePreview',

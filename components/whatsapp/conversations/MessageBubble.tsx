@@ -7,6 +7,7 @@ import { clsx } from 'clsx';
 import { MediaLightbox } from './MediaLightbox';
 import { AudioPlayer } from './AudioPlayer';
 import { DocumentViewer } from './DocumentViewer';
+import { waChat } from '@/lib/whatsapp-chat-typography';
 
 export interface MessageReaction {
   reaction: string;
@@ -42,13 +43,6 @@ export interface MessageBubbleProps {
   /** Re-fetch thread so media_url / status can update from the server */
   onMediaRefresh?: () => void;
 }
-
-/** 2× prior sizes (~14.2px body) for readable desktop chat */
-const MSG_TEXT_PX = 28.4;
-const MSG_LINE_PX = 38;
-const META_PX = 25.6;
-const TIME_PX = 22;
-const BTN_PX = 24;
 
 // Helper function to linkify URLs in text
 const linkifyText = (text: string) => {
@@ -126,13 +120,13 @@ export function MessageBubble({
     if (!isOutgoing || !message.status) return null;
     const s = String(message.status);
     // Baileys numeric: 0=error, 1=pending, 2=server ack, 3=delivery ack, 4=read, 5=played
-    if (s === 'sent'     || s === '2') return <Check className="w-6 h-6 text-gray-500" />;
-    if (s === 'delivered'|| s === '3') return <CheckCheck className="w-6 h-6 text-gray-500" />;
-    if (s === 'read'     || s === '4') return <CheckCheck className="w-6 h-6 text-primary-500" />;
-    if (s === '5')                     return <CheckCheck className="w-6 h-6 text-primary-500" />;
-    if (s === 'failed'   || s === '0') return <X className="w-6 h-6 text-red-500" />;
+    if (s === 'sent'     || s === '2') return <Check className={`${waChat.statusIcon} text-gray-500`} />;
+    if (s === 'delivered'|| s === '3') return <CheckCheck className={`${waChat.statusIcon} text-gray-500`} />;
+    if (s === 'read'     || s === '4') return <CheckCheck className={`${waChat.statusIcon} text-primary-500`} />;
+    if (s === '5')                     return <CheckCheck className={`${waChat.statusIcon} text-primary-500`} />;
+    if (s === 'failed'   || s === '0') return <X className={`${waChat.statusIcon} text-red-500`} />;
     // 1 = pending/clock — single grey tick
-    if (s === '1' || s === 'pending') return <Check className="w-6 h-6 text-gray-400" />;
+    if (s === '1' || s === 'pending') return <Check className={`${waChat.statusIcon} text-gray-400`} />;
     return null;
   };
 
@@ -142,11 +136,11 @@ export function MessageBubble({
     
     switch (type) {
       case 'bot':
-        return <Bot className="w-6 h-6 text-primary-600" />;
+        return <Bot className="w-4 h-4 text-primary-600" />;
       case 'campaign':
-        return <Megaphone className="w-6 h-6 text-orange-500" />;
+        return <Megaphone className="w-4 h-4 text-orange-500" />;
       case 'agent':
-        return <User className="w-6 h-6 text-primary-600" />;
+        return <User className="w-4 h-4 text-primary-600" />;
       default:
         return null;
     }
@@ -159,7 +153,7 @@ export function MessageBubble({
     )}>
       {/* Avatar (for incoming messages or if showAvatar is true) */}
       {!isOutgoing && showAvatar && (
-        <div className="w-12 h-12 rounded-full bg-primary-600 flex items-center justify-center text-white text-base font-semibold flex-shrink-0">
+        <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
           {renderSenderIcon() || message.message_text?.charAt(0)?.toUpperCase() || '?'}
         </div>
       )}
@@ -170,7 +164,7 @@ export function MessageBubble({
       )}>
         {/* Sender name for group messages (incoming only) — fall back to phone number */}
         {isGroup && !isOutgoing && (message.sender_name || message.sender_number) && (
-          <div className="text-[#667781] px-1 mb-0.5" style={{ fontSize: `${META_PX}px`, fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+          <div className={clsx(waChat.msgMeta, 'px-1 mb-0.5')}>
             {message.sender_name || `+${message.sender_number}`}
           </div>
         )}
@@ -190,13 +184,13 @@ export function MessageBubble({
                 : 'bg-[#f0f2f5] border-l-[#06cf9c]'
             )}>
               {/* Sender name - extract from JID */}
-              <div className="font-semibold text-[#06cf9c] mb-0.5 truncate" style={{ fontSize: `${META_PX}px` }}>
+              <div className={waChat.msgQuoteName}>
                 {message.quoted_message.sender.includes('@') 
                   ? message.quoted_message.sender.split('@')[0]
                   : message.quoted_message.sender}
               </div>
               {/* Quoted message content */}
-              <div className="text-[#667781] truncate flex items-center gap-1.5" style={{ fontSize: `${MSG_TEXT_PX}px`, fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+              <div className={clsx(waChat.msgQuoteBody, 'flex items-center gap-1.5')}>
                 {message.quoted_message.type === 'image' && <span>📷</span>}
                 {message.quoted_message.type === 'video' && <span>🎥</span>}
                 {message.quoted_message.type === 'audio' && <span>🎵</span>}
@@ -211,8 +205,7 @@ export function MessageBubble({
           ) &&
             !message.media_url && (
               <div
-                className="mb-2 p-3 bg-[#f0f2f5] rounded text-[#667781] border border-dashed border-gray-300 flex flex-col gap-2"
-                style={{ fontSize: `${MSG_TEXT_PX}px` }}
+                className={clsx(waChat.msgSecondary, 'mb-2 p-3 bg-[#f0f2f5] rounded border border-dashed border-gray-300 flex flex-col gap-2')}
               >
                 <div className="flex items-center gap-2">
                   <Loader2
@@ -233,8 +226,7 @@ export function MessageBubble({
                     type="button"
                     onClick={handleMediaRetry}
                     disabled={mediaRetrying}
-                    className="inline-flex items-center justify-center gap-1.5 self-start rounded-md border border-gray-300 bg-white px-2 py-1 text-[#111b21] hover:bg-gray-50 disabled:opacity-50"
-                    style={{ fontSize: `${TIME_PX}px` }}
+                    className={clsx(waChat.msgTime, 'inline-flex items-center justify-center gap-1.5 self-start rounded-md border border-gray-300 bg-white px-2 py-1 text-[#111b21] hover:bg-gray-50 disabled:opacity-50')}
                   >
                     <RefreshCw className={`w-4 h-4 ${mediaRetrying ? 'animate-spin' : ''}`} />
                     Retry
@@ -256,12 +248,12 @@ export function MessageBubble({
                   {imageLoadState === 'loading' && (
                     <div className="absolute inset-0 z-10 flex min-h-[120px] max-h-[300px] items-center justify-center gap-2 bg-[#f0f2f5] text-[#667781]">
                       <Loader2 className="h-7 w-7 animate-spin text-primary-500" aria-hidden />
-                      <span style={{ fontSize: `${TIME_PX}px` }}>Loading…</span>
+                      <span className={waChat.msgTime}>Loading…</span>
                     </div>
                   )}
                   {imageLoadState === 'error' && (
                     <div className="flex min-h-[120px] flex-col items-stretch justify-center gap-2 bg-[#f0f2f5] p-3 text-center text-[#667781]">
-                      <span style={{ fontSize: `${MSG_TEXT_PX}px` }}>Couldn’t load image</span>
+                      <span className={waChat.msgSecondary}>Couldn’t load image</span>
                       {onMediaRefresh && (
                         <button
                           type="button"
@@ -270,8 +262,7 @@ export function MessageBubble({
                             handleMediaRetry();
                           }}
                           disabled={mediaRetrying}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[#111b21] hover:bg-gray-50 disabled:opacity-50"
-                          style={{ fontSize: `${TIME_PX}px` }}
+                          className={clsx(waChat.msgTime, 'inline-flex items-center justify-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[#111b21] hover:bg-gray-50 disabled:opacity-50')}
                         >
                           <RefreshCw className={`h-4 w-4 ${mediaRetrying ? 'animate-spin' : ''}`} />
                           Retry
@@ -292,7 +283,7 @@ export function MessageBubble({
                   />
                   {imageLoadState === 'ready' && (
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition flex items-center justify-center pointer-events-none">
-                      <span className="opacity-0 group-hover:opacity-100 text-white bg-black bg-opacity-50 px-3 py-1 rounded" style={{ fontSize: `${TIME_PX}px` }}>
+                      <span className={clsx(waChat.msgTime, 'opacity-0 group-hover:opacity-100 text-white bg-black bg-opacity-50 px-3 py-1 rounded')}>
                         Click to view
                       </span>
                     </div>
@@ -311,7 +302,7 @@ export function MessageBubble({
                   >
                     Your browser does not support video playback.
                   </video>
-                    <div className="text-center text-gray-500 mt-1" style={{ fontSize: `${TIME_PX}px` }}>
+                    <div className={clsx(waChat.msgTime, 'text-center text-gray-500 mt-1')}>
                     Click to play in full screen
                   </div>
                 </div>
@@ -332,7 +323,7 @@ export function MessageBubble({
               )}
               
               {!['image', 'video', 'document', 'audio'].includes(message.message_type || 'image') && (
-                <div className="p-4 bg-gray-50 rounded border border-gray-200 text-gray-600" style={{ fontSize: `${MSG_TEXT_PX}px` }}>
+                <div className={clsx(waChat.msgSecondary, 'p-4 bg-gray-50 rounded border border-gray-200')}>
                   <span className="mr-2">
                     {message.message_type === 'sticker' ? '🎭' : '📎'}
                   </span>
@@ -351,17 +342,14 @@ export function MessageBubble({
 
           {/* Text / Caption */}
           {message.message_text && (
-            <div
-              className="whitespace-pre-wrap break-words"
-              style={{ fontSize: `${MSG_TEXT_PX}px`, lineHeight: `${MSG_LINE_PX}px`, fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}
-            >
+            <div className={clsx(waChat.msgText, 'whitespace-pre-wrap break-words')}>
               {linkifyText(message.message_text)}
             </div>
           )}
           
           {/* Fallback for media-only messages without text */}
           {message.media_url && !message.message_text && (
-            <div className="text-gray-400 italic" style={{ fontSize: `${TIME_PX}px` }}>
+            <div className={waChat.msgCaption}>
               {message.message_type === 'image' ? 'Photo' :
                message.message_type === 'video' ? 'Video' :
                message.message_type === 'document' ? 'Document' :
@@ -376,19 +364,19 @@ export function MessageBubble({
                 <div
                   key={idx}
                   className={clsx(
-                    'px-3 py-2 rounded font-medium border',
+                    waChat.msgBtn,
+                    'px-3 py-2 rounded border',
                     isOutgoing
                       ? 'bg-white/80 border-white/60 text-[#111b21]'
                       : 'bg-gray-50 border-gray-200 text-gray-700'
                   )}
-                  style={{ fontSize: `${BTN_PX}px` }}
                 >
                   {btn.title}
                   {btn.type === 'call' && btn.phone && (
-                    <span className="ml-1 opacity-75" style={{ fontSize: `${TIME_PX}px` }}>📞 {btn.phone}</span>
+                    <span className={clsx(waChat.msgTime, 'ml-1 opacity-75')}>📞 {btn.phone}</span>
                   )}
                   {btn.type === 'url' && btn.url && (
-                    <span className="ml-1 opacity-75" style={{ fontSize: `${TIME_PX}px` }}>🔗</span>
+                    <span className={clsx(waChat.msgTime, 'ml-1 opacity-75')}>🔗</span>
                   )}
                 </div>
               ))}
@@ -401,7 +389,7 @@ export function MessageBubble({
           'flex items-center gap-1 mt-0.5 justify-end',
           isOutgoing ? 'flex-row' : 'flex-row-reverse'
         )}>
-          <span className="text-[#667781]" style={{ fontSize: `${TIME_PX}px`, fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>{timeStr}</span>
+          <span className={waChat.msgTime}>{timeStr}</span>
           {isOutgoing && renderStatusIcon()}
         </div>
 
@@ -413,7 +401,7 @@ export function MessageBubble({
           )}>
             <div className="flex gap-0.5 bg-white border border-gray-200 rounded-full px-2 py-0.5 shadow-sm">
               {[...new Map(message.reactions.map(r => [r.reaction, r])).values()].map(r => (
-                <span key={r.reaction} style={{ fontSize: '16px' }}>{r.reaction}</span>
+                <span key={r.reaction} className={waChat.reactionEmoji}>{r.reaction}</span>
               ))}
             </div>
           </div>
@@ -422,8 +410,8 @@ export function MessageBubble({
 
       {/* Avatar (for outgoing messages if showAvatar is true) */}
       {isOutgoing && showAvatar && type === 'agent' && (
-        <div className="w-12 h-12 rounded-full bg-primary-600 flex items-center justify-center text-white text-base font-semibold flex-shrink-0">
-          <User className="w-6 h-6" />
+        <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-white flex-shrink-0">
+          <User className="w-4 h-4" />
         </div>
       )}
 

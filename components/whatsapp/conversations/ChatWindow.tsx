@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/Textarea';
 import { MessageBubble } from './MessageBubble';
 import { ExportButton } from './ExportButton';
 import { SavedRepliesModal } from './SavedRepliesModal';
+import { waChat } from '@/lib/whatsapp-chat-typography';
+import { clsx } from 'clsx';
 import { Toast } from '@/components/ui/Toast';
 
 export interface Conversation {
@@ -443,9 +445,9 @@ export function ChatWindow({
             
             {/* Name and phone */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-medium text-white truncate" style={{ fontSize: '32px', lineHeight: '40px' }}>{displayName}</h3>
+              <h3 className={waChat.headerTitle}>{displayName}</h3>
               {!conversation.is_group && conversation.customer_phone && (
-                <p className="text-white/80" style={{ fontSize: '24px', lineHeight: '30px' }}>{formatPhoneNumber(conversation.customer_phone)}</p>
+                <p className={waChat.headerSub}>{formatPhoneNumber(conversation.customer_phone)}</p>
               )}
             </div>
           </div>
@@ -556,7 +558,7 @@ export function ChatWindow({
         
         {!hasMoreMessages && messages.length > 0 && (
           <div className="flex justify-center py-3">
-            <div className="text-gray-400 bg-gray-100 px-3 py-1 rounded-full" style={{ fontSize: '25.6px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+            <div className={clsx(waChat.datePill, 'text-gray-400 bg-gray-100')}>
               Beginning of conversation
             </div>
           </div>
@@ -617,7 +619,7 @@ export function ChatWindow({
                 if (item.type === 'date') {
                   return (
                     <div key={item.id} className="flex justify-center my-2">
-                      <span className="bg-[#ffffffd9] text-[#54656f] px-3 py-1 rounded-full" style={{ fontSize: '25.6px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                      <span className={waChat.datePill}>
                         {item.dateLabel}
                       </span>
                     </div>
@@ -660,7 +662,7 @@ export function ChatWindow({
                       }}
                     >
                       <div className="flex justify-center my-2">
-                        <span className="bg-[#ffffffd9] text-[#54656f] px-3 py-1 rounded-full" style={{ fontSize: '25.6px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                        <span className={waChat.datePill}>
                         {item.dateLabel}
                       </span>
                       </div>
@@ -796,8 +798,7 @@ export function ChatWindow({
               onKeyDown={handleKeyDown}
               placeholder="Type a message or / for saved replies"
               rows={1}
-              className="flex-1 resize-none min-h-[40px] max-h-[200px] border-0 focus:ring-0 focus:outline-none p-0"
-              style={{ fontSize: '30px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif', lineHeight: '40px' }}
+              className="flex-1 resize-none min-h-[40px] max-h-[200px] border-0 focus:ring-0 focus:outline-none p-0 wa-composer-input"
             />
             {/* Saved replies icon */}
             <button

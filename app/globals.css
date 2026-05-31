@@ -591,6 +591,76 @@
     font-size: var(--text-caption);
     line-height: var(--text-caption-lh);
   }
+
+  /** WhatsApp chat — token-backed; matches WhatsApp Web density on mobile + desktop. */
+  .wa-msg-text {
+    @apply text-sm leading-[19px] text-[#111b21];
+  }
+
+  .wa-msg-meta {
+    @apply text-xs leading-4 text-[#667781];
+  }
+
+  .wa-msg-time {
+    @apply text-caption leading-none text-[#667781];
+  }
+
+  .wa-msg-quote-name {
+    @apply text-xs font-semibold leading-4 text-[#06cf9c] truncate;
+  }
+
+  .wa-msg-quote-body {
+    @apply text-sm leading-[19px] text-[#667781] truncate;
+  }
+
+  .wa-msg-btn {
+    @apply text-sm font-medium;
+  }
+
+  .wa-msg-caption {
+    @apply text-caption italic text-gray-400;
+  }
+
+  .wa-msg-secondary {
+    @apply text-sm text-[#667781];
+  }
+
+  .wa-chat-header-title {
+    @apply text-base font-medium leading-tight text-white truncate;
+  }
+
+  .wa-chat-header-sub {
+    @apply text-sm leading-snug text-white/80;
+  }
+
+  .wa-date-pill {
+    @apply text-xs leading-none text-[#54656f] bg-[#ffffffd9] px-3 py-1 rounded-full;
+  }
+
+  .wa-composer-input {
+    font-size: var(--text-input);
+    line-height: var(--text-input-lh);
+  }
+
+  .wa-list-name {
+    @apply text-sm font-medium leading-tight text-[#111b21] truncate;
+  }
+
+  .wa-list-phone {
+    @apply text-xs leading-4 text-[#667781] truncate;
+  }
+
+  .wa-list-preview {
+    @apply text-sm leading-[19px] font-normal text-[#667781] truncate;
+  }
+
+  .wa-doc-title {
+    @apply text-sm leading-tight text-[#111b21] truncate;
+  }
+
+  .wa-doc-meta {
+    @apply text-xs leading-4 text-[#667781];
+  }
   
   .button-primary {
     @apply btn-primary;

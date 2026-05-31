@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import { clsx } from 'clsx';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Search, Loader2, Pin, BellOff, Bot, Megaphone, User, Filter, Tag, MoreVertical } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { NewConversationModal } from './NewConversationModal';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { ExportButton } from './ExportButton';
+import { waChat } from '@/lib/whatsapp-chat-typography';
 
 export interface Conversation {
   id: string;
@@ -357,7 +359,7 @@ export function ConversationList({
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-medium text-[#111b21] truncate" style={{ fontSize: '15px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                      <h4 className={waChat.listName}>
                         {displayName}
                       </h4>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -433,14 +435,14 @@ export function ConversationList({
                     
                     {/* Phone number (if not a group) */}
                     {phoneNumber && (
-                      <p className="text-[#667781] mb-1 truncate" style={{ fontSize: '12.8px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                      <p className={clsx(waChat.listPhone, 'mb-1')}>
                         {phoneNumber}
                       </p>
                     )}
 
                     {/* Last message and unread */}
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[#667781] truncate flex-1 font-normal" style={{ fontSize: '14.2px', fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+                      <p className={waChat.listPreview}>
                         {formatLastMessage(conv.last_message_text, conv.last_message_direction)}
                       </p>
                       {conv.unread_count > 0 && (

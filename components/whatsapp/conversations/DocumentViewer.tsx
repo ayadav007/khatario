@@ -1,6 +1,9 @@
 'use client';
 
+import { waChat } from '@/lib/whatsapp-chat-typography';
+
 import React, { useState, useEffect } from 'react';
+import { clsx } from 'clsx';
 import { Download, X } from 'lucide-react';
 
 interface DocumentViewerProps {
@@ -106,10 +109,10 @@ export function DocumentViewer({
 
           {/* File Info */}
           <div className="flex-1 min-w-0 pr-2">
-            <div className="font-normal text-[#111b21] truncate mb-1" style={{ fontSize: '28px', lineHeight: '36px' }}>
+            <div className={clsx(waChat.docTitle, 'mb-1')}>
               {fileName}
             </div>
-            <div className="text-[#667781]" style={{ fontSize: '24px', lineHeight: '30px' }}>
+            <div className={waChat.docMeta}>
               {getMetadata()}
             </div>
           </div>
