@@ -141,12 +141,15 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
     invoice.status === 'cancelled'
       ? invoice.payment_status || 'unpaid'
       : deriveInvoicePaymentStatus(invoice.grand_total, invoice.paid_amount, invoice.balance_amount ?? balance);
+  const openInvoiceView = () => {
+    window.location.assign(`/invoices/${invoiceId}/view`);
+  };
 
   const moreActions: NonNullable<React.ComponentProps<typeof DetailPanelShell>['moreActions']> = [
     {
-      label: 'Open full page',
+      label: 'View invoice',
       icon: ExternalLink,
-      onClick: () => router.push(`/invoices/${invoiceId}`),
+      onClick: openInvoiceView,
     },
   ];
 
@@ -182,6 +185,15 @@ export function InvoiceDetailPanel({ invoiceId, onClose }: InvoiceDetailPanelPro
             <StatusBadge status={invoice.status} />
             <StatusBadge status={paymentStatusForBadge || 'unpaid'} />
           </section>
+
+          <button
+            type="button"
+            onClick={openInvoiceView}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-semibold text-text-primary shadow-sm transition-colors hover:bg-gray-50 md:w-auto"
+          >
+            <ExternalLink className="h-4 w-4" />
+            View invoice
+          </button>
 
           <section className="grid grid-cols-2 gap-4 text-sm">
             <div>
