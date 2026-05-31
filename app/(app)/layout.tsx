@@ -56,28 +56,25 @@ function AppRouteLayoutInner({
   const pathname = usePathname();
   const [posMode, setPosMode] = useState(false);
   
-  // Check POS mode on mount and listen for changes
+  // Event-driven POS mode sync (no polling — 500ms interval starved the main thread).
   useEffect(() => {
-    const checkPosMode = () => {
-      setPosMode(getPosMode());
+    const syncPosMode = () => setPosMode(getPosMode());
+
+    syncPosMode();
+
+    window.addEventListener('posModeChanged', syncPosMode);
+
+    // Cross-tab writes to pos_mode_enabled (same-tab uses posModeChanged above).
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pos_mode_enabled' || e.key === null) {
+        syncPosMode();
+      }
     };
-    
-    // Initial check
-    checkPosMode();
-    
-    // Listen for POS mode changes
-    const handlePosModeChange = () => {
-      checkPosMode();
-    };
-    
-    window.addEventListener('posModeChanged', handlePosModeChange);
-    
-    // Also check periodically (in case localStorage is changed directly)
-    const interval = setInterval(checkPosMode, 500);
-    
+    window.addEventListener('storage', onStorage);
+
     return () => {
-      window.removeEventListener('posModeChanged', handlePosModeChange);
-      clearInterval(interval);
+      window.removeEventListener('posModeChanged', syncPosMode);
+      window.removeEventListener('storage', onStorage);
     };
   }, []);
 

@@ -33,6 +33,7 @@ export function getPosMode(): boolean {
 export function setPosMode(enabled: boolean): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(POS_MODE_KEY, enabled ? 'true' : 'false');
+  window.dispatchEvent(new Event('posModeChanged'));
 }
 
 /**

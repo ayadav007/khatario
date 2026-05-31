@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { ChevronDown, Info, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 
 interface AgingBreakdown {
   current: number;
@@ -58,6 +59,8 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
         </div>
         <Link
           href="/invoices/new"
+          // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
+          onClick={(e) => handleShellNavClick(e, '/invoices/new')}
           className="btn-primary inline-flex h-8 shrink-0 items-center gap-0.5 px-2.5 text-xs md:h-9 md:px-3"
         >
           <Plus className="h-3.5 w-3.5 md:h-4 md:w-4" />

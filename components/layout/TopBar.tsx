@@ -488,6 +488,8 @@ export const TopBar: React.FC<TopBarProps> = ({
             {mobileListCreate ? (
               <Link
                 href={mobileListCreate.href}
+                // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
+                onClick={(e) => handleShellNavClick(e, mobileListCreate.href)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
                 aria-label={mobileListCreate.ariaLabel}
                 title={mobileListCreate.ariaLabel}

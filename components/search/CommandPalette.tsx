@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, FileText, Users, Package, X, ArrowRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { commitShellNavigation } from '@/lib/navigation/app-shell-navigate';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SearchResult {
@@ -209,7 +210,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
               <p className="text-sm font-medium mb-2">Quick Actions</p>
               <div className="space-y-1 text-left">
                 <button
-                  onClick={() => { router.push('/invoices/new'); onClose(); }}
+                  onClick={() => {
+                    onClose();
+                    // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
+                    commitShellNavigation('/invoices/new');
+                  }}
                   className="w-full px-4 py-2 text-left hover:bg-gray-50 rounded text-sm"
                 >
                   <ArrowRight className="w-4 h-4 inline mr-2" />

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { FileText, Package, Users, ShoppingCart, Plus, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { commitShellNavigation } from '@/lib/navigation/app-shell-navigate';
 import { clsx } from 'clsx';
 
 interface QuickAction {
@@ -42,7 +42,6 @@ const quickActions: QuickAction[] = [
 export const QuickActionsFAB: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -59,7 +58,8 @@ export const QuickActionsFAB: React.FC = () => {
 
   const handleActionClick = (href: string) => {
     setIsOpen(false);
-    router.push(href);
+    // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
+    commitShellNavigation(href);
   };
 
   return (

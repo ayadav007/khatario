@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Search, Plus, Share2, Eye, Loader2, CreditCard, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
+import { handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { format } from 'date-fns';
@@ -594,7 +595,12 @@ function InvoicesPageContent() {
                   </button>
                 ))}
               </div>
-              <Link href="/invoices/new" className="hidden md:inline-flex">
+              <Link
+                href="/invoices/new"
+                className="hidden md:inline-flex"
+                // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
+                onClick={(e) => handleShellNavClick(e, '/invoices/new')}
+              >
                 <Button className="h-10 px-4">
                   <Plus className="w-4 h-4 mr-2" />
                   New Invoice
