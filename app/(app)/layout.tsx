@@ -26,6 +26,7 @@ import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
+import { AppShellRecovery } from '@/components/layout/AppShellRecovery';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
@@ -94,6 +95,7 @@ function AppRouteLayoutInner({
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
         <MobileBackNavigation />
+        <AppShellRecovery />
         <LastRouteTracker />
         <div className="h-screen w-screen overflow-hidden bg-background">
           <NetworkStatusBanner />
@@ -114,6 +116,7 @@ function AppRouteLayoutInner({
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
         <MobileBackNavigation />
+        <AppShellRecovery />
         <PullToRefresh />
         <LastRouteTracker />
         <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">

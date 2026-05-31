@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import { ChevronDown, Info, Plus } from 'lucide-react';
 import Link from 'next/link';
 
@@ -57,11 +56,12 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
             Unpaid ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
         </div>
-        <Link href="/invoices/new" className="shrink-0">
-          <Button variant="primary" size="sm" className="h-8 gap-0.5 px-2.5 text-xs md:h-9 md:px-3">
-            <Plus className="h-3.5 w-3.5 md:h-4 md:w-4" />
-            New
-          </Button>
+        <Link
+          href="/invoices/new"
+          className="btn-primary inline-flex h-8 shrink-0 items-center gap-0.5 px-2.5 text-xs md:h-9 md:px-3"
+        >
+          <Plus className="h-3.5 w-3.5 md:h-4 md:w-4" />
+          New
         </Link>
       </div>
 

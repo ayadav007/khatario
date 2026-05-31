@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { isStaleChunkError, recoverFromStaleShell } from '@/lib/shell-recovery';
 
 /**
  * Registers the app-shell service worker on the remote web origin (staging/PWA).
@@ -30,6 +31,13 @@ export function ServiceWorkerRegistration() {
       void navigator.serviceWorker.ready.then((reg) => reg.update());
     };
     window.addEventListener('focus', onFocus);
+
+    const onError = (event: ErrorEvent) => {
+      if (isStaleChunkError(event.message ?? '')) {
+        void recoverFromStaleShell();
+      }
+    };
+    window.addEventListener('error', onError);
 
     const register = async () => {
       try {
@@ -67,6 +75,7 @@ export function ServiceWorkerRegistration() {
     return () => {
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('error', onError);
     };
   }, []);
 
