@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/payment-methods
  * List payment methods for a business

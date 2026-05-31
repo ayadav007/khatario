@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { decrypt } from '@/lib/cloud-storage';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cloud-storage/google/auth
  * Initiate Google Drive OAuth flow using business-specific credentials

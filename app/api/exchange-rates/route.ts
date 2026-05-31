@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/exchange-rates
  * Get exchange rate for a date

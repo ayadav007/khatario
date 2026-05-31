@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const OTP_SEND_LIMIT = 10;
 const OTP_SEND_WINDOW_MS = 15 * 60 * 1000;
 

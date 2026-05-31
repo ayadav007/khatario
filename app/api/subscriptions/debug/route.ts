@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryOne, queryRows } from '@/lib/db';
 import { checkLimit } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/debug
  * Debug endpoint — development only; uses authenticated business from session (no cross-tenant query param).

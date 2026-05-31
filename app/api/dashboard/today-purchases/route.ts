@@ -3,6 +3,8 @@ import { queryRows } from '@/lib/db';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/dashboard/today-purchases
  * Get purchases made today (same logic as dashboard)

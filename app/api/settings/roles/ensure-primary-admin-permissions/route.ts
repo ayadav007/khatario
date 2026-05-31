@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/settings/roles/ensure-primary-admin-permissions
  * Ensures Primary Admin role has all permissions for all modules

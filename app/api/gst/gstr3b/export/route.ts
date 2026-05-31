@@ -5,6 +5,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getGstr3BPortalExport } from '@/lib/gst/gstr3b-portal-export';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/gst/gstr3b/export?period=YYYY-MM&branch_id=optional
  * Portal-style GSTR-3B JSON from filing snapshot (when filed/revised) or live ledger generator.

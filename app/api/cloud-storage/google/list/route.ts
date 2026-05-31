@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleDriveService } from '@/lib/cloud-storage';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cloud-storage/google/list
  * List backup files from Google Drive

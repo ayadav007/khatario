@@ -4,6 +4,8 @@ import { queryRows, queryOne, getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/period-locks
  * Get period locks for a business/branch

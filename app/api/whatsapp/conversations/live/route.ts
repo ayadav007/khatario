@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint to fetch conversations directly from Baileys store (live mode)
  * This bypasses database storage and shows chats like WhatsApp Web

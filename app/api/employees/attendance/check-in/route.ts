@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/employees/attendance/check-in
  * Check-in for attendance (face recognition, mobile app, or OTP)

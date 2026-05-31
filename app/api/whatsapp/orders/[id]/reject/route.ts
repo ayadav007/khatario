@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/whatsapp/orders/[id]/reject
  * Reject WhatsApp order and notify customer

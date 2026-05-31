@@ -4,6 +4,8 @@ import { generatePayslipPdf } from '@/lib/payslip-generator';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/salary/payslips/[id]/pdf
  * Generate and download payslip PDF

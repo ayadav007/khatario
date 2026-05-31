@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { getFirstBundleStockPreflightFailure } from '@/lib/invoice-bundle-stock';

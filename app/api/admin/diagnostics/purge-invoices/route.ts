@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Admin diagnostic endpoint: purge test invoices
  *

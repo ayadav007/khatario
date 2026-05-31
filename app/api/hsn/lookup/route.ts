@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { GroqHSNValidator } from '@/lib/services/groq-hsn-validator';
 
+export const dynamic = 'force-dynamic';
+
 interface HSNResult {
   code: string;
   description: string;

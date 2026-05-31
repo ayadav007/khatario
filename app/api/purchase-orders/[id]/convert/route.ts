@@ -7,6 +7,8 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { assertItemBelongsToBusiness, ItemOwnershipError } from '@/lib/item-ownership';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/purchase-orders/[id]/convert
  * Convert a purchase order to a purchase

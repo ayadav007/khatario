@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/ledger/balance/[accountId]
  * Get account balance as of a specific date (branch-scoped when branch_id is provided).

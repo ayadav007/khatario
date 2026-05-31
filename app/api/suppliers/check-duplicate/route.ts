@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { normalizeBusinessName, normalizePhone } from '@/lib/supplier-matching';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Check for duplicate suppliers before creation
  * GET /api/suppliers/check-duplicate?business_id=xxx&name=xxx&phone=xxx&gstin=xxx

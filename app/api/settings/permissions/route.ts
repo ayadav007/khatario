@@ -3,6 +3,8 @@ import { getUserPermissions } from '@/lib/permissions';
 import { queryRows, queryOne } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/permissions
  * Get permissions for a user in the format expected by the frontend

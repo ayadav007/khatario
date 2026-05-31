@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/thresholds?supplier_business_id=xxx
  * Get all thresholds set by a supplier

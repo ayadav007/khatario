@@ -4,6 +4,8 @@ import { queryRows, queryOne } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/bank-accounts
  * List bank accounts

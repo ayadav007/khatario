@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/user/product-tour
  * Marks the product tour as completed or dismissed (stops auto-show after first login).

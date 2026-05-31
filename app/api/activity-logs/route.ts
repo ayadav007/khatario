@@ -7,6 +7,8 @@ import {
 import { queryRows } from '@/lib/db';
 import { ActivityLog } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/activity-logs
  * Get activity logs

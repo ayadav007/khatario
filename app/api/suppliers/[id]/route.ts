@@ -6,6 +6,8 @@ import { Supplier } from '@/types/database';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/[id]
  * Fetch a single supplier with transactions

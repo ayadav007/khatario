@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { Item } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/items/[id]/transactions
  * Returns the sales and purchase transactions containing this item, merged into a unified list.

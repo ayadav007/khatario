@@ -7,6 +7,8 @@ import { GSTR1Generator } from '@/lib/gst/gstr1';
 import { buildGstr1Snapshot } from '@/lib/gst/gstr1-snapshot';
 import { replaceGstr1FilingDocuments } from '@/lib/gst/gstr1-filing-documents';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { filingId: string } }

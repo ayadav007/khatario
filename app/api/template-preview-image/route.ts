@@ -5,6 +5,8 @@ import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { injectPrintHtmlEnhancements, resolvePrintConfig } from '@/lib/print-config';
 
+export const dynamic = 'force-dynamic';
+
 function getSampleRenderData(templateId: string) {
   const isComposition = templateId.includes('composition');
   const isGstDetailed = templateId === 'gst_detailed';

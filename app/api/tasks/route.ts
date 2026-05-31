@@ -3,6 +3,8 @@ import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Task } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tasks
  * List tasks

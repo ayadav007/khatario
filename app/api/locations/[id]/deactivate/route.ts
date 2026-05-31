@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/locations/[id]/deactivate
  * Deactivate a warehouse with validation

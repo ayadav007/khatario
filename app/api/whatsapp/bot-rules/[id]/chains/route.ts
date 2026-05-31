@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for managing bot rule chains
  * POST - Create/update a chain mapping

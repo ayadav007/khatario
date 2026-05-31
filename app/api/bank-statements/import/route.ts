@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/bank-statements/import
  * Import bank statement (CSV/Excel)

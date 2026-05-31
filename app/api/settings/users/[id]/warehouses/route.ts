@@ -3,6 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/users/[id]/warehouses
  * Get warehouse access for a specific user

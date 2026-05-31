@@ -15,6 +15,8 @@ import {
   TRIAL_EXTENSION_DAYS,
 } from '@/lib/subscription/trial-extension';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/current
  * Get the current subscription for a business

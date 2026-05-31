@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for conversation automation timeline
  */

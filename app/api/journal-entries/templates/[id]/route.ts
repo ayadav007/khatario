@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/journal-entries/templates/[id]
  * Get a specific journal entry template

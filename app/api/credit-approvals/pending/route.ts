@@ -3,6 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/credit-approvals/pending
  * List all pending credit approvals for a business

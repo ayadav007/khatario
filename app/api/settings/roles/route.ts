@@ -3,6 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { query, queryRows, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/roles
  * List all roles for a business with their permissions

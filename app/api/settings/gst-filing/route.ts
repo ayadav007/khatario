@@ -4,6 +4,8 @@ import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import type { Gstr3BFilingFrequency } from '@/lib/gst/gst-interest';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/gst-filing
  * Org defaults for GSTR-3B due-date rules (used by GST status, charges, and filing unless overridden per request).

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for managing conversation labels
  * GET - Get all labels for a conversation

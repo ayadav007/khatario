@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * GSTR-2B Import API
  * 

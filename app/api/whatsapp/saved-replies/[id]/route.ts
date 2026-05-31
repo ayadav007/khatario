@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH  /api/whatsapp/saved-replies/[id]
  * DELETE /api/whatsapp/saved-replies/[id]

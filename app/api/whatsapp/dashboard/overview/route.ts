@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for WhatsApp CRM Dashboard Overview
  * GET /api/whatsapp/dashboard/overview

@@ -9,6 +9,8 @@ import { getRedisConnection } from '@/lib/queue/redis';
 import { queryOne } from '@/lib/db';
 import Redis from 'ioredis';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Server-Sent Events (SSE) endpoint for real-time notifications
  * 

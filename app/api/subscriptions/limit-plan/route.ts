@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { LIMIT_KEY_BY_TYPE, type LimitCheckType } from '@/lib/subscription/limit-registry';
 import { getLowestPlanForLimit } from '@/lib/subscription/limit-plan-recommendation';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/limit-plan?limit_type=items&current=14
  * Lowest paid plan that would allow one more unit than `current`.

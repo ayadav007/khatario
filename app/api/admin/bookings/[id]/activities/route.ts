@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/admin/bookings/[id]/activities
  * Add activity to booking (Admin only)

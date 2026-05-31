@@ -4,6 +4,8 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Helper function to safely query a table (returns empty array if table doesn't exist)
  */

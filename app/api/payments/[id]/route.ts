@@ -5,6 +5,8 @@ import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpe
 import { getUserAccessibleBranchIds } from '@/lib/branch-access';
 import { isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/payments/[id]
  * Single payment with joined customer/supplier names.

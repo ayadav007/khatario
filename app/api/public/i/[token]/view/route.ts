@@ -5,6 +5,8 @@ import {
 } from '@/lib/customer-surface';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 

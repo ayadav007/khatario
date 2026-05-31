@@ -4,6 +4,8 @@ import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { mergePortalTheme, normalizePortalThemeJson } from '@/lib/portal-theme';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/portal-theme
  * Effective theme for the signed-in user's business (same shape as session.portalTheme).

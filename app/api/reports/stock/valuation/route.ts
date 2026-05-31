@@ -5,6 +5,8 @@ import { getStockValue, ValuationMethod } from '@/lib/stock-valuation';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/stock/valuation
  * Generate stock valuation report

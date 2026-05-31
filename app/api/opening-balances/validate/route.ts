@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PUT /api/opening-balances/validate
  * Validate opening balance totals (ensure debits = credits for accounts)

@@ -5,6 +5,8 @@ import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/attendance
  * List attendance records

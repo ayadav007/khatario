@@ -3,6 +3,8 @@ import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { Shift } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/shifts
  * List all shifts for a business

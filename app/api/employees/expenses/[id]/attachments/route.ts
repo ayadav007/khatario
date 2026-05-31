@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { ExpenseAttachment } from '@/types/database';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/expenses/[id]/attachments
  * Get attachments for an expense

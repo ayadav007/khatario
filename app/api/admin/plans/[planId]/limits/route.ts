@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/plans/[planId]/limits
  * 

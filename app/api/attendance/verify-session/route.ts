@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/attendance/verify-session
  * Verify attendance session token

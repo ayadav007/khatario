@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/stock-requests/[id]/link
  * Body: { purchase_order_id?, sales_order_id?, invoice_id?, purchase_id? }

@@ -3,6 +3,8 @@ import { queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export interface ActivityLogRow {
   id: string;
   action_type: string;

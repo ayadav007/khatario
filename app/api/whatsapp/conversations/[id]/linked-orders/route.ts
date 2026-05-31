@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/whatsapp/conversations/[id]/linked-orders?business_id=
  *

@@ -6,6 +6,8 @@ import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 import { finalizePrintHtml } from '@/lib/pdf-generator';
 import { injectThermalScreenPreviewCss } from '@/lib/thermal-preview';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

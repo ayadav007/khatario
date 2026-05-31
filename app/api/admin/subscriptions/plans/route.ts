@@ -4,6 +4,8 @@ import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/subscriptions/plans
  * Fetch all subscription plans

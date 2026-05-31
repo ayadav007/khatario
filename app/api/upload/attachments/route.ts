@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/upload/attachments
  * Upload attachments for invoices or other documents

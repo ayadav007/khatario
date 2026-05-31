@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/notifications?business_id=xxx&limit=20
  * Get notifications for a business; user is taken from JWT (x-authenticated-user-id).

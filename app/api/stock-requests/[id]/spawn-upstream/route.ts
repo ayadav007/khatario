@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant, assertLinkedSupplier } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/stock-requests/[id]/spawn-upstream
  * Body: { upstream_business_id, requested_qty, need_by_date?, notes?, item_id? }

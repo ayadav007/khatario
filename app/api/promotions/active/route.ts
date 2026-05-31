@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/promotions/active?business_id=xxx&type=banner
  * Fetches active promotions targeted at a specific business

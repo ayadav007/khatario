@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne, queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/settings/users/fix-roles
  * Fix users without roles assigned - assigns Primary Admin role to primary admins

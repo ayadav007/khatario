@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleDriveService } from '@/lib/cloud-storage';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/cloud-storage/google/upload
  * Upload backup file to Google Drive

@@ -6,6 +6,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/expenses
  * Fetch all expenses for a business

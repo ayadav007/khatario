@@ -11,6 +11,8 @@ import {
 } from '@/lib/subscription/effective-plan';
 import { shouldOfferTrialExtension, TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
 
+export const dynamic = 'force-dynamic';
+
 /** Invalid JWT session: clear httpOnly cookies so the client cannot keep navigating with a ghost tenant. */
 function jsonSessionInvalid(
   status: number,

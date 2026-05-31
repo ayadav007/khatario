@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint to fetch and send messages in live mode (JID-based conversations)
  * This bypasses database storage and works directly with Baileys store

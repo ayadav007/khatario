@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/whatsapp/orders/[id]/approve
  * Approve WhatsApp order, convert to invoice, and notify customer

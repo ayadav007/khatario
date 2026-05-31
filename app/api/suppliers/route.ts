@@ -7,6 +7,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers
  * Fetch all suppliers for a business

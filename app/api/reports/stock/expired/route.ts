@@ -4,6 +4,8 @@ import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { fetchStockExpiryRows, parseAsOfDate } from '@/lib/reports/stock-expiry-report';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/stock/expired
  * Back-compat alias for expired batches only — same payload shape as /api/reports/stock/expiry?type=expired.

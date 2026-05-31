@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/locations/migrate-stock
  * Migrate existing items' stock to a warehouse

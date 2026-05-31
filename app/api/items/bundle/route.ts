@@ -7,6 +7,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { validateBundleComponentItems } from '@/lib/bundle-items-validation';
 
+export const dynamic = 'force-dynamic';
+
 type BundleComponentInput = { item_id: string; quantity: number | string };
 
 /**

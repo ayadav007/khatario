@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Socket.io API Route Handler for Next.js App Router
  * 

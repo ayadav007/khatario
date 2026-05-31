@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/plans
  * List active plans for in-app upgrade / change-plan UI (authenticated business users).

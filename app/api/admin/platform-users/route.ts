@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listPlatformAdmins, createPlatformAdmin } from '@/lib/platform-auth';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/platform-users
  * List all platform admins (super_admin only)

@@ -4,6 +4,8 @@ import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
 import { buildCustomerStatementHtml, type PartyStatementPrintPayload } from '@/lib/party-statement-print';
 import { GET as getStatementJson } from '../route';
 
+export const dynamic = 'force-dynamic';
+
 function safeFileName(name: string): string {
   return (name || 'statement').replace(/[^\w.-]+/g, '_').slice(0, 80);
 }

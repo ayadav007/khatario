@@ -4,6 +4,8 @@ import { sendPendingNotifications } from '@/lib/subscription/notifications';
 import { queryRows, query } from '@/lib/db';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 
+export const dynamic = 'force-dynamic';
+
 async function runSubscriptionCron() {
   const expiredCounts = await processExpiredSubscriptions();
   const notificationsSent = await sendPendingNotifications();

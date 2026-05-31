@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import type { BusinessDiscoveryVisibility } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/hub/profile/[businessId]
  * Authenticated hub profile + listings visible to viewer.

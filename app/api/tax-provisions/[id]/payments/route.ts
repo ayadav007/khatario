@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordTaxPayment, getTaxPayments } from '@/lib/services/tax-provision-calculator';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tax-provisions/[id]/payments
  * Get tax payments for a provision

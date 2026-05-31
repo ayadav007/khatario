@@ -3,6 +3,8 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { recordBillingTransaction } from '@/lib/platform-billing';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/admin/businesses/[id]/billing/record
  * Manually record a subscription payment outcome (support).

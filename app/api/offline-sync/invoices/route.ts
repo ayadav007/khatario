@@ -6,6 +6,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { INVOICE_LIST_CACHE_MAX } from '@/lib/offline/invoices/invoice-list-cache';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Latest invoice list rows for offline cache (max 100, no pagination).
  */

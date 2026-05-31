@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for fetching users/agents for WhatsApp conversation assignment
  */

@@ -6,6 +6,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { calendarMonthBounds } from '@/lib/gst/gst-period-lock';
 import { reviseGstReturn } from '@/lib/gst/gst-filing';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/gst/revise
  * Move a filed return to `revised` so books can be corrected (GSTR-3B amendment workflow).

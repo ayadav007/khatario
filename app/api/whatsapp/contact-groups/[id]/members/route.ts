@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/whatsapp/contact-groups/[id]/members
  * Get all members of a contact group

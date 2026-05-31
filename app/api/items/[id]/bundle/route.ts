@@ -4,6 +4,8 @@ import { Item } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/items/[id]/bundle
  * Bundle header item plus components with nested item snapshot (qty per bundle).

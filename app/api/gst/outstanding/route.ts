@@ -3,6 +3,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getOutstandingGst } from '@/lib/gst/gst-settlement';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/gst/outstanding?as_on_date=YYYY-MM-DD&branch_id=optional
  * Ledger balances for output GST + RCM (2155) as at date.

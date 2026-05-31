@@ -4,6 +4,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { format, eachMonthOfInterval, subDays } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/dashboard/cash-flow
  * Get monthly cash flow data for fiscal year

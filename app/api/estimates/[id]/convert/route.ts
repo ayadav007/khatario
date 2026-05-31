@@ -4,6 +4,8 @@ import { checkLimitInTransaction } from '@/lib/subscription';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/estimates/[id]/convert
  * Convert estimate to invoice

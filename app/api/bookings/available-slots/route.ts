@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { parseISO, getDay } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/bookings/available-slots?date=2025-01-15
  * Returns available time slots for a given date

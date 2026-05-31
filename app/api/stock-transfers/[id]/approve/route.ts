@@ -3,6 +3,8 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/stock-transfers/[id]/approve
  * Approve a stock transfer (changes status from 'draft' or 'pending_approval' to 'pending')

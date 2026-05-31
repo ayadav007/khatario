@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/bookings?status=pending&search=john&page=1&limit=20
  * List all bookings with filters (Admin only)

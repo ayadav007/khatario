@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to check WhatsApp Bot addon
 async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
   try {

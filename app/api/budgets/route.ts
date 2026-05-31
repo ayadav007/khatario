@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/budgets
  * List budgets

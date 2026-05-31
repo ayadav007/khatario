@@ -6,6 +6,8 @@ import { calculateWorkingDays, checkLeaveBalance } from '@/lib/leave-calculator'
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/leave-requests
  * List leave requests

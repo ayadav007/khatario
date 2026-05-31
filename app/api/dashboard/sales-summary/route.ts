@@ -4,6 +4,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { format, startOfMonth, endOfMonth, startOfDay } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/dashboard/sales-summary
  * Returns today's and this month's sales (excludes proforma)

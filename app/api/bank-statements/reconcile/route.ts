@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/bank-statements/reconcile
  * Auto-match bank statement transactions with ledger entries

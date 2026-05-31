@@ -4,6 +4,8 @@ import { finalizeClosingStock } from '@/lib/services/closing-stock-valuator';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/reports/stock/closing-stock/finalize
  * Finalize closing stock snapshot

@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { listGstReconciliationAlertHistory } from '@/lib/gst/gstr13b-alerts';
 import { resolveBranchId } from '@/lib/branch-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/gst/reconciliation/alerts/history?alert_id=UUID&limit=50&branch_id=
  */

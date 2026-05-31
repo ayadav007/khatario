@@ -6,6 +6,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getGstFilingStatus } from '@/lib/gst/gst-filing';
 import { parseGstDueDateQueryOverrides } from '@/lib/gst/gst-org-filing';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/gst/status?period=YYYY-MM&branch_id=optional&filing_frequency=&qrmp_due_day=
  * Due-date resolution matches GET /api/gst/charges for the same query params.

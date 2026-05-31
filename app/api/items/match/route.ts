@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/items/match
  * Find matching items using HSN/SAC code and fuzzy name matching

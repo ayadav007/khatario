@@ -3,6 +3,8 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { setBusinessSuspended } from '@/lib/admin-business-ops';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } },

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/suppliers/match
  * Find matching suppliers using fuzzy matching and aliases

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllFeatureAccessForBusiness } from '@/lib/subscription/feature-access';
 import * as db from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/features/enabled
  * 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export interface TimelineEntry {
   id: string;
   kind: 'activity' | 'comment';

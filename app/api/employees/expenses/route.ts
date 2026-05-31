@@ -6,6 +6,8 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/expenses
  * List employee expenses

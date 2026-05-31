@@ -5,6 +5,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/sales-orders
  * Fetch all sales orders for a business

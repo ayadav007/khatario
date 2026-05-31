@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/categories?business_id=xxx
  * Fetch all item categories for a business

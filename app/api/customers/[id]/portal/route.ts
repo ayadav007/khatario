@@ -8,6 +8,8 @@ import {
 } from '@/lib/customer-surface';
 import { sendBusinessEmail } from '@/lib/business-email';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/customers/[id]/portal
  * Enable/disable customer portal + optional invite email.

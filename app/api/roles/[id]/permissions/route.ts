@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { RolePermission, Permission } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/roles/[id]/permissions
  * Get all permissions for a role

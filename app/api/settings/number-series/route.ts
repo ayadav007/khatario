@@ -4,6 +4,8 @@ import { query, queryOne, queryRows } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

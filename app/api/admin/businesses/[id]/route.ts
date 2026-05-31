@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/businesses/[id]
  * Get detailed information about a specific business

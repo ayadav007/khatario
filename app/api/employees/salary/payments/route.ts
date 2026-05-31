@@ -5,6 +5,8 @@ import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/salary/payments
  * List salary payments

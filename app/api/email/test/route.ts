@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { testEmailConfig } from '@/lib/email';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/email/test
  * Test email configuration

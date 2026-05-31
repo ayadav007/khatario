@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * GET  /api/whatsapp/saved-replies?business_id=&search=&category=
  * POST /api/whatsapp/saved-replies

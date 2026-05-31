@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionRule } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/commission-rules
  * List all commission rules for a business

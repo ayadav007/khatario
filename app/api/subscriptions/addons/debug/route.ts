@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import * as db from '@/lib/db';
 import { hasWhatsAppBotAddon, getBusinessAddons } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/addons/debug
  * Debug endpoint to check addon status

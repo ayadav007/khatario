@@ -3,6 +3,8 @@ import { queryOne, queryRows, query } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { requirePortalSession } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }

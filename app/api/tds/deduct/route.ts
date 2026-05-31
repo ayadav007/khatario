@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { TDSTransaction } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/tds/deduct
  * Record TDS deduction on payment

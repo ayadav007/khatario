@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createProvisionEntry, getProvisionEntries } from '@/lib/services/provisions-manager';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/provisions/[id]/entries
  * Get provision entries

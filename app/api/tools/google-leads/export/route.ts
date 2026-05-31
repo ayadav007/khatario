@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * NOTE:
  * This module is intentionally isolated.

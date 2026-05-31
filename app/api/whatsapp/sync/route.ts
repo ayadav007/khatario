@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncWhatsAppMessages } from '@/lib/whatsapp';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     let body;

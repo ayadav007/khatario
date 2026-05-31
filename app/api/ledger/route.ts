@@ -3,6 +3,8 @@ import { queryRows, queryOne } from '@/lib/db';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/ledger
  * List ledger entries with filters

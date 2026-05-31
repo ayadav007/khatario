@@ -5,6 +5,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import type { BusinessDiscovery } from '@/types/database';
 import { normalizeCategoryList } from '@/lib/suppliers-hub';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/hub/discovery — current business discovery settings
  * PATCH — update (requires updated_by_user_id)

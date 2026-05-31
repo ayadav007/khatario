@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { checkUserPermission } from '@/lib/permissions';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/credit-approvals/reject
  * Reject a credit approval request

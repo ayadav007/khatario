@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { renderTemplatePreviewHtml } from '@/lib/template-preview-render';
 import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';
 
+export const dynamic = 'force-dynamic';
+
 registerGlobalInvoiceHandlebarsHelpers();
 
 function getSampleData(templateId: string) {

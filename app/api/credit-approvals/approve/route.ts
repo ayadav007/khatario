@@ -5,6 +5,8 @@ import { checkUserPermission } from '@/lib/permissions';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { calculateCreditMetrics } from '@/lib/credit-utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/credit-approvals/approve
  * Approve a credit approval request

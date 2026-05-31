@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getProvisionById } from '@/lib/services/provisions-manager';
 import { getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/provisions/[id]
  * Get provision by ID

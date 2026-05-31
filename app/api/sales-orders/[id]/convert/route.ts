@@ -4,6 +4,8 @@ import { checkLimitInTransaction } from '@/lib/subscription';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/sales-orders/[id]/convert
  * Convert a sales order to an invoice

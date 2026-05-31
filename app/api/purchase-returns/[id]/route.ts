@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/purchase-returns/[id]
  * Fetch a single purchase return with line items.

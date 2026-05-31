@@ -3,6 +3,8 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const contentType = request.headers.get('content-type') || '';

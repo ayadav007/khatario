@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

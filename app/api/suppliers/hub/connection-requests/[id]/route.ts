@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import type { SupplierConnectionRequest } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/suppliers/hub/connection-requests/[id]
  * Body: { action: 'accept' | 'decline' | 'cancel', updated_by_user_id }

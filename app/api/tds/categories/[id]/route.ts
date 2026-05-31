@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { TDSCategory } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tds/categories/[id]
  * Get a single TDS category

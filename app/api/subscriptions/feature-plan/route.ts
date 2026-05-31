@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFeatureAccessInfo } from '@/lib/subscription/feature-access-info';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/feature-plan
  * Get which plan(s) have a specific feature enabled (via subscription_plan_features).

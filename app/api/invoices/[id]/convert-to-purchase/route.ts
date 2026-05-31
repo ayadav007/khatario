@@ -5,6 +5,8 @@ import { allocateStockOnPurchase } from '@/lib/stock-valuation';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/invoices/[id]/convert-to-purchase
  * Convert an invoice (received from supplier) to a purchase

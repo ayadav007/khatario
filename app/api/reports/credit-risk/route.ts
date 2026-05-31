@@ -5,6 +5,8 @@ import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateCreditMetrics } from '@/lib/credit-utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/credit-risk
  * Get credit risk data for business (read-only, derived data)

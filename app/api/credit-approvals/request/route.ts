@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateProjectedCreditMetrics } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/credit-approvals/request
  * Request credit approval for an invoice or purchase

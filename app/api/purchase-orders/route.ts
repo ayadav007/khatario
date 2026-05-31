@@ -4,6 +4,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getBusinessIdFromRequest, getUserIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/purchase-orders
  * Fetch all purchase orders for a business

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { TDSPayment } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tds/payments
  * List TDS payments

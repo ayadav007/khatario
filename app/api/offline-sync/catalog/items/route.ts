@@ -3,6 +3,8 @@ import { queryRows, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 function labelBundleNames(rows: Record<string, unknown>[]) {
   return rows.map((it) => {
     if (!it?.is_bundle) return it;

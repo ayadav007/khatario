@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
+export const dynamic = 'force-dynamic';
+
 /** Only real `customers` columns; prevents unknown JSON keys from breaking dynamic UPDATE. */
 const CUSTOMER_UPDATABLE = new Set([
   'name',

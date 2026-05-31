@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { serializeFaceEncoding, averageFaceDescriptors } from '@/lib/face-recognition';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/employees/face-enrollment
  * Enroll face data for an employee

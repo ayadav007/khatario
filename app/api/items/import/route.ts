@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 import { seedOpeningStockLayers } from '@/lib/seed-opening-stock-layers';
 import { Item } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 interface ImportItem {
   name: string;
   code?: string;

@@ -3,6 +3,8 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { createImpersonationToken } from '@/lib/admin-business-ops';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } },

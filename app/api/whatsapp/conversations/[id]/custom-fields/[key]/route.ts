@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * DELETE endpoint for specific custom field
  */

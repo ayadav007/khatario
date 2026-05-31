@@ -11,6 +11,8 @@ import {
 } from '@/lib/subscription/apply-plan-change';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/subscriptions/upgrade
  * Instant upgrade for free / ₹0 plans only. Paid plans use POST /api/subscriptions/checkout.

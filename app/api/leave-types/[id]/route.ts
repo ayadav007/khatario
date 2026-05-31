@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { LeaveType } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/leave-types/[id]
  * Update a leave type

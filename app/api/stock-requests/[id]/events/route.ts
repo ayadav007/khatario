@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/stock-requests/[id]/events
  * Activity log for one quantity request (requester or responder only).

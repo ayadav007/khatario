@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { assertFeatureAccess } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 // GET - List filter presets
 export async function GET(request: NextRequest) {
   try {

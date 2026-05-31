@@ -4,6 +4,8 @@ import { queryOne, query } from '@/lib/db';
 import { LeaveRequest } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/employees/leave-requests/[id]
  * Update leave request (approve, reject, cancel)

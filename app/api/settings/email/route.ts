@@ -9,6 +9,8 @@ import {
   verifyBusinessEmailConfig,
 } from '@/lib/business-email';
 
+export const dynamic = 'force-dynamic';
+
 async function resolveBusinessId(request: NextRequest, body?: { business_id?: string }) {
   const userId = getUserIdFromRequest(request, body);
   if (!userId) return { error: NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) };

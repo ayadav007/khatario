@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
 import { Supplier } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 export interface ActivityLogRow {
   id: string;
   action_type: string;

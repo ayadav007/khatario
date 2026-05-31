@@ -3,6 +3,8 @@ import { queryRows } from '@/lib/db';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/dashboard/charts
  * Get chart data for sales and purchases over time

@@ -4,6 +4,8 @@ import { sendDailyInvoiceSummaryEmail } from '@/lib/business-reminder-email';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/cron/send-daily-invoice-summary
  * Background job endpoint to send daily invoice summary emails to all business owners

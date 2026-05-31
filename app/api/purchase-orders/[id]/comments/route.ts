@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
+
+export const dynamic = 'force-dynamic';
 /**
  * POST /api/purchase-orders/[id]/comments
  * Add a user comment on a purchase order.

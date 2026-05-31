@@ -8,6 +8,8 @@ import { getAllTaxProvisions } from '@/lib/services/tax-provision-calculator';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/profit-loss
  * Generate enhanced Profit & Loss statement with account-wise breakdown

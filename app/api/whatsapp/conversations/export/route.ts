@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for exporting conversation list
  * POST /api/whatsapp/conversations/export

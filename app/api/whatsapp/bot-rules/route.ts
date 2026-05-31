@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for managing WhatsApp bot rules
  * GET - Get all bot rules for a business

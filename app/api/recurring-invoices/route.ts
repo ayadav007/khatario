@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/recurring-invoices
  * Fetch all recurring invoices for a business

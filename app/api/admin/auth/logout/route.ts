@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { clearPlatformSessionCookie } from '@/lib/platform-jwt';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/admin/auth/logout — clear platform admin httpOnly session.
  */

@@ -5,6 +5,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { FeatureKeys } from '@/lib/featureKeys';
 import { applyGstSetoff } from '@/lib/gst/gst-settlement';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/gst/setoff
  * Post GST ITC set-off to the ledger (voucher_type gst_setoff).

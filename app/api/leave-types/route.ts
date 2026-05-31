@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveType } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/leave-types
  * List all leave types for a business

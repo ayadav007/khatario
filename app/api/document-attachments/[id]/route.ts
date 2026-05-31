@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/document-attachments/[id]
  * Get/download a specific document attachment

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for exporting single conversation chat history
  * POST /api/whatsapp/conversations/[id]/export

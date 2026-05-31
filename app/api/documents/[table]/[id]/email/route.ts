@@ -8,6 +8,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
+export const dynamic = 'force-dynamic';
+
 const VALID_TABLES: DocumentTable[] = [
   'invoices',
   'sales_orders',

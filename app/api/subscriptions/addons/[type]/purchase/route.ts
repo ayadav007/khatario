@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import * as db from '@/lib/db';
 import { WhatsAppAddonType, clearAddonCache } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/subscriptions/addons/[type]/purchase
  * Purchase/activate a WhatsApp add-on

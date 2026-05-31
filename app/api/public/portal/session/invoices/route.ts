@@ -6,6 +6,8 @@ import {
   publicInvoiceUrl,
 } from '@/lib/customer-surface';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/public/portal/session/invoices
  * List final invoices for the logged-in portal customer.

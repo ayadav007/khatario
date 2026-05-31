@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for managing individual conversations
  * DELETE - Delete conversation

@@ -4,6 +4,8 @@ import { format } from 'date-fns';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/invoices/for-reminders?business_id=xxx&payment_status=both&search=xxx&date_from=xxx&date_to=xxx
  * Fetch invoices eligible for manual reminders

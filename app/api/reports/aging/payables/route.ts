@@ -6,6 +6,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getFinancialYearStartDate } from '@/lib/ledger-utils';
 import { calculateCreditMetrics } from '@/lib/credit-utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/aging/payables
  * Generate payables aging report

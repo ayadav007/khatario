@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { GoogleDriveService, DropboxService } from '@/lib/cloud-storage';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/backup/history/[id]/download
  * Download a backup file from cloud storage

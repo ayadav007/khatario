@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { disconnectWhatsApp } from '@/lib/whatsapp';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     let body;

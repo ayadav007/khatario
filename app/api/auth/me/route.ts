@@ -5,6 +5,8 @@ import { User, Business } from '@/types/database';
 import { getUserIdFromRequest, assertUserSessionVersionMatches } from '@/lib/auth-helpers';
 import { clearSessionCookie } from '@/lib/jwt';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Legacy endpoint kept for backward compatibility.
  * New code should use /api/auth/session instead for fewer round-trips.

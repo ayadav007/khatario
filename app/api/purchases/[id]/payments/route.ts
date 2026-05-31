@@ -9,6 +9,8 @@ import {
   getUserIdFromRequest,
 } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/purchases/[id]/payments
  * Record a payment against a purchase

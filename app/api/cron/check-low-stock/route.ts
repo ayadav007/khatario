@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows } from '@/lib/db';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/cron/check-low-stock
  * Periodic check for items below threshold

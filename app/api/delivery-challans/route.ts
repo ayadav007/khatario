@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/delivery-challans
  * Fetch all delivery challans for a business

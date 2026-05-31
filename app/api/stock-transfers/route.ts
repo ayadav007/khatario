@@ -6,6 +6,8 @@ import { isInterBranchTransfer, createInterBranchInvoice, isEwayBillRequired } f
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/stock-transfers
  * Fetch all stock transfers for a business

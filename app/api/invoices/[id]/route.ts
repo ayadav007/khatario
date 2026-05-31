@@ -8,6 +8,8 @@ import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
+export const dynamic = 'force-dynamic';
+
 type ProfitSummary = {
   total_revenue: number;
   total_cost: number;

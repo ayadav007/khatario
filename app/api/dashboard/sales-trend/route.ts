@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';

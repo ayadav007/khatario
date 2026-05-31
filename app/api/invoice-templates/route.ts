@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query as dbQuery, queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/invoice-templates
  * Get all invoice templates for a business

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { queryOne, queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const gate = await requirePortalSession(request);

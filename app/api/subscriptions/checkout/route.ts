@@ -9,6 +9,8 @@ import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 import { queryOne } from '@/lib/db';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/subscriptions/checkout
  * Paid plan → Razorpay Payment Link. 100% coupon / free_months → instant upgrade.

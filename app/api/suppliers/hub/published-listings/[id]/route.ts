@@ -7,6 +7,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH / DELETE — own listing only
  */

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/notifications/read-all
  * Mark all notifications as read for a business and the JWT user.

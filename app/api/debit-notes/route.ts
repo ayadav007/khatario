@@ -10,6 +10,8 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/debit-notes
  * Fetch all debit notes for a business

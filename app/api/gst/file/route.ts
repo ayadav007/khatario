@@ -7,6 +7,8 @@ import { calendarMonthBounds } from '@/lib/gst/gst-period-lock';
 import { fileGstReturn } from '@/lib/gst/gst-filing';
 import { parseGstDueDateBodyOverrides } from '@/lib/gst/gst-org-filing';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/gst/file
  * Mark GST return as filed after settlement + payment + GSTR-3B critical checks; locks period.

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Webhook endpoint for receiving incoming WhatsApp messages
  * This is a fallback endpoint if direct socket listening doesn't work

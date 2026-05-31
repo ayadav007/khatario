@@ -8,6 +8,8 @@ import { EmployeeExpense } from '@/types/database';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 function tenantBusinessId(request: NextRequest) {
   return getSessionScopedBusinessId(request);
 }

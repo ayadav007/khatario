@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { listPlatformBillingEvents, listPlatformBillingTransactions } from '@/lib/platform-billing';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const auth = await requirePlatformRequest(request, 'support', 'can_manage_subscriptions');
   if (!auth.ok) return auth.response;

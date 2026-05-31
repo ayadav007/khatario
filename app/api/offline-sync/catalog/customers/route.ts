@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /** Paginated customer export for offline catalog sync (same filters as GET /api/customers). */
 export async function GET(request: NextRequest) {
   try {

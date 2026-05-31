@@ -25,6 +25,8 @@ import { getParserVersionMetadata } from '@/lib/services/invoice-extract/parserV
 import { buildSupplierLayoutFingerprint } from '@/lib/services/invoice-extract/supplierFingerprintEngine';
 import { getUserIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 function invoiceExtractDebugEnabled(): boolean {
   const v = (process.env.INVOICE_EXTRACT_DEBUG || '').toLowerCase().trim();
   return v === '1' || v === 'true' || v === 'yes';

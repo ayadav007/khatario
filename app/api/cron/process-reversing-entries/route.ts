@@ -3,6 +3,8 @@ import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { hasFeature } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/cron/process-reversing-entries
  * Process scheduled reversing entries that are due today

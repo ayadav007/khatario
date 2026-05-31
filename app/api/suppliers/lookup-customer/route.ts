@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/lookup-customer?supplier_business_id=xxx&customer_name=xxx
  * Look up customer business_id from supplier relationship

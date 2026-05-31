@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/stock-requests/[id]
  * Responder maps their catalog item (required before PO/purchase from request).

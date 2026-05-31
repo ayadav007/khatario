@@ -6,6 +6,8 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { restoreBundleChildrenAfterInvoiceCancel } from '@/lib/invoice-bundle-stock';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }

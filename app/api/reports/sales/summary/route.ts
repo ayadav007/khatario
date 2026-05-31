@@ -5,6 +5,8 @@ import { format, startOfDay, startOfWeek, startOfMonth, endOfDay, endOfWeek, end
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/sales/summary
  * Get sales summary report aggregated by day/week/month

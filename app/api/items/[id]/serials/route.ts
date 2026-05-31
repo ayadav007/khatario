@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/items/[id]/serials
  * List serial numbers for an item

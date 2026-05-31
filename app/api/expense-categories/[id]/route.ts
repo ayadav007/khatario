@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { assertExpenseAccountForBusiness } from '@/lib/expense-category-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/expense-categories/[id]
  * Update category name, description, or linked ledger expense account.

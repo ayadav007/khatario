@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { checkAndSendPaymentDueReminders, checkAndSendOverdueReminders } from '@/lib/payment-reminder-checker';

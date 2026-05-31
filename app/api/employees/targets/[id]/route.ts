@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { EmployeeTarget } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * DELETE /api/employees/targets/[id]
  * Delete an employee target

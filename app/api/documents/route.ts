@@ -3,6 +3,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { DOCUMENT_ENTITY_TYPES, isValidDocumentEntityType } from '@/lib/document-entity-types';
 import { getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/documents
  * List documents for a specific entity

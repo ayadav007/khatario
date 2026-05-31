@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processAllCampaigns } from '@/lib/campaign-processor';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET/POST /api/cron/process-campaigns
  * Background job endpoint to process all running WhatsApp campaigns

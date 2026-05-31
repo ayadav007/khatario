@@ -8,6 +8,8 @@ import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } 
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/credit-notes
  * Fetch all credit notes for a business

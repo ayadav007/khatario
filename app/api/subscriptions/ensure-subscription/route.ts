@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryOne, query } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/subscriptions/ensure-subscription
  * Ensure a business has a subscription (auto-assign free plan if missing)

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Admin diagnostic endpoint: migrate legacy pre-Phase-3 GST out of Sales (4101)
  * into the new Output GST split accounts (2150 / 2151 / 2152 / 2153).

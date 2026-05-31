@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { TDSCertificate } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tds/certificates
  * List TDS certificates

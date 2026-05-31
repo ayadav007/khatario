@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionEarning } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/commissions
  * List commission earnings for employees

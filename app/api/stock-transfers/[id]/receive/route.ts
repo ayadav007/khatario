@@ -4,6 +4,8 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { createInterBranchPurchaseEntries } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/stock-transfers/[id]/receive
  * Receive/complete a stock transfer - adds stock to destination warehouse

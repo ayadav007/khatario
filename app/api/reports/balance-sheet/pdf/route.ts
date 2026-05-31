@@ -10,6 +10,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { internalApiFetchFromRequest } from '@/lib/internal-api-fetch';
 import { absoluteUrlForServerSideAsset } from '@/lib/absolute-asset-url';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

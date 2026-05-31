@@ -37,6 +37,8 @@ import {
 } from '@/lib/offer-feature-gate';
 import { getEnabledFeatures } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

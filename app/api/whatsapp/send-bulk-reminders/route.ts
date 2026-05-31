@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { checkLimit } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/whatsapp/send-bulk-reminders
  * Send reminders to manually selected invoices

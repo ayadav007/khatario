@@ -3,6 +3,8 @@ import { getUserIdFromRequest, assertUserSessionVersionMatches } from '@/lib/aut
 import { clearSessionCookie } from '@/lib/jwt';
 import { listUserBusinessMemberships } from '@/lib/user-businesses';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/businesses/my
  * All businesses the current user belongs to (from user_businesses), with name and role.

@@ -6,6 +6,8 @@ import {
   PLATFORM_TEMPLATE_DEFINITIONS,
 } from '@/lib/platform-email-templates';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const auth = await requirePlatformRequest(request, 'admin');
   if (!auth.ok) return auth.response;

@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { getEffectivePlanId } from '@/lib/subscription/effective-plan';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admin/businesses
  * List all businesses with search and pagination

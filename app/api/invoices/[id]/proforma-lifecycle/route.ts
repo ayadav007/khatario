@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession, getSessionScopedBusinessId, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 // Valid lifecycle statuses
 const VALID_STATUSES = [
   'created',

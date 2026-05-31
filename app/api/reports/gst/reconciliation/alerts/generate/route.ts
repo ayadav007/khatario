@@ -6,6 +6,8 @@ import { generateReconciliationAlerts } from '@/lib/gst/gstr13b-alerts';
 import type { Gstr13bReconciliationMode } from '@/lib/gst/gstr1-3b-reconciliation';
 import { resolveBranchId } from '@/lib/branch-helpers';
 
+export const dynamic = 'force-dynamic';
+
 const MODES: Gstr13bReconciliationMode[] = ['live_vs_live', 'filed_vs_live', 'filed_vs_filed'];
 
 /**

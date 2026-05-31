@@ -5,6 +5,8 @@ import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getFinancialYearStartDate } from '@/lib/ledger-utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/party/ageing
  * Get ageing report (outstanding categorized by age: 0-30, 30-60, 60+ days)

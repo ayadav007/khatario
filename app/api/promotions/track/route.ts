@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/promotions/track
  * Tracks user interaction with a promotion (view, click, dismiss)

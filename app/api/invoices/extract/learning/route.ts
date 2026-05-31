@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionScopedBusinessId, getUserFromRequest } from '@/lib/auth-helpers';
 import { queryOne } from '@/lib/db';

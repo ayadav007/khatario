@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
+export const dynamic = 'force-dynamic';
+
 interface JournalEntryLine {
   account_id: string;
   debit: number;

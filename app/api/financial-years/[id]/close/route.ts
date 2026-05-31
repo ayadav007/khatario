@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { executeYearClosing, validateYearClosing } from '@/lib/services/year-closing';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/financial-years/[id]/close
  * Execute year closing process

@@ -7,6 +7,8 @@ import {
 import { queryRows, queryOne, query } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 interface GetTodosQuery {
   business_id: string;
   user_id?: string;

@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { assertExpenseAccountForBusiness } from '@/lib/expense-category-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/expense-categories
  * Fetch all expense categories for a business

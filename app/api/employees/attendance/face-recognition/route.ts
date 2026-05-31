@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { parseFaceEncoding, matchFace, serializeFaceEncoding } from '@/lib/face-recognition';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/employees/attendance/face-recognition
  * Check-in/out using face recognition

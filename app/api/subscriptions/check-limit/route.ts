@@ -3,6 +3,8 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { checkLimit, type LimitCheckType } from '@/lib/subscription';
 import { notifyUsageThresholdIfNeeded } from '@/lib/subscription/usage-threshold-notify';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/check-limit
  * Check if a business has reached a usage limit

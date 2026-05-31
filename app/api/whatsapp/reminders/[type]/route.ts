@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { hasFeature } from '@/lib/subscription';
 import { FEATURE_PLAN_DENIED_RESPONSE_CODE } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/whatsapp/reminders/[type]
  * Update specific reminder type settings

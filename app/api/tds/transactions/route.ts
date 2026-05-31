@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tds/transactions
  * List TDS transactions

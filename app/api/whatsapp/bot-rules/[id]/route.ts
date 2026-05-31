@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for managing individual bot rules
  * GET - Get a single bot rule

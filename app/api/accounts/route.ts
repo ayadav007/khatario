@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { Account, AccountGroup } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/accounts
  * List accounts with filters

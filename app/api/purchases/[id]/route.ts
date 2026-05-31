@@ -9,6 +9,8 @@ import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from 
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/purchases/[id]
  * Fetch a single purchase with its items

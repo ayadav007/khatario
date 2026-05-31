@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAccountMappings, updateAccountMappings, autoDetectAccountMappings } from '@/lib/account-mappings';
 import { AccountMappings } from '@/lib/account-mappings';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/account-mappings
  * Get account mappings for a business

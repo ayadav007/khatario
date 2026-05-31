@@ -4,6 +4,8 @@ import * as db from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/party/statement
  * Get period-based party statement (customer/supplier) with opening balance, transactions, and closing balance

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { generateDepreciationSchedule } from '@/lib/accounting/depreciation';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/fixed-assets
  * List fixed assets

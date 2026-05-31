@@ -5,6 +5,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getGstAuditComparison } from '@/lib/gst/gst-filing';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/gst/audit-comparison?period=YYYY-MM&branch_id=optional
  * Stored filing snapshot vs freshly recalculated GSTR-3B (net payable delta + warnings).

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/items/[id]/serials/[serialId]
  * Update serial number status or details

@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import type { SupplierConnectionRequest } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/hub/connection-requests — incoming + outgoing for current business
  * POST — buyer creates request (body: supplier_business_id, message?, created_by_user_id, business_id)

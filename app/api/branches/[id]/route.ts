@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/branches/[id]
  * Get a specific branch

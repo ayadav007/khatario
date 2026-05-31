@@ -8,6 +8,8 @@ import {
 } from '@/lib/customer-surface';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const VERIFY_LIMIT = 20;
 const VERIFY_WINDOW_MS = 15 * 60 * 1000;
 

@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/hub/directory?q=&page=
  * Lists businesses opted into directory search (excludes current business).

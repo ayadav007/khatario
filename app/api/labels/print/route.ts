@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
 import { query, queryOne } from '@/lib/db';

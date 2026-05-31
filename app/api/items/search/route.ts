@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { normalizeBarcode } from '@/lib/barcode-validator';
 
+export const dynamic = 'force-dynamic';
+
 function labelBundleNames(rows: any[]) {
   return rows.map((it) => {
     if (!it?.is_bundle) return it;

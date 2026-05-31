@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/bank-statements/reconciliation-report
  * Generate bank reconciliation report

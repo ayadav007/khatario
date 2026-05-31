@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPolicyRegistry } from '@/lib/policies/registry';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/policies
  * Get all registered PBAC policies (admin-only, read-only)

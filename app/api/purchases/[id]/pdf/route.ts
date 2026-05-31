@@ -5,6 +5,8 @@ import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
 import { getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

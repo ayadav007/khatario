@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant, assertLinkedSupplier } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/stock-requests
  * Tenant = authenticated business only (query business_id ignored for security).

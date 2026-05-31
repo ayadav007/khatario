@@ -7,6 +7,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/hub/published-listings — own business (supplier) listings + item names
  * POST — add listing (created_by_user_id for auth)

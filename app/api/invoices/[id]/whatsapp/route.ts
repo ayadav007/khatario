@@ -4,6 +4,8 @@ import { Invoice, Customer } from '@/types/database';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Send invoice via WhatsApp
  * POST /api/invoices/[id]/whatsapp

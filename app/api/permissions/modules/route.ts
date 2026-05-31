@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { PermissionModule } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/permissions/modules
  * List all permission modules

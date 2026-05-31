@@ -3,6 +3,8 @@ import { authenticatePlatformAdmin, logAdminAction } from '@/lib/platform-auth';
 import { signPlatformAccessToken, setPlatformSessionCookie } from '@/lib/platform-jwt';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const ADMIN_LOGIN_LIMIT = 10;
 const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
 

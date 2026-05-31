@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { notifyAdminsOfNewBooking } from '@/lib/demo-booking-notifications';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/bookings/create
  * Create a new demo booking

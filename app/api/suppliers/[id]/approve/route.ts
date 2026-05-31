@@ -3,6 +3,8 @@ import { query, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { Supplier } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Approve or reject a supplier relationship request
  * POST /api/suppliers/:id/approve

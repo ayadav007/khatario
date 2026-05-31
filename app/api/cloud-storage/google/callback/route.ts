@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { encrypt } from '@/lib/cloud-storage';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cloud-storage/google/callback
  * Handle Google Drive OAuth callback

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint for conversation summary counters
  * GET /api/whatsapp/conversations/summary

@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/stock-requests/[id]/respond
  * Body: { status: 'confirmed'|'partial'|'declined'|'backorder', confirmed_qty?: number, notes?: string }

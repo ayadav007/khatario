@@ -4,6 +4,8 @@ import * as db from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/sales/payment-mode
  * Get sales report grouped by payment mode (Cash, UPI, Card, etc.)

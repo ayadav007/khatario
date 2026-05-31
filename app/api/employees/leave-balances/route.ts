@@ -4,6 +4,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveBalance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/leave-balances
  * Get leave balances for employees

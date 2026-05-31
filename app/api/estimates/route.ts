@@ -5,6 +5,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/estimates
  * Fetch all proforma invoices (estimates/quotations) for a business

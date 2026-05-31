@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/suppliers/dashboard/analytics?supplier_business_id=xxx
  * Get location-based analytics for supplier

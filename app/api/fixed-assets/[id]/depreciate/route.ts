@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { calculateSLMDepreciation, calculateWDVDepreciation } from '@/lib/accounting/depreciation';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/fixed-assets/[id]/depreciate
  * Calculate and record depreciation for an asset

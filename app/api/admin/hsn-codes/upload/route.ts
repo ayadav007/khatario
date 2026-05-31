@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import { parse } from 'csv-parse/sync';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requirePlatformRequest(request, 'admin');

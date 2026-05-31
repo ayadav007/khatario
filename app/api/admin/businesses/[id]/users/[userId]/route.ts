@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { adminResetUserPassword, adminSetUserActive } from '@/lib/admin-business-ops';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string; userId: string } },

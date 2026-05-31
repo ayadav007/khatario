@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';

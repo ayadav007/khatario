@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Legacy API — proxies reads/writes to business_template_assignments.
  * Kept for backward compatibility with older code paths.

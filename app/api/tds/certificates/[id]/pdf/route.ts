@@ -4,6 +4,8 @@ import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import puppeteer from 'puppeteer';
 import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

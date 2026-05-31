@@ -8,6 +8,8 @@ import {
   isInvoicePubliclyViewable,
 } from '@/lib/customer-surface';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/invoices/[id]/public-link
  * Staff: get or create the customer-facing bill URL.

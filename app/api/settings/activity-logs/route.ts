@@ -6,6 +6,8 @@ import {
 } from '@/lib/auth-helpers';
 import { queryRows, queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/settings/activity-logs
  * Get activity logs for a business

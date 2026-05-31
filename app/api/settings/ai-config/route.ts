@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to check WhatsApp Bot addon
 async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
   try {

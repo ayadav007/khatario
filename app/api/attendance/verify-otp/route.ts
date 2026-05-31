@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 import crypto from 'crypto';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const VERIFY_LIMIT = 20;
 const VERIFY_WINDOW_MS = 15 * 60 * 1000;
 

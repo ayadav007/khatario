@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

@@ -5,6 +5,8 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusines
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Gateway rows for a sales order (payment_transactions), not accounting `payments`.
  * GET /api/payments?order_id=<sales_orders.id>

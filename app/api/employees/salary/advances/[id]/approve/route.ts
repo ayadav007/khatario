@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 import { SalaryAdvance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/employees/salary/advances/[id]/approve
  * Approve or reject a salary advance

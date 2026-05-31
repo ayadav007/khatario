@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { OpeningBalanceTransaction } from '@/types/journal-entries';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/opening-balances
  * Get all opening balances for a financial year

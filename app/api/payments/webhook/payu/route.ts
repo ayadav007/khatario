@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handlePaymentWebhookPost } from '../handle-post';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/payments/webhook/payu?business_id=&lt;uuid&gt;
  *

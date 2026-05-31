@@ -4,6 +4,8 @@ import { queryRows } from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/reports/stock/low-stock-warehouse
  * Get low stock items per warehouse based on warehouse-specific reorder points

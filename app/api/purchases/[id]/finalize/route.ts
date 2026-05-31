@@ -7,6 +7,8 @@ import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
 import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 async function fetchPurchaseWithItems(id: string, businessId: string) {
   const purchase = await queryOne(
     `SELECT * FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { getBusinessAddons } from '@/lib/subscription';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/subscriptions/addons/current
  * Get current active add-ons for a business

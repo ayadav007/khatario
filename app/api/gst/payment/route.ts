@@ -5,6 +5,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { FeatureKeys } from '@/lib/featureKeys';
 import { recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/gst/payment
  * Record GST challan payment: Dr output (or RCM) / Cr bank. Voucher type gst_payment.

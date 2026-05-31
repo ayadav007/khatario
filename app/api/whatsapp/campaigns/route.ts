@@ -3,6 +3,8 @@ import { query, queryOne } from '@/lib/db';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
 import { getWhatsAppStatus } from '@/lib/whatsapp';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/whatsapp/campaigns
  * List campaigns for a business with optional search, status filter, and pagination

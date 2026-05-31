@@ -4,6 +4,8 @@ import { queryRows } from '@/lib/db';
 import { LeaveRequest } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/employees/leave-calendar
  * Get leave calendar for a date range

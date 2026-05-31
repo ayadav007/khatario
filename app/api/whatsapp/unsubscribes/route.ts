@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import { hasWhatsAppBotAddon } from '@/lib/subscription';
 import { normalizePhone, isValidPhone } from '@/lib/utils/phone';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/whatsapp/unsubscribes
  * List all unsubscribed numbers for a business

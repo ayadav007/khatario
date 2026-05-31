@@ -4,6 +4,8 @@ import { applyStockAuditOverrides } from '@/lib/services/closing-stock-valuator'
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/reports/stock/closing-stock/audit
  * Body: business_id, user_id, snapshot_id, overrides: { [item_id]: physical_qty }

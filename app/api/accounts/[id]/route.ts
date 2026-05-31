@@ -4,6 +4,8 @@ import { queryOne, query } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/accounts/[id]
  * Get account details

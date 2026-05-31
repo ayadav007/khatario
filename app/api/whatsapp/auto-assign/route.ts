@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * GET  /api/whatsapp/auto-assign?business_id= — read current settings
  * PATCH /api/whatsapp/auto-assign?business_id= — update settings

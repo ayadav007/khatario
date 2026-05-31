@@ -4,6 +4,8 @@ import { checkUserBranchAccess, getUserBranches } from '@/lib/branch-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/user-branches
  * Get all branches a user can access, OR get all user-branch assignments for a business

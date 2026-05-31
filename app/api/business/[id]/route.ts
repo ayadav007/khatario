@@ -3,6 +3,8 @@ import { query, queryOne } from '@/lib/db';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { getStateCode } from '@/lib/gst-utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * When the business has exactly one active branch, keep it in sync with company identity
  * on the business row (GSTIN, address, etc.) so branch-scoped flows stay consistent.

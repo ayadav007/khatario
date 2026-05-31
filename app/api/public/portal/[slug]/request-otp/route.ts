@@ -5,6 +5,8 @@ import { resolveBusinessByPortalSlug } from '@/lib/customer-surface';
 import { sendBusinessEmail } from '@/lib/business-email';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+export const dynamic = 'force-dynamic';
+
 const OTP_LIMIT = 8;
 const OTP_WINDOW_MS = 15 * 60 * 1000;
 

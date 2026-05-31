@@ -3,6 +3,8 @@ import { queryRows } from '@/lib/db';
 import { triggerTodoReminder, type TodoForReminder } from '@/lib/services/todoReminderService';
 import { logTodoReminder } from '@/lib/todo-reminders/reminderLog';
 
+export const dynamic = 'force-dynamic';
+
 const BATCH_LIMIT = 100;
 const MAX_WALL_MS = 25_000;
 const CRON_MAX_BATCHES = 1000;

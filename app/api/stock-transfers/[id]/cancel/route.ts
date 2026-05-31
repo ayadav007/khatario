@@ -3,6 +3,8 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/stock-transfers/[id]/cancel
  * Cancel a stock transfer (restore stock to source warehouse if already dispatched)

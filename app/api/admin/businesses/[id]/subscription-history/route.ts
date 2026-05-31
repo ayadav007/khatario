@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import {

@@ -24,6 +24,8 @@ import {
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/purchases
  * Fetch all purchases for a business

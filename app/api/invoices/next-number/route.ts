@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 // Mapping of document types to prefixes and counter columns
 const DOCUMENT_TYPE_CONFIG: Record<string, { prefix: string; counterColumn: string }> = {
   'tax_invoice': { prefix: 'INV', counterColumn: 'next_tax_invoice_number' },

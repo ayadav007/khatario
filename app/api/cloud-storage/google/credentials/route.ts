@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 import { encrypt, decrypt } from '@/lib/cloud-storage';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/cloud-storage/google/credentials
  * Get Google Drive credentials for a business (without secrets)

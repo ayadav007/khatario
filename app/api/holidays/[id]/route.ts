@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { Holiday } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/holidays/[id]
  * Update a holiday

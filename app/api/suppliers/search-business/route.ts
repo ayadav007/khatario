@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Search for business accounts by name and phone number
  * Used when adding a supplier to find if they have an account

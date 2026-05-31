@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/todos/users?business_id=xxx
  * Get list of users/employees for todo assignment
