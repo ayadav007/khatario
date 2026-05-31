@@ -9,6 +9,8 @@ import {
   loadCapabilitySnapshot,
   isSnapshotExpired,
   type CapabilitySnapshot,
+  type Subscription,
+  type Addon,
 } from '@/lib/capability-snapshot';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { markAppSynced } from '@/lib/sync-timestamp';
@@ -20,25 +22,6 @@ import {
 } from '@/lib/layout-data/fetch-cache';
 import { NotificationProvider } from './NotificationContext';
 import { BadgeProvider } from './BadgeContext';
-
-interface Subscription {
-  id: string;
-  business_id: string;
-  plan_id: string;
-  status: string;
-  plan_name?: string;
-  plan_display_name?: string;
-  features?: unknown;
-  [key: string]: unknown;
-}
-
-interface Addon {
-  id: string;
-  business_id: string;
-  addon_type: string;
-  status: string;
-  [key: string]: unknown;
-}
 
 export interface Promotion {
   id: string;

@@ -135,7 +135,15 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                                 {notification.message}
                               </p>
                               <p className="text-xs text-gray-400 mt-1">
-                                {format(new Date(notification.created_at || notification.timestamp), 'MMM dd, hh:mm a')}
+                                {format(
+                                  new Date(
+                                    notification.created_at ||
+                                      (typeof notification.timestamp === 'string'
+                                        ? notification.timestamp
+                                        : '')
+                                  ),
+                                  'MMM dd, hh:mm a'
+                                )}
                               </p>
                             </div>
                             {!notification.is_read && (
@@ -147,16 +155,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                               </button>
                             )}
                           </div>
-                          {notification.actionUrl && (
+                          {typeof notification.actionUrl === 'string' && notification.actionUrl && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="mt-2"
                               onClick={() => {
-                                window.location.href = notification.actionUrl!;
+                                window.location.href = notification.actionUrl as string;
                               }}
                             >
-                              {notification.actionLabel || 'View'}
+                              {(typeof notification.actionLabel === 'string'
+                                ? notification.actionLabel
+                                : null) || 'View'}
                             </Button>
                           )}
                         </div>

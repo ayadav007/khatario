@@ -14,16 +14,17 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
 
   if (loading || !subscription) return null;
 
+  const nestedPlan = subscription.plan as { code?: string; display_name?: string } | undefined;
   const planCode = (
-    subscription?.plan_name ||
-    subscription?.plan_id ||
-    subscription?.plan?.code ||
+    subscription.plan_name ||
+    subscription.plan_id ||
+    nestedPlan?.code ||
     'free'
   ).toLowerCase();
   const planDisplayName =
-    subscription?.plan_display_name ||
-    subscription?.plan?.display_name ||
-    subscription?.plan_name ||
+    subscription.plan_display_name ||
+    nestedPlan?.display_name ||
+    subscription.plan_name ||
     'Free';
 
   const showTrialBadge =
