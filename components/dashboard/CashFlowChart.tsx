@@ -240,7 +240,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
                 fill="#3b82f6"
                 stroke={c.pointStroke}
                 strokeWidth="2"
-                className="hover:r-7 transition-all cursor-pointer"
+                className="cursor-pointer transition-opacity hover:opacity-75"
               />
               <title>{`${point.fullMonth}: ₹${point.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</title>
             </g>

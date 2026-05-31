@@ -28,6 +28,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const isOpenRef = useRef(isOpen);
+  const resultsStateRef = useRef(results);
+  const selectedIndexRef = useRef(selectedIndex);
+  const onCloseRef = useRef(onClose);
+  const selectResultRef = useRef<(result: SearchResult) => void>(() => {});
+
+  isOpenRef.current = isOpen;
+  resultsStateRef.current = results;
+  selectedIndexRef.current = selectedIndex;
+  onCloseRef.current = onClose;
 
   // Always enabled - no feature flag check needed
 
@@ -40,26 +50,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpenRef.current) return;
+
+      const currentResults = resultsStateRef.current;
+      const currentIndex = selectedIndexRef.current;
+
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
+        setSelectedIndex((prev) => Math.min(prev + 1, currentResults.length - 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
-      } else if (e.key === 'Enter' && results[selectedIndex]) {
+      } else if (e.key === 'Enter' && currentResults[currentIndex]) {
         e.preventDefault();
-        handleSelectResult(results[selectedIndex]);
+        selectResultRef.current(currentResults[currentIndex]);
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, results, selectedIndex, onClose]);
+  }, []);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -135,6 +148,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     router.push(result.href);
     onClose();
   };
+  selectResultRef.current = handleSelectResult;
 
   const getTypeIcon = (type: SearchResult['type']) => {
     switch (type) {

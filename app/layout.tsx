@@ -31,6 +31,7 @@ import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegi
 import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
 import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
 import { OfflineBannerProvider } from "@/contexts/OfflineBannerContext";
+import { ListenerLeakProbeBoot } from "@/components/debug/ListenerLeakProbeBoot";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
@@ -77,6 +78,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${dmSans.variable} ${sourceSans3.variable}`}>
       <body className="font-sans antialiased">
+        <ListenerLeakProbeBoot />
         <NetworkStatusProvider>
         <OfflineBannerProvider>
         <AuthProvider>

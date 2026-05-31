@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { BarChart3 } from 'lucide-react';
@@ -100,6 +100,23 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
     }
   };
 
+  /** One delegated handler — avoids per-bar React click/mouse listeners on rerender. */
+  const handleChartClick = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const target = e.target as Element;
+      if (target.tagName !== 'rect') return;
+      const kind = target.getAttribute('data-bar');
+      const date = target.getAttribute('data-date');
+      if (!kind || !date) return;
+      if (kind === 'sales') {
+        router.push(`/invoices?date_from=${date}&date_to=${date}`);
+      } else if (kind === 'purchases') {
+        router.push(`/purchases?date_from=${date}&date_to=${date}`);
+      }
+    },
+    [router]
+  );
+
   // Simple SVG-based bar chart (no external dependencies)
   const renderBarChart = () => {
     if (chartData.length === 0) {
@@ -109,14 +126,6 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
         </div>
       );
     }
-
-    // Debug: Log chart data
-    console.log('[SalesVsPurchasesChart] Rendering bars with data:', {
-      dataLength: chartData.length,
-      sampleData: chartData.slice(0, 3),
-      allSales: chartData.map(d => d.sales),
-      allPurchases: chartData.map(d => d.purchases),
-    });
 
     const maxValue = Math.max(
       ...chartData.map(d => Math.max(Number(d.sales) || 0, Number(d.purchases) || 0)),
@@ -135,7 +144,13 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
 
     return (
       <div className="w-full overflow-x-auto">
-        <svg width={width} height={height} className="w-full h-auto" viewBox={`0 0 ${width} ${height}`}>
+        <svg
+          width={width}
+          height={height}
+          className="w-full h-auto [&_rect[data-bar]]:cursor-pointer [&_rect[data-bar]]:transition-opacity [&_rect[data-bar]:hover]:opacity-75"
+          viewBox={`0 0 ${width} ${height}`}
+          onClick={handleChartClick}
+        >
           {/* Grid lines */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = padding + chartHeight * (1 - ratio);
@@ -234,15 +249,9 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
                     width={barHalfWidth}
                     height={finalPurchasesHeight}
                     fill="#ef4444"
-                    className="hover:opacity-80 transition-opacity cursor-pointer"
+                    data-bar="purchases"
+                    data-date={d.date}
                     rx="2"
-                    onClick={handlePurchasesClick}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = '0.7';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = '1';
-                    }}
                   >
                     <title>
                       Purchases: ₹{purchasesValue.toLocaleString('en-IN')} on {format(new Date(d.date), 'MMM dd, yyyy')} - Click to view purchases

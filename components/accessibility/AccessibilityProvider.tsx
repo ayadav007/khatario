@@ -25,17 +25,21 @@ export const AccessibilityProvider: React.FC<AccessibilityProviderProps> = ({ ch
     liveRegion.id = 'accessibility-announcer';
     document.body.appendChild(liveRegion);
 
-    document.addEventListener('keydown', (e) => {
+    const onKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Tab') {
         document.body.classList.add('keyboard-nav');
       }
-    });
-
-    document.addEventListener('mousedown', () => {
+    };
+    const onMousedown = () => {
       document.body.classList.remove('keyboard-nav');
-    });
+    };
+
+    document.addEventListener('keydown', onKeydown);
+    document.addEventListener('mousedown', onMousedown);
 
     return () => {
+      document.removeEventListener('keydown', onKeydown);
+      document.removeEventListener('mousedown', onMousedown);
       skipLink.remove();
       liveRegion.remove();
     };

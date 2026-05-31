@@ -16,6 +16,18 @@ export function ParkedBillsDrawer({ isOpen, onClose, onResume }: ParkedBillsDraw
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const isOpenRef = useRef(isOpen);
+  const billsRef = useRef(bills);
+  const selectedIndexRef = useRef(selectedIndex);
+  const onCloseRef = useRef(onClose);
+  const onResumeRef = useRef(onResume);
+
+  isOpenRef.current = isOpen;
+  billsRef.current = bills;
+  selectedIndexRef.current = selectedIndex;
+  onCloseRef.current = onClose;
+  onResumeRef.current = onResume;
+
   useEffect(() => {
     if (isOpen) {
       setBills(getParkedBills());
@@ -24,27 +36,30 @@ export function ParkedBillsDrawer({ isOpen, onClose, onResume }: ParkedBillsDraw
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpenRef.current) return;
+
+      const currentBills = billsRef.current;
+      const index = selectedIndexRef.current;
+
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex(prev => Math.min(prev + 1, bills.length - 1));
+        setSelectedIndex((prev) => Math.min(prev + 1, currentBills.length - 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex(prev => Math.max(prev - 1, 0));
-      } else if (e.key === 'Enter' && bills[selectedIndex]) {
+        setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      } else if (e.key === 'Enter' && currentBills[index]) {
         e.preventDefault();
-        onResume(bills[selectedIndex]);
-      } else if (e.key === 'Delete' && bills[selectedIndex]) {
+        onResumeRef.current(currentBills[index]);
+      } else if (e.key === 'Delete' && currentBills[index]) {
         e.preventDefault();
         if (confirm('Delete this parked bill?')) {
-          deleteParkedBill(bills[selectedIndex].id);
+          deleteParkedBill(currentBills[index].id);
           const updated = getParkedBills();
           setBills(updated);
-          if (selectedIndex >= updated.length) {
+          if (index >= updated.length) {
             setSelectedIndex(Math.max(0, updated.length - 1));
           }
         }
@@ -53,7 +68,7 @@ export function ParkedBillsDrawer({ isOpen, onClose, onResume }: ParkedBillsDraw
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, bills, selectedIndex, onClose, onResume]);
+  }, []);
 
   if (!isOpen) return null;
 

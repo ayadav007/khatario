@@ -18,6 +18,8 @@ import { markAppSynced } from '@/lib/sync-timestamp';
 
 /** Server upserts re-fire `created_at`; fetch-only fallback is gated (first list paint skipped) + `shownReminderIds`. */
 const TODO_REMINDER_RECENT_AGE_MS = 10 * 60 * 1000;
+/** Coalesce SSE notification bursts before forcing a list refresh. */
+const SSE_NOTIFICATION_DEBOUNCE_MS = 750;
 
 interface Subscription {
   id: string;
@@ -66,6 +68,28 @@ export interface Promotion {
 interface BadgeCounts {
   unpaid_invoices: number;
   low_stock_items: number;
+}
+
+function notificationsPayloadUnchanged(
+  prevList: Notification[],
+  nextList: Notification[],
+  prevUnread: number,
+  nextUnread: number
+): boolean {
+  if (prevUnread !== nextUnread || prevList.length !== nextList.length) return false;
+  for (let i = 0; i < prevList.length; i++) {
+    const a = prevList[i];
+    const b = nextList[i];
+    if (a.id !== b.id || !!a.is_read !== !!b.is_read) return false;
+  }
+  return true;
+}
+
+function badgeCountsUnchanged(prev: BadgeCounts, next: BadgeCounts): boolean {
+  return (
+    prev.unpaid_invoices === next.unpaid_invoices &&
+    prev.low_stock_items === next.low_stock_items
+  );
 }
 
 interface LayoutData {
@@ -386,11 +410,23 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
         shownTodoReminderCount: shownReminderIds.current.size,
       });
 
-      setData((prev) => ({
-        ...prev,
-        notifications: normalizedNotifications,
-        unreadNotificationCount: unreadCount,
-      }));
+      setData((prev) => {
+        if (
+          notificationsPayloadUnchanged(
+            prev.notifications,
+            normalizedNotifications,
+            prev.unreadNotificationCount,
+            unreadCount
+          )
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          notifications: normalizedNotifications,
+          unreadNotificationCount: unreadCount,
+        };
+      });
     };
     
     // Clear any pending debounced fetch
@@ -557,10 +593,11 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
         { business_id: business.id }
       );
 
-      setData((prev) => ({
-        ...prev,
-        badgeCounts: res || { unpaid_invoices: 0, low_stock_items: 0 },
-      }));
+      setData((prev) => {
+        const next = res || { unpaid_invoices: 0, low_stock_items: 0 };
+        if (badgeCountsUnchanged(prev.badgeCounts, next)) return prev;
+        return { ...prev, badgeCounts: next };
+      });
     } catch (error) {
       console.error('Failed to fetch badge counts:', error);
     }
@@ -953,8 +990,9 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
         }
         sseRefreshDebounceRef.current = setTimeout(() => {
           sseRefreshDebounceRef.current = null;
+          if (typeof document !== 'undefined' && document.hidden) return;
           void fetchNotifications(true);
-        }, 400);
+        }, SSE_NOTIFICATION_DEBOUNCE_MS);
       } catch (error) {
         console.error('[SSE] Error processing notification event:', error);
       }
@@ -977,17 +1015,45 @@ export function LayoutDataProvider({ children }: { children: React.ReactNode }) 
     };
   }, [business?.id, user?.id, fetchNotifications]);
 
-  // Periodic check for new notifications (fallback - keeps polling as backup)
+  // Periodic check for new notifications (fallback — paused while tab is hidden)
   useEffect(() => {
     if (!business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
-    // Force refresh: notification list cache TTL is 5m; skipCache false would keep stale rows and miss new todo_reminders.
-    const notificationCheckInterval = setInterval(() => {
-      void fetchNotifications(true);
-    }, 30000);
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-    return () => clearInterval(notificationCheckInterval);
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void fetchNotifications(true);
+    };
+
+    const startPolling = () => {
+      if (interval || (typeof document !== 'undefined' && document.hidden)) return;
+      interval = setInterval(tick, 30000);
+    };
+
+    const stopPolling = () => {
+      if (!interval) return;
+      clearInterval(interval);
+      interval = null;
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        tick();
+        startPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [business?.id, user?.id, fetchNotifications]);
 
   // Clear cache on logout
