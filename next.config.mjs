@@ -1,5 +1,12 @@
 import withPWAInit from '@ducanh2912/next-pwa';
 
+/** Bust PWA runtime + precache on every production build (fixes stale dashboard after deploy). */
+const APP_BUILD_ID =
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.GITHUB_SHA ||
+  process.env.APP_BUILD_ID ||
+  `local-${Date.now()}`;
+
 const withPWA = withPWAInit({
   dest: 'public',
   // Disable in development (avoids cache confusion during hot reload)
@@ -11,19 +18,20 @@ const withPWA = withPWAInit({
     document: '/offline',
   },
   workboxOptions: {
+    // New build → new cache namespace; old pages-cache / next-static entries are dropped.
+    cacheId: `khatario-${APP_BUILD_ID.slice(0, 12)}`,
     // Take over immediately — new SW activates without waiting for old tabs to close
     skipWaiting: true,
     clientsClaim: true,
     // Pre-warm the dashboard into the SW cache during install so it is
     // available on cold-start offline even before the user has navigated there.
-    // revision: null → SW treats it as opaque (always re-fetches on install).
     additionalManifestEntries: [
-      { url: '/dashboard', revision: null },
-      { url: '/login', revision: null },
-      { url: '/items', revision: null },
-      { url: '/customers', revision: null },
-      { url: '/invoices', revision: null },
-      { url: '/more', revision: null },
+      { url: '/dashboard', revision: APP_BUILD_ID },
+      { url: '/login', revision: APP_BUILD_ID },
+      { url: '/items', revision: APP_BUILD_ID },
+      { url: '/customers', revision: APP_BUILD_ID },
+      { url: '/invoices', revision: APP_BUILD_ID },
+      { url: '/more', revision: APP_BUILD_ID },
     ],
     runtimeCaching: [
       // ── Static Next.js assets — immutable (hash-versioned), cache forever ─
@@ -63,8 +71,9 @@ const withPWA = withPWAInit({
         handler: 'NetworkFirst',
         options: {
           cacheName: 'pages-cache',
-          networkTimeoutSeconds: 8,
-          expiration: { maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 },
+          // Prefer fresh HTML after deploy; fall back to cache only when offline/slow.
+          networkTimeoutSeconds: 5,
+          expiration: { maxEntries: 32, maxAgeSeconds: 24 * 60 * 60 },
         },
       },
       // ── Public static assets (fonts, icons, images) ───────────────────────
@@ -82,6 +91,9 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_BUILD_ID: APP_BUILD_ID,
+  },
   reactStrictMode: true,
   serverExternalPackages: ["pdf-parse", "tesseract.js", "@techstark/opencv-js", "sharp"],
   images: {
