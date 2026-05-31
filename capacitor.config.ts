@@ -32,6 +32,13 @@ const serverUrl = resolveCapacitorServerUrl(process.env.CAP_SERVER_URL);
 const allowCleartext = process.env.CAP_ALLOW_CLEARTEXT === 'true';
 const androidScheme = process.env.CAP_ANDROID_SCHEME || 'https';
 
+/** Remote WebView debugging for chrome://inspect (see docs/ANDROID_WEBVIEW_DEBUG.md). */
+const webContentsDebuggingEnabled =
+  process.env.CAP_WEBVIEW_DEBUG === 'true' ||
+  process.env.CAP_WEBVIEW_DEBUG === '1' ||
+  (process.env.CAP_SERVER_URL || '').includes('staging') ||
+  process.env.NODE_ENV !== 'production';
+
 const config: CapacitorConfig = {
   appId: 'com.khatario.app',
   appName: 'Khatario',
@@ -56,8 +63,7 @@ const config: CapacitorConfig = {
     // Let Android WebView handle focus/keyboard directly. captureInput can
     // swallow text entry on some devices when loading a remote server.url.
     captureInput: false,
-    webContentsDebuggingEnabled:
-      process.env.NODE_ENV !== 'production',
+    webContentsDebuggingEnabled,
   },
   plugins: {
     /**

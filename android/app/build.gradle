@@ -3,6 +3,9 @@ apply plugin: 'com.android.application'
 android {
     namespace = "com.khatario.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         applicationId "com.khatario.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -17,8 +20,14 @@ android {
         }
     }
     buildTypes {
+        debug {
+            debuggable true
+            buildConfigField "boolean", "ENABLE_WEBVIEW_DEBUG", "true"
+        }
         release {
             minifyEnabled false
+            debuggable false
+            buildConfigField "boolean", "ENABLE_WEBVIEW_DEBUG", "false"
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

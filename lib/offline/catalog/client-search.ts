@@ -1,6 +1,7 @@
 import type { TenantScope } from '@/lib/offline/types';
 import { isAppOffline } from '@/lib/network/offline-state';
 import { getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
 import type {
   CatalogCustomer,
   CatalogItemSearchResult,
@@ -30,26 +31,30 @@ export async function preferCatalogForScope(scope: TenantScope): Promise<boolean
   }
 }
 
+async function withReadyCatalog<T>(
+  scope: TenantScope,
+  fn: (repo: Awaited<ReturnType<typeof getCatalogRepository>>) => Promise<T>
+): Promise<T | null> {
+  const repo = await getCatalogRepository();
+  const status = await repo.getStatus(scope);
+  if (!status.ready) return null;
+  return fn(repo);
+}
+
 /** Search local catalog regardless of online/offline flag (when populated). */
 export async function searchCatalogItemsLocal(
   scope: TenantScope,
   query: string,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  if (!status.ready) return null;
-  return repo.searchItems(scope, query, options);
+  return withReadyCatalog(scope, (repo) => repo.searchItems(scope, query, options));
 }
 
 export async function browseCatalogItemsLocal(
   scope: TenantScope,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  if (!status.ready) return null;
-  return repo.browseItems(scope, options);
+  return withReadyCatalog(scope, (repo) => repo.browseItems(scope, options));
 }
 
 export async function searchCatalogCustomersLocal(
@@ -57,20 +62,14 @@ export async function searchCatalogCustomersLocal(
   query: string,
   limit = 20
 ): Promise<CatalogCustomer[] | null> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  if (!status.ready) return null;
-  return repo.searchCustomers(scope, query, limit);
+  return withReadyCatalog(scope, (repo) => repo.searchCustomers(scope, query, limit));
 }
 
 export async function listCatalogCustomersLocal(
   scope: TenantScope,
   limit = 500
 ): Promise<CatalogCustomer[] | null> {
-  const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  if (!status.ready) return null;
-  return repo.listCustomers(scope, limit);
+  return withReadyCatalog(scope, (repo) => repo.listCustomers(scope, limit));
 }
 
 /**
@@ -86,8 +85,10 @@ export async function searchCustomersForBilling(
 }
 
 export async function getCatalogStatus(scope: TenantScope): Promise<CatalogStatus> {
-  const repo = await getCatalogRepository();
-  return repo.getStatus(scope);
+  return withSqliteLabel('catalog-status', async () => {
+    const repo = await getCatalogRepository();
+    return repo.getStatus(scope);
+  });
 }
 
 /**
@@ -100,8 +101,9 @@ export async function searchOfflineItems(
   query: string,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  if (!(await preferCatalogForScope(scope))) return null;
-  return searchCatalogItemsLocal(scope, query, options);
+  return withSqliteLabel('catalog-search/items', () =>
+    searchCatalogItemsLocal(scope, query, options)
+  );
 }
 
 /**
@@ -112,8 +114,9 @@ export async function browseOfflineItems(
   scope: TenantScope,
   options?: CatalogSearchOptions
 ): Promise<CatalogItemSearchResult[] | null> {
-  if (!(await preferCatalogForScope(scope))) return null;
-  return browseCatalogItemsLocal(scope, options);
+  return withSqliteLabel('catalog-search/browse', () =>
+    browseCatalogItemsLocal(scope, options)
+  );
 }
 
 /**
@@ -125,9 +128,12 @@ export async function findOfflineItemByBarcode(
   barcode: string,
   stockScope?: CatalogStockScope
 ): Promise<CatalogItemSearchResult | null> {
-  if (!(await preferCatalogForScope(scope))) return null;
-  const repo = await getCatalogRepository();
-  return repo.findItemByBarcode(scope, barcode, stockScope);
+  return withSqliteLabel('catalog-search/barcode', async () => {
+    const repo = await getCatalogRepository();
+    const status = await repo.getStatus(scope);
+    if (!status.ready) return null;
+    return repo.findItemByBarcode(scope, barcode, stockScope);
+  });
 }
 
 /**

@@ -10,14 +10,10 @@ import type {
   CatalogStockScope,
 } from '@/lib/offline/catalog/types';
 import {
-  buildCustomerSearchText,
-  buildItemSearchText,
   searchCatalogCustomers,
   searchCatalogItems,
 } from '@/lib/offline/catalog/search-helpers';
 import {
-  customerRowId,
-  itemRowId,
   stockScopeKey,
 } from '@/lib/offline/catalog/idb/idb-catalog-db';
 import {
@@ -25,8 +21,58 @@ import {
   CATALOG_SQLITE_SCHEMA,
   scopeKey,
 } from '@/lib/offline/catalog/sqlite/schema';
+import {
+  resolveSqliteLabel,
+  tracedSqliteExecute,
+  tracedSqliteQuery,
+  tracedSqliteRun,
+} from '@/lib/debug/sqlite-probe';
+import {
+  batchUpsertCatalogCustomers,
+  batchUpsertCatalogItems,
+} from '@/lib/offline/catalog/sqlite/sqlite-batch-upsert';
 
 type SqlRow = Record<string, unknown>;
+
+const STATUS_CACHE_TTL_MS = 5_000;
+const statusCache = new Map<
+  string,
+  { at: number; status: CatalogStatus }
+>();
+
+function invalidateStatusCache(scope: TenantScope): void {
+  statusCache.delete(scopeKey(scope.businessId, scope.userId));
+}
+
+async function sqliteQuery(
+  method: string,
+  statement: string,
+  values?: unknown[]
+): Promise<Awaited<ReturnType<typeof CapacitorSQLite.query>>> {
+  const label = resolveSqliteLabel(method);
+  return tracedSqliteQuery(label, statement, () =>
+    CapacitorSQLite.query({
+      database: CATALOG_SQLITE_DB,
+      statement,
+      values: values as (string | number | null)[] | undefined,
+    })
+  );
+}
+
+async function sqliteRun(
+  method: string,
+  statement: string,
+  values?: unknown[]
+): Promise<void> {
+  const label = resolveSqliteLabel(method);
+  await tracedSqliteRun(label, statement, () =>
+    CapacitorSQLite.run({
+      database: CATALOG_SQLITE_DB,
+      statement,
+      values: values as (string | number | null)[] | undefined,
+    })
+  );
+}
 
 let schemaReady = false;
 let connectionReady = false;
@@ -60,10 +106,12 @@ async function ensureSqliteReady(): Promise<boolean> {
         connectionReady = true;
       }
       if (!schemaReady) {
-        await CapacitorSQLite.execute({
-          database: CATALOG_SQLITE_DB,
-          statements: CATALOG_SQLITE_SCHEMA,
-        });
+        await tracedSqliteExecute('init/schema', CATALOG_SQLITE_SCHEMA, () =>
+          CapacitorSQLite.execute({
+            database: CATALOG_SQLITE_DB,
+            statements: CATALOG_SQLITE_SCHEMA,
+          })
+        );
         schemaReady = true;
       }
       return true;
@@ -82,25 +130,24 @@ async function ensureSqliteReady(): Promise<boolean> {
 }
 
 async function readMeta(sk: string, key: string): Promise<string | null> {
-  const result = await CapacitorSQLite.query({
-    database: CATALOG_SQLITE_DB,
-    statement:
-      'SELECT meta_value FROM catalog_meta WHERE scope_key = ? AND meta_key = ?',
-    values: [sk, key],
-  });
+  const result = await sqliteQuery(
+    'readMeta',
+    'SELECT meta_value FROM catalog_meta WHERE scope_key = ? AND meta_key = ?',
+    [sk, key]
+  );
   const row = result.values?.[0] as SqlRow | undefined;
   if (!row) return null;
   return String(row.meta_value ?? row['meta_value'] ?? '');
 }
 
 async function writeMeta(sk: string, key: string, value: string): Promise<void> {
-  await CapacitorSQLite.run({
-    database: CATALOG_SQLITE_DB,
-    statement: `INSERT INTO catalog_meta (scope_key, meta_key, meta_value)
+  await sqliteRun(
+    'writeMeta',
+    `INSERT INTO catalog_meta (scope_key, meta_key, meta_value)
       VALUES (?, ?, ?)
       ON CONFLICT(scope_key, meta_key) DO UPDATE SET meta_value = excluded.meta_value`,
-    values: [sk, key, value],
-  });
+    [sk, key, value]
+  );
 }
 
 function rowToItem(row: SqlRow): CatalogItemSearchResult {
@@ -144,88 +191,15 @@ export class SqliteCatalogDriver implements CatalogRepository {
   ): Promise<void> {
     await this.ready();
     const sk = scopeKey(scope.businessId, scope.userId);
-    const scopeKeyVal = stockScopeKey(stockScope);
-    const now = new Date().toISOString();
-    for (const item of items) {
-      await CapacitorSQLite.run({
-        database: CATALOG_SQLITE_DB,
-        statement: `INSERT INTO catalog_items (
-          row_id, business_id, user_id, item_id, stock_scope_key,
-          name, code, barcode, unit, item_type, selling_price, purchase_price,
-          tax_rate, hsn_sac, current_stock, image_url, has_variants, gst_included,
-          is_bundle, variants_json, search_text, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(row_id) DO UPDATE SET
-          name = excluded.name,
-          code = excluded.code,
-          barcode = excluded.barcode,
-          unit = excluded.unit,
-          item_type = excluded.item_type,
-          selling_price = excluded.selling_price,
-          purchase_price = excluded.purchase_price,
-          tax_rate = excluded.tax_rate,
-          hsn_sac = excluded.hsn_sac,
-          current_stock = excluded.current_stock,
-          image_url = excluded.image_url,
-          has_variants = excluded.has_variants,
-          gst_included = excluded.gst_included,
-          is_bundle = excluded.is_bundle,
-          variants_json = excluded.variants_json,
-          search_text = excluded.search_text,
-          updated_at = excluded.updated_at`,
-        values: [
-          itemRowId(scope.businessId, scope.userId, item.id, scopeKeyVal),
-          scope.businessId,
-          scope.userId,
-          item.id,
-          scopeKeyVal,
-          item.name,
-          item.code ?? null,
-          item.barcode ?? null,
-          item.unit,
-          item.item_type ?? null,
-          item.selling_price,
-          item.purchase_price ?? null,
-          item.tax_rate,
-          item.hsn_sac ?? null,
-          item.current_stock,
-          item.image_url ?? null,
-          item.has_variants ? 1 : 0,
-          item.gst_included ? 1 : 0,
-          item.is_bundle ? 1 : 0,
-          item.variants?.length ? JSON.stringify(item.variants) : null,
-          buildItemSearchText(item),
-          now,
-        ],
-      });
-    }
+    await batchUpsertCatalogItems(scope, items, stockScope);
     await writeMeta(sk, 'stockScope', JSON.stringify(stockScope));
+    invalidateStatusCache(scope);
   }
 
   async upsertCustomers(scope: TenantScope, customers: CatalogCustomer[]): Promise<void> {
     await this.ready();
-    const now = new Date().toISOString();
-    for (const customer of customers) {
-      await CapacitorSQLite.run({
-        database: CATALOG_SQLITE_DB,
-        statement: `INSERT INTO catalog_customers (
-          row_id, business_id, user_id, customer_id, payload_json, search_text, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(row_id) DO UPDATE SET
-          payload_json = excluded.payload_json,
-          search_text = excluded.search_text,
-          updated_at = excluded.updated_at`,
-        values: [
-          customerRowId(scope.businessId, scope.userId, customer.id),
-          scope.businessId,
-          scope.userId,
-          customer.id,
-          JSON.stringify(customer),
-          buildCustomerSearchText(customer),
-          now,
-        ],
-      });
-    }
+    await batchUpsertCatalogCustomers(scope, customers);
+    invalidateStatusCache(scope);
   }
 
   private async loadItems(
@@ -233,26 +207,26 @@ export class SqliteCatalogDriver implements CatalogRepository {
     scopeKeyVal: string
   ): Promise<CatalogItemSearchResult[]> {
     await this.ready();
-    const result = await CapacitorSQLite.query({
-      database: CATALOG_SQLITE_DB,
-      statement: `SELECT * FROM catalog_items
+    const result = await sqliteQuery(
+      'loadItems',
+      `SELECT * FROM catalog_items
         WHERE business_id = ? AND user_id = ? AND stock_scope_key = ?
         ORDER BY name ASC`,
-      values: [scope.businessId, scope.userId, scopeKeyVal],
-    });
+      [scope.businessId, scope.userId, scopeKeyVal]
+    );
     return (result.values ?? []).map((row) => rowToItem(row as SqlRow));
   }
 
   /** All cached items for tenant, deduped by item id (multiple stock scopes). */
   private async loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSearchResult[]> {
     await this.ready();
-    const result = await CapacitorSQLite.query({
-      database: CATALOG_SQLITE_DB,
-      statement: `SELECT * FROM catalog_items
+    const result = await sqliteQuery(
+      'loadAllItemsForTenant',
+      `SELECT * FROM catalog_items
         WHERE business_id = ? AND user_id = ?
         ORDER BY name ASC`,
-      values: [scope.businessId, scope.userId],
-    });
+      [scope.businessId, scope.userId]
+    );
     const byId = new Map<string, CatalogItemSearchResult>();
     for (const row of result.values ?? []) {
       const item = rowToItem(row as SqlRow);
@@ -348,14 +322,14 @@ export class SqliteCatalogDriver implements CatalogRepository {
 
   async listCustomers(scope: TenantScope, limit = 20): Promise<CatalogCustomer[]> {
     await this.ready();
-    const result = await CapacitorSQLite.query({
-      database: CATALOG_SQLITE_DB,
-      statement: `SELECT payload_json FROM catalog_customers
+    const result = await sqliteQuery(
+      'listCustomers',
+      `SELECT payload_json FROM catalog_customers
         WHERE business_id = ? AND user_id = ?
         ORDER BY search_text ASC
         LIMIT ?`,
-      values: [scope.businessId, scope.userId, limit],
-    });
+      [scope.businessId, scope.userId, limit]
+    );
     return (result.values ?? []).map((row) => {
       const payload = (row as SqlRow).payload_json as string;
       return JSON.parse(payload) as CatalogCustomer;
@@ -365,18 +339,21 @@ export class SqliteCatalogDriver implements CatalogRepository {
   async getStatus(scope: TenantScope): Promise<CatalogStatus> {
     await this.ready();
     const sk = scopeKey(scope.businessId, scope.userId);
-    const itemCountResult = await CapacitorSQLite.query({
-      database: CATALOG_SQLITE_DB,
-      statement:
-        'SELECT COUNT(*) as cnt FROM catalog_items WHERE business_id = ? AND user_id = ?',
-      values: [scope.businessId, scope.userId],
-    });
-    const customerCountResult = await CapacitorSQLite.query({
-      database: CATALOG_SQLITE_DB,
-      statement:
-        'SELECT COUNT(*) as cnt FROM catalog_customers WHERE business_id = ? AND user_id = ?',
-      values: [scope.businessId, scope.userId],
-    });
+    const cached = statusCache.get(sk);
+    if (cached && Date.now() - cached.at < STATUS_CACHE_TTL_MS) {
+      return cached.status;
+    }
+
+    const itemCountResult = await sqliteQuery(
+      'getStatus/itemCount',
+      'SELECT COUNT(*) as cnt FROM catalog_items WHERE business_id = ? AND user_id = ?',
+      [scope.businessId, scope.userId]
+    );
+    const customerCountResult = await sqliteQuery(
+      'getStatus/customerCount',
+      'SELECT COUNT(*) as cnt FROM catalog_customers WHERE business_id = ? AND user_id = ?',
+      [scope.businessId, scope.userId]
+    );
     const itemCount = Number((itemCountResult.values?.[0] as SqlRow)?.cnt ?? 0);
     const customerCount = Number(
       (customerCountResult.values?.[0] as SqlRow)?.cnt ?? 0
@@ -394,7 +371,7 @@ export class SqliteCatalogDriver implements CatalogRepository {
       const raw = await readMeta(sk, key);
       return raw ? Number(raw) : null;
     };
-    return {
+    const status: CatalogStatus = {
       ready: itemCount > 0 || customerCount > 0,
       itemCount,
       customerCount,
@@ -403,6 +380,8 @@ export class SqliteCatalogDriver implements CatalogRepository {
       lastCustomersDeltaAt: await parseMeta('lastCustomersDeltaAt'),
       stockScope,
     };
+    statusCache.set(sk, { at: Date.now(), status });
+    return status;
   }
 
   async setSyncTimestamps(
@@ -424,26 +403,28 @@ export class SqliteCatalogDriver implements CatalogRepository {
     if (patch.lastCustomersDeltaAt != null) {
       await writeMeta(sk, 'lastCustomersDeltaAt', String(patch.lastCustomersDeltaAt));
     }
+    invalidateStatusCache(scope);
   }
 
   async clearTenant(scope: TenantScope): Promise<void> {
     await this.ready();
     const sk = scopeKey(scope.businessId, scope.userId);
-    await CapacitorSQLite.run({
-      database: CATALOG_SQLITE_DB,
-      statement: 'DELETE FROM catalog_items WHERE business_id = ? AND user_id = ?',
-      values: [scope.businessId, scope.userId],
-    });
-    await CapacitorSQLite.run({
-      database: CATALOG_SQLITE_DB,
-      statement: 'DELETE FROM catalog_customers WHERE business_id = ? AND user_id = ?',
-      values: [scope.businessId, scope.userId],
-    });
-    await CapacitorSQLite.run({
-      database: CATALOG_SQLITE_DB,
-      statement: 'DELETE FROM catalog_meta WHERE scope_key = ?',
-      values: [sk],
-    });
+    await sqliteRun(
+      'clearTenant/items',
+      'DELETE FROM catalog_items WHERE business_id = ? AND user_id = ?',
+      [scope.businessId, scope.userId]
+    );
+    await sqliteRun(
+      'clearTenant/customers',
+      'DELETE FROM catalog_customers WHERE business_id = ? AND user_id = ?',
+      [scope.businessId, scope.userId]
+    );
+    await sqliteRun(
+      'clearTenant/meta',
+      'DELETE FROM catalog_meta WHERE scope_key = ?',
+      [sk]
+    );
+    invalidateStatusCache(scope);
   }
 }
 

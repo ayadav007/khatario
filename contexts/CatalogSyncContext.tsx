@@ -16,6 +16,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { NETWORK_RECONNECT_EVENT } from '@/lib/network/events';
 import { getCatalogStatus } from '@/lib/offline/catalog/client-search';
+import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
 import {
   runDeltaCatalogSync,
   runFullCatalogSync,
@@ -42,6 +43,8 @@ const CatalogSyncContext = createContext<CatalogSyncContextValue | undefined>(
 
 /** Minimum gap between automatic background delta syncs (ms). */
 const MIN_AUTO_DELTA_MS = 60_000;
+/** Throttle progress UI updates during sync to reduce render churn. */
+const PROGRESS_THROTTLE_MS = 750;
 
 export function CatalogSyncProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('CatalogSyncProvider');
@@ -55,6 +58,21 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
   const syncingRef = useRef(false);
   const lastAutoSyncAtRef = useRef(0);
   const bootScopeKeyRef = useRef<string | null>(null);
+  const progressThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingProgressRef = useRef<CatalogSyncProgress | null>(null);
+
+  const setProgressThrottled = useCallback((next: CatalogSyncProgress) => {
+    pendingProgressRef.current = next;
+    if (progressThrottleRef.current) return;
+    setProgress(next);
+    progressThrottleRef.current = setTimeout(() => {
+      progressThrottleRef.current = null;
+      if (pendingProgressRef.current) {
+        setProgress(pendingProgressRef.current);
+        pendingProgressRef.current = null;
+      }
+    }, PROGRESS_THROTTLE_MS);
+  }, []);
 
   const scope: TenantScope | null = useMemo(
     () =>
@@ -77,7 +95,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
       return;
     }
     try {
-      setStatus(await getCatalogStatus(scope));
+      setStatus(await withSqliteLabel('catalog-sync/status', () => getCatalogStatus(scope)));
     } catch {
       setStatus(null);
     }
@@ -106,7 +124,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
           scope,
           userId: user.id,
           stockScope,
-          onProgress: setProgress,
+          onProgress: setProgressThrottled,
         };
         if (mode === 'full') {
           await runFullCatalogSync(syncOptions);
@@ -131,7 +149,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
         setIsSyncing(false);
       }
     },
-    [scope, user?.id, isOnline, stockScope, refreshStatus]
+    [scope, user?.id, isOnline, stockScope, refreshStatus, setProgressThrottled]
   );
 
   const runSyncRef = useRef(runSync);
@@ -157,7 +175,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
     bootScopeKeyRef.current = bootKey;
 
     void (async () => {
-      const current = await getCatalogStatus(scope);
+      const current = await withSqliteLabel('catalog-sync/boot', () => getCatalogStatus(scope));
       await runSyncRef.current(current.ready ? 'delta' : 'full');
     })();
   }, [scope?.businessId, scope?.userId, user?.id, isOnline]);

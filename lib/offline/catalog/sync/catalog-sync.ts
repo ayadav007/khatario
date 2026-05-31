@@ -2,6 +2,7 @@ import type { TenantScope } from '@/lib/offline/types';
 import { isAppOffline } from '@/lib/network/offline-state';
 import type { CatalogRepository } from '@/lib/offline/catalog/catalog-repository';
 import { withCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
 import {
   mapApiCustomerToCatalog,
   mapApiItemToCatalog,
@@ -37,7 +38,9 @@ export async function runCatalogSync(options: CatalogSyncOptions): Promise<void>
   if (isAppOffline()) {
     throw new Error('Catalog sync requires network');
   }
-  return withCatalogRepository((repo) => runCatalogSyncWithRepo(repo, options));
+  return withSqliteLabel('catalog-sync', () =>
+    withCatalogRepository((repo) => runCatalogSyncWithRepo(repo, options))
+  );
 }
 
 async function runCatalogSyncWithRepo(
