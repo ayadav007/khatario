@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Bell, X, Check, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 
 import { format } from 'date-fns';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 export interface Notification {
   id: string;
@@ -25,10 +25,10 @@ interface NotificationCenterProps {
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({ businessId }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { notifications, unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useLayoutData();
+  const { notifications, unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useNotifications();
 
   // TopBar mounts two NotificationCenter instances (mobile + desktop, CSS-hidden). Do not refresh on mount
-  // or visibility — that doubled force-refreshes. Bootstrap + SSE + 30s poll in LayoutDataContext load the list;
+  // or visibility — that doubled force-refreshes. Bootstrap + SSE + 30s poll in NotificationProvider load the list;
   // refresh when the user opens the panel (same pattern as NotificationPanel).
   useEffect(() => {
     if (isOpen) {

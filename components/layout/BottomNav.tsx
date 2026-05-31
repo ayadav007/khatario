@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, FileText, Package, Users, MoreHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useBadges } from '@/contexts/BadgeContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
 import { isOfflineCapable } from '@/lib/offline/offline-capable-routes';
@@ -17,7 +17,7 @@ const TAB_HREFS = MOBILE_TAB_ROOTS as readonly string[];
 export const BottomNav: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
-  const { badgeCounts, refreshBadgeCounts } = useLayoutData();
+  const { badgeCounts, refreshBadgeCounts } = useBadges();
   const { isOffline } = useNetworkStatus();
   const { flashBlockedFeature } = useOfflineBanner();
 

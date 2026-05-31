@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useSubscriptionCheck } from '@/hooks/useSubscriptionCheck';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import {
   CheckCircle2,
@@ -100,7 +100,7 @@ export default function TodoPage() {
   const { business, user } = useAuth();
   const router = useRouter();
   const { hasFeature, loading: featureLoading } = useSubscriptionCheck(business?.id);
-  const { refreshNotifications } = useLayoutData();
+  const { refreshNotifications } = useNotifications();
   const hasTodoFeature = hasFeature('todo');
   const todoTz = useMemo(() => getBusinessTodoTimezone(business), [business]);
   const { visible: showGlobalScheduleRail, setVisible: setShowGlobalScheduleRail, bumpRefresh } =

@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { useRouter } from 'next/navigation';
 import { 
   Bell, 
@@ -37,14 +38,14 @@ interface Notification {
 export default function NotificationsPage() {
   const { business, user } = useAuth();
   const router = useRouter();
-  const { 
-    notifications, 
-    unreadNotificationCount, 
-    loading, 
-    refreshNotifications, 
-    markNotificationAsRead, 
-    markAllNotificationsAsRead 
-  } = useLayoutData();
+  const { loading } = useLayoutData();
+  const {
+    notifications,
+    unreadNotificationCount,
+    refreshNotifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+  } = useNotifications();
   
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all');
 

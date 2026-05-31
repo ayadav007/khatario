@@ -53,7 +53,7 @@ import {
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { PromotionSidebar } from '@/components/promotions/PromotionSidebar';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
@@ -78,13 +78,13 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-export const Sidebar: React.FC = () => {
+export const Sidebar = React.memo(function Sidebar() {
   useRenderLoopProbe('Sidebar');
   const { sidebarCollapsed, toggleSidebar } = useLayout();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { business, user, branch: sessionBranch, branches, activeBranchCount } = useAuth();
-  const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useLayoutData();
+  const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
   const { hasCapability } = useCapabilityCheck();
 
   const [showAddonModal, setShowAddonModal] = useState(false);
@@ -1516,4 +1516,4 @@ export const Sidebar: React.FC = () => {
       )}
     </>
   );
-};
+});

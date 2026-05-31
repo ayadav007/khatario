@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useBadges } from '@/contexts/BadgeContext';
 
 interface RecordPaymentModalProps {
   invoiceId: string;
@@ -24,7 +24,7 @@ export function RecordPaymentModal({
   onSuccess,
   onClose,
 }: RecordPaymentModalProps) {
-  const { refreshBadgeCounts } = useLayoutData();
+  const { refreshBadgeCounts } = useBadges();
   const [amount, setAmount] = useState<string>(balanceAmount.toString());
   const [paymentMode, setPaymentMode] = useState<string>('cash');
   const [reference, setReference] = useState<string>('');

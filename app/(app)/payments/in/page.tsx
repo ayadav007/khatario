@@ -15,7 +15,7 @@ import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useBadges } from '@/contexts/BadgeContext';
 
 interface Payment {
   id: string;
@@ -52,7 +52,7 @@ export default function PaymentInPage() {
   const { business, user } = useAuth();
   const { currentBranchId, isLoading: branchLoading } = useBranch();
   const toast = useToastContext();
-  const { refreshBadgeCounts } = useLayoutData();
+  const { refreshBadgeCounts } = useBadges();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);

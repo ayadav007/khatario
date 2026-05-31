@@ -5,6 +5,7 @@ import { Bell, Check, X, AlertCircle, CheckCircle, XCircle, Package, Clock, Aler
 import { useRouter } from 'next/navigation';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 interface Notification {
   id: string;
@@ -20,7 +21,8 @@ interface Notification {
 
 export function NotificationPanel() {
   const router = useRouter();
-  const { notifications, unreadNotificationCount, loading, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useLayoutData();
+  const { loading } = useLayoutData();
+  const { notifications, unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
