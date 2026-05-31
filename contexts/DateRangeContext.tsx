@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef, useMemo } from 'react';
 
 interface DateRange {
   start: string;
@@ -18,6 +20,7 @@ interface DateRangeContextType {
 const DateRangeContext = createContext<DateRangeContextType | undefined>(undefined);
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
+  useRenderLoopProbe('DateRangeProvider');
   const [dateRange, setDateRangeState] = useState<DateRange | null>(null);
   const handlerRef = useRef<((range: DateRange) => void) | null>(null);
 
@@ -33,8 +36,13 @@ export function DateRangeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const value = useMemo<DateRangeContextType>(
+    () => ({ dateRange, setDateRange, registerHandler }),
+    [dateRange, setDateRange, registerHandler]
+  );
+
   return (
-    <DateRangeContext.Provider value={{ dateRange, setDateRange, registerHandler }}>
+    <DateRangeContext.Provider value={value}>
       {children}
     </DateRangeContext.Provider>
   );

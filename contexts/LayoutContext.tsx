@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 
 interface LayoutContextType {
@@ -18,6 +20,7 @@ const LayoutContext = createContext<LayoutContextType>({
 export const useLayout = () => useContext(LayoutContext);
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('LayoutProvider');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -39,10 +42,15 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     }
   }, [pathname]);
 
-  const toggleSidebar = () => setSidebarCollapsed(prev => !prev);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(prev => !prev), []);
+
+  const value = useMemo<LayoutContextType>(
+    () => ({ sidebarCollapsed, setSidebarCollapsed, toggleSidebar }),
+    [sidebarCollapsed, toggleSidebar]
+  );
 
   return (
-    <LayoutContext.Provider value={{ sidebarCollapsed, setSidebarCollapsed, toggleSidebar }}>
+    <LayoutContext.Provider value={value}>
       {children}
     </LayoutContext.Provider>
   );

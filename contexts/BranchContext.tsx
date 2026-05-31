@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { useRouter } from 'next/navigation';
 import {
@@ -43,6 +45,7 @@ const BranchContext = createContext<BranchContextType>({
 export const useBranch = () => useContext(BranchContext);
 
 export function BranchProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('BranchProvider');
   const { user, business, branches: sessionBranches, permissions, isPrimaryAdmin, loading: authLoading } = useAuth();
   const router = useRouter();
   const [currentBranchId, setCurrentBranchIdState] = useState<string | 'ALL'>('ALL');
@@ -180,19 +183,26 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
 
   const { refresh: authRefresh } = useAuth();
 
-  return (
-    <BranchContext.Provider
-      value={{
-        currentBranchId,
-        accessibleBranches,
-        isAdmin,
-        currentBranch,
-        isLoading,
-        setCurrentBranchId,
-        refreshBranches: authRefresh,
-      }}
-    >
-      {children}
-    </BranchContext.Provider>
+  const value = useMemo<BranchContextType>(
+    () => ({
+      currentBranchId,
+      accessibleBranches,
+      isAdmin,
+      currentBranch,
+      isLoading,
+      setCurrentBranchId,
+      refreshBranches: authRefresh,
+    }),
+    [
+      currentBranchId,
+      accessibleBranches,
+      isAdmin,
+      currentBranch,
+      isLoading,
+      setCurrentBranchId,
+      authRefresh,
+    ]
   );
+
+  return <BranchContext.Provider value={value}>{children}</BranchContext.Provider>;
 }

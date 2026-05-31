@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 
 interface DarkModeContextType {
   isDarkMode: boolean;
@@ -10,6 +12,7 @@ interface DarkModeContextType {
 const DarkModeContext = createContext<DarkModeContextType | undefined>(undefined);
 
 export function DarkModeProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('DarkModeProvider');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -40,12 +43,17 @@ export function DarkModeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isDarkMode, mounted]);
 
-  const toggleDarkMode = () => {
+  const toggleDarkMode = useCallback(() => {
     setIsDarkMode((prev) => !prev);
-  };
+  }, []);
+
+  const value = useMemo<DarkModeContextType>(
+    () => ({ isDarkMode, toggleDarkMode }),
+    [isDarkMode, toggleDarkMode]
+  );
 
   return (
-    <DarkModeContext.Provider value={{ isDarkMode, toggleDarkMode }}>
+    <DarkModeContext.Provider value={value}>
       {children}
     </DarkModeContext.Provider>
   );

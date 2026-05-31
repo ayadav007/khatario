@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import {
   Search,
   User,
@@ -299,6 +300,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   showDateRange = false,
   onDateRangeChange,
 }) => {
+  useRenderLoopProbe('TopBar');
   const { setDateRange: setDateRangeFromContext } = useDateRange();
   const { business, user, logout, isPrimaryAdmin } = useAuth();
   const {

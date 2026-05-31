@@ -23,15 +23,18 @@ const withPWA = withPWAInit({
     // Take over immediately — new SW activates without waiting for old tabs to close
     skipWaiting: true,
     clientsClaim: true,
-    // Pre-warm the dashboard into the SW cache during install so it is
-    // available on cold-start offline even before the user has navigated there.
+    // IMPORTANT: do NOT precache authenticated app routes (/dashboard, /items,
+    // /customers, /invoices, /more). At SW install time those fetches run through
+    // middleware; when the user is logged out they 307-redirect to /login, so the
+    // precache stores the LOGIN html under /dashboard and serves it forever
+    // (bypassing the NetworkFirst handler) — this is what made the app show the
+    // login screen on every refresh even with a valid session. Only precache the
+    // public, auth-independent pages. Authenticated routes are cached at runtime
+    // by the NetworkFirst navigation handler (offline fallback still works once a
+    // page has been visited online, plus the /offline fallback below).
     additionalManifestEntries: [
-      { url: '/dashboard', revision: APP_BUILD_ID },
       { url: '/login', revision: APP_BUILD_ID },
-      { url: '/items', revision: APP_BUILD_ID },
-      { url: '/customers', revision: APP_BUILD_ID },
-      { url: '/invoices', revision: APP_BUILD_ID },
-      { url: '/more', revision: APP_BUILD_ID },
+      { url: '/offline', revision: APP_BUILD_ID },
     ],
     runtimeCaching: [
       // ── Static Next.js assets — immutable (hash-versioned), cache forever ─
@@ -101,7 +104,10 @@ const nextConfig = {
   },
   swcMinify: true,
   compiler: {
-    removeConsole: process.env.NODE_ENV === "production",
+    // Keep console.error in production so the render-loop probe (and real errors)
+    // remain visible on staging. log/warn/info are still stripped.
+    removeConsole:
+      process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false,
   },
   webpack: (config, { isServer }) => {
     config.optimization = {

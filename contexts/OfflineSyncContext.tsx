@@ -1,5 +1,7 @@
 'use client';
 
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
 import React, {
   createContext,
   useCallback,
@@ -45,6 +47,7 @@ const OfflineSyncContext = createContext<OfflineSyncContextValue | undefined>(
 );
 
 export function OfflineSyncProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('OfflineSyncProvider');
   const { business, user } = useAuth();
   const { isOnline, isOffline, lastChangedAt } = useNetworkStatus();
   const [connectivityState, setConnectivityState] =
@@ -58,10 +61,16 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
   const [stateChangedAt, setStateChangedAt] = useState<number | null>(null);
   const migratedRef = useRef(false);
 
-  const scope: TenantScope | null =
-    business?.id && user?.id
-      ? { businessId: business.id, userId: user.id }
-      : null;
+  // Must be memoized: a fresh object every render makes every `[scope]` effect
+  // below re-run on each render (re-subscribing listeners/intervals, re-reading
+  // IDB), which feeds the app-wide re-render churn.
+  const scope = useMemo<TenantScope | null>(
+    () =>
+      business?.id && user?.id
+        ? { businessId: business.id, userId: user.id }
+        : null,
+    [business?.id, user?.id]
+  );
 
   const refreshCounts = useCallback(async () => {
     if (!scope) return;

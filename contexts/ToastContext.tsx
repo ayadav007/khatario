@@ -1,6 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useCallback } from 'react';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useToast } from '@/hooks/useToast';
 import { ToastContainer } from '@/components/ui/ToastContainer';
 import { shouldSuppressOfflineToast } from '@/lib/network/errors';
@@ -16,6 +18,7 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('ToastProvider');
   const { toasts, showToast, removeToast, success, error, warning, info } = useToast();
 
   const guardedError = useCallback(
@@ -34,13 +37,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [warning]
   );
 
-  const contextValue: ToastContextType = {
-    showToast: (message, type, duration, action) => showToast(message, type, duration, action),
-    success: (message, action) => success(message, action),
-    error: guardedError,
-    warning: guardedWarning,
-    info: (message, action) => info(message, action),
-  };
+  // Stable identity: consumers commonly put these in effect deps. Inline arrows
+  // here produced a brand-new context value every render, re-running those
+  // effects and contributing to the app-wide re-render loop.
+  const contextValue = useMemo<ToastContextType>(
+    () => ({
+      showToast,
+      success,
+      error: guardedError,
+      warning: guardedWarning,
+      info,
+    }),
+    [showToast, success, guardedError, guardedWarning, info]
+  );
 
   return (
     <ToastContext.Provider value={contextValue}>

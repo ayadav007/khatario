@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import { 
   LayoutDashboard, 
   Users, 
@@ -77,6 +78,7 @@ function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
 }
 
 export const Sidebar: React.FC = () => {
+  useRenderLoopProbe('Sidebar');
   const { sidebarCollapsed, toggleSidebar } = useLayout();
   const pathname = usePathname();
   const searchParams = useSearchParams();

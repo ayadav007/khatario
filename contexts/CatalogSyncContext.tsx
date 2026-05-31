@@ -1,5 +1,7 @@
 'use client';
 
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
 import React, {
   createContext,
   useCallback,
@@ -42,6 +44,7 @@ const CatalogSyncContext = createContext<CatalogSyncContextValue | undefined>(
 const MIN_AUTO_DELTA_MS = 60_000;
 
 export function CatalogSyncProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('CatalogSyncProvider');
   const { business, user } = useAuth();
   const { currentBranchId } = useBranch();
   const { isOnline } = useNetworkStatus();

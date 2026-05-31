@@ -7,7 +7,7 @@
  * Legacy: useFeatureRegistry() for feature checks, /api/subscriptions/check-limit for limit checks.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface LimitCheck {
   allowed: boolean;
@@ -80,9 +80,9 @@ export function useSubscriptionCheck(businessId: string | undefined) {
     }
   }, [subscription, loading, businessId]);
 
-  async function checkLimit(
+  const checkLimit = useCallback(async (
     limitType: 'invoices' | 'customers' | 'items' | 'users' | 'whatsapp'
-  ): Promise<LimitCheck> {
+  ): Promise<LimitCheck> => {
     if (!businessId) {
       return { allowed: false, current: 0, limit: 0 };
     }
@@ -119,7 +119,7 @@ export function useSubscriptionCheck(businessId: string | undefined) {
       console.error('Error checking limit:', error);
       return { allowed: false, current: 0, limit: 0 };
     }
-  }
+  }, [businessId, subscription]);
 
   const [addons, setAddons] = useState<any[]>([]);
   const [addonsLoading, setAddonsLoading] = useState(true);
@@ -157,7 +157,7 @@ export function useSubscriptionCheck(businessId: string | undefined) {
    * 2. Feature Registry (new system)
    * 3. JSONB fallback (legacy)
    */
-  function hasFeature(featureKey: string): boolean {
+  const hasFeature = useCallback((featureKey: string): boolean => {
     // Helper: Check if addon is active
     const hasActiveAddon = (addonType: string): boolean => {
       if (!Array.isArray(addons) || addons.length === 0) {
@@ -202,7 +202,7 @@ export function useSubscriptionCheck(businessId: string | undefined) {
       );
     }
     return hasInRegistry;
-  }
+  }, [addons, enabledFeatures]);
 
   return {
     loading: loading || addonsLoading || featuresLoading,

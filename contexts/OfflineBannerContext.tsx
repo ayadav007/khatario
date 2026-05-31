@@ -1,5 +1,7 @@
 'use client';
 
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
 import React, {
   createContext,
   useCallback,
@@ -31,6 +33,7 @@ const OfflineBannerContext = createContext<OfflineBannerContextValue | undefined
 const BLOCKED_FLASH_MS = 2000;
 
 export function OfflineBannerProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('OfflineBannerProvider');
   const [mode, setMode] = useState<OfflineBannerMode>('default');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

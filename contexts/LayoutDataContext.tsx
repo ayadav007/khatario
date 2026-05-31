@@ -1,5 +1,7 @@
 'use client';
 
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { TodoReminderPopup } from '@/components/notifications/TodoReminderPopup';
@@ -198,6 +200,7 @@ async function fetchWithDedup<T>(
 }
 
 export function LayoutDataProvider({ children }: { children: React.ReactNode }) {
+  useRenderLoopProbe('LayoutDataProvider');
   const { business, user } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);

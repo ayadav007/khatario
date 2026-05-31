@@ -32,6 +32,7 @@ import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -50,6 +51,7 @@ function AppRouteLayoutInner({
 }: {
   children: React.ReactNode;
 }) {
+  useRenderLoopProbe('AppRouteLayoutInner');
   const { sidebarCollapsed } = useLayout();
   const pathname = usePathname();
   const [posMode, setPosMode] = useState(false);
