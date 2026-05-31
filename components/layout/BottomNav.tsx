@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, FileText, Package, Users, MoreHorizontal } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -9,7 +9,6 @@ import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
 import { isOfflineCapable } from '@/lib/offline/offline-capable-routes';
-import { isCapacitorNative } from '@/lib/capacitor/platform';
 import { MOBILE_TAB_ROOTS, normalizePath } from '@/lib/mobile-navigation';
 
 const TAB_HREFS = MOBILE_TAB_ROOTS as readonly string[];
@@ -17,18 +16,9 @@ const TAB_HREFS = MOBILE_TAB_ROOTS as readonly string[];
 export const BottomNav: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
-
-  const [mounted, setMounted] = useState(false);
   const { badgeCounts, refreshBadgeCounts } = useLayoutData();
   const { isOffline } = useNetworkStatus();
   const { flashBlockedFeature } = useOfflineBanner();
-  const navLockRef = useRef(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     const isMobile = window.innerWidth < 1024;
@@ -45,44 +35,31 @@ export const BottomNav: React.FC = () => {
     }
   }, [router]);
 
-  const navigateToTab = useCallback(
-    (href: string) => {
-      if (navLockRef.current) return;
+  const handleTabClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+  ) => {
+    const current = normalizePath(pathname);
+    const target = normalizePath(href);
 
-      if (isOffline && !isOfflineCapable(href)) {
-        flashBlockedFeature();
-        return;
-      }
+    if (isOffline && !isOfflineCapable(href)) {
+      e.preventDefault();
+      flashBlockedFeature();
+      return;
+    }
 
-      const current = normalizePath(pathnameRef.current);
-      const target = normalizePath(href);
+    if (current === target) {
+      e.preventDefault();
+      return;
+    }
 
-      if (current === target) return;
-
-      navLockRef.current = true;
-      window.setTimeout(() => {
-        navLockRef.current = false;
-      }, 450);
-
-      // Synchronous App Router call inside the tap handler (no startTransition).
-      if (current.startsWith(`${target}/`)) {
-        router.replace(href);
-        return;
-      }
-      router.push(href);
-    },
-    [flashBlockedFeature, isOffline, router],
-  );
-
-  const handleTabActivate = useCallback(
-    (href: string, e: React.MouseEvent | React.TouchEvent) => {
-      if (e.type === 'touchend') {
-        e.preventDefault();
-      }
-      navigateToTab(href);
-    },
-    [navigateToTab],
-  );
+    // Collapse nested route to tab root synchronously (must stay in gesture handler for WebView).
+    if (current.startsWith(`${target}/`)) {
+      e.preventDefault();
+      router.replace(href);
+    }
+    // Otherwise let <Link> perform default client navigation (push).
+  };
 
   const navItems = [
     {
@@ -114,7 +91,7 @@ export const BottomNav: React.FC = () => {
     },
   ];
 
-  const nav = (
+  return (
     <nav
       data-mobile-bottom-nav
       role="tablist"
@@ -132,21 +109,17 @@ export const BottomNav: React.FC = () => {
         const Icon = item.icon;
         const isActive =
           pathname === item.href || pathname?.startsWith(item.href + '/');
-        const useTouchEnd = isCapacitorNative();
 
         return (
-          <button
+          <Link
             key={item.href}
-            type="button"
+            href={item.href}
+            scroll={false}
+            prefetch
             role="tab"
             aria-selected={isActive}
             aria-current={isActive ? 'page' : undefined}
-            onTouchEnd={
-              useTouchEnd ? (e) => handleTabActivate(item.href, e) : undefined
-            }
-            onClick={
-              useTouchEnd ? undefined : () => navigateToTab(item.href)
-            }
+            onClick={(e) => handleTabClick(e, item.href)}
             className={clsx(
               'relative flex h-full flex-1 flex-col items-center justify-center gap-1',
               'transition-colors active:bg-slate-50',
@@ -166,14 +139,9 @@ export const BottomNav: React.FC = () => {
             {isActive ? (
               <div className="absolute left-1/2 top-0 h-0.5 w-8 -translate-x-1/2 rounded-b-full bg-primary-500" />
             ) : null}
-          </button>
+          </Link>
         );
       })}
     </nav>
   );
-
-  if (!mounted) return null;
-  if (typeof window !== 'undefined' && window.innerWidth >= 1024) return null;
-
-  return createPortal(nav, document.body);
 };
