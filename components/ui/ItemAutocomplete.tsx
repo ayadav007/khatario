@@ -694,7 +694,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         <input
           ref={setInputRef}
           type="text"
-          className={`w-full bg-transparent border-none focus:ring-0 py-2 px-1 font-medium placeholder-gray-400 text-[21px] min-h-[40px] ${className || ''}`}
+          className={`w-full bg-transparent border-none focus:ring-0 py-2 px-1 font-medium placeholder-gray-400 text-xl min-h-[40px] ${className || ''}`}
           placeholder={placeholder || "Search Item"}
           value={query}
           onChange={handleInputChange}
@@ -758,14 +758,14 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                   <img src={item.image_url} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-border" />
                 ) : (
                   <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center border border-border">
-                    <span className="text-gray-400 text-[10px] font-bold">{item.name.charAt(0).toUpperCase()}</span>
+                    <span className="text-gray-400 text-2xs font-bold">{item.name.charAt(0).toUpperCase()}</span>
                   </div>
                 )}
                 <div>
                   <div className="font-medium text-text-primary text-sm flex items-center gap-2">
                     {item.name}
                     {item.item_type === 'service' && (
-                      <span className="text-[10px] uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold leading-none">Service</span>
+                      <span className="text-2xs uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold leading-none">Service</span>
                     )}
                   </div>
                   <div className="text-xs text-text-secondary flex items-center gap-2">

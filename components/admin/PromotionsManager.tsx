@@ -978,7 +978,7 @@ export function PromotionsManager() {
                           className="flex-1 bg-primary-200 hover:bg-primary-400 rounded-t transition-all group relative"
                           style={{ height: `${height}%` }}
                         >
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10">
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-800 text-white text-2xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10">
                             {format(new Date(day.date), 'MMM d')}: {day.count}
                           </div>
                         </div>
@@ -1056,11 +1056,11 @@ export function PromotionsManager() {
                     <div className="flex items-center justify-center gap-4 text-xs text-gray-600">
                       <div className="flex flex-col items-center">
                         <span className="font-bold">{promo.view_count || 0}</span>
-                        <span className="text-[10px] uppercase text-gray-400">Views</span>
+                        <span className="text-2xs uppercase text-gray-400">Views</span>
                       </div>
                       <div className="flex flex-col items-center">
                         <span className="font-bold text-green-600">{promo.click_count || 0}</span>
-                        <span className="text-[10px] uppercase text-gray-400">Clicks</span>
+                        <span className="text-2xs uppercase text-gray-400">Clicks</span>
                       </div>
                     </div>
                   </td>

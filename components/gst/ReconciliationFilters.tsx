@@ -55,7 +55,7 @@ export function ReconciliationFilters({
             onChange={(e) => onPeriodChange(e.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
-          <p className="mt-1 text-[11px] text-text-muted" title="GST return month in YYYY-MM">
+          <p className="mt-1 text-caption text-text-muted" title="GST return month in YYYY-MM">
             Format YYYY-MM (GST filing period)
           </p>
         </div>
@@ -89,7 +89,7 @@ export function ReconciliationFilters({
               </option>
             ))}
           </select>
-          <p className="mt-1 max-w-md text-[11px] leading-snug text-text-muted">
+          <p className="mt-1 max-w-md text-caption leading-snug text-text-muted">
             <span className="font-medium text-text-secondary">Live vs Live</span> — current books vs current books ·{' '}
             <span className="font-medium text-text-secondary">Filed vs Live</span> — filed data vs current books ·{' '}
             <span className="font-medium text-text-secondary">Filed vs Filed</span> — filed vs filed snapshot

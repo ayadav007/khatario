@@ -382,12 +382,12 @@ export default function WhatsAppOrdersPage() {
                                 </div>
                               )}
                               {order.ocr_data.validation_summary && (
-                                <div className="mt-2 text-[10px] text-gray-600 border-t border-gray-200 pt-2">
+                                <div className="mt-2 text-2xs text-gray-600 border-t border-gray-200 pt-2">
                                   Validation: {order.ocr_data.validation_summary}
                                 </div>
                               )}
                               {order.ocr_data.reason && (
-                                <div className="mt-2 text-[10px] text-gray-500 italic border-t border-gray-200 pt-2">
+                                <div className="mt-2 text-2xs text-gray-500 italic border-t border-gray-200 pt-2">
                                   AI Note: {order.ocr_data.reason}
                                 </div>
                               )}

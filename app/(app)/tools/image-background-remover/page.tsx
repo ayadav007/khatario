@@ -296,7 +296,7 @@ export default function ImageBackgroundRemoverPage() {
             {/* Input Side */}
             <div className="space-y-2">
               <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Original Image</span>
+                <span className="text-2xs font-bold text-text-secondary uppercase tracking-widest">Original Image</span>
                 <button onClick={reset} className="text-xs text-red-500 hover:underline">Change Image</button>
               </div>
               <Card padding="none" className="overflow-hidden bg-gray-100 flex items-center justify-center min-h-[350px]">
@@ -307,7 +307,7 @@ export default function ImageBackgroundRemoverPage() {
             {/* Result Side */}
             <div className="space-y-2">
               <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Processed Result</span>
+                <span className="text-2xs font-bold text-text-secondary uppercase tracking-widest">Processed Result</span>
                 {image.processed && (
                   <button onClick={downloadImage} className="text-xs text-primary-600 hover:underline flex items-center gap-1 font-bold">
                     <Download className="w-3 h-3" /> Save PNG
@@ -366,14 +366,14 @@ export default function ImageBackgroundRemoverPage() {
                       ) : (
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase text-gray-400">Magic Brush Active</span>
-                            <Button variant="ghost" size="sm" onClick={() => setIsRefining(false)} className="h-6 text-[10px]">Finish</Button>
+                            <span className="text-2xs font-bold uppercase text-gray-400">Magic Brush Active</span>
+                            <Button variant="ghost" size="sm" onClick={() => setIsRefining(false)} className="h-6 text-2xs">Finish</Button>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-gray-500 whitespace-nowrap">Size: {brushSize}px</span>
+                            <span className="text-2xs text-gray-500 whitespace-nowrap">Size: {brushSize}px</span>
                             <input type="range" min="2" max="50" value={brushSize} onChange={(e) => setBrushSize(parseInt(e.target.value))} className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-primary-500" />
                           </div>
-                          <div className="text-[10px] text-primary-600 bg-slate-50 p-1.5 rounded flex items-center gap-1.5">
+                          <div className="text-2xs text-primary-600 bg-slate-50 p-1.5 rounded flex items-center gap-1.5">
                             <Info className="w-3 h-3" /> Drag over leftover background to erase it perfectly.
                           </div>
                         </div>

@@ -467,7 +467,7 @@ export function ExtractionReviewModal({
                             }
                             className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded"
                           />
-                          <p className="text-[10px] text-gray-500 mt-0.5">From invoice; edit if OCR is wrong</p>
+                          <p className="text-2xs text-gray-500 mt-0.5">From invoice; edit if OCR is wrong</p>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
@@ -497,7 +497,7 @@ export function ExtractionReviewModal({
                           />
                           {(Number(item.discount_amount) || 0) > 0 &&
                             (Number(item.tax_rate) || 0) > 0 && (
-                              <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-[10px] text-gray-600">
+                              <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-2xs text-gray-600">
                                 <input
                                   type="checkbox"
                                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -637,7 +637,7 @@ export function ExtractionReviewModal({
                       ))}
                     </tbody>
                   </table>
-                  <p className="px-2 py-1.5 text-[10px] text-gray-500 border-t border-gray-100">
+                  <p className="px-2 py-1.5 text-2xs text-gray-500 border-t border-gray-100">
                     GST slab table is rolled up from line items (tax-inclusive totals and rates) after
                     normalization so it matches the grid.
                   </p>
@@ -685,7 +685,7 @@ export function ExtractionReviewModal({
                           (extractedData.debug.ocr_gst as any).section_headers.length > 0 && (
                             <div>
                               <div className="font-medium text-text-secondary mb-1">Detected section headers</div>
-                              <ul className="font-mono text-[11px] space-y-0.5 text-text-primary bg-white border border-border rounded p-2 max-h-32 overflow-y-auto">
+                              <ul className="font-mono text-caption space-y-0.5 text-text-primary bg-white border border-border rounded p-2 max-h-32 overflow-y-auto">
                                 {(extractedData.debug.ocr_gst as any).section_headers.map(
                                   (
                                     h: { text: string; y: number; rate?: number; confidence?: number },
@@ -707,7 +707,7 @@ export function ExtractionReviewModal({
                               <div className="font-medium text-text-secondary mb-1">
                                 Footer / post-total GST lines ignored (no section restart)
                               </div>
-                              <ul className="font-mono text-[10px] space-y-0.5 text-text-primary bg-white border border-border rounded p-2 max-h-28 overflow-y-auto">
+                              <ul className="font-mono text-2xs space-y-0.5 text-text-primary bg-white border border-border rounded p-2 max-h-28 overflow-y-auto">
                                 {(extractedData.debug.ocr_gst as any).propagation.trace.footerIgnoredHeaders.map(
                                   (r: { lineIndex: number; text: string; reason: string }, i: number) => (
                                     <li key={i}>
@@ -722,7 +722,7 @@ export function ExtractionReviewModal({
                           (extractedData.debug.ocr_gst as any).propagation.trace.rejectedHeaders.length > 0 && (
                             <div>
                               <div className="font-medium text-text-secondary mb-1">Rejected header candidates</div>
-                              <ul className="font-mono text-[10px] space-y-0.5 text-gray-700 bg-white border border-border rounded p-2 max-h-28 overflow-y-auto">
+                              <ul className="font-mono text-2xs space-y-0.5 text-gray-700 bg-white border border-border rounded p-2 max-h-28 overflow-y-auto">
                                 {(extractedData.debug.ocr_gst as any).propagation.trace.rejectedHeaders
                                   .slice(0, 40)
                                   .map((r: { lineIndex: number; text: string; reason: string; confidence: number }, i: number) => (
@@ -738,7 +738,7 @@ export function ExtractionReviewModal({
                             <div>
                               <div className="font-medium text-text-secondary mb-1">Line overrides (LLM → OCR slab)</div>
                               <div className="overflow-x-auto border border-border rounded bg-white">
-                                <table className="min-w-full text-[11px]">
+                                <table className="min-w-full text-caption">
                                   <thead className="bg-gray-50 text-left text-gray-700">
                                     <tr>
                                       <th className="px-2 py-1">#</th>
@@ -770,7 +770,7 @@ export function ExtractionReviewModal({
                               <ul className="space-y-1 text-amber-800">
                                 {(extractedData.debug.ocr_gst as any).validation.issues.map(
                                   (iss: { code: string; message: string }, i: number) => (
-                                    <li key={i} className="text-[11px]">
+                                    <li key={i} className="text-caption">
                                       {iss.code}: {iss.message}
                                     </li>
                                   )
@@ -782,7 +782,7 @@ export function ExtractionReviewModal({
                           <div className="font-medium text-text-secondary mb-1">
                             Reconstructed lines (sample — y / kind / slab)
                           </div>
-                          <div className="max-h-40 overflow-y-auto font-mono text-[10px] border border-border rounded p-2 bg-white text-text-primary">
+                          <div className="max-h-40 overflow-y-auto font-mono text-2xs border border-border rounded p-2 bg-white text-text-primary">
                             {((extractedData.debug.ocr_gst as any).propagation?.lines as any[])
                               ?.slice(0, 80)
                               .map((ln: any, i: number) => (
@@ -819,7 +819,7 @@ export function ExtractionReviewModal({
                     {extractedData?.extraction_method || '—'}
                   </span>
                   . Raw Google Vision text is only included when{' '}
-                  <code className="text-[11px] bg-gray-100 px-1 rounded">INVOICE_EXTRACT_DEBUG=true</code> and
+                  <code className="text-caption bg-gray-100 px-1 rounded">INVOICE_EXTRACT_DEBUG=true</code> and
                   Google OCR pipeline is used.
                 </p>
                 {typeof extractedData?.debug?.note === 'string' && (
@@ -849,7 +849,7 @@ export function ExtractionReviewModal({
                   <div className="text-xs font-medium text-text-secondary mb-1">
                     Structured extraction (what the app parsed — same as below in the form)
                   </div>
-                  <pre className="max-h-[36vh] overflow-auto text-[11px] leading-snug font-mono border border-border rounded-md p-3 bg-gray-50 text-text-primary whitespace-pre-wrap break-words">
+                  <pre className="max-h-[36vh] overflow-auto text-caption leading-snug font-mono border border-border rounded-md p-3 bg-gray-50 text-text-primary whitespace-pre-wrap break-words">
                     {JSON.stringify(extractedData?.data ?? {}, null, 2)}
                   </pre>
                 </div>

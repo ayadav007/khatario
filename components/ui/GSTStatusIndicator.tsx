@@ -78,7 +78,7 @@ export const GSTStatusIndicator: React.FC<GSTStatusIndicatorProps> = ({
   if (loading) {
     return (
       <div className={clsx(
-        'flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-medium',
+        'flex items-center gap-1.5 px-2 py-1 rounded border text-2xs font-medium',
         'bg-gray-50 text-gray-400 border-gray-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
         className
       )}>
@@ -90,7 +90,7 @@ export const GSTStatusIndicator: React.FC<GSTStatusIndicatorProps> = ({
 
   return (
     <div className={clsx(
-      'flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-medium transition-all',
+      'flex items-center gap-1.5 px-2 py-1 rounded border text-2xs font-medium transition-all',
       bg,
       className
     )}>

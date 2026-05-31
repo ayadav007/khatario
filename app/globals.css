@@ -182,7 +182,14 @@
     --color-text-muted: #94a3b8;
     --color-border: #e2e8f0;
 
-    /* Typography scale (desktop default). Tailwind text-* uses these via tailwind.config.js */
+    /**
+     * Typography scale (desktop default). Tailwind text-* and semantic type-* use these.
+     * Prefer semantic tokens (type-label, type-caption) in components over raw text-[Npx].
+     */
+    --text-2xs: 10px;
+    --text-2xs-lh: 14px;
+    --text-caption: 11px;
+    --text-caption-lh: 16px;
     --text-xs: 12px;
     --text-xs-lh: 16px;
     --text-sm: 14px;
@@ -197,6 +204,16 @@
     --text-2xl-lh: 32px;
     --text-3xl: 30px;
     --text-3xl-lh: 36px;
+    --text-display-sm: 20px;
+    --text-display-sm-lh: 24px;
+    --text-display: 28px;
+    --text-display-lh: 32px;
+    --text-display-lg: 36px;
+    --text-display-lg-lh: 40px;
+    --text-chart: 11px;
+    --text-chart-lh: 14px;
+    --text-input: var(--text-base);
+    --text-input-lh: var(--text-base-lh);
 
     /* Spacing scale (desktop). Tailwind page-x, stack-*, card-* map here. */
     --space-page-x: 24px;
@@ -223,6 +240,10 @@
   /* Mobile: denser type + tighter spacing; touch targets unchanged. */
   @media (max-width: 767px) {
     :root {
+      --text-2xs: 10px;
+      --text-2xs-lh: 14px;
+      --text-caption: 11px;
+      --text-caption-lh: 15px;
       --text-xs: 12px;
       --text-xs-lh: 16px;
       --text-sm: 13px;
@@ -237,6 +258,17 @@
       --text-2xl-lh: 28px;
       --text-3xl: 24px;
       --text-3xl-lh: 30px;
+      --text-display-sm: 18px;
+      --text-display-sm-lh: 22px;
+      --text-display: 24px;
+      --text-display-lh: 28px;
+      --text-display-lg: 28px;
+      --text-display-lg-lh: 32px;
+      --text-chart: 10px;
+      --text-chart-lh: 12px;
+      /* iOS focus-zoom prevention — inputs stay 16px; body uses --text-base (14px). */
+      --text-input: 16px;
+      --text-input-lh: 24px;
 
       --space-page-x: 16px;
       --space-page-y: 12px;
@@ -284,17 +316,41 @@
     @apply bg-background text-text-primary text-base antialiased;
     overflow-x: hidden;
     max-width: 100%;
+    font-size: var(--text-base);
+    line-height: var(--text-base-lh);
   }
 
-  /* 16px inputs on mobile prevents iOS focus zoom; body/list text stays 14px via tokens. */
-  @media (max-width: 767px) {
-    .input,
-    input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
-    select,
-    textarea {
-      font-size: 16px;
-      line-height: 24px;
-    }
+  h1 {
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
+    font-weight: 700;
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 600;
+  }
+
+  h4 {
+    font-size: var(--text-base);
+    line-height: var(--text-base-lh);
+    font-weight: 600;
+  }
+
+  /* Form controls use --text-input (16px mobile, --text-base desktop). */
+  .input,
+  input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
+  select,
+  textarea {
+    font-size: var(--text-input);
+    line-height: var(--text-input-lh);
   }
 
   /* Hide number input spinners for all browsers */
@@ -371,7 +427,7 @@
   }
 
   .form-section-title {
-    @apply text-sm font-semibold uppercase tracking-wide text-text-primary;
+    @apply font-semibold uppercase tracking-wide text-text-primary text-caption;
   }
 
   .form-section-description {
@@ -385,11 +441,11 @@
 
   /** Settings / profile pages — mobile-first type scale (uses --text-* tokens). */
   .settings-page-title {
-    @apply text-xl font-bold md:text-2xl text-text-primary;
+    @apply font-bold text-text-primary text-xl md:text-2xl;
   }
 
   .settings-section-title {
-    @apply text-base font-semibold md:text-lg text-text-primary mb-3 md:mb-4;
+    @apply font-semibold text-text-primary text-base md:text-lg mb-3 md:mb-4;
   }
 
   /**
@@ -414,12 +470,126 @@
   
   .input {
     @apply w-full min-h-10 rounded-input border border-border
-           text-base leading-normal touch-manipulation
+           touch-manipulation
            bg-surface text-text-primary placeholder-text-muted
            dark:bg-surface-dark dark:border-border-dark
            focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
            transition-all duration-200 md:min-h-11;
+    font-size: var(--text-input);
+    line-height: var(--text-input-lh);
     padding: var(--space-input-y) var(--space-input-x);
+  }
+
+  /** Semantic typography — prefer these over text-[Npx] or ad-hoc md:text-* pairs. */
+  .type-micro {
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs-lh);
+  }
+
+  .type-caption {
+    font-size: var(--text-caption);
+    line-height: var(--text-caption-lh);
+  }
+
+  .type-label {
+    @apply font-medium text-text-primary;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+
+  .type-label-compact {
+    @apply font-semibold uppercase tracking-wide text-text-secondary;
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs-lh);
+  }
+
+  .type-label-section {
+    @apply font-semibold uppercase tracking-wide text-text-secondary;
+    font-size: var(--text-caption);
+    line-height: var(--text-caption-lh);
+  }
+
+  .type-body {
+    font-size: var(--text-base);
+    line-height: var(--text-base-lh);
+  }
+
+  .type-body-sm {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+
+  .type-body-secondary {
+    @apply text-text-secondary;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+
+  .type-page-title {
+    @apply font-bold text-text-primary;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+  }
+
+  @media (min-width: 768px) {
+    .type-page-title {
+      font-size: var(--text-2xl);
+      line-height: var(--text-2xl-lh);
+    }
+  }
+
+  .type-section-title {
+    @apply font-semibold text-text-primary;
+    font-size: var(--text-base);
+    line-height: var(--text-base-lh);
+  }
+
+  @media (min-width: 768px) {
+    .type-section-title {
+      font-size: var(--text-lg);
+      line-height: var(--text-lg-lh);
+    }
+  }
+
+  .type-panel-title {
+    @apply font-semibold text-text-primary;
+    font-size: var(--text-base);
+    line-height: var(--text-base-lh);
+  }
+
+  .type-kpi-value {
+    @apply font-bold tabular-nums text-gray-900;
+    font-size: var(--text-display-sm);
+    line-height: var(--text-display-sm-lh);
+  }
+
+  @media (min-width: 768px) {
+    .type-kpi-value {
+      font-size: var(--text-display);
+      line-height: var(--text-display-lh);
+    }
+  }
+
+  .type-nav-label {
+    @apply font-medium;
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs-lh);
+  }
+
+  .type-chart-label {
+    font-size: var(--text-chart);
+    line-height: var(--text-chart-lh);
+  }
+
+  .type-input-inline {
+    font-size: var(--text-input);
+    line-height: var(--text-input-lh);
+  }
+
+  .type-mono-caption {
+    @apply font-mono;
+    font-size: var(--text-caption);
+    line-height: var(--text-caption-lh);
   }
   
   .button-primary {
@@ -462,7 +632,7 @@
   }
   
   .chip {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-medium
            md:px-3 md:py-1 md:text-sm
            bg-slate-100 text-text-secondary border border-border
            dark:bg-slate-800 dark:text-slate-300 dark:border-border-dark;
@@ -488,13 +658,12 @@
   }
   
   .table-header {
-    @apply bg-slate-50 text-text-primary font-semibold text-xs
-           md:text-sm
+    @apply bg-slate-50 text-text-primary font-semibold text-caption md:text-sm
            dark:bg-slate-800/80;
   }
   
   .table-cell {
-    @apply border-b border-border text-xs text-text-primary md:text-sm;
+    @apply border-b border-border text-caption text-text-primary md:text-sm;
     padding: var(--space-table-cell-y) var(--space-table-cell-x);
   }
 }

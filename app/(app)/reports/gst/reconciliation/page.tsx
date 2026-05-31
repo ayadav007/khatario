@@ -605,7 +605,7 @@ function Gstr13bReconciliationPageContent() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-text-muted">
+          <p className="mt-2 text-caption text-text-muted">
             Full lifecycle:{' '}
             <code className="rounded bg-gray-100 px-1">
               GET /api/reports/gst/reconciliation/alerts/history?alert_id=…
@@ -616,7 +616,7 @@ function Gstr13bReconciliationPageContent() {
 
       {onlyMismatchedView && (
         <p className="text-xs text-amber-900 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2">
-          Showing <strong>mismatch-only</strong> vouchers (deep link). Clear URL <code className="text-[11px]">view</code>{' '}
+          Showing <strong>mismatch-only</strong> vouchers (deep link). Clear URL <code className="text-caption">view</code>{' '}
           or change filters to see all.
         </p>
       )}
@@ -751,13 +751,13 @@ function Gstr13bReconciliationPageContent() {
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
                       {subtitle && (
-                        <span className="text-[10px] text-text-muted" title={c.note}>
+                        <span className="text-2xs text-text-muted" title={c.note}>
                           {subtitle}
                         </span>
                       )}
                     </div>
                     {c.note && (
-                      <p className="mt-1 text-[11px] text-amber-800 border border-amber-100 bg-amber-50/80 rounded px-2 py-1">
+                      <p className="mt-1 text-caption text-amber-800 border border-amber-100 bg-amber-50/80 rounded px-2 py-1">
                         {c.note}
                       </p>
                     )}
@@ -803,7 +803,7 @@ function Gstr13bReconciliationPageContent() {
                   return (
                     <div key={key} className="rounded-lg border border-border bg-white p-3">
                       <h4 className="text-xs font-semibold capitalize text-text-primary">{key.replace('_', ' ')}</h4>
-                      {c.note && <p className="mt-1 text-[11px] text-text-muted">{c.note}</p>}
+                      {c.note && <p className="mt-1 text-caption text-text-muted">{c.note}</p>}
                       <p className="mt-2 text-xs tabular-nums">
                         G1 {fmtInr(g1t)} · 3B {fmtInr(g3t)} · Δ {fmtInr(dt)}
                       </p>

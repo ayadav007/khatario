@@ -382,7 +382,7 @@ export function ScanRecordBillsScreen() {
                 <div className="flex h-14 w-full items-center justify-center rounded-lg border border-border bg-white shadow-sm dark:bg-slate-900">
                   <ImageIcon className="h-6 w-6 text-text-muted" aria-hidden />
                 </div>
-                <span className="w-full truncate text-center text-[10px] text-text-secondary">
+                <span className="w-full truncate text-center text-2xs text-text-secondary">
                   {vendorLabel(j).slice(0, 10)}
                   …
                 </span>
@@ -446,13 +446,13 @@ export function ScanRecordBillsScreen() {
                             <div className="min-w-0">
                               <div className="font-semibold text-text-primary">{vendorLabel(job)}</div>
                               <div className="mt-0.5 text-xs text-text-secondary">{subtitleLine(job)}</div>
-                              <div className="mt-2 text-[11px] text-text-muted">
+                              <div className="mt-2 text-caption text-text-muted">
                                 {items > 0 ? `${items} item${items === 1 ? '' : 's'}` : '—'}
                               </div>
                             </div>
                             <span
                               className={clsx(
-                                'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase',
+                                'shrink-0 rounded-full border px-2 py-0.5 text-2xs font-semibold uppercase',
                                 done
                                   ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200'
                                   : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'

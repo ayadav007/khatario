@@ -133,7 +133,7 @@ export default function SignupPage() {
             </p>
             <ul className="mt-8 min-w-0 space-y-3.5">
               {benefits.map((line) => (
-                <li key={line} className="flex gap-3 text-sm leading-snug text-slate-700 dark:text-slate-300 sm:text-[15px]">
+                <li key={line} className="flex gap-3 text-sm leading-snug text-slate-700 dark:text-slate-300 sm:text-base">
                   <span
                     className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white"
                     aria-hidden

@@ -89,7 +89,7 @@ export function WelcomeTourModal({ userName, onShowAround, onDismiss, onTourBusi
 
             <h2
               id="product-tour-welcome-title"
-              className="mt-5 text-2xl font-bold tracking-tight text-text-primary sm:text-[1.65rem]"
+              className="mt-5 text-2xl font-bold tracking-tight text-text-primary sm:text-display-sm"
             >
               Welcome aboard
               {first ? (
@@ -102,7 +102,7 @@ export function WelcomeTourModal({ userName, onShowAround, onDismiss, onTourBusi
               ) : null}
               !
             </h2>
-            <p className="mx-auto mt-3 max-w-sm text-[15px] leading-relaxed text-text-secondary">
+            <p className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-text-secondary">
               We&apos;re glad you&apos;re here. Take a short guided walk through the sidebar — or jump in and
               explore whenever you&apos;re ready.
             </p>

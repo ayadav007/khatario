@@ -174,10 +174,10 @@ export function TodoScheduleRail() {
       </button>
       <div className="p-2.5 space-y-2 border-b border-border dark:border-border-dark">
         <div className="flex items-center justify-between gap-1">
-          <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">
+          <span className="text-2xs font-semibold text-text-secondary uppercase tracking-wide">
             Schedule
           </span>
-          <span className="text-[9px] text-text-muted truncate max-w-[7rem]" title={todoTz}>
+          <span className="text-2xs text-text-muted truncate max-w-[7rem]" title={todoTz}>
             {todoTz.replace(/_/g, ' ')}
           </span>
         </div>
@@ -207,15 +207,15 @@ export function TodoScheduleRail() {
               caption_label: 'text-xs font-semibold text-text-primary',
               nav: 'flex items-center gap-0.5',
               button_previous:
-                'h-6 w-6 inline-flex items-center justify-center rounded border border-border text-[10px] opacity-80 hover:opacity-100',
+                'h-6 w-6 inline-flex items-center justify-center rounded border border-border text-2xs opacity-80 hover:opacity-100',
               button_next:
-                'h-6 w-6 inline-flex items-center justify-center rounded border border-border text-[10px] opacity-80 hover:opacity-100',
+                'h-6 w-6 inline-flex items-center justify-center rounded border border-border text-2xs opacity-80 hover:opacity-100',
               month_caption: 'flex justify-center items-center h-7',
               table: 'w-full border-collapse scale-90 origin-top',
               weekdays: 'flex',
-              weekday: 'text-text-muted w-7 text-[0.6rem] font-medium uppercase',
+              weekday: 'text-text-muted w-7 text-2xs font-medium uppercase',
               week: 'flex w-full mt-0.5',
-              day: 'group/day relative w-7 h-7 text-center p-0 text-[11px] font-normal',
+              day: 'group/day relative w-7 h-7 text-center p-0 text-caption font-normal',
               day_button: clsx(
                 'inline-flex items-center justify-center w-7 h-7 rounded text-text-primary',
                 'hover:bg-slate-100/80 dark:hover:bg-slate-800',
@@ -229,10 +229,10 @@ export function TodoScheduleRail() {
       </div>
 
       <div className="p-2.5 flex-1 min-h-0 flex flex-col">
-        <h3 className="text-[11px] font-bold text-text-primary leading-tight">
+        <h3 className="text-caption font-bold text-text-primary leading-tight">
           {formatInTimeZone(toDate(`${selectedYmd} 12:00:00`, { timeZone: todoTz }), todoTz, 'EEE, d MMM')}
         </h3>
-        <p className="text-[10px] text-text-muted mb-2">
+        <p className="text-2xs text-text-muted mb-2">
           {selectedDayTodos.length} due
         </p>
         {loading ? (
@@ -240,7 +240,7 @@ export function TodoScheduleRail() {
             <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
           </div>
         ) : selectedDayTodos.length === 0 ? (
-          <p className="text-[11px] text-text-secondary">Nothing due.</p>
+          <p className="text-caption text-text-secondary">Nothing due.</p>
         ) : (
           <ul className="space-y-1.5 overflow-y-auto flex-1 pr-0.5">
             {selectedDayTodos.map((todo) => (
@@ -249,13 +249,13 @@ export function TodoScheduleRail() {
                   type="button"
                   onClick={() => openTodo(todo)}
                   className={clsx(
-                    'w-full text-left rounded-md border border-border dark:border-border-dark px-2 py-1.5 text-[11px] transition',
+                    'w-full text-left rounded-md border border-border dark:border-border-dark px-2 py-1.5 text-caption transition',
                     'hover:bg-slate-100/50 dark:hover:bg-slate-800/80',
                     todo.status === 'completed' && 'opacity-60'
                   )}
                 >
                   <div className="font-medium text-text-primary line-clamp-2">{todo.title}</div>
-                  <div className="text-[10px] text-text-muted mt-0.5 space-y-0.5">
+                  <div className="text-2xs text-text-muted mt-0.5 space-y-0.5">
                     <div>
                       Due: {formatInTimeZone(parseISO(todo.due_date), todoTz, 'h:mm a')}
                       {todo.status === 'completed' ? ' · Done' : ''}

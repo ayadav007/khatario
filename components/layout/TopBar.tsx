@@ -140,7 +140,7 @@ function DateRangeControls({
               nav_button_next: 'absolute right-1',
               table: 'w-full border-collapse space-y-1',
               head_row: 'flex',
-              head_cell: 'text-text-secondary rounded-md w-9 font-normal text-[0.8rem]',
+              head_cell: 'text-text-secondary rounded-md w-9 font-normal text-xs',
               row: 'flex w-full mt-2',
               cell: 'text-center text-sm p-0 relative [&:has([aria-selected])]:bg-slate-50 dark:[&:has([aria-selected])]:bg-primary-900/35 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-md focus-within:relative focus-within:z-20',
               day: 'h-9 w-9 p-0 font-normal aria-selected:opacity-100 text-text-primary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md',

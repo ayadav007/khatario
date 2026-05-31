@@ -184,7 +184,7 @@ export default function ToolsDashboardPage() {
                     <div className={`p-3 rounded-xl ${tool.color} shadow-sm group-hover:scale-110 transition-transform duration-300`}>
                       <tool.icon className="w-6 h-6" />
                     </div>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-text-secondary bg-gray-100 px-2 py-1 rounded">
+                    <span className="text-2xs font-bold uppercase tracking-widest text-text-secondary bg-gray-100 px-2 py-1 rounded">
                       {tool.category}
                     </span>
                   </div>

@@ -70,7 +70,7 @@ export function ItemMobileCard({ item, onOpen, onAdjustStock }: Props) {
                 {item.name}
               </h3>
               {subtitle ? (
-                <p className="mt-0.5 truncate text-[11px] text-text-muted">{subtitle}</p>
+                <p className="mt-0.5 truncate text-caption text-text-muted">{subtitle}</p>
               ) : null}
             </div>
             <div className="shrink-0 text-right">
@@ -84,19 +84,19 @@ export function ItemMobileCard({ item, onOpen, onAdjustStock }: Props) {
 
           <div className="mt-1.5 grid grid-cols-3 gap-1">
             <div>
-              <p className="text-[10px] text-text-muted">Sale</p>
+              <p className="text-2xs text-text-muted">Sale</p>
               <p className="text-xs font-semibold tabular-nums text-gray-900 dark:text-slate-100">
                 {formatMoney(item.selling_price)}
               </p>
             </div>
             <div>
-              <p className="text-[10px] text-text-muted">Purchase</p>
+              <p className="text-2xs text-text-muted">Purchase</p>
               <p className="text-xs font-semibold tabular-nums text-gray-900 dark:text-slate-100">
                 {formatMoney(item.purchase_price)}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] text-text-muted">{isService ? 'Type' : 'Tax'}</p>
+              <p className="text-2xs text-text-muted">{isService ? 'Type' : 'Tax'}</p>
               <p className="text-xs font-semibold text-gray-900 dark:text-slate-100">
                 {isService ? 'Service' : `${item.tax_rate}%`}
               </p>

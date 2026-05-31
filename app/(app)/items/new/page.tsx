@@ -1952,7 +1952,7 @@ export default function NewItemPage() {
                                           )}
                                         </div>
                                         {variantValidation?.isValid && (
-                                          <span className="absolute right-0 -bottom-3 text-[10px] text-green-600 opacity-0 group-hover/barcode:opacity-100 transition-opacity">
+                                          <span className="absolute right-0 -bottom-3 text-2xs text-green-600 opacity-0 group-hover/barcode:opacity-100 transition-opacity">
                                             {variantBarcodeType}
                                           </span>
                                         )}

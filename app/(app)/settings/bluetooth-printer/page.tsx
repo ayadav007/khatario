@@ -234,7 +234,7 @@ function PrinterRow({
           <div className="font-medium text-text-primary truncate flex items-center gap-2">
             {printer.name}
             {isActive && (
-              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+              <span className="text-2xs uppercase tracking-wide px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
                 connected
               </span>
             )}
@@ -245,12 +245,12 @@ function PrinterRow({
           </div>
           <div className="flex flex-wrap gap-2 mt-1.5">
             {printer.preferForLabels && (
-              <span className="text-[10px] uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded inline-flex items-center gap-1">
+              <span className="text-2xs uppercase px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded inline-flex items-center gap-1">
                 <Star className="w-3 h-3" /> default labels
               </span>
             )}
             {printer.preferForReceipts && (
-              <span className="text-[10px] uppercase px-1.5 py-0.5 bg-slate-100 text-primary-700 rounded inline-flex items-center gap-1">
+              <span className="text-2xs uppercase px-1.5 py-0.5 bg-slate-100 text-primary-700 rounded inline-flex items-center gap-1">
                 <Star className="w-3 h-3" /> default receipts
               </span>
             )}

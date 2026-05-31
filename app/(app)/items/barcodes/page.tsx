@@ -519,7 +519,7 @@ export default function BulkBarcodePrintPage() {
                       <td className="py-2 pr-3 font-mono text-xs">
                         {entry.is_weighed && entry.plu_code ? (
                           <span className="inline-flex items-center gap-1">
-                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 rounded text-[10px] font-sans">
+                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 rounded text-2xs font-sans">
                               PLU
                             </span>
                             {entry.plu_code}
@@ -570,7 +570,7 @@ export default function BulkBarcodePrintPage() {
                               className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
                               disabled={!checked}
                             />
-                            <span className="text-[10px] text-gray-500">
+                            <span className="text-2xs text-gray-500">
                               {entry.weight_barcode_mode === 'price'
                                 ? 'paise'
                                 : 'g'}

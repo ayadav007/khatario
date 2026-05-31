@@ -378,7 +378,7 @@ const ItemsTable = React.memo(function ItemsTable({
                   )}
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">Item</label>
+                  <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Item</label>
                   <ItemAutocomplete
                     value={row.name}
                     onChange={(val) => onUpdateRow(i, 'name', val)}
@@ -390,7 +390,7 @@ const ItemsTable = React.memo(function ItemsTable({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">HSN</label>
+                    <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">HSN</label>
                     <input
                       value={row.hsnSac}
                       onChange={(e) => onUpdateRow(i, 'hsnSac', e.target.value)}
@@ -399,7 +399,7 @@ const ItemsTable = React.memo(function ItemsTable({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">Qty</label>
+                    <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Qty</label>
                     <input
                       type="number"
                       inputMode="numeric"
@@ -410,7 +410,7 @@ const ItemsTable = React.memo(function ItemsTable({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">Price</label>
+                    <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Price</label>
                     <input
                       type="number"
                       inputMode="decimal"
@@ -422,7 +422,7 @@ const ItemsTable = React.memo(function ItemsTable({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">Disc %</label>
+                    <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Disc %</label>
                     <input
                       type="number"
                       inputMode="decimal"
@@ -436,7 +436,7 @@ const ItemsTable = React.memo(function ItemsTable({
                 </div>
                 {documentType !== 'bill_of_supply' && (
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-text-secondary block mb-1">Tax %</label>
+                    <label className="text-2xs font-bold uppercase text-text-secondary block mb-1">Tax %</label>
                     <input
                       type="number"
                       inputMode="decimal"

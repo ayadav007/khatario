@@ -290,7 +290,7 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
               Sales vs Purchases
             </h3>
           </div>
-          <div className="flex items-center gap-2.5 text-[10px] text-text-secondary md:text-xs">
+          <div className="flex items-center gap-2.5 text-2xs text-text-secondary md:text-xs">
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-sm bg-green-500" />
               Sales
@@ -304,7 +304,7 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
         <select
           value={selectedPeriod}
           onChange={(e) => setSelectedPeriod(e.target.value as any)}
-          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
+          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
         >
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>

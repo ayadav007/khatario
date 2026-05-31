@@ -36,7 +36,7 @@ export const TemplatePreviewPlaceholder: React.FC<TemplatePreviewPlaceholderProp
             </div>
           </div>
           <div className="text-right">
-            <div className="font-bold text-[10px]" style={{ color }}>
+            <div className="font-bold text-2xs" style={{ color }}>
               {isComposition ? 'BILL OF SUPPLY' : 'TAX INVOICE'}
             </div>
             <div className="text-[6px] text-gray-500 mt-0.5">

@@ -244,7 +244,7 @@ export default function CustomerStatementPage() {
                 </p>
               </div>
               <div className="text-left sm:text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Period</p>
+                <p className="text-2xs font-semibold uppercase tracking-wider text-text-muted">Period</p>
                 <p className="text-sm font-medium text-text-primary">{periodDisplay}</p>
               </div>
             </div>
@@ -256,7 +256,7 @@ export default function CustomerStatementPage() {
                 {data.party?.phone && <p className="text-sm text-text-secondary">Phone: {data.party.phone}</p>}
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 sm:px-5 sm:py-4 sm:min-w-[220px] shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">{summary.title}</p>
+                <p className="text-2xs font-semibold uppercase tracking-wide text-text-muted">{summary.title}</p>
                 <p className="text-2xl font-bold text-text-primary tabular-nums mt-1">
                   ₹ {formatInrStatement(summary.amount)}
                 </p>
@@ -283,7 +283,7 @@ export default function CustomerStatementPage() {
                         <p className="font-mono text-xs text-text-secondary mt-1 truncate">{row.reference_number}</p>
                         <p className="text-sm text-text-primary mt-1">{row.description}</p>
                       </div>
-                      <Chip variant="default" className="shrink-0 text-[10px] max-w-[120px] truncate">
+                      <Chip variant="default" className="shrink-0 text-2xs max-w-[120px] truncate">
                         {customerVoucherLabel(row.transaction_type)}
                       </Chip>
                     </div>

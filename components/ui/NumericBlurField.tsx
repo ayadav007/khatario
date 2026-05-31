@@ -103,14 +103,12 @@ export function NumericBlurField({
     onCommit(n);
   };
 
-  const underlineLabel = compact
-    ? 'text-[10px] font-semibold uppercase tracking-wide text-text-secondary'
-    : 'text-[11px] font-semibold uppercase tracking-wide text-text-secondary';
-  const boxedLabel = 'block text-sm font-medium text-text-primary mb-1.5';
+  const underlineLabel = compact ? 'type-label-compact' : 'type-label-section';
+  const boxedLabel = 'type-label block mb-1.5';
 
-  const underlineInput = compact
-    ? 'focus-primary w-full min-w-0 border-0 border-b border-border bg-transparent pb-1.5 text-[14px] font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border'
-    : 'focus-primary w-full border-0 border-b border-border bg-transparent pb-2 text-[15px] font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border';
+  const underlineInput =
+    'focus-primary w-full min-w-0 border-0 border-b border-border bg-transparent font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border type-input-inline';
+  const underlineInputPadding = compact ? 'pb-1.5' : 'pb-2 w-full';
 
   return (
     <div
@@ -136,7 +134,7 @@ export function NumericBlurField({
         }}
         onChange={(e) => setText(e.target.value)}
         className={clsx(
-          variant === 'boxed' ? 'input' : underlineInput,
+          variant === 'boxed' ? 'input' : clsx(underlineInput, underlineInputPadding),
           nativeInputClassName,
           inputClassName,
         )}

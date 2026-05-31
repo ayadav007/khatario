@@ -80,7 +80,7 @@ export function HowToFeaturedTiles({ items, onSelect }: HowToFeaturedTilesProps)
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden sm:aspect-[5/3] sm:min-h-[140px]">
                 <Thumbnail slug={article.slug} title={article.title} Icon={Icon} />
-                <div className="absolute left-2 top-2 rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 shadow-sm backdrop-blur-sm dark:bg-slate-900/90 dark:text-slate-300">
+                <div className="absolute left-2 top-2 rounded-md bg-white/90 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-slate-600 shadow-sm backdrop-blur-sm dark:bg-slate-900/90 dark:text-slate-300">
                   {article.category}
                 </div>
               </div>

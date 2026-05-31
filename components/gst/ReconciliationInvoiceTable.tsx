@@ -290,9 +290,9 @@ export function ReconciliationInvoiceTable({
                 >
                   <td className="px-3 py-2">
                     <div className="font-mono text-xs text-text-primary">{r.document_id}</div>
-                    <div className="text-[11px] text-text-muted">{r.voucher_type.replace('_', ' ')}</div>
+                    <div className="text-caption text-text-muted">{r.voucher_type.replace('_', ' ')}</div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-text-primary" title="Registration GSTIN">
+                  <td className="px-3 py-2 font-mono text-caption text-text-primary" title="Registration GSTIN">
                     {issuerGstin || '—'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtInr(r.gstr1.taxable_value)}</td>
@@ -314,7 +314,7 @@ export function ReconciliationInvoiceTable({
                   </td>
                   <td className="px-3 py-2 text-center">
                     <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-caption font-medium ${
                         mismatch
                           ? 'border-red-200 bg-red-50 text-red-800'
                           : 'border-green-200 bg-green-50 text-green-800'

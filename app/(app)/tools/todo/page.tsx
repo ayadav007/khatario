@@ -1058,7 +1058,7 @@ function TodoAdvancedForm({
                   <option value="h1">1 hour before</option>
                   <option value="custom">Custom</option>
                 </select>
-                <p className="text-[10px] text-text-muted mt-1" title={todoTz}>
+                <p className="text-2xs text-text-muted mt-1" title={todoTz}>
                   Due is interpreted in {todoTz.replace(/_/g, ' ')}.
                 </p>
               </div>

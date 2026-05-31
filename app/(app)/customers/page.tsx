@@ -409,7 +409,7 @@ export default function CustomersPage() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-[9px] text-text-muted font-medium uppercase tracking-wide">
+                        <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">
                           {PARTY_BALANCE_COLUMN_HEADER}
                         </p>
                         <p
@@ -423,7 +423,7 @@ export default function CustomersPage() {
                         >
                           ₹{balance.toLocaleString('en-IN')}
                         </p>
-                        <p className="text-[9px] text-text-muted leading-none mt-0.5">
+                        <p className="text-2xs text-text-muted leading-none mt-0.5">
                           {customerBalanceHint(balance)}
                         </p>
                       </div>
@@ -437,7 +437,7 @@ export default function CustomersPage() {
                           e.stopPropagation();
                           setSelectedCustomerId(customer.id);
                         }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-text-secondary rounded-lg border border-border hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-text-secondary rounded-lg border border-border hover:bg-slate-50 dark:hover:bg-slate-800/60"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         View
@@ -446,7 +446,7 @@ export default function CustomersPage() {
                         <button
                           onClick={(e) => handleSendReminder(customer.id, e)}
                           disabled={sendingReminder === customer.id}
-                          className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/35 rounded-lg border border-green-200 dark:border-green-900 disabled:opacity-50"
+                          className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/35 rounded-lg border border-green-200 dark:border-green-900 disabled:opacity-50"
                         >
                           {sendingReminder === customer.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -461,7 +461,7 @@ export default function CustomersPage() {
                           e.stopPropagation();
                           router.push(`/customers/${customer.id}/edit`);
                         }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-medium text-primary-700 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/30 rounded-lg border border-border dark:border-primary-800/60"
+                        className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-primary-700 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/30 rounded-lg border border-border dark:border-primary-800/60"
                       >
                         <Edit className="w-3.5 h-3.5" />
                         Edit

@@ -91,11 +91,11 @@ export function ProviderSelector({
                   </p>
                   <div className="mt-2">
                     {configured ? (
-                      <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+                      <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-caption font-semibold text-green-800">
                         Connected
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-caption font-semibold text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         Not configured
                       </span>
                     )}

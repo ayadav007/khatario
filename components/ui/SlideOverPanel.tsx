@@ -45,7 +45,7 @@ export function SlideOverPanel({
         )}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <h2 className="type-panel-title">{title}</h2>
           <button
             type="button"
             onClick={onClose}

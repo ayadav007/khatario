@@ -101,12 +101,12 @@ const ActionsBar = React.memo(function ActionsBar({
                     ₹{Math.max(0, credit.availableCredit).toLocaleString('en-IN')}
                   </div>
                 </div>
-                <div className="mt-0.5 text-[11px] text-green-700">
+                <div className="mt-0.5 text-caption text-green-700">
                   Total credit limit: ₹{credit.creditLimit.toLocaleString('en-IN')}
                 </div>
               </div>
             )}
-            <p className="text-[10px] text-center text-amber-700 dark:text-amber-300">
+            <p className="text-2xs text-center text-amber-700 dark:text-amber-300">
               {isOnline ? '⚠️ This will affect GST filing' : '⚠️ Offline: Sync to file GST'}
             </p>
           </div>

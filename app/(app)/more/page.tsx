@@ -177,7 +177,7 @@ export default function MorePage() {
                               <span className="text-sm leading-snug text-text-primary pr-2">
                                 {item.label}
                                 {item.isLocked ? (
-                                  <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">
+                                  <span className="ml-2 text-2xs font-semibold uppercase text-amber-700">
                                     (Upgrade)
                                   </span>
                                 ) : null}
@@ -203,7 +203,7 @@ export default function MorePage() {
             Log out
           </button>
 
-          <p className="text-center text-[10px] text-text-muted uppercase tracking-widest mt-4">
+          <p className="text-center text-2xs text-text-muted uppercase tracking-widest mt-4">
             Khatario
           </p>
         </>

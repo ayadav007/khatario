@@ -326,7 +326,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         <select
           value={selectedYear || ''}
           onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
+          className="h-8 shrink-0 rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 md:h-9 md:px-3 md:text-xs"
         >
           {getAvailableYears().map(year => (
             <option key={year} value={year}>
@@ -344,7 +344,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
           const maxC = Math.max(...closings);
           const flat = Math.abs(maxC - minC) < 0.01;
           return flat ? (
-            <p className="mt-1.5 px-1 text-[10px] text-text-muted md:mt-2 md:text-xs">
+            <p className="mt-1.5 px-1 text-2xs text-text-muted md:mt-2 md:text-xs">
               The line shows <strong>cash at each month-end</strong> (opening + in − out, month by month). If
               it looks flat, your receipts and payments are mostly in <strong>one</strong> month, so the
               balance does not change in other months. Hover a point to see the amount for that month.
@@ -356,7 +356,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
       {/* Summary Panel */}
       <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 md:grid-cols-4 md:gap-3 md:pt-3">
         <div className="group relative flex flex-col">
-          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">
+          <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
             Cash as on {openingDate}
           </p>
           <p className="cursor-help text-sm font-bold tabular-nums text-text-primary md:text-base">
@@ -373,7 +373,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
         
         {/* Incoming with breakdown tooltip */}
         <div className="group relative flex flex-col">
-          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">Incoming</p>
+          <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">Incoming</p>
           <p className="cursor-help text-sm font-bold tabular-nums text-green-600 md:text-base">
             <span className="text-green-600">+</span> ₹{(data?.summary.total_incoming || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
@@ -397,7 +397,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
 
         {/* Outgoing with breakdown tooltip */}
         <div className="group relative flex flex-col">
-          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">Outgoing</p>
+          <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">Outgoing</p>
           <p className="cursor-help text-sm font-bold tabular-nums text-red-600 md:text-base">
             <span className="text-red-600">-</span> ₹{(data?.summary.total_outgoing || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
@@ -427,7 +427,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
 
         {/* Closing Balance with calculation tooltip */}
         <div className="group relative flex flex-col">
-          <p className="mb-0.5 text-[10px] leading-tight text-text-secondary md:text-xs">
+          <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
             Cash as on {closingDate}
           </p>
           <p className="cursor-help text-sm font-bold tabular-nums text-gray-900 md:text-base">

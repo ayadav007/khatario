@@ -326,7 +326,7 @@ function ItemsPage() {
                   <div className="font-medium text-sm text-text-primary truncate flex items-center gap-1.5">
                     <span className="truncate">{item.name}</span>
                     {(item as Item & { is_bundle?: boolean }).is_bundle && (
-                      <span className="shrink-0 text-[9px] uppercase bg-blue-50 text-blue-800 px-1 py-px rounded border border-blue-200 font-bold">
+                      <span className="shrink-0 text-2xs uppercase bg-blue-50 text-blue-800 px-1 py-px rounded border border-blue-200 font-bold">
                         Bundle
                       </span>
                     )}
@@ -425,18 +425,18 @@ function ItemsPage() {
                               <div className="flex items-center gap-2">
                                 {item.name}
                                 {item.item_type === 'service' && (
-                                  <span className="text-[10px] uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold">Service</span>
+                                  <span className="text-2xs uppercase bg-slate-100 text-primary-700 px-1.5 py-0.5 rounded font-bold">Service</span>
                                 )}
                                 {(item as Item & { is_bundle?: boolean }).is_bundle && (
-                                  <span className="text-[10px] uppercase bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded font-bold border border-blue-200">
+                                  <span className="text-2xs uppercase bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded font-bold border border-blue-200">
                                     Bundle
                                   </span>
                                 )}
                                 {(item as any).has_variants && (
-                                  <span className="text-[10px] uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">Variants</span>
+                                  <span className="text-2xs uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">Variants</span>
                                 )}
                               </div>
-                              {item.code && <div className="text-[10px] text-text-muted mt-0.5 font-medium">Code: {item.code}</div>}
+                              {item.code && <div className="text-2xs text-text-muted mt-0.5 font-medium">Code: {item.code}</div>}
                             </div>
                           </div>
                         </td>
@@ -446,7 +446,7 @@ function ItemsPage() {
                             <div className="flex flex-col">
                               <span className="font-mono text-sm">{item.barcode}</span>
                               {(item as any).barcode_type && (
-                                <span className="text-[10px] text-text-muted mt-0.5">{(item as any).barcode_type}</span>
+                                <span className="text-2xs text-text-muted mt-0.5">{(item as any).barcode_type}</span>
                               )}
                             </div>
                           ) : (

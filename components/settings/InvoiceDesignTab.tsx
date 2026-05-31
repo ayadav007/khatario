@@ -748,8 +748,8 @@ export const InvoiceDesignTab: React.FC = () => {
                 <option value="Letter">Letter (US)</option>
                 <option value="Legal">Legal</option>
               </select>
-              {selectedTemplate?.id === 'thermal_80mm' && <p className="text-[10px] text-orange-600 mt-1">Locked to 80mm for Thermal Template</p>}
-              {selectedTemplate?.id === 'thermal_58mm' && <p className="text-[10px] text-orange-600 mt-1">Locked to 58mm for Thermal Template</p>}
+              {selectedTemplate?.id === 'thermal_80mm' && <p className="text-2xs text-orange-600 mt-1">Locked to 80mm for Thermal Template</p>}
+              {selectedTemplate?.id === 'thermal_58mm' && <p className="text-2xs text-orange-600 mt-1">Locked to 58mm for Thermal Template</p>}
             </div>
 
             <div>
@@ -768,7 +768,7 @@ export const InvoiceDesignTab: React.FC = () => {
               <label className="block text-xs text-text-secondary mb-1">Margins (mm)</label>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <span className="text-[10px] text-text-muted uppercase">Top</span>
+                  <span className="text-2xs text-text-muted uppercase">Top</span>
                   <Input 
                     type="number" 
                     value={settings.margin_top ?? 10} 
@@ -777,7 +777,7 @@ export const InvoiceDesignTab: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-text-muted uppercase">Bottom</span>
+                  <span className="text-2xs text-text-muted uppercase">Bottom</span>
                   <Input 
                     type="number" 
                     value={settings.margin_bottom ?? 10} 
@@ -786,7 +786,7 @@ export const InvoiceDesignTab: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-text-muted uppercase">Left</span>
+                  <span className="text-2xs text-text-muted uppercase">Left</span>
                   <Input 
                     type="number" 
                     value={settings.margin_left ?? 10} 
@@ -795,7 +795,7 @@ export const InvoiceDesignTab: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-text-muted uppercase">Right</span>
+                  <span className="text-2xs text-text-muted uppercase">Right</span>
                   <Input 
                     type="number" 
                     value={settings.margin_right ?? 10} 

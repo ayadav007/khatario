@@ -493,7 +493,7 @@ export function MobileItemPickerPanel({
                 <li key={k} className="flex items-start gap-3 px-3 py-3 bg-white">
                   <ItemPickerThumb item={item} />
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-text-primary text-[15px] leading-snug">{item.name}</p>
+                    <p className="font-semibold text-text-primary text-base leading-snug">{item.name}</p>
                     {item.code && item.code !== item.name && (
                       <p className="text-xs text-text-muted mt-0.5">{item.code}</p>
                     )}
@@ -559,7 +559,7 @@ export function MobileItemPickerPanel({
           >
             {totalPicked === 0 ? 'Add to invoice' : `Add to invoice · ${totalPicked} pcs`}
           </Button>
-          <p className="text-[11px] text-center text-text-muted">Adjust quantities above, then confirm here.</p>
+          <p className="text-caption text-center text-text-muted">Adjust quantities above, then confirm here.</p>
         </div>
       </div>
 

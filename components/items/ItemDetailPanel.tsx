@@ -233,7 +233,7 @@ export function ItemDetailPanel({ itemId, onClose, onDelete, canDelete }: ItemDe
           )}
           <span
             className={clsx(
-              'text-[10px] uppercase px-1.5 py-0.5 rounded font-bold tracking-wider',
+              'text-2xs uppercase px-1.5 py-0.5 rounded font-bold tracking-wider',
               isService ? 'bg-slate-100 text-primary-700' : 'bg-slate-100 text-primary-700'
             )}
           >
@@ -427,7 +427,7 @@ export function ItemDetailPanel({ itemId, onClose, onDelete, canDelete }: ItemDe
                           <td className="py-2 px-2">
                             <span
                               className={clsx(
-                                'text-[10px] uppercase font-bold px-1.5 py-0.5 rounded',
+                                'text-2xs uppercase font-bold px-1.5 py-0.5 rounded',
                                 tx.type === 'invoice'
                                   ? 'bg-green-100 text-green-700'
                                   : 'bg-slate-100 text-primary-700'

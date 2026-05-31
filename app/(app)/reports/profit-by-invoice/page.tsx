@@ -235,7 +235,7 @@ export default function ProfitByInvoiceReportPage() {
                       title={`Sort profit ${sortProfitDesc ? 'ascending' : 'descending'}`}
                     >
                       Profit
-                      <span className="text-[11px] font-normal text-text-muted">
+                      <span className="text-caption font-normal text-text-muted">
                         ({sortProfitDesc ? 'high→low' : 'low→high'})
                       </span>
                     </button>

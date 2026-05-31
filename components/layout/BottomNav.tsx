@@ -87,12 +87,12 @@ export const BottomNav: React.FC = () => {
               <div className="relative">
                 <Icon className={clsx('w-5 h-5', isActive && 'text-primary-500')} />
                 {item.badge && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white ring-2 ring-surface">
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-error px-1 type-nav-label font-bold text-white ring-2 ring-surface">
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <span className="type-nav-label">{item.label}</span>
               {isActive && (
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-500 rounded-b-full" />
               )}

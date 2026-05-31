@@ -435,7 +435,7 @@ export default function SupplierRequestsPage() {
                                 </span>
                               </div>
                               {ev.payload && Object.keys(ev.payload).length > 0 && (
-                                <p className="text-[10px] text-gray-600 mt-0.5 break-all font-mono">
+                                <p className="text-2xs text-gray-600 mt-0.5 break-all font-mono">
                                   {JSON.stringify(ev.payload)}
                                 </p>
                               )}

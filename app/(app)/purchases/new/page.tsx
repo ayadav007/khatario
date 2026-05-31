@@ -1075,13 +1075,13 @@ export default function NewPurchasePage() {
           )}
           <div>
             <div className="font-medium text-text-primary mb-1">Extractor payload (supplier / invoice / lines)</div>
-            <pre className="text-[11px] leading-snug font-mono border border-border rounded-md p-2 bg-gray-50 text-text-primary whitespace-pre-wrap break-words max-h-[220px] overflow-auto">
+            <pre className="text-caption leading-snug font-mono border border-border rounded-md p-2 bg-gray-50 text-text-primary whitespace-pre-wrap break-words max-h-[220px] overflow-auto">
               {JSON.stringify(lastInvoiceFillTrace.fromReview, null, 2)}
             </pre>
           </div>
           <div>
             <div className="font-medium text-text-primary mb-1">What was written into this purchase form</div>
-            <pre className="text-[11px] leading-snug font-mono border border-border rounded-md p-2 bg-gray-50 text-text-primary whitespace-pre-wrap break-words max-h-[220px] overflow-auto">
+            <pre className="text-caption leading-snug font-mono border border-border rounded-md p-2 bg-gray-50 text-text-primary whitespace-pre-wrap break-words max-h-[220px] overflow-auto">
               {JSON.stringify(lastInvoiceFillTrace.appliedToForm, null, 2)}
             </pre>
           </div>
@@ -1674,7 +1674,7 @@ export default function NewPurchasePage() {
                           <td className="py-2 px-3">
                             <div className="space-y-1 min-w-[10rem]">
                               {!(item.item_id || '').trim() && (item.item_name || '').trim().length > 0 && (
-                                <span className="inline-block text-[10px] font-semibold uppercase rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-800">
+                                <span className="inline-block text-2xs font-semibold uppercase rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-800">
                                   New item
                                 </span>
                               )}
@@ -1729,7 +1729,7 @@ export default function NewPurchasePage() {
                               warehouseId={selectedWarehouseId || undefined}
                             />
                             {!(item.item_id || '').trim() && (
-                              <p className="text-[11px] text-text-secondary leading-snug">
+                              <p className="text-caption text-text-secondary leading-snug">
                                 Not in catalogue — search above to link to inventory.
                               </p>
                             )}
@@ -1790,7 +1790,7 @@ export default function NewPurchasePage() {
                               }}
                             />
                             {formData.price_mode === 'exclusive' && (item.discount_amount ?? 0) > 0 && (
-                              <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-[10px] leading-tight text-text-secondary">
+                              <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-2xs leading-tight text-text-secondary">
                                 <input
                                   type="checkbox"
                                   className="rounded border-border text-primary-600 focus:ring-primary-500"
@@ -1879,7 +1879,7 @@ export default function NewPurchasePage() {
                               }
                               onChange={(e) => setLineItemInvoiceTotal(item.id, e.target.value)}
                             />
-                            <p className="text-[10px] text-text-muted leading-tight mt-0.5 max-w-[8rem] ml-auto">
+                            <p className="text-2xs text-text-muted leading-tight mt-0.5 max-w-[8rem] ml-auto">
                               From invoice; edit to match bill — Rate updates.
                             </p>
                           </td>
@@ -2073,7 +2073,7 @@ export default function NewPurchasePage() {
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} {isOnline ? 'Save & Finalize' : 'Sync Required'}
             </Button>
-            <p className="text-[10px] text-center text-text-muted">
+            <p className="text-2xs text-center text-text-muted">
               {isOnline ? '⚠️ This will affect GST filing' : '⚠️ Offline: Sync to file GST'}
             </p>
           </div>

@@ -35,7 +35,7 @@ export function ListPageHeader({
       <div className="min-w-0 flex-1 relative">
         <h1 className="list-page-h1">{title}</h1>
         {description ? (
-          <p className="text-text-secondary text-sm mt-1 hidden md:block">{description}</p>
+          <p className="type-body-secondary mt-1 hidden md:block">{description}</p>
         ) : null}
       </div>
       {actions != null ? (

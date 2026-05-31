@@ -104,7 +104,7 @@
     "start:lan": "cross-env HOST=0.0.0.0 node server.js --production",
     "start:http": "next start",
     "lint": "next lint",
-    "check": "npm run check:ui-primary && npm run check:mobile-chrome",
+    "check": "npm run check:ui-primary && npm run check:mobile-chrome && npm run check:typography",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -149,6 +149,9 @@
     "cap:add:android": "cap add android",
     "audit:mobile-ux": "node scripts/mobile-ux-page-audit.cjs",
     "check:ui-primary": "node scripts/check-raw-primary-ui.mjs",
+    "check:typography": "node scripts/check-arbitrary-font-sizes.mjs",
+    "check:typography:strict": "node scripts/check-arbitrary-font-sizes.mjs --strict",
+    "migrate:typography-font-sizes": "node scripts/migrate-arbitrary-font-sizes.mjs",
     "check:mobile-chrome": "node scripts/check-mobile-page-chrome.mjs",
     "migrate:ui-primary-bg": "node scripts/migrate-primary-backgrounds.mjs",
     "migrate:ui-primary-gradients": "node scripts/migrate-primary-gradients.mjs"

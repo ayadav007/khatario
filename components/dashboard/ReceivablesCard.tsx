@@ -53,7 +53,7 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
               </div>
             </div>
           </div>
-          <p className="mt-0.5 text-[11px] text-text-secondary md:text-xs">
+          <p className="mt-0.5 text-caption text-text-secondary md:text-xs">
             Unpaid ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </p>
         </div>
@@ -70,7 +70,7 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
           href="/invoices?status=unpaid&aging_days_min=0&aging_days_max=0"
           className={`${rowClass} cursor-pointer border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-green-50 to-teal-50 transition-all hover:from-emerald-100 hover:via-green-100 hover:to-teal-100 dark:border-emerald-800/55 dark:from-emerald-950/50 dark:via-green-950/40 dark:to-teal-950/35 dark:hover:from-emerald-900/55 dark:hover:via-green-900/45 dark:hover:to-teal-900/40`}
         >
-          <span className="text-[11px] font-medium uppercase tracking-wide text-emerald-900 dark:text-emerald-200 md:text-xs">
+          <span className="text-caption font-medium uppercase tracking-wide text-emerald-900 dark:text-emerald-200 md:text-xs">
             Current
           </span>
           <span className="text-sm font-bold tabular-nums text-emerald-900 dark:text-emerald-200 md:text-base">
@@ -84,7 +84,7 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
             onClick={() => setShowAging(!showAging)}
             className={`${rowClass} w-full border-red-100 bg-red-50 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/35 dark:hover:bg-red-950/50`}
           >
-            <span className="text-[11px] font-medium uppercase tracking-wide text-red-700 dark:text-red-300 md:text-xs">
+            <span className="text-caption font-medium uppercase tracking-wide text-red-700 dark:text-red-300 md:text-xs">
               Overdue
             </span>
             <div className="flex items-center gap-1.5">
@@ -110,7 +110,7 @@ export const ReceivablesCard: React.FC<ReceivablesCardProps> = ({ total, aging }
                   href={`/invoices?status=unpaid&aging_days_min=${min}&aging_days_max=${max}`}
                   className="flex items-center justify-between rounded px-1 py-1.5 transition-colors hover:bg-red-50 dark:hover:bg-red-950/25"
                 >
-                  <span className="text-[11px] text-text-secondary md:text-xs">{label}</span>
+                  <span className="text-caption text-text-secondary md:text-xs">{label}</span>
                   <span className="text-xs font-medium tabular-nums text-text-primary md:text-sm">
                     ₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                   </span>

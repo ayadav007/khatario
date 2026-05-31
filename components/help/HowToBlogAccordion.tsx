@@ -274,7 +274,7 @@ export function HowToBlogAccordion({ className }: Props) {
                           >
                             <GuideIcon article={article} />
                             <span className="min-w-0 flex-1">
-                              <span className="block text-lg font-semibold leading-snug text-slate-900 dark:text-slate-50 sm:text-[1.125rem]">
+                              <span className="block text-lg font-semibold leading-snug text-slate-900 dark:text-slate-50 sm:text-xl">
                                 {article.title}
                               </span>
                               <span className="mt-1.5 block text-sm leading-relaxed text-slate-600 dark:text-slate-400">
@@ -306,7 +306,7 @@ export function HowToBlogAccordion({ className }: Props) {
                               aria-labelledby={`${article.slug}-header`}
                               className="border-t border-slate-100 bg-slate-50/50 px-4 py-6 sm:px-8 sm:py-8 dark:border-slate-700/80 dark:bg-slate-950/20"
                             >
-                              <div className="mx-auto max-w-3xl text-base leading-[1.75] text-slate-800 dark:text-slate-200 sm:text-[17px]">
+                              <div className="mx-auto max-w-3xl text-base leading-[1.75] text-slate-800 dark:text-slate-200 sm:text-lg">
                                 <HowToSectionBlocks sections={article.sections} />
                               </div>
                             </div>

@@ -154,7 +154,7 @@ export function PurchaseOrderCommentsHistoryPanel({
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
           All comments
           {commentCount > 0 && (
-            <span className="ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">
+            <span className="ml-2 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-100 px-1.5 py-0.5 text-2xs font-bold text-blue-800">
               {commentCount}
             </span>
           )}

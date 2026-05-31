@@ -534,22 +534,22 @@ function PurchasesPageContent() {
                                 returnType="GSTR-3B" 
                               />
                               {purchase.reconciliation_status === 'MATCHED' && (
-                                <div className="text-[10px] bg-success-50 text-success-700 px-2 py-0.5 rounded-full font-medium">
+                                <div className="text-2xs bg-success-50 text-success-700 px-2 py-0.5 rounded-full font-medium">
                                   ✓ Matched in 2B
                                 </div>
                               )}
                               {purchase.reconciliation_status === 'MISSING_IN_2B' && (
-                                <div className="text-[10px] bg-error-50 text-error-700 px-2 py-0.5 rounded-full font-medium">
+                                <div className="text-2xs bg-error-50 text-error-700 px-2 py-0.5 rounded-full font-medium">
                                   ⚠️ Missing in 2B
                                 </div>
                               )}
                               {purchase.reconciliation_decision === 'ITC_NOT_ELIGIBLE' && (
-                                <div className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                                <div className="text-2xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                                   Ineligible ITC
                                 </div>
                               )}
                               {!purchase.reconciliation_decision && purchase.reconciliation_status && purchase.reconciliation_status !== 'MATCHED' && (
-                                <div className="text-[10px] bg-warning-100 text-warning-700 px-2 py-0.5 rounded-full font-bold animate-pulse">
+                                <div className="text-2xs bg-warning-100 text-warning-700 px-2 py-0.5 rounded-full font-bold animate-pulse">
                                   Requires Decision
                                 </div>
                               )}
@@ -648,22 +648,22 @@ function PurchasesPageContent() {
                                   returnType="GSTR-3B" 
                                 />
                                 {purchase.reconciliation_status === 'MATCHED' && (
-                                  <div className="text-[10px] bg-success-50 text-success-700 px-2 py-0.5 rounded-full font-medium">
+                                  <div className="text-2xs bg-success-50 text-success-700 px-2 py-0.5 rounded-full font-medium">
                                     ✓ Matched in 2B
                                   </div>
                                 )}
                                 {purchase.reconciliation_status === 'MISSING_IN_2B' && (
-                                  <div className="text-[10px] bg-error-50 text-error-700 px-2 py-0.5 rounded-full font-medium">
+                                  <div className="text-2xs bg-error-50 text-error-700 px-2 py-0.5 rounded-full font-medium">
                                     ⚠️ Missing in 2B
                                   </div>
                                 )}
                                 {purchase.reconciliation_decision === 'ITC_NOT_ELIGIBLE' && (
-                                  <div className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                                  <div className="text-2xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
                                     Ineligible ITC
                                   </div>
                                 )}
                                 {!purchase.reconciliation_decision && purchase.reconciliation_status && purchase.reconciliation_status !== 'MATCHED' && (
-                                  <div className="text-[10px] bg-warning-100 text-warning-700 px-2 py-0.5 rounded-full font-bold">
+                                  <div className="text-2xs bg-warning-100 text-warning-700 px-2 py-0.5 rounded-full font-bold">
                                     Requires Decision
                                   </div>
                                 )}

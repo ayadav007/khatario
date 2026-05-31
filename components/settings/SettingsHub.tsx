@@ -361,7 +361,7 @@ export function SettingsHub() {
                               >
                                 <span className="font-medium text-text-primary">{link.label}</span>
                                 {locked && (
-                                  <span className="ml-1 text-[10px] uppercase text-text-muted">
+                                  <span className="ml-1 text-2xs uppercase text-text-muted">
                                     Plan
                                   </span>
                                 )}

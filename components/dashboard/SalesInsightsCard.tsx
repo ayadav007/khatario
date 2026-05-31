@@ -235,7 +235,7 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
           <TrendingUp className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-text-primary md:text-base">Sales insights</h2>
-            <p className="text-[11px] text-text-secondary md:text-xs">{chartSubtitle}</p>
+            <p className="text-caption text-text-secondary md:text-xs">{chartSubtitle}</p>
           </div>
         </div>
 
@@ -308,7 +308,7 @@ function SummaryStat({
 }) {
   return (
     <div className="text-center">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-text-secondary md:text-[11px]">
+      <p className="text-2xs font-medium uppercase tracking-wide text-text-secondary md:text-caption">
         {label}
       </p>
       <p
@@ -318,7 +318,7 @@ function SummaryStat({
       >
         {value}
       </p>
-      <p className="mt-0.5 hidden text-[10px] text-text-muted sm:block">{hint}</p>
+      <p className="mt-0.5 hidden text-2xs text-text-muted sm:block">{hint}</p>
     </div>
   );
 }

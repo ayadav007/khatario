@@ -776,7 +776,7 @@ export default function CustomizeTemplateDrawer({
               <div className="space-y-5">
                 <div className="lg:hidden rounded-xl border border-gray-200 bg-slate-50 p-3 space-y-2">
                   <p className="text-xs font-semibold text-gray-700">Quick palette</p>
-                  <p className="text-[11px] text-gray-500">Tap to apply — refine below</p>
+                  <p className="text-caption text-gray-500">Tap to apply — refine below</p>
                   <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
                     {[
                       { name: 'Indigo', primary: '#3949AB', secondary: '#1E88E5', accent: '#FF6B6B' },
@@ -805,7 +805,7 @@ export default function CustomizeTemplateDrawer({
                             style={{ backgroundColor: preset.secondary }}
                           />
                         </span>
-                        <span className="text-[10px] font-medium text-gray-700">{preset.name}</span>
+                        <span className="text-2xs font-medium text-gray-700">{preset.name}</span>
                       </button>
                     ))}
                   </div>

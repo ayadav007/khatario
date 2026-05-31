@@ -325,18 +325,18 @@ export function POSLayout({
         {/* LEFT: Invoice Number & Date */}
         <div className="flex items-center gap-6">
           <div>
-            <div className="text-[10px] text-gray-500 uppercase">Invoice</div>
+            <div className="text-2xs text-gray-500 uppercase">Invoice</div>
             <div className="font-bold text-sm text-gray-900">
               {offlineInvoiceLabel || invoiceNumber || 'New'}
             </div>
             {offlinePending && (
-              <div className="mt-0.5 text-[10px] font-medium text-amber-700">
+              <div className="mt-0.5 text-2xs font-medium text-amber-700">
                 Offline · sync pending
               </div>
             )}
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 uppercase">Date</div>
+            <div className="text-2xs text-gray-500 uppercase">Date</div>
             <div className="font-medium text-sm text-gray-700">{format(new Date(invoiceDate), 'dd-MM-yyyy')}</div>
           </div>
         </div>
@@ -405,7 +405,7 @@ export function POSLayout({
           </div>
           {/* Customer Name Display (Read-only) */}
           <div className="w-48">
-            <div className="text-[10px] text-gray-500 uppercase">Customer</div>
+            <div className="text-2xs text-gray-500 uppercase">Customer</div>
             <div className="font-medium text-sm text-gray-700">{customerName || 'Cash Sale'}</div>
           </div>
         </div>
@@ -420,7 +420,7 @@ export function POSLayout({
           >
             <Save className="w-3.5 h-3.5" />
             Park
-            <span className="text-[10px] opacity-70">(Ctrl+H)</span>
+            <span className="text-2xs opacity-70">(Ctrl+H)</span>
           </Button>
           <Button
             variant="secondary"
@@ -430,7 +430,7 @@ export function POSLayout({
           >
             <Clock className="w-3.5 h-3.5" />
             Parked ({parkedBillsCount})
-            <span className="text-[10px] opacity-70">(Ctrl+B)</span>
+            <span className="text-2xs opacity-70">(Ctrl+B)</span>
           </Button>
         </div>
       </div>
@@ -473,7 +473,7 @@ export function POSLayout({
             >
               <Printer className="w-5 h-5 mr-2" />
               {isPrinting ? 'PRINTING...' : 'PRINT BILL'}
-              <span className="text-[10px] opacity-70 ml-2">(F6)</span>
+              <span className="text-2xs opacity-70 ml-2">(F6)</span>
             </Button>
             {!canPrint && itemCount === 0 && (
               <p className="text-xs text-red-600 text-center mt-2">Add items to print</p>
@@ -541,12 +541,12 @@ export function POSLayout({
                   : 'Print to Bluetooth'}
               </Button>
               {!bluetooth.supported && (
-                <p className="text-[11px] text-gray-500 text-center">
+                <p className="text-caption text-gray-500 text-center">
                   Browser has no Bluetooth support
                 </p>
               )}
               {bluetooth.supported && bluetooth.pairedCount === 0 && (
-                <p className="text-[11px] text-gray-500 text-center">
+                <p className="text-caption text-gray-500 text-center">
                   Pair a printer in Settings → Print & devices
                 </p>
               )}
@@ -568,23 +568,23 @@ export function POSLayout({
         <div className="flex items-center justify-between gap-6">
           {/* Item Count */}
           <div className="flex flex-col items-center">
-            <span className="text-[28px] text-gray-500 uppercase font-semibold">Items</span>
-            <span className="text-[36px] font-bold text-gray-900 text-center">{itemRows.filter(r => r.itemId && r.name).length}</span>
+            <span className="text-display text-gray-500 uppercase font-semibold">Items</span>
+            <span className="text-display-lg font-bold text-gray-900 text-center">{itemRows.filter(r => r.itemId && r.name).length}</span>
           </div>
           {/* Subtotal */}
           <div className="flex flex-col items-center">
-            <span className="text-[28px] text-gray-500 uppercase font-semibold">Subtotal</span>
-            <span className="text-[36px] font-bold text-gray-900 text-center">₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <span className="text-display text-gray-500 uppercase font-semibold">Subtotal</span>
+            <span className="text-display-lg font-bold text-gray-900 text-center">₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
           {/* Total Tax */}
           <div className="flex flex-col items-center">
-            <span className="text-[28px] text-gray-500 uppercase font-semibold">Total Tax</span>
-            <span className="text-[36px] font-bold text-gray-900 text-center">₹{totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <span className="text-display text-gray-500 uppercase font-semibold">Total Tax</span>
+            <span className="text-display-lg font-bold text-gray-900 text-center">₹{totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
           {/* Grand Total - Most Prominent */}
           <div className="flex flex-col items-center ml-auto">
-            <span className="text-[28px] text-gray-500 uppercase font-semibold">Grand Total</span>
-            <span className="text-[36px] font-bold text-primary-700 text-center">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <span className="text-display text-gray-500 uppercase font-semibold">Grand Total</span>
+            <span className="text-display-lg font-bold text-primary-700 text-center">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
       </div>

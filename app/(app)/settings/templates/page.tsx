@@ -273,7 +273,7 @@ export default function TemplatesPage() {
                   <h1 className="text-base sm:text-xl font-bold text-text-primary truncate">
                     Templates & Printing
                   </h1>
-                  <p className="text-[11px] sm:text-xs text-text-secondary line-clamp-2 sm:line-clamp-none">
+                  <p className="text-caption sm:text-xs text-text-secondary line-clamp-2 sm:line-clamp-none">
                     Design beautiful documents for your business
                   </p>
                 </div>
@@ -282,15 +282,15 @@ export default function TemplatesPage() {
             <div className="flex items-center gap-2 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-thin lg:pb-0 lg:mx-0 lg:px-0 lg:overflow-visible">
               <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50 rounded-xl border border-primary-200 shrink-0">
                 <span className="text-xl sm:text-2xl font-bold text-primary-600">{totalTemplates}</span>
-                <span className="text-[10px] sm:text-xs text-primary-600 font-medium">Templates</span>
+                <span className="text-2xs sm:text-xs text-primary-600 font-medium">Templates</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-green-50 rounded-xl border border-green-200 shrink-0">
                 <span className="text-xl sm:text-2xl font-bold text-green-600">{totalDocTypes}</span>
-                <span className="text-[10px] sm:text-xs text-green-600 font-medium">Types</span>
+                <span className="text-2xs sm:text-xs text-green-600 font-medium">Types</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-purple-50 rounded-xl border border-purple-200 shrink-0">
                 <span className="text-xl sm:text-2xl font-bold text-purple-600">{totalActive}</span>
-                <span className="text-[10px] sm:text-xs text-purple-600 font-medium">Active</span>
+                <span className="text-2xs sm:text-xs text-purple-600 font-medium">Active</span>
               </div>
             </div>
           </div>
@@ -300,7 +300,7 @@ export default function TemplatesPage() {
       {/* Mobile: document types — horizontal chips (reference-style) */}
       <div className="lg:hidden bg-surface dark:bg-slate-900/70 border-b border-border">
         <div className="px-3 pt-2 pb-2">
-          <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2 px-1">
+          <p className="text-2xs font-bold text-text-muted uppercase tracking-wider mb-2 px-1">
             Document types
           </p>
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:thin]">
@@ -322,7 +322,7 @@ export default function TemplatesPage() {
                 <span className="max-w-[120px] truncate">{docType.label}</span>
                 <span
                   className={`
-                    text-[10px] px-1.5 py-0.5 rounded-md font-bold
+                    text-2xs px-1.5 py-0.5 rounded-md font-bold
                     ${
                       activeDocType === docType.id
                         ? 'bg-white/25 text-white'
@@ -427,7 +427,7 @@ export default function TemplatesPage() {
                     />
                   </div>
                   {focusedTemplate.active && (
-                    <div className="absolute top-3 right-3 z-20 bg-gradient-to-r from-emerald-500 to-green-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 shadow-lg">
+                    <div className="absolute top-3 right-3 z-20 bg-gradient-to-r from-emerald-500 to-green-500 text-white px-3 py-1.5 rounded-lg text-2xs font-bold flex items-center gap-1.5 shadow-lg">
                       <Check className="w-3.5 h-3.5" />
                       ACTIVE
                     </div>
@@ -436,13 +436,13 @@ export default function TemplatesPage() {
                     {focusedTemplate.features.slice(0, 4).map((feature, idx) => (
                       <span
                         key={idx}
-                        className="text-[10px] sm:text-xs bg-white/95 backdrop-blur-sm text-text-secondary px-2 py-1 rounded-md font-semibold shadow border border-border/80"
+                        className="text-2xs sm:text-xs bg-white/95 backdrop-blur-sm text-text-secondary px-2 py-1 rounded-md font-semibold shadow border border-border/80"
                       >
                         {feature}
                       </span>
                     ))}
                     {focusedTemplate.features.length > 4 && (
-                      <span className="text-[10px] bg-white/95 text-text-secondary px-2 py-1 rounded-md font-semibold border border-border/80">
+                      <span className="text-2xs bg-white/95 text-text-secondary px-2 py-1 rounded-md font-semibold border border-border/80">
                         +{focusedTemplate.features.length - 4} more
                       </span>
                     )}
@@ -451,7 +451,7 @@ export default function TemplatesPage() {
               </div>
 
               <div>
-                <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2 px-0.5">
+                <p className="text-2xs font-bold text-text-muted uppercase tracking-wider mb-2 px-0.5">
                   Choose template
                 </p>
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 [scrollbar-width:thin]">

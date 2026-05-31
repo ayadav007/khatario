@@ -158,7 +158,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
               type="text"
               className={
                 compact
-                  ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 pl-0 pr-7 pt-0.5 text-[14px] font-medium text-text-primary placeholder:text-text-muted shadow-none outline-none ring-0 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60'
+                  ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 pl-0 pr-7 pt-0.5 text-sm font-medium text-text-primary placeholder:text-text-muted shadow-none outline-none ring-0 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60'
                   : 'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60'
               }
               placeholder={compact ? 'Search customer…' : 'Search Customer...'}
@@ -2648,7 +2648,7 @@ function NewInvoiceContent() {
           {!isFinal && (
             <label className="flex h-9 lg:h-11 cursor-pointer select-none items-center gap-2">
               <input type="checkbox" checked={isExport} onChange={e => { setIsExport(e.target.checked); setRows(prev => prev.map(r => calculateRow(r, true))); if (!e.target.checked) { setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); } }} className="h-4 w-4 rounded border-border bg-surface text-primary-600 focus:ring-primary-500 dark:border-slate-500" disabled={isFinal || isInvoiceLocked} />
-              <span className="text-[11px] lg:text-xs font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap">{documentType === 'bill_of_supply' ? 'Export' : 'Export invoice'}</span>
+              <span className="text-caption lg:text-xs font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap">{documentType === 'bill_of_supply' ? 'Export' : 'Export invoice'}</span>
             </label>
           )}
           </div>
@@ -2802,10 +2802,10 @@ function NewInvoiceContent() {
           </div>
         )}
         <Card padding="sm" className="space-y-3 border-border">
-          <h2 className="border-b border-border pb-1.5 text-[11px] font-bold uppercase tracking-wider text-text-primary">Bill details</h2>
+          <h2 className="border-b border-border pb-1.5 text-caption font-bold uppercase tracking-wider text-text-primary">Bill details</h2>
           <div className="space-y-3">
             <div className="space-y-0.5 border-b border-border pb-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Customer</div>
+              <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Customer</div>
               <CustomerAutocomplete
                 compact
                 customers={customers}
@@ -2823,17 +2823,17 @@ function NewInvoiceContent() {
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2">
               <div className="min-w-0 space-y-0.5">
-                <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
+                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
                 <Input
                   type="date"
                   value={invoiceDate}
                   onChange={(e) => setInvoiceDate(e.target.value)}
                   disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 />
               </div>
               <div className="min-w-0 space-y-0.5">
-                <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
                   Due date <span className="text-text-muted normal-case font-normal">(optional)</span>
                 </label>
                 <Input
@@ -2844,14 +2844,14 @@ function NewInvoiceContent() {
                     setDueDate(e.target.value);
                   }}
                   disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 />
               </div>
             </div>
             <div className="space-y-0.5 border-b border-border pb-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
               <select
-                className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 value={placeOfSupply}
                 onChange={(e) => {
                   setPlaceOfSupply(e.target.value);
@@ -2869,43 +2869,43 @@ function NewInvoiceContent() {
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-border pb-2">
               <div className="min-w-0 space-y-0.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Prefix</div>
+                <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Prefix</div>
                 <Input
                   value={invoicePrefix ?? ''}
                   readOnly
-                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] font-semibold"
+                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm font-semibold"
                 />
               </div>
               <div className="min-w-0 space-y-0.5">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Number</div>
+                <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Number</div>
                 <Input
                   value={invoiceNumber ?? ''}
                   readOnly
-                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] font-semibold"
+                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm font-semibold"
                 />
               </div>
             </div>
             {documentType === 'proforma_invoice' && !isFinal && (
               <div className="space-y-0.5 border-b border-border pb-2">
-                <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
                   Estimate valid until
                 </label>
                 <Input
                   type="date"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px]"
+                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm"
                 />
               </div>
             )}
             {warehouses && warehouses.length > 0 && (
               <div className="space-y-0.5 border-b border-border pb-2">
-                <label className="block text-[10px] font-semibold uppercase tracking-wide text-text-secondary">Warehouse</label>
+                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Warehouse</label>
                 <select
                   value={selectedWarehouseId}
                   onChange={(e) => setSelectedWarehouseId(e.target.value)}
                   disabled={isFinal || isInvoiceLocked || warehousesLoading}
-                  className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 >
                   {warehousesLoading ? (
                     <option>Loading...</option>
@@ -2960,11 +2960,11 @@ function NewInvoiceContent() {
           <Card padding="sm" className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-primary">Addresses</h3>
             <div>
-              <label className="mb-0.5 block text-[10px] font-semibold uppercase text-text-secondary">Bill To</label>
+              <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
               <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
             </div>
             <div>
-              <label className="mb-0.5 block text-[10px] font-semibold uppercase text-text-secondary">Ship To</label>
+              <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
               <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
             </div>
           </Card>
@@ -3085,7 +3085,7 @@ function NewInvoiceContent() {
           <div className="max-w-[1600px] mx-auto space-y-2">
             <Button variant="secondary" className="h-11 w-full" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
             <Button variant="primary" className="w-full h-12 font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="w-5 h-5 mr-2" /> Generate</Button>
-            <p className="text-[10px] text-center text-text-muted">Generate finalizes the document for GST.</p>
+            <p className="text-2xs text-center text-text-muted">Generate finalizes the document for GST.</p>
             <Button variant="ghost" className="w-full h-10 text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
           </div>
         </div>

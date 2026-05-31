@@ -871,7 +871,7 @@ function BankReconciliationPageContent() {
                                 {l.transaction_date}
                                 {l.match_status === 'unmatched' && l.age_days != null && l.age_days > 0 ? (
                                   <span
-                                    className={`rounded px-1 py-0 text-[10px] font-medium ${ageBadgeClass(l.age_days)}`}
+                                    className={`rounded px-1 py-0 text-2xs font-medium ${ageBadgeClass(l.age_days)}`}
                                     title={`${l.age_days} days since transaction`}
                                   >
                                     {l.age_days}d
@@ -885,12 +885,12 @@ function BankReconciliationPageContent() {
                                 {l.match_status === 'unmatched' && sug ? (
                                   <div className="flex flex-wrap items-center gap-1">
                                     <span
-                                      className={`inline-flex max-w-full cursor-help rounded border px-1.5 py-0 text-[10px] font-medium ${tierBadgeClass(sug.tier)}`}
+                                      className={`inline-flex max-w-full cursor-help rounded border px-1.5 py-0 text-2xs font-medium ${tierBadgeClass(sug.tier)}`}
                                       title={matchReasonTooltipText(sug, l, ledgerById)}
                                     >
                                       {suggestionHeadline(sug, l, ledgerById, fmt)}
                                     </span>
-                                    <span className="text-[10px] text-text-muted">({sug.confidence})</span>
+                                    <span className="text-2xs text-text-muted">({sug.confidence})</span>
                                   </div>
                                 ) : null}
                               </div>
@@ -910,7 +910,7 @@ function BankReconciliationPageContent() {
                           </tr>
                           {expanded && showBreakdown && breakdown.length ? (
                             <tr className="bg-gray-50/95 border-t border-dashed border-border">
-                              <td colSpan={7} className="px-4 py-2 text-[11px] text-text-secondary">
+                              <td colSpan={7} className="px-4 py-2 text-caption text-text-secondary">
                                 <p className="font-medium text-text-primary">
                                   ₹{fmt(flow.amount)} matched with:
                                 </p>

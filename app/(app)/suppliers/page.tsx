@@ -382,7 +382,7 @@ export default function SuppliersPage() {
                     <div>
                       <h3 className="font-bold text-gray-900">{supplier.name}</h3>
                       {supplier.gstin ? (
-                        <p className="text-[10px] uppercase font-bold text-primary-600 bg-slate-50 px-1.5 py-0.5 rounded mt-1 inline-block">
+                        <p className="text-2xs uppercase font-bold text-primary-600 bg-slate-50 px-1.5 py-0.5 rounded mt-1 inline-block">
                           GSTIN: {supplier.gstin}
                         </p>
                       ) : null}

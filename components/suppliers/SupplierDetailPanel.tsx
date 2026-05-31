@@ -306,7 +306,7 @@ export function SupplierDetailPanel({ supplierId, onClose }: SupplierDetailPanel
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="border-b border-border bg-gray-50/80 dark:bg-slate-800/50 text-[10px] uppercase tracking-wide text-text-muted">
+                      <thead className="border-b border-border bg-gray-50/80 dark:bg-slate-800/50 text-2xs uppercase tracking-wide text-text-muted">
                         <tr>
                           <th className="text-left py-2 px-3 font-semibold">Date</th>
                           <th className="text-left py-2 px-3 font-semibold">Bill #</th>
@@ -366,7 +366,7 @@ export function SupplierDetailPanel({ supplierId, onClose }: SupplierDetailPanel
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead className="border-b border-border bg-gray-50/80 dark:bg-slate-800/50 text-[10px] uppercase tracking-wide text-text-muted">
+                      <thead className="border-b border-border bg-gray-50/80 dark:bg-slate-800/50 text-2xs uppercase tracking-wide text-text-muted">
                         <tr>
                           <th className="text-left py-2 px-3 font-semibold">Date</th>
                           <th className="text-left py-2 px-3 font-semibold">Reference</th>

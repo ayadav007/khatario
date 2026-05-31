@@ -83,7 +83,7 @@ function AddressBlock({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">{label}</p>
+      <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">{label}</p>
       <div className="mt-1 text-sm text-gray-900 whitespace-pre-line">{children}</div>
     </div>
   );
@@ -146,7 +146,7 @@ export function PurchaseOrderSummaryView({ order, items }: PurchaseOrderSummaryP
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,200px)_1fr]">
         <div className="border-l-2 border-amber-400 pl-4 space-y-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Status</p>
+          <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">Status</p>
           {statusSteps.map((step) => (
             <div key={step.key}>
               <p className="text-xs text-text-secondary">{step.label}</p>
@@ -175,13 +175,13 @@ export function PurchaseOrderSummaryView({ order, items }: PurchaseOrderSummaryP
 
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 text-sm">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">
             Order date
           </p>
           <p className="mt-1 font-medium text-gray-900">{formatDate(order.order_date as string)}</p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">
             Expected delivery
           </p>
           <p className="mt-1 font-medium text-gray-900">
@@ -189,7 +189,7 @@ export function PurchaseOrderSummaryView({ order, items }: PurchaseOrderSummaryP
           </p>
         </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+          <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">
             Payment terms
           </p>
           <p className="mt-1 font-medium text-gray-900">
@@ -201,7 +201,7 @@ export function PurchaseOrderSummaryView({ order, items }: PurchaseOrderSummaryP
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[520px] text-sm">
           <thead>
-            <tr className="border-b border-border bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-border bg-gray-50 text-left text-caption font-semibold uppercase tracking-wide text-gray-600">
               <th className="px-4 py-2.5">Items &amp; description</th>
               <th className="px-4 py-2.5 text-right">Ordered</th>
               <th className="px-4 py-2.5">Status</th>
@@ -282,7 +282,7 @@ export function PurchaseOrderSummaryView({ order, items }: PurchaseOrderSummaryP
 
       {order.notes ? (
         <div className="rounded-lg border border-border bg-gray-50 p-4 text-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary">Notes</p>
+          <p className="text-caption font-semibold uppercase tracking-wide text-text-secondary">Notes</p>
           <p className="mt-1 text-gray-900 whitespace-pre-line">{String(order.notes)}</p>
         </div>
       ) : null}

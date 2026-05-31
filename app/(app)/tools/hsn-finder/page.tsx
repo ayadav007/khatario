@@ -120,7 +120,7 @@ export default function HSNFinderPage() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">
               {filteredData.length} Results Found
             </h2>
-            <p className="text-[10px] text-text-muted italic">
+            <p className="text-2xs text-text-muted italic">
               * Rates are indicative. Verify with official notifications.
             </p>
           </div>
@@ -147,7 +147,7 @@ export default function HSNFinderPage() {
                           <span className="font-mono font-bold text-primary-700 bg-slate-50 px-2 py-0.5 rounded text-sm">
                             #{item.code}
                           </span>
-                          <span className="text-[10px] uppercase font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded tracking-wider">
+                          <span className="text-2xs uppercase font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded tracking-wider">
                             {item.category}
                           </span>
                         </div>
@@ -160,7 +160,7 @@ export default function HSNFinderPage() {
                       <div className="text-2xl font-black text-success-600">
                         {item.rate}%
                       </div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase">GST Rate</p>
+                      <p className="text-2xs font-bold text-gray-400 uppercase">GST Rate</p>
                     </div>
                   </div>
                 </div>

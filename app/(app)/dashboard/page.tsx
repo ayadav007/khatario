@@ -535,12 +535,12 @@ function DashboardPage() {
                       </Link>
                       <Chip
                         variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'}
-                        className="shrink-0 !px-1.5 !py-0.5 !text-[10px] md:!text-xs"
+                        className="shrink-0 !px-1.5 !py-0.5 !text-2xs md:!text-xs"
                       >
                         {item.current_stock} {item.unit}
                       </Chip>
                     </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-text-secondary md:text-xs">
+                    <div className="mt-0.5 flex items-center justify-between gap-2 text-caption text-text-secondary md:text-xs">
                       <p className="truncate">
                         Min: {item.min_stock} {item.unit}
                       </p>

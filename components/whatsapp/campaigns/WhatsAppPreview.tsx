@@ -119,7 +119,7 @@ export function WhatsAppPreview({ message }: WhatsAppPreviewProps) {
               {/* Message Text */}
               {message.text && (
                 <div className="mb-2">
-                  <p className="text-[#303030] text-[14.2px] leading-[19px] whitespace-pre-wrap break-words">
+                  <p className="text-[#303030] text-sm leading-[19px] whitespace-pre-wrap break-words">
                     {formatMessage(message.text)}
                   </p>
                 </div>
@@ -128,7 +128,7 @@ export function WhatsAppPreview({ message }: WhatsAppPreviewProps) {
               {/* Footer */}
               {message.footer && (
                 <div className="mb-2 mt-1">
-                  <p className="text-[#667781] text-[12.8px] leading-[16px]">
+                  <p className="text-[#667781] text-xs leading-[16px]">
                     {message.footer}
                   </p>
                 </div>
@@ -152,7 +152,7 @@ export function WhatsAppPreview({ message }: WhatsAppPreviewProps) {
                           fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif'
                         }}
                       >
-                        <span className="text-[#0086ff] text-[14.2px] font-normal leading-[19px] text-center">
+                        <span className="text-[#0086ff] text-sm font-normal leading-[19px] text-center">
                           {buttonText}
                         </span>
                       </div>

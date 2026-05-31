@@ -284,7 +284,7 @@ function InvoicesPageContent() {
                 <div className="text-xs font-medium text-text-primary">
                   {formatInr(invoice.grand_total)}
                 </div>
-                <div className="text-[10px] text-text-muted">
+                <div className="text-2xs text-text-muted">
                   Tax {formatInr(invoice.tax_total)}
                 </div>
               </button>
@@ -469,7 +469,7 @@ function InvoicesPageContent() {
                     
                     <div className="flex justify-between items-center mb-2">
                       <div>
-                        <p className="text-[10px] text-text-muted">
+                        <p className="text-2xs text-text-muted">
                           {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : '-'}
                         </p>
                         {invoice.status === 'final' && invoice.document_type !== 'proforma_invoice' && (
@@ -492,7 +492,7 @@ function InvoicesPageContent() {
                           e.stopPropagation();
                           setSelectedInvoiceId(invoice.id);
                         }}
-                        className="flex items-center justify-center gap-1 py-2 px-1 text-[10px] font-semibold text-text-secondary hover:bg-slate-100/90 dark:hover:bg-slate-800 rounded-lg border border-border transition-colors"
+                        className="flex items-center justify-center gap-1 py-2 px-1 text-2xs font-semibold text-text-secondary hover:bg-slate-100/90 dark:hover:bg-slate-800 rounded-lg border border-border transition-colors"
                       >
                         <Eye className="w-3 h-3" />
                         View
@@ -502,7 +502,7 @@ function InvoicesPageContent() {
                           e.stopPropagation();
                           openShareForInvoice(invoice);
                         }}
-                        className="flex items-center justify-center gap-1 py-2 px-1 text-[10px] font-semibold text-text-secondary hover:bg-slate-100/90 dark:hover:bg-slate-800 rounded-lg border border-border transition-colors"
+                        className="flex items-center justify-center gap-1 py-2 px-1 text-2xs font-semibold text-text-secondary hover:bg-slate-100/90 dark:hover:bg-slate-800 rounded-lg border border-border transition-colors"
                       >
                         <Share2 className="w-3 h-3" />
                         Share
@@ -513,7 +513,7 @@ function InvoicesPageContent() {
                             e.stopPropagation();
                             setPaymentModalInvoice(invoice);
                           }}
-                          className="flex items-center justify-center gap-1 py-2 px-1 text-[10px] font-semibold text-primary-600 dark:text-primary-300 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-primary-900/50 rounded-lg border border-primary-100 dark:border-primary-800 transition-colors"
+                          className="flex items-center justify-center gap-1 py-2 px-1 text-2xs font-semibold text-primary-600 dark:text-primary-300 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-primary-900/50 rounded-lg border border-primary-100 dark:border-primary-800 transition-colors"
                         >
                           <CreditCard className="w-3 h-3" />
                           Pay

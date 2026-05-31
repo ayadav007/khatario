@@ -86,6 +86,8 @@ module.exports = {
         'large': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
       },
       fontSize: {
+        '2xs': ['var(--text-2xs)', { lineHeight: 'var(--text-2xs-lh)' }],
+        caption: ['var(--text-caption)', { lineHeight: 'var(--text-caption-lh)' }],
         xs: ['var(--text-xs)', { lineHeight: 'var(--text-xs-lh)' }],
         sm: ['var(--text-sm)', { lineHeight: 'var(--text-sm-lh)' }],
         base: ['var(--text-base)', { lineHeight: 'var(--text-base-lh)' }],
@@ -93,6 +95,11 @@ module.exports = {
         xl: ['var(--text-xl)', { lineHeight: 'var(--text-xl-lh)' }],
         '2xl': ['var(--text-2xl)', { lineHeight: 'var(--text-2xl-lh)' }],
         '3xl': ['var(--text-3xl)', { lineHeight: 'var(--text-3xl-lh)' }],
+        'display-sm': ['var(--text-display-sm)', { lineHeight: 'var(--text-display-sm-lh)' }],
+        display: ['var(--text-display)', { lineHeight: 'var(--text-display-lh)' }],
+        'display-lg': ['var(--text-display-lg)', { lineHeight: 'var(--text-display-lg-lh)' }],
+        chart: ['var(--text-chart)', { lineHeight: 'var(--text-chart-lh)' }],
+        input: ['var(--text-input)', { lineHeight: 'var(--text-input-lh)' }],
       },
       spacing: {
         'page-x': 'var(--space-page-x)',

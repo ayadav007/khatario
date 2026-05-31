@@ -170,7 +170,7 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
                       </span>
                     </>
                   ) : (
-                    <Chip variant={invoiceChipVariant(invoice)} className="!py-0 !text-[10px]">
+                    <Chip variant={invoiceChipVariant(invoice)} className="!py-0 !text-2xs">
                       {formatStatusLabel(invoice.payment_status || invoice.status)}
                     </Chip>
                   )}
@@ -214,7 +214,7 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
                     </span>
                   </>
                 ) : (
-                  <Chip variant={purchaseChipVariant(purchase)} className="!py-0 !text-[10px]">
+                  <Chip variant={purchaseChipVariant(purchase)} className="!py-0 !text-2xs">
                     {purchase.status}
                   </Chip>
                 )}

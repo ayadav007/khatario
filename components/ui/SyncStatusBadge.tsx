@@ -11,7 +11,7 @@ interface SyncStatusBadgeProps {
 }
 
 export function SyncStatusBadge({ status, size = 'sm', showLabel = true }: SyncStatusBadgeProps) {
-  const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-1';
+  const sizeClass = size === 'sm' ? 'text-2xs px-1.5 py-0.5' : 'text-xs px-2 py-1';
   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
 
   if (status === 'synced') {

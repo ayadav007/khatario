@@ -388,12 +388,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                 ₹ {totalReceivable.toLocaleString('en-IN')}
               </p>
               {totalReceivable < -0.005 && (
-                <p className="text-[10px] sm:text-xs text-text-muted mt-1.5 sm:mt-2 leading-snug hidden sm:block">
+                <p className="text-2xs sm:text-xs text-text-muted mt-1.5 sm:mt-2 leading-snug hidden sm:block">
                   Negative balance means advance or overpayment held as customer credit.
                 </p>
               )}
               {totalReceivable > 0.005 && (
-                <p className="text-[10px] sm:text-xs text-text-muted mt-1.5 sm:mt-2 leading-snug hidden sm:block">
+                <p className="text-2xs sm:text-xs text-text-muted mt-1.5 sm:mt-2 leading-snug hidden sm:block">
                   Amount still owed on open sales (net of payments).
                 </p>
               )}
@@ -523,7 +523,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                               </p>
                               <span
                                 className={clsx(
-                                  'inline-block mt-2 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                  'inline-block mt-2 rounded-full px-2 py-0.5 text-2xs font-semibold',
                                   statusToneClass(st.tone)
                                 )}
                               >
@@ -532,7 +532,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                             </div>
                           </div>
                           {tx.type === 'invoice' && !isProformaInvoice(tx) && Number(tx.balance_amount) > 0.005 && (
-                            <p className="text-[11px] text-text-muted mt-3 pt-3 border-t border-border">
+                            <p className="text-caption text-text-muted mt-3 pt-3 border-t border-border">
                               Outstanding on document: ₹{' '}
                               {Number(tx.balance_amount).toLocaleString('en-IN', {
                                 minimumFractionDigits: 0,
@@ -541,7 +541,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                             </p>
                           )}
                           {tx.type === 'invoice' && isProformaInvoice(tx) && (
-                            <p className="text-[11px] text-text-muted mt-3 pt-3 border-t border-border">
+                            <p className="text-caption text-text-muted mt-3 pt-3 border-t border-border">
                               Estimate only — not included in account balance until issued as a tax invoice.
                             </p>
                           )}
@@ -595,7 +595,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                                 >
                                   ₹ {d.rupees.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                                 </span>
-                                <span className="block text-[10px] text-text-muted mt-0.5">{d.caption}</span>
+                                <span className="block text-2xs text-text-muted mt-0.5">{d.caption}</span>
                               </td>
                               <td className="table-cell text-right font-medium text-text-secondary">
                                 {tx.type === 'invoice'
@@ -607,7 +607,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                               <td className="table-cell text-left">
                                 <span
                                   className={clsx(
-                                    'inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                    'inline-block rounded-full px-2 py-0.5 text-2xs font-semibold',
                                     statusToneClass(st.tone)
                                   )}
                                 >

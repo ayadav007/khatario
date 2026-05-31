@@ -154,7 +154,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
                 className="max-h-full object-contain drop-shadow-lg"
               />
             ) : (
-              <div className="w-full h-2/3 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/60 text-center px-1">
+              <div className="w-full h-2/3 rounded-full bg-white/10 flex items-center justify-center text-2xs text-white/60 text-center px-1">
                 No art
               </div>
             )}
@@ -170,7 +170,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-[10px] text-gray-500 self-center">
+            <span className="text-2xs text-gray-500 self-center">
               {safeCarousel + 1} / {carouselLen}
             </span>
             <button
@@ -184,7 +184,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
           </div>
         )}
         {carouselLen <= 1 && (
-          <p className="text-[10px] text-center text-gray-500 py-1 px-2 bg-gray-50 border-t border-gray-100">
+          <p className="text-2xs text-center text-gray-500 py-1 px-2 bg-gray-50 border-t border-gray-100">
             Add a second image URL to preview multiple slides. Single slide: dashboard carousel.
           </p>
         )}
@@ -240,9 +240,9 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
               <h4 className="font-black text-xs uppercase tracking-wider leading-tight">{title}</h4>
               {form.dismissible !== false && <X className="w-3 h-3 opacity-60 shrink-0" />}
             </div>
-            {desc && <p className="text-[10px] font-medium opacity-90 line-clamp-2">{desc}</p>}
+            {desc && <p className="text-2xs font-medium opacity-90 line-clamp-2">{desc}</p>}
             {buttonText && (
-              <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest pt-0.5">
+              <div className="flex items-center gap-1 text-2xs font-black uppercase tracking-widest pt-0.5">
                 {buttonText}
                 <CtaIcon action={action} />
               </div>
@@ -264,7 +264,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
         <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-100 p-1">
           <div className="h-10 bg-white rounded border border-gray-200 overflow-hidden">
             {topbarLen === 0 ? (
-              <div className="h-full flex items-center justify-center text-[10px] text-gray-400">
+              <div className="h-full flex items-center justify-center text-2xs text-gray-400">
                 Add image URL(s) to preview
               </div>
             ) : useCarousel ? (
@@ -302,7 +302,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
           </div>
         </div>
         {topbarLen > 1 && useCarousel && (
-          <div className="flex items-center justify-center gap-2 pointer-events-auto text-[10px] text-gray-600">
+          <div className="flex items-center justify-center gap-2 pointer-events-auto text-2xs text-gray-600">
             <button
               type="button"
               className="p-0.5 rounded border border-gray-200 bg-white hover:bg-gray-50"
@@ -325,7 +325,7 @@ export function PromotionFormPreview({ form }: { form: PromotionFormPreviewInput
           </div>
         )}
         {topbarLen > 1 && !useCarousel && (
-          <p className="text-[10px] text-gray-500 text-center">First image only (single mode). Enable vertical carousel for 2+ URLs.</p>
+          <p className="text-2xs text-gray-500 text-center">First image only (single mode). Enable vertical carousel for 2+ URLs.</p>
         )}
       </div>
     );

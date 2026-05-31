@@ -261,7 +261,7 @@ export function PurchaseItemPickerScreen() {
                     {rateLabel}
                     {it.unit ? ` / ${it.unit}` : ''}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-text-muted">
+                  <div className="mt-0.5 text-caption text-text-muted">
                     Stock: {Number(it.current_stock || 0).toLocaleString('en-IN')}
                     {it.unit ? it.unit : ''}
                   </div>

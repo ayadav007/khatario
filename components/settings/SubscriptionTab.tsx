@@ -944,7 +944,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
               <div className="flex items-center justify-between mb-0.5">
                 <p className="text-xs text-text-muted">WhatsApp/day</p>
                 {addons.length > 0 ? (
-                  <span className="text-[10px] font-medium bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Active</span>
+                  <span className="text-2xs font-medium bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Active</span>
                 ) : (
                   <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
                 )}
@@ -957,7 +957,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
                   : subscription.features.limits.max_whatsapp_per_day}
               </p>
               {!addons.length && (
-                <p className="text-[10px] text-emerald-600 font-medium mt-1">Boost with Add-on →</p>
+                <p className="text-2xs text-emerald-600 font-medium mt-1">Boost with Add-on →</p>
               )}
             </div>
           </div>

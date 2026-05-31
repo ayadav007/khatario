@@ -262,7 +262,7 @@ function PurchaseOrdersPageContent() {
                 <p className="mt-0.5 text-xs text-gray-600">
                   {order.order_number} · {formatDate(order.order_date)}
                 </p>
-                <p className={clsx('mt-1 text-[10px] font-semibold uppercase', poStatusClass(order.status))}>
+                <p className={clsx('mt-1 text-2xs font-semibold uppercase', poStatusClass(order.status))}>
                   {poStatusLabel(order.status)}
                 </p>
               </button>
@@ -314,7 +314,7 @@ function PurchaseOrdersPageContent() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
             <thead>
-              <tr className="border-b border-border bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+              <tr className="border-b border-border bg-gray-50 text-left text-caption font-semibold uppercase tracking-wide text-gray-600">
                 <th className="w-10 px-3 py-2.5">
                   <input type="checkbox" className="rounded border-gray-300" aria-label="Select all" />
                 </th>

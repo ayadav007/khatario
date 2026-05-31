@@ -37,7 +37,7 @@ function PageThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
       >
         <X className="h-3 w-3" />
       </button>
-      <span className="mt-1 block text-center text-[10px] text-text-muted">
+      <span className="mt-1 block text-center text-2xs text-text-muted">
         {src ? '' : '…'}
       </span>
     </div>
@@ -110,7 +110,7 @@ export function ScanPreviewScreen({ pages, onAddPage, onRemovePage, onProceed, o
               className="flex h-20 w-16 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-text-muted active:bg-slate-50"
             >
               <Plus className="h-5 w-5" />
-              <span className="text-[10px]">Add</span>
+              <span className="text-2xs">Add</span>
             </button>
           )}
 

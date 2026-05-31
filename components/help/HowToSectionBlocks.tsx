@@ -22,7 +22,7 @@ export function HowToSectionBlocks({ sections }: Props) {
             );
           case 'p':
             return (
-              <p key={i} className="not-prose mb-5 text-[17px] leading-[1.75] text-text-secondary">
+              <p key={i} className="not-prose mb-5 text-lg leading-[1.75] text-text-secondary">
                 {section.text}
               </p>
             );

@@ -306,7 +306,7 @@ export function CustomerLedgerView({
 
           <div className="overflow-x-auto rounded-xl border border-border bg-surface">
             <table className="w-full text-sm min-w-[520px]">
-              <thead className="border-b border-border bg-slate-50 text-[10px] uppercase tracking-wide text-text-muted">
+              <thead className="border-b border-border bg-slate-50 text-2xs uppercase tracking-wide text-text-muted">
                 <tr>
                   <th className="text-left py-2 px-3 font-semibold">Transactions</th>
                   <th className="text-right py-2 px-3 font-semibold">Debit</th>
@@ -389,7 +389,7 @@ export function CustomerLedgerView({
               {sharing ? 'Sharing…' : 'Share'}
             </Button>
           </div>
-          <p className="text-[11px] text-text-muted">
+          <p className="text-caption text-text-muted">
             Download/Share will attach the statement PDF in the next step (native WhatsApp share).
           </p>
         </div>

@@ -89,8 +89,8 @@ const FL = React.forwardRef<
       htmlFor={id}
       className={
         dense
-          ? 'block text-[10px] font-semibold uppercase tracking-wide text-text-secondary'
-          : 'text-[11px] font-semibold uppercase tracking-wide text-text-secondary'
+          ? 'block text-2xs font-semibold uppercase tracking-wide text-text-secondary'
+          : 'text-caption font-semibold uppercase tracking-wide text-text-secondary'
       }
     >
       {label}
@@ -100,8 +100,8 @@ const FL = React.forwardRef<
       id={id}
       className={
         dense
-          ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 text-[14px] font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border'
-          : 'focus-primary w-full border-0 border-b border-border bg-transparent pb-2 text-[15px] font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border'
+          ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 text-sm font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border'
+          : 'focus-primary w-full border-0 border-b border-border bg-transparent pb-2 text-base font-medium text-text-primary shadow-none outline-none placeholder:text-text-muted ring-0 focus-visible:border-border'
       }
       {...rest}
     />
@@ -147,14 +147,14 @@ function InvoiceInclusiveLineMobileInput(props: {
   );
 }
 
-const SLABEL = 'text-[11px] font-semibold uppercase tracking-wide text-text-secondary';
+const SLABEL = 'text-caption font-semibold uppercase tracking-wide text-text-secondary';
 /** Tighter Bill details block on mobile */
-const SLABEL_DENSE = 'text-[10px] font-semibold uppercase tracking-wide text-text-secondary';
+const SLABEL_DENSE = 'text-2xs font-semibold uppercase tracking-wide text-text-secondary';
 const SEL = `${SLABEL} block mb-1`;
 const SEL_CLASS =
-  'focus-primary w-full border-0 border-b border-border bg-transparent pb-2 text-[15px] font-medium text-text-primary shadow-none outline-none ring-0';
+  'focus-primary w-full border-0 border-b border-border bg-transparent pb-2 text-base font-medium text-text-primary shadow-none outline-none ring-0';
 const SEL_CLASS_DENSE =
-  'focus-primary w-full min-w-0 border-0 border-b border-border bg-transparent pb-1.5 text-[14px] font-medium text-text-primary shadow-none outline-none ring-0';
+  'focus-primary w-full min-w-0 border-0 border-b border-border bg-transparent pb-1.5 text-sm font-medium text-text-primary shadow-none outline-none ring-0';
 
 /** Flat section title (no white panel — title + rule only). */
 function MobileSectionHeading({
@@ -172,7 +172,7 @@ function MobileSectionHeading({
       <h2
         className={
           compact
-            ? 'text-[11px] font-bold uppercase tracking-wider text-text-primary'
+            ? 'text-caption font-bold uppercase tracking-wider text-text-primary'
             : 'text-xs font-bold uppercase tracking-wider text-text-primary'
         }
       >
@@ -230,7 +230,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
 
   const itemAutocompleteClass = useMemo(
     () =>
-      '!text-[16px] font-semibold leading-snug rounded-none border-0 border-b border-border pb-1 min-h-[36px]',
+      '!text-base font-semibold leading-snug rounded-none border-0 border-b border-border pb-1 min-h-[36px]',
     [],
   );
 
@@ -252,7 +252,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <span className={SLABEL_DENSE}>Supplier · required</span>
               {props.supplierNeedsCatalogLink && (
-                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-800">
+                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-green-800">
                   New party
                 </span>
               )}
@@ -441,10 +441,10 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               <option value="inclusive">Inclusive (rate includes GST)</option>
             </select>
             <details className="mt-1.5 rounded-md border border-border bg-surface px-2 py-1.5">
-              <summary className="cursor-pointer list-none text-[10px] font-medium text-text-secondary [&::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer list-none text-2xs font-medium text-text-secondary [&::-webkit-details-marker]:hidden">
                 When is CGST/SGST vs IGST?
               </summary>
-              <p className="mt-1.5 border-t border-dashed border-border pt-1.5 text-[10px] leading-snug text-text-secondary">
+              <p className="mt-1.5 border-t border-dashed border-border pt-1.5 text-2xs leading-snug text-text-secondary">
                 {props.totals.intraState
                   ? 'Intra-state: CGST + SGST when supplier state matches yours.'
                   : 'Inter-state: IGST when supplier state differs.'}
@@ -513,7 +513,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               ))}
             </select>
           )}
-          <p className="text-[11px] text-text-muted">Used when you finalize goods into stock.</p>
+          <p className="text-caption text-text-muted">Used when you finalize goods into stock.</p>
         </section>
       )}
 
@@ -570,7 +570,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
                     <div className="font-semibold leading-snug text-text-primary line-clamp-3">
                       {item.item_name?.trim() ? item.item_name : '—'}
                     </div>
-                    <div className="mt-1 text-[11px] text-text-secondary">
+                    <div className="mt-1 text-caption text-text-secondary">
                       Qty × rate · {item.quantity} {item.unit} × ₹{item.unit_price.toFixed(2)}
                     </div>
                   </div>
@@ -596,11 +596,11 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             >
               <div className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[11px] font-semibold text-text-primary dark:bg-slate-700 dark:text-text-primary">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gray-100 text-caption font-semibold text-text-primary dark:bg-slate-700 dark:text-text-primary">
                     {i + 1}
                   </span>
                   {!(item.item_id || '').trim() && (item.item_name || '').trim().length > 0 && (
-                    <span className="rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-green-800">
+                    <span className="rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wide text-green-800">
                       New item
                     </span>
                   )}
@@ -670,7 +670,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
                   }}
                 />
                 {!(item.item_id || '').trim() && (
-                  <p className="text-[10px] leading-snug text-text-secondary">
+                  <p className="text-2xs leading-snug text-text-secondary">
                     Not in catalogue — search to link inventory.
                   </p>
                 )}
@@ -764,7 +764,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               </div>
 
               {props.formData.price_mode === 'exclusive' && (item.discount_amount ?? 0) > 0 && (
-                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] text-text-secondary">
+                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-caption text-text-secondary">
                   <input
                     type="checkbox"
                     className="rounded border-border text-primary-600 focus:ring-primary-500"
@@ -815,12 +815,12 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               {(item.track_batch || item.track_serial) && (
                 <div className="mt-2 border-t border-dashed border-border pt-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+                    <span className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">
                       Batch / serial
                     </span>
                     <button
                       type="button"
-                      className="link-primary text-[11px] font-medium"
+                      className="link-primary text-caption font-medium"
                       onClick={() =>
                         props.setExpandedItems((prev) => {
                           const n = new Set(prev);
@@ -885,7 +885,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
 
               <div className="mt-3 border-t border-border pt-2">
                 <div className="flex flex-wrap items-end justify-between gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">
                     Line incl. GST
                   </span>
                   <InvoiceInclusiveLineMobileInput
@@ -1079,7 +1079,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               {props.isOnline ? 'Finalize' : 'Offline'}
             </Button>
           </div>
-          <p className="mt-2 px-4 text-center text-[10px] text-text-muted">
+          <p className="mt-2 px-4 text-center text-2xs text-text-muted">
             {props.isOnline ? 'Finalizing posts to GST‑linked books.' : 'Go online to finalize for filing.'}
           </p>
         </div>

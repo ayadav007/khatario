@@ -136,7 +136,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
         aria-label={`Pending Actions (${totalPending})`}
       >
         <div 
-          className="text-white text-[10px] font-bold tracking-widest"
+          className="text-white text-2xs font-bold tracking-widest"
           style={{ 
             writingMode: 'vertical-rl',
             textOrientation: 'upright'
@@ -145,7 +145,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
           PENDING
         </div>
         {hasPendingActions && (
-          <span className="absolute top-2 text-[10px] font-bold bg-red-500 rounded-full w-5 h-5 flex items-center justify-center">
+          <span className="absolute top-2 text-2xs font-bold bg-red-500 rounded-full w-5 h-5 flex items-center justify-center">
             {totalPending > 9 ? '9+' : totalPending}
           </span>
         )}

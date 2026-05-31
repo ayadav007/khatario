@@ -898,7 +898,7 @@ const DeadStockRowItem: React.FC<{
           >
             {row.item_name}
           </button>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+          <div className="text-caption text-gray-500 dark:text-gray-400 truncate">
             {row.quantity} {row.unit} · {row.branch_name}
             {row.warehouse_name ? ` / ${row.warehouse_name}` : ''}
             {row.last_sale_date
@@ -912,7 +912,7 @@ const DeadStockRowItem: React.FC<{
           </div>
           <Link
             href={`/items/${row.item_id}`}
-            className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline"
+            className="text-caption text-primary-600 dark:text-primary-400 hover:underline"
           >
             View item
           </Link>
@@ -950,7 +950,7 @@ const DeadStockRowItem: React.FC<{
                       >
                         {s.name}
                       </Link>
-                      <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-400">
+                      <span className="ml-1 text-2xs text-gray-500 dark:text-gray-400">
                         ({s.match_type === 'same_item' ? 'bought this' : 'same category'})
                       </span>
                     </div>
@@ -964,7 +964,7 @@ const DeadStockRowItem: React.FC<{
                         WhatsApp
                       </a>
                     ) : (
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      <span className="text-2xs text-gray-400 dark:text-gray-500">
                         No phone
                       </span>
                     )}

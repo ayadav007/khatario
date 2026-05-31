@@ -298,7 +298,7 @@ function TemplateCard({
           </div>
         </div>
         {readOnly && (
-          <span className="text-[10px] uppercase tracking-wide text-text-secondary bg-gray-100 dark:bg-slate-700 rounded px-2 py-0.5">
+          <span className="text-2xs uppercase tracking-wide text-text-secondary bg-gray-100 dark:bg-slate-700 rounded px-2 py-0.5">
             System
           </span>
         )}
