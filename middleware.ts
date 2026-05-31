@@ -137,6 +137,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  /** Sidebar report route map — business app, not platform admin (handler is unauthenticated). */
+  if (pathname === '/api/admin/reports' && request.method === 'GET') {
+    return NextResponse.next();
+  }
+
   if (isPlatformAdminProtectedPath(pathname)) {
     const platformPayload = await getPlatformSessionFromRequest(request);
     if (platformPayload) {

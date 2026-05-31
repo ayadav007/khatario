@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+import { handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 import { 
   LayoutDashboard, 
   Users, 
@@ -1185,6 +1186,11 @@ export const Sidebar: React.FC = () => {
                         // For non-collapsible items: if no href, prevent navigation
                         if (!item.collapsible && (!item.href || item.href === '#')) {
                           e.preventDefault();
+                          return;
+                        }
+
+                        if (item.href && item.href !== '#') {
+                          handleShellNavClick(e, item.href);
                         }
                       }}
                       className={clsx(
@@ -1307,6 +1313,7 @@ export const Sidebar: React.FC = () => {
                         href={item.href!}
                         prefetch={false}
                         data-tour={item.tourId}
+                        onClick={(e) => handleShellNavClick(e, item.href!)}
                         className={clsx(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative',
                           'hover:bg-slate-100 dark:hover:bg-slate-700/90',
@@ -1330,7 +1337,10 @@ export const Sidebar: React.FC = () => {
                             <Link
                               href={createRoute}
                               prefetch={false}
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShellNavClick(e, createRoute);
+                              }}
                               className={clsx(
                                 'absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-sm font-medium',
                                 'opacity-0 group-hover/item:opacity-100 transition-opacity',

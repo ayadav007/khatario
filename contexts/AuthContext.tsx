@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Bumped on login/logout so stale in-flight /api/auth/session calls cannot revoke a new session. */
   const sessionGenerationRef = useRef(0);
   const authBootstrappedRef = useRef(false);
+  const reconnectFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (
     typeof window !== 'undefined' &&
@@ -286,7 +287,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? data.activeBranchCount
             : (data.branches?.length ?? 0)
         );
-        setPermissions(data.permissions || {});
+        setPermissions((prev) => {
+          const next = data.permissions || {};
+          if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
+        });
         setIsPrimaryAdmin(data.isPrimaryAdmin || false);
         setSubscription(data.subscription || null);
         if (data.portalTheme && data.user?.business_id) {
@@ -395,7 +400,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   ? data.activeBranchCount
                   : (data.branches?.length ?? 0)
               );
-              setPermissions(data.permissions || {});
+              setPermissions((prev) => {
+          const next = data.permissions || {};
+          if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
+        });
               setIsPrimaryAdmin(data.isPrimaryAdmin || false);
               setSubscription(data.subscription || null);
               if (data.portalTheme && data.user?.business_id) {
@@ -478,12 +487,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const onReconnect = () => {
-      if (localStorage.getItem('user')) {
-        void fetchSession();
+      if (!localStorage.getItem('user')) return;
+      if (reconnectFetchTimerRef.current) {
+        clearTimeout(reconnectFetchTimerRef.current);
       }
+      reconnectFetchTimerRef.current = setTimeout(() => {
+        reconnectFetchTimerRef.current = null;
+        void fetchSession();
+      }, 1500);
     };
     window.addEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
-    return () => window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
+    return () => {
+      if (reconnectFetchTimerRef.current) {
+        clearTimeout(reconnectFetchTimerRef.current);
+      }
+      window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
+    };
   }, []);
 
   const login = async (data: any) => {

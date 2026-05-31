@@ -15,7 +15,7 @@ import { useRef } from 'react';
  */
 const WINDOW_MS = 1000;
 /** Renders within WINDOW_MS to be flagged as a loop (normal renders are far below this). */
-const THRESHOLD = 30;
+const THRESHOLD = 15;
 const LOG_THROTTLE_MS = 1000;
 
 interface RenderLoopEvent {

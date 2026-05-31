@@ -10,6 +10,7 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
 import { isOfflineCapable } from '@/lib/offline/offline-capable-routes';
 import { MOBILE_TAB_ROOTS, normalizePath } from '@/lib/mobile-navigation';
+import { commitShellNavigation } from '@/lib/navigation/app-shell-navigate';
 
 const TAB_HREFS = MOBILE_TAB_ROOTS as readonly string[];
 
@@ -53,12 +54,14 @@ export const BottomNav: React.FC = () => {
       return;
     }
 
-    // Collapse nested route to tab root synchronously (must stay in gesture handler for WebView).
+    // Soft App Router transitions can stall when the shell is CPU-bound (render churn).
+    // Full navigation matches post-login redirect in AuthContext and always commits.
+    e.preventDefault();
     if (current.startsWith(`${target}/`)) {
-      e.preventDefault();
-      router.replace(href);
+      commitShellNavigation(href);
+      return;
     }
-    // Otherwise let <Link> perform default client navigation (push).
+    commitShellNavigation(href);
   };
 
   const navItems = [

@@ -45,17 +45,17 @@ export function useMobileHeaderTitleContext(): MobileHeaderTitleContextValue | u
  * Clears when the component unmounts. Updates when `title` changes without flashing to route title.
  */
 export function useMobileHeaderTitleOverride(title: string | null | undefined) {
-  const ctx = useContext(MobileHeaderTitleContext);
+  const setOverrideTitle = useContext(MobileHeaderTitleContext)?.setOverrideTitle;
   useEffect(() => {
-    if (!ctx) return;
-    ctx.setOverrideTitle(title?.trim() || null);
-  }, [ctx, title]);
+    if (!setOverrideTitle) return;
+    setOverrideTitle(title?.trim() || null);
+  }, [setOverrideTitle, title]);
 
   useEffect(() => {
     return () => {
-      ctx?.setOverrideTitle(null);
+      setOverrideTitle?.(null);
     };
-  }, [ctx]);
+  }, [setOverrideTitle]);
 }
 
 /**
@@ -63,12 +63,12 @@ export function useMobileHeaderTitleOverride(title: string | null | undefined) {
  * Pass `null` when the slot should be empty.
  */
 export function useMobileHeaderRightAccessory(node: React.ReactNode | null | undefined) {
-  const ctx = useContext(MobileHeaderTitleContext);
+  const setRightAccessory = useContext(MobileHeaderTitleContext)?.setRightAccessory;
   useEffect(() => {
-    if (!ctx) return;
-    ctx.setRightAccessory(node ?? null);
+    if (!setRightAccessory) return;
+    setRightAccessory(node ?? null);
     return () => {
-      ctx.setRightAccessory(null);
+      setRightAccessory(null);
     };
-  }, [ctx, node]);
+  }, [setRightAccessory, node]);
 }
