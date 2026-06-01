@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { BarChart3 } from 'lucide-react';
@@ -83,11 +83,6 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
 
       if (res.ok) {
         const data = await res.json();
-        console.log('[SalesVsPurchasesChart] Fetched data:', {
-          chartDataLength: data.chartData?.length || 0,
-          sampleData: data.chartData?.slice(0, 3),
-          dateRange: { startDate, endDate },
-        });
         setChartData(data.chartData || []);
       } else {
         const errorData = await res.json().catch(() => ({}));
@@ -126,8 +121,8 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
     [router]
   );
 
-  // Simple SVG-based bar chart (no external dependencies)
-  const renderBarChart = () => {
+  // Memoized SVG — avoids recreating hundreds of nodes (and native tooltip listeners) on unrelated rerenders.
+  const barChart = useMemo(() => {
     if (chartData.length === 0) {
       return (
         <div className="flex h-36 items-center justify-center text-sm text-text-muted md:h-48">
@@ -137,7 +132,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
     }
 
     const maxValue = Math.max(
-      ...chartData.map(d => Math.max(Number(d.sales) || 0, Number(d.purchases) || 0)),
+      ...chartData.map((d) => Math.max(Number(d.sales) || 0, Number(d.purchases) || 0)),
       1000
     );
 
@@ -160,7 +155,6 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           viewBox={`0 0 ${width} ${height}`}
           onClick={handleChartClick}
         >
-          {/* Grid lines */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = padding + chartHeight * (1 - ratio);
             return (
@@ -176,7 +170,6 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
             );
           })}
 
-          {/* Y-axis labels */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = padding + chartHeight * (1 - ratio);
             const value = Math.round(maxValue * ratio);
@@ -194,26 +187,24 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
             );
           })}
 
-          {/* Bars */}
           {chartData.map((d, i) => {
             const salesValue = Number(d.sales) || 0;
             const purchasesValue = Number(d.purchases) || 0;
             const x = padding + i * barSpacing + (barSpacing - barWidth) / 2;
             const salesHeight = maxValue > 0 ? (salesValue / maxValue) * chartHeight : 0;
             const purchasesHeight = maxValue > 0 ? (purchasesValue / maxValue) * chartHeight : 0;
-            const salesY = padding + chartHeight - salesHeight;
-            const purchasesY = padding + chartHeight - purchasesHeight;
             const barHalfWidth = (barWidth - gapBetweenBars) / 2;
-
-            // Ensure minimum height for visibility (at least 2px if value > 0)
             const minBarHeight = 2;
-            const finalSalesHeight = salesValue > 0 && salesHeight < minBarHeight ? minBarHeight : salesHeight;
-            const finalPurchasesHeight = purchasesValue > 0 && purchasesHeight < minBarHeight ? minBarHeight : purchasesHeight;
+            const finalSalesHeight =
+              salesValue > 0 && salesHeight < minBarHeight ? minBarHeight : salesHeight;
+            const finalPurchasesHeight =
+              purchasesValue > 0 && purchasesHeight < minBarHeight ? minBarHeight : purchasesHeight;
             const finalSalesY = padding + chartHeight - finalSalesHeight;
             const finalPurchasesY = padding + chartHeight - finalPurchasesHeight;
+            const dateLabel = format(new Date(d.date), 'MMM dd, yyyy');
 
             return (
-              <g key={i}>
+              <g key={d.date}>
                 {salesValue > 0 && (
                   <rect
                     x={x}
@@ -224,11 +215,8 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     data-bar="sales"
                     data-date={d.date}
                     rx="2"
-                  >
-                    <title>
-                      Sales: ₹{salesValue.toLocaleString('en-IN')} on {format(new Date(d.date), 'MMM dd, yyyy')} - Click to view invoices
-                    </title>
-                  </rect>
+                    aria-label={`Sales ₹${salesValue.toLocaleString('en-IN')} on ${dateLabel}`}
+                  />
                 )}
 
                 {purchasesValue > 0 && (
@@ -241,14 +229,10 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     data-bar="purchases"
                     data-date={d.date}
                     rx="2"
-                  >
-                    <title>
-                      Purchases: ₹{purchasesValue.toLocaleString('en-IN')} on {format(new Date(d.date), 'MMM dd, yyyy')} - Click to view purchases
-                    </title>
-                  </rect>
+                    aria-label={`Purchases ₹${purchasesValue.toLocaleString('en-IN')} on ${dateLabel}`}
+                  />
                 )}
 
-                {/* X-axis label */}
                 {i % Math.ceil(chartData.length / 8) === 0 || i === chartData.length - 1 ? (
                   <text
                     x={x + barWidth / 2}
@@ -266,7 +250,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
         </svg>
       </div>
     );
-  };
+  }, [chartData, chartColors, handleChartClick, plotHeight]);
 
   if (loading) {
     return (
@@ -312,7 +296,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
       </div>
 
       <div className="border-t border-border pt-2 md:pt-3">
-        {renderBarChart()}
+        {barChart}
       </div>
     </Card>
   );

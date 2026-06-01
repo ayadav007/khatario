@@ -142,7 +142,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     [data?.buckets, data?.granularity, focusRange.end, focusRange.start, preset, router]
   );
 
-  const renderChart = () => {
+  const chartBody = useMemo(() => {
     const buckets = data?.buckets ?? [];
     const hasSales = buckets.some((b) => b.sales > 0);
 
@@ -225,11 +225,8 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
                     fill="#22c55e"
                     data-bucket-key={bucket.key}
                     className="opacity-90 hover:opacity-100"
-                  >
-                    <title>
-                      {bucket.label}: {formatInr(salesValue)} ({bucket.receipt_count} receipts)
-                    </title>
-                  </rect>
+                    aria-label={`${bucket.label}: ${formatInr(salesValue)} (${bucket.receipt_count} receipts)`}
+                  />
                 )}
                 {showLabel && (
                   <text
@@ -248,7 +245,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
         </svg>
       </div>
     );
-  };
+  }, [chartColors, data?.buckets, data?.granularity, handleChartClick, plotHeight, preset]);
 
   const summary = data?.summary;
 
@@ -312,7 +309,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
             />
           </div>
 
-          <div className="border-t border-border pt-2 md:pt-3">{renderChart()}</div>
+          <div className="border-t border-border pt-2 md:pt-3">{chartBody}</div>
         </>
       )}
     </Card>

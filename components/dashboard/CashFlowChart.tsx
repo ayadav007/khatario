@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Info, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
@@ -90,7 +90,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     }
   };
 
-  const renderChart = () => {
+  const chartBody = useMemo(() => {
     if (!data || data.months.length === 0) {
       return (
         <div className="flex h-36 items-center justify-center text-sm text-text-muted md:h-48">
@@ -105,10 +105,9 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     const allValues = series.flatMap((m) => [m.opening, m.closing, m.incoming, m.outgoing]);
     const minValue = Math.min(...allValues, 0);
     const maxValue = Math.max(...allValues, 1000);
-    
-    // Add padding to the range for better visualization
+
     const valueRange = maxValue - minValue;
-    const padding = valueRange * 0.1; // 10% padding
+    const padding = valueRange * 0.1;
     const adjustedMin = minValue - padding;
     const adjustedMax = maxValue + padding;
     const adjustedRange = adjustedMax - adjustedMin;
@@ -129,23 +128,19 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       if (month.month === 'opening') {
         monthLabel = 'Open';
       } else {
-        const [y, monthNum] = month.month.split('-');
-        const monthDate = new Date(parseInt(y, 10), parseInt(monthNum, 10) - 1, 1);
+        const [yStr, monthNum] = month.month.split('-');
+        const monthDate = new Date(parseInt(yStr, 10), parseInt(monthNum, 10) - 1, 1);
         monthLabel = format(monthDate, 'MMM-yy');
       }
 
       return { x, y, month: monthLabel, value: month.closing, fullMonth: month.monthLabel };
     });
 
-    const path = points
-      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-      .join(' ');
+    const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
-    // Generate Y-axis labels dynamically based on data range
-    // Ensure zero is always included if it's within the range
     const numLabels = 6;
     let yAxisLabels = Array.from({ length: numLabels }, (_, i) => {
-      const value = adjustedMin + (adjustedRange * (numLabels - 1 - i) / (numLabels - 1));
+      const value = adjustedMin + (adjustedRange * (numLabels - 1 - i)) / (numLabels - 1);
       const y = chartPadding + (i / (numLabels - 1)) * chartHeight;
       let label = '';
       if (Math.abs(value) >= 100000) {
@@ -158,29 +153,32 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       return { y, label, value };
     });
 
-    // If zero is in range but not in labels, add it
     if (adjustedMin <= 0 && adjustedMax >= 0) {
-      const hasZero = yAxisLabels.some(label => Math.abs(label.value) < 0.01);
+      const hasZero = yAxisLabels.some((label) => Math.abs(label.value) < 0.01);
       if (!hasZero) {
         const zeroY = chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight;
         yAxisLabels.push({ y: zeroY, label: '₹0', value: 0 });
-        yAxisLabels.sort((a, b) => b.y - a.y); // Sort by Y position (top to bottom)
+        yAxisLabels.sort((a, b) => b.y - a.y);
       }
     }
 
-    // Draw zero line if it's within the range
-    const zeroY = adjustedMin <= 0 && adjustedMax >= 0
-      ? chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
-      : null;
+    const zeroY =
+      adjustedMin <= 0 && adjustedMax >= 0
+        ? chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
+        : null;
 
-    // Calculate SVG height to accommodate rotated labels
     const svgHeight = height + (series.length > 7 ? 40 : 0);
     const svgWidth = Math.max(width, series.length * 70);
 
     return (
       <div className="w-full overflow-x-auto overflow-y-visible">
-        <svg width={svgWidth} height={svgHeight} className="w-full h-auto" viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ overflow: 'visible' }}>
-          {/* Zero line - draw first so it's behind everything */}
+        <svg
+          width={svgWidth}
+          height={svgHeight}
+          className="w-full h-auto"
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          style={{ overflow: 'visible' }}
+        >
           {zeroY !== null && (
             <line
               x1={chartPadding}
@@ -194,7 +192,6 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
             />
           )}
 
-          {/* Grid lines */}
           {yAxisLabels.map((label, i) => (
             <line
               key={i}
@@ -203,12 +200,11 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               x2={width - chartPadding}
               y2={label.y}
               stroke={label.value === 0 ? c.gridStrong : c.grid}
-              strokeWidth={label.value === 0 ? "1.5" : "1"}
-              strokeDasharray={label.value === 0 ? "4,4" : "none"}
+              strokeWidth={label.value === 0 ? '1.5' : '1'}
+              strokeDasharray={label.value === 0 ? '4,4' : 'none'}
             />
           ))}
 
-          {/* Y-axis labels */}
           {yAxisLabels.map((label, i) => (
             <text
               key={i}
@@ -217,13 +213,12 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               textAnchor="end"
               fontSize="10"
               fill={label.value === 0 ? c.labelStrong : c.axis}
-              fontWeight={label.value === 0 ? "700" : "400"}
+              fontWeight={label.value === 0 ? '700' : '400'}
             >
               {label.label}
             </text>
           ))}
 
-          {/* Cash flow line */}
           <path
             d={path}
             fill="none"
@@ -233,30 +228,26 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
             strokeLinejoin="round"
           />
 
-          {/* Data points */}
           {points.map((point, i) => (
-            <g key={i}>
-              <circle
-                cx={point.x}
-                cy={point.y}
-                r="5"
-                fill="#3b82f6"
-                stroke={c.pointStroke}
-                strokeWidth="2"
-                className="cursor-pointer transition-opacity hover:opacity-75"
-              />
-              <title>{`${point.fullMonth}: ₹${point.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</title>
-            </g>
+            <circle
+              key={i}
+              cx={point.x}
+              cy={point.y}
+              r="5"
+              fill="#3b82f6"
+              stroke={c.pointStroke}
+              strokeWidth="2"
+              className="cursor-pointer transition-opacity hover:opacity-75"
+              aria-label={`${point.fullMonth}: ₹${point.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+            />
           ))}
 
-          {/* X-axis labels - show all months */}
           {points.map((point, i) => {
-            // Rotate labels if there are more than 6 months to prevent overlap
             const shouldRotate = data.months.length > 6;
             const rotation = shouldRotate ? -45 : 0;
             const labelY = shouldRotate ? height + 30 : height - 5;
             const labelX = point.x;
-            
+
             return (
               <g key={`month-label-${i}`} transform={`translate(${labelX}, ${labelY})`}>
                 <text
@@ -278,7 +269,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </svg>
       </div>
     );
-  };
+  }, [chartColors, data, plotHeight]);
 
   // Get available fiscal years (current and previous 2 years)
   const getAvailableYears = () => {
@@ -340,7 +331,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       </div>
 
       <div className="border-t border-border pt-2 md:pt-3">
-        {renderChart()}
+        {chartBody}
         {data && data.months.length > 1 && (() => {
           const closings = data.months.map((m) => m.closing);
           const minC = Math.min(...closings);

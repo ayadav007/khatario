@@ -552,7 +552,7 @@ const SalesChartWidget: React.FC<{ businessId: string }> = ({ businessId }) => {
       </div>
       <div className="flex gap-0.5 h-16 items-end">
         {data.slice(-14).map((d) => (
-          <div key={d.date} className="flex-1 min-w-0 flex flex-col items-center justify-end" title={`${d.date}: ₹ ${Number(d.sales).toLocaleString('en-IN')}`}>
+          <div key={d.date} className="flex-1 min-w-0 flex flex-col items-center justify-end" aria-label={`${d.date}: ₹ ${Number(d.sales).toLocaleString('en-IN')}`}>
             <div className="w-full bg-green-500/60 dark:bg-green-600/60 rounded-t min-h-[2px]" style={{ height: `${Math.max((Number(d.sales) / maxVal) * 100, 2)}%` }} />
           </div>
         ))}
