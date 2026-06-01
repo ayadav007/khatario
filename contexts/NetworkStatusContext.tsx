@@ -19,6 +19,9 @@ import {
 } from '@/lib/network/offline-state';
 import { probeServerReachable } from '@/lib/network/connectivity-probe';
 import { probeNetworkReconnectDispatched } from '@/lib/debug/dashboard-refresh-probe';
+import {
+  markCapacitorNetworkReady,
+} from '@/lib/auth/should-trust-cached-session';
 
 /** Debounce reconnect side-effects — avoids flap → full-app refresh storms on mobile. */
 const RECONNECT_DISPATCH_DEBOUNCE_MS = 5_000;

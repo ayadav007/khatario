@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
