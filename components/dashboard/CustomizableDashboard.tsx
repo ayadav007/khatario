@@ -37,10 +37,10 @@ interface CustomizableDashboardProps {
   initialWidgets?: WidgetConfig[];
 }
 
-export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
+export const CustomizableDashboard = React.memo(function CustomizableDashboard({
   businessId,
   initialWidgets = [],
-}) => {
+}: CustomizableDashboardProps) {
   const toast = useToastContext();
   const { hasFeature, loading: featuresLoading } = useFeatureRegistry();
   const [widgets, setWidgets] = useState<WidgetConfig[]>(initialWidgets);
@@ -346,7 +346,7 @@ export const CustomizableDashboard: React.FC<CustomizableDashboardProps> = ({
       )}
     </div>
   );
-};
+});
 
 const SalesSummaryWidget: React.FC<{ businessId: string }> = ({ businessId }) => {
   const [data, setData] = useState<{ today_sales: number; month_sales: number } | null>(null);

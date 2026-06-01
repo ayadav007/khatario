@@ -9,7 +9,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
+  useSyncExternalStore,
 } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -17,6 +17,11 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { NETWORK_RECONNECT_EVENT } from '@/lib/network/events';
 import { getCatalogStatus } from '@/lib/offline/catalog/client-search';
 import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
+import {
+  getCatalogSyncProgressSnapshot,
+  setCatalogSyncProgress,
+  subscribeCatalogSyncProgress,
+} from '@/lib/offline/catalog/catalog-sync-progress-store';
 import {
   runDeltaCatalogSync,
   runFullCatalogSync,
@@ -27,52 +32,82 @@ import type {
 } from '@/lib/offline/catalog/types';
 import type { TenantScope } from '@/lib/offline/types';
 
-interface CatalogSyncContextValue {
+/** Stable engine API — no high-frequency progress in this context. */
+export interface CatalogSyncEngineContextValue {
   status: CatalogStatus | null;
   isSyncing: boolean;
-  progress: CatalogSyncProgress | null;
   lastError: string | null;
   triggerFullSync: () => Promise<void>;
   triggerDeltaSync: () => Promise<void>;
   refreshStatus: () => Promise<void>;
 }
 
-const CatalogSyncContext = createContext<CatalogSyncContextValue | undefined>(
+/** Full API including progress (settings / debug UI). */
+export interface CatalogSyncContextValue extends CatalogSyncEngineContextValue {
+  progress: CatalogSyncProgress | null;
+}
+
+const CatalogSyncEngineContext = createContext<CatalogSyncEngineContextValue | undefined>(
   undefined
 );
 
 /** Minimum gap between automatic background delta syncs (ms). */
 const MIN_AUTO_DELTA_MS = 60_000;
-/** Throttle progress UI updates during sync to reduce render churn. */
+/** Throttle progress store writes within the same phase. */
 const PROGRESS_THROTTLE_MS = 750;
+const PROGRESS_SAME_PHASE_MS = 3_000;
 
 export function CatalogSyncProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('CatalogSyncProvider');
   const { business, user } = useAuth();
   const { currentBranchId } = useBranch();
   const { isOnline } = useNetworkStatus();
-  const [status, setStatus] = useState<CatalogStatus | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [progress, setProgress] = useState<CatalogSyncProgress | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
+  const [status, setStatus] = React.useState<CatalogStatus | null>(null);
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [lastError, setLastError] = React.useState<string | null>(null);
   const syncingRef = useRef(false);
   const lastAutoSyncAtRef = useRef(0);
   const bootScopeKeyRef = useRef<string | null>(null);
   const progressThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingProgressRef = useRef<CatalogSyncProgress | null>(null);
+  const lastProgressEmitRef = useRef(0);
+  const lastProgressPhaseRef = useRef<CatalogSyncProgress['phase']>('idle');
+
+  const publishProgress = useCallback((next: CatalogSyncProgress | null) => {
+    setCatalogSyncProgress(next);
+  }, []);
 
   const setProgressThrottled = useCallback((next: CatalogSyncProgress) => {
     pendingProgressRef.current = next;
+    const phaseChanged = next.phase !== lastProgressPhaseRef.current;
+    const terminal = next.phase === 'done' || next.phase === 'error';
+    const now = Date.now();
+    const dueSamePhase = now - lastProgressEmitRef.current >= PROGRESS_SAME_PHASE_MS;
+
+    const flush = () => {
+      const pending = pendingProgressRef.current;
+      if (!pending) return;
+      lastProgressPhaseRef.current = pending.phase;
+      lastProgressEmitRef.current = Date.now();
+      publishProgress(pending);
+      pendingProgressRef.current = null;
+    };
+
+    if (phaseChanged || terminal || dueSamePhase) {
+      if (progressThrottleRef.current) {
+        clearTimeout(progressThrottleRef.current);
+        progressThrottleRef.current = null;
+      }
+      flush();
+      return;
+    }
+
     if (progressThrottleRef.current) return;
-    setProgress(next);
     progressThrottleRef.current = setTimeout(() => {
       progressThrottleRef.current = null;
-      if (pendingProgressRef.current) {
-        setProgress(pendingProgressRef.current);
-        pendingProgressRef.current = null;
-      }
+      flush();
     }, PROGRESS_THROTTLE_MS);
-  }, []);
+  }, [publishProgress]);
 
   const scope: TenantScope | null = useMemo(
     () =>
@@ -117,7 +152,12 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
       syncingRef.current = true;
       setIsSyncing(true);
       setLastError(null);
-      setProgress({ phase: 'idle', itemsSynced: 0, customersSynced: 0, invoicesSynced: 0 });
+      publishProgress({
+        phase: 'idle',
+        itemsSynced: 0,
+        customersSynced: 0,
+        invoicesSynced: 0,
+      });
 
       try {
         const syncOptions = {
@@ -132,24 +172,26 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
           await runDeltaCatalogSync(syncOptions);
         }
         await refreshStatus();
-        setProgress(null);
+        publishProgress(null);
         if (!options?.manual) {
           lastAutoSyncAtRef.current = Date.now();
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Catalog sync failed';
         setLastError(message);
-        setProgress((p) =>
-          p
-            ? { ...p, phase: 'error', message }
-            : { phase: 'error', itemsSynced: 0, customersSynced: 0, invoicesSynced: 0, message }
-        );
+        publishProgress({
+          phase: 'error',
+          itemsSynced: pendingProgressRef.current?.itemsSynced ?? 0,
+          customersSynced: pendingProgressRef.current?.customersSynced ?? 0,
+          invoicesSynced: pendingProgressRef.current?.invoicesSynced ?? 0,
+          message,
+        });
       } finally {
         syncingRef.current = false;
         setIsSyncing(false);
       }
     },
-    [scope, user?.id, isOnline, stockScope, refreshStatus, setProgressThrottled]
+    [scope, user?.id, isOnline, stockScope, refreshStatus, setProgressThrottled, publishProgress]
   );
 
   const runSyncRef = useRef(runSync);
@@ -167,7 +209,6 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
     void refreshStatus();
   }, [refreshStatus]);
 
-  /** One automatic sync per tenant when coming online — not on every render. */
   useEffect(() => {
     if (!scope || !isOnline || !user?.id) return;
     const bootKey = `${scope.businessId}:${scope.userId}`;
@@ -202,36 +243,52 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
     };
   }, [scope?.businessId, scope?.userId, isOnline]);
 
-  const value = useMemo(
+  const engineValue = useMemo<CatalogSyncEngineContextValue>(
     () => ({
       status,
       isSyncing,
-      progress,
       lastError,
       triggerFullSync,
       triggerDeltaSync,
       refreshStatus,
     }),
-    [
-      status,
-      isSyncing,
-      progress,
-      lastError,
-      triggerFullSync,
-      triggerDeltaSync,
-      refreshStatus,
-    ]
+    [status, isSyncing, lastError, triggerFullSync, triggerDeltaSync, refreshStatus]
   );
 
   return (
-    <CatalogSyncContext.Provider value={value}>{children}</CatalogSyncContext.Provider>
+    <CatalogSyncEngineContext.Provider value={engineValue}>
+      {children}
+    </CatalogSyncEngineContext.Provider>
   );
 }
 
-export function useCatalogSync(): CatalogSyncContextValue {
-  const ctx = useContext(CatalogSyncContext);
+/** Progress only — use on settings/debug sync UI. Does not touch engine provider. */
+export function useCatalogSyncProgress(): CatalogSyncProgress | null {
+  return useSyncExternalStore(
+    subscribeCatalogSyncProgress,
+    getCatalogSyncProgressSnapshot,
+    () => null
+  );
+}
+
+/** Stable engine surface (no progress subscription). */
+export function useCatalogSyncEngine(): CatalogSyncEngineContextValue {
+  const ctx = useContext(CatalogSyncEngineContext);
   if (!ctx) {
-    throw new Error('useCatalogSync must be used within CatalogSyncProvider');
+    throw new Error('useCatalogSyncEngine must be used within CatalogSyncProvider');
   }
   return ctx;
+}
+
+/** Backward-compatible hook for settings / debug pages. */
+export function useCatalogSync(): CatalogSyncContextValue {
+  const engine = useCatalogSyncEngine();
+  const progress = useCatalogSyncProgress();
+  return useMemo(
+    () => ({
+      ...engine,
+      progress,
+    }),
+    [engine, progress]
+  );
 }

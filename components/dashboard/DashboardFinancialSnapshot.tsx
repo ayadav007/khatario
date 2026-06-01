@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Info } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { probeDashboardRefresh } from '@/lib/debug/dashboard-refresh-probe';
 
 export type DashboardKpiClickType = 'sales' | 'purchases' | 'collection' | 'profit';
 
@@ -25,10 +26,11 @@ type DashboardFinancialSnapshotProps = {
   onItemClick?: (type: DashboardKpiClickType) => void;
 };
 
-export function DashboardFinancialSnapshot({
+export const DashboardFinancialSnapshot = memo(function DashboardFinancialSnapshot({
   items,
   onItemClick,
 }: DashboardFinancialSnapshotProps) {
+  probeDashboardRefresh('kpi-strip-rerender');
   return (
     <div className="grid grid-cols-2 gap-2 md:gap-3">
       {items.map((kpi) => {
@@ -77,4 +79,4 @@ export function DashboardFinancialSnapshot({
       })}
     </div>
   );
-}
+});

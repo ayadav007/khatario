@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -48,10 +48,17 @@ import {
 } from '@/lib/offline/repositories/entity-cache-repository';
 import { markAppSynced } from '@/lib/sync-timestamp';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+import {
+  probeDashboardRefresh,
+  probeDashboardRefreshKeyBump,
+} from '@/lib/debug/dashboard-refresh-probe';
 
 function DashboardPage() {
+  useRenderLoopProbe('DashboardPage');
+  probeDashboardRefresh('dashboard-rerender');
   const { business, user, loading: authLoading } = useAuth();
-  const { currentBranchId, isLoading: branchLoading } = useBranch();
+  const { isLoading: branchLoading } = useBranch();
   const { registerHandler } = useDateRange();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
@@ -63,7 +70,7 @@ function DashboardPage() {
   const [shareModalInvoice, setShareModalInvoice] = useState<any>(null);
   const [shareFormatInvoice, setShareFormatInvoice] = useState<any>(null);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<any>(null);
-  const { isOffline, isOnline, lastChangedAt } = useNetworkStatus();
+  const { isOffline, isOnline } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
@@ -72,9 +79,10 @@ function DashboardPage() {
     prevOnlineRef.current = isOnline;
 
     if (isOnline && wasOffline) {
+      probeDashboardRefreshKeyBump('offline-to-online');
       setDashboardRefreshKey((key) => key + 1);
     }
-  }, [isOnline, lastChangedAt]);
+  }, [isOnline]);
 
   const openShareForInvoice = (invoice: { id: string; invoice_number: string }) => {
     if (canUseNativeInvoiceShare()) {
@@ -136,6 +144,8 @@ function DashboardPage() {
     };
   }, [handleDateRangeChange, registerHandler]);
 
+  const overviewLoadedRef = useRef(false);
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (authLoading || branchLoading) return;
@@ -147,7 +157,8 @@ function DashboardPage() {
         setLoading(false);
         return;
       }
-      setLoading(true);
+      if (!overviewLoadedRef.current) setLoading(true);
+      probeDashboardRefresh('overview-fetch', dateRangeKey);
       try {
         const params: Record<string, string> = {
           business_id: business.id,
@@ -159,6 +170,7 @@ function DashboardPage() {
         if (res.ok) {
           const result = await res.json();
           setData(result);
+          overviewLoadedRef.current = true;
           saveDashboardSnapshot(business.id, user.id, dateRangeKey, result);
           void saveDashboardCache(
             { businessId: business.id, userId: user.id },
@@ -175,19 +187,9 @@ function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [authLoading, branchLoading, business?.id, user?.id, dateRange, currentBranchId, dashboardRefreshKey, isOffline, dateRangeKey]);
+  }, [authLoading, branchLoading, business?.id, user?.id, dateRangeKey, dashboardRefreshKey, isOffline]);
 
-  if (loading && !data) {
-    return (
-      
-        <div className="flex items-center justify-center h-[calc(100vh-100px)]">
-          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-        </div>
-      
-    );
-  }
-
-  const handleCardClick = async (
+  const handleCardClick = useCallback(async (
     type: 'sales' | 'purchases' | 'receivables' | 'payables' | 'collection'
   ) => {
     if (!business?.id) return;
@@ -206,8 +208,8 @@ function DashboardPage() {
       } else if (type === 'payables') {
         endpoint = `/api/dashboard/payables?business_id=${business.id}`;
       } else if (type === 'collection') {
-        const start = dateRange?.start ?? format(new Date(), 'yyyy-MM-dd');
-        const end = dateRange?.end ?? format(new Date(), 'yyyy-MM-dd');
+        const start = dateRange.start;
+        const end = dateRange.end;
         endpoint = `/api/dashboard/collection?business_id=${business.id}&start_date=${start}&end_date=${end}`;
       }
 
@@ -231,88 +233,108 @@ function DashboardPage() {
     } finally {
       setLoadingDetails(false);
     }
-  };
+  }, [business?.id, dateRange.start, dateRange.end]);
 
-  // Get period label for KPI titles (e.g., "Today", "This Week", "This Month")
-  const periodLabel = dateRange?.label || "Today";
-  
-  // Format period label for titles (handle apostrophe correctly)
-  const getPeriodPrefix = (label: string) => {
-    if (label === "Today") return "Today's";
-    if (label.endsWith("'s")) return label; // Already has apostrophe
-    return `${label}'s`;
-  };
-  
-  const periodPrefix = getPeriodPrefix(periodLabel);
-  
-  // Get values from API (profit is now calculated correctly using COGS)
+  const periodLabel = dateRange.label || 'Today';
+
+  const periodPrefix = useMemo(() => {
+    if (periodLabel === 'Today') return "Today's";
+    if (periodLabel.endsWith("'s")) return periodLabel;
+    return `${periodLabel}'s`;
+  }, [periodLabel]);
+
   const sales = data?.sales || 0;
   const purchases = data?.purchases || 0;
   const collection = data?.collection || 0;
-  const profit = data?.profit || 0; // Gross Profit = Sales - COGS (calculated in API)
+  const profit = data?.profit || 0;
 
-  const handleKpiClick = (type: DashboardKpiClickType) => {
+  const handleKpiClick = useCallback((type: DashboardKpiClickType) => {
     if (type === 'profit') return;
-    handleCardClick(type);
-  };
+    void handleCardClick(type);
+  }, [handleCardClick]);
 
-  const formatInr = (amount: number) => `₹ ${amount.toLocaleString('en-IN')}`;
+  const financialSnapshotItems: DashboardKpiItem[] = useMemo(
+    () => [
+      {
+        id: 'sales',
+        title: `${periodPrefix} Sales`,
+        value: `₹ ${sales.toLocaleString('en-IN')}`,
+        icon: TrendingUp,
+        iconColor: 'text-emerald-700 dark:text-emerald-200',
+        valueColor: 'text-emerald-700 dark:text-emerald-300',
+        iconWellClassName:
+          'border border-emerald-300/80 bg-gradient-to-br from-emerald-100 via-emerald-50 to-teal-50 dark:border-emerald-700 dark:from-emerald-950/60 dark:via-emerald-950/40 dark:to-teal-950/35',
+        clickType: 'sales',
+        tooltipTitle: 'Sales',
+        tooltipBody: 'Invoice revenue in the selected period (final invoices, incl. GST).',
+      },
+      {
+        id: 'collection',
+        title: `${periodPrefix} Collection`,
+        value: `₹ ${collection.toLocaleString('en-IN')}`,
+        icon: Wallet,
+        iconColor: 'text-blue-700 dark:text-blue-200',
+        valueColor: 'text-blue-700 dark:text-blue-300',
+        iconWellClassName:
+          'border border-blue-300/80 bg-gradient-to-br from-blue-100 via-blue-50 to-sky-50 dark:border-blue-700 dark:from-blue-950/60 dark:via-blue-950/40 dark:to-sky-950/35',
+        clickType: 'collection',
+        tooltipTitle: 'Collection',
+        tooltipBody: 'Customer payments received in the selected period.',
+      },
+      {
+        id: 'purchases',
+        title: `${periodPrefix} Purchases`,
+        value: `₹ ${purchases.toLocaleString('en-IN')}`,
+        icon: TrendingDown,
+        iconColor: 'text-orange-700 dark:text-orange-200',
+        valueColor: 'text-orange-700 dark:text-orange-300',
+        iconWellClassName:
+          'border border-orange-300/80 bg-gradient-to-br from-orange-100 via-orange-50 to-amber-50 dark:border-orange-700 dark:from-orange-950/60 dark:via-orange-950/40 dark:to-amber-950/35',
+        clickType: 'purchases',
+        tooltipTitle: 'Purchases',
+        tooltipBody: 'Purchase bills recorded in the selected period.',
+      },
+      {
+        id: 'profit',
+        title: `${periodPrefix} Profit`,
+        value: `₹ ${profit.toLocaleString('en-IN')}`,
+        icon: IndianRupee,
+        iconColor: profit >= 0 ? 'text-violet-700 dark:text-violet-200' : 'text-red-600 dark:text-red-300',
+        valueColor: profit >= 0 ? 'text-violet-700 dark:text-violet-300' : 'text-red-600 dark:text-red-400',
+        iconWellClassName:
+          profit >= 0
+            ? 'border border-violet-300/80 bg-gradient-to-br from-violet-100 via-violet-50 to-purple-50 dark:border-violet-700 dark:from-violet-950/60 dark:via-violet-950/40 dark:to-purple-950/35'
+            : 'border border-red-200/80 bg-gradient-to-br from-red-50 via-rose-50 to-red-100 dark:border-red-800/55 dark:from-red-950/50 dark:via-rose-950/40 dark:to-red-900/35',
+        tooltipTitle: 'Gross profit',
+        tooltipBody: 'Sales minus cost of goods sold (COGS) for the period.',
+      },
+    ],
+    [collection, periodPrefix, profit, purchases, sales]
+  );
 
-  const financialSnapshotItems: DashboardKpiItem[] = [
-    {
-      id: 'sales',
-      title: `${periodPrefix} Sales`,
-      value: formatInr(sales),
-      icon: TrendingUp,
-      iconColor: 'text-emerald-700 dark:text-emerald-200',
-      valueColor: 'text-emerald-700 dark:text-emerald-300',
-      iconWellClassName:
-        'border border-emerald-300/80 bg-gradient-to-br from-emerald-100 via-emerald-50 to-teal-50 dark:border-emerald-700 dark:from-emerald-950/60 dark:via-emerald-950/40 dark:to-teal-950/35',
-      clickType: 'sales',
-      tooltipTitle: 'Sales',
-      tooltipBody: 'Invoice revenue in the selected period (final invoices, incl. GST).',
-    },
-    {
-      id: 'collection',
-      title: `${periodPrefix} Collection`,
-      value: formatInr(collection),
-      icon: Wallet,
-      iconColor: 'text-blue-700 dark:text-blue-200',
-      valueColor: 'text-blue-700 dark:text-blue-300',
-      iconWellClassName:
-        'border border-blue-300/80 bg-gradient-to-br from-blue-100 via-blue-50 to-sky-50 dark:border-blue-700 dark:from-blue-950/60 dark:via-blue-950/40 dark:to-sky-950/35',
-      clickType: 'collection',
-      tooltipTitle: 'Collection',
-      tooltipBody: 'Customer payments received in the selected period.',
-    },
-    {
-      id: 'purchases',
-      title: `${periodPrefix} Purchases`,
-      value: formatInr(purchases),
-      icon: TrendingDown,
-      iconColor: 'text-orange-700 dark:text-orange-200',
-      valueColor: 'text-orange-700 dark:text-orange-300',
-      iconWellClassName:
-        'border border-orange-300/80 bg-gradient-to-br from-orange-100 via-orange-50 to-amber-50 dark:border-orange-700 dark:from-orange-950/60 dark:via-orange-950/40 dark:to-amber-950/35',
-      clickType: 'purchases',
-      tooltipTitle: 'Purchases',
-      tooltipBody: 'Purchase bills recorded in the selected period.',
-    },
-    {
-      id: 'profit',
-      title: `${periodPrefix} Profit`,
-      value: formatInr(profit),
-      icon: IndianRupee,
-      iconColor: profit >= 0 ? 'text-violet-700 dark:text-violet-200' : 'text-red-600 dark:text-red-300',
-      valueColor: profit >= 0 ? 'text-violet-700 dark:text-violet-300' : 'text-red-600 dark:text-red-400',
-      iconWellClassName:
-        profit >= 0
-          ? 'border border-violet-300/80 bg-gradient-to-br from-violet-100 via-violet-50 to-purple-50 dark:border-violet-700 dark:from-violet-950/60 dark:via-violet-950/40 dark:to-purple-950/35'
-          : 'border border-red-200/80 bg-gradient-to-br from-red-50 via-rose-50 to-red-100 dark:border-red-800/55 dark:from-red-950/50 dark:via-rose-950/40 dark:to-red-900/35',
-      tooltipTitle: 'Gross profit',
-      tooltipBody: 'Sales minus cost of goods sold (COGS) for the period.',
-    },
-  ];
+  const chartDateRange = useMemo(
+    () => ({ start: dateRange.start, end: dateRange.end }),
+    [dateRange.start, dateRange.end]
+  );
+
+  const salesInsightsDateRange = useMemo(
+    () => ({
+      start: dateRange.start,
+      end: dateRange.end,
+      label: dateRange.label,
+    }),
+    [dateRange.start, dateRange.end, dateRange.label]
+  );
+
+  if (loading && !data) {
+    return (
+      
+        <div className="flex items-center justify-center h-[calc(100vh-100px)]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        </div>
+      
+    );
+  }
 
   const emptyAging = {
     current: 0,
@@ -363,7 +385,7 @@ function DashboardPage() {
         />
 
         {business?.id && (
-          <SalesInsightsCard businessId={business.id} dateRange={dateRange} />
+          <SalesInsightsCard businessId={business.id} dateRange={salesInsightsDateRange} />
         )}
 
         {data ? (
@@ -412,7 +434,7 @@ function DashboardPage() {
 
           {/* Sales vs Purchases Chart */}
           {business?.id && (
-            <SalesVsPurchasesChart businessId={business.id} dateRange={dateRange || undefined} />
+            <SalesVsPurchasesChart businessId={business.id} dateRange={chartDateRange} />
           )}
         </div>
 

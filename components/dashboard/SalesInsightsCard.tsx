@@ -15,6 +15,7 @@ import {
   formatSalesTrendNavLabel,
   stepSalesTrendRange,
 } from '@/lib/dashboard/sales-trend-range';
+import { probeDashboardRefresh } from '@/lib/debug/dashboard-refresh-probe';
 
 type DashboardDateRange = { start: string; end: string; label: string };
 
@@ -50,7 +51,11 @@ function formatCompactInr(value: number): string {
   return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
-export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardProps) {
+export const SalesInsightsCard = React.memo(function SalesInsightsCard({
+  businessId,
+  dateRange,
+}: SalesInsightsCardProps) {
+  probeDashboardRefresh('sales-insights-rerender');
   const router = useRouter();
   const { isDarkMode } = useDarkMode();
   const chartColors = getChartPalette(isDarkMode);
@@ -82,6 +87,7 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
   const fetchData = useCallback(async () => {
     if (!businessId) return;
     setLoading(true);
+    probeDashboardRefresh('sales-trend-fetch', `${focusRange.start}-${focusRange.end}`);
     try {
       const url = buildApiUrl('/api/dashboard/sales-trend', {
         business_id: businessId,
@@ -124,6 +130,18 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
     router.push(`/invoices?date_from=${bucket.key}&date_to=${bucket.key}`);
   };
 
+  const handleChartClick = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const target = e.target as Element;
+      if (target.tagName !== 'rect') return;
+      const key = target.getAttribute('data-bucket-key');
+      if (!key) return;
+      const bucket = data?.buckets.find((b) => b.key === key);
+      if (bucket) handleBarClick(bucket);
+    },
+    [data?.buckets, data?.granularity, focusRange.end, focusRange.start, preset, router]
+  );
+
   const renderChart = () => {
     const buckets = data?.buckets ?? [];
     const hasSales = buckets.some((b) => b.sales > 0);
@@ -155,7 +173,13 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
 
     return (
       <div className="w-full overflow-x-auto">
-        <svg width={width} height={height} className="h-auto w-full" viewBox={`0 0 ${width} ${height}`}>
+        <svg
+          width={width}
+          height={height}
+          className="h-auto w-full [&_rect[data-bucket-key]]:cursor-pointer"
+          viewBox={`0 0 ${width} ${height}`}
+          onClick={handleChartClick}
+        >
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
             const y = paddingTop + chartHeight * (1 - ratio);
             return (
@@ -199,8 +223,8 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
                     height={barH}
                     rx={2}
                     fill="#22c55e"
-                    className="cursor-pointer opacity-90 hover:opacity-100"
-                    onClick={() => handleBarClick(bucket)}
+                    data-bucket-key={bucket.key}
+                    className="opacity-90 hover:opacity-100"
                   >
                     <title>
                       {bucket.label}: {formatInr(salesValue)} ({bucket.receipt_count} receipts)
@@ -293,7 +317,7 @@ export function SalesInsightsCard({ businessId, dateRange }: SalesInsightsCardPr
       )}
     </Card>
   );
-}
+});
 
 function SummaryStat({
   label,

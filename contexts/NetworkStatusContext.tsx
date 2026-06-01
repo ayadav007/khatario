@@ -18,9 +18,10 @@ import {
   setAppOnlineState,
 } from '@/lib/network/offline-state';
 import { probeServerReachable } from '@/lib/network/connectivity-probe';
-import {
-  markCapacitorNetworkReady,
-} from '@/lib/auth/should-trust-cached-session';
+import { probeNetworkReconnectDispatched } from '@/lib/debug/dashboard-refresh-probe';
+
+/** Debounce reconnect side-effects — avoids flap → full-app refresh storms on mobile. */
+const RECONNECT_DISPATCH_DEBOUNCE_MS = 5_000;
 
 export interface NetworkStatusContextValue {
   isOnline: boolean;
@@ -65,6 +66,20 @@ export function NetworkStatusProvider({
   const [networkReady, setNetworkReady] = useState(!isCapacitorNative());
   const [lastChangedAt, setLastChangedAt] = useState<number | undefined>();
   const isOnlineRef = useRef(isOnline);
+  const reconnectDispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleReconnectDispatch = useCallback((source: string) => {
+    if (reconnectDispatchTimerRef.current) {
+      clearTimeout(reconnectDispatchTimerRef.current);
+    }
+    reconnectDispatchTimerRef.current = setTimeout(() => {
+      reconnectDispatchTimerRef.current = null;
+      if (!isOnlineRef.current) return;
+      console.info('[NetworkStatus] Reconnected (%s)', source);
+      probeNetworkReconnectDispatched(source);
+      dispatchNetworkReconnect();
+    }, RECONNECT_DISPATCH_DEBOUNCE_MS);
+  }, []);
 
   const applyOnlineState = useCallback((online: boolean, source: string) => {
     if (isOnlineRef.current === online) return;
@@ -76,12 +91,16 @@ export function NetworkStatusProvider({
     setLastChangedAt(Date.now());
 
     if (online && wasOffline) {
-      console.info('[NetworkStatus] Reconnected (%s)', source);
-      dispatchNetworkReconnect();
+      console.info('[NetworkStatus] Online transition (%s), debouncing reconnect handlers', source);
+      scheduleReconnectDispatch(source);
     } else if (!online) {
+      if (reconnectDispatchTimerRef.current) {
+        clearTimeout(reconnectDispatchTimerRef.current);
+        reconnectDispatchTimerRef.current = null;
+      }
       console.info('[NetworkStatus] Offline (%s)', source);
     }
-  }, []);
+  }, [scheduleReconnectDispatch]);
 
   useEffect(() => {
     setAppOnlineState(isOnlineRef.current);
@@ -142,6 +161,10 @@ export function NetworkStatusProvider({
 
     return () => {
       cancelled = true;
+      if (reconnectDispatchTimerRef.current) {
+        clearTimeout(reconnectDispatchTimerRef.current);
+        reconnectDispatchTimerRef.current = null;
+      }
       window.removeEventListener('online', handleBrowserOnline);
       window.removeEventListener('offline', handleBrowserOffline);
       removeNativeListener?.();

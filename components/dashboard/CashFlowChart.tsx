@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { getChartPalette } from '@/lib/chartTheme';
 import { useDashboardChartHeight } from '@/hooks/useDashboardChartHeight';
+import { probeDashboardRefresh } from '@/lib/debug/dashboard-refresh-probe';
 
 interface CashFlowMonth {
   month: string;
@@ -44,7 +45,8 @@ interface CashFlowChartProps {
   businessId: string;
 }
 
-export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
+export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: CashFlowChartProps) {
+  probeDashboardRefresh('cash-flow-rerender');
   const { isDarkMode } = useDarkMode();
   const chartColors = getChartPalette(isDarkMode);
   const plotHeight = useDashboardChartHeight(150, 240);
@@ -70,6 +72,7 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
     if (!businessId || !selectedYear) return;
 
     setLoading(true);
+    probeDashboardRefresh('cash-flow-fetch', String(selectedYear));
     try {
       const res = await fetch(
         `/api/dashboard/cash-flow?business_id=${businessId}&fiscal_year=${selectedYear}`,
@@ -459,6 +462,6 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({ businessId }) => {
       </div>
     </Card>
   );
-};
+});
 
 

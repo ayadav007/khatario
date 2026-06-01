@@ -7,6 +7,7 @@ import { BarChart3 } from 'lucide-react';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { getChartPalette } from '@/lib/chartTheme';
 import { useDashboardChartHeight } from '@/hooks/useDashboardChartHeight';
+import { probeDashboardRefresh } from '@/lib/debug/dashboard-refresh-probe';
 
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -21,7 +22,11 @@ interface SalesVsPurchasesChartProps {
   dateRange?: { start: string; end: string };
 }
 
-export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ businessId, dateRange }) => {
+export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
+  businessId,
+  dateRange,
+}: SalesVsPurchasesChartProps) {
+  probeDashboardRefresh('sales-chart-rerender');
   const router = useRouter();
   const { isDarkMode } = useDarkMode();
   const chartColors = getChartPalette(isDarkMode);
@@ -30,14 +35,18 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d' | 'custom'>('30d');
 
+  const dateRangeKey =
+    dateRange != null ? `${dateRange.start}-${dateRange.end}` : undefined;
+
   useEffect(() => {
     fetchChartData();
-  }, [businessId, selectedPeriod, dateRange]);
+  }, [businessId, selectedPeriod, dateRangeKey]);
 
   const fetchChartData = async () => {
     if (!businessId) return;
 
     setLoading(true);
+    probeDashboardRefresh('sales-chart-fetch', selectedPeriod);
     try {
       let startDate: string;
       let endDate: string = format(new Date(), 'yyyy-MM-dd');
@@ -203,21 +212,8 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
             const finalSalesY = padding + chartHeight - finalSalesHeight;
             const finalPurchasesY = padding + chartHeight - finalPurchasesHeight;
 
-            const handleSalesClick = () => {
-              if (salesValue > 0) {
-                router.push(`/invoices?date_from=${d.date}&date_to=${d.date}`);
-              }
-            };
-
-            const handlePurchasesClick = () => {
-              if (purchasesValue > 0) {
-                router.push(`/purchases?date_from=${d.date}&date_to=${d.date}`);
-              }
-            };
-
             return (
               <g key={i}>
-                {/* Sales bar */}
                 {salesValue > 0 && (
                   <rect
                     x={x}
@@ -225,15 +221,9 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
                     width={barHalfWidth}
                     height={finalSalesHeight}
                     fill="#10b981"
-                    className="hover:opacity-80 transition-opacity cursor-pointer"
+                    data-bar="sales"
+                    data-date={d.date}
                     rx="2"
-                    onClick={handleSalesClick}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = '0.7';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = '1';
-                    }}
                   >
                     <title>
                       Sales: ₹{salesValue.toLocaleString('en-IN')} on {format(new Date(d.date), 'MMM dd, yyyy')} - Click to view invoices
@@ -241,7 +231,6 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
                   </rect>
                 )}
 
-                {/* Purchases bar */}
                 {purchasesValue > 0 && (
                   <rect
                     x={x + barHalfWidth + gapBetweenBars}
@@ -327,5 +316,5 @@ export const SalesVsPurchasesChart: React.FC<SalesVsPurchasesChartProps> = ({ bu
       </div>
     </Card>
   );
-};
+});
 
