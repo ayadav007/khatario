@@ -9,6 +9,13 @@
  * Inspect: window.__KHATARIO_SQLITE__ in DevTools
  */
 
+import {
+  isRuntimeIdlePhase,
+  isRuntimeProbeEnabled,
+  recordSqliteIdleQuery,
+  recordSqliteQuery,
+} from '@/lib/debug/runtime-isolation';
+
 export type SqliteOp = 'query' | 'run' | 'execute';
 
 export interface SqliteProbeEntry {
@@ -86,6 +93,16 @@ function statementPreview(statement: string): string {
 }
 
 function bump(op: SqliteOp, label: string, statement: string): void {
+  const runtimeActive = isRuntimeProbeEnabled();
+  if (!isEnabled() && !runtimeActive) return;
+
+  if (runtimeActive) {
+    recordSqliteQuery();
+    if (op === 'query' && isRuntimeIdlePhase()) {
+      recordSqliteIdleQuery();
+    }
+  }
+
   if (!isEnabled()) return;
 
   const stats = getStats();

@@ -22,6 +22,11 @@ import {
   readCacheEntry,
   setCacheEntry,
 } from '@/lib/layout-data/fetch-cache';
+import {
+  isNotificationSseDisabled,
+  recordEventSourceMessage,
+  recordFetchNotifications,
+} from '@/lib/debug/runtime-isolation';
 
 /** Server upserts re-fire `created_at`; fetch-only fallback is gated (first list paint skipped) + `shownReminderIds`. */
 const TODO_REMINDER_RECENT_AGE_MS = 10 * 60 * 1000;
@@ -235,6 +240,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     lastFetchTimeRef.current = Date.now();
 
     const run = async () => {
+      recordFetchNotifications(skipCache ? 'skip-cache' : 'cache');
       const applySeq = ++notificationsApplySeqRef.current;
       try {
         reminderPipelineLog('client.fetch_notifications.run', { skipCache, applySeq });
@@ -415,6 +421,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
+    if (isNotificationSseDisabled()) return;
     if (!business?.id || !user?.id) return;
 
     const wasOffline = !prevOnlineRef.current;
@@ -427,6 +434,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const sseRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (isNotificationSseDisabled()) return;
     if (!business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
@@ -442,6 +450,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     eventSource.onmessage = (event) => {
       try {
+        recordEventSourceMessage();
         console.log('[SSE] Received notification event:', event.data);
         try {
           const parsed = JSON.parse(event.data) as {
@@ -515,6 +524,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
+    if (isNotificationSseDisabled()) return;
     if (!business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 

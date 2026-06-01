@@ -10,6 +10,8 @@ import { useAuth } from '@/contexts/AuthContext';
 
 import { useRouter } from 'next/navigation';
 
+import { isPromotionCarouselsDisabled } from '@/lib/debug/runtime-isolation';
+
 
 
 interface Promotion {
@@ -252,6 +254,8 @@ export function PromotionCarousel() {
 
   useEffect(() => {
 
+    if (isPromotionCarouselsDisabled()) return;
+
     if (slides.length <= 1) return;
 
     const current = slides[currentIndex];
@@ -298,7 +302,9 @@ export function PromotionCarousel() {
 
 
 
-  const currentPromo = slides[currentIndex];
+  const displayIndex = isPromotionCarouselsDisabled() ? 0 : currentIndex;
+
+  const currentPromo = slides[displayIndex];
 
 
 
@@ -383,7 +389,7 @@ export function PromotionCarousel() {
             {currentPromo.image_url ? (
 
               <img 
-                key={`${currentPromo.id}-${currentIndex}`}
+                key={`${currentPromo.id}-${displayIndex}`}
                 src={currentPromo.image_url} 
 
                 alt={currentPromo.title}
@@ -412,7 +418,7 @@ export function PromotionCarousel() {
 
       {/* Navigation Arrows */}
 
-      {slides.length > 1 && (
+      {slides.length > 1 && !isPromotionCarouselsDisabled() && (
 
         <>
 
@@ -456,7 +462,7 @@ export function PromotionCarousel() {
 
       {/* Indicators */}
 
-      {slides.length > 1 && (
+      {slides.length > 1 && !isPromotionCarouselsDisabled() && (
 
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
 
@@ -478,7 +484,7 @@ export function PromotionCarousel() {
 
               className={`h-1.5 rounded-full transition-all ${
 
-                currentIndex === idx ? 'w-8 bg-white' : 'w-2 bg-white bg-opacity-40 hover:bg-opacity-60'
+                displayIndex === idx ? 'w-8 bg-white' : 'w-2 bg-white bg-opacity-40 hover:bg-opacity-60'
 
               }`}
 

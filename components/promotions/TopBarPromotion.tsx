@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import type { Promotion } from '@/contexts/LayoutDataContext';
 import { clsx } from 'clsx';
+import { isPromotionCarouselsDisabled } from '@/lib/debug/runtime-isolation';
 
 function parseImageUrls(promo: Promotion & Record<string, unknown>): string[] {
   const raw = promo.topbar_image_urls;
@@ -58,12 +59,16 @@ export function TopBarPromotion({ businessId }: { businessId: string }) {
   }, [refreshPromotion, businessId]);
 
   useEffect(() => {
+    if (isPromotionCarouselsDisabled()) return;
     if (!useCarousel || urls.length < 2) return;
     const t = setInterval(() => {
       setIndex((i) => (i + 1) % urls.length);
     }, tick);
     return () => clearInterval(t);
   }, [useCarousel, urls.length, tick]);
+
+  const displayIndex = isPromotionCarouselsDisabled() ? 0 : index;
+  const showCarouselMotion = useCarousel && !isPromotionCarouselsDisabled();
 
   const track = useCallback(
     async (action: 'view' | 'click') => {
@@ -129,13 +134,13 @@ export function TopBarPromotion({ businessId }: { businessId: string }) {
       }
       tabIndex={promo.button_url ? 0 : undefined}
     >
-      {useCarousel ? (
+      {showCarouselMotion ? (
         <div className="h-16 w-full min-h-16 min-w-0 overflow-hidden">
           <div
             className="flex flex-col transition-transform duration-500 ease-in-out will-change-transform"
             style={{
               height: `${urls.length * 4}rem`,
-              transform: `translateY(-${index * 4}rem)`,
+              transform: `translateY(-${displayIndex * 4}rem)`,
             }}
             aria-label={promo.title}
           >
