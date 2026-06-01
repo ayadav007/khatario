@@ -48,7 +48,6 @@ interface CashFlowChartProps {
 export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: CashFlowChartProps) {
   probeDashboardRefresh('cash-flow-rerender');
   const { isDarkMode } = useDarkMode();
-  const chartColors = getChartPalette(isDarkMode);
   const plotHeight = useDashboardChartHeight(150, 240);
   const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +98,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       );
     }
 
-    const c = chartColors;
+    const c = getChartPalette(isDarkMode);
     const series = data.chart_series?.length ? data.chart_series : data.months;
 
     const allValues = series.flatMap((m) => [m.opening, m.closing, m.incoming, m.outgoing]);
@@ -269,7 +268,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </svg>
       </div>
     );
-  }, [chartColors, data, plotHeight]);
+  }, [data, isDarkMode, plotHeight]);
 
   // Get available fiscal years (current and previous 2 years)
   const getAvailableYears = () => {

@@ -58,7 +58,6 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
   probeDashboardRefresh('sales-insights-rerender');
   const router = useRouter();
   const { isDarkMode } = useDarkMode();
-  const chartColors = getChartPalette(isDarkMode);
   const plotHeight = useDashboardChartHeight(160, 220);
 
   const preset = useMemo(
@@ -168,7 +167,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     const chartHeight = height - paddingTop - paddingBottom;
     const barSpacing = chartWidth / buckets.length;
     const barWidth = Math.max(4, Math.min(40, barSpacing * 0.72));
-    const c = chartColors;
+    const c = getChartPalette(isDarkMode);
     const labelEvery = data?.granularity === 'hour' ? 4 : Math.max(1, Math.ceil(buckets.length / 8));
 
     return (
@@ -245,7 +244,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
         </svg>
       </div>
     );
-  }, [chartColors, data?.buckets, data?.granularity, handleChartClick, plotHeight, preset]);
+  }, [data?.buckets, data?.granularity, handleChartClick, isDarkMode, plotHeight, preset]);
 
   const summary = data?.summary;
 

@@ -29,7 +29,6 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
   probeDashboardRefresh('sales-chart-rerender');
   const router = useRouter();
   const { isDarkMode } = useDarkMode();
-  const chartColors = getChartPalette(isDarkMode);
   const plotHeight = useDashboardChartHeight(150, 240);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +143,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
     const barWidth = Math.max(30, Math.min(60, (chartWidth / chartData.length) * 0.6));
     const barSpacing = chartWidth / chartData.length;
     const gapBetweenBars = 4;
-    const c = chartColors;
+    const c = getChartPalette(isDarkMode);
 
     return (
       <div className="w-full overflow-x-auto">
@@ -250,7 +249,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
         </svg>
       </div>
     );
-  }, [chartData, chartColors, handleChartClick, plotHeight]);
+  }, [chartData, handleChartClick, isDarkMode, plotHeight]);
 
   if (loading) {
     return (
