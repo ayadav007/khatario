@@ -30,6 +30,23 @@ const META_ITEM_COUNT = 'itemCount';
 const META_CUSTOMER_COUNT = 'customerCount';
 const META_STOCK_SCOPE = 'stockScope';
 
+const STATUS_CACHE_TTL_MS = 5_000;
+
+const statusCache = new Map<string, { at: number; status: CatalogStatus }>();
+
+function scopeCacheKey(scope: TenantScope): string {
+  return `${scope.businessId}:${scope.userId}`;
+}
+
+/** Drop cached status after sync or tenant clear (avoids stale ready/count). */
+export function invalidateIdbCatalogStatusCache(scope?: TenantScope): void {
+  if (!scope) {
+    statusCache.clear();
+    return;
+  }
+  statusCache.delete(scopeCacheKey(scope));
+}
+
 function metaKey(scope: TenantScope, key: string): string {
   return `${scope.businessId}:${scope.userId}:${key}`;
 }
@@ -76,6 +93,48 @@ async function loadCustomers(scope: TenantScope): Promise<CatalogCustomer[]> {
   }
   await tx.done;
   return rows.map((row) => row.customer);
+}
+
+/** Full index walk — each cursor step registers IDB listeners via `idb`; avoid calling often. */
+async function countTenantRows(
+  scope: TenantScope
+): Promise<{ itemCount: number; customerCount: number }> {
+  const db = await getCatalogIdb();
+  const itemRange = IDBKeyRange.only([scope.businessId, scope.userId]);
+
+  let itemCount = 0;
+  {
+    const tx = db.transaction('items', 'readonly');
+    const idx = tx.store.index('by-tenant');
+    let cursor = await idx.openCursor(itemRange);
+    while (cursor) {
+      itemCount += 1;
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  let customerCount = 0;
+  {
+    const tx = db.transaction('customers', 'readonly');
+    const idx = tx.store.index('by-tenant');
+    let cursor = await idx.openCursor(itemRange);
+    while (cursor) {
+      customerCount += 1;
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  return { itemCount, customerCount };
+}
+
+/** Recompute counts once after catalog sync (writes meta + refreshes status cache). */
+export async function refreshIdbCatalogCountMeta(scope: TenantScope): Promise<void> {
+  const { itemCount, customerCount } = await countTenantRows(scope);
+  await writeMeta(scope, META_ITEM_COUNT, String(itemCount));
+  await writeMeta(scope, META_CUSTOMER_COUNT, String(customerCount));
+  invalidateIdbCatalogStatusCache(scope);
 }
 
 async function loadAllItemsForTenant(scope: TenantScope): Promise<CatalogItemSearchResult[]> {
@@ -226,31 +285,27 @@ export class IdbCatalogDriver implements CatalogRepository {
   }
 
   async getStatus(scope: TenantScope): Promise<CatalogStatus> {
-    const db = await getCatalogIdb();
-    const itemRange = IDBKeyRange.only([scope.businessId, scope.userId]);
-
-    let itemCount = 0;
-    {
-      const tx = db.transaction('items', 'readonly');
-      const idx = tx.store.index('by-tenant');
-      let cursor = await idx.openCursor(itemRange);
-      while (cursor) {
-        itemCount += 1;
-        cursor = await cursor.continue();
-      }
-      await tx.done;
+    const sk = scopeCacheKey(scope);
+    const cached = statusCache.get(sk);
+    if (cached && Date.now() - cached.at < STATUS_CACHE_TTL_MS) {
+      return cached.status;
     }
 
-    let customerCount = 0;
-    {
-      const tx = db.transaction('customers', 'readonly');
-      const idx = tx.store.index('by-tenant');
-      let cursor = await idx.openCursor(itemRange);
-      while (cursor) {
-        customerCount += 1;
-        cursor = await cursor.continue();
-      }
-      await tx.done;
+    const itemMeta = await readMeta(scope, META_ITEM_COUNT);
+    const customerMeta = await readMeta(scope, META_CUSTOMER_COUNT);
+    let itemCount =
+      itemMeta != null && itemMeta !== '' ? Number(itemMeta) : Number.NaN;
+    let customerCount =
+      customerMeta != null && customerMeta !== ''
+        ? Number(customerMeta)
+        : Number.NaN;
+
+    if (!Number.isFinite(itemCount) || !Number.isFinite(customerCount)) {
+      const counted = await countTenantRows(scope);
+      itemCount = counted.itemCount;
+      customerCount = counted.customerCount;
+      await writeMeta(scope, META_ITEM_COUNT, String(itemCount));
+      await writeMeta(scope, META_CUSTOMER_COUNT, String(customerCount));
     }
 
     const stockScopeRaw = await readMeta(scope, META_STOCK_SCOPE);
@@ -266,7 +321,7 @@ export class IdbCatalogDriver implements CatalogRepository {
       const raw = await readMeta(scope, key);
       return raw ? Number(raw) : null;
     };
-    return {
+    const status: CatalogStatus = {
       ready: itemCount > 0 || customerCount > 0,
       itemCount,
       customerCount,
@@ -275,6 +330,8 @@ export class IdbCatalogDriver implements CatalogRepository {
       lastCustomersDeltaAt: await parseNum(META_CUSTOMERS_DELTA),
       stockScope,
     };
+    statusCache.set(sk, { at: Date.now(), status });
+    return status;
   }
 
   async setSyncTimestamps(
@@ -319,6 +376,7 @@ export class IdbCatalogDriver implements CatalogRepository {
       metaCursor = await metaCursor.continue();
     }
     await metaTx.done;
+    invalidateIdbCatalogStatusCache(scope);
   }
 }
 

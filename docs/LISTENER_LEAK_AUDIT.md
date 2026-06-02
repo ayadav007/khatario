@@ -54,6 +54,23 @@ Performance Monitor “JS event listeners” can still climb on a **single page*
 | `CommandPalette` + `useCommandPalette` | duplicate `keydown` on `document` | yes | `[]` | 2 stable listeners (acceptable) |
 | `more/page.tsx` | none | — | — | Slowness likely full reload + provider remount, not local listeners |
 
+## Finding (2026-03): top leakers = IndexedDB
+
+When `topLeakers()` shows `8283-*.js` / `object:IDBRequest` / `object:IDBTransaction` at the top, the churn is from the **`idb` npm package** (catalog + offline DB), not React DOM listeners.
+
+Typical cause in Khatario web builds:
+
+- `IdbCatalogDriver.getStatus()` used to **walk entire item/customer indexes** on every `withReadyCatalog()` call (items/invoices/customers list hydration calls `browseCatalogItemsLocal` → `getStatus` + heavy reads).
+- Each IDB cursor step registers short-lived `success`/`error` listeners (normal), but **thousands of calls per minute** keeps Performance Monitor climbing.
+
+**Mitigations shipped:**
+
+- 5s status cache + meta-backed counts in `idb-catalog-driver.ts`
+- 5s “catalog ready” cache in `client-search.ts` (`withReadyCatalog`)
+- One recount after catalog sync (`refreshIdbCatalogCountMeta`)
+
+Re-run probe after deploy; IDB lines should drop in `adds/sec` at idle.
+
 ## Next steps after probe run
 
 1. Note top `file:event@target` lines with highest **net** and **adds/sec** in 5s reports.

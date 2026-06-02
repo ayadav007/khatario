@@ -1,6 +1,7 @@
 import type { TenantScope } from '@/lib/offline/types';
 import { isAppOffline } from '@/lib/network/offline-state';
 import { getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import { invalidateIdbCatalogStatusCache } from '@/lib/offline/catalog/idb/idb-catalog-driver';
 import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
 import type {
   CatalogCustomer,
@@ -31,13 +32,40 @@ export async function preferCatalogForScope(scope: TenantScope): Promise<boolean
   }
 }
 
+const READY_CACHE_TTL_MS = 5_000;
+const readyCache = new Map<string, { at: number; ready: boolean }>();
+
+function readyCacheKey(scope: TenantScope): string {
+  return `${scope.businessId}:${scope.userId}`;
+}
+
+/** Invalidate after catalog sync so list pages re-check readiness without hammering IDB. */
+export function invalidateCatalogClientCaches(scope?: TenantScope): void {
+  if (!scope) {
+    readyCache.clear();
+    invalidateIdbCatalogStatusCache();
+    return;
+  }
+  readyCache.delete(readyCacheKey(scope));
+  invalidateIdbCatalogStatusCache(scope);
+}
+
 async function withReadyCatalog<T>(
   scope: TenantScope,
   fn: (repo: Awaited<ReturnType<typeof getCatalogRepository>>) => Promise<T>
 ): Promise<T | null> {
   const repo = await getCatalogRepository();
-  const status = await repo.getStatus(scope);
-  if (!status.ready) return null;
+  const rk = readyCacheKey(scope);
+  const cached = readyCache.get(rk);
+  let ready: boolean;
+  if (cached && Date.now() - cached.at < READY_CACHE_TTL_MS) {
+    ready = cached.ready;
+  } else {
+    const status = await repo.getStatus(scope);
+    ready = status.ready;
+    readyCache.set(rk, { at: Date.now(), ready });
+  }
+  if (!ready) return null;
   return fn(repo);
 }
 

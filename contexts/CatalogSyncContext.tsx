@@ -15,7 +15,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { NETWORK_RECONNECT_EVENT } from '@/lib/network/events';
-import { getCatalogStatus } from '@/lib/offline/catalog/client-search';
+import {
+  getCatalogStatus,
+  invalidateCatalogClientCaches,
+} from '@/lib/offline/catalog/client-search';
 import { withSqliteLabel } from '@/lib/debug/sqlite-probe';
 import {
   getCatalogSyncProgressSnapshot,
@@ -171,6 +174,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
         } else {
           await runDeltaCatalogSync(syncOptions);
         }
+        invalidateCatalogClientCaches(scope);
         await refreshStatus();
         publishProgress(null);
         if (!options?.manual) {

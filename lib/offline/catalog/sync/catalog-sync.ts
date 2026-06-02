@@ -17,6 +17,9 @@ import {
   CATALOG_SYNC_PAGE_SIZE,
 } from '@/lib/offline/catalog/types';
 import { runInvoiceListSync } from '@/lib/offline/invoices/invoice-list-sync';
+import { invalidateCatalogClientCaches } from '@/lib/offline/catalog/client-search';
+import { refreshIdbCatalogCountMeta } from '@/lib/offline/catalog/idb/idb-catalog-driver';
+import { getActiveCatalogBackend } from '@/lib/offline/catalog/catalog-service';
 
 export interface CatalogSyncOptions {
   scope: TenantScope;
@@ -173,6 +176,11 @@ async function runCatalogSyncWithRepo(
     lastItemsDeltaAt: now,
     lastCustomersDeltaAt: now,
   });
+
+  invalidateCatalogClientCaches(scope);
+  if (getActiveCatalogBackend() === 'indexeddb') {
+    await refreshIdbCatalogCountMeta(scope);
+  }
 
   report('done', 'Catalog sync complete');
 }
