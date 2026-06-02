@@ -298,6 +298,8 @@ export function PromotionCarousel() {
 
 
 
+  if (isPromotionCarouselsDisabled()) return null;
+
   if (loading || slides.length === 0) return null;
 
 

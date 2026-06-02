@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
@@ -16,8 +16,8 @@ import { DashboardCardDetails } from '@/components/dashboard/DashboardCardDetail
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { GSTStatusIndicator } from '@/components/ui/GSTStatusIndicator';
 import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
-import { SalesInsightsCard } from '@/components/dashboard/SalesInsightsCard';
 import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSection';
+import { DashboardSalesInsightsSection } from '@/components/dashboard/DashboardSalesInsightsSection';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
@@ -39,6 +39,7 @@ import { canUseNativeInvoiceShare } from '@/lib/share-invoice';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useLazyMountWhenVisible } from '@/hooks/useLazyMountWhenVisible';
 import { bumpDashboardRenderCounter } from '@/lib/debug/dashboard-render-counter';
+import { isDashboardBodyDisabled, isDashboardMinimalMode } from '@/lib/debug/runtime-isolation';
 import {
   loadDashboardSnapshot,
   saveDashboardSnapshot,
@@ -57,7 +58,9 @@ import {
 
 function DashboardPage() {
   useRenderLoopProbe('DashboardPage');
-  bumpDashboardRenderCounter();
+  useLayoutEffect(() => {
+    bumpDashboardRenderCounter();
+  });
   probeDashboardRefresh('dashboard-rerender');
   const { business, user, loading: authLoading } = useAuth();
   const { isLoading: branchLoading } = useBranch();
@@ -370,6 +373,9 @@ function DashboardPage() {
   const payablesAging =
     typeof data?.payables === 'object' && data?.payables?.aging ? data.payables.aging : emptyAging;
 
+  const minimal = isDashboardMinimalMode();
+  const hideBody = isDashboardBodyDisabled();
+
   return (
     <>
       <div className={STACK_PAGE_CLASS}>
@@ -387,19 +393,21 @@ function DashboardPage() {
           onItemClick={handleKpiClick}
         />
 
-        {business?.id && (
-          <SalesInsightsCard businessId={business.id} dateRange={salesInsightsDateRange} />
-        )}
+        {business?.id ? (
+          <DashboardSalesInsightsSection
+            businessId={business.id}
+            dateRange={salesInsightsDateRange}
+          />
+        ) : null}
 
-        {data ? (
+        {!hideBody && data ? (
           <div className={STACK_SECTION_CLASS}>
             <ReceivablesCard total={receivablesTotal} aging={receivablesAging} />
             <PayablesCard total={payablesTotal} aging={payablesAging} />
           </div>
         ) : null}
 
-        {/* Promotional Carousel */}
-        <PromotionCarousel />
+        {!hideBody && !minimal ? <PromotionCarousel /> : null}
 
         {/* Card Details Modal */}
         {selectedCard && (
@@ -426,13 +434,14 @@ function DashboardPage() {
         )}
 
         {/* Pending Actions Button - Sticky in top-right */}
-        {data && <PendingActionsButton data={data} />}
+        {!hideBody && data ? <PendingActionsButton data={data} /> : null}
 
-        {/* Charts Row - lazy mount when scrolled near viewport */}
-        {business?.id ? (
+        {!hideBody && business?.id ? (
           <DashboardChartsSection businessId={business.id} chartDateRange={chartDateRange} />
         ) : null}
 
+        {!hideBody ? (
+        <>
         {/* Main Content Row - Recent Invoices and Low Stock */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-page">
           {/* Recent Invoices - Takes 2 columns */}
@@ -587,6 +596,8 @@ function DashboardPage() {
             <div className="h-24 rounded-lg border border-dashed border-border bg-background/80" aria-hidden />
           )}
         </div>
+        </>
+        ) : null}
       </div>
 
       {shareFormatInvoice && (

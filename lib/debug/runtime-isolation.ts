@@ -96,14 +96,33 @@ export function isPromotionCarouselsDisabled(): boolean {
   return DISABLE_PROMOTION_CAROUSELS;
 }
 
-/** Bisect: localStorage.setItem('khatario:disable-dashboard-charts', '1') + reload */
-export function isDashboardChartsDisabled(): boolean {
+function readLocalFlag(key: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return localStorage.getItem('khatario:disable-dashboard-charts') === '1';
+    return localStorage.getItem(key) === '1';
   } catch {
     return false;
   }
+}
+
+/** Bisect: localStorage.setItem('khatario:disable-dashboard-charts', '1') + reload */
+export function isDashboardChartsDisabled(): boolean {
+  return readLocalFlag('khatario:disable-dashboard-charts');
+}
+
+/** Bisect: only KPI strip + usage banner — localStorage khatario:dashboard-minimal=1 */
+export function isDashboardMinimalMode(): boolean {
+  return readLocalFlag('khatario:dashboard-minimal');
+}
+
+/** Bisect: hide Sales insights card — khatario:disable-dashboard-insights=1 */
+export function isDashboardInsightsDisabled(): boolean {
+  return isDashboardMinimalMode() || readLocalFlag('khatario:disable-dashboard-insights');
+}
+
+/** Bisect: hide receivables/payables + pending + lists — khatario:disable-dashboard-body=1 */
+export function isDashboardBodyDisabled(): boolean {
+  return isDashboardMinimalMode() || readLocalFlag('khatario:disable-dashboard-body');
 }
 
 export function isRuntimeIdlePhase(): boolean {

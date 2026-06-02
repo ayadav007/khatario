@@ -334,6 +334,18 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { isOpen: isCommandPaletteOpen, close: closeCommandPalette, open: openCommandPalette } =
     commandPalette;
   const { isDarkMode, toggleDarkMode } = useDarkMode();
+  const [isLgScreen, setIsLgScreen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const apply = () => setIsLgScreen(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
+  const notificationCenter =
+    business?.id != null ? <NotificationCenter businessId={business.id} /> : null;
 
   useEffect(() => {
     if (isPrimaryAdmin) {
@@ -497,7 +509,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <Plus className="h-5 w-5" />
               </Link>
             ) : null}
-            {business?.id && <NotificationCenter businessId={business.id} />}
+            {business?.id && !isLgScreen && notificationCenter}
             {mobileQuickSettings.moduleMenu ? (
               <button
                 type="button"
@@ -616,7 +628,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             />
           </form>
 
-          {business?.id && <NotificationCenter businessId={business.id} />}
+          {business?.id && isLgScreen && notificationCenter}
 
           <button
             type="button"
