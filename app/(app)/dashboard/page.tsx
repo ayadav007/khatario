@@ -16,13 +16,12 @@ import { DashboardCardDetails } from '@/components/dashboard/DashboardCardDetail
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { GSTStatusIndicator } from '@/components/ui/GSTStatusIndicator';
 import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
-import { SalesVsPurchasesChart } from '@/components/dashboard/SalesVsPurchasesChart';
 import { SalesInsightsCard } from '@/components/dashboard/SalesInsightsCard';
+import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSection';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
-import { CashFlowChart } from '@/components/dashboard/CashFlowChart';
 import {
   DashboardFinancialSnapshot,
   type DashboardKpiClickType,
@@ -38,6 +37,8 @@ import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
 import { canUseNativeInvoiceShare } from '@/lib/share-invoice';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useLazyMountWhenVisible } from '@/hooks/useLazyMountWhenVisible';
+import { bumpDashboardRenderCounter } from '@/lib/debug/dashboard-render-counter';
 import {
   loadDashboardSnapshot,
   saveDashboardSnapshot,
@@ -56,6 +57,7 @@ import {
 
 function DashboardPage() {
   useRenderLoopProbe('DashboardPage');
+  bumpDashboardRenderCounter();
   probeDashboardRefresh('dashboard-rerender');
   const { business, user, loading: authLoading } = useAuth();
   const { isLoading: branchLoading } = useBranch();
@@ -71,6 +73,7 @@ function DashboardPage() {
   const [shareFormatInvoice, setShareFormatInvoice] = useState<any>(null);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<any>(null);
   const { isOffline, isOnline } = useNetworkStatus();
+  const widgetsMount = useLazyMountWhenVisible('240px');
   const prevOnlineRef = useRef(isOnline);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
@@ -425,18 +428,10 @@ function DashboardPage() {
         {/* Pending Actions Button - Sticky in top-right */}
         {data && <PendingActionsButton data={data} />}
 
-        {/* Charts Row - Two equal columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-section md:gap-stack-page">
-          {/* Cash Flow Chart */}
-          {business?.id && (
-            <CashFlowChart businessId={business.id} />
-          )}
-
-          {/* Sales vs Purchases Chart */}
-          {business?.id && (
-            <SalesVsPurchasesChart businessId={business.id} dateRange={chartDateRange} />
-          )}
-        </div>
+        {/* Charts Row - lazy mount when scrolled near viewport */}
+        {business?.id ? (
+          <DashboardChartsSection businessId={business.id} chartDateRange={chartDateRange} />
+        ) : null}
 
         {/* Main Content Row - Recent Invoices and Low Stock */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-page">
@@ -584,12 +579,13 @@ function DashboardPage() {
           </Card>
         </div>
 
-        {/* Customizable Widgets Section */}
-        <div className="mt-3 md:mt-6">
-          <CustomizableDashboard 
-            businessId={business?.id || ''} 
-            initialWidgets={[]}
-          />
+        {/* Customizable Widgets Section — deferred until near viewport */}
+        <div ref={widgetsMount.ref} className="mt-3 md:mt-6">
+          {widgetsMount.mounted ? (
+            <CustomizableDashboard businessId={business?.id || ''} initialWidgets={[]} />
+          ) : (
+            <div className="h-24 rounded-lg border border-dashed border-border bg-background/80" aria-hidden />
+          )}
         </div>
       </div>
 

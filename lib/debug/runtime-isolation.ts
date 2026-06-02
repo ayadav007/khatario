@@ -83,13 +83,9 @@ function isProbeStorageEnabled(): boolean {
   }
 }
 
-/** Probe runs when isolation flags are on OR localStorage flag is set. */
+/** Probe runs only when explicitly enabled via localStorage (not from isolation flags). */
 export function isRuntimeProbeEnabled(): boolean {
-  return (
-    DISABLE_NOTIFICATION_SSE ||
-    DISABLE_PROMOTION_CAROUSELS ||
-    isProbeStorageEnabled()
-  );
+  return isProbeStorageEnabled();
 }
 
 export function isNotificationSseDisabled(): boolean {
@@ -98,6 +94,16 @@ export function isNotificationSseDisabled(): boolean {
 
 export function isPromotionCarouselsDisabled(): boolean {
   return DISABLE_PROMOTION_CAROUSELS;
+}
+
+/** Bisect: localStorage.setItem('khatario:disable-dashboard-charts', '1') + reload */
+export function isDashboardChartsDisabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('khatario:disable-dashboard-charts') === '1';
+  } catch {
+    return false;
+  }
 }
 
 export function isRuntimeIdlePhase(): boolean {

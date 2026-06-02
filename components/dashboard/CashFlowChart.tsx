@@ -236,7 +236,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               fill="#3b82f6"
               stroke={c.pointStroke}
               strokeWidth="2"
-              className="cursor-pointer transition-opacity hover:opacity-75"
+              className="cursor-pointer"
               aria-label={`${point.fullMonth}: ₹${point.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
             />
           ))}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
@@ -115,31 +115,37 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     setFocusRange((prev) => stepSalesTrendRange(preset, prev.start, prev.end, direction));
   };
 
-  const handleBarClick = (bucket: SalesTrendBucket) => {
-    if (bucket.sales <= 0) return;
-    if (data?.granularity === 'hour' && preset === 'day') {
-      router.push(`/invoices?date_from=${focusRange.start}&date_to=${focusRange.end}`);
-      return;
-    }
-    if (data?.granularity === 'week') {
-      const weekEnd = format(addDays(parseISO(bucket.key), 6), 'yyyy-MM-dd');
-      router.push(`/invoices?date_from=${bucket.key}&date_to=${weekEnd}`);
-      return;
-    }
-    router.push(`/invoices?date_from=${bucket.key}&date_to=${bucket.key}`);
-  };
-
-  const handleChartClick = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const target = e.target as Element;
-      if (target.tagName !== 'rect') return;
-      const key = target.getAttribute('data-bucket-key');
-      if (!key) return;
-      const bucket = data?.buckets.find((b) => b.key === key);
-      if (bucket) handleBarClick(bucket);
+  const handleBarClick = useCallback(
+    (bucket: SalesTrendBucket) => {
+      if (bucket.sales <= 0) return;
+      if (data?.granularity === 'hour' && preset === 'day') {
+        router.push(`/invoices?date_from=${focusRange.start}&date_to=${focusRange.end}`);
+        return;
+      }
+      if (data?.granularity === 'week') {
+        const weekEnd = format(addDays(parseISO(bucket.key), 6), 'yyyy-MM-dd');
+        router.push(`/invoices?date_from=${bucket.key}&date_to=${weekEnd}`);
+        return;
+      }
+      router.push(`/invoices?date_from=${bucket.key}&date_to=${bucket.key}`);
     },
-    [data?.buckets, data?.granularity, focusRange.end, focusRange.start, preset, router]
+    [data?.granularity, focusRange.end, focusRange.start, preset, router]
   );
+
+  const bucketsRef = useRef(data?.buckets);
+  bucketsRef.current = data?.buckets;
+
+  const handleBarClickRef = useRef(handleBarClick);
+  handleBarClickRef.current = handleBarClick;
+
+  const handleChartClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const target = e.target as Element;
+    if (target.tagName !== 'rect') return;
+    const key = target.getAttribute('data-bucket-key');
+    if (!key) return;
+    const bucket = bucketsRef.current?.find((b) => b.key === key);
+    if (bucket) handleBarClickRef.current(bucket);
+  }, []);
 
   const chartBody = useMemo(() => {
     const buckets = data?.buckets ?? [];
@@ -223,7 +229,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
                     rx={2}
                     fill="#22c55e"
                     data-bucket-key={bucket.key}
-                    className="opacity-90 hover:opacity-100"
+                    className="opacity-90"
                     aria-label={`${bucket.label}: ${formatInr(salesValue)} (${bucket.receipt_count} receipts)`}
                   />
                 )}
@@ -244,7 +250,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
         </svg>
       </div>
     );
-  }, [data?.buckets, data?.granularity, handleChartClick, isDarkMode, plotHeight, preset]);
+  }, [data?.buckets, data?.granularity, isDarkMode, plotHeight, preset]);
 
   const summary = data?.summary;
 

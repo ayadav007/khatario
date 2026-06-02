@@ -150,7 +150,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
         <svg
           width={width}
           height={height}
-          className="w-full h-auto [&_rect[data-bar]]:cursor-pointer [&_rect[data-bar]]:transition-opacity [&_rect[data-bar]:hover]:opacity-75"
+          className="w-full h-auto [&_rect[data-bar]]:cursor-pointer"
           viewBox={`0 0 ${width} ${height}`}
           onClick={handleChartClick}
         >
