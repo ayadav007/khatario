@@ -10,6 +10,8 @@ localStorage.setItem('khatario:listener-probe-verbose', '1')
 
 Hard reload, then wait 30s idle on a hot page (`/invoices`, `/customers`, `/dashboard`).
 
+If you see `Invalid value used as weak map key` in the console, pull latest — the probe must not throw (older builds could spam this and add CPU load).
+
 ```js
 window.__KHATARIO_LISTENER_PROBE__.snapshot()
 window.__KHATARIO_LISTENER_PROBE__.topLeakers(15)

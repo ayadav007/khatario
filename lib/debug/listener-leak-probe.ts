@@ -203,23 +203,37 @@ const buckets = new Map<string, ListenerLeakBucket>();
 const recentRenderAdds: ListenerProbeSnapshot['recentRenderPhaseAdds'] = [];
 
 /** Per-target active listener keys (target -> event -> Set<listenerKey>) */
-const activeRegistry = new WeakMap<
-  EventTarget,
-  Map<string, Set<string>>
->();
+const activeRegistry = new WeakMap<object, Map<string, Set<string>>>();
+/** Fallback when target/listener cannot be used as a WeakMap key (host objects, revoked proxies). */
+const activeRegistryByFallback = new Map<string, Map<string, Set<string>>>();
 
 const fnIdMap = new WeakMap<Function, number>();
+const fnIdBySignature = new Map<string, number>();
 let nextFnId = 1;
+
+function isObjectLike(value: unknown): value is object {
+  return typeof value === 'object' && value !== null;
+}
 
 function listenerIdentity(listener: EventListenerOrEventListenerObject | null): string {
   if (listener === null) return 'null';
   if (typeof listener === 'function') {
-    let id = fnIdMap.get(listener);
-    if (id === undefined) {
-      id = nextFnId++;
-      fnIdMap.set(listener, id);
+    try {
+      let id = fnIdMap.get(listener);
+      if (id === undefined) {
+        id = nextFnId++;
+        fnIdMap.set(listener, id);
+      }
+      return `fn#${id}`;
+    } catch {
+      const sig = listener.toString().slice(0, 120);
+      let id = fnIdBySignature.get(sig);
+      if (id === undefined) {
+        id = nextFnId++;
+        fnIdBySignature.set(sig, id);
+      }
+      return `fn#${id}~sig`;
     }
-    return `fn#${id}`;
   }
   return `obj:${String(listener)}`;
 }
@@ -237,13 +251,109 @@ function registryKey(type: string, listener: EventListenerOrEventListenerObject 
   return `${type}|${listenerIdentity(listener)}${optionsKey(options)}`;
 }
 
+function fallbackTargetKey(target: EventTarget): string {
+  return `fb:${targetKind(target)}:${Object.prototype.toString.call(target)}`;
+}
+
 function getTargetMap(target: EventTarget): Map<string, Set<string>> {
-  let map = activeRegistry.get(target);
+  if (isObjectLike(target)) {
+    try {
+      let map = activeRegistry.get(target);
+      if (!map) {
+        map = new Map();
+        activeRegistry.set(target, map);
+      }
+      return map;
+    } catch {
+      /* host object rejected as WeakMap key */
+    }
+  }
+  const fb = fallbackTargetKey(target);
+  let map = activeRegistryByFallback.get(fb);
   if (!map) {
     map = new Map();
-    activeRegistry.set(target, map);
+    activeRegistryByFallback.set(fb, map);
   }
   return map;
+}
+
+function trackListenerAdd(
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options: boolean | AddEventListenerOptions | undefined,
+  source: SourceAttribution,
+  kind: string
+): void {
+  const rKey = registryKey(type, listener, options);
+  const tMap = getTargetMap(target);
+  let set = tMap.get(type);
+  if (!set) {
+    set = new Set();
+    tMap.set(type, set);
+  }
+
+  totalAdds += 1;
+  windowAdds += 1;
+  recordByEvent(type, 'adds');
+  recordByTarget(kind, 'adds');
+
+  if (set.has(rKey)) {
+    duplicateAdds += 1;
+    bumpBucket(source, type, kind, 'duplicates');
+  } else {
+    set.add(rKey);
+    activeCountEstimate += 1;
+  }
+
+  if (source.phase === 'render') {
+    renderPhaseAdds += 1;
+    bumpBucket(source, type, kind, 'renderPhaseAdds');
+    recentRenderAdds.push({ ts: Date.now(), event: type, source });
+    if (recentRenderAdds.length > 50) recentRenderAdds.shift();
+    console.error(
+      `[LISTENER-PROBE] addEventListener during RENDER: ${type} on ${kind} at ${source.file}:${source.line}`,
+      source.rawStackLine
+    );
+  } else {
+    bumpBucket(source, type, kind, 'adds');
+  }
+
+  if (isVerbose()) {
+    console.debug(`[LISTENER-PROBE] +${type} ${kind} ${source.file}:${source.line} (${source.phase})`);
+  }
+}
+
+function trackListenerRemove(
+  target: EventTarget,
+  type: string,
+  listener: EventListenerOrEventListenerObject | null,
+  options: boolean | EventListenerOptions | undefined,
+  source: SourceAttribution,
+  kind: string
+): void {
+  const rKey = registryKey(type, listener, options);
+  const tMap = getTargetMap(target);
+  const set = tMap.get(type);
+
+  totalRemoves += 1;
+  windowRemoves += 1;
+  recordByEvent(type, 'removes');
+  recordByTarget(kind, 'removes');
+  bumpBucket(source, type, kind, 'removes');
+
+  if (!set || !set.has(rKey)) {
+    unmatchedRemoves += 1;
+    bumpBucket(source, type, kind, 'unmatchedRemoves');
+    if (isVerbose()) {
+      console.warn(
+        `[LISTENER-PROBE] remove without matching add: ${type} ${kind} ${listenerIdentity(listener)}`
+      );
+    }
+  } else {
+    set.delete(rKey);
+    activeCountEstimate = Math.max(0, activeCountEstimate - 1);
+  }
 }
 
 function activeEstimate(): number {
@@ -415,46 +525,13 @@ export function installListenerLeakProbe(): void {
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | AddEventListenerOptions
   ) {
-    const source = parseStack(5);
-    const kind = targetKind(this);
-    const rKey = registryKey(String(type), listener, options);
-    const tMap = getTargetMap(this);
-    let set = tMap.get(String(type));
-    if (!set) {
-      set = new Set();
-      tMap.set(String(type), set);
+    try {
+      const source = parseStack(5);
+      const kind = targetKind(this);
+      trackListenerAdd(this, String(type), listener, options, source, kind);
+    } catch (err) {
+      console.warn('[LISTENER-PROBE] track add failed (app continues):', err);
     }
-
-    totalAdds += 1;
-    windowAdds += 1;
-    recordByEvent(String(type), 'adds');
-    recordByTarget(kind, 'adds');
-
-    if (set.has(rKey)) {
-      duplicateAdds += 1;
-      bumpBucket(source, String(type), kind, 'duplicates');
-    } else {
-      set.add(rKey);
-      activeCountEstimate += 1;
-    }
-
-    if (source.phase === 'render') {
-      renderPhaseAdds += 1;
-      bumpBucket(source, String(type), kind, 'renderPhaseAdds');
-      recentRenderAdds.push({ ts: Date.now(), event: String(type), source });
-      if (recentRenderAdds.length > 50) recentRenderAdds.shift();
-      console.error(
-        `[LISTENER-PROBE] addEventListener during RENDER: ${String(type)} on ${kind} at ${source.file}:${source.line}`,
-        source.rawStackLine
-      );
-    } else {
-      bumpBucket(source, String(type), kind, 'adds');
-    }
-
-    if (isVerbose()) {
-      console.debug(`[LISTENER-PROBE] +${String(type)} ${kind} ${source.file}:${source.line} (${source.phase})`);
-    }
-
     return origAdd.call(this, type, listener as EventListener, options);
   };
 
@@ -463,31 +540,13 @@ export function installListenerLeakProbe(): void {
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | EventListenerOptions
   ) {
-    const source = parseStack(5);
-    const kind = targetKind(this);
-    const rKey = registryKey(String(type), listener, options);
-    const tMap = getTargetMap(this);
-    const set = tMap.get(String(type));
-
-    totalRemoves += 1;
-    windowRemoves += 1;
-    recordByEvent(String(type), 'removes');
-    recordByTarget(kind, 'removes');
-    bumpBucket(source, String(type), kind, 'removes');
-
-    if (!set || !set.has(rKey)) {
-      unmatchedRemoves += 1;
-      bumpBucket(source, String(type), kind, 'unmatchedRemoves');
-      if (isVerbose()) {
-        console.warn(
-          `[LISTENER-PROBE] remove without matching add: ${String(type)} ${kind} ${listenerIdentity(listener)}`
-        );
-      }
-    } else {
-      set.delete(rKey);
-      activeCountEstimate = Math.max(0, activeCountEstimate - 1);
+    try {
+      const source = parseStack(5);
+      const kind = targetKind(this);
+      trackListenerRemove(this, String(type), listener, options, source, kind);
+    } catch (err) {
+      console.warn('[LISTENER-PROBE] track remove failed (app continues):', err);
     }
-
     return origRemove.call(this, type, listener as EventListener, options);
   };
 
@@ -561,6 +620,8 @@ export function installListenerLeakProbe(): void {
     topLeakers,
     reset: () => {
       buckets.clear();
+      activeRegistryByFallback.clear();
+      fnIdBySignature.clear();
       for (const k of Object.keys(byEventTotals)) delete byEventTotals[k];
       for (const k of Object.keys(byTargetTotals)) delete byTargetTotals[k];
       totalAdds = 0;
