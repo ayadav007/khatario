@@ -105,11 +105,14 @@ export function NetworkStatusProvider({
     }
   }, [scheduleReconnectDispatch]);
 
+  const applyOnlineStateRef = useRef(applyOnlineState);
+  applyOnlineStateRef.current = applyOnlineState;
+
   useEffect(() => {
     setAppOnlineState(isOnlineRef.current);
 
-    const handleBrowserOnline = () => applyOnlineState(true, 'browser-online');
-    const handleBrowserOffline = () => applyOnlineState(false, 'browser-offline');
+    const handleBrowserOnline = () => applyOnlineStateRef.current(true, 'browser-online');
+    const handleBrowserOffline = () => applyOnlineStateRef.current(false, 'browser-offline');
 
     window.addEventListener('online', handleBrowserOnline);
     window.addEventListener('offline', handleBrowserOffline);
@@ -125,26 +128,26 @@ export function NetworkStatusProvider({
           markCapacitorNetworkReady();
           setNetworkReady(true);
           const online = reconcileNativeOnline(status.connected);
-          applyOnlineState(online, 'capacitor-initial');
+          applyOnlineStateRef.current(online, 'capacitor-initial');
           if (!online) {
-            await confirmOnlineWithProbe(applyOnlineState);
+            await confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
           }
         })
         .catch((error) => {
           console.warn('[NetworkStatus] Capacitor Network.getStatus failed:', error);
           markCapacitorNetworkReady();
           setNetworkReady(true);
-          applyOnlineState(readBrowserOnline(), 'capacitor-error-fallback');
-          void confirmOnlineWithProbe(applyOnlineState);
+          applyOnlineStateRef.current(readBrowserOnline(), 'capacitor-error-fallback');
+          void confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
         });
 
       void import('@capacitor/network')
         .then(({ Network }) =>
           Network.addListener('networkStatusChange', (status) => {
             const online = reconcileNativeOnline(status.connected);
-            applyOnlineState(online, 'capacitor-change');
+            applyOnlineStateRef.current(online, 'capacitor-change');
             if (!online) {
-              void confirmOnlineWithProbe(applyOnlineState);
+              void confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
             }
           })
         )
@@ -172,7 +175,7 @@ export function NetworkStatusProvider({
       window.removeEventListener('offline', handleBrowserOffline);
       removeNativeListener?.();
     };
-  }, [applyOnlineState]);
+  }, []);
 
   const value = useMemo<NetworkStatusContextValue>(
     () => ({

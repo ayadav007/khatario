@@ -167,6 +167,18 @@ function ProductTourInner() {
 
   const posBlocking = pathname === '/invoices/new' && getPosMode();
 
+  const tourHandlerCtxRef = useRef({
+    authLoading,
+    snapshotLoaded,
+    user,
+    lg,
+    posBlocking,
+    pathname,
+    router,
+    startSpotlightTour: (_options?: { chainBusinessProfile?: boolean }) => {},
+    toast,
+  });
+
   const persistTourCompletion = useCallback(async () => {
     if (completionSavedRef.current) return;
     completionSavedRef.current = true;
@@ -255,6 +267,18 @@ function ProductTourInner() {
     [destroyTour, persistTourCompletion, router, setSidebarCollapsed, steps]
   );
 
+  tourHandlerCtxRef.current = {
+    authLoading,
+    snapshotLoaded,
+    user,
+    lg,
+    posBlocking,
+    pathname,
+    router,
+    startSpotlightTour,
+    toast,
+  };
+
   // Manual start: ?product_tour=start (from Help & Support)
   useEffect(() => {
     if (authLoading || !user || !snapshotLoaded || !lg || posBlocking) return;
@@ -341,41 +365,33 @@ function ProductTourInner() {
   /** Sidebar footer: sidebar spotlight, optionally then Business Profile tour */
   useEffect(() => {
     const handler = (e: Event) => {
-      if (authLoading || !snapshotLoaded || !user) return;
-      if (!lg) return;
-      if (posBlocking) {
-        toast.warning('Turn off POS mode on this invoice page to run the tour.');
+      const ctx = tourHandlerCtxRef.current;
+      if (ctx.authLoading || !ctx.snapshotLoaded || !ctx.user) return;
+      if (!ctx.lg) return;
+      if (ctx.posBlocking) {
+        ctx.toast.warning('Turn off POS mode on this invoice page to run the tour.');
         return;
       }
       const detail = (e as CustomEvent<{ chainBusinessProfile?: boolean }>).detail;
       const chainBusinessProfile = detail?.chainBusinessProfile === true;
 
       /** Settings sub-pages replace the main nav — tour targets are missing; use dashboard first */
-      const onSettingsDeepRoute = typeof pathname === 'string' && pathname.startsWith('/settings/');
+      const onSettingsDeepRoute =
+        typeof ctx.pathname === 'string' && ctx.pathname.startsWith('/settings/');
       if (onSettingsDeepRoute) {
         sessionStorage.setItem(
           PRODUCT_TOUR_CHAIN_PROFILE_SESSION_KEY,
           chainBusinessProfile ? '1' : '0'
         );
-        router.push('/dashboard?product_tour=start');
+        ctx.router.push('/dashboard?product_tour=start');
         return;
       }
 
-      startSpotlightTour({ chainBusinessProfile });
+      ctx.startSpotlightTour({ chainBusinessProfile });
     };
     window.addEventListener(PRODUCT_TOUR_START_EVENT, handler);
     return () => window.removeEventListener(PRODUCT_TOUR_START_EVENT, handler);
-  }, [
-    authLoading,
-    snapshotLoaded,
-    user,
-    lg,
-    posBlocking,
-    pathname,
-    router,
-    startSpotlightTour,
-    toast,
-  ]);
+  }, []);
 
   const onTourBusinessProfile = useCallback(async () => {
     setWelcomeOpen(false);

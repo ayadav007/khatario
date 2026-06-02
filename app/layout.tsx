@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Inter, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
+/** Listener probe must patch EventTarget before other client modules run. */
+import "@/lib/debug/listener-leak-probe";
 
 const inter = Inter({
   subsets: ["latin"],

@@ -3,7 +3,9 @@
 import { useEffect } from 'react';
 import { installListenerLeakProbe } from '@/lib/debug/listener-leak-probe';
 
-/** Loads listener instrumentation when localStorage flag is set. */
+/**
+ * Ensures probe is installed after hydration (primary install runs at module load in app/layout import).
+ */
 export function ListenerLeakProbeBoot() {
   useEffect(() => {
     installListenerLeakProbe();

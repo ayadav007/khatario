@@ -113,6 +113,9 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     }
   }, [scope, isOffline, applyConnectivity, refreshCounts]);
 
+  const triggerSyncRef = useRef(triggerSync);
+  triggerSyncRef.current = triggerSync;
+
   useEffect(() => {
     applyConnectivity(isSyncing);
   }, [isOnline, pendingActionCount, isSyncing, applyConnectivity]);
@@ -144,22 +147,22 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
     const onReconnect = () => {
       setConnectivityState('reconnecting');
       setStateChangedAt(Date.now());
-      void triggerSync();
+      void triggerSyncRef.current();
     };
 
     window.addEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
     return () => window.removeEventListener(NETWORK_RECONNECT_EVENT, onReconnect);
-  }, [scope, isOffline, triggerSync]);
+  }, [scope?.businessId, scope?.userId, isOffline]);
 
   useEffect(() => {
     if (!scope || isOffline) return;
     const interval = setInterval(() => {
       if (pendingActionCount > 0 && !isSyncEngineRunning()) {
-        void triggerSync();
+        void triggerSyncRef.current();
       }
     }, 60_000);
     return () => clearInterval(interval);
-  }, [scope, isOffline, pendingActionCount, triggerSync]);
+  }, [scope?.businessId, scope?.userId, isOffline, pendingActionCount]);
 
   const connectivity = useMemo(
     () =>

@@ -3,6 +3,9 @@
 import { useEffect } from 'react';
 import { isStaleChunkError, recoverFromStaleShell } from '@/lib/shell-recovery';
 
+/** Avoid stacking `updatefound` / `statechange` listeners when the shell remounts in dev/StrictMode. */
+let swRegistrationHooksAttached = false;
+
 /**
  * Registers the app-shell service worker on the remote web origin (staging/PWA).
  * Skips Capacitor local errorPath pages (https://localhost/...).
@@ -44,19 +47,22 @@ export function ServiceWorkerRegistration() {
         const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         await reg.update();
 
-        reg.addEventListener('updatefound', () => {
-          const installing = reg.installing;
-          if (!installing) return;
-          installing.addEventListener('statechange', () => {
-            if (
-              installing.state === 'installed' &&
-              navigator.serviceWorker.controller &&
-              reg.waiting
-            ) {
-              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-            }
+        if (!swRegistrationHooksAttached) {
+          swRegistrationHooksAttached = true;
+          reg.addEventListener('updatefound', () => {
+            const installing = reg.installing;
+            if (!installing) return;
+            installing.addEventListener('statechange', () => {
+              if (
+                installing.state === 'installed' &&
+                navigator.serviceWorker.controller &&
+                reg.waiting
+              ) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
           });
-        });
+        }
 
         if (reg.waiting && navigator.serviceWorker.controller) {
           reg.waiting.postMessage({ type: 'SKIP_WAITING' });
