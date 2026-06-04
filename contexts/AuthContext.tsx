@@ -41,6 +41,38 @@ function persistPortalThemeFromSession(portalTheme: PortalTheme, businessId: str
   localStorage.removeItem(PORTAL_THEME_LEGACY_KEY);
 }
 
+/** Avoid Auth → Sidebar re-render storms when /api/auth/session returns fresh object literals. */
+function sessionUserUnchanged(prev: User | null, next: User | null): boolean {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  return prev.id === next.id && prev.business_id === next.business_id;
+}
+
+function sessionBusinessUnchanged(prev: Business | null, next: Business | null): boolean {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  return prev.id === next.id && prev.name === next.name;
+}
+
+function sessionBranchUnchanged(prev: unknown, next: unknown): boolean {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  const a = prev as { id?: string; name?: string; branch_code?: string };
+  const b = next as { id?: string; name?: string; branch_code?: string };
+  return a.id === b.id && a.name === b.name && a.branch_code === b.branch_code;
+}
+
+function sessionBranchesUnchanged(prev: unknown[], next: unknown[]): boolean {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i++) {
+    const a = prev[i] as { id?: string };
+    const b = next[i] as { id?: string };
+    if (a?.id !== b?.id) return false;
+  }
+  return true;
+}
+
 export interface SessionPermissions {
   [moduleKey: string]: {
     can_view: boolean;
@@ -278,10 +310,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       if (res.ok) {
         const data = await res.json();
-        setUser(data.user);
-        setBusiness(data.business);
-        setBranch(data.branch || null);
-        setBranches(data.branches || []);
+        setUser((prev) =>
+          sessionUserUnchanged(prev, data.user) ? prev : data.user
+        );
+        setBusiness((prev) =>
+          sessionBusinessUnchanged(prev, data.business) ? prev : data.business
+        );
+        setBranch((prev: typeof branch) => {
+          const next = data.branch || null;
+          return sessionBranchUnchanged(prev, next) ? prev : next;
+        });
+        setBranches((prev: typeof branches) => {
+          const next = data.branches || [];
+          return sessionBranchesUnchanged(prev, next) ? prev : next;
+        });
         setActiveBranchCount(
           typeof data.activeBranchCount === 'number'
             ? data.activeBranchCount
@@ -391,10 +433,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (res.ok) {
             const data = await res.json();
             if (data.user) {
-              setUser(data.user);
-              setBusiness(data.business);
-              setBranch(data.branch || null);
-              setBranches(data.branches || []);
+              setUser((prev) =>
+                sessionUserUnchanged(prev, data.user) ? prev : data.user
+              );
+              setBusiness((prev) =>
+                sessionBusinessUnchanged(prev, data.business) ? prev : data.business
+              );
+              setBranch((prev: typeof branch) => {
+                const next = data.branch || null;
+                return sessionBranchUnchanged(prev, next) ? prev : next;
+              });
+              setBranches((prev: typeof branches) => {
+                const next = data.branches || [];
+                return sessionBranchesUnchanged(prev, next) ? prev : next;
+              });
               setActiveBranchCount(
                 typeof data.activeBranchCount === 'number'
                   ? data.activeBranchCount

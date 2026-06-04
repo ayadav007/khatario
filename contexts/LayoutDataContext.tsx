@@ -206,13 +206,19 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
 
         const promo = res.promotions && res.promotions.length > 0 ? res.promotions[0] : null;
 
-        setData((prev) => ({
-          ...prev,
-          promotions: {
-            ...prev.promotions,
-            [type]: promo,
-          },
-        }));
+        setData((prev) => {
+          const existing = prev.promotions[type];
+          if (existing === promo) return prev;
+          if (existing?.id === promo?.id && promo != null) return prev;
+          if (existing == null && promo == null) return prev;
+          return {
+            ...prev,
+            promotions: {
+              ...prev.promotions,
+              [type]: promo,
+            },
+          };
+        });
         return promo;
       } catch (error) {
         console.error(`Failed to fetch ${type} promotion:`, error);

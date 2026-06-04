@@ -13,7 +13,7 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { evaluateCapabilityAccess } from '@/lib/capability-eval';
 
 export interface UseCapabilityResult {
@@ -39,7 +39,7 @@ export function useCapability(
 ): UseCapabilityResult {
   const { user, business, isPrimaryAdmin: sessionIsPrimaryAdmin, permissions: sessionPermissions } =
     useAuth();
-  const { snapshotLoaded } = useLayoutData();
+  const { snapshotLoaded } = useShellLayoutSettings();
 
   return useMemo(() => {
     const hasCapability = (res: string, act?: string): boolean => {
@@ -85,7 +85,7 @@ export function useCapabilityCheck(): {
 } {
   const { user, business, isPrimaryAdmin: sessionIsPrimaryAdmin, permissions: sessionPermissions } =
     useAuth();
-  const { snapshotLoaded } = useLayoutData();
+  const { snapshotLoaded } = useShellLayoutSettings();
 
   const hasCapability = useMemo(() => {
     return (res: string, act?: string): boolean => {

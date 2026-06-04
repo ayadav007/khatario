@@ -83,6 +83,7 @@ export const Sidebar = React.memo(function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useLayout();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
   const { business, user, branch: sessionBranch, branches, activeBranchCount } = useAuth();
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
   const { hasCapability } = useCapabilityCheck();
@@ -242,10 +243,17 @@ export const Sidebar = React.memo(function Sidebar() {
 
   // Use branch data from AuthContext session (no extra API calls)
   useEffect(() => {
-    if (sessionBranch) {
-      setUserBranch({ name: sessionBranch.name, code: sessionBranch.branch_code });
+    if (!sessionBranch) {
+      setUserBranch((prev) => (prev === null ? prev : null));
+      return;
     }
-  }, [sessionBranch]);
+    const name = sessionBranch.name;
+    const code = sessionBranch.branch_code;
+    setUserBranch((prev) => {
+      if (prev?.name === name && prev?.code === code) return prev;
+      return { name, code };
+    });
+  }, [sessionBranch?.id, sessionBranch?.name, sessionBranch?.branch_code]);
 
   // Unified capability check — uses snapshot (last-known server state when offline)
   // NOTE: hasCapability now uses capability-normalizer.ts for all key normalization
@@ -982,6 +990,9 @@ export const Sidebar = React.memo(function Sidebar() {
     reportRouteMap,
   ]);
 
+  const visibleNavItemsRef = useRef(visibleNavItems);
+  visibleNavItemsRef.current = visibleNavItems;
+
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   /** Product tour: expand Sales / Inventory / More so spotlight targets exist in the DOM */
@@ -1050,35 +1061,32 @@ export const Sidebar = React.memo(function Sidebar() {
     return false;
   };
 
-  // Auto-expand sections that contain the active route
+  // Auto-expand sections that contain the active route (stable deps — avoid nav array identity churn)
   useEffect(() => {
-    // Save current scroll position before state update
+    const items = visibleNavItemsRef.current;
+    if (!items || items.length === 0) return;
+
     if (navRef.current) {
       scrollPositionRef.current = navRef.current.scrollTop;
     }
 
     setOpenSections((prevOpenSections) => {
-      if (!visibleNavItems || visibleNavItems.length === 0) {
-        return prevOpenSections;
-      }
       const newOpenSections: Record<string, boolean> = { ...prevOpenSections };
       let hasChanges = false;
 
-      visibleNavItems.forEach((item) => {
-        if (item.collapsible && item.subItems) {
-          // Auto-expand if any sub-item is active
-          if (isAnySubItemActive(item)) {
-            if (!newOpenSections[item.label]) {
-              newOpenSections[item.label] = true;
-              hasChanges = true;
-            }
+      for (const item of items) {
+        if (item.collapsible && item.subItems && isAnySubItemActive(item)) {
+          if (!newOpenSections[item.label]) {
+            newOpenSections[item.label] = true;
+            hasChanges = true;
           }
         }
-      });
-      
+      }
+
       return hasChanges ? newOpenSections : prevOpenSections;
     });
-  }, [pathname, searchParams, visibleNavItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads pathname/searchParamsKey
+  }, [pathname, searchParamsKey, sidebarReady]);
 
   // Restore scroll position after render
   useEffect(() => {
