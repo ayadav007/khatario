@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-import { commitShellNavigation, handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 import {
   Search,
   User,
@@ -469,7 +468,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           {showMobileBack ? (
             <button
               type="button"
-              onClick={() => commitShellNavigation(mobileBackHref)}
+              onClick={() => router.push(mobileBackHref)}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
               aria-label="Go back"
             >
@@ -478,7 +477,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           ) : (
             <Link
               href="/dashboard"
-              onClick={(e) => handleShellNavClick(e, '/dashboard')}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
               aria-label="Home"
             >
@@ -500,8 +498,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             {mobileListCreate ? (
               <Link
                 href={mobileListCreate.href}
-                // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
-                onClick={(e) => handleShellNavClick(e, mobileListCreate.href)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
                 aria-label={mobileListCreate.ariaLabel}
                 title={mobileListCreate.ariaLabel}

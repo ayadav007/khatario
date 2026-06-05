@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { FileText, Package, Users, ShoppingCart, Plus, X } from 'lucide-react';
-import { commitShellNavigation } from '@/lib/navigation/app-shell-navigate';
 import { clsx } from 'clsx';
 
 interface QuickAction {
@@ -40,6 +40,7 @@ const quickActions: QuickAction[] = [
 ];
 
 export const QuickActionsFAB: React.FC = () => {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -58,8 +59,7 @@ export const QuickActionsFAB: React.FC = () => {
 
   const handleActionClick = (href: string) => {
     setIsOpen(false);
-    // Hard nav: soft App Router transitions stall under heavy shell (Phase 0 stabilization).
-    commitShellNavigation(href);
+    router.push(href);
   };
 
   return (

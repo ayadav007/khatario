@@ -33,6 +33,7 @@ import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
+import { ShellNavigationBridge } from '@/components/navigation/ShellNavigationBridge';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -93,6 +94,7 @@ function AppRouteLayoutInner({
     return (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <ShellNavigationBridge />
         <MobileBackNavigation />
         <AppShellRecovery />
         <LastRouteTracker />
@@ -114,6 +116,7 @@ function AppRouteLayoutInner({
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
+        <ShellNavigationBridge />
         <MobileBackNavigation />
         <AppShellRecovery />
         <PullToRefresh />

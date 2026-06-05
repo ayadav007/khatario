@@ -1,28 +1,47 @@
 import type { MouseEvent } from 'react';
 
-/**
- * Full document navigation for app-shell links when Next.js soft routing is stuck.
- * AuthContext uses the same approach after login (`window.location.replace`).
- */
-export function commitShellNavigation(href: string): void {
-  if (typeof window === 'undefined') return;
-  const raw = href.trim();
-  if (!raw || raw === '#') return;
+type ShellNavigateFn = (href: string) => void;
 
-  let targetPath: string;
+let shellNavigate: ShellNavigateFn | null = null;
+
+/** Registered once from app shell layout so imperative callers can use router.push. */
+export function registerShellNavigate(fn: ShellNavigateFn | null): void {
+  shellNavigate = fn;
+}
+
+function resolveTargetPath(href: string): string | null {
+  const raw = href.trim();
+  if (!raw || raw === '#') return null;
+
   try {
     const url = raw.startsWith('http')
       ? new URL(raw)
-      : new URL(raw, window.location.origin);
-    targetPath = url.pathname + url.search;
+      : new URL(raw, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    return url.pathname + url.search;
   } catch {
-    return;
+    return null;
   }
+}
+
+/**
+ * Client-side shell navigation (Next.js App Router).
+ * Falls back to full navigation only before the shell bridge mounts.
+ */
+export function commitShellNavigation(href: string): void {
+  if (typeof window === 'undefined') return;
+
+  const targetPath = resolveTargetPath(href);
+  if (!targetPath) return;
 
   const current = window.location.pathname + window.location.search;
   if (current === targetPath) return;
 
-  window.location.assign(raw.startsWith('http') ? raw : targetPath);
+  if (shellNavigate) {
+    shellNavigate(targetPath);
+    return;
+  }
+
+  window.location.assign(targetPath);
 }
 
 /** True for a plain left-click (respect modifier / middle-click for new tab). */
@@ -37,13 +56,12 @@ export function isPlainPrimaryClick(e: MouseEvent): boolean {
 }
 
 /**
- * Use on shell `<Link>` clicks: prevent soft nav and commit a full navigation instead.
+ * Legacy hook for shell `<Link>` clicks — no-op so Next.js handles soft routing.
+ * Kept for call sites that may pass extra click logic alongside navigation.
  */
 export function handleShellNavClick(
-  e: MouseEvent<HTMLAnchorElement>,
-  href: string
+  _e: MouseEvent<HTMLAnchorElement>,
+  _href: string
 ): void {
-  if (!isPlainPrimaryClick(e)) return;
-  e.preventDefault();
-  commitShellNavigation(href);
+  // Intentionally empty: <Link> performs client-side navigation.
 }

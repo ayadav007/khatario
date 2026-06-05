@@ -10,7 +10,6 @@ import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
 import { isOfflineCapable } from '@/lib/offline/offline-capable-routes';
 import { MOBILE_TAB_ROOTS, normalizePath } from '@/lib/mobile-navigation';
-import { commitShellNavigation } from '@/lib/navigation/app-shell-navigate';
 
 const TAB_HREFS = MOBILE_TAB_ROOTS as readonly string[];
 
@@ -54,14 +53,7 @@ export const BottomNav: React.FC = () => {
       return;
     }
 
-    // Soft App Router transitions can stall when the shell is CPU-bound (render churn).
-    // Full navigation matches post-login redirect in AuthContext and always commits.
-    e.preventDefault();
-    if (current.startsWith(`${target}/`)) {
-      commitShellNavigation(href);
-      return;
-    }
-    commitShellNavigation(href);
+    // Default: let <Link> perform client-side navigation.
   };
 
   const navItems = [
