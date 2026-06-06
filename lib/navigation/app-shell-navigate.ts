@@ -56,12 +56,14 @@ export function isPlainPrimaryClick(e: MouseEvent): boolean {
 }
 
 /**
- * Legacy hook for shell `<Link>` clicks — no-op so Next.js handles soft routing.
- * Kept for call sites that may pass extra click logic alongside navigation.
+ * Shell `<Link>` clicks: imperative soft nav via router.push (registered in layout).
+ * Next.js default Link routing can stall when the shell main thread is busy.
  */
 export function handleShellNavClick(
-  _e: MouseEvent<HTMLAnchorElement>,
-  _href: string
+  e: MouseEvent<HTMLAnchorElement>,
+  href: string
 ): void {
-  // Intentionally empty: <Link> performs client-side navigation.
+  if (!isPlainPrimaryClick(e)) return;
+  e.preventDefault();
+  commitShellNavigation(href);
 }

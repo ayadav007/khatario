@@ -53,7 +53,8 @@ export const BottomNav: React.FC = () => {
       return;
     }
 
-    // Default: let <Link> perform client-side navigation.
+    e.preventDefault();
+    router.push(href);
   };
 
   const navItems = [

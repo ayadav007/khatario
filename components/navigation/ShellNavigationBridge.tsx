@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { startTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { registerShellNavigate } from '@/lib/navigation/app-shell-navigate';
 
@@ -9,7 +9,11 @@ export function ShellNavigationBridge() {
   const router = useRouter();
 
   useEffect(() => {
-    registerShellNavigate((href) => router.push(href));
+    registerShellNavigate((href) => {
+      startTransition(() => {
+        router.push(href);
+      });
+    });
     return () => registerShellNavigate(null);
   }, [router]);
 
