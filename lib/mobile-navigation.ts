@@ -10,8 +10,8 @@ export const MOBILE_TAB_ROOTS = [
   '/more',
 ] as const;
 
-/** Selector for document-level touch handlers (pull-to-refresh) to ignore bottom nav taps. */
-export const MOBILE_BOTTOM_NAV_SELECTOR = '[data-mobile-bottom-nav]';
+/** Used by PullToRefresh to ignore bottom-tab taps. */
+export const MOBILE_BOTTOM_NAV_SELECTOR = 'nav[data-mobile-bottom-nav]';
 
 export function normalizePath(pathname: string | null): string {
   if (!pathname) return '/';

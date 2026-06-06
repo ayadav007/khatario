@@ -156,10 +156,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedPermissions = localStorage.getItem('permissions');
     const storedBranches = localStorage.getItem('branches');
     const storedIsAdmin = localStorage.getItem('isPrimaryAdmin');
-    if (storedUser) setUser(JSON.parse(storedUser));
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser) as User;
+      setUser((prev) => (sessionUserUnchanged(prev, parsedUser) ? prev : parsedUser));
+    }
     if (storedBusiness) {
-      const b = JSON.parse(storedBusiness);
-      setBusiness(b);
+      const b = JSON.parse(storedBusiness) as Business;
+      setBusiness((prev) => (sessionBusinessUnchanged(prev, b) ? prev : b));
       if (b?.id) {
         try {
           localStorage.setItem('businessId', b.id);
@@ -168,10 +171,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    if (storedBranch) setBranch(JSON.parse(storedBranch));
-    if (storedPermissions) setPermissions(JSON.parse(storedPermissions));
-    if (storedBranches) setBranches(JSON.parse(storedBranches));
-    if (storedIsAdmin) setIsPrimaryAdmin(JSON.parse(storedIsAdmin));
+    if (storedBranch) {
+      const parsedBranch = JSON.parse(storedBranch);
+      setBranch((prev: typeof branch) =>
+        sessionBranchUnchanged(prev, parsedBranch) ? prev : parsedBranch
+      );
+    }
+    if (storedPermissions) {
+      const parsed = JSON.parse(storedPermissions) as SessionPermissions;
+      setPermissions((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(parsed)) return prev;
+        return parsed;
+      });
+    }
+    if (storedBranches) {
+      const parsedBranches = JSON.parse(storedBranches) as unknown[];
+      setBranches((prev: typeof branches) =>
+        sessionBranchesUnchanged(prev, parsedBranches) ? prev : parsedBranches
+      );
+    }
+    if (storedIsAdmin) {
+      const parsedAdmin = JSON.parse(storedIsAdmin) as boolean;
+      setIsPrimaryAdmin((prev) => (prev === parsedAdmin ? prev : parsedAdmin));
+    }
     let bizIdFromCache: string | undefined;
     if (storedBusiness) {
       try {
@@ -190,7 +212,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const o = JSON.parse(rawTheme) as unknown;
         if (o && typeof o === 'object' && 'primary_hex' in (o as object)) {
-          setPortalTheme(mergePortalTheme(o));
+          const merged = mergePortalTheme(o);
+          setPortalTheme((prev) => {
+            if (prev && JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+            return merged;
+          });
         }
       } catch {
         /* ignore */
@@ -324,23 +350,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const next = data.branches || [];
           return sessionBranchesUnchanged(prev, next) ? prev : next;
         });
-        setActiveBranchCount(
-          typeof data.activeBranchCount === 'number'
-            ? data.activeBranchCount
-            : (data.branches?.length ?? 0)
-        );
+        setActiveBranchCount((prev) => {
+          const next =
+            typeof data.activeBranchCount === 'number'
+              ? data.activeBranchCount
+              : (data.branches?.length ?? 0);
+          return prev === next ? prev : next;
+        });
         setPermissions((prev) => {
           const next = data.permissions || {};
           if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
           return next;
         });
-        setIsPrimaryAdmin(data.isPrimaryAdmin || false);
-        setSubscription(data.subscription || null);
+        setIsPrimaryAdmin((prev) => {
+          const next = data.isPrimaryAdmin || false;
+          return prev === next ? prev : next;
+        });
+        setSubscription((prev: typeof subscription) => {
+          const next = data.subscription || null;
+          if (prev === next) return prev;
+          if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
+        });
         if (data.portalTheme && data.user?.business_id) {
-          setPortalTheme(data.portalTheme);
+          setPortalTheme((prev) => {
+            if (prev && JSON.stringify(prev) === JSON.stringify(data.portalTheme)) return prev;
+            return data.portalTheme;
+          });
           persistPortalThemeFromSession(data.portalTheme, data.user.business_id);
         } else {
-          setPortalTheme(null);
+          setPortalTheme((prev) => (prev === null ? prev : null));
           removeAllPortalThemeStorageKeys();
         }
 
@@ -447,23 +486,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const next = data.branches || [];
                 return sessionBranchesUnchanged(prev, next) ? prev : next;
               });
-              setActiveBranchCount(
-                typeof data.activeBranchCount === 'number'
-                  ? data.activeBranchCount
-                  : (data.branches?.length ?? 0)
-              );
+              setActiveBranchCount((prev) => {
+                const next =
+                  typeof data.activeBranchCount === 'number'
+                    ? data.activeBranchCount
+                    : (data.branches?.length ?? 0);
+                return prev === next ? prev : next;
+              });
               setPermissions((prev) => {
-          const next = data.permissions || {};
-          if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
-          return next;
-        });
-              setIsPrimaryAdmin(data.isPrimaryAdmin || false);
-              setSubscription(data.subscription || null);
+                const next = data.permissions || {};
+                if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+                return next;
+              });
+              setIsPrimaryAdmin((prev) => {
+                const next = data.isPrimaryAdmin || false;
+                return prev === next ? prev : next;
+              });
+              setSubscription((prev: typeof subscription) => {
+                const next = data.subscription || null;
+                if (prev === next) return prev;
+                if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+                return next;
+              });
               if (data.portalTheme && data.user?.business_id) {
-                setPortalTheme(data.portalTheme);
+                setPortalTheme((prev) => {
+                  if (prev && JSON.stringify(prev) === JSON.stringify(data.portalTheme)) return prev;
+                  return data.portalTheme;
+                });
                 persistPortalThemeFromSession(data.portalTheme, data.user.business_id);
               } else {
-                setPortalTheme(null);
+                setPortalTheme((prev) => (prev === null ? prev : null));
                 removeAllPortalThemeStorageKeys();
               }
 

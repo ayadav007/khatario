@@ -80,13 +80,22 @@ function SubscriptionUsageBannerInner({
     return nudgeRows;
   }, [nudgeRows, highlightLimit]);
 
+  const visibleRowsKey = useMemo(
+    () =>
+      visibleRows
+        .map((r) => `${r.limitType}:${r.current}:${r.limit}:${r.percent}`)
+        .join('|'),
+    [visibleRows]
+  );
+
   useEffect(() => {
     setDismissed(false);
   }, [businessId, highlightLimit]);
 
   useEffect(() => {
+    // Dashboard variant does not use `plans`; never setState here — setPlans({}) allocates
+    // a new object each run and visibleRows used to churn every render → infinite loop.
     if (!businessId || visibleRows.length === 0 || variant === 'dashboard') {
-      setPlans({});
       return;
     }
 
@@ -109,14 +118,20 @@ function SubscriptionUsageBannerInner({
         }),
       );
       if (!cancelled) {
-        setPlans(Object.fromEntries(entries));
+        setPlans((prev) => {
+          const next = Object.fromEntries(entries) as Partial<
+            Record<UsageNudgeLimitType, RecommendedPlan | null>
+          >;
+          if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
+        });
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [businessId, visibleRows, variant]);
+  }, [businessId, visibleRowsKey, variant]);
 
   if (loading || dismissed || visibleRows.length === 0) {
     return null;

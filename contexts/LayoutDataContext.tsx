@@ -157,11 +157,12 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
     if (!business?.id) {
       return;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setData((prev) => ({
-        ...prev,
-        warehousesSettingLoaded: true,
-      }));
+    if (!isOnline) {
+      setData((prev) =>
+        prev.warehousesSettingLoaded
+          ? prev
+          : { ...prev, warehousesSettingLoaded: true }
+      );
       return;
     }
 
@@ -187,7 +188,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         warehousesSettingLoaded: true,
       }));
     }
-  }, [business?.id]);
+  }, [business?.id, isOnline]);
 
   const refreshWarehouses = useCallback(async () => {
     await fetchWarehousesSetting(true);
@@ -245,7 +246,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
       const cachedSnapshot = loadCapabilitySnapshot(business.id, user.id);
       const isExpired = cachedSnapshot ? isSnapshotExpired(cachedSnapshot) : true;
 
-      if (!navigator.onLine) {
+      if (!isOnline) {
         if (cachedSnapshot) {
           console.log('[LayoutData] Offline: using cached snapshot (age:', Math.floor((Date.now() - (cachedSnapshot.timestamp || 0)) / 1000), 'seconds)');
           setData((prev) => ({
@@ -275,6 +276,10 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           enabledFeatureIds: cachedSnapshot.enabledFeatures || [],
         }));
         setSnapshotLoaded(true);
+        setData((prev) => ({
+          ...prev,
+          warehousesSettingLoaded: true,
+        }));
       }
 
       try {
@@ -356,13 +361,13 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
     };
 
     bootstrapCapability().then(() => {
-      if (navigator.onLine) {
+      if (isOnline) {
         void fetchWarehousesSetting().finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
     });
-  }, [business?.id, user?.id, fetchWarehousesSetting]);
+  }, [business?.id, user?.id, fetchWarehousesSetting, isOnline]);
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;

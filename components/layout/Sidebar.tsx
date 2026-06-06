@@ -50,7 +50,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 import { useLayout } from '@/contexts/LayoutContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
@@ -1197,9 +1196,6 @@ export const Sidebar = React.memo(function Sidebar() {
                           return;
                         }
 
-                        if (item.href && item.href !== '#') {
-                          handleShellNavClick(e, item.href);
-                        }
                       }}
                       className={clsx(
                         'flex items-center gap-3 flex-1 px-3 py-2.5 rounded-lg transition-all group relative cursor-pointer',
@@ -1321,7 +1317,6 @@ export const Sidebar = React.memo(function Sidebar() {
                         href={item.href!}
                         prefetch={false}
                         data-tour={item.tourId}
-                        onClick={(e) => handleShellNavClick(e, item.href!)}
                         className={clsx(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative',
                           'hover:bg-slate-100 dark:hover:bg-slate-700/90',
@@ -1345,10 +1340,7 @@ export const Sidebar = React.memo(function Sidebar() {
                             <Link
                               href={createRoute}
                               prefetch={false}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleShellNavClick(e, createRoute);
-                              }}
+                              onClick={(e) => e.stopPropagation()}
                               className={clsx(
                                 'absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-sm font-medium',
                                 'opacity-0 group-hover/item:opacity-100 transition-opacity',

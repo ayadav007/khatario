@@ -41,6 +41,11 @@ export function useCapability(
     useAuth();
   const { snapshotLoaded } = useShellLayoutSettings();
 
+  const permissionsSignature = useMemo(
+    () => JSON.stringify(sessionPermissions),
+    [sessionPermissions]
+  );
+
   return useMemo(() => {
     const hasCapability = (res: string, act?: string): boolean => {
       if (!business?.id || !user?.id) return false;
@@ -70,7 +75,7 @@ export function useCapability(
     business?.id,
     snapshotLoaded,
     sessionIsPrimaryAdmin,
-    sessionPermissions,
+    permissionsSignature,
   ]);
 }
 
@@ -87,6 +92,11 @@ export function useCapabilityCheck(): {
     useAuth();
   const { snapshotLoaded } = useShellLayoutSettings();
 
+  const permissionsSignature = useMemo(
+    () => JSON.stringify(sessionPermissions),
+    [sessionPermissions]
+  );
+
   const hasCapability = useMemo(() => {
     return (res: string, act?: string): boolean => {
       if (!business?.id || !user?.id) return false;
@@ -101,7 +111,7 @@ export function useCapabilityCheck(): {
     };
     // snapshotLoaded must be a dependency so consumers (e.g. Sidebar) recompute when
     // LayoutDataContext finishes bootstrap and localStorage snapshot is authoritative.
-  }, [user?.id, business?.id, snapshotLoaded, sessionIsPrimaryAdmin, sessionPermissions]);
+  }, [user?.id, business?.id, snapshotLoaded, sessionIsPrimaryAdmin, permissionsSignature]);
 
   return {
     hasCapability,

@@ -26,14 +26,11 @@ import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
-import { AppShellRecovery } from '@/components/layout/AppShellRecovery';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-import { ShellNavigationBridge } from '@/components/navigation/ShellNavigationBridge';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -52,20 +49,16 @@ function AppRouteLayoutInner({
 }: {
   children: React.ReactNode;
 }) {
-  useRenderLoopProbe('AppRouteLayoutInner');
   const { sidebarCollapsed } = useLayout();
   const pathname = usePathname();
   const [posMode, setPosMode] = useState(false);
-  
-  // Event-driven POS mode sync (no polling — 500ms interval starved the main thread).
+
   useEffect(() => {
     const syncPosMode = () => setPosMode(getPosMode());
 
     syncPosMode();
-
     window.addEventListener('posModeChanged', syncPosMode);
 
-    // Cross-tab writes to pos_mode_enabled (same-tab uses posModeChanged above).
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'pos_mode_enabled' || e.key === null) {
         syncPosMode();
@@ -79,24 +72,16 @@ function AppRouteLayoutInner({
     };
   }, []);
 
-  // Full-width pages (no padding, no top bar)
   const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
-  
-  // Show date range picker on dashboard
   const showDateRange = pathname === '/dashboard';
-  
-  // Check if we're on the invoice creation page (where POS mode is active)
   const isInvoicePage = pathname === '/invoices/new';
   const isInvoiceComposer = pathname === '/invoices/new';
 
-  // In POS mode, hide all navigation and make it full-screen
   if (posMode && isInvoicePage) {
     return (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
-        <ShellNavigationBridge />
         <MobileBackNavigation />
-        <AppShellRecovery />
         <LastRouteTracker />
         <div className="h-screen w-screen overflow-hidden bg-background">
           <NetworkStatusBanner />
@@ -116,9 +101,7 @@ function AppRouteLayoutInner({
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
-        <ShellNavigationBridge />
         <MobileBackNavigation />
-        <AppShellRecovery />
         <PullToRefresh />
         <LastRouteTracker />
         <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">

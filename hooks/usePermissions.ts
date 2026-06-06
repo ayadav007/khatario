@@ -172,13 +172,16 @@ export function usePermissions() {
           aliasWarningLogged = true;
         }
 
-        setPermissions(normalized);
+        setPermissions((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(normalized)) return prev;
+          return normalized;
+        });
       } else {
-        setPermissions({});
+        setPermissions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       }
     } catch (error) {
       console.error('Failed to fetch permissions:', error);
-      setPermissions({});
+      setPermissions((prev) => (Object.keys(prev).length === 0 ? prev : {}));
     } finally {
       setLoading(false);
     }

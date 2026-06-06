@@ -30,16 +30,12 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
       '/whatsapp/conversations' // Collapse sidebar for conversations page
     ];
     
-    // Check if current path matches any of the auto-collapse patterns
     const shouldCollapse = autoCollapseRoutes.some(route => pathname?.includes(route));
     
-    if (shouldCollapse) {
-      setSidebarCollapsed(true);
-    } else {
-      // Restore to default (expanded) when leaving these pages
-      // This ensures sidebar is expanded when navigating to other pages
-      setSidebarCollapsed(false);
-    }
+    setSidebarCollapsed((prev) => {
+      const next = shouldCollapse;
+      return prev === next ? prev : next;
+    });
   }, [pathname]);
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed(prev => !prev), []);

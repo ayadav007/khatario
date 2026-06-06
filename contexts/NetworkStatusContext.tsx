@@ -111,11 +111,31 @@ export function NetworkStatusProvider({
   useEffect(() => {
     setAppOnlineState(isOnlineRef.current);
 
+    const syncBrowserOnlineHint = () => {
+      if (isCapacitorNative()) return;
+      const browserOnline = readBrowserOnline();
+      if (browserOnline !== isOnlineRef.current) {
+        applyOnlineStateRef.current(browserOnline, 'browser-sync');
+      }
+    };
+
     const handleBrowserOnline = () => applyOnlineStateRef.current(true, 'browser-online');
     const handleBrowserOffline = () => applyOnlineStateRef.current(false, 'browser-offline');
 
     window.addEventListener('online', handleBrowserOnline);
     window.addEventListener('offline', handleBrowserOffline);
+    window.addEventListener('focus', syncBrowserOnlineHint);
+    document.addEventListener('visibilitychange', syncBrowserOnlineHint);
+
+    // Reconcile on mount — `offline` can fire without a matching `online` (Windows/Chrome),
+    // leaving React state stuck offline while navigator.onLine is already true.
+    syncBrowserOnlineHint();
+
+    // Browser `navigator.onLine` reflects system internet, not loopback. On localhost dev
+    // (or flaky Wi‑Fi), the UI can load while the browser still reports "offline".
+    if (!isCapacitorNative() && !isOnlineRef.current) {
+      void confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
+    }
 
     let cancelled = false;
     let removeNativeListener: (() => void) | undefined;
@@ -173,6 +193,8 @@ export function NetworkStatusProvider({
       }
       window.removeEventListener('online', handleBrowserOnline);
       window.removeEventListener('offline', handleBrowserOffline);
+      window.removeEventListener('focus', syncBrowserOnlineHint);
+      document.removeEventListener('visibilitychange', syncBrowserOnlineHint);
       removeNativeListener?.();
     };
   }, []);

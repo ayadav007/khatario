@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { buildMoreMenuSections, type MoreNavSection } from '@/lib/more-navigation';
 import type { LucideIcon } from 'lucide-react';
@@ -59,28 +60,29 @@ function sectionIconBg(title: string): string {
 
 export default function MorePage() {
   const { logout, business } = useAuth();
-  const { warehousesEnabled, warehousesSettingLoaded, snapshotLoaded } = useLayoutData();
+  const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
+  const { isOffline } = useNetworkStatus();
   const { hasCapability } = useCapabilityCheck();
   const [isSupplier, setIsSupplier] = useState(false);
-  const [supplierResolved, setSupplierResolved] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const defaultSectionApplied = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    if (!business?.id) {
+    if (!business?.id || isOffline) {
       setIsSupplier(false);
-      setSupplierResolved(true);
       return;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setIsSupplier(false);
-      setSupplierResolved(true);
-      return;
-    }
-    (async () => {
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+
+    void (async () => {
       try {
-        const res = await fetch(`/api/suppliers/dashboard?supplier_business_id=${business.id}`);
+        const res = await fetch(
+          `/api/suppliers/dashboard?supplier_business_id=${business.id}`,
+          { signal: controller.signal },
+        );
         if (!cancelled && res.ok) {
           const data = await res.json();
           setIsSupplier((data.stats?.active_customers || 0) > 0);
@@ -90,16 +92,20 @@ export default function MorePage() {
       } catch {
         if (!cancelled) setIsSupplier(false);
       } finally {
-        if (!cancelled) setSupplierResolved(true);
+        window.clearTimeout(timeout);
       }
     })();
+
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeout);
     };
-  }, [business?.id]);
+  }, [business?.id, isOffline]);
 
-  const menuReady =
-    snapshotLoaded && warehousesSettingLoaded && supplierResolved;
+  // Show menu once capability snapshot is ready — do not block on supplier probe or
+  // warehouses API (those refine sections in the background).
+  const menuReady = snapshotLoaded;
 
   const sections: MoreNavSection[] = useMemo(() => {
     if (!menuReady) return [];

@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
-import { handleShellNavClick } from '@/lib/navigation/app-shell-navigate';
 import {
   Search,
   User,
@@ -142,7 +140,7 @@ function DateRangeControls({
               nav_button_next: 'absolute right-1',
               table: 'w-full border-collapse space-y-1',
               head_row: 'flex',
-              head_cell: 'text-text-secondary rounded-md w-9 font-normal text-xs',
+              head_cell: 'text-text-secondary rounded-md w-9 font-normal text-[0.8rem]',
               row: 'flex w-full mt-2',
               cell: 'text-center text-sm p-0 relative [&:has([aria-selected])]:bg-slate-50 dark:[&:has([aria-selected])]:bg-primary-900/35 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-md focus-within:relative focus-within:z-20',
               day: 'h-9 w-9 p-0 font-normal aria-selected:opacity-100 text-text-primary hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md',
@@ -301,7 +299,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   showDateRange = false,
   onDateRangeChange,
 }) => {
-  useRenderLoopProbe('TopBar');
   const { setDateRange: setDateRangeFromContext } = useDateRange();
   const { business, user, logout, isPrimaryAdmin } = useAuth();
   const {
@@ -334,18 +331,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   const { isOpen: isCommandPaletteOpen, close: closeCommandPalette, open: openCommandPalette } =
     commandPalette;
   const { isDarkMode, toggleDarkMode } = useDarkMode();
-  const [isLgScreen, setIsLgScreen] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const apply = () => setIsLgScreen(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
-
-  const notificationCenter =
-    business?.id != null ? <NotificationCenter businessId={business.id} /> : null;
 
   useEffect(() => {
     if (isPrimaryAdmin) {
@@ -478,7 +463,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           ) : (
             <Link
               href="/dashboard"
-              onClick={(e) => handleShellNavClick(e, '/dashboard')}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
               aria-label="Home"
             >
@@ -500,7 +484,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             {mobileListCreate ? (
               <Link
                 href={mobileListCreate.href}
-                onClick={(e) => handleShellNavClick(e, mobileListCreate.href)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
                 aria-label={mobileListCreate.ariaLabel}
                 title={mobileListCreate.ariaLabel}
@@ -508,7 +491,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <Plus className="h-5 w-5" />
               </Link>
             ) : null}
-            {business?.id && !isLgScreen && notificationCenter}
+            {business?.id && <NotificationCenter businessId={business.id} />}
             {mobileQuickSettings.moduleMenu ? (
               <button
                 type="button"
@@ -627,7 +610,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             />
           </form>
 
-          {business?.id && isLgScreen && notificationCenter}
+          {business?.id && <NotificationCenter businessId={business.id} />}
 
           <button
             type="button"

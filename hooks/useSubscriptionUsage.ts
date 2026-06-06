@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   USAGE_NUDGE_LIMIT_TYPES,
   type UsageNudgeLimitType,
@@ -67,7 +67,7 @@ export function useSubscriptionUsage(
     void refresh();
   }, [refresh]);
 
-  const nudgeRows = rows.filter((r) => r.showNudge);
+  const nudgeRows = useMemo(() => rows.filter((r) => r.showNudge), [rows]);
 
   return { rows, nudgeRows, loading, refresh };
 }
