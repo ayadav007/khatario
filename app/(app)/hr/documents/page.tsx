@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { FileText, Loader2, Plus, Download } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { EmployeeSearchSelect } from '@/components/hr/EmployeeSearchSelect';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';

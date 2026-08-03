@@ -89,7 +89,7 @@ export default function RecruitmentHubPage() {
     <div className="space-y-6 p-4 md:p-6">
       <ListPageHeader
         title="Recruitment"
-        subtitle="Jobs, interviews, offers, and onboarding"
+        description="Jobs, interviews, offers, and onboarding"
         actions={
           <Link href="/employees/recruitment/jobs/new">
             <Button><Plus className="mr-2 h-4 w-4" /> New job</Button>

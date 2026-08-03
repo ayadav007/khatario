@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       INNER JOIN employees e ON lb.employee_id = e.id
       WHERE e.business_id = $1 AND lb.year = $2
     `;
-    const params: any[] = [businessId, parseInt(year)];
+    const params: any[] = [businessId, year];
 
     if (employeeId) {
       sql += ` AND lb.employee_id = $3`;

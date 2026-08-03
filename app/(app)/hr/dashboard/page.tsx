@@ -70,7 +70,7 @@ export default function HrDashboardPage() {
   }
 
   if (authStatus === 'denied') {
-    return <AccessDenied resource="employees" action="read" />;
+    return <AccessDenied module="employees" action="read" />;
   }
 
   if (authStatus === 'loading') {

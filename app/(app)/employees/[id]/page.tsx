@@ -440,7 +440,11 @@ export default function EmployeeDetailPage() {
             employeeId={employeeId}
             businessId={business.id}
             userId={user.id}
-            joiningDate={employee.joining_date}
+            joiningDate={
+              employee.joining_date
+                ? String(employee.joining_date).slice(0, 10)
+                : null
+            }
           />
         )}
 

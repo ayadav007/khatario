@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       try {
         await recordUpgradeBilling({
           businessId: business_id,
-          subscriptionId: null,
+          subscriptionId: undefined,
           planId: plan_id,
           planDisplayName: plan.display_name,
           moduleKey,

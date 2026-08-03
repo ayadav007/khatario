@@ -34,7 +34,6 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/period-locks': 'Period Locks',
   '/settings/subscription': 'Subscription & Billing',
   '/settings/products': 'Your products',
-  '/settings/products': 'Your products',
   '/settings/templates': 'Templates & Printing',
   '/settings/templates/customize': 'Customize Template',
   '/settings/bluetooth-printer': 'Print & devices',

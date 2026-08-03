@@ -157,7 +157,10 @@ export function parseSyntheticPermissionId(permissionId: string): {
   return null;
 }
 
-export function actionToFlag(action: string): keyof typeof RBAC_STANDARD_ACTIONS[number]['flag'] | null {
+export type RbacPermissionFlag =
+  (typeof RBAC_STANDARD_ACTIONS)[number]['flag'];
+
+export function actionToFlag(action: string): RbacPermissionFlag | null {
   const found = RBAC_STANDARD_ACTIONS.find((a) => a.key === action);
   return found ? found.flag : null;
 }

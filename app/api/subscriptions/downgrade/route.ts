@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       confirmed: true,
       scheduled_date: result.scheduled_date,
       dataImpact: result.dataImpact,
-      subscription: result.subscription,
+      subscription: 'subscription' in result ? result.subscription : undefined,
       message: result.scheduled_date
         ? `Downgrade scheduled for ${result.scheduled_date}. You'll keep your current plan until then.`
         : 'Downgrade scheduled successfully.',

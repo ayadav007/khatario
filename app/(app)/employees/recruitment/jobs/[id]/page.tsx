@@ -99,7 +99,7 @@ export default function RecruitmentJobDetailPage() {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <ListPageHeader
         title={String(job?.title ?? 'Job')}
-        subtitle={String(job?.department ?? '')}
+        description={String(job?.department ?? '')}
         actions={
           <Button onClick={() => setShowAdd(true)}>
             <Plus className="mr-2 h-4 w-4" /> Add candidate

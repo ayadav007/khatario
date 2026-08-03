@@ -325,7 +325,14 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
             ),
         ),
       );
-      setUsageData(results.filter((r): r is UsageData => r != null));
+      setUsageData(
+        results.filter((r): r is NonNullable<typeof r> => r != null).map((r) => ({
+          limit_type: r.limit_type,
+          current_count: r.current_count,
+          max_limit: r.max_limit,
+          allowed: r.allowed,
+        })),
+      );
     } catch (error) {
       console.error('Error fetching usage data:', error);
     } finally {

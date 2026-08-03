@@ -238,7 +238,11 @@ export default function AttendanceManagementPage() {
                             </div>
                             <AttendanceLogLine
                               kind="check_in"
-                              time={record.check_in_time}
+                              time={
+                                record.check_in_time
+                                  ? String(record.check_in_time)
+                                  : null
+                              }
                               lat={record.check_in_location_lat}
                               lng={record.check_in_location_lng}
                               compact
@@ -258,7 +262,11 @@ export default function AttendanceManagementPage() {
                             </div>
                             <AttendanceLogLine
                               kind="check_out"
-                              time={record.check_out_time}
+                              time={
+                                record.check_out_time
+                                  ? String(record.check_out_time)
+                                  : null
+                              }
                               lat={record.check_out_location_lat}
                               lng={record.check_out_location_lng}
                               compact

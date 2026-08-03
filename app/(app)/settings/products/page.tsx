@@ -26,7 +26,7 @@ type ModuleCard = {
   can_add: boolean;
 };
 
-export function ProductsSettingsPanel({ businessId }: { businessId: string }) {
+function ProductsSettingsPanel({ businessId }: { businessId: string }) {
   const toast = useToastContext();
   const { refresh } = useAuth();
   const searchParams = useSearchParams();

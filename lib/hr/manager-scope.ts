@@ -169,20 +169,22 @@ export async function wouldCreateReportingCycle(
   if (!newManagerId) return false;
   if (newManagerId === employeeId) return true;
 
-  let current: string | null = newManagerId;
+  let walker: string = newManagerId;
   const visited = new Set<string>();
   const maxDepth = 500;
 
-  for (let i = 0; i < maxDepth && current; i++) {
-    if (current === employeeId) return true;
-    if (visited.has(current)) return true;
-    visited.add(current);
+  for (let i = 0; i < maxDepth; i++) {
+    if (walker === employeeId) return true;
+    if (visited.has(walker)) return true;
+    visited.add(walker);
 
     const row = await queryOne<{ reporting_manager_id: string | null }>(
       `SELECT reporting_manager_id FROM employees WHERE id = $1 AND business_id = $2`,
-      [current, businessId]
+      [walker, businessId],
     );
-    current = row?.reporting_manager_id ?? null;
+    const nextManager = row?.reporting_manager_id ?? null;
+    if (!nextManager) return false;
+    walker = nextManager;
   }
 
   return false;

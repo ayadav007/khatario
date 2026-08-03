@@ -184,12 +184,24 @@ export function EmployeePortalLeaveHub() {
 
       {tab === 'stats' && (
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <SimpleBarChart title="Weekly pattern" items={data.insights.weekly_pattern} />
+          <SimpleBarChart
+            title="Weekly pattern"
+            items={data.insights.weekly_pattern.map((x) => ({
+              label: x.day,
+              value: x.count,
+            }))}
+          />
           <HorizontalBarChart
             title="Consumed leave types"
             items={data.insights.consumed_by_type.map((x) => ({ label: x.name, value: x.days }))}
           />
-          <SimpleBarChart title="Monthly stats" items={data.insights.monthly_stats} />
+          <SimpleBarChart
+            title="Monthly stats"
+            items={data.insights.monthly_stats.map((x) => ({
+              label: x.month,
+              value: x.days,
+            }))}
+          />
         </div>
       )}
 

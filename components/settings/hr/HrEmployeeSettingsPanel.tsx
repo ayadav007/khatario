@@ -100,10 +100,15 @@ export function HrEmployeeSettingsPanel() {
           </div>
         </div>
         <SettingsToggleRow
-          label="Auto-confirm when probation ends"
+          title="Auto-confirm when probation ends"
           description="Otherwise HR must confirm manually"
           checked={settings.probation_auto_confirm}
-          onChange={(checked) => setSettings({ ...settings, probation_auto_confirm: checked })}
+          onToggle={() =>
+            setSettings({
+              ...settings,
+              probation_auto_confirm: !settings.probation_auto_confirm,
+            })
+          }
         />
       </section>
 
@@ -154,19 +159,34 @@ export function HrEmployeeSettingsPanel() {
       <section className="space-y-3">
         <h3 className="settings-section-title">Portal visibility</h3>
         <SettingsToggleRow
-          label="Show new joiners"
+          title="Show new joiners"
+          description="Highlight recent joiners on the HR dashboard"
           checked={settings.show_new_joiners}
-          onChange={(checked) => setSettings({ ...settings, show_new_joiners: checked })}
+          onToggle={() =>
+            setSettings({ ...settings, show_new_joiners: !settings.show_new_joiners })
+          }
         />
         <SettingsToggleRow
-          label="Show work anniversaries"
+          title="Show work anniversaries"
+          description="Highlight work anniversaries on the HR dashboard"
           checked={settings.show_work_anniversaries}
-          onChange={(checked) => setSettings({ ...settings, show_work_anniversaries: checked })}
+          onToggle={() =>
+            setSettings({
+              ...settings,
+              show_work_anniversaries: !settings.show_work_anniversaries,
+            })
+          }
         />
         <SettingsToggleRow
-          label="Show department heads"
+          title="Show department heads"
+          description="Show department head cards on the HR dashboard"
           checked={settings.show_department_heads}
-          onChange={(checked) => setSettings({ ...settings, show_department_heads: checked })}
+          onToggle={() =>
+            setSettings({
+              ...settings,
+              show_department_heads: !settings.show_department_heads,
+            })
+          }
         />
       </section>
 

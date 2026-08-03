@@ -91,7 +91,7 @@ export default function NewRecruitmentJobPage() {
   return (
     <div className="space-y-6 p-4 md:p-6">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      <ListPageHeader title="New job" subtitle="Define custom interview rounds for this role" />
+      <ListPageHeader title="New job" description="Define custom interview rounds for this role" />
       <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4">
         <Card className="space-y-4 p-4">
           <Input label="Job title" value={title} onChange={(e) => setTitle(e.target.value)} required />

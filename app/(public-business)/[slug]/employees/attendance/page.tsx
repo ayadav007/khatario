@@ -84,7 +84,6 @@ export default function EmployeePortalAttendancePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employee_id: session.employee.id,
-          session_token: session.token,
           location_lat: location?.lat,
           location_lng: location?.lng,
         }),

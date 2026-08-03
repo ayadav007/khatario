@@ -40,7 +40,7 @@ export async function POST(
         bottom: `${m.bottom}mm`,
         left: `${m.left}mm`,
       });
-      return new NextResponse(pdf, {
+      return new NextResponse(new Uint8Array(pdf), {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="${template.name.replace(/\s+/g, '-')}.pdf"`,
