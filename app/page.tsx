@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
@@ -21,14 +21,23 @@ import { LandingTrustStrip } from '@/components/marketing/landing/LandingTrustSt
 import { LandingWalkthrough } from '@/components/marketing/landing/LandingWalkthrough';
 import { LandingWhoItsFor } from '@/components/marketing/landing/LandingWhoItsFor';
 import { LandingScrollTrialModal } from '@/components/marketing/landing/LandingScrollTrialModal';
+import { LandingProductPicker } from '@/components/marketing/landing/LandingProductPicker';
+import { LandingScrollProgress } from '@/components/marketing/landing/LandingScrollProgress';
+import { LandingMobileCta } from '@/components/marketing/landing/LandingMobileCta';
+import {
+  LandingProductProvider,
+  readProductLineFromSearchParam,
+} from '@/components/marketing/landing/LandingProductContext';
 
-export default function LandingPage() {
+function LandingPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [isNativeApp] = useState(() => isCapacitorNative());
   const [plans, setPlans] = useState<LandingPricingPlan[]>([]);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(true);
+  const initialProductLine = readProductLineFromSearchParam(searchParams.get('product'));
 
   useEffect(() => {
     if (!isNativeApp || authLoading) return;
@@ -61,29 +70,48 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <MarketingSiteHeader />
+    <LandingProductProvider initialProductLine={initialProductLine}>
+      <div className="min-h-screen bg-white pb-20 md:pb-0">
+        <LandingScrollProgress />
+        <MarketingSiteHeader />
 
-      <LandingHero />
-      <LandingSocialProof />
-      <LandingConnectedSupply />
-      <LandingProblemSolution />
-      <LandingWhoItsFor />
-      <LandingScenarios />
-      <LandingWalkthrough />
-      <LandingKeyFeatures />
-      <LandingComparison />
-      <LandingTestimonials />
-      <LandingTrustStrip />
-      <LandingPricing
-        plans={plans}
-        loading={loading}
-        billingCycle={billingCycle}
-        onBillingCycle={setBillingCycle}
-      />
-      <LandingFinalCta />
-      <LandingFooter />
-      <LandingScrollTrialModal />
-    </div>
+        <LandingProductPicker />
+        <LandingHero />
+        <LandingSocialProof />
+        <LandingConnectedSupply />
+        <LandingProblemSolution />
+        <LandingWhoItsFor />
+        <LandingScenarios />
+        <LandingWalkthrough />
+        <LandingKeyFeatures />
+        <LandingComparison />
+        <LandingTestimonials />
+        <LandingTrustStrip />
+        <LandingPricing
+          plans={plans}
+          loading={loading}
+          billingCycle={billingCycle}
+          onBillingCycle={setBillingCycle}
+        />
+        <LandingFinalCta />
+        <LandingFooter />
+        <LandingScrollTrialModal />
+        <LandingMobileCta />
+      </div>
+    </LandingProductProvider>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white">
+          <Loader2 className="h-8 w-8 animate-spin text-primary-600" aria-label="Loading" />
+        </div>
+      }
+    >
+      <LandingPageContent />
+    </Suspense>
   );
 }

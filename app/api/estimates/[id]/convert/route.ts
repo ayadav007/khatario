@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db';
+import { getPool, queryOne } from '@/lib/db';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { FeatureKeys } from '@/lib/featureKeys';
+import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +23,40 @@ export async function POST(
 
   try {
     const estimateId = params.id;
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const estimateMeta = await queryOne<{ business_id: string }>(
+      'SELECT business_id FROM estimates WHERE id = $1',
+      [estimateId],
+    );
+    if (!estimateMeta) {
+      return NextResponse.json({ error: 'Estimate not found' }, { status: 404 });
+    }
+
+    try {
+      await authorize(userId, 'invoices', 'create', {
+        businessId: estimateMeta.business_id,
+      });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
+    try {
+      await enforceAccess({
+        userId,
+        businessId: estimateMeta.business_id,
+        feature: FeatureKeys.ESTIMATES_QUOTATIONS,
+      });
+    } catch (error) {
+      const denied = enforceAccessErrorResponse(error);
+      if (denied) return denied;
+      throw error;
+    }
+
     const body = await request.json();
     const { invoice_number, invoice_date, due_date, created_by } = body;
 

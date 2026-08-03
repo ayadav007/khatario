@@ -3,6 +3,8 @@ import { queryRows } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/fixed-assets/depreciation-schedule
  * Get depreciation schedule
@@ -10,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const assetId = searchParams.get('asset_id');
     const financialYear = searchParams.get('financial_year');
 

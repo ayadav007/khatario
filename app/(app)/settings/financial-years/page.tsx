@@ -4,13 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CalendarRange, Loader2, Plus } from 'lucide-react';
+import { CalendarRange, Loader2, Plus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface FinancialYear {
   id: string;
@@ -127,38 +127,22 @@ export default function FinancialYearsSettingsPage() {
   };
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-      <div>
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1 text-sm text-text-secondary hover:text-primary-600 mb-3"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Settings
-        </Link>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-              <CalendarRange className="w-7 h-7 text-primary-600" />
-              Financial years
-            </h1>
-            <p className="text-sm text-text-secondary mt-1 max-w-xl">
-              Define each accounting period for your business (for example April–March). Reports like closing stock,
-              GST, and year-end summaries use these periods.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={applySuggestedIndianFY}>
-              Use current Indian FY (Apr–Mar)
-            </Button>
-            <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add financial year
-            </Button>
-          </div>
+    <SettingsPageShell
+      title="Financial years"
+      description="Define each accounting period for your business (for example April–March). Reports like closing stock, GST, and year-end summaries use these periods."
+      icon={CalendarRange}
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={applySuggestedIndianFY}>
+            Use current Indian FY (Apr–Mar)
+          </Button>
+          <Button type="button" size="sm" onClick={() => setShowForm((v) => !v)}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add financial year
+          </Button>
         </div>
-      </div>
-
+      }
+    >
       {showForm && (
         <Card>
           <h2 className="text-lg font-semibold text-text-primary mb-4">New financial year</h2>
@@ -267,6 +251,6 @@ export default function FinancialYearsSettingsPage() {
         </Link>{' '}
         and choose the same year label you added here.
       </p>
-    </div>
+    </SettingsPageShell>
   );
 }

@@ -62,7 +62,7 @@ const PROGRESS_SAME_PHASE_MS = 3_000;
 
 export function CatalogSyncProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('CatalogSyncProvider');
-  const { business, user } = useAuth();
+  const { business, user, loading: authLoading } = useAuth();
   const { currentBranchId } = useBranch();
   const { isOnline } = useNetworkStatus();
   const [status, setStatus] = React.useState<CatalogStatus | null>(null);
@@ -214,7 +214,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
   }, [refreshStatus]);
 
   useEffect(() => {
-    if (!scope || !isOnline || !user?.id) return;
+    if (authLoading || !scope || !isOnline || !user?.id) return;
     const bootKey = `${scope.businessId}:${scope.userId}`;
     if (bootScopeKeyRef.current === bootKey) return;
     bootScopeKeyRef.current = bootKey;
@@ -223,7 +223,7 @@ export function CatalogSyncProvider({ children }: { children: React.ReactNode })
       const current = await withSqliteLabel('catalog-sync/boot', () => getCatalogStatus(scope));
       await runSyncRef.current(current.ready ? 'delta' : 'full');
     })();
-  }, [scope?.businessId, scope?.userId, user?.id, isOnline]);
+  }, [authLoading, scope?.businessId, scope?.userId, user?.id, isOnline]);
 
   useEffect(() => {
     if (!scope) {

@@ -3,10 +3,14 @@ import { query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const documentType = searchParams.get('document_type') || 'tax_invoice';
 
     if (!businessId) {

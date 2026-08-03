@@ -5,6 +5,17 @@ import { Employee } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { wouldCreateReportingCycle } from '@/lib/hr/manager-scope';
+import {
+  filterFieldsByPermission,
+  rejectRestrictedFieldUpdates,
+} from '@/lib/field-permission-filter';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+  assertPortalOwnResource,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +30,13 @@ export async function GET(
   try {
     const employeeId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const actor = await resolveActorContext(request);
+    let businessId = getBusinessIdFromRequest(request);
+    let userId = getUserIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+      userId = actor.userId;
+    }
 
     if (!businessId) {
       return NextResponse.json(
@@ -34,6 +50,17 @@ export async function GET(
         { error: 'user_id is required for authorization' },
         { status: 400 }
       );
+    }
+
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'profile');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+      const forbidden = assertPortalOwnResource(actor, employeeId);
+      if (forbidden) return forbidden;
     }
 
     // AUTHORIZATION: Employee self-service - allow if user is accessing own profile OR has permission
@@ -92,7 +119,9 @@ export async function GET(
       [employeeId]
     );
 
-    return NextResponse.json({ employee, documents });
+    const filteredEmployee = await filterFieldsByPermission(employee, userId, 'employees');
+
+    return NextResponse.json({ employee: filteredEmployee, documents });
   } catch (error: any) {
     console.error('Error fetching employee:', error);
     return NextResponse.json(
@@ -154,6 +183,21 @@ export async function PATCH(
       throw error;
     }
 
+    const { rejected: restrictedFields } = await rejectRestrictedFieldUpdates(
+      updated_by_user_id,
+      'employees',
+      body
+    );
+    if (restrictedFields.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'You do not have permission to update restricted employee fields',
+          fields: restrictedFields,
+        },
+        { status: 403 }
+      );
+    }
+
     const {
       name,
       email,
@@ -175,6 +219,14 @@ export async function PATCH(
       bank_name,
       pan_number,
       aadhaar_number,
+      uan,
+      esi_ip_number,
+      pf_account_no,
+      pf_applicable,
+      esi_applicable,
+      default_shift_id,
+      branch_id,
+      weekly_off_override,
       is_active,
       role_id,
     } = body;
@@ -208,9 +260,16 @@ export async function PATCH(
         }
       }
       if (password) {
-        const passwordHash = await bcrypt.hash(password, 10);
+        const { validateEmployeePortalPassword } = await import('@/lib/employee-portal/password');
+        const validation = validateEmployeePortalPassword(String(password));
+        if (!validation.ok) {
+          return NextResponse.json({ error: validation.error }, { status: 400 });
+        }
+        const passwordHash = await bcrypt.hash(String(password).trim(), 10);
         userUpdates.push(`password_hash = $${paramIndex++}`);
         userParams.push(passwordHash);
+        userUpdates.push(`must_change_password = $${paramIndex++}`);
+        userParams.push(true);
       }
 
       if (userUpdates.length > 0) {
@@ -258,13 +317,37 @@ export async function PATCH(
       employeeUpdates.push(`department = $${paramIndex++}`);
       employeeParams.push(department || null);
     }
+    if (default_shift_id !== undefined) {
+      employeeUpdates.push(`default_shift_id = $${paramIndex++}`);
+      employeeParams.push(default_shift_id || null);
+    }
+    if (branch_id !== undefined) {
+      employeeUpdates.push(`branch_id = $${paramIndex++}`);
+      employeeParams.push(branch_id || null);
+    }
+    if (weekly_off_override !== undefined) {
+      employeeUpdates.push(`weekly_off_override = $${paramIndex++}::jsonb`);
+      employeeParams.push(
+        weekly_off_override ? JSON.stringify(weekly_off_override) : null,
+      );
+    }
     if (joining_date !== undefined) {
       employeeUpdates.push(`joining_date = $${paramIndex++}`);
       employeeParams.push(joining_date || null);
     }
     if (reporting_manager_id !== undefined) {
+      const newManagerId = reporting_manager_id || null;
+      if (newManagerId) {
+        const cycle = await wouldCreateReportingCycle(businessId, employeeId, newManagerId);
+        if (cycle) {
+          return NextResponse.json(
+            { error: 'Invalid reporting manager: would create a cycle in the org hierarchy' },
+            { status: 400 }
+          );
+        }
+      }
       employeeUpdates.push(`reporting_manager_id = $${paramIndex++}`);
-      employeeParams.push(reporting_manager_id || null);
+      employeeParams.push(newManagerId);
     }
     if (employment_type) {
       employeeUpdates.push(`employment_type = $${paramIndex++}`);
@@ -318,6 +401,26 @@ export async function PATCH(
       employeeUpdates.push(`aadhaar_number = $${paramIndex++}`);
       employeeParams.push(aadhaar_number || null);
     }
+    if (uan !== undefined) {
+      employeeUpdates.push(`uan = $${paramIndex++}`);
+      employeeParams.push(uan ? String(uan).trim() : null);
+    }
+    if (esi_ip_number !== undefined) {
+      employeeUpdates.push(`esi_ip_number = $${paramIndex++}`);
+      employeeParams.push(esi_ip_number ? String(esi_ip_number).trim() : null);
+    }
+    if (pf_account_no !== undefined) {
+      employeeUpdates.push(`pf_account_no = $${paramIndex++}`);
+      employeeParams.push(pf_account_no ? String(pf_account_no).trim() : null);
+    }
+    if (pf_applicable !== undefined) {
+      employeeUpdates.push(`pf_applicable = $${paramIndex++}`);
+      employeeParams.push(!!pf_applicable);
+    }
+    if (esi_applicable !== undefined) {
+      employeeUpdates.push(`esi_applicable = $${paramIndex++}`);
+      employeeParams.push(!!esi_applicable);
+    }
     if (is_active !== undefined) {
       employeeUpdates.push(`is_active = $${paramIndex++}`);
       employeeParams.push(is_active);
@@ -348,7 +451,11 @@ export async function PATCH(
       [employeeId]
     );
 
-    return NextResponse.json({ employee: updatedEmployee });
+    const filteredEmployee = updatedEmployee
+      ? await filterFieldsByPermission(updatedEmployee, updated_by_user_id, 'employees')
+      : null;
+
+    return NextResponse.json({ employee: filteredEmployee });
   } catch (error: any) {
     console.error('Error updating employee:', error);
     return NextResponse.json(

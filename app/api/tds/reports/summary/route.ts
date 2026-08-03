@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,19 +8,11 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/reports/summary
  * Get TDS summary report
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const financialYear = searchParams.get('financial_year');
     const quarter = searchParams.get('quarter');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     let sql = `
       SELECT 
@@ -66,9 +59,9 @@ export async function GET(request: NextRequest) {
         ${quarter ? `AND t.quarter = $3` : ''}
       GROUP BY t.section_code, tc.section_name
       ORDER BY total_amount DESC
-    `, financialYear && quarter 
+    `, financialYear && quarter
       ? [businessId, financialYear, quarter]
-      : financialYear 
+      : financialYear
         ? [businessId, financialYear]
         : [businessId]);
 
@@ -83,5 +76,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});

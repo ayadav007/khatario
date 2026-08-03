@@ -50,6 +50,8 @@ export interface Business {
   business_type?: 'retail' | 'wholesaler' | 'distributor' | 'manufacturer' | 'service' | 'other';
   industry?: 'pharmaceuticals' | 'textiles' | 'garments' | 'electronics' | 'food_beverages' | 'automotive' | 'construction' | 'services' | 'other';
   business_model?: 'b2b' | 'b2c' | 'b2b2c' | 'export' | 'mixed';
+  product_line?: 'billing' | 'hr' | 'connect';
+  primary_module?: 'billing' | 'hr' | 'connect' | 'crm';
   iec_code?: string; // Import Export Code - Mandatory for exporters
   swift_code?: string; // SWIFT/BIC code for international wire transfers
   created_at: Date;
@@ -95,6 +97,14 @@ export interface Employee {
   bank_name?: string;
   pan_number?: string;
   aadhaar_number?: string;
+  uan?: string | null;
+  esi_ip_number?: string | null;
+  pf_account_no?: string | null;
+  pf_applicable?: boolean;
+  esi_applicable?: boolean;
+  default_shift_id?: string;
+  branch_id?: string | null;
+  weekly_off_override?: unknown;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -119,6 +129,8 @@ export interface Shift {
   start_time: string; // TIME format
   end_time: string; // TIME format
   break_duration: number; // minutes
+  description?: string | null;
+  deduct_break_from_hours?: boolean;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -421,6 +433,12 @@ export interface SalaryPayment {
   loan_deduction: number;
   other_deductions: number;
   total_deductions: number;
+  employer_provident_fund?: number;
+  esi_employee?: number;
+  esi_employer?: number;
+  pf_wage?: number | null;
+  esi_wage?: number | null;
+  statutory_breakdown?: unknown;
   gross_salary: number;
   net_salary: number;
   payment_mode?: string;
@@ -475,6 +493,7 @@ export interface AdvanceRecovery {
   salary_payment_id?: string;
   recovery_amount: number;
   recovery_date: Date;
+  recovery_note?: string | null;
   created_at: Date;
   // Joined fields
   advance?: SalaryAdvance;
@@ -796,6 +815,8 @@ export interface Item {
   weight_barcode_mode?: 'weight' | 'price';
   /** null = use business default; false = block; true = allow oversell on invoices */
   allow_sale_when_out_of_stock?: boolean | null;
+  /** Visible in the public online store */
+  show_in_store?: boolean;
   created_at: Date;
   updated_at: Date;
 }

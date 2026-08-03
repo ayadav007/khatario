@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { getWhatsAppStatus } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -9,28 +9,14 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/campaigns
  * List campaigns for a business with optional search, status filter, and pagination
  */
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const businessId = searchParams.get('business_id');
     const search = (searchParams.get('search') || '').trim();
     const status = searchParams.get('status') || 'all';
     const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10) || 20, 1), 500);
     const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
     
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check subscription
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
-
     const baseWhere = 'WHERE business_id = $1';
     const listParams: any[] = [businessId];
     let p = 2;
@@ -81,21 +67,20 @@ export async function GET(request: NextRequest) {
     console.error('Error listing campaigns:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});
 /**
  * POST /api/whatsapp/campaigns
  * Create a new campaign
  */
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
     const contentType = request.headers.get('content-type') || '';
-    let body: any;
+    let payload: any;
 
     // Handle FormData (for image uploads)
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
-      body = {
+      payload = {
         business_id: formData.get('business_id') as string,
         name: formData.get('name') as string,
         message_type: formData.get('message_type') as string,
@@ -111,11 +96,10 @@ export async function POST(request: NextRequest) {
         daily_send_limit: formData.get('daily_send_limit') ? parseInt(formData.get('daily_send_limit') as string) : null,
       };
     } else {
-      // Handle JSON
-      body = await request.json();
+      // Handle JSON (parseJsonBody already consumed body for standard JSON posts)
+      payload = body;
     }
     const {
-      business_id,
       name,
       message_type,
       message_text,
@@ -129,23 +113,15 @@ export async function POST(request: NextRequest) {
       batch_size = 20,
       pause_between_batches = 120,
       daily_send_limit,
-    } = body;
+    } = payload ?? {};
 
-    if (!business_id || !name || !message_text || !recipients || !Array.isArray(recipients)) {
+    if (!name || !message_text || !recipients || !Array.isArray(recipients)) {
       return NextResponse.json(
-        { error: 'Missing required fields: business_id, name, message_text, recipients' },
+        { error: 'Missing required fields: businessId, name, message_text, recipients' },
         { status: 400 }
       );
     }
 
-    // Check subscription
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     // Validate recipients
     const validRecipients = recipients.filter((r: any) => r.phone && r.phone.length >= 9 && r.phone.length <= 15);
@@ -165,7 +141,7 @@ export async function POST(request: NextRequest) {
       const unsubscribesResult = await query(`
         SELECT phone FROM whatsapp_unsubscribes 
         WHERE business_id = $1 AND phone = ANY($2)
-      `, [business_id, phones]);
+      `, [businessId, phones]);
       
       const unsubscribedPhones = new Set(unsubscribesResult.rows.map((r: any) => r.phone));
       unsubscribedCount = unsubscribedPhones.size;
@@ -187,7 +163,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Extract scheduled_at if provided
-    const scheduled_at = body.scheduled_at ? new Date(body.scheduled_at) : null;
+    const scheduled_at = payload?.scheduled_at ? new Date(payload.scheduled_at) : null;
     
     // Handle media URL and type
     let finalMediaUrl = media_url || null;
@@ -197,15 +173,15 @@ export async function POST(request: NextRequest) {
     if ((message_type === 'image' || message_type === 'button') && finalMediaUrl) {
       // Media URL provided (from media library)
       finalMediaType = 'image';
-    } else if ((message_type === 'image' || message_type === 'button') && body.image && body.image instanceof File) {
+    } else if ((message_type === 'image' || message_type === 'button') && payload?.image && payload.image instanceof File) {
       // File upload (legacy support - but should use media library)
       try {
         // Convert file to base64 data URL (similar to /api/upload/image)
-        const bytes = await body.image.arrayBuffer();
+        const bytes = await payload.image.arrayBuffer();
         const buffer = Buffer.from(bytes);
         const base64 = buffer.toString('base64');
-        finalMediaUrl = `data:${body.image.type};base64,${base64}`;
-        finalMediaType = body.image.type.startsWith('image/') ? 'image' : 'document';
+        finalMediaUrl = `data:${payload.image.type};base64,${base64}`;
+        finalMediaType = payload.image.type.startsWith('image/') ? 'image' : 'document';
       } catch (error: any) {
         console.error('[Campaign API] Error processing image file:', error);
         return NextResponse.json(
@@ -226,7 +202,7 @@ export async function POST(request: NextRequest) {
     
     if (!scheduled_at) {
       // Check WhatsApp connection before auto-starting
-      const whatsappStatus = await getWhatsAppStatus(business_id);
+      const whatsappStatus = await getWhatsAppStatus(businessId);
       if (whatsappStatus.status === 'connected') {
         initialStatus = 'running';
         shouldAutoStart = true;
@@ -251,7 +227,7 @@ export async function POST(request: NextRequest) {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING id
       `, [
-        business_id,
+        businessId,
         name,
         message_type || 'text',
         message_text,
@@ -325,5 +301,5 @@ export async function POST(request: NextRequest) {
     console.error('Error creating campaign:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 

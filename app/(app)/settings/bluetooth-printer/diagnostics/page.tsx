@@ -3,11 +3,10 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Activity, Copy, Check } from 'lucide-react';
+import { Activity, Copy, Check } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { collectPrinterRuntimeDiagnostics } from '@/lib/printer/runtime';
 import { BleVsClassicHelp } from '@/components/printer/BleVsClassicHelp';
 
@@ -56,24 +55,11 @@ export default function BluetoothPrinterDiagnosticsPage() {
       : 'Browser / PWA';
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-      <div>
-        <Link
-          href="/settings/bluetooth-printer"
-          className="text-sm text-text-secondary hover:underline inline-flex items-center gap-1 mb-2"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to Print & devices
-        </Link>
-        <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3">
-          <Activity className="w-6 h-6 text-text-muted" />
-          Printer diagnostics
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Runtime details for support. Share this screen when Bluetooth printing
-          fails on a device.
-        </p>
-      </div>
-
+    <SettingsPageShell
+      title="Printer diagnostics"
+      description="Runtime details for support. Share this screen when Bluetooth printing fails on a device."
+      icon={Activity}
+    >
       <Card padding="md">
         <div className="flex justify-end mb-3">
           <Button variant="secondary" size="sm" onClick={handleCopy}>
@@ -156,6 +142,6 @@ export default function BluetoothPrinterDiagnosticsPage() {
       <Card padding="md">
         <BleVsClassicHelp />
       </Card>
-    </div>
+    </SettingsPageShell>
   );
 }

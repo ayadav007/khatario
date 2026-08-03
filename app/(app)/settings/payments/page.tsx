@@ -5,10 +5,11 @@ export const dynamic = 'force-dynamic';
 import { PaymentProvidersSettings } from '@/components/settings/PaymentProvidersSettings';
 import { ManualPaymentMethodsSettings } from '@/components/settings/manual-payments/ManualPaymentMethodsSettings';
 import { useAuth } from '@/contexts/AuthContext';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { CreditCard } from 'lucide-react';
 
 export default function PaymentProvidersSettingsPage() {
   const { business, user } = useAuth();
@@ -84,14 +85,11 @@ export default function PaymentProvidersSettingsPage() {
   }
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Payments</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Configure automatic gateways and manual payment methods in one place.
-        </p>
-      </div>
-
+    <SettingsPageShell
+      title="Payments"
+      description="Configure automatic gateways and manual payment methods in one place."
+      icon={CreditCard}
+    >
       <div className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-text-primary">
@@ -156,6 +154,6 @@ export default function PaymentProvidersSettingsPage() {
         </div>
         <ManualPaymentMethodsSettings businessId={business?.id ?? null} userId={user?.id ?? null} />
       </div>
-    </div>
+    </SettingsPageShell>
   );
 }

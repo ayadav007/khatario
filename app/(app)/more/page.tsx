@@ -20,13 +20,16 @@ import {
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { buildMoreMenuSections, type MoreNavSection } from '@/lib/more-navigation';
+import { MORE_SECTION_QUERY_KEY } from '@/lib/navigation/more-menu-back';
 import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
+import { MobileAccountCard } from '@/components/layout/MobileAccountCard';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   Supplier: Store,
@@ -59,7 +62,8 @@ function sectionIconBg(title: string): string {
 }
 
 export default function MorePage() {
-  const { logout, business } = useAuth();
+  const searchParams = useSearchParams();
+  const { logout, business, platformSession } = useAuth();
   const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
   const { isOffline } = useNetworkStatus();
   const { hasCapability } = useCapabilityCheck();
@@ -107,22 +111,36 @@ export default function MorePage() {
   // warehouses API (those refine sections in the background).
   const menuReady = snapshotLoaded;
 
+  const enabledModules = platformSession?.enabledModules ?? ['billing'];
+
   const sections: MoreNavSection[] = useMemo(() => {
     if (!menuReady) return [];
     return buildMoreMenuSections({
       isSupplier,
       warehousesEnabled: !!warehousesEnabled,
       hasCapability,
+      enabledModules,
     });
-  }, [menuReady, isSupplier, warehousesEnabled, hasCapability]);
+  }, [menuReady, isSupplier, warehousesEnabled, hasCapability, enabledModules]);
 
-  // Default once: expand Sales (like reference) or first section — do not reset when user collapses all
+  // Expand section from ?section= query (mobile back from a More menu page)
+  useEffect(() => {
+    const section = searchParams.get(MORE_SECTION_QUERY_KEY);
+    if (!section) return;
+    defaultSectionApplied.current = true;
+    setOpenSection(section);
+  }, [searchParams]);
+
+  // Default once: expand Sales (billing), HR (hr-only), or first section
   useEffect(() => {
     if (!sections.length || defaultSectionApplied.current) return;
     defaultSectionApplied.current = true;
-    const preferred = sections.find((s) => s.title === 'Sales');
+    const hrOnly =
+      enabledModules.includes('hr') && !enabledModules.includes('billing');
+    const preferredTitle = hrOnly ? 'HR & Employees' : 'Sales';
+    const preferred = sections.find((s) => s.title === preferredTitle);
     setOpenSection(preferred?.title ?? sections[0].title);
-  }, [sections]);
+  }, [sections, enabledModules]);
 
   const toggleSection = (title: string) => {
     setOpenSection((prev) => (prev === title ? null : title));
@@ -137,6 +155,8 @@ export default function MorePage() {
         </div>
       ) : (
         <>
+          <MobileAccountCard className="mb-6 lg:hidden" />
+
           <div>
             <h2 className="text-lg font-bold text-text-primary mb-2">My Business</h2>
 

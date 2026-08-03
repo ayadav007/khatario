@@ -10,7 +10,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface Location {
   id: string;
@@ -243,13 +243,11 @@ export default function LocationsPage() {
   }
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Warehouses</h1>
-            <p className="text-text-secondary text-sm mt-1">Manage multiple warehouses and godowns</p>
-          </div>
+      <SettingsPageShell
+        title="Warehouses"
+        description="Manage multiple warehouses and godowns"
+        icon={MapPin}
+        actions={
           <button
             onClick={() => router.push('/settings/warehouses/new')}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
@@ -257,7 +255,8 @@ export default function LocationsPage() {
             <Plus className="w-5 h-5" />
             <span>Add Warehouse</span>
           </button>
-        </div>
+        }
+      >
 
         {/* Enterprise Feature Banner */}
         <div className="bg-gradient-to-r from-purple-50 to-slate-50 border border-purple-200 rounded-lg p-4">
@@ -430,8 +429,7 @@ export default function LocationsPage() {
             }}
           />
         )}
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

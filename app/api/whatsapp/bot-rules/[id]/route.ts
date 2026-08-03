@@ -7,31 +7,13 @@ export const dynamic = 'force-dynamic';
  * DELETE - Delete bot rule
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { query, queryOne, queryRows } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const ruleId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const rule = await queryOne(
       `SELECT id, name, category, trigger_type, trigger_value, trigger_conditions,
@@ -61,34 +43,19 @@ export async function GET(
     console.error('Error fetching bot rule:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const ruleId = params.id;
-    const body = await request.json();
-    const { business_id, ...updates } = body;
+    const { ...updates } = (body ?? {}) as Record<string, any>;
 
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
 
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     // Verify rule belongs to business
     const existingRule = await queryOne(
       `SELECT id FROM whatsapp_bot_rules WHERE id = $1 AND business_id = $2`,
-      [ruleId, business_id]
+      [ruleId, businessId]
     );
 
     if (!existingRule) {
@@ -158,7 +125,7 @@ export async function PATCH(
     }
 
     updateFields.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(ruleId, business_id);
+    values.push(ruleId, businessId);
 
     const rule = await queryOne(
       `UPDATE whatsapp_bot_rules 
@@ -173,29 +140,11 @@ export async function PATCH(
     console.error('Error updating bot rule:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const ruleId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     // Verify rule belongs to business
     const rule = await queryOne(
@@ -218,5 +167,4 @@ export async function DELETE(
     console.error('Error deleting bot rule:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

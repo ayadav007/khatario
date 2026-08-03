@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Building2,
   Check,
@@ -15,6 +16,11 @@ import {
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
+import {
+  normalizeProductLine,
+  PRODUCT_LINE_LABELS,
+  type ProductLine,
+} from '@/lib/product-lines';
 
 const fieldShell =
   '[&_input]:rounded-lg [&_input]:border-slate-200 [&_input]:bg-white [&_input]:py-3 [&_input]:shadow-none ' +
@@ -29,9 +35,71 @@ const selectClassName = clsx(
 const labelClass =
   'mb-1.5 block text-sm font-medium text-slate-800 dark:text-slate-200';
 
-export default function SignupPage() {
+const SIGNUP_COPY: Record<
+  ProductLine,
+  { title: string; subtitle: string; benefits: string[]; cta: string; illustration: string }
+> = {
+  billing: {
+    title: 'What can you do with Khatario Billing?',
+    subtitle:
+      'Everything you need to run billing and operations for an Indian business—without juggling five different tools.',
+    benefits: [
+      'Create GST-ready invoices, estimates, and e-way aligned documents',
+      'Manage customers, suppliers, items, and stock in one place',
+      'Multi-branch and roles when your team grows',
+      'Purchase bills, expenses, and payment tracking built in',
+      'Reports for sales, GST, and inventory at a glance',
+      'WhatsApp and email options for faster collections',
+      'Secure cloud access—work from office or field',
+      'Start with a free trial, then stay on Free or upgrade anytime',
+    ],
+    cta: 'Start my free trial',
+    illustration: 'Your team, invoices, and inventory—in one dashboard',
+  },
+  hr: {
+    title: 'What can you do with Khatario HR?',
+    subtitle:
+      'Employee records, attendance, payroll, and leave—without buying the full billing suite.',
+    benefits: [
+      'Employee master with departments and designations',
+      'Daily attendance and shift tracking',
+      'Payroll, payslips, and salary payments (HR Pro)',
+      'Leave requests and holiday calendar',
+      'Employee self-service portal for your team',
+      'Role-based access for HR admins and managers',
+      '30-day trial with full HR Pro features',
+      'Upgrade to Starter (attendance) or Pro (payroll) after trial',
+    ],
+    cta: 'Start HR trial',
+    illustration: 'Your team, attendance, and payroll—in one place',
+  },
+  connect: {
+    title: 'What can you do with Khatario Connect?',
+    subtitle:
+      'WhatsApp CRM and messaging—no platform fee. Pay only for the add-ons you enable.',
+    benefits: [
+      'Free Connect account — no monthly platform charge',
+      'WhatsApp Bot add-on: conversations, rules, automation',
+      'Send Message add-on: text, buttons, and media',
+      'CRM-style customer threads and labeling',
+      'Team users and WhatsApp settings included',
+      'Add billing later from the same account if you grow',
+      'Secure cloud access from phone or desktop',
+      'Enable add-ons when you are ready — no lock-in',
+    ],
+    cta: 'Create free Connect account',
+    illustration: 'WhatsApp conversations and automation—in one inbox',
+  },
+};
+
+function SignupPageContent() {
+  const searchParams = useSearchParams();
+  const productLine = normalizeProductLine(searchParams.get('product'));
+  const copy = SIGNUP_COPY[productLine];
+  const productLabel = PRODUCT_LINE_LABELS[productLine];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -54,20 +122,22 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setErrorCode(null);
 
     try {
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-        // Required so the browser stores Set-Cookie from the signup response (session JWTs).
+        body: JSON.stringify({ ...formData, productLine }),
         credentials: 'same-origin',
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error((data as { error?: string }).error || 'Signup failed');
+        const payload = data as { error?: string; code?: string };
+        setErrorCode(payload.code ?? null);
+        throw new Error(payload.error || 'Signup failed');
       }
 
       // Full page navigation (not client-side router.push): guarantees the next document
@@ -83,17 +153,6 @@ export default function SignupPage() {
     }
   };
 
-  const benefits = [
-    'Create GST-ready invoices, estimates, and e-way aligned documents',
-    'Manage customers, suppliers, items, and stock in one place',
-    'Multi-branch and roles when your team grows',
-    'Purchase bills, expenses, and payment tracking built in',
-    'Reports for sales, GST, and inventory at a glance',
-    'WhatsApp and email options for faster collections',
-    'Secure cloud access—work from office or field',
-    'Start with a free trial, then stay on Free or upgrade anytime',
-  ];
-
   /** Wide shell: use horizontal space on large monitors (not a skinny centered column). */
   const pageShell =
     'mx-auto w-full max-w-[1800px] px-4 sm:px-6 md:px-10 lg:px-14 xl:px-16 2xl:px-20';
@@ -103,9 +162,9 @@ export default function SignupPage() {
       {/* Top bar — Exotel-style */}
       <header className="border-b border-slate-100 dark:border-slate-800">
         <div className={clsx(pageShell, 'flex items-center justify-between py-4')}>
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={`/?product=${productLine}`} className="flex items-center gap-2">
             <span className="text-xl font-bold tracking-tight text-primary-600 dark:text-primary-400">
-              Khatario
+              Khatario {productLabel}
             </span>
           </Link>
           <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
@@ -125,14 +184,13 @@ export default function SignupPage() {
           {/* Left — value prop */}
           <div className="order-2 flex min-w-0 flex-col justify-center lg:order-1">
             <h1 className="text-2xl font-bold leading-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl xl:leading-tight">
-              What can you do with Khatario?
+              {copy.title}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400 sm:text-base lg:text-lg">
-              Everything you need to run billing and operations for an Indian business—without juggling
-              five different tools.
+              {copy.subtitle}
             </p>
             <ul className="mt-8 min-w-0 space-y-3.5">
-              {benefits.map((line) => (
+              {copy.benefits.map((line) => (
                 <li key={line} className="flex gap-3 text-sm leading-snug text-slate-700 dark:text-slate-300 sm:text-base">
                   <span
                     className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white"
@@ -163,7 +221,7 @@ export default function SignupPage() {
                 </div>
               </div>
               <p className="relative mt-6 text-center text-xs text-slate-500 dark:text-slate-500">
-                Your team, invoices, and inventory—in one dashboard
+                {copy.illustration}
               </p>
             </div>
           </div>
@@ -175,13 +233,33 @@ export default function SignupPage() {
                 Hi there! Let&apos;s get you started
               </h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
-                Create your account and go live in a couple of minutes.
+                Create your {productLabel} account and go live in a couple of minutes.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Signing up for{' '}
+                <Link href={`/?product=${productLine}`} className="font-medium text-primary-600 hover:underline">
+                  Khatario {productLabel}
+                </Link>
+                {' · '}
+                <Link href="/?product=billing" className="hover:underline">Billing</Link>
+                {' · '}
+                <Link href="/?product=hr" className="hover:underline">HR</Link>
+                {' · '}
+                <Link href="/?product=connect" className="hover:underline">Connect</Link>
               </p>
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-5">
                 {error && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-                    {error}
+                    <p>{error}</p>
+                    {errorCode === 'PHONE_ALREADY_REGISTERED' && (
+                      <p className="mt-2">
+                        <Link href="/login" className="font-semibold text-primary-600 hover:underline dark:text-primary-400">
+                          Go to login
+                        </Link>
+                        {' '}or use a different mobile number.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -353,7 +431,7 @@ export default function SignupPage() {
                   size="lg"
                   isLoading={loading}
                 >
-                  Start my free trial
+                  {copy.cta}
                 </Button>
 
                 <p className="text-center text-xs leading-relaxed text-slate-500 dark:text-slate-400">
@@ -380,5 +458,19 @@ export default function SignupPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white text-slate-600">
+          Loading signup…
+        </div>
+      }
+    >
+      <SignupPageContent />
+    </Suspense>
   );
 }

@@ -3,6 +3,12 @@ import { queryOne } from '@/lib/db';
 import { generatePayslipPdf } from '@/lib/payslip-generator';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+  assertPortalOwnResource,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +22,13 @@ export async function GET(
 ) {
   try {
     const salaryPaymentId = params.id;
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    const actor = await resolveActorContext(request);
+    let businessId = getBusinessIdFromRequest(request);
+    let userId = getUserIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+      userId = actor.userId;
+    }
 
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
@@ -28,6 +39,15 @@ export async function GET(
         { error: 'user_id is required for authorization' },
         { status: 400 }
       );
+    }
+
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'payslips');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
     }
 
     const salaryPayment = await queryOne<{
@@ -42,7 +62,12 @@ export async function GET(
       return NextResponse.json({ error: 'Salary payment not found' }, { status: 404 });
     }
 
-    let allowed = false;
+    if (actor?.isPortal) {
+      const forbidden = assertPortalOwnResource(actor, salaryPayment.employee_id);
+      if (forbidden) return forbidden;
+    }
+
+    let allowed = actor?.isPortal && salaryPayment.employee_id === userId;
     try {
       await authorize(userId, 'payroll', 'read', { businessId });
       allowed = true;

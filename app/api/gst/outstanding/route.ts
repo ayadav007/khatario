@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getOutstandingGst } from '@/lib/gst/gst-settlement';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,17 +9,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/gst/outstanding?as_on_date=YYYY-MM-DD&branch_id=optional
  * Ledger balances for output GST + RCM (2155) as at date.
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const asOnDate = searchParams.get('as_on_date');
     const branchIdParam = searchParams.get('branch_id');
@@ -33,7 +24,7 @@ export async function GET(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam || undefined,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -47,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'read', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
       });
     } catch (error) {
@@ -60,7 +51,7 @@ export async function GET(request: NextRequest) {
     const consolidated = searchParams.get('consolidated') === '1' || searchParams.get('consolidated') === 'true';
 
     const result = await getOutstandingGst({
-      businessId: business_id,
+      businessId,
       asOnDate,
       branchId: consolidated ? null : finalBranchId,
     });
@@ -73,4 +64,4 @@ export async function GET(request: NextRequest) {
     console.error('GST outstanding error:', error);
     return NextResponse.json({ error: error?.message || 'Failed to load outstanding GST' }, { status: 500 });
   }
-}
+});

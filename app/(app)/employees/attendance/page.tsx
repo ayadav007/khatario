@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import Link from 'next/link';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
+import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
+import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
   employee_code: string;
@@ -38,6 +40,15 @@ export default function AttendanceManagementPage() {
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'half_day' | 'leave'>('all');
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     if (business?.id) {
@@ -111,6 +122,10 @@ export default function AttendanceManagementPage() {
   }
 
   // authStatus === 'allowed' - render page content
+
+  if (isMobile) {
+    return <ManagerTeamRollCall />;
+  }
 
   return (
     
@@ -216,9 +231,19 @@ export default function AttendanceManagementPage() {
                       </td>
                       <td className="py-4 px-4">
                         {record.check_in_time ? (
-                          <div className="flex items-center gap-1 text-green-700">
-                            <CheckCircle className="w-4 h-4" />
-                            <span>{format(new Date(record.check_in_time), 'hh:mm a')}</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-green-700">
+                              <CheckCircle className="w-4 h-4" />
+                              <span>{format(new Date(record.check_in_time), 'hh:mm a')}</span>
+                            </div>
+                            <AttendanceLogLine
+                              kind="check_in"
+                              time={record.check_in_time}
+                              lat={record.check_in_location_lat}
+                              lng={record.check_in_location_lng}
+                              compact
+                              showTime={false}
+                            />
                           </div>
                         ) : (
                           <span className="text-text-secondary">—</span>
@@ -226,9 +251,19 @@ export default function AttendanceManagementPage() {
                       </td>
                       <td className="py-4 px-4">
                         {record.check_out_time ? (
-                          <div className="flex items-center gap-1 text-primary-700">
-                            <XCircle className="w-4 h-4" />
-                            <span>{format(new Date(record.check_out_time), 'hh:mm a')}</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-primary-700">
+                              <XCircle className="w-4 h-4" />
+                              <span>{format(new Date(record.check_out_time), 'hh:mm a')}</span>
+                            </div>
+                            <AttendanceLogLine
+                              kind="check_out"
+                              time={record.check_out_time}
+                              lat={record.check_out_location_lat}
+                              lng={record.check_out_location_lng}
+                              compact
+                              showTime={false}
+                            />
                           </div>
                         ) : (
                           <span className="text-text-secondary">—</span>

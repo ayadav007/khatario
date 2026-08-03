@@ -16,13 +16,18 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { ManualPaymentMethodsSettings } from '@/components/settings/manual-payments/ManualPaymentMethodsSettings';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 
 export const BusinessProfileTab: React.FC = () => {
-  const { business, branch, user, activeBranchCount } = useAuth();
+  const { business, branch, user, activeBranchCount, hasPlatformModule } = useAuth();
   const { refreshWarehouses } = useLayoutData();
   const featureRegistry = useFeatureRegistry();
   const searchParams = useSearchParams();
   const toast = useToastContext();
+  const hasBilling = hasPlatformModule('billing');
+  const hasHr = hasPlatformModule('hr');
+  const hasConnect = hasPlatformModule('connect');
+  const showSalesAiIntro = hasBilling || hasConnect;
   const [loading, setLoading] = useState(false);
   const [showWarehouseUpgradePrompt, setShowWarehouseUpgradePrompt] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -826,7 +831,7 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       )}
       
-      <form onSubmit={handleSubmit} className={STACK_PAGE_CLASS}>
+      <form id="business-profile-form" onSubmit={handleSubmit} className={STACK_PAGE_CLASS}>
       <div className="grid grid-cols-1 gap-stack-page xl:grid-cols-2 xl:items-start">
         <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
       {/* Basic Information */}
@@ -878,13 +883,14 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       </section>
 
-      {/* Business Type & Industry */}
+      {/* Business Type & Industry — billing */}
+      {hasBilling ? (
       <section data-tour="bp-type">
         <h3 className="settings-section-title">Business Type & Industry</h3>
         <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Business Type</label>
+            <label className="type-label mb-1.5 block">Business Type</label>
             <select
               name="business_type"
               value={formData.business_type}
@@ -902,7 +908,7 @@ export const BusinessProfileTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Industry</label>
+            <label className="type-label mb-1.5 block">Industry</label>
             <select
               name="industry"
               value={formData.industry}
@@ -923,7 +929,7 @@ export const BusinessProfileTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Business Model</label>
+            <label className="type-label mb-1.5 block">Business Model</label>
             <select
               name="business_model"
               value={formData.business_model}
@@ -942,7 +948,7 @@ export const BusinessProfileTab: React.FC = () => {
 
         {/* Company Introduction for AI Chatbot */}
         <div className="min-w-0">
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label className="type-label mb-1.5 block">
             Company Introduction / About Us
           </label>
           <textarea
@@ -953,15 +959,36 @@ export const BusinessProfileTab: React.FC = () => {
             placeholder="Describe your company, products, services, values, and unique selling points. This helps the AI chatbot answer customer questions accurately..."
             className="input min-h-[140px] resize-y"
           />
-          <p className="text-xs text-text-muted mt-1">
+          <p className="type-body-sm mt-1.5 text-text-muted">
             This introduction will be used by the AI sales agent chatbot to answer customer questions on WhatsApp. 
             Include details about your products, services, delivery, payment terms, and any other information that would help a sales representative.
           </p>
         </div>
         </div>
       </section>
+      ) : null}
 
-      {/* Product Features */}
+      {showSalesAiIntro && !hasBilling ? (
+      <section data-tour="bp-type">
+        <h3 className="settings-section-title">Company profile for AI</h3>
+        <div className="min-w-0">
+          <label className="type-label mb-1.5 block">Company introduction / About us</label>
+          <textarea
+            name="company_introduction"
+            value={formData.company_introduction}
+            onChange={handleChange}
+            rows={6}
+            placeholder="Describe your company, products, and services for the AI assistant..."
+            className="input min-h-[140px] resize-y"
+          />
+          <p className="type-body-sm mt-1.5 text-text-muted">
+            Used by the AI sales agent on WhatsApp to answer customer questions.
+          </p>
+        </div>
+      </section>
+      ) : null}
+
+      {hasBilling ? (
       <section data-tour="bp-features">
         <h3 className="settings-section-title">Product Features</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1099,6 +1126,38 @@ export const BusinessProfileTab: React.FC = () => {
             </div>
           </div>
         )}
+
+          <div
+            id="pos-mode"
+            data-tour="bp-pos"
+            className="scroll-mt-24 flex items-center justify-between rounded-lg border border-border bg-gray-50 p-4 dark:bg-slate-800/50 md:col-span-2"
+          >
+            <div className="flex-1">
+              <h4 className="type-label mb-1 text-text-primary">POS Mode</h4>
+              <p className="type-body-sm text-text-secondary">
+                Enable POS mode for a retail billing interface optimized for fast checkout with two-column layout and quick payment entry.
+              </p>
+            </div>
+            <div className="ml-4">
+              <button
+                type="button"
+                onClick={togglePosMode}
+                className={`
+                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
+                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+                  ${posModeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
+                `}
+              >
+                <span
+                  className={`
+                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
+                    transition duration-200 ease-in-out
+                    ${posModeEnabled ? 'translate-x-5' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
+          </div>
         </div>
 
         {showWarehouseUpgradePrompt && (
@@ -1109,37 +1168,7 @@ export const BusinessProfileTab: React.FC = () => {
           />
         )}
       </section>
-
-      {/* POS Mode */}
-      <section id="pos-mode" data-tour="bp-pos" className="scroll-mt-24">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <h4 className="font-medium text-text-primary mb-1">POS Mode</h4>
-            <p className="text-sm text-text-secondary">
-              Enable POS mode for a retail billing interface optimized for fast checkout with two-column layout and quick payment entry.
-            </p>
-          </div>
-          <div className="ml-4">
-            <button
-              type="button"
-              onClick={togglePosMode}
-              className={`
-                relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                ${posModeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-              `}
-            >
-              <span
-                className={`
-                  pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                  transition duration-200 ease-in-out
-                  ${posModeEnabled ? 'translate-x-5' : 'translate-x-0'}
-                `}
-              />
-            </button>
-          </div>
-        </div>
-      </section>
+      ) : null}
 
         </div>
         <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
@@ -1181,7 +1210,7 @@ export const BusinessProfileTab: React.FC = () => {
             />
 
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">State</label>
+              <label className="type-label mb-1.5 block">State</label>
               <select
                 name="state"
                 value={formData.state}
@@ -1217,27 +1246,28 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       </section>
 
-      {/* GST & Tax Details */}
-      <section data-tour="bp-gst">
+      {/* GST & Tax Details — billing */}
+      {hasBilling ? (
+      <section id="bp-gst" data-tour="bp-gst">
         <h3 className="settings-section-title">GST & Tax Information</h3>
         <div className={STACK_SECTION_CLASS}>
           {/* GST Registration Type */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">
-              GST Registration Type <span className="text-red-500">*</span>
+            <label className="type-label mb-1.5 block">
+              GST Registration Type <span className="text-error">*</span>
             </label>
             <select
               name="gst_registration_type"
               value={formData.gst_registration_type}
               onChange={handleChange}
-              className="w-full border border-border dark:border-slate-600 rounded-md px-3 py-2 bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="input"
               required
             >
               <option value="regular">Regular (Normal GST)</option>
               <option value="composition">Composition Scheme</option>
               <option value="unregistered">Unregistered (No GSTIN)</option>
             </select>
-            <p className="text-xs text-text-muted mt-1">
+            <p className="type-body-sm mt-1.5 text-text-muted">
               <strong>Regular:</strong> Standard GST registration, can charge GST and issue Tax Invoices.<br />
               <strong>Composition:</strong> Simplified scheme with lower tax rate, cannot charge GST, must issue Bill of Supply.<br />
               <strong>Unregistered:</strong> No GST registration, for businesses below threshold limit.
@@ -1295,8 +1325,31 @@ export const BusinessProfileTab: React.FC = () => {
           )}
         </div>
       </section>
+      ) : null}
 
-      {/* Export & Banking Details */}
+      {hasHr && !hasBilling ? (
+      <section id="bp-tax-hr" data-tour="bp-gst">
+        <h3 className="settings-section-title">Tax & compliance</h3>
+        <div className={STACK_SECTION_CLASS}>
+          <Input
+            label="PAN"
+            name="pan"
+            value={formData.pan}
+            onChange={handleChange}
+            onBlur={(e) => handleFieldBlur(e, 'pan')}
+            placeholder="ABCDE1234F"
+            maxLength={10}
+            inputRef={(el) => { fieldRefs.current['pan'] = el; }}
+            className={highlightedField === 'pan' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
+          />
+          <p className="type-body-sm text-text-muted">
+            Used on payslips, Form 16, and other HR compliance documents.
+          </p>
+        </div>
+      </section>
+      ) : null}
+
+      {hasBilling ? (
       <section data-tour="bp-export">
         <h3 className="settings-section-title">Export & Banking Details</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1321,6 +1374,7 @@ export const BusinessProfileTab: React.FC = () => {
           IEC Code is mandatory for exporters. SWIFT Code is required for international wire transfers.
         </p>
       </section>
+      ) : null}
 
 
       <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
@@ -1373,7 +1427,7 @@ export const BusinessProfileTab: React.FC = () => {
           </div>
 
           <p className="text-xs text-text-muted">
-            Upload an image file (JPEG, PNG, GIF, WebP) up to 2MB. Logo will be displayed on invoices.
+            Upload an image file (JPEG, PNG, GIF, WebP) up to 2MB. Logo appears on {hasBilling ? 'invoices and' : ''} HR documents.
           </p>
         </div>
       </section>
@@ -1433,15 +1487,9 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="flex justify-end" data-tour="bp-save">
-        <Button type="submit" disabled={saving}>
-          <Save className="w-4 h-4 mr-2" />
-          {saving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </div>
       </form>
 
+      {hasBilling ? (
       <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
       {/* Bank Accounts Section - Outside main form to avoid nested forms */}
       <section data-tour="bp-banks">
@@ -1528,7 +1576,7 @@ export const BusinessProfileTab: React.FC = () => {
                   placeholder="Branch location"
                 />
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Account Type</label>
+                  <label className="type-label mb-1.5 block">Account Type</label>
                   <select
                     name="account_type"
                     value={bankAccountForm.account_type}
@@ -1664,6 +1712,14 @@ export const BusinessProfileTab: React.FC = () => {
         className="w-full"
       />
       </div>
+      ) : null}
+
+      <SettingsFloatingSaveBar tourAnchor="bp-save">
+        <Button type="submit" form="business-profile-form" disabled={saving} className="w-full sm:w-auto">
+          <Save className="w-4 h-4 mr-2" />
+          {saving ? 'Saving...' : 'Save Changes'}
+        </Button>
+      </SettingsFloatingSaveBar>
     </div>
   );
 };

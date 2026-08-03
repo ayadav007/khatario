@@ -12,12 +12,20 @@ import { SendRemindersTab } from '@/components/whatsapp/SendRemindersTab';
 import { ReminderLogsTab } from '@/components/whatsapp/ReminderLogsTab';
 import { QRCodeSVG } from 'qrcode.react';
 import { Toast, ToastType } from '@/components/ui/Toast';
+import { useCapabilityCheck } from '@/hooks/useCapability';
+import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
+import { Lock } from 'lucide-react';
 
 type ConnectionStatus = 'disconnected' | 'pending_qr' | 'connected' | 'error';
 type Tab = 'connection' | 'bot-settings' | 'auto-reminders' | 'send-reminders' | 'logs';
 
-export function WhatsAppTab() {
+const PREMIUM_TABS: Tab[] = ['bot-settings', 'auto-reminders', 'send-reminders', 'logs'];
+
+export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) {
   const { business } = useAuth();
+  const { hasCapability } = useCapabilityCheck();
+  const hasBotAddon = hasCapability('whatsapp_bot', 'view');
+  const [showBotAddonModal, setShowBotAddonModal] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('connection');
   
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
@@ -345,12 +353,33 @@ export function WhatsAppTab() {
   // No longer using third-party QR API - using client-side rendering
 
   const tabs = [
-    { id: 'connection' as Tab, label: 'Connection' },
-    { id: 'bot-settings' as Tab, label: 'Bot Settings' },
-    { id: 'auto-reminders' as Tab, label: 'Auto Reminders' },
-    { id: 'send-reminders' as Tab, label: 'Send Reminders' },
-    { id: 'logs' as Tab, label: 'Logs' },
+    { id: 'connection' as Tab, label: 'Connection', premium: false },
+    { id: 'bot-settings' as Tab, label: 'Bot Settings', premium: true },
+    { id: 'auto-reminders' as Tab, label: 'Auto Reminders', premium: true },
+    { id: 'send-reminders' as Tab, label: 'Send Reminders', premium: true },
+    { id: 'logs' as Tab, label: 'Logs', premium: true },
   ];
+
+  function selectTab(tabId: Tab) {
+    if (PREMIUM_TABS.includes(tabId) && !hasBotAddon) {
+      setShowBotAddonModal(true);
+      return;
+    }
+    setActiveTab(tabId);
+  }
+
+  function renderPremiumGate(title: string, description: string) {
+    return (
+      <Card padding="lg" className="max-w-lg mx-auto text-center">
+        <Lock className="w-12 h-12 text-text-muted mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
+        <p className="mt-2 text-sm text-text-secondary">{description}</p>
+        <Button className="mt-4" onClick={() => setShowBotAddonModal(true)}>
+          Unlock WhatsApp Bot addon
+        </Button>
+      </Card>
+    );
+  }
 
   // Load bot settings
   const loadBotSettings = useCallback(async () => {
@@ -407,15 +436,15 @@ export function WhatsAppTab() {
 
   return (
     <div className="space-y-6">
-      {/* WhatsApp Tabs */}
+      {!connectOnly ? (
       <div className="border-b border-border">
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               className={`
-                py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap
+                py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap inline-flex items-center gap-1.5
                 ${activeTab === tab.id
                   ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                   : 'border-transparent text-text-muted hover:text-text-secondary dark:hover:text-text-primary hover:border-border'
@@ -423,14 +452,23 @@ export function WhatsAppTab() {
               `}
             >
               {tab.label}
+              {tab.premium && !hasBotAddon ? (
+                <Lock className="h-3.5 w-3.5 text-amber-600" aria-hidden />
+              ) : null}
             </button>
           ))}
         </nav>
       </div>
+      ) : null}
 
       {/* Tab Content */}
-      <div className="mt-6">
-        {activeTab === 'connection' && (
+      <div className={connectOnly ? undefined : 'mt-6'}>
+        {(connectOnly || activeTab === 'connection') && (
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary">
+              Basic WhatsApp includes connecting your number and sending invoices from billing.
+              Bot, reminders, and inbox features require the WhatsApp Bot addon.
+            </p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Connection Card */}
             <Card padding="lg" className="space-y-6">
@@ -472,19 +510,21 @@ export function WhatsAppTab() {
                       )}
                     </div>
                     <div className="flex flex-col gap-2 w-full max-w-xs">
-                      <Button
-                        variant="secondary"
-                        onClick={handleSyncMessages}
-                        disabled={syncing || loading}
-                        className="flex items-center gap-2 w-full"
-                      >
-                        {syncing ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                        {syncing ? 'Syncing Messages...' : 'Sync Messages'}
-                      </Button>
+                      {hasBotAddon ? (
+                        <Button
+                          variant="secondary"
+                          onClick={handleSyncMessages}
+                          disabled={syncing || loading}
+                          className="flex items-center gap-2 w-full"
+                        >
+                          {syncing ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                          {syncing ? 'Syncing Messages...' : 'Sync Messages'}
+                        </Button>
+                      ) : null}
                       <Button
                         variant="secondary"
                         onClick={() => setShowDisconnectConfirm(true)}
@@ -614,9 +654,11 @@ export function WhatsAppTab() {
             </Card>
 
           </div>
+          </div>
         )}
 
         {activeTab === 'bot-settings' && (
+          hasBotAddon ? (
           <Card padding="lg" className="w-full max-w-4xl">
             <div className="space-y-6">
               <div>
@@ -698,11 +740,44 @@ export function WhatsAppTab() {
               )}
             </div>
           </Card>
+          ) : (
+            renderPremiumGate(
+              'Bot settings require WhatsApp Bot',
+              'Automation, typing indicators, and reminder tools are part of the WhatsApp Bot addon.',
+            )
+          )
         )}
 
-        {activeTab === 'auto-reminders' && <ReminderSettingsTab />}
-        {activeTab === 'send-reminders' && <SendRemindersTab />}
-        {activeTab === 'logs' && <ReminderLogsTab />}
+        {activeTab === 'auto-reminders' && (
+          hasBotAddon ? (
+            <ReminderSettingsTab />
+          ) : (
+            renderPremiumGate(
+              'Auto reminders require WhatsApp Bot',
+              'Schedule payment reminders automatically with the WhatsApp Bot addon.',
+            )
+          )
+        )}
+        {activeTab === 'send-reminders' && (
+          hasBotAddon ? (
+            <SendRemindersTab />
+          ) : (
+            renderPremiumGate(
+              'Bulk reminders require WhatsApp Bot',
+              'Send payment reminders in bulk with the WhatsApp Bot addon.',
+            )
+          )
+        )}
+        {activeTab === 'logs' && (
+          hasBotAddon ? (
+            <ReminderLogsTab />
+          ) : (
+            renderPremiumGate(
+              'Reminder logs require WhatsApp Bot',
+              'View delivery history with the WhatsApp Bot addon.',
+            )
+          )
+        )}
       </div>
 
       {/* Toast Notification */}
@@ -755,6 +830,17 @@ export function WhatsAppTab() {
           </div>
         </div>
       )}
+
+      {showBotAddonModal ? (
+        <WhatsAppAddonModal
+          addonType="whatsapp_bot"
+          onClose={() => setShowBotAddonModal(false)}
+          onPurchaseSuccess={() => {
+            setShowBotAddonModal(false);
+            window.location.reload();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

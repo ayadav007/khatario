@@ -6,6 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
 import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
+import { productLineForModule } from '@/lib/platform-modules';
+import type { PlatformModule } from '@/lib/platform-modules';
+import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
 
 interface SubscriptionPlan {
   id: string;
@@ -26,6 +29,7 @@ interface SubscriptionPlan {
     features: Record<string, boolean>;
   };
   sort_order: number;
+  product_line?: string | null;
 }
 
 interface UpgradeModalProps {
@@ -35,6 +39,10 @@ interface UpgradeModalProps {
   featureName?: string;
   /** Pre-select a plan in the upgrade grid (e.g. limit recommendation). */
   initialPlanId?: string;
+  /** Scope plan list + checkout to this product module. */
+  moduleKey?: PlatformModule;
+  /** Show a free trial option alongside paid plans (for module addition flow). */
+  showTrialOption?: boolean;
   onClose: () => void;
   onUpgradeSuccess?: () => void;
 }
@@ -45,6 +53,8 @@ export function UpgradeModal({
   limit,
   featureName,
   initialPlanId,
+  moduleKey,
+  showTrialOption,
   onClose,
   onUpgradeSuccess,
 }: UpgradeModalProps) {
@@ -59,10 +69,41 @@ export function UpgradeModal({
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
+
+  const trialConfig =
+    showTrialOption && moduleKey
+      ? MODULE_ADD_CONFIG[moduleKey as Exclude<PlatformModule, 'crm'>]
+      : null;
+
+  async function handleStartTrial() {
+    if (!trialConfig || !business?.id || !moduleKey) return;
+    setStartingTrial(true);
+    try {
+      const result = await startPlanUpgrade({
+        businessId: business.id,
+        planId: trialConfig.trialPlanId,
+        moduleKey,
+        billingCycle: 'monthly',
+        amountInr: 0,
+      });
+      if (result.mode === 'instant') {
+        toast.success(`${trialConfig.label} ${trialConfig.trialDays}-day trial started!`);
+        onUpgradeSuccess?.();
+        onClose();
+        window.location.reload();
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Could not start trial.';
+      toast.error(message);
+    } finally {
+      setStartingTrial(false);
+    }
+  }
 
   useEffect(() => {
     void fetchPlans();
-  }, [initialPlanId]);
+  }, [initialPlanId, moduleKey]);
 
   useEffect(() => {
     setCouponApplied(false);
@@ -113,9 +154,14 @@ export function UpgradeModal({
       const response = await fetch('/api/subscriptions/plans');
       if (response.ok) {
         const data = await response.json();
-        const availablePlans = (data.plans || []).filter((p: SubscriptionPlan) =>
-          isPurchasableUpgradePlan(p.id),
-        );
+        const productLine = moduleKey ? productLineForModule(moduleKey) : null;
+        const availablePlans = (data.plans || [])
+          .filter((p: SubscriptionPlan) => isPurchasableUpgradePlan(p.id))
+          .filter((p: SubscriptionPlan) => {
+            if (!productLine) return true;
+            const line = p.product_line ?? 'billing';
+            return line === productLine;
+          });
         setPlans(availablePlans);
 
         if (availablePlans.length > 0) {
@@ -143,6 +189,7 @@ export function UpgradeModal({
       const result = await startPlanUpgrade({
         businessId: business.id,
         planId: selectedPlanId,
+        moduleKey,
         billingCycle,
         amountInr,
         couponCode: couponApplied ? couponCode.trim() : undefined,
@@ -250,7 +297,9 @@ export function UpgradeModal({
             <div className="bg-gray-100 dark:bg-slate-800 p-3 rounded-full">
               <TrendingUp className="w-6 h-6 text-gray-700 dark:text-gray-200" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900">Upgrade Your Plan</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {trialConfig ? `Add ${trialConfig.label}` : 'Upgrade Your Plan'}
+            </h2>
           </div>
           {limitType && (
             <p className="text-gray-600 mt-2">{getLimitMessage()}</p>
@@ -272,6 +321,44 @@ export function UpgradeModal({
             </div>
           )}
         </div>
+
+        {/* Free Trial Option */}
+        {trialConfig && trialConfig.trialDays ? (
+          <div className="p-6 border-b border-gray-200">
+            <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Start {trialConfig.trialDays}-day free trial
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {trialConfig.description} Try all features free for {trialConfig.trialDays} days — no credit card needed.
+                  </p>
+                </div>
+                <button
+                  onClick={handleStartTrial}
+                  disabled={startingTrial}
+                  className="flex-shrink-0 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {startingTrial ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  {startingTrial ? 'Starting...' : 'Start Free Trial'}
+                </button>
+              </div>
+            </div>
+            <div className="relative mt-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-3 text-gray-500">or choose a paid plan</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Billing Cycle Toggle */}
         <div className="p-6 border-b border-gray-200 bg-gray-50">

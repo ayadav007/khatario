@@ -1,136 +1,179 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import {
+  assertWhatsAppBaseAccess,
+  assertWhatsAppManualAddon,
+  isTransactionalWhatsAppSend,
+  withPremiumSubscriptionApi,
+} from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
-  try {
-    const contentType = request.headers.get('content-type') || '';
-    let body: any;
-
-    // Handle FormData (for image uploads)
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      body = {
-        business_id: formData.get('business_id') as string,
-        to: formData.get('to') as string,
-        message: formData.get('message') as string,
-        message_type: formData.get('message_type') as string,
-        image: formData.get('image') as File | null,
-      };
-    } else {
-      // Handle JSON
+export const POST = withPremiumSubscriptionApi(
+  {
+    claimedBusinessId: ({ request }) => getBusinessIdFromRequest(request),
+    afterSubscription: async (ctx) => {
       try {
-        body = await request.json();
-      } catch (parseError) {
-        return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+        const contentType = ctx.request.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const peek = await ctx.request.clone().json();
+          if (isTransactionalWhatsAppSend(peek)) {
+            return assertWhatsAppBaseAccess(ctx);
+          }
+        }
+      } catch {
+        /* fall through to manual gate */
       }
-    }
+      return assertWhatsAppManualAddon(ctx);
+    },
+  },
+  async ({ request, businessId }) => {
+    try {
+      const limitBlock = await limitExceededResponse(businessId, 'whatsapp');
+      if (limitBlock) return limitBlock;
 
-    const { business_id, to, message, mediaUrl, invoiceId, message_type, buttons, image, footer } = body || {};
-    
-    if (!business_id || !to || !message) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
+      const contentType = request.headers.get('content-type') || '';
+      let body: Record<string, unknown>;
 
-    // Convert new button format to backend format
-    let formattedButtons: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }> | undefined;
-    if (message_type === 'button' && buttons) {
-      formattedButtons = [];
-      
-      // Handle new format from bulk campaign / single message
-      if (buttons.quickReplies || buttons.callToActions) {
-        // Add quick replies
-        if (buttons.quickReplies && Array.isArray(buttons.quickReplies)) {
-          buttons.quickReplies.forEach((title: string, index: number) => {
-            if (title.trim()) {
+      if (contentType.includes('multipart/form-data')) {
+        const formData = await request.formData();
+        body = {
+          to: formData.get('to') as string,
+          message: formData.get('message') as string,
+          message_type: formData.get('message_type') as string,
+          image: formData.get('image') as File | null,
+        };
+      } else {
+        try {
+          body = (await request.json()) as Record<string, unknown>;
+        } catch {
+          return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+        }
+      }
+
+      const {
+        to,
+        message,
+        mediaUrl,
+        invoiceId,
+        message_type,
+        buttons,
+        image,
+        footer,
+      } = body as {
+        to?: string;
+        message?: string;
+        mediaUrl?: string;
+        invoiceId?: string;
+        message_type?: string;
+        buttons?: unknown;
+        image?: File | null;
+        footer?: string;
+      };
+
+      if (!to || !message) {
+        return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      }
+
+      let formattedButtons:
+        | Array<{
+            id: string;
+            title: string;
+            type?: 'quick_reply' | 'call' | 'url';
+            phone?: string;
+            url?: string;
+          }>
+        | undefined;
+
+      if (message_type === 'button' && buttons) {
+        formattedButtons = [];
+
+        if (
+          typeof buttons === 'object' &&
+          buttons !== null &&
+          ('quickReplies' in buttons || 'callToActions' in buttons)
+        ) {
+          const buttonObj = buttons as {
+            quickReplies?: string[];
+            callToActions?: {
+              phone?: { title?: string; phone?: string };
+              url?: { title?: string; url?: string };
+            };
+          };
+
+          if (buttonObj.quickReplies && Array.isArray(buttonObj.quickReplies)) {
+            buttonObj.quickReplies.forEach((title: string, index: number) => {
+              if (title.trim()) {
+                formattedButtons!.push({
+                  id: `quick_reply_${index}`,
+                  title: title.trim(),
+                  type: 'quick_reply',
+                });
+              }
+            });
+          }
+
+          if (buttonObj.callToActions) {
+            if (buttonObj.callToActions.phone?.title && buttonObj.callToActions.phone?.phone) {
               formattedButtons!.push({
-                id: `quick_reply_${index}`,
-                title: title.trim(),
-                type: 'quick_reply'
+                id: 'call_button',
+                title: buttonObj.callToActions.phone.title,
+                type: 'call',
+                phone: buttonObj.callToActions.phone.phone,
               });
             }
-          });
-        }
-        
-        // Add call to actions
-        if (buttons.callToActions) {
-          if (buttons.callToActions.phone?.title && buttons.callToActions.phone?.phone) {
-            formattedButtons!.push({
-              id: 'call_button',
-              title: buttons.callToActions.phone.title,
-              type: 'call',
-              phone: buttons.callToActions.phone.phone
-            });
+
+            if (buttonObj.callToActions.url?.title && buttonObj.callToActions.url?.url) {
+              formattedButtons!.push({
+                id: 'url_button',
+                title: buttonObj.callToActions.url.title,
+                type: 'url',
+                url: buttonObj.callToActions.url.url,
+              });
+            }
           }
-          
-          if (buttons.callToActions.url?.title && buttons.callToActions.url?.url) {
-            formattedButtons!.push({
-              id: 'url_button',
-              title: buttons.callToActions.url.title,
-              type: 'url',
-              url: buttons.callToActions.url.url
-            });
-          }
+        } else if (Array.isArray(buttons)) {
+          formattedButtons = buttons as typeof formattedButtons;
         }
-      } 
-      // Handle old format (backward compatibility)
-      else if (Array.isArray(buttons)) {
-        formattedButtons = buttons;
       }
-    }
 
-    // Check if business has WhatsApp Bot addon (unlocks Conversations, Bot Rules, and Send Message)
-    // Exception: allow sending if it's an invoice-related message (invoice sending is free)
-    if (invoiceId) {
-      // Invoice messages are allowed without addon
-    } else {
-      const hasAddon = await hasWhatsAppBotAddon(business_id);
-      if (!hasAddon) {
-        return NextResponse.json(
-          { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-          { status: 403 }
-        );
+      let imageBuffer: Buffer | undefined;
+      if (image && image instanceof File) {
+        const arrayBuffer = await image.arrayBuffer();
+        imageBuffer = Buffer.from(arrayBuffer);
       }
-    }
 
-    // Handle image upload (FormData)
-    let imageBuffer: Buffer | undefined;
-    if (image && image instanceof File) {
-      const arrayBuffer = await image.arrayBuffer();
-      imageBuffer = Buffer.from(arrayBuffer);
-    }
+      let media: string | Buffer | undefined = mediaUrl || imageBuffer;
 
-    let media: string | Buffer | undefined = mediaUrl || imageBuffer;
-
-    // If invoiceId is provided, generate PDF buffer internally
-    if (invoiceId) {
+      if (invoiceId) {
         try {
-            media = await generateInvoicePdf(invoiceId);
+          media = await generateInvoicePdf(String(invoiceId));
         } catch (e) {
-            console.error('Failed to generate PDF for WhatsApp:', e);
-            return NextResponse.json({ error: 'Failed to generate invoice PDF' }, { status: 500 });
+          console.error('Failed to generate PDF for WhatsApp:', e);
+          return NextResponse.json({ error: 'Failed to generate invoice PDF' }, { status: 500 });
         }
+      }
+
+      await sendWhatsAppMessage(
+        businessId,
+        to,
+        message,
+        media,
+        (message_type || 'text') as 'text' | 'button' | 'image' | 'document',
+        formattedButtons,
+        footer,
+      );
+
+      return NextResponse.json({ success: true });
+    } catch (error: unknown) {
+      console.error('Error sending WA message:', error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'Send failed' },
+        { status: 500 },
+      );
     }
-
-    // Send message with appropriate type
-    await sendWhatsAppMessage(
-      business_id,
-      to,
-      message,
-      media,
-      message_type || 'text',
-      formattedButtons, // Formatted buttons array
-      footer // Optional footer for button messages
-    );
-    
-    return NextResponse.json({ success: true });
-
-  } catch (error: any) {
-    console.error('Error sending WA message:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
+  },
+);

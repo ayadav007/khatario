@@ -1,0 +1,26 @@
+[
+  {
+    "route": "/api/admin/billing/events",
+    "file": "app/api/admin/billing/events/route.ts"
+  },
+  {
+    "route": "/api/cron/process-reversing-entries",
+    "file": "app/api/cron/process-reversing-entries/route.ts"
+  },
+  {
+    "route": "/api/cron/refresh-profile-pictures",
+    "file": "app/api/cron/refresh-profile-pictures/route.ts"
+  },
+  {
+    "route": "/api/gst/gstr2b/decision",
+    "file": "app/api/gst/gstr2b/decision/route.ts"
+  },
+  {
+    "route": "/api/gst/gstr2b/export",
+    "file": "app/api/gst/gstr2b/export/route.ts"
+  },
+  {
+    "route": "/api/gst/gstr2b/reconcile",
+    "file": "app/api/gst/gstr2b/reconcile/route.ts"
+  }
+]

@@ -3,6 +3,8 @@ import { queryRows, queryOne, query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/payment-methods
  * List payment methods for a business
@@ -10,14 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const methods = await queryRows(`
       SELECT * FROM payment_methods 
@@ -42,8 +39,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       method_type,
       method_name,
       upi_id,
@@ -109,9 +108,11 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
       id,
-      business_id,
       method_type,
       method_name,
       upi_id,
@@ -228,8 +229,9 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const businessId = searchParams.get('business_id');
-
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     if (!id || !businessId) {
       return NextResponse.json(
         { error: 'id and business_id are required' },

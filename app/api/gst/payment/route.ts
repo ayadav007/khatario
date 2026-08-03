@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,26 +11,26 @@ export const dynamic = 'force-dynamic';
  * POST /api/gst/payment
  * Record GST challan payment: Dr output (or RCM) / Cr bank. Voucher type gst_payment.
  */
-export async function POST(request: NextRequest) {
+export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({ body, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const amount = Number(body.amount);
-    const taxHead = String(body.tax_head || '').toUpperCase() as GstTaxHead;
-    const paymentDate = body.payment_date as string | undefined;
-    const branchIdParam = body.branch_id as string | undefined;
-    const bankAccountId = body.bank_account_id as string | undefined;
-    const challanNumber = body.challan_number as string | undefined;
-    const paymentMode = body.payment_mode as string | undefined;
-    const narrationPrefix = body.narration_prefix as string | undefined;
+    const parsed = (body ?? {}) as {
+      amount?: unknown;
+      tax_head?: string;
+      payment_date?: string;
+      branch_id?: string;
+      bank_account_id?: string;
+      challan_number?: string;
+      payment_mode?: string;
+      narration_prefix?: string;
+    };
+    const amount = Number(parsed.amount);
+    const taxHead = String(parsed.tax_head || '').toUpperCase() as GstTaxHead;
+    const paymentDate = parsed.payment_date;
+    const branchIdParam = parsed.branch_id;
+    const bankAccountId = parsed.bank_account_id;
+    const challanNumber = parsed.challan_number;
+    const paymentMode = parsed.payment_mode;
+    const narrationPrefix = parsed.narration_prefix;
 
     if (!['IGST', 'CGST', 'SGST', 'RCM'].includes(taxHead)) {
       return NextResponse.json({ error: 'tax_head must be IGST, CGST, SGST, or RCM' }, { status: 400 });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'create', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
         entry_date: paymentDate,
       });
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await recordGstPayment({
-      businessId: business_id,
+      businessId,
       branchId: finalBranchId,
       amount,
       taxHead,
@@ -99,4 +99,4 @@ export async function POST(request: NextRequest) {
     console.error('GST payment error:', error);
     return NextResponse.json({ error: error?.message || 'GST payment failed' }, { status: 500 });
   }
-}
+});

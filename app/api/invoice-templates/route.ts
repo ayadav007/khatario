@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query as dbQuery, queryOne } from '@/lib/db';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,15 +10,17 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+
+    const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const businessId = tenant.businessId;
 
     // Get business-specific templates and global templates
     const templates = await dbQuery(
@@ -45,22 +48,24 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const business_id = tenant.businessId;
     const {
-      business_id,
       template_name,
       vendor_pattern,
       template_yaml,
       is_global = false,
       created_by
     } = body;
-
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     if (!template_name || !template_yaml) {
       return NextResponse.json(

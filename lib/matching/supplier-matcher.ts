@@ -50,7 +50,7 @@ function levenshteinDistance(str1: string, str2: string): number {
 /**
  * Calculate similarity score (0-100) based on Levenshtein distance
  */
-function calculateSimilarity(str1: string, str2: string): number {
+export function calculateSimilarity(str1: string, str2: string): number {
   const distance = levenshteinDistance(str1, str2);
   const maxLength = Math.max(str1.length, str2.length);
   
@@ -62,11 +62,27 @@ function calculateSimilarity(str1: string, str2: string): number {
 
 /**
  * Normalize supplier name for matching
- * Removes common suffixes, extra spaces, punctuation
+ * Removes common suffixes, prefixes, extra spaces, punctuation
  */
-function normalizeSupplierName(name: string): string {
+export function normalizeSupplierName(name: string): string {
   let normalized = name.toLowerCase().trim();
-  
+
+  const prefixes = [
+    'es',
+    'm s',
+    'm/s',
+    'shri',
+    'sri',
+    'mr',
+    'ms',
+    'mrs',
+    'dr',
+  ];
+  for (const prefix of prefixes) {
+    const pattern = new RegExp(`^${prefix.replace('/', '\\/')}\\s+`, 'i');
+    normalized = normalized.replace(pattern, '');
+  }
+
   // Remove common suffixes
   const suffixes = [
     'pvt ltd', 'pvt. ltd.', 'private limited', 'pvt limited',

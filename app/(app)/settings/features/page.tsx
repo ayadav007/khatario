@@ -1,10 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, Layout, Moon, Palette } from 'lucide-react';
+import { Layout, Moon, Palette } from 'lucide-react';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -233,31 +232,11 @@ function UIFeaturesSettingsPage() {
   }, [canModify, refresh, toast]);
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-8`}>
-      <div className="flex items-center gap-2 text-sm text-text-secondary">
-        <Link href="/settings" className="transition hover:text-primary-600">
-          Settings
-        </Link>
-        <ChevronRight className="h-4 w-4" />
-        <span className="text-text-muted">Module settings</span>
-        <ChevronRight className="h-4 w-4" />
-        <span className="font-medium text-text-primary">UI features</span>
-      </div>
-
-      <div className="space-y-1">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-slate-100 p-3 dark:bg-slate-800/40">
-            <Layout className="h-6 w-6 text-primary-600 dark:text-primary-300" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-text-primary sm:text-3xl">UI features</h1>
-            <p className="mt-1 max-w-3xl text-text-secondary">
-              Personal color scheme (this device) and organization-wide portal branding for everyone in your business.
-            </p>
-          </div>
-        </div>
-      </div>
-
+    <SettingsPageShell
+      title="UI features"
+      description="Personal color scheme (this device) and organization-wide portal branding for everyone in your business."
+      icon={Layout}
+    >
       <Card className="p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-3">
@@ -355,7 +334,7 @@ function UIFeaturesSettingsPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </SettingsPageShell>
   );
 }
 

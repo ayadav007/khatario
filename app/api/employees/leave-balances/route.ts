@@ -3,6 +3,11 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveBalance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,11 +17,15 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const actor = await resolveActorContext(request);
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    const employeeId = searchParams.get('employee_id');
-    const year = searchParams.get('year') || new Date().getFullYear().toString();
+    let businessId = getBusinessIdFromRequest(request);
+    let userId = getUserIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+      userId = actor.userId;
+    }
+    let employeeId = searchParams.get('employee_id');
 
     if (!businessId) {
       return NextResponse.json(
@@ -32,7 +41,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // AUTHORIZATION: Employee self-service - allow if user is employee viewing own balance OR has permission
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'leaves');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+      employeeId = actor.userId;
+    }
+
+    const yearParam = searchParams.get('year');
+    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+
+    // AUTHORIZATION: Employee self-service
     const { isEmployee } = await import('@/lib/access-boundary');
     const userIsEmployee = await isEmployee(userId);
     

@@ -3,6 +3,8 @@ import { createProvisionEntry, getProvisionEntries } from '@/lib/services/provis
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/provisions/[id]/entries
  * Get provision entries
@@ -13,7 +15,9 @@ export async function GET(
 ) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const financialYear = searchParams.get('financial_year');
 
     if (!businessId || !financialYear) {
@@ -49,8 +53,10 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       financial_year,
       entry_date,
       entry_type,

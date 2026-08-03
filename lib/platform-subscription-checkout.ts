@@ -34,6 +34,15 @@ import {
 
 } from '@/lib/subscription/apply-plan-change';
 
+import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
+
+import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { BillingTransactionStateError } from '@/lib/platform-billing-transaction-state';
+
+import { formatModulePlanReceiptLabel } from '@/lib/subscription/billing-labels';
+
+import { normalizePlatformModule } from '@/lib/platform-modules';
+
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 
 import { redeemCoupon } from '@/lib/subscription/coupons';
@@ -109,6 +118,8 @@ export interface CreateSubscriptionCheckoutInput {
   billingCycle: BillingCycle;
 
   couponCode?: string | null;
+
+  moduleKey?: string | null;
 
 }
 
@@ -224,13 +235,16 @@ export async function createSubscriptionCheckout(
 
   const recipient = await getBusinessPlatformRecipient(input.businessId);
 
-
+  const moduleKey =
+    normalizePlatformModule(input.moduleKey) ?? (await resolveModuleKeyForPlan(input.planId));
 
   const pending = await recordBillingTransaction({
 
     businessId: input.businessId,
 
     planId: input.planId,
+
+    moduleKey,
 
     amount: pricing.baseAmount,
 
@@ -244,7 +258,11 @@ export async function createSubscriptionCheckout(
 
     status: 'pending',
 
-    description: `Checkout: ${plan.display_name} (${input.billingCycle})`,
+    description: formatModulePlanReceiptLabel(
+      moduleKey,
+      plan.display_name,
+      input.billingCycle,
+    ),
 
     skipEmails: true,
 
@@ -281,6 +299,8 @@ export async function createSubscriptionCheckout(
       plan_id: input.planId,
 
       billing_cycle: input.billingCycle,
+
+      module_key: moduleKey,
 
       billing_transaction_id: pending.id,
 
@@ -388,61 +408,59 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   );
 
+  const moduleKey = await resolveModuleKeyForPlan(params.planId);
+
 
 
   let couponId: string | null = null;
 
+  if (!params.billingTransactionId) {
+    throw new Error('CHECKOUT_TRANSACTION_REQUIRED');
+  }
 
+  const tx = await queryOne<{ coupon_id: string | null; status: string }>(
+    `SELECT coupon_id, status FROM billing_transactions WHERE id = $1 AND business_id = $2`,
+    [params.billingTransactionId, params.businessId],
+  );
 
-  if (params.billingTransactionId) {
+  if (!tx) {
+    throw new Error('CHECKOUT_TRANSACTION_NOT_FOUND');
+  }
 
-    const tx = await queryOne<{ coupon_id: string | null }>(
-
-      `SELECT coupon_id FROM billing_transactions WHERE id = $1`,
-
-      [params.billingTransactionId],
-
-    );
-
-    couponId = tx?.coupon_id ?? null;
-
-
-
-    await updateBillingTransactionStatus(
-
-      params.billingTransactionId,
-
+  if (tx.status !== 'pending') {
+    throw new BillingTransactionStateError(
+      'INVALID_STATUS_TRANSITION',
+      `Checkout transaction is already ${tx.status}`,
+      tx.status as 'pending' | 'completed' | 'failed' | 'refunded',
       'completed',
-
-      params.gatewayResponse,
-
     );
+  }
 
-    if (params.providerPaymentId) {
+  couponId = tx.coupon_id ?? null;
 
-      await query(
+  await updateBillingTransactionStatus(
+    params.billingTransactionId,
+    'completed',
+    params.gatewayResponse,
+  );
 
-        `UPDATE billing_transactions
+  if (params.providerPaymentId) {
+    await query(
+      `UPDATE billing_transactions
+       SET payment_reference = COALESCE(payment_reference, $2)
+       WHERE id = $1`,
+      [params.billingTransactionId, params.providerPaymentId],
+    );
+  }
 
-         SET payment_reference = COALESCE(payment_reference, $2)
-
-         WHERE id = $1`,
-
-        [params.billingTransactionId, params.providerPaymentId],
-
-      );
-
-    }
-
-  } else {
-
-    await recordBillingTransaction({
+  try {
+    await applyModuleSubscriptionPlanChange({
 
       businessId: params.businessId,
 
-      planId: params.planId,
+      moduleKey,
 
-      amount: params.amount,
+      planId: params.planId,
 
       billingCycle: params.billingCycle,
 
@@ -450,31 +468,25 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
       paymentReference: params.providerPaymentId,
 
-      status: 'completed',
+    });
 
-      description: 'Razorpay webhook payment',
+  } catch {
 
-      gatewayResponse: params.gatewayResponse,
+    await applySubscriptionPlanChange({
+
+      businessId: params.businessId,
+
+      planId: params.planId,
+
+      billingCycle: params.billingCycle,
+
+      paymentMethod: 'razorpay',
+
+      paymentReference: params.providerPaymentId,
 
     });
 
   }
-
-
-
-  await applySubscriptionPlanChange({
-
-    businessId: params.businessId,
-
-    planId: params.planId,
-
-    billingCycle: params.billingCycle,
-
-    paymentMethod: 'razorpay',
-
-    paymentReference: params.providerPaymentId,
-
-  });
 
 
 
@@ -529,6 +541,10 @@ export function extractCheckoutMetaFromWebhookNotes(
   billingTransactionId?: string;
 
   couponId?: string;
+
+  checkoutType?: string;
+
+  addonType?: string;
 
 } {
 
@@ -601,6 +617,14 @@ export function extractCheckoutMetaFromWebhookNotes(
             : undefined,
 
       couponId,
+
+      checkoutType:
+
+        typeof n.checkout_type === 'string' ? n.checkout_type.trim() : undefined,
+
+      addonType:
+
+        typeof n.addon_type === 'string' ? n.addon_type.trim() : undefined,
 
     };
 

@@ -1,27 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { disconnectWhatsApp } from '@/lib/whatsapp';
+import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ businessId }) => {
   try {
-    let body;
-    try {
-      body = await request.json();
-    } catch (parseError) {
-      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
-    }
-
-    const { business_id } = body || {};
-    if (!business_id) {
-      return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
-
-    await disconnectWhatsApp(business_id);
+    await disconnectWhatsApp(businessId);
     return NextResponse.json({ success: true });
-
   } catch (error: any) {
     console.error('[WA] Error disconnecting:', error);
     return NextResponse.json({ error: error.message || 'Failed to disconnect' }, { status: 500 });
   }
-}
+});

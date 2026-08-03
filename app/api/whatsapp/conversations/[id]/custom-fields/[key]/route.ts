@@ -6,33 +6,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string; key: string } }
-) {
+export const DELETE = withWhatsAppPremiumApi<{ id: string; key: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const fieldKey = decodeURIComponent(params.key);
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
     if (!conversationId) {
@@ -51,5 +30,4 @@ export async function DELETE(
     console.error('Error deleting custom field:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

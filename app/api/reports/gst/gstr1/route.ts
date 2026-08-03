@@ -238,7 +238,7 @@ export async function GET(request: NextRequest) {
               error: 'GSTIN is required for GSTR-1 export',
               message: finalBranchId 
                 ? 'Please set GSTIN for this branch in Branch Settings before exporting GSTR-1 reports.'
-                : 'Please set your business GSTIN in Settings → Tax & GST tab before exporting GSTR-1 reports.',
+                : 'Please set your business GSTIN in Settings → Business Profile (GST & tax) before exporting GSTR-1 reports.',
               code: 'GSTIN_MISSING'
             },
             { status: 400 }

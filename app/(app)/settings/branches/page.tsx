@@ -9,7 +9,8 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
 
 interface Branch {
   id: string;
@@ -138,10 +139,10 @@ export default function BranchesPage() {
   if (!hasAccess) {
     return (
       
-        <div className={`${SETTINGS_CONTENT_WIDTH} py-8 flex justify-center`}>
+        <div className={`${WIDE_PAGE_CONTENT_CLASS} py-8 flex justify-center`}>
           <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
             <Building2 className="w-16 h-16 text-text-muted mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-text-primary mb-2">
+            <h2 className="settings-section-title mb-2">
               Multi-Branch Feature is Locked
             </h2>
             <p className="text-text-secondary mb-6">
@@ -160,13 +161,11 @@ export default function BranchesPage() {
   }
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Branches</h1>
-            <p className="text-text-secondary text-sm mt-1">Manage branch offices and accounting units</p>
-          </div>
+      <SettingsPageShell
+        title="Branches"
+        description="Manage branch offices and accounting units"
+        icon={Building2}
+        actions={
           <button
             onClick={() => router.push('/settings/branches/new')}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
@@ -174,7 +173,8 @@ export default function BranchesPage() {
             <Plus className="w-5 h-5" />
             <span>Add Branch</span>
           </button>
-        </div>
+        }
+      >
 
         {/* Info Banner */}
         <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 rounded-lg p-4">
@@ -324,7 +324,6 @@ export default function BranchesPage() {
             ))
           )}
         </div>
-      </div>
-    
+      </SettingsPageShell>
   );
 }

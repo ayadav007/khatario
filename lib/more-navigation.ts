@@ -3,6 +3,12 @@
  * filtered by module permissions and plan features (RBAC).
  */
 
+import {
+  isNavSectionVisible,
+  type PlatformModule,
+} from '@/lib/platform-modules';
+import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+
 export type MoreNavItem = {
   href: string;
   label: string;
@@ -21,6 +27,8 @@ export type MoreNavContext = {
   isSupplier: boolean;
   warehousesEnabled: boolean;
   hasCapability: (resource: string, action?: string) => boolean;
+  /** Enabled platform modules (billing, hr, connect, crm). Tools always shown. */
+  enabledModules: PlatformModule[];
 };
 
 /** Match Sidebar: hasFeature === hasCapability(featureKey, 'view') */
@@ -62,6 +70,7 @@ function section(
   items: MoreNavItem[],
   ctx: MoreNavContext
 ): MoreNavSection | null {
+  if (!isNavSectionVisible(title, ctx.enabledModules)) return null;
   const vis = filterItems(items, ctx);
   if (vis.length === 0) return null;
   return { title, items: vis };
@@ -74,7 +83,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const { isSupplier, warehousesEnabled, hasCapability } = ctx;
   const out: MoreNavSection[] = [];
 
-  if (isSupplier) {
+  if (isSupplier && isNavSectionVisible('Supplier', ctx.enabledModules)) {
     const s = section(
       'Supplier',
       [
@@ -186,16 +195,14 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   if (reports) out.push(reports);
 
   const hr = section(
-    'HR & Employees',
-    [
-      { href: '/employees', label: 'All Employees', module: 'employees' },
-      { href: '/employees/new', label: 'Add Employee', module: 'employees' },
-      { href: '/employees/attendance', label: 'Attendance', module: 'attendance' },
-      { href: '/employees/leaves', label: 'Leaves', module: 'leave_requests' },
-      { href: '/employees/salary/payments', label: 'Salary Payments', module: 'payroll' },
-      { href: '/employees/commissions', label: 'Commissions', module: 'commissions' },
-      { href: '/activity-logs', label: 'Activity Logs', module: 'settings' },
-    ],
+    HR_NAV_SECTION_TITLE,
+    HR_ADMIN_NAV_ITEMS.map((item) => ({
+      href: item.href,
+      label: item.label,
+      module: item.module,
+      featureKey: item.featureKey,
+      isLocked: item.featureKey ? !hasFeature(hasCapability, item.featureKey) : false,
+    })),
     ctx
   );
   if (hr) out.push(hr);
@@ -220,6 +227,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     'Settings & data',
     [
       { href: '/settings', label: 'Settings', module: 'settings' },
+      { href: '/settings/email', label: 'Email (SMTP)', module: 'settings' },
       { href: '/settings/users', label: 'Manage Users', module: 'settings' },
       { href: '/settings/backup', label: 'Backup & restore', module: 'settings' },
       { href: '/settings/offline-sync', label: 'Offline sync', module: 'settings' },

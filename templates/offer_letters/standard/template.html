@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offer Letter - {{candidate.full_name}}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 12px;
+      line-height: 1.65;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 36px 40px;
+      position: relative;
+      min-height: 1000px;
+    }
+    .watermark {
+      position: absolute;
+      top: 42%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.06;
+      max-width: 280px;
+      z-index: 0;
+    }
+    .content { position: relative; z-index: 1; }
+    .header { text-align: center; margin-bottom: 28px; border-bottom: 1px solid #ddd; padding-bottom: 16px; }
+    .logo { max-height: 56px; max-width: 180px; margin-bottom: 8px; }
+    .company-name { font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+    .company-address { font-size: 11px; color: #555; margin-top: 6px; }
+    .subject { text-align: center; font-weight: bold; text-decoration: underline; margin: 24px 0 20px; font-size: 13px; }
+    .salutation { margin-bottom: 16px; }
+    .body p { margin-bottom: 12px; text-align: justify; }
+    .details-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11px; }
+    .details-table th, .details-table td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; }
+    .details-table th { background: #f5f5f5; width: 42%; }
+    .ctc-table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 11px; }
+    .ctc-table th, .ctc-table td { border: 1px solid #ccc; padding: 6px 10px; }
+    .ctc-table th { background: #f5f5f5; text-align: left; }
+    .ctc-table .total td { font-weight: bold; background: #fafafa; }
+    .signatures {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 48px;
+      page-break-inside: avoid;
+    }
+    .sig-block { width: 48%; font-size: 11px; }
+    .sig-block img { max-height: 52px; max-width: 160px; object-fit: contain; display: block; margin: 8px 0; }
+    .sig-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 6px; }
+    .footer {
+      margin-top: 40px;
+      padding-top: 12px;
+      border-top: 1px solid #ddd;
+      font-size: 10px;
+      color: #666;
+      text-align: center;
+    }
+    .accepted-note { font-size: 11px; margin-top: 8px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    {{#if settings.show_watermark}}
+      {{#if business.logo_url}}
+        <img src="{{business.logo_url}}" class="watermark" alt="" />
+      {{/if}}
+    {{/if}}
+
+    <div class="content">
+      <div class="header">
+        {{#if business.logo_url}}
+          <img src="{{business.logo_url}}" class="logo" alt="{{business.name}}" />
+        {{/if}}
+        <div class="company-name">{{business.name}}</div>
+        <div class="company-address">{{business.address}}</div>
+        {{#if business.cin}}<div class="company-address">CIN: {{business.cin}}</div>{{/if}}
+      </div>
+
+      <div class="subject">SUBJECT: OFFER LETTER</div>
+
+      <div class="salutation">Dear {{candidate.full_name}},</div>
+
+      <div class="body">
+        <p>{{settings.body_intro}}</p>
+
+        <table class="details-table">
+          <tr><th>Position</th><td>{{offer.designation}}</td></tr>
+          {{#if offer.department}}<tr><th>Department</th><td>{{offer.department}}</td></tr>{{/if}}
+          {{#if offer.work_location}}<tr><th>Location</th><td>{{offer.work_location}}</td></tr>{{/if}}
+          <tr><th>Date of Joining</th><td>{{offer.joining_date}}</td></tr>
+          <tr><th>Cost to Company (Annual)</th><td>INR {{offer.ctc_annual}}</td></tr>
+          {{#if offer.annual_bonus}}<tr><th>Annual Bonus</th><td>INR {{offer.annual_bonus}}</td></tr>{{/if}}
+        </table>
+
+        {{#if settings.show_ctc_breakdown}}
+        <p><strong>Compensation breakdown (annual):</strong></p>
+        <table class="ctc-table">
+          <thead><tr><th>Component</th><th>Amount (INR)</th></tr></thead>
+          <tbody>
+            <tr><td>Basic Salary</td><td>{{offer.basic_salary_annual}}</td></tr>
+            {{#if offer.hra_annual}}<tr><td>HRA</td><td>{{offer.hra_annual}}</td></tr>{{/if}}
+            {{#if offer.transport_annual}}<tr><td>Transport Allowance</td><td>{{offer.transport_annual}}</td></tr>{{/if}}
+            {{#if offer.medical_annual}}<tr><td>Medical Allowance</td><td>{{offer.medical_annual}}</td></tr>{{/if}}
+            {{#if offer.special_annual}}<tr><td>Special Allowance</td><td>{{offer.special_annual}}</td></tr>{{/if}}
+            {{#if offer.other_annual}}<tr><td>Other Allowances</td><td>{{offer.other_annual}}</td></tr>{{/if}}
+            <tr class="total"><td>Total CTC</td><td>{{offer.ctc_annual}}</td></tr>
+          </tbody>
+        </table>
+        {{/if}}
+
+        {{#if settings.probation_clause}}<p>{{settings.probation_clause}}</p>{{/if}}
+        {{#if settings.notice_period_clause}}<p>{{settings.notice_period_clause}}</p>{{/if}}
+        {{#if offer.terms_text}}<p>{{offer.terms_text}}</p>{{/if}}
+        {{#if settings.additional_terms}}<p>{{settings.additional_terms}}</p>{{/if}}
+      </div>
+
+      <div class="signatures">
+        <div class="sig-block">
+          <p>For {{business.name}}</p>
+          {{#if business.signature_url}}
+            <img src="{{business.signature_url}}" alt="Authorized signature" />
+          {{/if}}
+          <div class="sig-line">
+            <strong>{{signatory.name}}</strong><br>
+            {{signatory.title}}
+          </div>
+        </div>
+        <div class="sig-block">
+          {{#if candidate.signature_url}}
+            <p class="accepted-note">I agree to and accept the terms as set forth in this Offer letter.</p>
+            <img src="{{candidate.signature_url}}" alt="Candidate signature" />
+            <div class="sig-line">
+              <strong>{{candidate.full_name}}</strong><br>
+              {{candidate.accepted_date}}
+            </div>
+          {{else}}
+            <p style="color:#888; margin-top: 48px;">Candidate acceptance pending</p>
+          {{/if}}
+        </div>
+      </div>
+
+      {{#if settings.footer_text}}
+        <div class="footer">{{settings.footer_text}}</div>
+      {{/if}}
+    </div>
+  </div>
+</body>
+</html>

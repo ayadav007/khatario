@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { EmployeePortalInviteCard } from '@/components/hr/EmployeePortalInviteCard';
+import { EmployeeSalaryStructurePanel } from '@/components/hr/EmployeeSalaryStructurePanel';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -22,6 +24,7 @@ interface EmployeeWithUser extends Employee {
   reporting_manager_name?: string;
   reporting_manager_code?: string;
   role_name?: string;
+  portal_invited_at?: string | null;
 }
 
 export default function EmployeeDetailPage() {
@@ -30,7 +33,7 @@ export default function EmployeeDetailPage() {
   const { business, user } = useAuth();
   const employeeId = params.id as string;
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'face_enrollment'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'salary' | 'documents' | 'face_enrollment'>('overview');
   const [employee, setEmployee] = useState<EmployeeWithUser | null>(null);
   const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +218,17 @@ export default function EmployeeDetailPage() {
           </div>
         </Card>
 
+        {business?.id ? (
+          <EmployeePortalInviteCard
+            employeeId={employeeId}
+            businessId={business.id}
+            employeeEmail={employee.user_email}
+            employeePhone={employee.user_phone}
+            employeeCode={employee.employee_code}
+            portalInvitedAt={employee.portal_invited_at}
+          />
+        ) : null}
+
         {/* Tabs */}
         <div className="border-b border-border">
           <div className="flex gap-4">
@@ -227,6 +241,16 @@ export default function EmployeeDetailPage() {
               }`}
             >
               Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('salary')}
+              className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
+                activeTab === 'salary'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              Salary structure
             </button>
             <button
               onClick={() => setActiveTab('documents')}
@@ -301,12 +325,19 @@ export default function EmployeeDetailPage() {
                 )}
                 {employee.salary && (
                   <div className="flex justify-between">
-                    <span className="text-text-secondary">Salary:</span>
-                    <span className="font-medium text-text-primary">
+                    <span className="text-text-secondary">Monthly gross:</span>
+                    <span className="font-medium text-gray-900">
                       ₹ {Number(employee.salary).toLocaleString('en-IN')}
                     </span>
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('salary')}
+                  className="text-sm link-primary"
+                >
+                  View salary structure →
+                </button>
               </div>
             </Card>
 
@@ -402,6 +433,15 @@ export default function EmployeeDetailPage() {
               </div>
             </Card>
           </div>
+        )}
+
+        {activeTab === 'salary' && business?.id && user?.id && (
+          <EmployeeSalaryStructurePanel
+            employeeId={employeeId}
+            businessId={business.id}
+            userId={user.id}
+            joiningDate={employee.joining_date}
+          />
         )}
 
         {activeTab === 'documents' && (
@@ -614,8 +654,16 @@ function FaceEnrollmentTab({ employeeId, businessId }: { employeeId: string; bus
   return (
     <Card>
       <div className="flex items-center gap-2 mb-6">
-        <Camera className="w-5 h-5 text-primary-600" />
+        <Camera className="w-5 h-5 text-text-secondary" />
         <h2 className="text-lg font-semibold text-text-primary">Face Enrollment</h2>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="font-medium">Face recognition enrollment is not ready yet</p>
+        <p className="mt-1 text-amber-800">
+          Camera preview may work, but face encoding (matching for attendance) is not implemented.
+          Use PIN / manual attendance for now. This tab will be enabled when encoding ships.
+        </p>
       </div>
 
       {enrolled ? (
@@ -638,10 +686,11 @@ function FaceEnrollmentTab({ employeeId, businessId }: { employeeId: string; bus
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="bg-slate-50 border border-primary-200 rounded-lg p-4">
-            <p className="text-sm text-primary-800">
-              <strong>Instructions:</strong> Capture 3-5 images of the employee's face from different angles.
-              Make sure the face is clearly visible and well-lit.
+          <div className="rounded-lg border border-border bg-gray-50 p-4">
+            <p className="text-sm text-text-secondary">
+              <strong className="text-text-primary">Instructions:</strong> Capture 3-5 images of the
+              employee&apos;s face from different angles. Make sure the face is clearly visible and
+              well-lit. (Preview only until encoding ships.)
             </p>
           </div>
 
@@ -702,29 +751,19 @@ function FaceEnrollmentTab({ employeeId, businessId }: { employeeId: string; bus
             {faceEncodings.length >= 3 && (
               <Button
                 onClick={handleEnroll}
-                disabled={loading}
+                disabled
                 className="flex-1"
+                title="Face encoding is not implemented yet"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Enrolling...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Complete Enrollment
-                  </>
-                )}
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Complete Enrollment (coming soon)
               </Button>
             )}
           </div>
 
-          {faceEncodings.length > 0 && faceEncodings.length < 3 && (
-            <p className="text-sm text-text-secondary text-center">
-              Capture {3 - faceEncodings.length} more image(s) to complete enrollment
-            </p>
-          )}
+          <p className="text-sm text-text-secondary text-center">
+            Enrollment save is disabled until real face encoding is available.
+          </p>
         </div>
       )}
 

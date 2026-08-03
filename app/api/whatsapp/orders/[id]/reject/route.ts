@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, query } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { query } from '@/lib/db';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,36 +8,27 @@ export const dynamic = 'force-dynamic';
  * POST /api/whatsapp/orders/[id]/reject
  * Reject WhatsApp order and notify customer
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const orderId = params.id;
+export const POST = withWhatsAppPremiumApi<{ id: string }>(
+  { parseJsonBody: true },
+  async ({ params, body, businessId }) => {
+    const orderId = params.id;
 
-  try {
-    const { business_id, reason } = await request.json();
+    try {
+      const { reason } = (body ?? {}) as { reason?: string };
 
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Update order status
-    await query(
-      `UPDATE sales_orders 
+      await query(
+        `UPDATE sales_orders 
        SET status = 'cancelled', 
            notes = $1,
            updated_at = CURRENT_TIMESTAMP 
        WHERE id = $2 AND business_id = $3`,
-      [reason || 'Payment could not be verified', orderId, business_id]
-    );
+        [reason || 'Payment could not be verified', orderId, businessId],
+      );
 
-    // Notify customer via WhatsApp (should be done in background)
-    // ...
-
-    return NextResponse.json({ success: true, message: 'Order rejected' });
-
-  } catch (error: any) {
-    console.error('Error rejecting WhatsApp order:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+      return NextResponse.json({ success: true, message: 'Order rejected' });
+    } catch (error: any) {
+      console.error('Error rejecting WhatsApp order:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  },
+);

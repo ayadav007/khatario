@@ -5,6 +5,8 @@ import { Task } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/tasks
  * List tasks
@@ -12,7 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const employeeId = searchParams.get('employee_id');
     const status = searchParams.get('status');
     const priority = searchParams.get('priority');
@@ -94,8 +98,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       title,
       description,
       assigned_to,

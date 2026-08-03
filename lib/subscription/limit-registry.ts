@@ -3,6 +3,8 @@
  * Used by checkLimit and checkLimitInTransaction.
  */
 
+import { ACTIVE_EMPLOYEE_COUNT_SQL, CONSOLE_SEAT_COUNT_SQL } from '@/lib/subscription/seat-counting';
+
 export type LimitCheckType =
   | 'invoices'
   | 'customers'
@@ -88,14 +90,14 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
     case 'items':
       return { sql: `SELECT COUNT(*)::int AS count FROM items WHERE business_id = $1`, params: p };
     case 'users':
-      return { sql: `SELECT COUNT(*)::int AS count FROM users WHERE business_id = $1`, params: p };
+      return { sql: CONSOLE_SEAT_COUNT_SQL, params: p };
     case 'whatsapp':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM whatsapp_messages WHERE business_id = $1 AND sent_at >= ${todayStart}`,
         params: p,
       };
     case 'employees':
-      return { sql: `SELECT COUNT(*)::int AS count FROM employees WHERE business_id = $1`, params: p };
+      return { sql: ACTIVE_EMPLOYEE_COUNT_SQL, params: p };
     case 'attendance':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM employee_attendance ea

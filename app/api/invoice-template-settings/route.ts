@@ -3,6 +3,8 @@ import * as db from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * Legacy API — proxies reads/writes to business_template_assignments.
  * Kept for backward compatibility with older code paths.
@@ -11,11 +13,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const business_id = searchParams.get('business_id');
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'Missing business_id' }, { status: 400 });
-    }
+    const tenant = requireTenantBusinessId(req, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
 
     const result = await db.queryOne(
       `SELECT template_id, settings FROM business_template_assignments 
@@ -45,7 +45,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { business_id, settings } = body;
+    const tenant = requireTenantBusinessId(req, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { settings } = body;
 
     if (!business_id || !settings) {
       return NextResponse.json({ error: 'Missing business_id or settings' }, { status: 400 });

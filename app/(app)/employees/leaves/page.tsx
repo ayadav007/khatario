@@ -76,7 +76,7 @@ export default function LeavesPage() {
   };
 
   const handleAction = async (requestId: string, action: 'approve' | 'reject' | 'cancel', rejectionReason?: string) => {
-    if (!business?.id) return;
+    if (!business?.id || !user?.id) return;
 
     setProcessingId(requestId);
     try {
@@ -85,7 +85,9 @@ export default function LeavesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          approved_by: business.id, // TODO: Use actual logged-in user ID
+          // leave_requests.approved_by → employees(id); console users share id with linked employee row
+          approved_by: user.id,
+          updated_by_user_id: user.id,
           rejection_reason: rejectionReason,
         }),
       });
@@ -171,7 +173,7 @@ export default function LeavesPage() {
             <Link href="/employees/leaves/calendar">
               <Button>
                 <Calendar className="w-4 h-4 mr-2" />
-                Calendar View
+                Team Calendar
               </Button>
             </Link>
           </div>

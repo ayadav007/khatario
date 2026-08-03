@@ -1,0 +1,34 @@
+[
+  {
+    "route": "/api/admin/businesses/[id]/billing/record",
+    "file": "app/api/admin/businesses/[id]/billing/record/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]/billing",
+    "file": "app/api/admin/businesses/[id]/billing/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]/impersonate",
+    "file": "app/api/admin/businesses/[id]/impersonate/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]",
+    "file": "app/api/admin/businesses/[id]/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]/subscription",
+    "file": "app/api/admin/businesses/[id]/subscription/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]/users",
+    "file": "app/api/admin/businesses/[id]/users/route.ts"
+  },
+  {
+    "route": "/api/admin/businesses/[id]/users/[userId]",
+    "file": "app/api/admin/businesses/[id]/users/[userId]/route.ts"
+  },
+  {
+    "route": "/api/suppliers/hub/profile/[businessId]",
+    "file": "app/api/suppliers/hub/profile/[businessId]/route.ts"
+  }
+]

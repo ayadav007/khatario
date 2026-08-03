@@ -2,9 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveRequest } from '@/types/database';
-import { calculateWorkingDays, checkLeaveBalance } from '@/lib/leave-calculator';
+import { checkLeaveBalance } from '@/lib/leave-calculator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  canActOnLeaveRequest,
+  getDirectReportIds,
+  getEmployeeIdForUser,
+  resolveListScope,
+} from '@/lib/hr/manager-scope';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+  enforcePortalSelfScope,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import { getDefaultPlanBundle, getLeavePlanTypeRule } from '@/lib/hr/leave/leave-plan';
+import { validateLeaveApplication, resolveLeaveYearForRequest, shouldAutoApprove } from '@/lib/hr/leave/leave-policy';
+import { calculateLeaveDaysWithSandwich } from '@/lib/hr/leave/leave-days';
+import { ensureLeaveBalanceRow } from '@/lib/hr/leave/leave-accrual';
+import { bootstrapLeaveRequestApprovals } from '@/lib/hr/leave/leave-request-approval';
+import { syncApprovedLeaveToAttendance } from '@/lib/hr/leave-attendance-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,13 +32,28 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const actor = await resolveActorContext(request);
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'leaves');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+    }
+
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    const employeeId = searchParams.get('employee_id');
+    let businessId = getBusinessIdFromRequest(request);
+    let userId = getUserIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+      if (!userId) userId = actor.userId;
+    }
+    let employeeId = searchParams.get('employee_id');
     const status = searchParams.get('status');
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
+    const scopeParam = searchParams.get('scope');
 
     if (!businessId) {
       return NextResponse.json(
@@ -49,11 +82,20 @@ export async function GET(request: NextRequest) {
         await authorize(userId, 'leave_requests', 'read', { businessId });
       } catch (error) {
         if (error instanceof AuthorizationError) {
-          return error.toNextResponse();
+          const actorEmployeeId = await getEmployeeIdForUser(userId, businessId);
+          const teamIds = actorEmployeeId
+            ? await getDirectReportIds(businessId, actorEmployeeId)
+            : [];
+          if (teamIds.length === 0) {
+            return error.toNextResponse();
+          }
+        } else {
+          throw error;
         }
-        throw error;
       }
     }
+
+    const listScope = await resolveListScope(userId, businessId, 'leave', scopeParam);
 
     let sql = `
       SELECT 
@@ -78,6 +120,26 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       sql += ` AND lr.employee_id = $${paramIndex}`;
       params.push(employeeId);
+      paramIndex++;
+    } else if (actor?.isPortal) {
+      sql += ` AND lr.employee_id = $${paramIndex}`;
+      params.push(actor.userId);
+      paramIndex++;
+    } else if (listScope === 'team') {
+      const actorEmployeeId = await getEmployeeIdForUser(userId, businessId);
+      if (actorEmployeeId) {
+        const teamIds = await getDirectReportIds(businessId, actorEmployeeId);
+        if (teamIds.length === 0) {
+          return NextResponse.json({ requests: [] });
+        }
+        const ph = teamIds.map((_, i) => `$${paramIndex + i}`).join(', ');
+        sql += ` AND lr.employee_id IN (${ph})`;
+        params.push(...teamIds);
+        paramIndex += teamIds.length;
+      }
+    } else if (listScope === 'self') {
+      sql += ` AND lr.employee_id = $${paramIndex}`;
+      params.push(userId);
       paramIndex++;
     }
 
@@ -127,7 +189,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
+    const actor = await resolveActorContext(request, body);
+    let {
       business_id,
       employee_id,
       leave_type_id,
@@ -136,6 +199,19 @@ export async function POST(request: NextRequest) {
       reason,
       attachment_url,
     } = body;
+
+    if (actor) {
+      business_id = actor.businessId;
+      if (actor.isPortal) {
+        try {
+          await assertPortalFeatureForRequest(request, actor.businessId, 'leaves');
+        } catch (error) {
+          if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+          throw error;
+        }
+        employee_id = actor.userId;
+      }
+    }
 
     if (!business_id || !employee_id || !leave_type_id || !start_date || !end_date) {
       return NextResponse.json(
@@ -179,11 +255,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate working days
-    const totalDays = await calculateWorkingDays(
-      new Date(start_date),
-      new Date(end_date),
-      business_id
+    const { plan } = await getDefaultPlanBundle(business_id);
+    const typeRule = await getLeavePlanTypeRule(plan.id, leave_type_id);
+    if (!typeRule) {
+      return NextResponse.json(
+        { error: 'Leave type is not configured in the leave plan' },
+        { status: 400 },
+      );
+    }
+
+    const totalDays = await calculateLeaveDaysWithSandwich(
+      start_date,
+      end_date,
+      business_id,
+      typeRule,
     );
 
     if (totalDays <= 0) {
@@ -193,11 +278,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check leave balance
-    const year = new Date(start_date).getFullYear();
-    const balanceCheck = await checkLeaveBalance(employee_id, leave_type_id, totalDays, year);
+    const isPortalSelfApply = Boolean(actor?.isPortal && authUserId === employee_id);
 
-    if (!balanceCheck.sufficient) {
+    try {
+      await validateLeaveApplication({
+        businessId: business_id,
+        employeeId: employee_id,
+        leaveTypeId: leave_type_id,
+        startDate: start_date,
+        endDate: end_date,
+        reason,
+        attachmentUrl: attachment_url,
+        actorUserId: authUserId,
+        isPortalSelfApply,
+        totalDays,
+      });
+    } catch (validationError) {
+      return NextResponse.json(
+        { error: validationError instanceof Error ? validationError.message : 'Validation failed' },
+        { status: 400 },
+      );
+    }
+
+    const leaveYear = resolveLeaveYearForRequest(start_date, plan);
+    await ensureLeaveBalanceRow(employee_id, leave_type_id, leaveYear);
+
+    const balanceCheck = await checkLeaveBalance(employee_id, leave_type_id, totalDays, leaveYear);
+
+    if (!balanceCheck.sufficient && !typeRule.allow_negative_balance) {
       return NextResponse.json(
         {
           error: `Insufficient leave balance. Available: ${balanceCheck.currentBalance} days, Required: ${totalDays} days`,
@@ -207,36 +315,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for overlapping leave requests
-    const overlapping = await queryOne(
-      `SELECT id FROM leave_requests
-       WHERE employee_id = $1
-       AND status IN ('pending', 'approved')
-       AND (
-         (start_date <= $2 AND end_date >= $2) OR
-         (start_date <= $3 AND end_date >= $3) OR
-         (start_date >= $2 AND end_date <= $3)
-       )`,
-      [employee_id, start_date, end_date]
-    );
-
-    if (overlapping) {
-      return NextResponse.json(
-        { error: 'You already have a leave request for this period' },
-        { status: 400 }
-      );
-    }
+    const autoApprove = await shouldAutoApprove(typeRule);
+    const initialStatus = autoApprove ? 'approved' : 'pending';
 
     const leaveLimit = await limitExceededResponse(business_id, 'leave_requests');
     if (leaveLimit) return leaveLimit;
 
-    // Create leave request
     const leaveRequest = await queryOne<LeaveRequest>(
       `INSERT INTO leave_requests (
         employee_id, leave_type_id, start_date, end_date, total_days,
         reason, attachment_url, requested_by, status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
       [
         employee_id,
@@ -247,8 +337,26 @@ export async function POST(request: NextRequest) {
         reason || null,
         attachment_url || null,
         employee_id,
+        initialStatus,
       ]
     );
+
+    if (!leaveRequest) {
+      return NextResponse.json({ error: 'Failed to create leave request' }, { status: 500 });
+    }
+
+    if (!autoApprove) {
+      await bootstrapLeaveRequestApprovals(leaveRequest.id, business_id, employee_id);
+    } else {
+      await syncApprovedLeaveToAttendance({
+        businessId: business_id,
+        employeeId: employee_id,
+        leaveRequestId: leaveRequest.id,
+        startDate: start_date,
+        endDate: end_date,
+        totalDays,
+      });
+    }
 
     return NextResponse.json({ request: leaveRequest }, { status: 201 });
   } catch (error: any) {

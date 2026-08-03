@@ -8,11 +8,12 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Loader2, Building2 } from 'lucide-react';
+import { Loader2, Building2, MapPin } from 'lucide-react';
 import { WarehouseBranchLinks } from '@/components/settings/WarehouseBranchLinks';
 import { Card } from '@/components/ui/Card';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
-import Link from 'next/link';
+import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { INDIAN_STATES } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -190,20 +191,11 @@ export default function EditWarehousePage() {
   }
 
   return (
-    <FormPageContainer className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <Link
-          href="/settings/warehouses"
-          className="p-2 hover:bg-surface rounded-lg transition border border-border"
-        >
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Edit Warehouse</h1>
-          <p className="text-text-secondary text-sm mt-1">Update warehouse details</p>
-        </div>
-      </div>
-
+    <SettingsPageShell
+      title="Edit Warehouse"
+      description="Update warehouse details"
+      icon={MapPin}
+    >
       <FormCard>
       <form onSubmit={handleSubmit}>
       <div className="form-page-shell">
@@ -324,12 +316,13 @@ export default function EditWarehousePage() {
         </FormSection>
       </div>
 
-        <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+        <SettingsFloatingSaveBar align="between">
           <Button
             type="button"
             variant="secondary"
             onClick={() => router.push('/settings/warehouses')}
             disabled={saving}
+            className="flex-1 sm:flex-none"
           >
             Cancel
           </Button>
@@ -337,6 +330,7 @@ export default function EditWarehousePage() {
             type="submit"
             variant="primary"
             disabled={saving}
+            className="flex-1 sm:flex-none"
           >
             {saving ? (
               <>
@@ -347,7 +341,7 @@ export default function EditWarehousePage() {
               'Save Changes'
             )}
           </Button>
-        </div>
+        </SettingsFloatingSaveBar>
       </form>
       </FormCard>
 
@@ -377,6 +371,6 @@ export default function EditWarehousePage() {
           </Card>
         </div>
       )}
-    </FormPageContainer>
+    </SettingsPageShell>
   );
 }

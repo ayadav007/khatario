@@ -1,0 +1,4324 @@
+{
+  "summary": {
+    "total": 138,
+    "critical": 131,
+    "high": 1,
+    "medium": 3
+  },
+  "critical": [
+    {
+      "route": "/api/accounts/groups",
+      "file": "app/api/accounts/groups/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/backup/history",
+      "file": "app/api/backup/history/route.ts",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/history/[id]",
+      "file": "app/api/backup/history/[id]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/history/[id]/download",
+      "file": "app/api/backup/history/[id]/download/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/schedule",
+      "file": "app/api/backup/schedule/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/bank-statements/reconciliation-report",
+      "file": "app/api/bank-statements/reconciliation-report/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/bank-statements/unreconciled",
+      "file": "app/api/bank-statements/unreconciled/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/budgets",
+      "file": "app/api/budgets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/budgets/[id]/variance",
+      "file": "app/api/budgets/[id]/variance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/auth",
+      "file": "app/api/cloud-storage/google/auth/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/credentials",
+      "file": "app/api/cloud-storage/google/credentials/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/list",
+      "file": "app/api/cloud-storage/google/list/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/commission-rules",
+      "file": "app/api/commission-rules/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/commission-rules/[id]",
+      "file": "app/api/commission-rules/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/currencies",
+      "file": "app/api/currencies/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/debug/template-assignment",
+      "file": "app/api/debug/template-assignment/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/delivery-challans",
+      "file": "app/api/delivery-challans/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/depreciation/calculate",
+      "file": "app/api/depreciation/calculate/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/document-attachments/[id]",
+      "file": "app/api/document-attachments/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/employees/face-enrollment",
+      "file": "app/api/employees/face-enrollment/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/performance",
+      "file": "app/api/employees/performance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/salary/advances/balance",
+      "file": "app/api/employees/salary/advances/balance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/targets",
+      "file": "app/api/employees/targets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/targets/[id]",
+      "file": "app/api/employees/targets/[id]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/exchange-rates",
+      "file": "app/api/exchange-rates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/expense-categories",
+      "file": "app/api/expense-categories/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/features/enabled",
+      "file": "app/api/features/enabled/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/filters/presets",
+      "file": "app/api/filters/presets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/financial-years",
+      "file": "app/api/financial-years/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/financial-years/[id]/close",
+      "file": "app/api/financial-years/[id]/close/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/fixed-assets",
+      "file": "app/api/fixed-assets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/fixed-assets/depreciation-schedule",
+      "file": "app/api/fixed-assets/depreciation-schedule/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/decision",
+      "file": "app/api/gst/gstr2b/decision/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/export",
+      "file": "app/api/gst/gstr2b/export/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/reconcile",
+      "file": "app/api/gst/gstr2b/reconcile/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/holidays",
+      "file": "app/api/holidays/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/holidays/[id]",
+      "file": "app/api/holidays/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/inventory-adjustments/[id]",
+      "file": "app/api/inventory-adjustments/[id]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoice-template-settings",
+      "file": "app/api/invoice-template-settings/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoice-templates",
+      "file": "app/api/invoice-templates/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoices/next-number",
+      "file": "app/api/invoices/next-number/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/batches",
+      "file": "app/api/items/[id]/batches/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/batches/[batchId]",
+      "file": "app/api/items/[id]/batches/[batchId]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/serials",
+      "file": "app/api/items/[id]/serials/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/serials/[serialId]",
+      "file": "app/api/items/[id]/serials/[serialId]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/valuation",
+      "file": "app/api/items/[id]/valuation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/search",
+      "file": "app/api/items/search/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/journal-entries/templates",
+      "file": "app/api/journal-entries/templates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/journal-entries/templates/[id]",
+      "file": "app/api/journal-entries/templates/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/leave-types",
+      "file": "app/api/leave-types/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/leave-types/[id]",
+      "file": "app/api/leave-types/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/ledger/account/[accountId]/statement",
+      "file": "app/api/ledger/account/[accountId]/statement/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/ledger/account/[accountId]/statement/pdf",
+      "file": "app/api/ledger/account/[accountId]/statement/pdf/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/ledger/balance/[accountId]",
+      "file": "app/api/ledger/balance/[accountId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/locations",
+      "file": "app/api/locations/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/opening-balances",
+      "file": "app/api/opening-balances/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/payment-methods",
+      "file": "app/api/payment-methods/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions",
+      "file": "app/api/provisions/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions/[id]",
+      "file": "app/api/provisions/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions/[id]/entries",
+      "file": "app/api/provisions/[id]/entries/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/recurring-invoices",
+      "file": "app/api/recurring-invoices/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/settings/account-mappings",
+      "file": "app/api/settings/account-mappings/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/ai-config",
+      "file": "app/api/settings/ai-config/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/item-sales-stock",
+      "file": "app/api/settings/item-sales-stock/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/product-variants",
+      "file": "app/api/settings/product-variants/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/user-management",
+      "file": "app/api/settings/user-management/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/warehouses",
+      "file": "app/api/settings/warehouses/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/settings/whatsapp-bot",
+      "file": "app/api/settings/whatsapp-bot/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/shifts",
+      "file": "app/api/shifts/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/shifts/[id]",
+      "file": "app/api/shifts/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/suppliers/[id]/approve",
+      "file": "app/api/suppliers/[id]/approve/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/suppliers/check-duplicate",
+      "file": "app/api/suppliers/check-duplicate/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/suppliers/requests",
+      "file": "app/api/suppliers/requests/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tasks",
+      "file": "app/api/tasks/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tasks/[id]",
+      "file": "app/api/tasks/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tax-provisions",
+      "file": "app/api/tax-provisions/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/categories",
+      "file": "app/api/tds/categories/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/categories/[id]",
+      "file": "app/api/tds/categories/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/certificates",
+      "file": "app/api/tds/certificates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/payments",
+      "file": "app/api/tds/payments/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/reports/summary",
+      "file": "app/api/tds/reports/summary/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/transactions",
+      "file": "app/api/tds/transactions/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/template-assignments",
+      "file": "app/api/template-assignments/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/template-preview",
+      "file": "app/api/template-preview/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tools/whatsapp-groups",
+      "file": "app/api/tools/whatsapp-groups/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/warehouses/[id]/stock-availability",
+      "file": "app/api/warehouses/[id]/stock-availability/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/whatsapp/auto-assign",
+      "file": "app/api/whatsapp/auto-assign/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules",
+      "file": "app/api/whatsapp/bot-rules/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules/[id]",
+      "file": "app/api/whatsapp/bot-rules/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules/[id]/chains",
+      "file": "app/api/whatsapp/bot-rules/[id]/chains/route.ts",
+      "methods": [
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/campaigns",
+      "file": "app/api/whatsapp/campaigns/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/campaigns/[id]",
+      "file": "app/api/whatsapp/campaigns/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contact-groups",
+      "file": "app/api/whatsapp/contact-groups/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contact-groups/[id]/members",
+      "file": "app/api/whatsapp/contact-groups/[id]/members/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contacts",
+      "file": "app/api/whatsapp/contacts/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]",
+      "file": "app/api/whatsapp/conversations/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/custom-fields",
+      "file": "app/api/whatsapp/conversations/[id]/custom-fields/route.ts",
+      "methods": [
+        "GET",
+        "PUT"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/custom-fields/[key]",
+      "file": "app/api/whatsapp/conversations/[id]/custom-fields/[key]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/labels",
+      "file": "app/api/whatsapp/conversations/[id]/labels/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/messages",
+      "file": "app/api/whatsapp/conversations/[id]/messages/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/notes",
+      "file": "app/api/whatsapp/conversations/[id]/notes/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/live/[jid]/messages",
+      "file": "app/api/whatsapp/conversations/live/[jid]/messages/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/labels",
+      "file": "app/api/whatsapp/labels/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/labels/[id]",
+      "file": "app/api/whatsapp/labels/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/media",
+      "file": "app/api/whatsapp/media/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders",
+      "file": "app/api/whatsapp/reminders/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders/[type]",
+      "file": "app/api/whatsapp/reminders/[type]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/saved-replies",
+      "file": "app/api/whatsapp/saved-replies/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/saved-replies/[id]",
+      "file": "app/api/whatsapp/saved-replies/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/unsubscribes",
+      "file": "app/api/whatsapp/unsubscribes/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/accounts/reconciliation",
+      "file": "app/api/accounts/reconciliation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/badges/counts",
+      "file": "app/api/badges/counts/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/employees/salary/advances/[id]/approve",
+      "file": "app/api/employees/salary/advances/[id]/approve/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "hasAuthorize": true,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "authorize() present but businessId may not be passed — RBAC uses user DB business_id for resource loads; Sensitive domain"
+    },
+    {
+      "route": "/api/promotions/active",
+      "file": "app/api/promotions/active/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/todos/check-reminders",
+      "file": "app/api/todos/check-reminders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/todos/users",
+      "file": "app/api/todos/users/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contacts/[phone]",
+      "file": "app/api/whatsapp/contacts/[phone]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations",
+      "file": "app/api/whatsapp/conversations/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/linked-orders",
+      "file": "app/api/whatsapp/conversations/[id]/linked-orders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/timeline",
+      "file": "app/api/whatsapp/conversations/[id]/timeline/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/live",
+      "file": "app/api/whatsapp/conversations/live/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/stream",
+      "file": "app/api/whatsapp/conversations/stream/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/summary",
+      "file": "app/api/whatsapp/conversations/summary/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/agents",
+      "file": "app/api/whatsapp/dashboard/agents/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/campaigns",
+      "file": "app/api/whatsapp/dashboard/campaigns/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/overview",
+      "file": "app/api/whatsapp/dashboard/overview/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/lead-profiles",
+      "file": "app/api/whatsapp/lead-profiles/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/orders",
+      "file": "app/api/whatsapp/orders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders/logs",
+      "file": "app/api/whatsapp/reminders/logs/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/status",
+      "file": "app/api/whatsapp/status/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/users",
+      "file": "app/api/whatsapp/users/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    }
+  ],
+  "high": [
+    {
+      "route": "/api/ledger",
+      "file": "app/api/ledger/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": true,
+      "hasPortalSession": false,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 8,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "authorize() present but businessId may not be passed — RBAC uses user DB business_id for resource loads; Sensitive domain"
+    }
+  ],
+  "medium": [
+    {
+      "route": "/api/notifications",
+      "file": "app/api/notifications/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    },
+    {
+      "route": "/api/notifications/read-all",
+      "file": "app/api/notifications/read-all/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    },
+    {
+      "route": "/api/search",
+      "file": "app/api/search/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    }
+  ],
+  "all": [
+    {
+      "route": "/api/accounts/groups",
+      "file": "app/api/accounts/groups/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/backup/history",
+      "file": "app/api/backup/history/route.ts",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/history/[id]",
+      "file": "app/api/backup/history/[id]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/history/[id]/download",
+      "file": "app/api/backup/history/[id]/download/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/backup/schedule",
+      "file": "app/api/backup/schedule/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/bank-statements/reconciliation-report",
+      "file": "app/api/bank-statements/reconciliation-report/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/bank-statements/unreconciled",
+      "file": "app/api/bank-statements/unreconciled/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/budgets",
+      "file": "app/api/budgets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/budgets/[id]/variance",
+      "file": "app/api/budgets/[id]/variance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/auth",
+      "file": "app/api/cloud-storage/google/auth/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/credentials",
+      "file": "app/api/cloud-storage/google/credentials/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/cloud-storage/google/list",
+      "file": "app/api/cloud-storage/google/list/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/commission-rules",
+      "file": "app/api/commission-rules/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/commission-rules/[id]",
+      "file": "app/api/commission-rules/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/currencies",
+      "file": "app/api/currencies/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/debug/template-assignment",
+      "file": "app/api/debug/template-assignment/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/delivery-challans",
+      "file": "app/api/delivery-challans/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/depreciation/calculate",
+      "file": "app/api/depreciation/calculate/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/document-attachments/[id]",
+      "file": "app/api/document-attachments/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/employees/face-enrollment",
+      "file": "app/api/employees/face-enrollment/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/performance",
+      "file": "app/api/employees/performance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/salary/advances/balance",
+      "file": "app/api/employees/salary/advances/balance/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/targets",
+      "file": "app/api/employees/targets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/employees/targets/[id]",
+      "file": "app/api/employees/targets/[id]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/exchange-rates",
+      "file": "app/api/exchange-rates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/expense-categories",
+      "file": "app/api/expense-categories/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/features/enabled",
+      "file": "app/api/features/enabled/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/filters/presets",
+      "file": "app/api/filters/presets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/financial-years",
+      "file": "app/api/financial-years/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/financial-years/[id]/close",
+      "file": "app/api/financial-years/[id]/close/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/fixed-assets",
+      "file": "app/api/fixed-assets/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/fixed-assets/depreciation-schedule",
+      "file": "app/api/fixed-assets/depreciation-schedule/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/decision",
+      "file": "app/api/gst/gstr2b/decision/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/export",
+      "file": "app/api/gst/gstr2b/export/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/gst/gstr2b/reconcile",
+      "file": "app/api/gst/gstr2b/reconcile/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/holidays",
+      "file": "app/api/holidays/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/holidays/[id]",
+      "file": "app/api/holidays/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/inventory-adjustments/[id]",
+      "file": "app/api/inventory-adjustments/[id]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoice-template-settings",
+      "file": "app/api/invoice-template-settings/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoice-templates",
+      "file": "app/api/invoice-templates/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/invoices/next-number",
+      "file": "app/api/invoices/next-number/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/batches",
+      "file": "app/api/items/[id]/batches/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/batches/[batchId]",
+      "file": "app/api/items/[id]/batches/[batchId]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/serials",
+      "file": "app/api/items/[id]/serials/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/serials/[serialId]",
+      "file": "app/api/items/[id]/serials/[serialId]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/[id]/valuation",
+      "file": "app/api/items/[id]/valuation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/items/search",
+      "file": "app/api/items/search/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/journal-entries/templates",
+      "file": "app/api/journal-entries/templates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/journal-entries/templates/[id]",
+      "file": "app/api/journal-entries/templates/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/leave-types",
+      "file": "app/api/leave-types/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/leave-types/[id]",
+      "file": "app/api/leave-types/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/ledger/account/[accountId]/statement",
+      "file": "app/api/ledger/account/[accountId]/statement/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/ledger/account/[accountId]/statement/pdf",
+      "file": "app/api/ledger/account/[accountId]/statement/pdf/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/ledger/balance/[accountId]",
+      "file": "app/api/ledger/balance/[accountId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/locations",
+      "file": "app/api/locations/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/opening-balances",
+      "file": "app/api/opening-balances/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/payment-methods",
+      "file": "app/api/payment-methods/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions",
+      "file": "app/api/provisions/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions/[id]",
+      "file": "app/api/provisions/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/provisions/[id]/entries",
+      "file": "app/api/provisions/[id]/entries/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/recurring-invoices",
+      "file": "app/api/recurring-invoices/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/settings/account-mappings",
+      "file": "app/api/settings/account-mappings/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/ai-config",
+      "file": "app/api/settings/ai-config/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/item-sales-stock",
+      "file": "app/api/settings/item-sales-stock/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/product-variants",
+      "file": "app/api/settings/product-variants/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/user-management",
+      "file": "app/api/settings/user-management/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/settings/warehouses",
+      "file": "app/api/settings/warehouses/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/settings/whatsapp-bot",
+      "file": "app/api/settings/whatsapp-bot/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/shifts",
+      "file": "app/api/shifts/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/shifts/[id]",
+      "file": "app/api/shifts/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/suppliers/[id]/approve",
+      "file": "app/api/suppliers/[id]/approve/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/suppliers/check-duplicate",
+      "file": "app/api/suppliers/check-duplicate/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/suppliers/requests",
+      "file": "app/api/suppliers/requests/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tasks",
+      "file": "app/api/tasks/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tasks/[id]",
+      "file": "app/api/tasks/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tax-provisions",
+      "file": "app/api/tax-provisions/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/categories",
+      "file": "app/api/tds/categories/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/categories/[id]",
+      "file": "app/api/tds/categories/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/certificates",
+      "file": "app/api/tds/certificates/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/payments",
+      "file": "app/api/tds/payments/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/reports/summary",
+      "file": "app/api/tds/reports/summary/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/tds/transactions",
+      "file": "app/api/tds/transactions/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/template-assignments",
+      "file": "app/api/template-assignments/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/template-preview",
+      "file": "app/api/template-preview/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/tools/whatsapp-groups",
+      "file": "app/api/tools/whatsapp-groups/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/warehouses/[id]/stock-availability",
+      "file": "app/api/warehouses/[id]/stock-availability/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": true,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only; Sensitive domain"
+    },
+    {
+      "route": "/api/whatsapp/auto-assign",
+      "file": "app/api/whatsapp/auto-assign/route.ts",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules",
+      "file": "app/api/whatsapp/bot-rules/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules/[id]",
+      "file": "app/api/whatsapp/bot-rules/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/bot-rules/[id]/chains",
+      "file": "app/api/whatsapp/bot-rules/[id]/chains/route.ts",
+      "methods": [
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/campaigns",
+      "file": "app/api/whatsapp/campaigns/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/campaigns/[id]",
+      "file": "app/api/whatsapp/campaigns/[id]/route.ts",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contact-groups",
+      "file": "app/api/whatsapp/contact-groups/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contact-groups/[id]/members",
+      "file": "app/api/whatsapp/contact-groups/[id]/members/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contacts",
+      "file": "app/api/whatsapp/contacts/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]",
+      "file": "app/api/whatsapp/conversations/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/custom-fields",
+      "file": "app/api/whatsapp/conversations/[id]/custom-fields/route.ts",
+      "methods": [
+        "GET",
+        "PUT"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/custom-fields/[key]",
+      "file": "app/api/whatsapp/conversations/[id]/custom-fields/[key]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/labels",
+      "file": "app/api/whatsapp/conversations/[id]/labels/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/messages",
+      "file": "app/api/whatsapp/conversations/[id]/messages/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/notes",
+      "file": "app/api/whatsapp/conversations/[id]/notes/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/live/[jid]/messages",
+      "file": "app/api/whatsapp/conversations/live/[jid]/messages/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/labels",
+      "file": "app/api/whatsapp/labels/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/labels/[id]",
+      "file": "app/api/whatsapp/labels/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/media",
+      "file": "app/api/whatsapp/media/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders",
+      "file": "app/api/whatsapp/reminders/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders/[type]",
+      "file": "app/api/whatsapp/reminders/[type]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/saved-replies",
+      "file": "app/api/whatsapp/saved-replies/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/saved-replies/[id]",
+      "file": "app/api/whatsapp/saved-replies/[id]/route.ts",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/unsubscribes",
+      "file": "app/api/whatsapp/unsubscribes/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 10,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/accounts/reconciliation",
+      "file": "app/api/accounts/reconciliation/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/badges/counts",
+      "file": "app/api/badges/counts/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/employees/salary/advances/[id]/approve",
+      "file": "app/api/employees/salary/advances/[id]/approve/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "hasAuthorize": true,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "authorize() present but businessId may not be passed — RBAC uses user DB business_id for resource loads; Sensitive domain"
+    },
+    {
+      "route": "/api/promotions/active",
+      "file": "app/api/promotions/active/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/todos/check-reminders",
+      "file": "app/api/todos/check-reminders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/todos/users",
+      "file": "app/api/todos/users/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/contacts/[phone]",
+      "file": "app/api/whatsapp/contacts/[phone]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations",
+      "file": "app/api/whatsapp/conversations/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/linked-orders",
+      "file": "app/api/whatsapp/conversations/[id]/linked-orders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/[id]/timeline",
+      "file": "app/api/whatsapp/conversations/[id]/timeline/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/live",
+      "file": "app/api/whatsapp/conversations/live/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/stream",
+      "file": "app/api/whatsapp/conversations/stream/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/conversations/summary",
+      "file": "app/api/whatsapp/conversations/summary/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/agents",
+      "file": "app/api/whatsapp/dashboard/agents/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/campaigns",
+      "file": "app/api/whatsapp/dashboard/campaigns/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/dashboard/overview",
+      "file": "app/api/whatsapp/dashboard/overview/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/lead-profiles",
+      "file": "app/api/whatsapp/lead-profiles/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/orders",
+      "file": "app/api/whatsapp/orders/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/reminders/logs",
+      "file": "app/api/whatsapp/reminders/logs/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/status",
+      "file": "app/api/whatsapp/status/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/whatsapp/users",
+      "file": "app/api/whatsapp/users/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 9,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "No user/RBAC check in handler — JWT middleware only"
+    },
+    {
+      "route": "/api/ledger",
+      "file": "app/api/ledger/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": true,
+      "hasPortalSession": false,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 8,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "authorize() present but businessId may not be passed — RBAC uses user DB business_id for resource loads; Sensitive domain"
+    },
+    {
+      "route": "/api/notifications",
+      "file": "app/api/notifications/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    },
+    {
+      "route": "/api/notifications/read-all",
+      "file": "app/api/notifications/read-all/route.ts",
+      "methods": [
+        "PATCH"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    },
+    {
+      "route": "/api/search",
+      "file": "app/api/search/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": true,
+      "hasUserCheck": true,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 6,
+      "crossTenant": "YES — query business_id used directly in handler",
+      "notes": "Session validated but tenant not bound to query param; Sensitive domain"
+    },
+    {
+      "route": "/api/admin/billing/events",
+      "file": "app/api/admin/billing/events/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 3,
+      "crossTenant": "Varies — admin/cron scope",
+      "notes": ""
+    },
+    {
+      "route": "/api/cron/process-reversing-entries",
+      "file": "app/api/cron/process-reversing-entries/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": true,
+      "severity": 3,
+      "crossTenant": "Varies — admin/cron scope",
+      "notes": ""
+    },
+    {
+      "route": "/api/cron/refresh-profile-pictures",
+      "file": "app/api/cron/refresh-profile-pictures/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "hasAuthorize": false,
+      "hasPortalSession": false,
+      "hasUserCheck": false,
+      "hasAssertFeature": false,
+      "isMutation": false,
+      "severity": 3,
+      "crossTenant": "Varies — admin/cron scope",
+      "notes": ""
+    }
+  ]
+}

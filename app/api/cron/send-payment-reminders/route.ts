@@ -8,6 +8,7 @@ import {
   isInReminderSendWindow,
   reminderTimeToHhMm,
 } from '@/lib/reminder-schedule';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 /**
  * GET/POST /api/cron/send-payment-reminders
@@ -21,20 +22,10 @@ import {
  * - Vercel: `vercel.json` should invoke this at least every 15 minutes (see schedule there).
  *   Set CRON_SECRET; Vercel sends `Authorization: Bearer <CRON_SECRET>` on cron invocations.
  * - Other hosts: call this URL on the same cadence, or more often; same Bearer if CRON_SECRET is set.
- * - Local dev: leave CRON_SECRET unset, or set CRON_SECRET and use the header. Use `?force=1` to ignore the window.
+ * - Local dev: set CRON_SECRET and send `Authorization: Bearer <CRON_SECRET>`. Use `?force=1` to ignore the window.
  *
  * BullMQ is not required — this route is the job; something must trigger it on a schedule.
  */
-function assertCronAuthorized(request: NextRequest): NextResponse | null {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return null;
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return null;
-}
-
 export async function GET(request: NextRequest) {
   const denied = assertCronAuthorized(request);
   if (denied) return denied;

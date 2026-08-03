@@ -4,6 +4,8 @@ import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 registerGlobalInvoiceHandlebarsHelpers();
 
 function getSampleData(templateId: string) {
@@ -253,8 +255,9 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const templateId = searchParams.get('template_id');
     const customSettingsParam = searchParams.get('settings');
-    const businessId = searchParams.get('business_id');
-
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     if (!templateId) {
       return new NextResponse('template_id parameter is required', { status: 400 });
     }
@@ -292,6 +295,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const templateId = body.template_id as string | undefined;
     const businessId = (body.business_id as string | undefined) ?? null;
     const customSettings = (body.settings as Record<string, unknown> | undefined) ?? null;

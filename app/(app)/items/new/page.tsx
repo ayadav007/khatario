@@ -93,6 +93,7 @@ export default function NewItemPage() {
     /** inherit = use business default; block/allow = override for invoices */
     sales_stock_policy: 'inherit' as 'inherit' | 'block' | 'allow',
     is_bundle: false,
+    show_in_store: false,
   });
 
   const [businessDefaultAllowOversell, setBusinessDefaultAllowOversell] = useState(false);
@@ -427,6 +428,7 @@ export default function NewItemPage() {
                     ? 'block'
                     : 'inherit',
               is_bundle: !!(item as { is_bundle?: boolean }).is_bundle,
+              show_in_store: !!(item as any).show_in_store,
             });
 
             const itemIsBundle = !!(item as { is_bundle?: boolean }).is_bundle;
@@ -762,7 +764,8 @@ export default function NewItemPage() {
         brand: formData.brand || null,
         is_weighed: !!formData.is_weighed,
         plu_code: formData.plu_code || null,
-        weight_barcode_mode: formData.weight_barcode_mode || 'weight'
+        weight_barcode_mode: formData.weight_barcode_mode || 'weight',
+        show_in_store: !!formData.show_in_store,
       };
 
       const payload: Record<string, unknown> = {
@@ -2014,6 +2017,35 @@ export default function NewItemPage() {
                 />
                 <p className="text-xs text-gray-500 mt-1 max-w-5xl">
                   💡 Tip: Include features, benefits, specifications, usage instructions, or any details that help customers make informed decisions.
+                </p>
+              </FormSection>
+
+              <FormSection
+                title="Online Store"
+                description="Make this item visible in your public online store."
+              >
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.show_in_store}
+                    onClick={() => setFormData({ ...formData, show_in_store: !formData.show_in_store })}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      formData.show_in_store ? 'bg-green-500' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        formData.show_in_store ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm text-text-primary">
+                    Show in online store
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  When enabled, this item will be visible on your public storefront for customers to browse and order.
                 </p>
               </FormSection>
             </div>

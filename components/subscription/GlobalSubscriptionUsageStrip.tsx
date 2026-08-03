@@ -7,13 +7,13 @@ import { useSubscriptionUsage } from '@/hooks/useSubscriptionUsage';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
 
 /** Pages that already show a dedicated usage banner — avoid duplicate nudges. */
-const SKIP_PATHS = new Set([
+const SKIP_PATH_PREFIXES = [
   '/dashboard',
   '/items',
   '/customers',
   '/invoices',
-  '/settings/users',
-]);
+  '/settings',
+];
 
 export function GlobalSubscriptionUsageStrip() {
   const pathname = usePathname();
@@ -25,7 +25,13 @@ export function GlobalSubscriptionUsageStrip() {
     return nudgeRows.reduce((acc, row) => (row.percent > acc.percent ? row : acc));
   }, [nudgeRows]);
 
-  if (loading || !worst || !pathname || SKIP_PATHS.has(pathname)) {
+  const skipPath =
+    pathname != null &&
+    SKIP_PATH_PREFIXES.some((prefix) =>
+      prefix === '/settings' ? pathname === '/settings' || pathname.startsWith('/settings/') : pathname === prefix
+    );
+
+  if (loading || !worst || !pathname || skipPath) {
     return null;
   }
 

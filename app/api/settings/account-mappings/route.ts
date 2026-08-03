@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAccountMappings, updateAccountMappings, autoDetectAccountMappings } from '@/lib/account-mappings';
+import { getAccountMappings, updateAccountMappings } from '@/lib/account-mappings';
 import { AccountMappings } from '@/lib/account-mappings';
 
 export const dynamic = 'force-dynamic';
+
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/settings/account-mappings
@@ -11,14 +13,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const mappings = await getAccountMappings(businessId);
 
@@ -39,7 +36,10 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, mappings } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { mappings } = body;
 
     if (!business_id || !mappings) {
       return NextResponse.json(
@@ -53,38 +53,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Account mappings updated' });
   } catch (error: any) {
     console.error('Error updating account mappings:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * POST /api/settings/account-mappings/auto-detect
- * Auto-detect and save account mappings from existing accounts
- */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { business_id } = body;
-
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const mappings = await autoDetectAccountMappings(business_id);
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Account mappings auto-detected and saved',
-      mappings 
-    });
-  } catch (error: any) {
-    console.error('Error auto-detecting account mappings:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

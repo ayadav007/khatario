@@ -9,19 +9,21 @@ import { useOfflineBanner } from '@/contexts/OfflineBannerContext';
  * Single sticky offline bar — light red, no retry, optional 2s blocked flash.
  */
 export function NetworkStatusBanner() {
-  const { isOffline } = useNetworkStatus();
+  const { isOffline, networkReady } = useNetworkStatus();
   const { message } = useOfflineBanner();
+  const showOffline = networkReady && isOffline;
+
+  if (!showOffline) {
+    return null;
+  }
 
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-hidden={!isOffline}
       className={clsx(
         'sticky top-0 z-[60] overflow-hidden transition-[max-height,opacity] duration-300 ease-out',
-        isOffline
-          ? 'max-h-14 opacity-100'
-          : 'pointer-events-none max-h-0 opacity-0'
+        'max-h-14 opacity-100'
       )}
     >
       <div className="bg-red-400 px-4 py-2.5 shadow-sm">

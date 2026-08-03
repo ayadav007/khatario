@@ -112,6 +112,8 @@ export interface PayslipData {
     overtime?: number;
     bonus?: number;
     commission?: number;
+    other_earnings?: number;
+    extra_components?: Array<{ name: string; amount: number }>;
     total_earnings: number;
   };
   deductions: {
@@ -121,7 +123,13 @@ export interface PayslipData {
     advance_recovery?: number;
     loan_deduction?: number;
     other_deductions?: number;
+    esi_employee?: number;
+    extra_components?: Array<{ name: string; amount: number }>;
     total_deductions: number;
+  };
+  employer_contributions?: {
+    employer_provident_fund?: number;
+    esi_employer?: number;
   };
   summary: {
     gross_salary: number;
@@ -225,26 +233,95 @@ export async function generatePayslipHtml(salaryPaymentId: string): Promise<stri
       to_date: formatDate(salaryPayment.to_date),
       payment_date: formatDate(salaryPayment.payment_date),
     },
-    earnings: {
-      basic_salary: Number(salaryPayment.basic_salary),
-      hra: Number(salaryPayment.hra) || undefined,
-      transport_allowance: Number(salaryPayment.transport_allowance) || undefined,
-      medical_allowance: Number(salaryPayment.medical_allowance) || undefined,
-      special_allowance: Number(salaryPayment.special_allowance) || undefined,
-      overtime: Number(salaryPayment.overtime) || undefined,
-      bonus: Number(salaryPayment.bonus) || undefined,
-      commission: Number(salaryPayment.commission) || undefined,
-      total_earnings: Number(salaryPayment.total_earnings),
-    },
-    deductions: {
-      provident_fund: Number(salaryPayment.provident_fund) || undefined,
-      professional_tax: Number(salaryPayment.professional_tax) || undefined,
-      tds: Number(salaryPayment.tds) || undefined,
-      advance_recovery: Number(salaryPayment.advance_recovery) || undefined,
-      loan_deduction: Number(salaryPayment.loan_deduction) || undefined,
-      other_deductions: Number(salaryPayment.other_deductions) || undefined,
-      total_deductions: Number(salaryPayment.total_deductions),
-    },
+    earnings: (() => {
+      const SYSTEM_EARN = new Set([
+        'BASIC',
+        'HRA',
+        'TRANSPORT',
+        'MEDICAL',
+        'SPECIAL',
+      ]);
+      const raw = (salaryPayment as { component_breakdown?: unknown }).component_breakdown;
+      const breakdown = Array.isArray(raw) ? raw : [];
+      const extra = breakdown
+        .filter(
+          (x: { type?: string; code?: string; amount?: number }) =>
+            x?.type === 'earning' &&
+            !SYSTEM_EARN.has(String(x.code || '').toUpperCase()) &&
+            Number(x.amount) > 0,
+        )
+        .map((x: { name?: string; amount?: number }) => ({
+          name: String(x.name || 'Allowance'),
+          amount: Number(x.amount),
+        }));
+      const otherEarn = Number(salaryPayment.other_earnings) || 0;
+      return {
+        basic_salary: Number(salaryPayment.basic_salary),
+        hra: Number(salaryPayment.hra) || undefined,
+        transport_allowance: Number(salaryPayment.transport_allowance) || undefined,
+        medical_allowance: Number(salaryPayment.medical_allowance) || undefined,
+        special_allowance: Number(salaryPayment.special_allowance) || undefined,
+        overtime: Number(salaryPayment.overtime) || undefined,
+        bonus: Number(salaryPayment.bonus) || undefined,
+        commission: Number(salaryPayment.commission) || undefined,
+        other_earnings: extra.length === 0 && otherEarn > 0 ? otherEarn : undefined,
+        extra_components: extra.length > 0 ? extra : undefined,
+        total_earnings: Number(salaryPayment.total_earnings),
+      };
+    })(),
+    deductions: (() => {
+      const SYSTEM_DED = new Set(['PF', 'PT', 'TDS', 'ESI']);
+      const raw = (salaryPayment as { component_breakdown?: unknown }).component_breakdown;
+      const breakdown = Array.isArray(raw) ? raw : [];
+      const extra = breakdown
+        .filter(
+          (x: { type?: string; code?: string; amount?: number }) =>
+            x?.type === 'deduction' &&
+            !SYSTEM_DED.has(String(x.code || '').toUpperCase()) &&
+            String(x.code || '').toUpperCase() !== 'OTHER_DED' &&
+            Number(x.amount) > 0,
+        )
+        .map((x: { name?: string; amount?: number }) => ({
+          name: String(x.name || 'Deduction'),
+          amount: Number(x.amount),
+        }));
+      const otherDedLine = breakdown.find(
+        (x: { code?: string; type?: string }) =>
+          String(x.code || '').toUpperCase() === 'OTHER_DED' && x.type === 'deduction',
+      );
+      const extraSum = extra.reduce((s, x) => s + x.amount, 0);
+      const columnOther = Number(salaryPayment.other_deductions) || 0;
+      // Prefer catalog breakdown so custom lines aren't double-counted with other_deductions
+      const otherDisplay =
+        extra.length > 0
+          ? otherDedLine
+            ? Number(otherDedLine.amount)
+            : Math.max(0, Math.round((columnOther - extraSum) * 100) / 100)
+          : columnOther;
+      return {
+        provident_fund: Number(salaryPayment.provident_fund) || undefined,
+        professional_tax: Number(salaryPayment.professional_tax) || undefined,
+        tds: Number(salaryPayment.tds) || undefined,
+        advance_recovery: Number(salaryPayment.advance_recovery) || undefined,
+        loan_deduction: Number(salaryPayment.loan_deduction) || undefined,
+        other_deductions: otherDisplay > 0 ? otherDisplay : undefined,
+        esi_employee: Number((salaryPayment as { esi_employee?: number }).esi_employee) || undefined,
+        extra_components: extra.length > 0 ? extra : undefined,
+        total_deductions: Number(salaryPayment.total_deductions),
+      };
+    })(),
+    employer_contributions: (() => {
+      const erPf =
+        Number((salaryPayment as { employer_provident_fund?: number }).employer_provident_fund) ||
+        0;
+      const erEsi =
+        Number((salaryPayment as { esi_employer?: number }).esi_employer) || 0;
+      if (erPf <= 0 && erEsi <= 0) return undefined;
+      return {
+        employer_provident_fund: erPf > 0 ? erPf : undefined,
+        esi_employer: erEsi > 0 ? erEsi : undefined,
+      };
+    })(),
     summary: {
       gross_salary: Number(salaryPayment.gross_salary),
       total_deductions: Number(salaryPayment.total_deductions),

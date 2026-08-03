@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
  * This bypasses database storage and works directly with Baileys store
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getWhatsAppSocket } from '@/lib/whatsapp';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
@@ -39,7 +39,6 @@ function findMatchingStoreJid(
   }
   return null;
 }
-
 function getProtoTimestampSec(msg: proto.IWebMessageInfo): number {
   return extractWebMessageInfoTimestampSec(msg);
 }
@@ -213,30 +212,17 @@ async function transformOneProtoToFrontend(
   };
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { jid: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const jid = decodeURIComponent(params.jid);
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const rawLimit = parseInt(searchParams.get('limit') || '20', 10);
     const limit = Math.min(100, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 20));
     const rawOff = parseInt(searchParams.get('offset') || '0', 10);
     const offset = Math.max(0, Number.isFinite(rawOff) ? rawOff : 0);
 
     if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'businessId is required' }, { status: 400 });
     }
 
     // Get active socket
@@ -847,32 +833,13 @@ export async function GET(
       error: error.message || 'Failed to fetch live messages' 
     }, { status: 500 });
   }
-}
+});
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { jid: string } }
-) {
+export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const jid = decodeURIComponent(params.jid);
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const { message_text, message_type, media_url, buttons, footer } = body;
+    const { message_text, message_type, media_url, buttons, footer } = (body ?? {}) as Record<string, any>;
 
     if (!message_text && !media_url) {
       return NextResponse.json(
@@ -993,4 +960,4 @@ export async function POST(
     console.error('[Live Messages] Error sending message:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});

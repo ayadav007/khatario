@@ -7,6 +7,7 @@ import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { HrMobileSubNav } from '@/components/hr/HrMobileSubNav';
 
 interface EmployeesLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,8 @@ interface EmployeesLayoutProps {
 /** PBAC resource for useAuthorizationGuard / hasCapability (must match authorize() module keys). */
 function getEmployeesSectionResource(pathname: string | null): string {
   if (!pathname) return 'employees';
+  if (pathname.includes('/manager')) return 'leave_requests';
+  if (pathname.includes('/org-chart')) return 'employees';
   if (pathname.includes('/attendance')) return 'attendance';
   if (pathname.includes('/leaves')) return 'leave_requests';
   if (pathname.includes('/salary')) return 'payroll';
@@ -46,7 +49,12 @@ function EmployeesLayout({ children }: EmployeesLayoutProps) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <HrMobileSubNav />
+      {children}
+    </>
+  );
 }
 
 export default EmployeesLayout;

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { normalizePhone, isValidPhone } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
@@ -9,24 +9,14 @@ export const dynamic = 'force-dynamic';
  * POST /api/whatsapp/contacts/import
  * Import contacts from CSV or Group Extractor
  */
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
-    const body = await request.json();
-    const { business_id, contacts, source, imported_from_group, create_group, group_name, group_color } = body;
+    const { contacts, source, imported_from_group, create_group, group_name, group_color } = (body ?? {}) as Record<string, any>;
 
-    if (!business_id || !contacts || !Array.isArray(contacts)) {
+    if (!contacts || !Array.isArray(contacts)) {
       return NextResponse.json(
         { error: 'Business ID and contacts array are required' },
         { status: 400 }
-      );
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
       );
     }
 
@@ -67,7 +57,7 @@ export async function POST(request: NextRequest) {
         // Check if contact already exists
         const existingResult = await pool.query(
           'SELECT id FROM whatsapp_contacts WHERE business_id = $1 AND phone = $2',
-          [business_id, normalizedPhone]
+          [businessId, normalizedPhone]
         );
 
         if (existingResult.rows.length > 0) {
@@ -83,7 +73,7 @@ export async function POST(request: NextRequest) {
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING id`,
           [
-            business_id,
+            businessId,
             normalizedPhone,
             name || null,
             email || null,
@@ -119,7 +109,7 @@ export async function POST(request: NextRequest) {
           SET name = EXCLUDED.name
           RETURNING id`,
           [
-            business_id,
+            businessId,
             group_name,
             `Imported from ${source || 'CSV'} on ${new Date().toLocaleDateString()}`,
             group_color || '#25D366',
@@ -167,4 +157,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

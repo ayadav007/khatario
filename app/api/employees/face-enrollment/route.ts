@@ -4,6 +4,8 @@ import { serializeFaceEncoding, averageFaceDescriptors } from '@/lib/face-recogn
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * POST /api/employees/face-enrollment
  * Enroll face data for an employee
@@ -11,9 +13,11 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
       employee_id,
-      business_id,
       face_encodings, // Array of face encoding JSON strings (captured from multiple angles)
       face_image_url, // Optional: reference image URL
     } = body;
@@ -111,8 +115,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employee_id');
-    const businessId = searchParams.get('business_id');
-
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     if (!employeeId || !businessId) {
       return NextResponse.json(
         { error: 'employee_id and business_id are required' },

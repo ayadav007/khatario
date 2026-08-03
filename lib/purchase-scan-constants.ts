@@ -1,3 +1,6 @@
+/** Estimated minutes to enter one purchase bill manually (used for “time saved” on scan hub). */
+export const MANUAL_BILL_ENTRY_MINUTES = 2;
+
 /** sessionStorage key: pending invoice extract payload for /purchases/new after scan hub */
 export const PURCHASE_PENDING_EXTRACT_STORAGE_KEY = 'khatario_pending_purchase_extract_v1';
 

@@ -10,6 +10,10 @@ import {
 } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import {
+  requirePlatformModule,
+  platformModuleErrorResponse,
+} from '@/lib/security/require-platform-module';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +47,14 @@ export async function GET(request: NextRequest) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
+      throw error;
+    }
+
+    try {
+      await requirePlatformModule(businessId, 'billing', 'customers');
+    } catch (error) {
+      const denied = platformModuleErrorResponse(error);
+      if (denied) return denied;
       throw error;
     }
 

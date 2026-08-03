@@ -4,6 +4,8 @@ import { CommissionRule } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * PATCH /api/commission-rules/[id]
  * Update a commission rule
@@ -14,10 +16,14 @@ export async function PATCH(
 ) {
   try {
     const ruleId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const body = await request.json();
-
+    const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(
+      request,
+      body.business_id ?? searchParams.get('business_id'),
+    );
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     if (!businessId) {
       return NextResponse.json(
         { error: 'business_id is required' },
@@ -125,14 +131,9 @@ export async function DELETE(
   try {
     const ruleId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Verify rule belongs to business
     const existing = await queryOne(

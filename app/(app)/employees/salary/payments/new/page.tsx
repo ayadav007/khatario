@@ -13,15 +13,28 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import Link from 'next/link';
-import { format, startOfMonth, endOfMonth, addMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
+import {
+  type ProRataSalaryResult,
+} from '@/lib/hr/salary-payroll-helpers';
 
 interface Employee {
   id: string;
   name: string;
   employee_code: string;
   salary?: number;
+  joining_date?: string | null;
 }
+
+type RecoveryBreakdownRow = {
+  advance_id: string;
+  remaining_amount: number;
+  recovery_months: number | null;
+  recoveries_done: number;
+  suggested_installment: number;
+  plan_label: string | null;
+};
 
 export default function NewSalaryPaymentPage() {
   const router = useRouter();
@@ -36,8 +49,18 @@ export default function NewSalaryPaymentPage() {
     skipCheck: !user?.id || !business?.id
   });
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState(0);
+  const [suggestedRecovery, setSuggestedRecovery] = useState(0);
+  const [recoveryBreakdown, setRecoveryBreakdown] = useState<RecoveryBreakdownRow[]>([]);
+  const [proRataInfo, setProRataInfo] = useState<ProRataSalaryResult | null>(null);
+  const [prefillSource, setPrefillSource] = useState<'salary_structure' | 'employee_salary' | null>(null);
+  const [attendanceDeductionLines, setAttendanceDeductionLines] = useState<
+    { type: string; date: string; label: string; amount: number }[]
+  >([]);
+  const [attendanceDeductionSummary, setAttendanceDeductionSummary] = useState<Record<string, unknown> | null>(null);
+  const [componentBreakdown, setComponentBreakdown] = useState<
+    Array<{ code: string; name: string; type: string; amount: number }>
+  >([]);
 
   // Get current month
   const currentMonth = format(new Date(), 'yyyy-MM');
@@ -64,7 +87,13 @@ export default function NewSalaryPaymentPage() {
     tds: '0',
     advance_recovery: '0',
     loan_deduction: '0',
+    attendance_deduction: '0',
     other_deductions: '0',
+    employer_provident_fund: '0',
+    esi_employee: '0',
+    esi_employer: '0',
+    pf_wage: '',
+    esi_wage: '',
     working_days: '',
     present_days: '',
     absent_days: '',
@@ -73,6 +102,7 @@ export default function NewSalaryPaymentPage() {
     payment_mode: 'bank_transfer',
     payment_reference: '',
     notes: '',
+    advance_recovery_note: '',
   });
 
   useEffect(() => {
@@ -82,15 +112,91 @@ export default function NewSalaryPaymentPage() {
   }, [business?.id]);
 
   useEffect(() => {
-    if (formData.employee_id && business?.id) {
-      fetchPendingAdvance();
-      // Auto-fill basic salary from employee record
-      const emp = employees.find(e => e.id === formData.employee_id);
-      if (emp?.salary) {
-        setFormData(prev => ({ ...prev, basic_salary: emp.salary!.toString() }));
+    if (!formData.employee_id || !business?.id) return;
+
+    let cancelled = false;
+
+    const loadPrefill = async () => {
+      try {
+        const params = new URLSearchParams({
+          business_id: business.id,
+          user_id: user?.id || '',
+          employee_id: formData.employee_id,
+          from_date: formData.from_date,
+          to_date: formData.to_date,
+        });
+
+        const res = await fetch(`/api/employees/salary/payments/prefill?${params}`);
+        if (!res.ok || cancelled) return;
+
+        const data = await res.json();
+        const fields = data.fields ?? {};
+        setPrefillSource(data.source ?? null);
+        setProRataInfo(data.pro_rata ?? null);
+
+        const attDed = data.attendance_deduction;
+        const suggestedAtt = Number(attDed?.total ?? 0);
+        setAttendanceDeductionLines(attDed?.lines ?? []);
+        setAttendanceDeductionSummary(attDed?.summary ?? null);
+        setComponentBreakdown(
+          Array.isArray(data.component_breakdown) ? data.component_breakdown : [],
+        );
+
+        setFormData((prev) => ({
+          ...prev,
+          basic_salary: Number(fields.basic_salary ?? 0).toFixed(2),
+          hra: Number(fields.hra ?? 0).toFixed(2),
+          transport_allowance: Number(fields.transport_allowance ?? 0).toFixed(2),
+          medical_allowance: Number(fields.medical_allowance ?? 0).toFixed(2),
+          special_allowance: Number(fields.special_allowance ?? 0).toFixed(2),
+          other_earnings: Number(fields.other_earnings ?? 0).toFixed(2),
+          provident_fund: Number(fields.provident_fund ?? 0).toFixed(2),
+          professional_tax: Number(fields.professional_tax ?? 0).toFixed(2),
+          tds: Number(fields.tds ?? 0).toFixed(2),
+          other_deductions: Number(fields.other_deductions ?? 0).toFixed(2),
+          employer_provident_fund: Number(fields.employer_provident_fund ?? 0).toFixed(2),
+          esi_employee: Number(fields.esi_employee ?? 0).toFixed(2),
+          esi_employer: Number(fields.esi_employer ?? 0).toFixed(2),
+          pf_wage:
+            fields.pf_wage != null ? Number(fields.pf_wage).toFixed(2) : prev.pf_wage,
+          esi_wage:
+            fields.esi_wage != null ? Number(fields.esi_wage).toFixed(2) : prev.esi_wage,
+          attendance_deduction: suggestedAtt.toFixed(2),
+          working_days: data.pro_rata?.applied
+            ? prev.working_days || String(data.pro_rata.daysInPeriod)
+            : prev.working_days,
+          present_days: data.pro_rata?.applied
+            ? prev.present_days || String(data.pro_rata.daysPaid)
+            : prev.present_days,
+        }));
+
+        const grossPreview =
+          Number(fields.basic_salary ?? 0) +
+          Number(fields.hra ?? 0) +
+          Number(fields.transport_allowance ?? 0) +
+          Number(fields.medical_allowance ?? 0) +
+          Number(fields.special_allowance ?? 0) +
+          Number(fields.other_earnings ?? 0);
+
+        await fetchPendingAdvance(grossPreview);
+      } catch (error) {
+        console.error('Error loading payroll prefill:', error);
       }
-    }
-  }, [formData.employee_id, business?.id]);
+    };
+
+    void loadPrefill();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.employee_id, formData.from_date, formData.to_date, business?.id, user?.id, employees]);
+
+  function applySuggestedRecovery() {
+    setFormData((prev) => ({
+      ...prev,
+      advance_recovery: suggestedRecovery.toFixed(2),
+    }));
+  }
 
   const fetchEmployees = async () => {
     if (!business?.id) return;
@@ -104,6 +210,7 @@ export default function NewSalaryPaymentPage() {
           name: emp.user_name || emp.employee_code,
           employee_code: emp.employee_code,
           salary: emp.salary,
+          joining_date: emp.joining_date,
         })));
       }
     } catch (error) {
@@ -111,20 +218,52 @@ export default function NewSalaryPaymentPage() {
     }
   };
 
-  const fetchPendingAdvance = async () => {
+  const fetchPendingAdvance = async (basicOverride?: number) => {
     if (!business?.id || !formData.employee_id) return;
 
+    const basic = basicOverride ?? parseFloat(formData.basic_salary || '0');
+    const grossPreview =
+      basic +
+      parseFloat(formData.hra || '0') +
+      parseFloat(formData.transport_allowance || '0') +
+      parseFloat(formData.medical_allowance || '0') +
+      parseFloat(formData.special_allowance || '0') +
+      parseFloat(formData.overtime || '0') +
+      parseFloat(formData.bonus || '0') +
+      parseFloat(formData.commission || '0') +
+      parseFloat(formData.other_earnings || '0');
+
     try {
-      const res = await fetch(`/api/employees/salary/advances/balance?business_id=${business.id}&employee_id=${formData.employee_id}`);
+      const params = new URLSearchParams({
+        business_id: business.id,
+        employee_id: formData.employee_id,
+      });
+      if (grossPreview > 0) {
+        params.set('cap_amount', String(grossPreview));
+      }
+
+      const res = await fetch(`/api/employees/salary/advances/balance?${params}`);
       if (res.ok) {
         const data = await res.json();
-        setPendingAdvance(data.pending_balance || 0);
-        setFormData(prev => ({ ...prev, advance_recovery: Math.min(data.pending_balance || 0, prev.basic_salary ? parseFloat(prev.basic_salary) : 0).toString() }));
+        const pending = data.pending_balance || 0;
+        const suggested = data.suggested_recovery ?? pending;
+        setPendingAdvance(pending);
+        setSuggestedRecovery(suggested);
+        setRecoveryBreakdown(data.recovery_breakdown ?? []);
+        setFormData((prev) => ({
+          ...prev,
+          advance_recovery: Math.min(suggested, pending, grossPreview || pending).toFixed(2),
+        }));
       }
     } catch (error) {
       console.error('Error fetching pending advance:', error);
     }
   };
+
+  const partialRecovery =
+    pendingAdvance > 0 &&
+    parseFloat(formData.advance_recovery || '0') > 0 &&
+    parseFloat(formData.advance_recovery || '0') < pendingAdvance - 0.001;
 
   const calculateTotals = () => {
     const earnings = parseFloat(formData.basic_salary || '0') +
@@ -137,12 +276,15 @@ export default function NewSalaryPaymentPage() {
       parseFloat(formData.commission || '0') +
       parseFloat(formData.other_earnings || '0');
 
-    const deductions = parseFloat(formData.provident_fund || '0') +
+    const deductions =
+      parseFloat(formData.provident_fund || '0') +
       parseFloat(formData.professional_tax || '0') +
       parseFloat(formData.tds || '0') +
       parseFloat(formData.advance_recovery || '0') +
       parseFloat(formData.loan_deduction || '0') +
-      parseFloat(formData.other_deductions || '0');
+      parseFloat(formData.attendance_deduction || '0') +
+      parseFloat(formData.other_deductions || '0') +
+      parseFloat(formData.esi_employee || '0');
 
     return {
       totalEarnings: earnings,
@@ -168,6 +310,11 @@ export default function NewSalaryPaymentPage() {
           ...formData,
           processed_by: user?.id,
           generate_payslip: true,
+          component_breakdown: componentBreakdown,
+          attendance_adjustment_details:
+            attendanceDeductionLines.length > 0
+              ? { lines: attendanceDeductionLines, summary: attendanceDeductionSummary }
+              : null,
         }),
       });
 
@@ -249,7 +396,43 @@ export default function NewSalaryPaymentPage() {
                 onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
                 required
               />
+              <Input
+                label="Period from *"
+                type="date"
+                value={formData.from_date}
+                onChange={(e) => setFormData({ ...formData, from_date: e.target.value })}
+                required
+              />
+              <Input
+                label="Period to *"
+                type="date"
+                value={formData.to_date}
+                onChange={(e) => setFormData({ ...formData, to_date: e.target.value })}
+                required
+              />
             </div>
+
+            {prefillSource === 'salary_structure' && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <p className="font-medium">Prefilled from salary structure</p>
+                <p className="mt-1 text-blue-800/90">
+                  Earnings and statutory deductions loaded from the employee&apos;s active structure. You can still
+                  adjust amounts before processing.
+                </p>
+              </div>
+            )}
+
+            {proRataInfo?.applied && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <p className="font-medium">Pro-rata salary applied</p>
+                <p className="mt-1 text-blue-800/90">
+                  Joined {proRataInfo.joiningDate} — {proRataInfo.daysPaid} of{' '}
+                  {proRataInfo.daysInPeriod} days in this period. Full monthly: ₹
+                  {proRataInfo.fullMonthlySalary.toLocaleString('en-IN')} → payable gross ₹
+                  {proRataInfo.proratedAmount.toLocaleString('en-IN')}.
+                </p>
+              </div>
+            )}
 
             {/* Earnings */}
             <div>
@@ -334,19 +517,85 @@ export default function NewSalaryPaymentPage() {
             {/* Deductions */}
             <div>
               <h2 className="text-lg font-semibold text-text-primary mb-4">Deductions</h2>
+              {attendanceDeductionLines.length > 0 && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-medium">Suggested attendance deductions</p>
+                  <ul className="mt-2 space-y-1 text-xs text-amber-800/90">
+                    {attendanceDeductionLines.map((line, i) => (
+                      <li key={`${line.date}-${line.type}-${i}`}>
+                        {line.label}: ₹{line.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </li>
+                    ))}
+                  </ul>
+                  {attendanceDeductionSummary ? (
+                    <p className="mt-2 text-xs text-amber-800/90">
+                      Daily rate: ₹{Number(attendanceDeductionSummary.daily_rate ?? 0).toLocaleString('en-IN')}
+                      {' · '}
+                      Lates: {String(attendanceDeductionSummary.late_count ?? 0)} (
+                      {String(attendanceDeductionSummary.billable_late_count ?? 0)} billable)
+                    </p>
+                  ) : null}
+                </div>
+              )}
               {pendingAdvance > 0 && (
-                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-800">
-                    <strong>Pending Advance:</strong> ₹{pendingAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                <div className="mb-4 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p>
+                    <strong>Pending advance:</strong> ₹
+                    {pendingAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
+                  {suggestedRecovery > 0 && suggestedRecovery < pendingAdvance && (
+                    <p>
+                      <strong>Suggested this month:</strong> ₹
+                      {suggestedRecovery.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {recoveryBreakdown.some((b) => b.plan_label) ? (
+                        <span className="block text-xs text-amber-800/90 mt-1">
+                          {recoveryBreakdown
+                            .filter((b) => b.plan_label)
+                            .map((b) => b.plan_label)
+                            .join(' · ')}
+                        </span>
+                      ) : null}
+                    </p>
+                  )}
+                  {suggestedRecovery > 0 && (
+                    <Button type="button" variant="secondary" size="sm" onClick={applySuggestedRecovery}>
+                      Use suggested ₹{suggestedRecovery.toLocaleString('en-IN')}
+                    </Button>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Input
-                  label="Provident Fund (PF)"
+                  label="Employee PF"
                   type="number"
                   value={formData.provident_fund}
                   onChange={(e) => setFormData({ ...formData, provident_fund: e.target.value })}
+                  min="0"
+                  step="0.01"
+                />
+                <Input
+                  label="Employer PF (cost)"
+                  type="number"
+                  value={formData.employer_provident_fund}
+                  onChange={(e) =>
+                    setFormData({ ...formData, employer_provident_fund: e.target.value })
+                  }
+                  min="0"
+                  step="0.01"
+                />
+                <Input
+                  label="Employee ESI"
+                  type="number"
+                  value={formData.esi_employee}
+                  onChange={(e) => setFormData({ ...formData, esi_employee: e.target.value })}
+                  min="0"
+                  step="0.01"
+                />
+                <Input
+                  label="Employer ESI (cost)"
+                  type="number"
+                  value={formData.esi_employer}
+                  onChange={(e) => setFormData({ ...formData, esi_employer: e.target.value })}
                   min="0"
                   step="0.01"
                 />
@@ -384,6 +633,14 @@ export default function NewSalaryPaymentPage() {
                   step="0.01"
                 />
                 <Input
+                  label="Attendance deduction (late / LWP)"
+                  type="number"
+                  value={formData.attendance_deduction}
+                  onChange={(e) => setFormData({ ...formData, attendance_deduction: e.target.value })}
+                  min="0"
+                  step="0.01"
+                />
+                <Input
                   label="Other Deductions"
                   type="number"
                   value={formData.other_deductions}
@@ -392,6 +649,25 @@ export default function NewSalaryPaymentPage() {
                   step="0.01"
                 />
               </div>
+              {partialRecovery && (
+                <div className="mt-4">
+                  <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    Partial recovery note
+                  </label>
+                  <textarea
+                    value={formData.advance_recovery_note}
+                    onChange={(e) =>
+                      setFormData({ ...formData, advance_recovery_note: e.target.value })
+                    }
+                    className="input w-full"
+                    rows={2}
+                    placeholder="e.g. Employee requested half recovery this month; balance next salary."
+                  />
+                  <p className="mt-1 text-xs text-text-muted">
+                    Saved on the advance recovery record. A default note is generated if left blank.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Attendance (Optional) */}

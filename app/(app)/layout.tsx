@@ -9,8 +9,8 @@ import { DynamicTitle } from '@/components/layout/DynamicTitle';
 import { PromotionBanner } from '@/components/promotions/PromotionBanner';
 import { PromotionModal } from '@/components/promotions/PromotionModal';
 import { ProductTour } from '@/components/onboarding/ProductTour';
-import { ProfileCompletionBanner } from '@/components/layout/ProfileCompletionBanner';
 import { SubscriptionBanner } from '@/components/subscription/SubscriptionBanner';
+import { ProfileRequiredModalProvider } from '@/contexts/ProfileRequiredModalContext';
 import { TrialExtensionModal } from '@/components/subscription/TrialExtensionModal';
 import { ShellVersionBanner } from '@/components/printer/ShellVersionBanner';
 import { useLayout } from '@/contexts/LayoutContext';
@@ -31,6 +31,7 @@ import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
+import { ModuleShellGuard } from '@/components/layout/ModuleShellGuard';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -73,9 +74,12 @@ function AppRouteLayoutInner({
   }, []);
 
   const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
-  const showDateRange = pathname === '/dashboard';
+  const showDateRange =
+    pathname === '/dashboard' || pathname === '/hr/dashboard';
   const isInvoicePage = pathname === '/invoices/new';
   const isInvoiceComposer = pathname === '/invoices/new';
+  const isSettingsRoute =
+    pathname === '/settings' || (pathname?.startsWith('/settings/') ?? false);
 
   if (posMode && isInvoicePage) {
     return (
@@ -125,7 +129,6 @@ function AppRouteLayoutInner({
             {!isFullWidthPage && <SubscriptionBanner />}
             {!isFullWidthPage ? <GlobalSubscriptionUsageStrip /> : null}
             {!isFullWidthPage && <ShellVersionBanner />}
-            {!isFullWidthPage && <ProfileCompletionBanner />}
             <PromotionBanner />
             <div className="flex min-h-0 min-w-0 flex-1 items-stretch overflow-x-hidden">
               <main
@@ -135,10 +138,11 @@ function AppRouteLayoutInner({
                     ? 'h-screen'
                     : isInvoiceComposer
                       ? APP_MAIN_PADDING_COMPACT_CLASS
-                      : APP_MAIN_PADDING_CLASS
+                      : APP_MAIN_PADDING_CLASS,
+                  isSettingsRoute && 'settings-ui-scale'
                 )}
               >
-                {children}
+                <ModuleShellGuard>{children}</ModuleShellGuard>
               </main>
               {!isFullWidthPage && <TodoScheduleRail />}
             </div>
@@ -160,7 +164,9 @@ export default function AppRouteLayout({
 }) {
   return (
     <FeatureUpgradeModalProvider>
-      <AppRouteLayoutInner>{children}</AppRouteLayoutInner>
+      <ProfileRequiredModalProvider>
+        <AppRouteLayoutInner>{children}</AppRouteLayoutInner>
+      </ProfileRequiredModalProvider>
     </FeatureUpgradeModalProvider>
   );
 }

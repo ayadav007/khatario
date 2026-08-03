@@ -131,6 +131,9 @@
       <strong>Bill No:</strong> {{invoice.invoice_number}}<br>
       <strong>Date:</strong> {{invoice.invoice_date}}<br>
       <strong>Place of Supply:</strong> {{invoice.place_of_supply}}
+      {{#each invoice.custom_meta_display}}
+      <br><strong>{{this.label}}:</strong> {{this.value}}
+      {{/each}}
     </div>
   </div>
   
@@ -155,7 +158,8 @@
       {{#each items}}
       <tr>
         <td>{{this.index}}</td>
-        <td>{{this.item_name}}</td>
+        <td>{{this.item_name}}
+            {{> custom-item-lines}}</td>
         <td style="text-align: center;">{{this.quantity}} {{this.unit}}</td>
         <td style="text-align: right;">₹{{this.unit_price}}</td>
         <td style="text-align: right;">₹{{this.taxable_value}}</td>

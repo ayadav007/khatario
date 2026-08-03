@@ -130,6 +130,13 @@ export function injectTemplateScreenPreviewCss(
   body.print-root table {
     max-width: 100% !important;
   }
+  /* Customize-preview only: highlight where custom fields land (never printed) */
+  body.print-root .custom-field-row,
+  body.print-root .custom-field-line {
+    outline: 1.5px dashed #f59e0b !important;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 `.trim();
 

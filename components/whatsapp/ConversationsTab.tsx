@@ -1289,7 +1289,7 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
               </span>
             ) : (
               <Link
-                href="/settings/whatsapp"
+                href="/connect/whatsapp"
                 className="inline-flex items-center gap-1.5 link-primary hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1"
                 title="WhatsApp is not connected. Open integration settings to scan the QR code and connect."
               >

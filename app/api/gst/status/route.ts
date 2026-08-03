@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getGstFilingStatus } from '@/lib/gst/gst-filing';
 import { parseGstDueDateQueryOverrides } from '@/lib/gst/gst-org-filing';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,17 +12,8 @@ export const dynamic = 'force-dynamic';
  * GET /api/gst/status?period=YYYY-MM&branch_id=optional&filing_frequency=&qrmp_due_day=
  * Due-date resolution matches GET /api/gst/charges for the same query params.
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period');
     const branchIdParam = searchParams.get('branch_id');
@@ -36,7 +27,7 @@ export async function GET(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam || undefined,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -50,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'read', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
       });
     } catch (error) {
@@ -62,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -77,7 +68,7 @@ export async function GET(request: NextRequest) {
       parseGstDueDateQueryOverrides(searchParams);
 
     const statusPayload = await getGstFilingStatus({
-      businessId: business_id,
+      businessId,
       branchId: finalBranchId,
       gstPeriod: period.trim(),
       dueDateOverride,
@@ -89,4 +80,4 @@ export async function GET(request: NextRequest) {
     console.error('GST status error:', error);
     return NextResponse.json({ error: error?.message || 'Failed to load GST status' }, { status: 500 });
   }
-}
+});

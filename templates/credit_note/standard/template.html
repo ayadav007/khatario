@@ -95,7 +95,8 @@
       {{#each items}}
       <tr>
         <td>{{this.index}}</td>
-        <td><strong>{{this.item_name}}</strong></td>
+        <td><strong>{{this.item_name}}</strong>
+            {{> custom-item-lines}}</td>
         <td>{{this.hsn_sac}}</td>
         <td class="text-right">{{this.quantity}}</td>
         <td class="text-right">₹{{this.unit_price}}</td>

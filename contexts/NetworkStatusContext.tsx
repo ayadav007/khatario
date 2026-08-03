@@ -66,7 +66,8 @@ export function NetworkStatusProvider({
 }) {
   useRenderLoopProbe('NetworkStatusProvider');
   const [isOnline, setIsOnline] = useState(resolveInitialOnline);
-  const [networkReady, setNetworkReady] = useState(!isCapacitorNative());
+  /** False until first browser/Capacitor sync + optional server probe (avoids false offline flash). */
+  const [networkReady, setNetworkReady] = useState(false);
   const [lastChangedAt, setLastChangedAt] = useState<number | undefined>();
   const isOnlineRef = useRef(isOnline);
   const reconnectDispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,17 +128,28 @@ export function NetworkStatusProvider({
     window.addEventListener('focus', syncBrowserOnlineHint);
     document.addEventListener('visibilitychange', syncBrowserOnlineHint);
 
-    // Reconcile on mount — `offline` can fire without a matching `online` (Windows/Chrome),
-    // leaving React state stuck offline while navigator.onLine is already true.
-    syncBrowserOnlineHint();
+    let cancelled = false;
 
-    // Browser `navigator.onLine` reflects system internet, not loopback. On localhost dev
-    // (or flaky Wi‑Fi), the UI can load while the browser still reports "offline".
-    if (!isCapacitorNative() && !isOnlineRef.current) {
-      void confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
+    const finishWebInitialSync = async () => {
+      // Reconcile on mount — `offline` can fire without a matching `online` (Windows/Chrome),
+      // leaving React state stuck offline while navigator.onLine is already true.
+      syncBrowserOnlineHint();
+
+      // Browser `navigator.onLine` reflects system internet, not loopback. On localhost dev
+      // (or flaky Wi‑Fi / automation browsers), the UI can load while the browser reports "offline".
+      if (!isOnlineRef.current) {
+        await confirmOnlineWithProbe((o, s) => applyOnlineStateRef.current(o, s));
+      }
+
+      if (!cancelled) {
+        setNetworkReady(true);
+      }
+    };
+
+    if (!isCapacitorNative()) {
+      void finishWebInitialSync();
     }
 
-    let cancelled = false;
     let removeNativeListener: (() => void) | undefined;
 
     if (isCapacitorNative()) {

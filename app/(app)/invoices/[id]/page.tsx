@@ -525,6 +525,7 @@ export default function InvoiceDetailPage() {
                   <Share2 className="w-4 h-4" />
                   <span className="ml-2">Share</span>
                 </Button>
+                {bluetoothPrintButton}
                 <Button variant="secondary" onClick={() => window.open(`/api/invoices/${invoiceId}/pdf?user_id=${user?.id}`, '_blank')} className="flex-1">
                   <Download className="w-4 h-4" />
                   <span className="ml-2">PDF</span>

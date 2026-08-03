@@ -10,7 +10,7 @@ import { Plus, Edit, Trash2, Loader2, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { CommissionRule } from '@/types/database';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface Role {
   id: string;
@@ -180,12 +180,11 @@ export default function CommissionRulesPage() {
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Commission Rules</h1>
-            <p className="text-sm text-text-secondary mt-1">Configure commission calculation rules</p>
-          </div>
+      <SettingsPageShell
+        title="Commission Rules"
+        description="Configure commission calculation rules"
+        icon={DollarSign}
+        actions={
           <Button onClick={() => {
             setShowForm(true);
             setEditingRule(null);
@@ -205,7 +204,8 @@ export default function CommissionRulesPage() {
             <Plus className="w-4 h-4 mr-2" />
             Add Rule
           </Button>
-        </div>
+        }
+      >
 
         {showForm && (
           <Card>
@@ -409,8 +409,7 @@ export default function CommissionRulesPage() {
             </div>
           )}
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { CommissionRule } from '@/types/database';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,18 +11,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const businessId = tenant.businessId;
     const employeeId = searchParams.get('employee_id');
     const roleId = searchParams.get('role_id');
     const activeOnly = searchParams.get('active_only') === 'true';
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     let sql = `
       SELECT 
@@ -84,9 +87,18 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const business_id = tenant.businessId;
     const {
-      business_id,
       employee_id,
       role_id,
       commission_type,

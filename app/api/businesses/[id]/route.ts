@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,14 +10,29 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const businessId = params.id;
+    const tenant = requireTenantBusinessId(request, params.id);
+    if (!tenant.ok) return tenant.response;
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    try {
+      await authorize(userId, 'settings', 'read', { businessId: tenant.businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
+    }
 
     const business = await db.queryOne(`
       SELECT 
         id, name, email, phone, address_line1, address_line2, city, state, state_code, pincode, gstin
       FROM businesses
       WHERE id = $1
-    `, [businessId]);
+    `, [tenant.businessId]);
 
     if (!business) {
       return NextResponse.json(
@@ -45,7 +62,23 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const businessId = params.id;
+    const tenant = requireTenantBusinessId(request, params.id);
+    if (!tenant.ok) return tenant.response;
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    try {
+      await authorize(userId, 'settings', 'update', { businessId: tenant.businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
+    }
+
     const body = await request.json();
 
     const {
@@ -91,7 +124,7 @@ export async function PATCH(
       pincode,
       gstin,
       company_introduction,
-      businessId,
+      tenant.businessId,
     ]);
 
     if (!business) {
@@ -110,4 +143,3 @@ export async function PATCH(
     );
   }
 }
-

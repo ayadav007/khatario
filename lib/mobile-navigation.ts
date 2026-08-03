@@ -2,6 +2,8 @@
  * Mobile shell: tab roots, back navigation, and list-page create actions (TopBar +).
  */
 
+import { getMoreMenuBackHref } from '@/lib/navigation/more-menu-back';
+
 export const MOBILE_TAB_ROOTS = [
   '/dashboard',
   '/invoices',
@@ -54,6 +56,11 @@ export function getMobileBackHref(pathname: string | null): string {
     return parent || '/dashboard';
   }
 
+  const moreMenuBack = getMoreMenuBackHref(p);
+  if (moreMenuBack) {
+    return moreMenuBack;
+  }
+
   const segments = p.split('/').filter(Boolean);
   if (segments.length > 1) {
     segments.pop();
@@ -84,6 +91,7 @@ const LIST_CREATE_BY_PATH: Record<string, MobileListCreateAction> = {
     href: '/inventory-adjustments/new',
     ariaLabel: 'New adjustment',
   },
+  '/employees': { href: '/employees/new', ariaLabel: 'New employee' },
 };
 
 const COMPOSER_PREFIXES = [

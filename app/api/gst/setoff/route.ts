@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { applyGstSetoff } from '@/lib/gst/gst-settlement';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,27 +11,28 @@ export const dynamic = 'force-dynamic';
  * POST /api/gst/setoff
  * Post GST ITC set-off to the ledger (voucher_type gst_setoff).
  */
-export async function POST(request: NextRequest) {
+export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({ body, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const from = body.from as string | undefined;
-    const to = body.to as string | undefined;
-    const branchIdParam = body.branch_id as string | undefined;
-    const entryDate = body.entry_date as string | undefined;
-    const narrationPrefix = body.narration_prefix as string | undefined;
-    const mode = body.mode as 'period' | 'balance' | undefined;
-    const gst_period = body.gst_period as string | undefined;
-    const as_on_date = body.as_on_date as string | undefined;
-    const lock_period_after = body.lock_period_after as boolean | undefined;
+    const parsed = (body ?? {}) as {
+      from?: string;
+      to?: string;
+      branch_id?: string;
+      entry_date?: string;
+      narration_prefix?: string;
+      mode?: 'period' | 'balance';
+      gst_period?: string;
+      as_on_date?: string;
+      lock_period_after?: boolean;
+    };
+    const from = parsed.from;
+    const to = parsed.to;
+    const branchIdParam = parsed.branch_id;
+    const entryDate = parsed.entry_date;
+    const narrationPrefix = parsed.narration_prefix;
+    const mode = parsed.mode;
+    const gst_period = parsed.gst_period;
+    const as_on_date = parsed.as_on_date;
+    const lock_period_after = parsed.lock_period_after;
 
     if (!from || !to) {
       return NextResponse.json({ error: 'from and to (YYYY-MM-DD) are required' }, { status: 400 });
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'create', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
         entry_date: entryDate || to,
       });
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await applyGstSetoff({
-      businessId: business_id,
+      businessId,
       from,
       to,
       branchId: finalBranchId,
@@ -102,4 +103,4 @@ export async function POST(request: NextRequest) {
       msg.includes('already settled') || msg.includes('already applied') ? 409 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
-}
+});

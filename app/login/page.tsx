@@ -11,9 +11,14 @@ import Link from 'next/link';
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const { login, user, loading: authLoading } = useAuth();
+  const { login, user, loading: authLoading, platformSession } = useAuth();
   const { isOffline } = useNetworkStatus();
-  const redirectTarget = searchParams.get('redirect') || '/dashboard';
+  const redirectFromQuery = searchParams.get('redirect');
+  const defaultHome = platformSession?.defaultHomePath ?? '/dashboard';
+  const redirectTarget =
+    redirectFromQuery && redirectFromQuery !== '/dashboard'
+      ? redirectFromQuery
+      : defaultHome;
 
   // Already signed in (cached session or cookie) → go to app.
   //

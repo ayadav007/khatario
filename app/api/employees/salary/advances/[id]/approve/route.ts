@@ -5,6 +5,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * PATCH /api/employees/salary/advances/[id]/approve
  * Approve or reject a salary advance
@@ -15,9 +17,14 @@ export async function PATCH(
 ) {
   try {
     const advanceId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const body = await request.json();
+    const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(
+      request,
+      body.business_id ?? searchParams.get('business_id'),
+    );
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const { approved, approved_by, rejection_reason, payment_mode, payment_reference } = body;
 
     if (!businessId) {

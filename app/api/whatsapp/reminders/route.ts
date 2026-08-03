@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { hasFeature } from '@/lib/subscription';
 import {
@@ -9,24 +9,14 @@ import {
   reminderTimeToHhMm,
 } from '@/lib/reminder-schedule';
 import { FEATURE_PLAN_DENIED_RESPONSE_CODE } from '@/lib/subscription/feature-access';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 /**
  * GET /api/whatsapp/reminders?business_id=xxx
  * Fetch reminder settings for a business (both payment_due and overdue)
  */
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    // Fetch both reminder types
     const settings = await db.queryRows(
       `SELECT id, reminder_type, enabled, days_before, interval_days, message_template, include_pdf, created_at, updated_at
        FROM whatsapp_reminder_settings
@@ -68,26 +58,21 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * POST /api/whatsapp/reminders
  * Create or update reminder settings for both types
  */
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ body, businessId }) => {
   try {
-    const body = await request.json();
-    const { business_id, payment_due, overdue, schedule } = body;
+    const { payment_due, overdue, schedule } = (body ?? {}) as {
+      payment_due?: Record<string, unknown>;
+      overdue?: Record<string, unknown>;
+      schedule?: Record<string, unknown>;
+    };
 
-    if (!business_id) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check subscription feature (schedule + auto reminder types use the same feature)
-    const hasAccess = await hasFeature(business_id, 'whatsapp_auto_reminders');
+    const hasAccess = await hasFeature(businessId, 'whatsapp_auto_reminders');
     if (!hasAccess) {
       return NextResponse.json(
         {
@@ -120,7 +105,7 @@ export async function POST(request: NextRequest) {
          SET reminder_send_time = EXCLUDED.reminder_send_time,
              reminder_send_timezone = EXCLUDED.reminder_send_timezone,
              updated_at = CURRENT_TIMESTAMP`,
-        [business_id, sqlTime, tz]
+        [businessId, sqlTime, tz]
       );
       results.schedule = {
         reminder_send_time: reminderTimeToHhMm(sqlTime),
@@ -136,7 +121,7 @@ export async function POST(request: NextRequest) {
       // Check if exists
       const existing = await db.queryOne(
         `SELECT id FROM whatsapp_reminder_settings WHERE business_id = $1 AND reminder_type = 'payment_due'`,
-        [business_id]
+        [businessId]
       );
 
       if (existing) {
@@ -144,13 +129,13 @@ export async function POST(request: NextRequest) {
           `UPDATE whatsapp_reminder_settings
            SET enabled = $1, days_before = $2, message_template = $3, include_pdf = $4, updated_at = CURRENT_TIMESTAMP
            WHERE business_id = $5 AND reminder_type = 'payment_due'`,
-          [enabled || false, days_before || null, message_template || null, includePdf, business_id]
+          [enabled || false, days_before || null, message_template || null, includePdf, businessId]
         );
       } else {
         await db.query(
           `INSERT INTO whatsapp_reminder_settings (business_id, reminder_type, enabled, days_before, message_template, include_pdf)
            VALUES ($1, 'payment_due', $2, $3, $4, $5)`,
-          [business_id, enabled || false, days_before || null, message_template || null, includePdf]
+          [businessId, enabled || false, days_before || null, message_template || null, includePdf]
         );
       }
 
@@ -165,7 +150,7 @@ export async function POST(request: NextRequest) {
       // Check if exists
       const existing = await db.queryOne(
         `SELECT id FROM whatsapp_reminder_settings WHERE business_id = $1 AND reminder_type = 'overdue'`,
-        [business_id]
+        [businessId]
       );
 
       if (existing) {
@@ -173,13 +158,13 @@ export async function POST(request: NextRequest) {
           `UPDATE whatsapp_reminder_settings
            SET enabled = $1, interval_days = $2, message_template = $3, include_pdf = $4, updated_at = CURRENT_TIMESTAMP
            WHERE business_id = $5 AND reminder_type = 'overdue'`,
-          [enabled || false, interval_days || null, message_template || null, includePdf, business_id]
+          [enabled || false, interval_days || null, message_template || null, includePdf, businessId]
         );
       } else {
         await db.query(
           `INSERT INTO whatsapp_reminder_settings (business_id, reminder_type, enabled, interval_days, message_template, include_pdf)
            VALUES ($1, 'overdue', $2, $3, $4, $5)`,
-          [business_id, enabled || false, interval_days || null, message_template || null, includePdf]
+          [businessId, enabled || false, interval_days || null, message_template || null, includePdf]
         );
       }
 
@@ -216,5 +201,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 

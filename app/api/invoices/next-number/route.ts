@@ -3,6 +3,9 @@ import { queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+
 // Mapping of document types to prefixes and counter columns
 const DOCUMENT_TYPE_CONFIG: Record<string, { prefix: string; counterColumn: string }> = {
   'tax_invoice': { prefix: 'INV', counterColumn: 'next_tax_invoice_number' },
@@ -14,7 +17,22 @@ const DOCUMENT_TYPE_CONFIG: Record<string, { prefix: string; counterColumn: stri
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
+    const userId = getUserIdFromRequest(request);
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    try {
+      await authorize(userId, 'invoices', 'read', { businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
     const branchId = searchParams.get('branch_id'); // MANDATORY: Branch for invoice numbering
     const documentType = searchParams.get('document_type') || 'tax_invoice'; // Default to tax_invoice
 

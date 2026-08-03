@@ -5,20 +5,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/dashboard/agents
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Agent performance metrics
-    // Calculate: total assigned, open vs closed, avg response time
     const agentPerformance = await queryRows<{
       agent_id: string;
       agent_name: string;
@@ -80,11 +72,10 @@ export async function GET(request: NextRequest) {
     `, [businessId]);
 
     return NextResponse.json({
-      agents: agentPerformance || []
+      agents: agentPerformance || [],
     });
   } catch (error: any) {
     console.error('Error fetching agent performance:', error);
     return NextResponse.json({ agents: [] });
   }
-}
-
+});

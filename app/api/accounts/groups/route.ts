@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { AccountGroup } from '@/types/database';
+import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,19 +9,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/accounts/groups
  * List account groups
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const { searchParams } = new URL(ctx.request.url);
+    const businessId = ctx.businessId;
     const groupType = searchParams.get('group_type');
     const tree = searchParams.get('tree') === 'true';
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     if (tree) {
       // Return hierarchical tree structure
@@ -79,67 +73,76 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * POST /api/accounts/groups
  * Create a new account group
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const {
-      business_id,
-      group_code,
-      group_name,
-      group_type,
-      parent_group_id,
-      sort_order = 0,
-    } = body;
+export const POST = withPremiumSubscriptionApi(
+  { parseJsonBody: true },
+  async (ctx) => {
+    try {
+      const body = ctx.body as Record<string, unknown>;
+      const {
+        group_code,
+        group_name,
+        group_type,
+        parent_group_id,
+        sort_order = 0,
+      } = body as {
+        group_code?: string;
+        group_name?: string;
+        group_type?: string;
+        parent_group_id?: string;
+        sort_order?: number;
+      };
 
-    if (!business_id || !group_code || !group_name || !group_type) {
-      return NextResponse.json(
-        { error: 'business_id, group_code, group_name, and group_type are required' },
-        { status: 400 }
+      const business_id = ctx.businessId;
+
+      if (!group_code || !group_name || !group_type) {
+        return NextResponse.json(
+          { error: 'business_id, group_code, group_name, and group_type are required' },
+          { status: 400 }
+        );
+      }
+
+      // Validate group code uniqueness
+      const existing = await queryOne(
+        'SELECT id FROM account_groups WHERE business_id = $1 AND group_code = $2',
+        [business_id, group_code]
       );
-    }
 
-    // Validate group code uniqueness
-    const existing = await queryOne(
-      'SELECT id FROM account_groups WHERE business_id = $1 AND group_code = $2',
-      [business_id, group_code]
-    );
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Group code already exists' },
+          { status: 409 }
+        );
+      }
 
-    if (existing) {
-      return NextResponse.json(
-        { error: 'Group code already exists' },
-        { status: 409 }
-      );
-    }
-
-    const group = await queryOne<AccountGroup>(
-      `INSERT INTO account_groups (
+      const group = await queryOne<AccountGroup>(
+        `INSERT INTO account_groups (
         business_id, group_code, group_name, group_type, parent_group_id, sort_order
       )
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
-      [
-        business_id,
-        group_code,
-        group_name,
-        group_type,
-        parent_group_id || null,
-        sort_order,
-      ]
-    );
+        [
+          business_id,
+          group_code,
+          group_name,
+          group_type,
+          parent_group_id || null,
+          sort_order,
+        ]
+      );
 
-    return NextResponse.json({ group }, { status: 201 });
-  } catch (error: any) {
-    console.error('Error creating account group:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
+      return NextResponse.json({ group }, { status: 201 });
+    } catch (error: any) {
+      console.error('Error creating account group:', error);
+      return NextResponse.json(
+        { error: error.message || 'Internal server error' },
+        { status: 500 }
+      );
+    }
+  },
+);

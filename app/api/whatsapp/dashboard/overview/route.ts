@@ -5,19 +5,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/dashboard/overview
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, queryRows } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { queryOne } from '@/lib/db';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Conversation status overview
     const statusOverview = await queryOne<{
       total: number;
       open: number;
@@ -35,15 +28,11 @@ export async function GET(request: NextRequest) {
       WHERE business_id = $1 AND status = 'active'
     `, [businessId]);
 
-    // Bot vs Human split
-    // Count conversations with bot messages vs human messages
-    // A conversation is considered "bot-handled" if it has automation events (bot_message, button_clicked, etc.)
-    // Otherwise, it's human-handled
     const botVsHuman = await queryOne<{
       bot_handled: number;
       human_handled: number;
       handoff_count: number;
-      total_events: number; // Debug: total bot_message events
+      total_events: number;
     }>(`
       WITH bot_conversations AS (
         SELECT DISTINCT conversation_id
@@ -85,14 +74,13 @@ export async function GET(request: NextRequest) {
         (SELECT count FROM handoffs) as handoff_count,
         (SELECT total FROM debug_events) as total_events
     `, [businessId]);
-    
-    // Log debug info to help diagnose
+
     console.log('[Dashboard] Bot vs Human metrics:', {
       bot_handled: botVsHuman?.bot_handled || 0,
       human_handled: botVsHuman?.human_handled || 0,
       handoff_count: botVsHuman?.handoff_count || 0,
       total_bot_message_events: botVsHuman?.total_events || 0,
-      businessId: businessId.substring(0, 8) + '...'
+      businessId: businessId.substring(0, 8) + '...',
     });
 
     return NextResponse.json({
@@ -101,17 +89,16 @@ export async function GET(request: NextRequest) {
         open: 0,
         pending: 0,
         closed: 0,
-        unread: 0
+        unread: 0,
       },
       botVsHuman: botVsHuman || {
         bot_handled: 0,
         human_handled: 0,
-        handoff_count: 0
-      }
+        handoff_count: 0,
+      },
     });
   } catch (error: any) {
     console.error('Error fetching dashboard overview:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

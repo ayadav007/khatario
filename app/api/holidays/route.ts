@@ -5,6 +5,8 @@ import { Holiday } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/holidays
  * List holidays for a business
@@ -12,7 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const year = searchParams.get('year');
 
     if (!businessId) {
@@ -51,7 +55,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, holiday_date, holiday_name, is_recurring = false, description } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { holiday_date, holiday_name, is_recurring = false, description } = body;
 
     if (!business_id || !holiday_date || !holiday_name) {
       return NextResponse.json(

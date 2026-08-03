@@ -7,6 +7,7 @@ export type BillingCycle = 'monthly' | 'yearly';
 export interface StartPlanUpgradeParams {
   businessId: string;
   planId: string;
+  moduleKey?: string;
   billingCycle?: BillingCycle;
   /** Pre-discount list price from UI */
   amountInr: number;
@@ -31,6 +32,7 @@ export async function startPlanUpgrade(
       body: JSON.stringify({
         business_id: params.businessId,
         plan_id: params.planId,
+        module_key: params.moduleKey,
         billing_cycle: billingCycle,
       }),
     });
@@ -48,6 +50,7 @@ export async function startPlanUpgrade(
     body: JSON.stringify({
       business_id: params.businessId,
       plan_id: params.planId,
+      module_key: params.moduleKey,
       billing_cycle: billingCycle,
       coupon_code: couponCode,
     }),

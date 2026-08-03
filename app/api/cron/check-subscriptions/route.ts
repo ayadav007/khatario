@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processExpiredSubscriptions } from '@/lib/subscription/lifecycle';
+import { processExpiredSubscriptions, processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
 import { sendPendingNotifications } from '@/lib/subscription/notifications';
 import { queryRows, query } from '@/lib/db';
 import { assertCronAuthorized } from '@/lib/cron-auth';
@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 async function runSubscriptionCron() {
   const expiredCounts = await processExpiredSubscriptions();
+  const moduleExpiredCounts = await processExpiredModuleSubscriptions();
   const notificationsSent = await sendPendingNotifications();
 
   const activeBusinesses = await queryRows<{ business_id: string }>(
@@ -76,6 +77,7 @@ async function runSubscriptionCron() {
     success: true,
     summary: {
       expired: expiredCounts,
+      moduleExpired: moduleExpiredCounts,
       notificationsSent,
       usageSnapshots: snapshotsInserted,
     },

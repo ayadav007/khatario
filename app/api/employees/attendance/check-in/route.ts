@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { getEmployeePortalSessionFromRequest } from '@/lib/employee-portal/session';
+import { EMPLOYEE_PORTAL_SESSION_HEADER } from '@/lib/employee-portal/ess-api-allowlist';
+import { applyLateFieldsOnCheckIn, getAttendancePolicy } from '@/lib/hr/attendance-policy';
+import { validateCheckInGeofence } from '@/lib/hr/geofence';
+import { attendanceDateYmd } from '@/lib/hr/attendance-date';
+import { resolveShiftForEmployeeOnDate } from '@/lib/hr/shift-overtime/shift-assignment';
+import { getRosterEntryForDate } from '@/lib/hr/shift-overtime/shift-roster';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,9 +33,13 @@ export async function POST(request: NextRequest) {
       recognition_confidence, // For face recognition (0-1)
       device_info,
       ip_address,
+      shift_id,
     } = body;
 
-    if (!employee_id && !session_token) {
+    const portalHeader = request.headers.get(EMPLOYEE_PORTAL_SESSION_HEADER) === '1';
+    const portalSession = portalHeader ? await getEmployeePortalSessionFromRequest(request) : null;
+
+    if (!employee_id && !session_token && !portalSession) {
       return NextResponse.json(
         { error: 'Either employee_id or session_token is required' },
         { status: 400 }
@@ -31,6 +47,16 @@ export async function POST(request: NextRequest) {
     }
 
     let finalEmployeeId = employee_id;
+
+    if (portalSession) {
+      try {
+        await assertPortalFeatureForRequest(request, portalSession.business_id, 'attendance');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+      finalEmployeeId = portalSession.employee_id;
+    }
 
     // If session_token provided, verify and get employee_id
     if (session_token) {
@@ -58,8 +84,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Get employee business_id for authorization
-    const employee = await queryOne<{ business_id: string }>(
-      'SELECT business_id FROM employees WHERE id = $1',
+    const employee = await queryOne<{ business_id: string; default_shift_id: string | null }>(
+      'SELECT business_id, default_shift_id FROM employees WHERE id = $1',
       [finalEmployeeId]
     );
 
@@ -68,6 +94,14 @@ export async function POST(request: NextRequest) {
         { error: 'Employee not found' },
         { status: 404 }
       );
+    }
+
+    if (method === 'mobile_app' || method === 'otp') {
+      const policy = await getAttendancePolicy(employee.business_id);
+      const geo = validateCheckInGeofence(policy, location_lat, location_lng);
+      if (!geo.ok) {
+        return NextResponse.json({ error: geo.error }, { status: 400 });
+      }
     }
 
     // AUTHORIZATION: Attendance check-in is self-service
@@ -93,7 +127,7 @@ export async function POST(request: NextRequest) {
     }
     // Session token call - already verified, allow
 
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = attendanceDateYmd();
 
     // Check if attendance already exists for today
     let attendance = await queryOne<EmployeeAttendance>(
@@ -108,7 +142,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const effectiveShiftId =
+      shift_id ??
+      attendance?.shift_id ??
+      (await resolveShiftForEmployeeOnDate(employee.business_id, finalEmployeeId, today));
+
+    const rosterToday = await getRosterEntryForDate(employee.business_id, finalEmployeeId, today);
+    if (rosterToday?.is_day_off) {
+      return NextResponse.json(
+        { error: 'You are scheduled off today per the shift roster.' },
+        { status: 400 },
+      );
+    }
+
     const checkInTime = new Date();
+    const lateFields = await applyLateFieldsOnCheckIn({
+      businessId: employee.business_id,
+      checkIn: checkInTime,
+      dateYmd: today,
+      shiftId: effectiveShiftId,
+    });
 
     if (attendance) {
       // Update existing attendance record
@@ -116,13 +169,19 @@ export async function POST(request: NextRequest) {
         `UPDATE employee_attendance
          SET check_in_time = $1, check_in_method = $2,
              check_in_location_lat = $3, check_in_location_lng = $4,
-             status = 'present', updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5`,
+             status = 'present',
+             is_late = $5, late_minutes = $6,
+             shift_id = COALESCE($7, shift_id),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $8`,
         [
           checkInTime,
           method,
           location_lat || null,
           location_lng || null,
+          lateFields.is_late,
+          lateFields.late_minutes,
+          effectiveShiftId,
           attendance.id,
         ]
       );
@@ -136,9 +195,10 @@ export async function POST(request: NextRequest) {
       attendance = await queryOne<EmployeeAttendance>(
         `INSERT INTO employee_attendance (
           employee_id, date, check_in_time, check_in_method,
-          check_in_location_lat, check_in_location_lng, status
+          check_in_location_lat, check_in_location_lng, status,
+          shift_id, is_late, late_minutes
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'present')
+        VALUES ($1, $2, $3, $4, $5, $6, 'present', $7, $8, $9)
         RETURNING *`,
         [
           finalEmployeeId,
@@ -147,6 +207,9 @@ export async function POST(request: NextRequest) {
           method,
           location_lat || null,
           location_lng || null,
+          effectiveShiftId,
+          lateFields.is_late,
+          lateFields.late_minutes,
         ]
       );
     }

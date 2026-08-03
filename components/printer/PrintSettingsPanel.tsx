@@ -8,7 +8,6 @@ import Link from 'next/link';
 
 import {
 
-  ArrowLeft,
 
   Bluetooth,
 
@@ -108,25 +107,9 @@ export function PrintSettingsPanel({ onTestPrint, testing }: Props) {
 
     <div className="space-y-4">
 
-      <Link
+      <p className="text-sm text-text-secondary">
 
-        href="/settings"
-
-        className="text-sm text-text-secondary hover:underline inline-flex items-center gap-1"
-
-      >
-
-        <ArrowLeft className="w-4 h-4" /> Back to settings
-
-      </Link>
-
-
-
-      <h1 className="text-2xl font-bold text-text-primary">Print &amp; devices</h1>
-
-      <p className="text-sm text-text-secondary -mt-2">
-
-        Choose how this device prints. Invoice layout and paper size (A4, A5, 58mm, 80mm) are set under{' '}
+        Invoice layout and paper size (A4, A5, 58mm, 80mm) are set under{' '}
 
         <Link href="/settings/templates" className="text-primary-600 hover:text-primary-700 font-medium">
 
@@ -137,8 +120,6 @@ export function PrintSettingsPanel({ onTestPrint, testing }: Props) {
         .
 
       </p>
-
-
 
       <Card padding="none" className="overflow-hidden divide-y divide-border">
 

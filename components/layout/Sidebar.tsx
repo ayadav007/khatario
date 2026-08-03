@@ -48,6 +48,9 @@ import {
   Smartphone,
   Trash2,
   Wallet,
+  Mail,
+  ClipboardList,
+  HelpCircle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
@@ -58,6 +61,11 @@ import { PromotionSidebar } from '@/components/promotions/PromotionSidebar';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { PRODUCT_TOUR_START_EVENT } from '@/components/onboarding/productTourShared';
+import {
+  isNavSectionVisible,
+} from '@/lib/platform-modules';
+import { buildSettingsSidebarBlocks } from '@/lib/settings-module-registry';
+import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -83,7 +91,9 @@ export const Sidebar = React.memo(function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-  const { business, user, branch: sessionBranch, branches, activeBranchCount } = useAuth();
+  const { business, user, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
+  const enabledModules = platformSession?.enabledModules ?? ['billing'];
+  const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
   const { hasCapability } = useCapabilityCheck();
 
@@ -447,6 +457,22 @@ export const Sidebar = React.memo(function Sidebar() {
   const filterNavItems = (items: any[]): any[] => {
     return items
       .map(item => {
+        if (item.label && !isNavSectionVisible(item.label, enabledModules)) {
+          return null;
+        }
+        if (item.label === 'Supplier' && !hasPlatformModule('billing')) {
+          return null;
+        }
+        if (
+          (item.label === HR_NAV_SECTION_TITLE || item.label === 'HR & Payroll') &&
+          !hasPlatformModule('hr')
+        ) {
+          return null;
+        }
+        if (item.label === 'Connect' && !hasPlatformModule('connect')) {
+          return null;
+        }
+
         // If item has sub-items, filter them recursively first
         if (item.subItems) {
           const visibleChildren = filterNavItems(item.subItems);
@@ -464,7 +490,7 @@ export const Sidebar = React.memo(function Sidebar() {
   const navItems = useMemo(
     () => [
     // 1. DASHBOARD (Always first - most frequently used)
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, tourId: 'nav-dashboard' },
+    { href: homeHref, label: 'Dashboard', icon: LayoutDashboard, tourId: 'nav-dashboard' },
     
     // 2. SUPPLIER DASHBOARD (if business is a supplier)
     ...(isSupplier ? [
@@ -642,70 +668,18 @@ export const Sidebar = React.memo(function Sidebar() {
       ],
     },
     
-    // 7. HR & EMPLOYEES (Separate section for HR functions) — gated by plan hr_* registry features
+    // 7. HR & EMPLOYEES — single source: lib/hr/hr-admin-nav.ts
     {
-      label: 'HR & Employees',
+      label: HR_NAV_SECTION_TITLE,
       icon: UserCheck,
       collapsible: true,
-      subItems: [
-        {
-          href: '/employees',
-          label: 'All Employees',
-          module: 'employees',
-          featureKey: 'hr_employees',
-          isLocked: !hasFeature('hr_employees'),
-        },
-        {
-          href: '/employees/new',
-          label: 'Add Employee',
-          module: 'employees',
-          featureKey: 'hr_employees',
-          isLocked: !hasFeature('hr_employees'),
-        },
-        {
-          href: '/employees/attendance',
-          label: 'Attendance',
-          module: 'attendance',
-          featureKey: 'hr_attendance',
-          isLocked: !hasFeature('hr_attendance'),
-        },
-        {
-          href: '/employees/leaves',
-          label: 'Leaves',
-          module: 'leave_requests',
-          featureKey: 'hr_leaves',
-          isLocked: !hasFeature('hr_leaves'),
-        },
-        {
-          href: '/employees/salary/payments',
-          label: 'Salary Payments',
-          module: 'payroll',
-          featureKey: 'hr_payroll',
-          isLocked: !hasFeature('hr_payroll'),
-        },
-        {
-          href: '/employees/commissions',
-          label: 'Commissions',
-          module: 'commissions',
-          featureKey: 'hr_employees',
-          isLocked: !hasFeature('hr_employees'),
-        },
-        {
-          href: '/employees/performance',
-          label: 'Performance',
-          module: 'employees',
-          featureKey: 'hr_employees',
-          isLocked: !hasFeature('hr_employees'),
-        },
-        {
-          href: '/employees/tasks',
-          label: 'Tasks',
-          module: 'employees',
-          featureKey: 'hr_employees',
-          isLocked: !hasFeature('hr_employees'),
-        },
-        { href: '/activity-logs', label: 'Activity Logs', module: 'settings' },
-      ],
+      subItems: HR_ADMIN_NAV_ITEMS.map((item) => ({
+        href: item.href,
+        label: item.label,
+        module: item.module,
+        featureKey: item.featureKey,
+        isLocked: item.featureKey ? !hasFeature(item.featureKey) : false,
+      })),
     },
     
     // 8. MORE (Tools, WhatsApp, Settings - less frequently used)
@@ -740,215 +714,208 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/tools/image-background-remover', label: 'BG Remover' },
           ],
         },
-        { 
-          label: 'WhatsApp',
-          collapsible: true,
-          isLocked: !hasWhatsAppAddon(),
-          featureKey: 'whatsapp_bot',
-          subItems: [
-            { 
-              href: '/whatsapp/dashboard', 
-              label: 'Dashboard',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/conversations', 
-              label: 'Conversations',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/orders', 
-              label: 'Order Verification',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/bot-rules', 
-              label: 'Bot Rules',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/send-message', 
-              label: 'Send Message',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/campaigns', 
-              label: 'Campaigns',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/contacts', 
-              label: 'Contacts',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/contacts/groups', 
-              label: 'Contact Groups',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/group-extractor', 
-              label: 'Group Extractor',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-            { 
-              href: '/whatsapp/unsubscribes', 
-              label: 'Unsubscribes',
-              isLocked: !hasWhatsAppAddon(),
-              featureKey: 'whatsapp_bot'
-            },
-          ],
-        },
+        ...(hasPlatformModule('billing')
+          ? [
+              {
+                href: '/connect/whatsapp',
+                label: 'Send invoices on WhatsApp',
+                icon: MessageSquare,
+              },
+            ]
+          : []),
+        ...(hasPlatformModule('connect')
+          ? [
+              {
+                label: 'Connect',
+                collapsible: true,
+                subItems: [
+                  {
+                    href: '/connect/whatsapp',
+                    label: 'WhatsApp number',
+                  },
+                  {
+                    href: '/whatsapp/dashboard',
+                    label: 'Dashboard',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/conversations',
+                    label: 'Conversations',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/orders',
+                    label: 'Order Verification',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/bot-rules',
+                    label: 'Bot Rules',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/send-message',
+                    label: 'Send Message',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/campaigns',
+                    label: 'Campaigns',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/contacts',
+                    label: 'Contacts',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/contacts/groups',
+                    label: 'Contact Groups',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/group-extractor',
+                    label: 'Group Extractor',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/unsubscribes',
+                    label: 'Unsubscribes',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                ],
+              },
+            ]
+          : []),
         { href: '/settings/help', label: 'Help & Support', tourId: 'nav-help' },
         { href: '/settings', label: 'Settings', module: 'settings', tourId: 'nav-settings' },
       ],
     },
     ],
-    [isSupplier, warehousesEnabled, snapshotLoaded, hasCapability, reportRouteMap]
+    [isSupplier, warehousesEnabled, snapshotLoaded, hasCapability, reportRouteMap, homeHref, hasPlatformModule]
   );
 
-  // Settings navigation structure (shown when on settings pages)
-  // Organized in two main sections: ORGANIZATION SETTINGS and MODULE SETTINGS
+  // Settings navigation (module-scoped: Billing | HR | Connect | CRM)
   const settingsNavItems = useMemo(() => {
     if (!isSettingsPage) return null;
 
+    const groupIcons: Record<string, typeof Settings> = {
+      organization: Building,
+      users: Users,
+      subscription: CreditCard,
+      accounting: DollarSign,
+      'sales-billing': FileText,
+      'inventory-items': Package,
+      general: Settings,
+      'hr-time-attendance': Clock,
+      'hr-leave': Calendar,
+      'hr-payroll': DollarSign,
+      'hr-hiring': UserCheck,
+      'hr-employee-portal': Users,
+      connect: MessageSquare,
+      integrations: LayoutGrid,
+      help: HelpCircle,
+    };
+
+    const linkIcons: Record<string, typeof Settings> = {
+      '/settings/business': Building,
+      '/settings/branches': Building,
+      '/settings/warehouses': Warehouse,
+      '/settings/suppliers-directory': Store,
+      '/settings/financial-years': Calendar,
+      '/settings/products': LayoutGrid,
+      '/settings/subscription': CreditCard,
+      '/settings/user-management': Settings,
+      '/settings/users': Users,
+      '/settings/roles': Shield,
+      '/settings/user-branches': Building,
+      '/settings/user-warehouses': Warehouse,
+      '/settings/activity': Activity,
+      '/settings/account-mappings': DollarSign,
+      '/settings/period-locks': Lock,
+      '/settings/templates': FileText,
+      '/settings/bluetooth-printer': Bluetooth,
+      '/settings/custom-fields': FileText,
+      '/settings/number-series': Hash,
+      '/connect/whatsapp': MessageSquare,
+      '/settings/business#bp-features': Package,
+      '/settings/label-templates': Printer,
+      '/settings/features': Settings,
+      '/settings/backup': Database,
+      '/settings/offline-sync': RefreshCw,
+      '/settings/automation': Settings,
+      '/settings/integrations': LayoutGrid,
+      '/settings/email': Mail,
+      '/settings/payments': Wallet,
+      '/settings/integrations?category=sms': Smartphone,
+      '/settings/ai-config': Sparkles,
+      '/settings/ai-assistant': Sparkles,
+      '/settings/help': HelpCircle,
+      '/settings/help/how-to': HelpCircle,
+      '/settings/departments': Building,
+      '/settings/payroll': DollarSign,
+      '/settings/hiring': UserCheck,
+      '/settings/employee-portal': Users,
+      '/settings/commission-rules': DollarSign,
+      '/settings/holidays': Calendar,
+      '/settings/leave-types': Calendar,
+      '/settings/shifts': Clock,
+      '/settings/attendance-policy': Clock,
+      '/settings/hr-approval': CheckSquare,
+      '/settings/onboarding-templates': ClipboardList,
+      '/settings/offer-letter': FileText,
+      '/settings/whatsapp': MessageSquare,
+      '/settings/integrations?category=crm': Briefcase,
+      '/items/categories': Package,
+      '/settings/business#pos-mode': FileText,
+    };
+
+    const blocks = buildSettingsSidebarBlocks(enabledModules, {
+      hasFeature,
+    });
+
+    const moduleSections = blocks.map((block) => ({
+      label: block.label,
+      collapsible: true,
+      subItems: block.groups.map((group) => ({
+        label: group.title,
+        collapsible: true,
+        subItems: group.links.map((link) => {
+          const path = link.href.split('#')[0];
+          return {
+            href: link.href,
+            label: link.label,
+            icon:
+              linkIcons[link.href] ??
+              linkIcons[path] ??
+              groupIcons[group.groupId] ??
+              Settings,
+            module: link.module,
+            featureKey: link.featureKey,
+          };
+        }),
+      })),
+    }));
+
     return [
+      ...moduleSections,
       {
-        label: 'ORGANIZATION SETTINGS',
-        collapsible: true,
-        subItems: [
-          { href: '/settings/business', label: 'Organization', icon: Building, module: 'settings' },
-          { href: '/settings/suppliers-directory', label: 'Suppliers directory', icon: Store, module: 'settings' },
-          { href: '/settings/financial-years', label: 'Financial years', icon: Calendar, module: 'settings' },
-          { href: '/settings/branches', label: 'Branches', icon: Building, module: 'settings' },
-          { href: '/settings/warehouses', label: 'Warehouses', icon: Warehouse, module: 'settings' },
-          {
-            label: 'Users & Access',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/user-management', label: 'User Management', icon: Settings, module: 'settings' },
-              { href: '/settings/users', label: 'Manage Users', icon: Users, module: 'settings' },
-              { href: '/settings/roles', label: 'Manage Roles', icon: Shield, module: 'settings' },
-              { href: '/settings/user-branches', label: 'User Branches', icon: Building, module: 'settings' },
-              { href: '/settings/user-warehouses', label: 'User Warehouses', icon: Warehouse, module: 'settings' },
-              { href: '/settings/activity', label: 'Activity Logs', icon: Activity, module: 'settings' },
-            ]
-          },
-          {
-            label: 'Taxes & Compliance',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/tax', label: 'Tax & GST Settings', icon: CreditCard, module: 'settings' },
-            ]
-          },
-          {
-            label: 'Accounting',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/account-mappings', label: 'Account Mappings', icon: DollarSign, module: 'settings' },
-              { href: '/settings/period-locks', label: 'Period Locks', icon: Lock, module: 'settings' },
-            ]
-          },
-          {
-            label: 'Subscription',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/subscription', label: 'Plan & Billing', icon: CreditCard, module: 'settings' },
-            ],
-          },
-        ]
-      },
-      {
-        label: 'MODULE SETTINGS',
-        collapsible: true,
-        subItems: [
-          {
-            label: 'Sales & billing',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/templates', label: 'Templates & Printing', icon: FileText, module: 'settings' },
-              ...(hasFeature('barcode_thermal_printer') ? [{
-                href: '/settings/bluetooth-printer',
-                label: 'Print & Devices',
-                icon: Bluetooth,
-                module: 'settings',
-                featureKey: 'barcode_thermal_printer',
-              }] : []),
-              { href: '/settings/custom-fields', label: 'Custom Fields', icon: FileText, module: 'settings' },
-              { href: '/settings/number-series', label: 'Transaction Number Series', icon: Hash, module: 'settings' },
-            ]
-          },
-          {
-            label: 'Inventory & items',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/business#bp-features', label: 'Item Defaults', icon: Package, module: 'settings' },
-              ...(hasFeature('barcode_label_templates') ? [{
-                href: '/settings/label-templates',
-                label: 'Label Templates',
-                icon: Printer,
-                module: 'settings',
-                featureKey: 'barcode_label_templates',
-              }] : []),
-            ]
-          },
-          {
-            label: 'General',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/features', label: 'UI Features', icon: Settings, module: 'settings' },
-              { href: '/settings/backup', label: 'Backup & Restore', icon: Database, module: 'settings' },
-              { href: '/settings/offline-sync', label: 'Offline sync', icon: RefreshCw, module: 'settings' },
-              { href: '/settings/automation', label: 'Workflow Automation', icon: Settings, module: 'settings' },
-            ]
-          },
-          {
-            label: 'HR & Payroll',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/commission-rules', label: 'Commission Rules', icon: DollarSign, module: 'settings' },
-              { href: '/settings/holidays', label: 'Holidays', icon: Calendar, module: 'settings' },
-              { href: '/settings/leave-types', label: 'Leave Types', icon: Calendar, module: 'settings' },
-              { href: '/settings/shifts', label: 'Shifts', icon: Clock, module: 'settings' },
-            ]
-          },
-          {
-            label: 'EXTENSIONS & MARKETPLACE',
-            collapsible: true,
-            subItems: [
-              { href: '/settings/integrations', label: 'All integrations', icon: LayoutGrid, module: 'settings' },
-              { href: '/settings/payments', label: 'Payment providers', icon: Wallet, module: 'settings' },
-              {
-                href: '/settings/integrations?category=whatsapp',
-                label: 'WhatsApp',
-                icon: MessageSquare,
-                module: 'settings',
-              },
-              { href: '/settings/integrations?category=hr', label: 'HR', icon: Users, module: 'settings' },
-              { href: '/settings/integrations?category=sms', label: 'SMS', icon: Smartphone, module: 'settings' },
-              { href: '/settings/integrations?category=ai', label: 'AI', icon: Zap, module: 'settings' },
-              { href: '/settings/integrations?category=crm', label: 'CRM', icon: Briefcase, module: 'settings' },
-            ],
-          },
-        ]
-      },
-      // Back to main app link
-      {
-        href: '/dashboard',
+        href: homeHref,
         label: 'Back to Dashboard',
         icon: ArrowLeft,
-      }
+      },
     ];
-  }, [isSettingsPage, snapshotLoaded, hasCapability]);
+  }, [isSettingsPage, enabledModules, hasFeature, homeHref]);
 
   const sidebarReady = useMemo(
     () =>
@@ -987,6 +954,9 @@ export const Sidebar = React.memo(function Sidebar() {
     supplierStatusResolved,
     reportsDefinitionsResolved,
     reportRouteMap,
+    enabledModules,
+    hasPlatformModule,
+    homeHref,
   ]);
 
   const visibleNavItemsRef = useRef(visibleNavItems);

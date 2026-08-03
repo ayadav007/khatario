@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/document-attachments/[id]
  * Get/download a specific document attachment
@@ -14,14 +16,9 @@ export async function GET(
   try {
     const documentId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const document = await queryOne(
       `SELECT * FROM document_attachments WHERE id = $1 AND business_id = $2`,
@@ -58,7 +55,10 @@ export async function PATCH(
   try {
     const documentId = params.id;
     const body = await request.json();
-    const { business_id, file_name, description } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { file_name, description } = body;
 
     if (!business_id) {
       return NextResponse.json(
@@ -112,14 +112,9 @@ export async function DELETE(
   try {
     const documentId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Verify document belongs to business
     const document = await queryOne(

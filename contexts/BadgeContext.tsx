@@ -47,13 +47,13 @@ const BadgeContext = createContext<BadgeContextType>({
 
 export function BadgeProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('BadgeProvider');
-  const { business } = useAuth();
+  const { business, loading: authLoading } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);
   const [badgeCounts, setBadgeCounts] = useState<BadgeCounts>(defaultBadgeCounts);
 
   const fetchBadgeCounts = useCallback(async (forceRefresh = false) => {
-    if (!business?.id) return;
+    if (authLoading || !business?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     if (forceRefresh) {
@@ -73,20 +73,20 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to fetch badge counts:', error);
     }
-  }, [business?.id]);
+  }, [authLoading, business?.id]);
 
   const refreshBadgeCounts = useCallback(async () => {
     await fetchBadgeCounts(true);
   }, [fetchBadgeCounts]);
 
   useEffect(() => {
-    if (!business?.id) return;
+    if (authLoading || !business?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     void fetchBadgeCounts();
-  }, [business?.id, fetchBadgeCounts]);
+  }, [authLoading, business?.id, fetchBadgeCounts]);
 
   useEffect(() => {
-    if (!business?.id) return;
+    if (authLoading || !business?.id) return;
 
     const wasOffline = !prevOnlineRef.current;
     prevOnlineRef.current = isOnline;
@@ -94,7 +94,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     if (!isOnline || !wasOffline) return;
 
     void fetchBadgeCounts(true);
-  }, [isOnline, lastChangedAt, business?.id, fetchBadgeCounts]);
+  }, [isOnline, lastChangedAt, authLoading, business?.id, fetchBadgeCounts]);
 
   useEffect(() => {
     if (business?.id) return;

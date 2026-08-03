@@ -97,10 +97,54 @@ export function clearParkedBills(): void {
 
 /**
  * Is the auto-Bluetooth-print-on-save toggle enabled for POS?
+ * In the Capacitor Android/iOS app, default ON when never set — PDF popups
+ * do not work there, so PRINT BILL would otherwise silently do nothing.
  */
 export function getPosAutoBluetoothPrint(): boolean {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem(POS_AUTO_BT_PRINT_KEY) === 'true';
+  const stored = localStorage.getItem(POS_AUTO_BT_PRINT_KEY);
+  if (stored === null) {
+    try {
+      const cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } })
+        .Capacitor;
+      if (cap?.isNativePlatform?.()) return true;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  }
+  return stored === 'true';
+}
+
+function isNativeShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } })
+      .Capacitor;
+    return !!cap?.isNativePlatform?.();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether PRINT BILL / POS save should send ESC/POS to the paired Bluetooth
+ * printer instead of opening a PDF tab.
+ *
+ * On the Android/iOS app, always prefer Bluetooth when a printer is ready —
+ * `window.open(pdf)` is unreliable in Capacitor and looks like "nothing happened".
+ * On desktop web, honour the auto-print toggle.
+ */
+export function shouldPosPrintViaBluetooth(opts: {
+  featureEnabled: boolean;
+  btSupported: boolean;
+  pairedCount: number;
+}): boolean {
+  if (!opts.featureEnabled || !opts.btSupported || opts.pairedCount <= 0) {
+    return false;
+  }
+  if (isNativeShell()) return true;
+  return getPosAutoBluetoothPrint();
 }
 
 /**

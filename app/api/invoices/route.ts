@@ -14,6 +14,10 @@ import {
 } from '@/lib/invoice-bundle-stock';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import {
+  requirePlatformModule,
+  platformModuleErrorResponse,
+} from '@/lib/security/require-platform-module';
 import { calculateCreditMetrics, calculateProjectedCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -72,6 +76,14 @@ export async function GET(request: NextRequest) {
 
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+    }
+
+    try {
+      await requirePlatformModule(businessId, 'billing', 'invoices');
+    } catch (error) {
+      const denied = platformModuleErrorResponse(error);
+      if (denied) return denied;
+      throw error;
     }
 
     // Get user's accessible branch IDs if userId provided

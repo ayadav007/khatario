@@ -9,6 +9,7 @@ import {
   getFeatureDisplayName,
   getFeatureUpgradePitch,
 } from '@/lib/feature-upgrade-labels';
+import { getFeatureRequiredModule } from '@/lib/subscription/module-entitlements';
 import { formatPlanLabel } from '@/lib/format-plan-label';
 import {
   USAGE_LIMIT_SHORT_LABELS,
@@ -151,6 +152,15 @@ export function UpgradePrompt({
 
   const displayName =
     featureName || getFeatureDisplayName(featureKey ?? undefined);
+
+  const moduleKey =
+    limitType === 'feature' && featureKey
+      ? getFeatureRequiredModule(featureKey) ?? undefined
+      : limitType === 'whatsapp'
+        ? 'connect'
+        : limitType !== 'feature'
+          ? 'billing'
+          : undefined;
 
   /** Conversion copy sourced from centralized feature-map + fallback (see lib/feature-upgrade-labels). */
   const featurePitch =
@@ -441,6 +451,7 @@ export function UpgradePrompt({
           currentCount={currentCount}
           limit={limit}
           featureName={featureName || displayName}
+          moduleKey={moduleKey}
           initialPlanId={
             limitType === 'feature'
               ? requiredPlan?.planId

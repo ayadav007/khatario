@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { normalizePhone, isValidPhone } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
@@ -9,24 +9,14 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/unsubscribes
  * List all unsubscribed numbers for a business
  */
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const checkPhone = searchParams.get('check_phone'); // Check if specific phone is unsubscribed
     const checkPhones = searchParams.get('check_phones'); // Check multiple phones (comma-separated)
 
     if (!businessId) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
     }
 
     const pool = getPool();
@@ -75,32 +65,22 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});
 /**
  * POST /api/whatsapp/unsubscribes
  * Add phone(s) to unsubscribe list
  */
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
-    const body = await request.json();
-    const { business_id, phone, phones } = body;
+    const { phone, phones } = (body ?? {}) as Record<string, any>;
 
-    if (!business_id || (!phone && !phones)) {
+    if (! (!phone && !phones)) {
       return NextResponse.json(
         { error: 'Business ID and phone(s) are required' },
         { status: 400 }
       );
     }
 
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     // Normalize phone numbers
     const phonesToAdd = phones 
@@ -127,7 +107,7 @@ export async function POST(request: NextRequest) {
           VALUES ($1, $2)
           ON CONFLICT (business_id, phone) DO NOTHING
           RETURNING id`,
-          [business_id, phoneNumber]
+          [businessId, phoneNumber]
         );
 
         if (result.rows.length > 0) {
@@ -154,16 +134,15 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * DELETE /api/whatsapp/unsubscribes
  * Remove phone(s) from unsubscribe list (re-subscribe)
  */
-export async function DELETE(request: NextRequest) {
+export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const phone = searchParams.get('phone');
     const phones = searchParams.get('phones')?.split(',') || [];
 
@@ -171,15 +150,6 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: 'Business ID and phone(s) are required' },
         { status: 400 }
-      );
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
       );
     }
 
@@ -210,4 +180,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

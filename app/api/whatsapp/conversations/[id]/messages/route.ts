@@ -4,33 +4,16 @@ export const dynamic = 'force-dynamic';
  * API endpoint for fetching and sending messages in a conversation
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, query, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
     if (!conversationId) {
@@ -214,28 +197,10 @@ export async function GET(
     console.error('Error fetching messages:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
     if (!conversationId) {
@@ -276,8 +241,7 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
-    const { message_text, message_type, media_url, buttons, footer } = body;
+    const { message_text, message_type, media_url, buttons, footer } = (body ?? {}) as Record<string, any>;
 
     if (!message_text && !media_url) {
       return NextResponse.json(
@@ -363,4 +327,4 @@ export async function POST(
     console.error('Error sending message:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});

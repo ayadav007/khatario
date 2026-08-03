@@ -6,9 +6,8 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import Link from 'next/link';
-import { ChevronRight, Shield, Users } from 'lucide-react';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { Shield } from 'lucide-react';
 
 export default function UserManagementPage() {
   const { business, user } = useAuth();
@@ -65,100 +64,46 @@ export default function UserManagementPage() {
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-text-secondary">
-          <Link href="/settings" className="hover:text-primary-600 transition">Settings</Link>
-          <ChevronRight className="w-4 h-4" />
-          <span className="text-text-muted">Users & Access</span>
-          <ChevronRight className="w-4 h-4" />
-          <span className="text-text-primary font-medium">User Management</span>
-        </div>
-
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-pink-100 rounded-xl">
-            <Shield className="w-6 h-6 text-pink-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">User Management</h1>
-            <p className="text-sm text-text-secondary">Enable and configure user roles & permissions</p>
-          </div>
-        </div>
-
-        {/* User Management Toggle */}
-        <Card padding="lg">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-slate-100 rounded-lg">
-                <Shield className="w-6 h-6 text-primary-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary mb-1">
-                  User Roles & Permissions
-                </h3>
-                <p className="text-sm text-text-secondary mb-3">
-                  Add team members and give them limited control with role-based permissions
-                </p>
-                <div className="space-y-2 text-sm text-text-secondary">
-                  <p>• Create multiple users (Sales, Accountant, Inventory Manager)</p>
-                  <p>• Set individual passwords for each user</p>
-                  <p>• Define granular permissions (View, Add, Modify, Delete, Share)</p>
-                  <p>• Track all user activities</p>
-                </div>
-              </div>
+    <SettingsPageShell
+      title="User Management"
+      description="Enable and configure user roles & permissions"
+      icon={Shield}
+    >
+      <Card padding="lg">
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-slate-100 p-3 dark:bg-slate-800">
+              <Shield className="h-6 w-6 text-text-secondary" />
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={userManagementEnabled}
-                onChange={toggleUserManagement}
-                disabled={loading}
-                className="sr-only peer"
-              />
-              <div className="w-14 h-8 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-6 after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-surface dark:bg-slate-900/70 after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-primary-500"></div>
-            </label>
-          </div>
-        </Card>
-
-        {/* User Management UI */}
-        {userManagementEnabled ? (
-          <div className="grid grid-cols-2 gap-4">
-            <Link href="/settings/users">
-              <Card padding="md" className="hover:shadow-md transition cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <Users className="w-8 h-8 text-primary-600" />
-                  <div>
-                    <h4 className="font-semibold text-text-primary">Manage Users</h4>
-                    <p className="text-sm text-text-secondary">Add, edit, or remove team members</p>
-                  </div>
-                </div>
-              </Card>
-            </Link>
-
-            <Link href="/settings/roles">
-              <Card padding="md" className="hover:shadow-md transition cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <Shield className="w-8 h-8 text-purple-600" />
-                  <div>
-                    <h4 className="font-semibold text-text-primary">Manage Roles</h4>
-                    <p className="text-sm text-text-secondary">Configure role permissions</p>
-                  </div>
-                </div>
-              </Card>
-            </Link>
-          </div>
-        ) : (
-          <Card padding="lg">
-            <div className="text-center py-8">
-              <p className="text-text-secondary">
-                Enable User Management to add team members and manage permissions
+            <div>
+              <h3 className="settings-section-title mb-1">User Roles & Permissions</h3>
+              <p className="type-body-sm mb-3 text-text-secondary">
+                When enabled, you can assign roles and fine-grained permissions to team members.
+                Disable this if you prefer a simpler single-user setup.
+              </p>
+              <p className="type-body-sm text-text-muted">
+                After enabling, configure roles under{' '}
+                <strong className="text-text-primary">Roles & Permissions</strong> and assign users
+                under <strong className="text-text-primary">Manage Users</strong>.
               </p>
             </div>
-          </Card>
-        )}
-      </div>
-    
+          </div>
+          <button
+            type="button"
+            onClick={toggleUserManagement}
+            disabled={loading}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+              userManagementEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'
+            } ${loading ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                userManagementEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      </Card>
+    </SettingsPageShell>
   );
 }
-

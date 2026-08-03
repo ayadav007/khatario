@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useLandingProduct } from '@/components/marketing/landing/LandingProductContext';
+import { PRODUCT_LINE_LABELS } from '@/lib/product-lines';
 import { X, ArrowRight, Sparkles } from 'lucide-react';
 
 /** Once the modal has been shown this browser session, do not show again (survives refresh). */
@@ -16,6 +18,8 @@ const MIN_SCROLLABLE = 200;
  */
 export function LandingScrollTrialModal() {
   const router = useRouter();
+  const { productLine, signupHref } = useLandingProduct();
+  const productLabel = PRODUCT_LINE_LABELS[productLine];
   const [open, setOpen] = useState(false);
   const raf = useRef<number | null>(null);
   const openedRef = useRef(false);
@@ -108,18 +112,23 @@ export function LandingScrollTrialModal() {
           <Sparkles className="h-6 w-6" strokeWidth={1.75} />
         </div>
         <h2 id="landing-trial-modal-title" className="pr-8 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-          See your counter on Khatario — free
+          {productLine === 'connect'
+            ? 'Ready for WhatsApp CRM?'
+            : `Try Khatario ${productLabel} — free`}
         </h2>
         <p className="mt-3 text-base leading-relaxed text-slate-600 sm:text-lg">
-          You&apos;ve looked through a lot. Start a free trial: GST billing, stock, and WhatsApp in one app — no
-          card to begin.
+          {productLine === 'connect'
+            ? 'Create a free Connect account — add Bot or Send Message add-ons when you need them. No platform fee.'
+            : productLine === 'hr'
+              ? 'Start a 30-day HR trial: employees, attendance, payroll, and leave — no card to begin.'
+              : "You've looked through a lot. Start a free trial: GST billing, stock, and WhatsApp in one app — no card to begin."}
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <button
             type="button"
             onClick={() => {
               close();
-              router.push('/signup');
+              router.push(signupHref);
             }}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 py-3.5 text-base font-semibold text-white transition hover:bg-primary-700 sm:flex-none sm:px-6"
           >

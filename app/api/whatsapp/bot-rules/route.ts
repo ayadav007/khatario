@@ -6,28 +6,12 @@ export const dynamic = 'force-dynamic';
  * POST - Create a new bot rule
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
-
     const rules = await queryRows(
       `SELECT id, name, category, trigger_type, trigger_value, trigger_conditions,
               is_active, priority, response_type, response_message, response_media_url,
@@ -45,26 +29,12 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching bot rules:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi(
+  { parseJsonBody: true },
+  async ({ businessId, body }) => {
   try {
-    const body = await request.json();
-    const { business_id } = body;
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
-
     const {
       name,
       category,
@@ -86,7 +56,7 @@ export async function POST(request: NextRequest) {
       expected_input_type,
       context_variables,
       delay_seconds = 0
-    } = body;
+    } = (body ?? {}) as Record<string, any>;
 
     if (!name || !trigger_value || !response_message) {
       return NextResponse.json(
@@ -166,7 +136,7 @@ export async function POST(request: NextRequest) {
            updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
       [
-        business_id,
+        businessId,
         name.trim(),
         category?.trim() || null,
         trigger_type,
@@ -195,5 +165,5 @@ export async function POST(request: NextRequest) {
     console.error('Error creating bot rule:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 

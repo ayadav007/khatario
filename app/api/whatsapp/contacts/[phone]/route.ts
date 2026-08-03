@@ -4,31 +4,13 @@ export const dynamic = 'force-dynamic';
  * API endpoint for fetching contact information by phone number
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { phone: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ phone: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const phone = decodeURIComponent(params.phone);
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     // Normalize phone number (remove non-digits for comparison)
     const normalizedPhone = phone.replace(/\D/g, '');
@@ -200,5 +182,4 @@ export async function GET(
     console.error('Error fetching contact info:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

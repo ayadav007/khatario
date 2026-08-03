@@ -44,6 +44,8 @@ export function PlanLimitsMatrix({ planId, planName, onClose }: PlanLimitsMatrix
   const [saving, setSaving] = useState(false);
   const [modified, setModified] = useState(false);
   const [limitValues, setLimitValues] = useState<Record<string, number>>({});
+  /** Raw input while typing (allows "-" before "1" for unlimited). */
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!admin?.id) return;
@@ -84,6 +86,39 @@ export function PlanLimitsMatrix({ planId, planName, onClose }: PlanLimitsMatrix
       [limitKey]: value
     }));
     setModified(true);
+  }
+
+  function limitInputDisplay(limitKey: string, fallback: number): string {
+    if (limitKey in limitDrafts) return limitDrafts[limitKey];
+    const stored = limitValues[limitKey];
+    return String(stored ?? fallback);
+  }
+
+  function handleLimitInputChange(limitKey: string, raw: string) {
+    if (!/^-?\d*$/.test(raw)) return;
+    setLimitDrafts(prev => ({ ...prev, [limitKey]: raw }));
+    if (raw !== '' && raw !== '-') {
+      const parsed = parseInt(raw, 10);
+      if (!isNaN(parsed)) updateLimit(limitKey, parsed);
+    }
+  }
+
+  function handleLimitInputBlur(limitKey: string, fallback: number) {
+    const raw = limitDrafts[limitKey];
+    if (raw === undefined) return;
+    let value: number;
+    if (raw === '' || raw === '-') {
+      value = fallback;
+    } else {
+      const parsed = parseInt(raw, 10);
+      value = isNaN(parsed) ? fallback : parsed;
+    }
+    updateLimit(limitKey, value);
+    setLimitDrafts(prev => {
+      const next = { ...prev };
+      delete next[limitKey];
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -184,20 +219,13 @@ export function PlanLimitsMatrix({ planId, planName, onClose }: PlanLimitsMatrix
                       </div>
                       <div className="flex items-center space-x-2">
                         <input
-                          type="number"
-                          value={limitValues[limit.limit_key] ?? limit.default_value}
-                          onChange={(e) => {
-                            const value = e.target.value === '' ? 0 : parseInt(e.target.value);
-                            updateLimit(limit.limit_key, isNaN(value) ? 0 : value);
-                          }}
-                          onBlur={(e) => {
-                            if (e.target.value === '') {
-                              updateLimit(limit.limit_key, limit.default_value);
-                            }
-                          }}
+                          type="text"
+                          inputMode="numeric"
+                          value={limitInputDisplay(limit.limit_key, limit.default_value)}
+                          onChange={(e) => handleLimitInputChange(limit.limit_key, e.target.value)}
+                          onBlur={() => handleLimitInputBlur(limit.limit_key, limit.default_value)}
                           className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                           placeholder="-1"
-                          min="-1"
                           disabled={saving}
                         />
                         {limitValues[limit.limit_key] === -1 && (

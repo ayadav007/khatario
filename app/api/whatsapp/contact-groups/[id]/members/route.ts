@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,27 +8,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/contact-groups/[id]/members
  * Get all members of a contact group
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const groupId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     const pool = getPool();
 
@@ -68,43 +50,30 @@ export async function GET(
       { status: 500 }
     );
   }
-}
-
+});
 /**
  * POST /api/whatsapp/contact-groups/[id]/members
  * Add contacts to a group (bulk)
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const groupId = params.id;
-    const body = await request.json();
-    const { business_id, contact_ids } = body;
+    const { contact_ids } = (body ?? {}) as Record<string, any>;
 
-    if (!business_id || !contact_ids || !Array.isArray(contact_ids)) {
+    if (!contact_ids || !Array.isArray(contact_ids)) {
       return NextResponse.json(
         { error: 'Business ID and contact_ids array are required' },
         { status: 400 }
       );
     }
 
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     const pool = getPool();
 
     // Verify group belongs to business
     const groupResult = await pool.query(
       'SELECT id FROM whatsapp_contact_groups WHERE id = $1 AND business_id = $2',
-      [groupId, business_id]
+      [groupId, businessId]
     );
 
     if (groupResult.rows.length === 0) {
@@ -123,7 +92,7 @@ export async function POST(
         // Verify contact belongs to business
         const contactResult = await pool.query(
           'SELECT id FROM whatsapp_contacts WHERE id = $1 AND business_id = $2',
-          [contactId, business_id]
+          [contactId, businessId]
         );
 
         if (contactResult.rows.length === 0) {
@@ -164,35 +133,22 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * DELETE /api/whatsapp/contact-groups/[id]/members
  * Remove contacts from a group
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const groupId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const contactIds = searchParams.get('contact_ids')?.split(',') || [];
 
     if (!businessId || contactIds.length === 0) {
       return NextResponse.json(
         { error: 'Business ID and contact_ids are required' },
         { status: 400 }
-      );
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
       );
     }
 
@@ -230,4 +186,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-}
+});

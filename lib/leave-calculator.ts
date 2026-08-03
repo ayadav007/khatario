@@ -48,6 +48,43 @@ export async function calculateWorkingDays(
   return workingDays;
 }
 
+/** Weekday dates in range excluding weekends and business holidays (YYYY-MM-DD). */
+export async function enumerateWorkingDates(
+  startDate: Date | string,
+  endDate: Date | string,
+  businessId: string,
+): Promise<string[]> {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  if (start > end) {
+    throw new Error('Start date must be before or equal to end date');
+  }
+
+  const holidays = await queryRows<{ holiday_date: Date }>(
+    'SELECT holiday_date FROM holidays WHERE business_id = $1 AND holiday_date BETWEEN $2 AND $3',
+    [businessId, start, end],
+  );
+
+  const holidayDates = new Set(
+    holidays.map((h) => h.holiday_date.toISOString().split('T')[0]),
+  );
+
+  const dates: string[] = [];
+  const current = new Date(start);
+
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    const dateStr = current.toISOString().split('T')[0];
+    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidayDates.has(dateStr)) {
+      dates.push(dateStr);
+    }
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
 /**
  * Check if employee has sufficient leave balance
  */

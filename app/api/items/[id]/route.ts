@@ -163,6 +163,7 @@ export async function PATCH(
       plu_code,
       weight_barcode_mode,
       allow_sale_when_out_of_stock,
+      show_in_store,
       variants = []
     } = body;
 
@@ -262,6 +263,8 @@ export async function PATCH(
       }
     }
 
+    const patchShowInStore = Object.prototype.hasOwnProperty.call(body, 'show_in_store');
+
     const buildOptionalUpdate = (startIndex: number) => {
       const parts: string[] = [];
       const extra: unknown[] = [];
@@ -274,6 +277,12 @@ export async function PATCH(
       if (patchOversellPolicy) {
         parts.push(`, allow_sale_when_out_of_stock = $${idx}`);
         extra.push(oversellOverride);
+        idx += 1;
+      }
+      if (patchShowInStore) {
+        parts.push(`, show_in_store = $${idx}`);
+        extra.push(!!show_in_store);
+        idx += 1;
       }
       return { sql: parts.join(''), params: extra };
     };

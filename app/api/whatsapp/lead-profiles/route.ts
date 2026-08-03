@@ -1,46 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
-// Helper function to check WhatsApp Bot addon
-async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
-  try {
-    const addon = await queryOne(
-      `SELECT id FROM whatsapp_addons 
-       WHERE business_id = $1 
-       AND addon_type IN ('whatsapp_bot', 'whatsapp', 'whatsapp_send_message')
-       AND status = 'active' 
-       AND (end_date IS NULL OR end_date >= CURRENT_DATE)`,
-      [businessId]
-    );
-    return !!addon;
-  } catch (error) {
-    console.error('Error checking WhatsApp Bot addon:', error);
-    return false;
-  }
-}
-
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const phone = searchParams.get('phone');
     const conversationId = searchParams.get('conversation_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     let profile;
     if (conversationId) {
@@ -53,10 +22,8 @@ export async function GET(request: NextRequest) {
         );
       }
     } else if (phone) {
-      // Find by phone number - normalize it first
       const normalizedPhone = phone.replace(/\D/g, '');
-      
-      // First find the conversation
+
       const conversation = await queryOne(
         `SELECT id FROM whatsapp_conversations 
          WHERE business_id = $1 
@@ -70,7 +37,7 @@ export async function GET(request: NextRequest) {
          LIMIT 1`,
         [businessId, phone, normalizedPhone]
       );
-      
+
       if (conversation) {
         profile = await queryOne(
           `SELECT * FROM whatsapp_lead_profiles 
@@ -88,4 +55,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

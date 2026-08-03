@@ -174,16 +174,19 @@ export function useSubscriptionCheck(businessId: string | undefined) {
     const addonFeatureMap: Record<string, string> = {
       // Legacy keys
       'whatsapp_bot': 'whatsapp_bot',
-      'whatsapp_send_message': 'whatsapp_bot', // Both WhatsApp features use whatsapp_bot addon
-      
-      // Feature Registry keys
+      'whatsapp_send_message': 'whatsapp_send_message',
       'integration_whatsapp_bot': 'whatsapp_bot',
-      'integration_whatsapp_manual': 'whatsapp_bot',
+      'integration_whatsapp_manual': 'whatsapp_send_message',
     };
 
     // Check if this is an addon-based feature
     const addonType = addonFeatureMap[featureKey];
     if (addonType) {
+      if (addonType === 'whatsapp_send_message') {
+        return (
+          hasActiveAddon('whatsapp_send_message') || hasActiveAddon('whatsapp_bot')
+        );
+      }
       return hasActiveAddon(addonType);
     }
 

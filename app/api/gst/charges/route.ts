@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -13,6 +12,7 @@ import {
   mergeGstDueDateOptions,
   parseGstDueDateQueryOverrides,
 } from '@/lib/gst/gst-org-filing';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 /**
  * GET /api/gst/charges?period=YYYY-MM&branch_id=optional&filing_date=&payment_date=&is_nil_return=0|1&segment_details=1
@@ -21,17 +21,8 @@ import {
  * `effective_interest_end_date` = min(max(filing/payment, last payment after due), `as_on_date`).
  * Query `as_on_date=YYYY-MM-DD` (optional) defaults to **today in Asia/Kolkata** — reproducible reports.
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period');
     const branchIdParam = searchParams.get('branch_id');
@@ -47,7 +38,7 @@ export async function GET(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam || undefined,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -61,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'read', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
       });
     } catch (error) {
@@ -73,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -90,7 +81,7 @@ export async function GET(request: NextRequest) {
     const month = parseInt(ms, 10);
     const gen = new GSTR3BGenerator();
     const gstr3b = await gen.generate({
-      business_id,
+      business_id: businessId,
       month,
       year,
       branch_id: finalBranchId,
@@ -114,13 +105,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'as_on_date must be YYYY-MM-DD' }, { status: 400 });
     }
 
-    const org = await loadGstFilingOrgDefaults(business_id);
+    const org = await loadGstFilingOrgDefaults(businessId);
     const { override: dueDateOverride, due_date_inputs_from_request } =
       parseGstDueDateQueryOverrides(searchParams);
     const dueDateOptions = mergeGstDueDateOptions(org, dueDateOverride);
 
     const full = await computeGstChargesFull({
-      businessId: business_id,
+      businessId,
       branchId: finalBranchId,
       gstPeriod,
       netTaxPayable: Number(gstr3b.summary?.net_tax_payable ?? 0),
@@ -155,4 +146,4 @@ export async function GET(request: NextRequest) {
     console.error('GST charges error:', error);
     return NextResponse.json({ error: error?.message || 'GST charges failed' }, { status: 500 });
   }
-}
+});

@@ -7,7 +7,6 @@ import {
   Camera,
   Clock,
   FileText,
-  Image as ImageIcon,
   Loader2,
   Sparkles,
 } from 'lucide-react';
@@ -16,12 +15,22 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { postInvoiceExtract } from '@/lib/invoice-extract-client';
-import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY } from '@/lib/purchase-scan-constants';
+import { MANUAL_BILL_ENTRY_MINUTES, PURCHASE_PENDING_EXTRACT_STORAGE_KEY } from '@/lib/purchase-scan-constants';
 import { useToastContext } from '@/contexts/ToastContext';
 import { DocumentCropScreen } from '@/components/purchases/scan-flow/DocumentCropScreen';
 import { ScanPreviewScreen } from '@/components/purchases/scan-flow/ScanPreviewScreen';
 import { ScanLoadingScreen } from '@/components/purchases/scan-flow/ScanLoadingScreen';
 import { ScanSuccessScreen } from '@/components/purchases/scan-flow/ScanSuccessScreen';
+
+const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
+  'image/webp',
+]);
 
 type JobRow = {
   id: string;
@@ -34,6 +43,12 @@ type JobRow = {
 };
 
 type Filter = 'all' | 'incomplete' | 'completed';
+
+type GalleryPick = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
 
 type ScanPhase =
   | { type: 'idle' }
@@ -73,6 +88,35 @@ function itemCount(job: JobRow): number {
   return Array.isArray(items) ? items.length : 0;
 }
 
+function scanStatusBadge(job: JobRow): { label: string; className: string } {
+  if (job.status === 'completed') {
+    return {
+      label: 'Completed',
+      className:
+        'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200',
+    };
+  }
+  if (job.status === 'failed') {
+    return {
+      label: 'Failed',
+      className:
+        'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200',
+    };
+  }
+  if (job.status === 'processing') {
+    return {
+      label: 'Processing',
+      className:
+        'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200',
+    };
+  }
+  return {
+    label: 'Incomplete',
+    className:
+      'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200',
+  };
+}
+
 function groupLabel(dateStr: string): string {
   try {
     const d = parseISO(dateStr.slice(0, 10));
@@ -96,12 +140,14 @@ export function ScanRecordBillsScreen() {
   const [stats, setStats] = useState({
     billsScanned: 0,
     completedJobs: 0,
-    minutesSavedApprox: 0,
+    minutesSaved: 0,
   });
   const [filter, setFilter] = useState<Filter>('all');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [scanPhase, setScanPhase] = useState<ScanPhase>({ type: 'idle' });
+  const [galleryPicks, setGalleryPicks] = useState<GalleryPick[]>([]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const loadJobs = useCallback(async () => {
     if (!business?.id || !user?.id) return;
@@ -116,7 +162,13 @@ export function ScanRecordBillsScreen() {
         throw new Error(data.error || 'Failed to load scans');
       }
       setJobs(data.jobs || []);
-      if (data.stats) setStats(data.stats);
+      if (data.stats) {
+        setStats({
+          billsScanned: data.stats.billsScanned ?? 0,
+          completedJobs: data.stats.completedJobs ?? 0,
+          minutesSaved: data.stats.minutesSaved ?? data.stats.minutesSavedApprox ?? 0,
+        });
+      }
     } catch (e) {
       console.error(e);
       toast.error(e instanceof Error ? e.message : 'Could not load scans');
@@ -128,6 +180,14 @@ export function ScanRecordBillsScreen() {
   useEffect(() => {
     void loadJobs();
   }, [loadJobs]);
+
+  useEffect(() => {
+    return () => {
+      for (const pick of galleryPicks) {
+        URL.revokeObjectURL(pick.previewUrl);
+      }
+    };
+  }, [galleryPicks]);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((j) => {
@@ -148,10 +208,42 @@ export function ScanRecordBillsScreen() {
     return Array.from(map.entries());
   }, [filteredJobs]);
 
-  const galleryJobs = useMemo(
-    () => jobs.filter((j) => j.file_type?.startsWith('image/')).slice(0, 12),
-    [jobs]
-  );
+  const openGalleryPicker = () => {
+    galleryInputRef.current?.click();
+  };
+
+  const handleGalleryFileChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0 || !business?.id) return;
+
+    const maxSize = 10 * 1024 * 1024;
+    const next: GalleryPick[] = [];
+
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+        toast.error(`${file.name}: use JPG, PNG, or another image format`);
+        continue;
+      }
+      if (file.size > maxSize) {
+        toast.error(`${file.name} is too large (max 10MB)`);
+        continue;
+      }
+      next.push({
+        id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+
+    if (next.length === 0) return;
+    setGalleryPicks((prev) => [...next, ...prev].slice(0, 24));
+  };
+
+  const startScanFromGalleryPick = (pick: GalleryPick) => {
+    if (scanPhase.type !== 'idle') return;
+    setScanPhase({ type: 'cropping', rawFile: pick.file });
+  };
 
   const onExtractSuccess = useCallback(
     async (result: unknown) => {
@@ -187,16 +279,6 @@ export function ScanRecordBillsScreen() {
     };
     input.click();
   };
-
-  const ALLOWED_IMAGE_TYPES = new Set([
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/gif',
-    'image/bmp',
-    'image/tiff',
-    'image/webp',
-  ]);
 
   const openDeviceCamera = () => {
     cameraInputRef.current?.click();
@@ -277,10 +359,6 @@ export function ScanRecordBillsScreen() {
     }
   }, [scanPhase, onExtractSuccess, toast]);
 
-  const scrollToGallery = () => {
-    document.getElementById('scan-gallery-section')?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   return (
     <div className="relative min-h-[70vh] pb-[10rem] max-lg:pb-[calc(10rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
 
@@ -311,6 +389,18 @@ export function ScanRecordBillsScreen() {
           onDismiss={handleSuccessDismiss}
         />
       )}
+
+      {/* Hidden gallery picker: opens phone photo library (no capture) */}
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        aria-hidden
+        tabIndex={-1}
+        onChange={handleGalleryFileChange}
+      />
 
       {/* Hidden capture input: opens system camera on mobile */}
       <input
@@ -346,7 +436,13 @@ export function ScanRecordBillsScreen() {
           <span className="hidden h-4 w-px bg-border sm:block" aria-hidden />
           <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
             <Clock className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
-            <span>~{stats.minutesSavedApprox} min saved</span>
+            <span>
+              {stats.minutesSaved} min saved
+              <span className="font-normal text-text-secondary">
+                {' '}
+                ({MANUAL_BILL_ENTRY_MINUTES} min/bill)
+              </span>
+            </span>
           </span>
         </div>
         <Sparkles className="h-5 w-5 shrink-0 text-amber-500" aria-hidden />
@@ -363,28 +459,41 @@ export function ScanRecordBillsScreen() {
           <button
             type="button"
             className="link-primary text-xs font-semibold sm:text-sm"
-            onClick={scrollToGallery}
+            onClick={openGalleryPicker}
+            disabled={scanPhase.type !== 'idle'}
           >
             Browse gallery &gt;
           </button>
         </div>
-        {galleryJobs.length === 0 ? (
-          <p className="text-xs text-text-secondary">No gallery images yet — use camera or upload below.</p>
+        {galleryPicks.length === 0 ? (
+          <button
+            type="button"
+            onClick={openGalleryPicker}
+            disabled={scanPhase.type !== 'idle'}
+            className="w-full rounded-xl border border-dashed border-border bg-white px-4 py-6 text-center text-xs text-text-secondary transition-colors hover:bg-slate-50 disabled:opacity-60 dark:bg-surface-dark dark:hover:bg-slate-800/80"
+          >
+            Pick bill photos from your phone gallery — tap here or use Browse gallery above.
+          </button>
         ) : (
           <div className="flex gap-2 overflow-x-auto pb-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {galleryJobs.map((j) => (
+            {galleryPicks.map((pick) => (
               <button
-                key={j.id}
+                key={pick.id}
                 type="button"
-                onClick={() => router.push(`${returnTo.split('?')[0]}?extractionJob=${encodeURIComponent(j.id)}`)}
-                className="flex w-20 shrink-0 flex-col items-center gap-1 text-left"
+                onClick={() => startScanFromGalleryPick(pick)}
+                disabled={scanPhase.type !== 'idle'}
+                className="flex w-20 shrink-0 flex-col items-center gap-1 text-left disabled:opacity-60"
               >
-                <div className="flex h-14 w-full items-center justify-center rounded-lg border border-border bg-white shadow-sm dark:bg-slate-900">
-                  <ImageIcon className="h-6 w-6 text-text-muted" aria-hidden />
+                <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border bg-white shadow-sm dark:bg-slate-900">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pick.previewUrl}
+                    alt={pick.file.name}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <span className="w-full truncate text-center text-2xs text-text-secondary">
-                  {vendorLabel(j).slice(0, 10)}
-                  …
+                  {pick.file.name.replace(/\.[^.]+$/i, '').slice(0, 12)}
                 </span>
               </button>
             ))}
@@ -429,7 +538,7 @@ export function ScanRecordBillsScreen() {
                 </div>
                 <ul className="space-y-2">
                   {group.map((job) => {
-                    const done = job.status === 'completed';
+                    const badge = scanStatusBadge(job);
                     const items = itemCount(job);
                     return (
                       <li key={job.id}>
@@ -453,12 +562,10 @@ export function ScanRecordBillsScreen() {
                             <span
                               className={clsx(
                                 'shrink-0 rounded-full border px-2 py-0.5 text-2xs font-semibold uppercase',
-                                done
-                                  ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200'
-                                  : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'
+                                badge.className
                               )}
                             >
-                              {done ? 'Completed' : 'Incomplete'}
+                              {badge.label}
                             </span>
                           </div>
                         </button>

@@ -7,7 +7,41 @@
 import { Policy } from '../types';
 import {
   resourceBelongsToBusiness,
+  customCondition,
 } from '../conditions';
+import { canAccessEmployeeRecord } from '@/lib/hr/employee-access-scope';
+
+import {
+  isSalaryPaymentLocked,
+  isSalaryPaymentResource,
+} from '@/lib/hr/payroll-lock';
+
+function salaryPaymentIsEditable(): ReturnType<typeof customCondition> {
+  return customCondition(
+    'salary_payment_is_editable',
+    'Processed or paid salary payments cannot be modified',
+    async (_user, resource) => {
+      if (!isSalaryPaymentResource(resource)) return true;
+      return !isSalaryPaymentLocked(resource.status as string);
+    },
+    'Cannot modify a processed or paid salary payment',
+    'SALARY_PAYMENT_LOCKED'
+  );
+}
+
+function actorCanAccessEmployeeRecord(): ReturnType<typeof customCondition> {
+  return customCondition(
+    'actor_can_access_employee_record',
+    'Actor must have roster access to this employee (full HR, payroll, team manager, or self)',
+    async (user, resource, context) => {
+      const employeeId = resource?.id || context.resourceId;
+      if (!employeeId) return true;
+      return canAccessEmployeeRecord(user.id, user.business_id, employeeId);
+    },
+    'You do not have access to this employee record',
+    'EMPLOYEE_ACCESS_DENIED'
+  );
+}
 
 /**
  * Get all HR policies
@@ -22,6 +56,7 @@ export function getHrPolicies(): Policy[] {
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        actorCanAccessEmployeeRecord(),
       ],
     },
     {
@@ -40,6 +75,7 @@ export function getHrPolicies(): Policy[] {
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        actorCanAccessEmployeeRecord(),
       ],
     },
     {
@@ -58,6 +94,7 @@ export function getHrPolicies(): Policy[] {
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        actorCanAccessEmployeeRecord(),
       ],
     },
     {
@@ -76,6 +113,7 @@ export function getHrPolicies(): Policy[] {
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        actorCanAccessEmployeeRecord(),
       ],
     },
     {
@@ -130,7 +168,7 @@ export function getHrPolicies(): Policy[] {
     {
       resource: 'payroll',
       action: 'read',
-      requiresPermission: 'employees.read', // Using employees.read for payroll viewing
+      requiresPermission: 'payroll.read',
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
@@ -139,7 +177,7 @@ export function getHrPolicies(): Policy[] {
     {
       resource: 'payroll',
       action: 'create',
-      requiresPermission: 'employees.update', // Using employees.update for payroll creation
+      requiresPermission: 'payroll.create',
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
@@ -148,16 +186,27 @@ export function getHrPolicies(): Policy[] {
     {
       resource: 'payroll',
       action: 'update',
-      requiresPermission: 'employees.update',
+      requiresPermission: 'payroll.update',
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        salaryPaymentIsEditable(),
+      ],
+    },
+    {
+      resource: 'payroll',
+      action: 'delete',
+      requiresPermission: 'payroll.delete',
+      priority: 10,
+      conditions: [
+        resourceBelongsToBusiness(),
+        salaryPaymentIsEditable(),
       ],
     },
     {
       resource: 'salary',
       action: 'read',
-      requiresPermission: 'employees.read',
+      requiresPermission: 'payroll.read',
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
@@ -166,10 +215,30 @@ export function getHrPolicies(): Policy[] {
     {
       resource: 'salary',
       action: 'create',
-      requiresPermission: 'employees.update',
+      requiresPermission: 'payroll.create',
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+      ],
+    },
+    {
+      resource: 'salary',
+      action: 'update',
+      requiresPermission: 'payroll.update',
+      priority: 10,
+      conditions: [
+        resourceBelongsToBusiness(),
+        salaryPaymentIsEditable(),
+      ],
+    },
+    {
+      resource: 'salary',
+      action: 'delete',
+      requiresPermission: 'payroll.delete',
+      priority: 10,
+      conditions: [
+        resourceBelongsToBusiness(),
+        salaryPaymentIsEditable(),
       ],
     },
 
@@ -247,6 +316,36 @@ export function getHrPolicies(): Policy[] {
       conditions: [
         resourceBelongsToBusiness(),
       ],
+    },
+
+    // RECRUITMENT policies
+    {
+      resource: 'recruitment',
+      action: 'read',
+      requiresPermission: 'recruitment.read',
+      priority: 10,
+      conditions: [resourceBelongsToBusiness()],
+    },
+    {
+      resource: 'recruitment',
+      action: 'create',
+      requiresPermission: 'recruitment.create',
+      priority: 10,
+      conditions: [resourceBelongsToBusiness()],
+    },
+    {
+      resource: 'recruitment',
+      action: 'update',
+      requiresPermission: 'recruitment.update',
+      priority: 10,
+      conditions: [resourceBelongsToBusiness()],
+    },
+    {
+      resource: 'recruitment',
+      action: 'delete',
+      requiresPermission: 'recruitment.delete',
+      priority: 10,
+      conditions: [resourceBelongsToBusiness()],
     },
   ];
 }

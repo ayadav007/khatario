@@ -1,15 +1,16 @@
 export const dynamic = 'force-dynamic';
 
 /**
- * Webhook endpoint for receiving incoming WhatsApp messages
- * This is a fallback endpoint if direct socket listening doesn't work
- * Currently, Baileys handles messages via socket events, but this can be used
- * for external webhook integrations
+ * Webhook endpoint for receiving incoming WhatsApp messages.
+ * Meta signature auth — cannot use JWT-based withWhatsAppPremiumApi.
+ * Enforces operational subscription + WhatsApp addon on the claimed business_id.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { addWhatsAppMessageJob } from '@/lib/queue';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { assertOperationalSubscription } from '@/lib/security/require-operational-subscription';
+import { assertWhatsAppPremiumAddon } from '@/lib/security/premium-module-api';
 
 function verifyMetaWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
   const secret = process.env.WHATSAPP_APP_SECRET;
@@ -53,6 +54,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
+  const subscriptionGate = await assertOperationalSubscription(business_id);
+  if (!subscriptionGate.ok) {
+    return subscriptionGate.response;
+  }
+
+  const addonBlocked = await assertWhatsAppPremiumAddon({
+    request,
+    params: {},
+    body,
+    businessId: business_id,
+    userId: 'webhook',
+    subscription: subscriptionGate.subscription,
+  });
+  if (addonBlocked) {
+    return addonBlocked;
+  }
+
   const messageId =
     (typeof body.message_id === 'string' && body.message_id) || `webhook_${Date.now()}`;
   const fromDigits = from.replace(/[^0-9]/g, '') || 'unknown';
@@ -63,7 +81,7 @@ export async function POST(request: NextRequest) {
     messageId: messageId,
     conversationId: fromDigits,
     timestamp: Date.now(),
-    body
+    body,
   }).catch((e) => {
     console.error('[WA] webhook enqueue failed', e);
   });

@@ -106,3 +106,41 @@ export async function getEditableFields(
   );
   return new Set(rows.map(r => r.field_name));
 }
+
+const EMPLOYEE_SENSITIVE_FIELDS = [
+  'salary',
+  'bank_account_number',
+  'bank_ifsc',
+  'bank_name',
+  'pan_number',
+  'aadhaar_number',
+] as const;
+
+/**
+ * Remove fields the user cannot edit from a PATCH/POST body.
+ * Returns rejected field names when the client explicitly sent restricted values.
+ */
+export async function rejectRestrictedFieldUpdates(
+  userId: string,
+  moduleKey: string,
+  body: Record<string, unknown>,
+  fieldNames: readonly string[] = EMPLOYEE_SENSITIVE_FIELDS
+): Promise<{ sanitized: Record<string, unknown>; rejected: string[] }> {
+  const editable = await getEditableFields(userId, moduleKey);
+  if (editable.has('*')) {
+    return { sanitized: body, rejected: [] };
+  }
+
+  const sanitized = { ...body };
+  const rejected: string[] = [];
+
+  for (const field of fieldNames) {
+    if (!(field in body)) continue;
+    if (!editable.has(field)) {
+      rejected.push(field);
+      delete sanitized[field];
+    }
+  }
+
+  return { sanitized, rejected };
+}

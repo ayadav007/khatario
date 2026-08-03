@@ -5,32 +5,18 @@ export const dynamic = 'force-dynamic';
  * POST /api/whatsapp/conversations/export
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import ExcelJS from 'exceljs';
 
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
-    const body = await request.json();
-    const { business_id, format = 'csv', filters = {} } = body;
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
+    const { format = 'csv', filters = {} } = (body ?? {}) as Record<string, any>;
 
     // Build WHERE clause based on filters
     const whereConditions: string[] = ['c.business_id = $1', "c.status = 'active'"];
-    const params: any[] = [business_id];
+    const params: any[] = [businessId];
     let paramIndex = 2;
 
     if (filters.status) {
@@ -167,5 +153,4 @@ export async function POST(request: NextRequest) {
     console.error('Error exporting conversations:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

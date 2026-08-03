@@ -1,5 +1,21 @@
 [byterover-mcp]
 
+## gstack (AI workflow — Cursor)
+
+Khatario uses [gstack](https://github.com/garrytan/gstack) **selectively** via Cursor skills. Full install lives at `~/gstack`; skills at `~/.cursor/skills/gstack-*`.
+
+**Start here:** read `.cursor/skills/khatario-gstack/SKILL.md` or `.cursor/rules/gstack-workflow.mdc`.
+
+| Task | Skill to load |
+|------|----------------|
+| Code review before merge | `gstack-review` |
+| Security audit | `gstack-cso` |
+| Systematic debugging | `gstack-investigate` |
+| Staging QA | `gstack-qa` → `https://staging.khatario.com` |
+| Open PR | `gstack-ship` |
+
+**Order:** ByteRover knowledge first → gstack skill → Playwright e2e for regression. Deploy/Android: follow `docs/SERVER_INFRASTRUCTURE.md`, not generic gstack deploy skills.
+
 ## Infrastructure & deploy
 
 Before VPS deploy, nginx changes, or Android APK builds, read **`docs/SERVER_INFRASTRUCTURE.md`**.

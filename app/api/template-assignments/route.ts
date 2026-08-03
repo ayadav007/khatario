@@ -3,6 +3,8 @@ import { query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/template-assignments?business_id=X
  * Get all active template assignments for a business
@@ -10,14 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const result = await query(
       `SELECT template_id, document_type, settings, updated_at 
@@ -48,7 +45,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, template_id, document_type, settings = {} } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { template_id, document_type, settings = {} } = body;
+    // Only overwrite saved customizations when the caller explicitly sends settings.
+    // A plain "activate" (no settings in body) must NOT wipe prior customizations.
+    const hasExplicitSettings = Object.prototype.hasOwnProperty.call(body, 'settings');
 
     if (!business_id || !template_id || !document_type) {
       return NextResponse.json(
@@ -65,10 +68,13 @@ export async function POST(request: NextRequest) {
        ON CONFLICT (business_id, document_type) 
        DO UPDATE SET 
          template_id = EXCLUDED.template_id,
-         settings = EXCLUDED.settings,
+         settings = CASE
+           WHEN $5::boolean THEN EXCLUDED.settings
+           ELSE business_template_assignments.settings
+         END,
          updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [business_id, template_id, document_type, JSON.stringify(settings)]
+      [business_id, template_id, document_type, JSON.stringify(settings), hasExplicitSettings]
     );
 
     return NextResponse.json({
@@ -96,7 +102,10 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, document_type, template_id, settings } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { document_type, template_id, settings } = body;
 
     if (!business_id || !document_type || !settings) {
       return NextResponse.json(

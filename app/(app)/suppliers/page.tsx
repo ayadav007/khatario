@@ -15,6 +15,7 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { SupplierDetailPanel } from '@/components/suppliers/SupplierDetailPanel';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
 import { DeleteAction } from '@/components/common/DeleteAction';
 
@@ -118,13 +119,13 @@ export default function SuppliersPage() {
       <Card padding="md" className="hidden md:block mb-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Name, phone, or email"
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 h-10"
+              className="input pl-10"
             />
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -133,11 +134,10 @@ export default function SuppliersPage() {
                 key={f}
                 type="button"
                 onClick={() => setBalanceFilter(f as 'all' | 'with-balance' | 'zero-balance')}
-                className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  balanceFilter === f
-                    ? 'bg-primary-600 border-primary-600 text-white'
-                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}
+                className={clsx(
+                  'chip',
+                  balanceFilter === f && 'bg-primary-500 text-white border-primary-500'
+                )}
               >
                 {f.replace('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
               </button>
@@ -145,14 +145,14 @@ export default function SuppliersPage() {
           </div>
         </div>
       </Card>
-      <div className="md:hidden relative mb-3">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+      <div className="md:hidden relative mb-2">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search suppliers"
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl h-12"
+          placeholder="Name or phone"
+          className="input pl-10 w-full"
         />
       </div>
     </>
@@ -234,61 +234,25 @@ export default function SuppliersPage() {
 
   const fullList = (
     <>
-      {/* Search Bar — full width when no split toolbar */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:hidden">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name or phone"
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg h-12 md:h-10"
-          />
-        </div>
-      </div>
-
-      {/* Desktop Filter Chips — full list only */}
-      <div className="hidden md:flex gap-2 mb-4">
-        {['all', 'with-balance', 'zero-balance'].map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setBalanceFilter(f as 'all' | 'with-balance' | 'zero-balance')}
-            className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              balanceFilter === f
-                ? 'bg-primary-600 border-primary-600 text-white'
-                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-            }`}
-          >
-            {f.replace('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-          </button>
-        ))}
-      </div>
-
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
         </div>
       ) : filteredSuppliers.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-          <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600">
+        <Card padding="lg" className="text-center">
+          <User className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <p className="type-body-secondary">
             {search ? 'No suppliers found matching your search' : 'No suppliers yet'}
           </p>
           {!search && (
-            <button
-              type="button"
-              onClick={() => router.push('/suppliers/new')}
-              className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-            >
-              Add Your First Supplier
-            </button>
+            <Button className="mt-4" onClick={() => router.push('/suppliers/new')}>
+              Add your first supplier
+            </Button>
           )}
-        </div>
+        </Card>
       ) : (
         <>
-          <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <Card padding="none" className="overflow-hidden hidden md:block">
             <table className="table w-full">
               <thead>
                 <tr className="table-header border-b border-border">
@@ -360,9 +324,9 @@ export default function SuppliersPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
 
-          <div className="md:hidden grid grid-cols-1 gap-4">
+          <div className="md:hidden space-y-2">
             {paginatedSuppliers.map((supplier) => (
               <div
                 key={supplier.id}
@@ -372,19 +336,25 @@ export default function SuppliersPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') setSelectedSupplierId(supplier.id);
                 }}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition"
+                className="rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
               >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-slate-50 p-3 rounded-xl text-primary-600">
-                      <User className="w-5 h-5" />
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-primary-700 dark:bg-slate-800/40 dark:text-primary-300">
+                      {supplier.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900">{supplier.name}</h3>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold leading-snug text-text-primary">
+                        {supplier.name}
+                      </p>
                       {supplier.gstin ? (
-                        <p className="text-2xs uppercase font-bold text-primary-600 bg-slate-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-                          GSTIN: {supplier.gstin}
-                        </p>
+                        <p className="mt-0.5 truncate text-2xs text-text-muted">{supplier.gstin}</p>
+                      ) : null}
+                      {supplier.phone ? (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs text-text-muted">
+                          <Phone className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{supplier.phone}</span>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -409,12 +379,6 @@ export default function SuppliersPage() {
                     />
                   </div>
                 </div>
-                {supplier.phone && (
-                  <div className="flex items-center space-x-2 text-sm text-gray-600 mb-1">
-                    <Phone className="w-4 h-4 text-gray-400" />
-                    <span>{supplier.phone}</span>
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -422,27 +386,27 @@ export default function SuppliersPage() {
       )}
 
       {totalPages > 1 && filteredSuppliers.length > 0 && (
-        <div className="flex justify-between items-center p-4 border-t border-gray-200 bg-white rounded-b-xl">
-          <p className="text-sm text-gray-600">
+        <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-surface p-3 md:mt-0 md:rounded-none md:border-0 md:border-t md:bg-transparent md:p-4">
+          <p className="text-sm text-text-secondary">
             Page {page} of {totalPages} ({filteredSuppliers.length} suppliers)
           </p>
-          <div className="flex space-x-2">
-            <button
-              type="button"
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
             >
               Previous
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -459,19 +423,16 @@ export default function SuppliersPage() {
             <button
               type="button"
               onClick={() => setShowMobileFilters(true)}
-              className="p-2 bg-white border border-gray-200 rounded-lg md:hidden text-text-secondary"
+              className="rounded-lg border border-border bg-surface p-2 text-text-secondary md:hidden"
               aria-label="Filters"
             >
               <Filter className="w-5 h-5" />
             </button>
             <Link href="/suppliers/new">
-              <button
-                type="button"
-                className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
-              >
-                <Plus className="w-5 h-5" />
+              <Button className="h-10 px-4">
+                <Plus className="w-4 h-4 md:mr-2" />
                 <span className="hidden md:inline">Add Supplier</span>
-              </button>
+              </Button>
             </Link>
           </>
         }
@@ -480,22 +441,22 @@ export default function SuppliersPage() {
       {showMobileFilters && (
         <div className="fixed inset-0 z-[100] md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl p-6 animate-slide-up">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Filters</h3>
-              <button type="button" onClick={() => setShowMobileFilters(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                <X className="w-5 h-5 text-gray-500" />
+          <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-border bg-surface p-6 shadow-xl animate-slide-up">
+            <div className="mb-6 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-text-primary">Filters</h3>
+              <button type="button" onClick={() => setShowMobileFilters(false)} className="rounded-full p-2 hover:bg-slate-50 dark:hover:bg-slate-800">
+                <X className="w-5 h-5 text-text-muted" />
               </button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Balance Status</label>
+                <label className="type-label mb-2 block">Balance status</label>
                 <div className="flex flex-col gap-2">
                   {[
-                    { id: 'all', label: 'All Suppliers' },
-                    { id: 'with-balance', label: 'With Balance' },
-                    { id: 'zero-balance', label: 'Zero Balance' },
+                    { id: 'all', label: 'All suppliers' },
+                    { id: 'with-balance', label: 'With balance' },
+                    { id: 'zero-balance', label: 'Zero balance' },
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -504,11 +465,12 @@ export default function SuppliersPage() {
                         setBalanceFilter(f.id as 'all' | 'with-balance' | 'zero-balance');
                         setShowMobileFilters(false);
                       }}
-                      className={`px-4 py-3 rounded-xl text-left text-sm font-medium border transition-colors ${
+                      className={clsx(
+                        'rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors',
                         balanceFilter === f.id
-                          ? 'bg-slate-50 border-primary-500 text-primary-700'
-                          : 'bg-white border-gray-200 text-gray-600'
-                      }`}
+                          ? 'border-primary-500 bg-slate-50 text-primary-700 dark:bg-primary-900/35 dark:text-primary-300'
+                          : 'border-border bg-background/50 text-text-secondary dark:bg-slate-900/30'
+                      )}
                     >
                       {f.label}
                     </button>
@@ -517,13 +479,9 @@ export default function SuppliersPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="w-full mt-8 h-12 bg-primary-600 text-white font-bold rounded-xl"
-              onClick={() => setShowMobileFilters(false)}
-            >
-              Apply Filters
-            </button>
+            <Button className="mt-8 w-full" onClick={() => setShowMobileFilters(false)}>
+              Apply filters
+            </Button>
           </div>
         </div>
       )}

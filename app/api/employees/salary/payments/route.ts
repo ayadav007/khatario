@@ -4,6 +4,12 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalaryPayment } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import {
+  defaultPartialRecoveryNote,
+  isPartialAdvanceRecovery,
+} from '@/lib/hr/salary-payroll-helpers';
+import { getPendingEncashmentTotal, applyPendingLeaveEncashment } from '@/lib/hr/leave/leave-encashment-payroll';
+import { getPendingOtPayrollTotal, applyPendingOtPayroll } from '@/lib/hr/shift-overtime/ot-payroll';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,7 +127,16 @@ export async function POST(request: NextRequest) {
       tds = 0,
       advance_recovery = 0,
       loan_deduction = 0,
+      attendance_deduction = 0,
       other_deductions = 0,
+      employer_provident_fund = 0,
+      esi_employee = 0,
+      esi_employer = 0,
+      pf_wage = null,
+      esi_wage = null,
+      statutory_breakdown = null,
+      component_breakdown = null,
+      attendance_adjustment_details,
       payment_mode,
       payment_reference,
       working_days,
@@ -130,6 +145,7 @@ export async function POST(request: NextRequest) {
       leave_days,
       overtime_hours,
       notes,
+      advance_recovery_note,
       processed_by,
       generate_payslip = true,
     } = body;
@@ -163,13 +179,32 @@ export async function POST(request: NextRequest) {
     const payrollLimit = await limitExceededResponse(business_id, 'payroll');
     if (payrollLimit) return payrollLimit;
 
+    const pendingEncashment = await getPendingEncashmentTotal(business_id, employee_id);
+    const pendingOt = await getPendingOtPayrollTotal(business_id, employee_id);
+    const resolvedOtherEarnings = Number(other_earnings || 0) + pendingEncashment + pendingOt;
+    let encashmentNote = '';
+    if (pendingEncashment > 0) {
+      encashmentNote = `Leave encashment: ₹${pendingEncashment.toFixed(2)}`;
+    }
+    let otNote = '';
+    if (pendingOt > 0) {
+      otNote = `Overtime: ₹${pendingOt.toFixed(2)}`;
+    }
+
     // Calculate totals
     const totalEarnings = Number(basic_salary) + Number(hra) + Number(transport_allowance) +
       Number(medical_allowance) + Number(special_allowance) + Number(overtime) +
-      Number(bonus) + Number(commission) + Number(other_earnings);
+      Number(bonus) + Number(commission) + resolvedOtherEarnings;
 
-    const totalDeductions = Number(provident_fund) + Number(professional_tax) + Number(tds) +
-      Number(advance_recovery) + Number(loan_deduction) + Number(other_deductions);
+    const totalDeductions =
+      Number(provident_fund) +
+      Number(professional_tax) +
+      Number(tds) +
+      Number(advance_recovery) +
+      Number(loan_deduction) +
+      Number(attendance_deduction) +
+      Number(other_deductions) +
+      Number(esi_employee || 0);
 
     const grossSalary = totalEarnings;
     const netSalary = grossSalary - totalDeductions;
@@ -213,6 +248,30 @@ export async function POST(request: NextRequest) {
     // Calculate total advance recovery
     let totalAdvanceRecovery = Number(advance_recovery || 0);
     const advanceRecoveries: Array<{ advance_id: string; recovery_amount: number }> = [];
+    const totalPendingAdvance = pendingAdvances.reduce(
+      (sum, a) => sum + Number(a.remaining_amount || 0),
+      0
+    );
+
+    if (totalAdvanceRecovery > totalPendingAdvance + 0.001) {
+      return NextResponse.json(
+        {
+          error: `Advance recovery (₹${totalAdvanceRecovery}) cannot exceed pending balance (₹${totalPendingAdvance}).`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const partialRecovery = isPartialAdvanceRecovery(totalAdvanceRecovery, totalPendingAdvance);
+    const resolvedRecoveryNote =
+      advance_recovery_note?.trim() ||
+      (partialRecovery
+        ? defaultPartialRecoveryNote({
+            recovered: totalAdvanceRecovery,
+            pendingBefore: totalPendingAdvance,
+            paymentDate: payment_date,
+          })
+        : null);
 
     if (pendingAdvances.length > 0 && totalAdvanceRecovery > 0) {
       let remainingRecovery = totalAdvanceRecovery;
@@ -236,28 +295,42 @@ export async function POST(request: NextRequest) {
         basic_salary, hra, transport_allowance, medical_allowance, special_allowance,
         overtime, bonus, commission, other_earnings, total_earnings,
         provident_fund, professional_tax, tds, advance_recovery, loan_deduction,
-        other_deductions, total_deductions, gross_salary, net_salary,
+        attendance_deduction, other_deductions, total_deductions, gross_salary, net_salary,
         payment_mode, payment_reference, bank_account_number, bank_ifsc,
         working_days, present_days, absent_days, leave_days, overtime_hours,
-        status, processed_at, processed_by, notes
+        status, processed_at, processed_by, notes, attendance_adjustment_details,
+        employer_provident_fund, esi_employee, esi_employer, pf_wage, esi_wage,
+        statutory_breakdown, component_breakdown
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29,
-        $30, $31, $32, $33, $34, $35, $36, $37, $38
+        $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+        $41, $42, $43, $44, $45, $46, $47
       )
       RETURNING *`,
       [
         business_id, employee_id, salary_month, from_date, to_date, payment_date,
         basic_salary, hra, transport_allowance, medical_allowance, special_allowance,
-        overtime, bonus, commission, other_earnings, totalEarnings,
+        overtime, bonus, commission, resolvedOtherEarnings, totalEarnings,
         provident_fund, professional_tax, tds, advance_recovery, loan_deduction,
-        other_deductions, totalDeductions, grossSalary, netSalary,
+        attendance_deduction, other_deductions, totalDeductions, grossSalary, netSalary,
         payment_mode || null, payment_reference || null,
         employee?.bank_account_number || null, employee?.bank_ifsc || null,
         working_days || null, present_days || null, absent_days || null,
         leave_days || null, overtime_hours || null,
-        'processed', new Date(), processed_by || null, notes || null,
+        'processed', new Date(), processed_by || null,
+        [notes, encashmentNote, otNote].filter(Boolean).join('\n') || null,
+        attendance_adjustment_details
+          ? JSON.stringify(attendance_adjustment_details)
+          : null,
+        Number(employer_provident_fund || 0),
+        Number(esi_employee || 0),
+        Number(esi_employer || 0),
+        pf_wage != null ? Number(pf_wage) : null,
+        esi_wage != null ? Number(esi_wage) : null,
+        statutory_breakdown ? JSON.stringify(statutory_breakdown) : null,
+        JSON.stringify(Array.isArray(component_breakdown) ? component_breakdown : []),
       ]
     );
 
@@ -268,8 +341,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const encashmentApplied = await applyPendingLeaveEncashment(
+      business_id,
+      employee_id,
+      salaryPayment.id,
+    );
+
+    const otApplied = await applyPendingOtPayroll(business_id, employee_id, salaryPayment.id);
+
     // Record advance recoveries
     for (const recovery of advanceRecoveries) {
+      const advanceBefore = pendingAdvances.find((a) => a.id === recovery.advance_id);
+      const remainingBefore = Number(advanceBefore?.remaining_amount || 0);
+      const rowNote =
+        recovery.recovery_amount < remainingBefore - 0.001
+          ? resolvedRecoveryNote
+          : partialRecovery && advanceRecoveries.length === 1
+            ? resolvedRecoveryNote
+            : null;
+
       const newRecoveredAmount = await queryOne<{ recovered_amount: number }>(
         `SELECT recovered_amount FROM salary_advances WHERE id = $1 AND business_id = $2`,
         [recovery.advance_id, business_id]
@@ -294,9 +384,9 @@ export async function POST(request: NextRequest) {
       );
 
       await query(
-        `INSERT INTO advance_recoveries (advance_id, salary_payment_id, recovery_amount, recovery_date)
-         VALUES ($1, $2, $3, $4)`,
-        [recovery.advance_id, salaryPayment.id, recovery.recovery_amount, payment_date]
+        `INSERT INTO advance_recoveries (advance_id, salary_payment_id, recovery_amount, recovery_date, recovery_note)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [recovery.advance_id, salaryPayment.id, recovery.recovery_amount, payment_date, rowNote]
       );
     }
 
@@ -330,6 +420,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       salary_payment: salaryPayment,
       advance_recoveries: advanceRecoveries.length,
+      leave_encashment: encashmentApplied,
+      overtime_payroll: otApplied,
     }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating salary payment:', error);

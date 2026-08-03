@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import {
   declineSelfServeTrialExtension,
   grantSelfServeTrialExtension,
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
+
+    const guard = await applySubscriptionMutationGuard(request, tenant.businessId);
+    if (guard) return guard;
 
     const action = body.action as string;
     if (action === 'extend') {

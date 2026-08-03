@@ -254,7 +254,7 @@ export default function TemplatesPage() {
       <header className="sticky top-0 z-50 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-border shadow-sm">
         <div className="px-4 py-3 sm:px-6 sm:py-4">
           <div className={`flex flex-col gap-3 ${WIDE_PAGE_CONTENT_CLASS} mx-auto lg:flex-row lg:items-center lg:justify-between lg:gap-6`}>
-            <div className="flex items-start gap-3 min-w-0">
+            <div className="hidden md:flex items-start gap-3 min-w-0">
               <Link href="/settings" className="shrink-0 mt-0.5">
                 <button
                   type="button"
@@ -266,31 +266,32 @@ export default function TemplatesPage() {
               </Link>
               <div className="hidden lg:block h-8 w-px bg-gray-300 dark:bg-slate-600 shrink-0" aria-hidden />
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="p-2 sm:p-2.5 bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 rounded-xl shadow-lg shadow-purple-200 shrink-0">
-                  <Layout className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                <div className="p-2 sm:p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl shrink-0">
+                  <Layout className="w-5 h-5 sm:w-6 sm:h-6 text-text-secondary" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-base sm:text-xl font-bold text-text-primary truncate">
+                  <h1 className="settings-page-title truncate">
                     Templates & Printing
                   </h1>
-                  <p className="text-caption sm:text-xs text-text-secondary line-clamp-2 sm:line-clamp-none">
+                  <p className="type-body-secondary line-clamp-2 sm:line-clamp-none">
                     Design beautiful documents for your business
                   </p>
                 </div>
               </div>
             </div>
+            <h1 className="sr-only md:hidden">Templates & Printing</h1>
             <div className="flex items-center gap-2 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-thin lg:pb-0 lg:mx-0 lg:px-0 lg:overflow-visible">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-50 rounded-xl border border-primary-200 shrink-0">
-                <span className="text-xl sm:text-2xl font-bold text-primary-600">{totalTemplates}</span>
-                <span className="text-2xs sm:text-xs text-primary-600 font-medium">Templates</span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-surface rounded-xl border border-border shrink-0">
+                <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">{totalTemplates}</span>
+                <span className="text-2xs sm:text-caption text-text-secondary font-medium">Templates</span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-green-50 rounded-xl border border-green-200 shrink-0">
-                <span className="text-xl sm:text-2xl font-bold text-green-600">{totalDocTypes}</span>
-                <span className="text-2xs sm:text-xs text-green-600 font-medium">Types</span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-surface rounded-xl border border-border shrink-0">
+                <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">{totalDocTypes}</span>
+                <span className="text-2xs sm:text-caption text-text-secondary font-medium">Types</span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-purple-50 rounded-xl border border-purple-200 shrink-0">
-                <span className="text-xl sm:text-2xl font-bold text-purple-600">{totalActive}</span>
-                <span className="text-2xs sm:text-xs text-purple-600 font-medium">Active</span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 bg-surface rounded-xl border border-border shrink-0">
+                <span className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100">{totalActive}</span>
+                <span className="text-2xs sm:text-caption text-text-secondary font-medium">Active</span>
               </div>
             </div>
           </div>
@@ -313,8 +314,8 @@ export default function TemplatesPage() {
                   shrink-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-semibold transition-all border
                   ${
                     activeDocType === docType.id
-                      ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white border-primary-500 shadow-md'
-                      : 'bg-gray-50 dark:bg-slate-800/40 text-text-primary border-border hover:border-primary-200'
+                      ? 'bg-white dark:bg-slate-900 text-text-primary border-gray-900 dark:border-slate-300 shadow-sm ring-1 ring-gray-900/10 dark:ring-white/10'
+                      : 'bg-gray-50 dark:bg-slate-800/40 text-text-primary border-border hover:border-gray-300'
                   }
                 `}
               >
@@ -325,8 +326,8 @@ export default function TemplatesPage() {
                     text-2xs px-1.5 py-0.5 rounded-md font-bold
                     ${
                       activeDocType === docType.id
-                        ? 'bg-white/25 text-white'
-                        : 'bg-gray-200 text-text-secondary'
+                        ? 'bg-gray-100 text-text-primary dark:bg-slate-800'
+                        : 'bg-gray-200 text-text-secondary dark:bg-slate-700'
                     }
                   `}
                 >
@@ -551,7 +552,7 @@ export default function TemplatesPage() {
                   <span className="text-4xl">{currentDocType?.icon}</span>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-text-primary">
+                  <h2 className="settings-section-title mb-0">
                     {currentDocType?.label} Templates
                   </h2>
                   <p className="text-sm text-text-secondary mt-1">
@@ -772,18 +773,29 @@ export default function TemplatesPage() {
           templateName={customizeDrawer.template.name}
           documentType={activeDocType}
           onSave={async (settings) => {
+            // Pass template_id so settings attach to the template being customized.
+            // Without it, customizing a non-active template would silently save the
+            // settings onto whichever template is currently active.
+            const templateId = customizeDrawer.template?.id;
             const response = await fetch('/api/template-assignments', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 business_id: business?.id,
                 document_type: activeDocType,
+                template_id: templateId,
                 settings
               })
             });
 
             if (!response.ok) {
               throw new Error('Failed to save template settings');
+            }
+
+            // Saving a customization makes that template the active one for this
+            // document type (the PUT updates template_id) — reflect it in the UI.
+            if (templateId) {
+              setActiveTemplates(prev => ({ ...prev, [activeDocType]: templateId }));
             }
           }}
           isPaidFeature={hasTemplateCustomization ?? false}

@@ -19,21 +19,9 @@ export interface IntegrationRowStatus {
 function entryEntitled(
   entry: IntegrationCatalogEntry,
   hasFeature: (id: string) => boolean,
-  hasCapability: (resource: string, action?: string) => boolean
+  _hasCapability: (resource: string, action?: string) => boolean
 ): boolean {
   if (entry.comingSoon) return false;
-  if (entry.id === 'whatsapp') {
-    const keysOk =
-      entry.featureKeys.length === 0
-        ? false
-        : entry.featureKeysMatch === 'any'
-          ? entry.featureKeys.some((k) => hasFeature(k))
-          : entry.featureKeys.every((k) => hasFeature(k));
-    const addonOk =
-      hasCapability('integration_whatsapp_bot', 'view') ||
-      hasCapability('integration_whatsapp_manual', 'view');
-    return keysOk || addonOk;
-  }
   if (entry.featureKeys.length === 0) return true;
   const match = entry.featureKeysMatch ?? 'all';
   if (match === 'any') {
@@ -120,16 +108,13 @@ export function useIntegrationMarketplaceStatus() {
       let loading = baseLoading;
 
       switch (entry.id) {
-        case 'whatsapp':
+        case 'whatsapp-invoice-send':
           loading = baseLoading || whatsappLoading;
           active = whatsappStatus === 'connected';
           break;
         case 'email-smtp':
           loading = baseLoading || emailLoading;
           active = emailReady;
-          break;
-        case 'hr-suite':
-          active = hasCapability('employees', 'view');
           break;
         case 'ai-sales-agent':
         case 'ai-assistant':

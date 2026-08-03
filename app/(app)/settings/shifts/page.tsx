@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { Shift } from '@/types/database';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 export default function ShiftsPage() {
   const { business, user } = useAuth();
@@ -32,6 +33,8 @@ export default function ShiftsPage() {
     start_time: '',
     end_time: '',
     break_duration: '0',
+    description: '',
+    deduct_break_from_hours: false,
   });
 
   useEffect(() => {
@@ -86,6 +89,8 @@ export default function ShiftsPage() {
           start_time: '',
           end_time: '',
           break_duration: '0',
+          description: '',
+          deduct_break_from_hours: false,
         });
       } else {
         const errorData = await res.json();
@@ -129,18 +134,26 @@ export default function ShiftsPage() {
       start_time: shift.start_time,
       end_time: shift.end_time,
       break_duration: shift.break_duration.toString(),
+      description: shift.description ?? '',
+      deduct_break_from_hours: shift.deduct_break_from_hours ?? false,
     });
     setShowForm(true);
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Shifts</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage work shifts for employees</p>
-          </div>
-          <Button onClick={() => {
+      <SettingsPageShell
+        title="Shifts"
+        description="Manage work shifts for employees"
+        icon={Clock}
+        actions={
+          <div className="flex gap-2">
+            <Link href="/hr/shifts/roster">
+              <Button variant="secondary" type="button">Shift roster</Button>
+            </Link>
+            <Link href="/hr/shifts/bulk-assign">
+              <Button variant="secondary" type="button">Bulk assign</Button>
+            </Link>
+            <Button onClick={() => {
             // Check authorization before showing form
             if (!canCreate) {
               toast.error('You do not have permission to create shifts. Please contact your administrator.');
@@ -153,12 +166,16 @@ export default function ShiftsPage() {
               start_time: '',
               end_time: '',
               break_duration: '0',
+              description: '',
+              deduct_break_from_hours: false,
             });
           }}>
             <Plus className="w-4 h-4 mr-2" />
             Add Shift
           </Button>
-        </div>
+          </div>
+        }
+      >
 
         {showForm && (
           <Card>
@@ -195,7 +212,23 @@ export default function ShiftsPage() {
                   onChange={(e) => setFormData({ ...formData, break_duration: e.target.value })}
                   min="0"
                 />
+                <Input
+                  label="Description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Optional notes"
+                />
               </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={formData.deduct_break_from_hours}
+                  onChange={(e) =>
+                    setFormData({ ...formData, deduct_break_from_hours: e.target.checked })
+                  }
+                />
+                Deduct break from working hours
+              </label>
               <div className="flex justify-end gap-4">
                 <Button
                   type="button"
@@ -232,6 +265,7 @@ export default function ShiftsPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Start Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">End Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Break Duration</th>
+                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Description</th>
                     <th className="text-center py-3 px-4 font-semibold text-text-primary">Actions</th>
                   </tr>
                 </thead>
@@ -247,6 +281,12 @@ export default function ShiftsPage() {
                       <td className="py-4 px-4">{shift.start_time}</td>
                       <td className="py-4 px-4">{shift.end_time}</td>
                       <td className="py-4 px-4">{shift.break_duration} minutes</td>
+                      <td className="py-4 px-4 text-sm text-text-secondary">
+                        {shift.description || '—'}
+                        {shift.deduct_break_from_hours ? (
+                          <span className="block text-xs text-text-muted">Break deducted</span>
+                        ) : null}
+                      </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center justify-center gap-2">
                           <Button size="sm" variant="ghost" onClick={() => handleEdit(shift)}>
@@ -264,8 +304,7 @@ export default function ShiftsPage() {
             </div>
           )}
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

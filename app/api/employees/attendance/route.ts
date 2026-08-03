@@ -4,6 +4,10 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import {
+  assertPortalFeatureForRequest,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,9 +18,15 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    const employeeId = searchParams.get('employee_id');
+    let businessId = getBusinessIdFromRequest(request);
+    const { resolveActorContext } = await import('@/lib/employee-portal/portal-api-guard');
+    const actor = await resolveActorContext(request);
+    if (actor) {
+      businessId = actor.businessId;
+    }
+    let userId = getUserIdFromRequest(request);
+    if (actor && !userId) userId = actor.userId;
+    let employeeId = searchParams.get('employee_id');
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
     const status = searchParams.get('status');
@@ -35,14 +45,40 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // AUTHORIZATION: Check read permission (attendance is part of HR module)
-    try {
-      await authorize(userId, 'attendance', 'read', { businessId });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'attendance');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
       }
-      throw error;
+      employeeId = actor.userId;
+    }
+
+    const { isEmployee } = await import('@/lib/access-boundary');
+    const { isEmployeePortalSession } = await import('@/lib/employee-portal/portal-api-guard');
+    const userIsEmployee = await isEmployee(userId);
+    const portalSession = isEmployeePortalSession(request);
+
+    if (portalSession || (userIsEmployee && employeeId && userId === employeeId)) {
+      // Self-service / portal — allowed below with employee filter
+    } else {
+      try {
+        await authorize(userId, 'attendance', 'read', { businessId });
+      } catch (error) {
+        if (error instanceof AuthorizationError) {
+          return error.toNextResponse();
+        }
+        throw error;
+      }
+    }
+
+    if (portalSession && employeeId && employeeId !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (portalSession && !employeeId) {
+      employeeId = userId;
     }
 
     let sql = `

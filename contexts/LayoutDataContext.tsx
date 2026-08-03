@@ -88,7 +88,7 @@ const ShellLayoutSettingsContext = createContext<ShellLayoutSettings>({
 
 function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('LayoutDataProvider');
-  const { business, user } = useAuth();
+  const { business, user, loading: authLoading } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);
   const [data, setData] = useState<LayoutData>({
@@ -232,7 +232,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
   const [snapshotLoaded, setSnapshotLoaded] = useState(false);
 
   useEffect(() => {
-    if (!business?.id || !user?.id || hasInitialized.current) return;
+    if (authLoading || !business?.id || !user?.id || hasInitialized.current) return;
 
     hasInitialized.current = true;
     setLoading(true);
@@ -367,7 +367,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
-  }, [business?.id, user?.id, fetchWarehousesSetting, isOnline]);
+  }, [business?.id, user?.id, authLoading, fetchWarehousesSetting, isOnline]);
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;

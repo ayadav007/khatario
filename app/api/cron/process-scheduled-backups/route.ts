@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { GoogleDriveService, DropboxService } from '@/lib/cloud-storage';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,18 +11,10 @@ export const dynamic = 'force-dynamic';
  * This endpoint should be called by a cron job every hour
  */
 export async function GET(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
+
   try {
-    // Verify cron secret for security
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Invalid cron secret' },
-        { status: 401 }
-      );
-    }
-
     const now = new Date();
     console.log(`[Scheduled Backups] Processing at ${now.toISOString()}`);
 

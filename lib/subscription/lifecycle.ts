@@ -14,6 +14,11 @@ import {
   type SubscriptionPlan,
 } from '@/lib/subscription';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import {
+  getPostTrialFreePlanId,
+  HR_TRIAL_PLAN_ID,
+  normalizeProductLine,
+} from '@/lib/product-lines';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -434,16 +439,23 @@ export async function checkTrialExpiry(
 // ---------------------------------------------------------------------------
 
 /**
- * Downgrade a single business to the free plan (cron, admin, scripts).
+ * Downgrade a single business to the product-line free plan (cron, admin, scripts).
  */
 export async function moveSubscriptionToFree(
   businessId: string,
   fromPlanId: string,
   eventType: string,
 ): Promise<void> {
+  const business = await queryOne<{ product_line: string | null }>(
+    `SELECT product_line FROM businesses WHERE id = $1`,
+    [businessId],
+  );
+  const productLine = normalizeProductLine(business?.product_line);
+  const toPlanId = getPostTrialFreePlanId(productLine);
+
   await query(
     `UPDATE business_subscriptions
-     SET plan_id              = 'free',
+     SET plan_id              = $2,
          status               = 'active',
          trial_end_date       = NULL,
          end_date             = NULL,
@@ -451,15 +463,15 @@ export async function moveSubscriptionToFree(
          scheduled_plan_id    = NULL,
          cancel_at_period_end = false,
          cancelled_at         = NULL,
-         downgraded_from      = $2,
+         downgraded_from      = $3,
          updated_at           = NOW()
      WHERE business_id = $1`,
-    [businessId, fromPlanId],
+    [businessId, toPlanId, fromPlanId],
   );
 
   await logSubscriptionEvent(businessId, eventType, {
     from_plan_id: fromPlanId,
-    to_plan_id: 'free',
+    to_plan_id: toPlanId,
   });
 
   clearSubscriptionCache(businessId);
@@ -502,11 +514,12 @@ export async function processExpiredSubscriptions(): Promise<ExpiredSubscription
   }>(
     `SELECT business_id, plan_id
      FROM business_subscriptions
-     WHERE plan_id = 'trial'
+     WHERE plan_id IN ('trial', $1)
        AND trial_extension_granted = true
        AND trial_end_date IS NOT NULL
        AND trial_end_date < CURRENT_DATE
        AND trial_extension_declined_at IS NULL`,
+    [HR_TRIAL_PLAN_ID],
   );
 
   for (const row of expiredTrials) {
@@ -617,6 +630,147 @@ export async function processExpiredSubscriptions(): Promise<ExpiredSubscription
 
   for (const row of graceExpired) {
     await downgradeToFree(row.business_id, row.plan_id, 'grace_expired');
+    counts.graceExpired++;
+  }
+
+  return counts;
+}
+
+export interface ModuleExpiredSubscriptionCounts {
+  cancelledAtPeriodEnd: number;
+  scheduledDowngrades: number;
+  graceStarted: number;
+  graceExpired: number;
+}
+
+/**
+ * Batch-process per-module subscription lifecycle (cron companion to legacy processor).
+ */
+export async function processExpiredModuleSubscriptions(): Promise<ModuleExpiredSubscriptionCounts> {
+  const { moveModuleSubscriptionToFree } = await import(
+    '@/lib/subscription/module-plan-lifecycle'
+  );
+  const { clearModuleSubscriptionCache } = await import(
+    '@/lib/subscription/module-subscriptions'
+  );
+
+  const counts: ModuleExpiredSubscriptionCounts = {
+    cancelledAtPeriodEnd: 0,
+    scheduledDowngrades: 0,
+    graceStarted: 0,
+    graceExpired: 0,
+  };
+
+  const cancelledSubs = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_id: string;
+  }>(
+    `SELECT business_id, module_key, plan_id
+     FROM business_module_subscriptions
+     WHERE status IN ('active', 'trial')
+       AND cancel_at_period_end = true
+       AND end_date IS NOT NULL
+       AND end_date < CURRENT_DATE`,
+  );
+
+  for (const row of cancelledSubs) {
+    await moveModuleSubscriptionToFree(
+      row.business_id,
+      row.module_key as import('@/lib/platform-modules').PlatformModule,
+      row.plan_id,
+      'cancelled',
+    );
+    counts.cancelledAtPeriodEnd++;
+  }
+
+  const scheduledDowngrades = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_id: string;
+    scheduled_plan_id: string;
+  }>(
+    `SELECT business_id, module_key, plan_id, scheduled_plan_id
+     FROM business_module_subscriptions
+     WHERE status IN ('active', 'trial')
+       AND scheduled_plan_id IS NOT NULL
+       AND end_date IS NOT NULL
+       AND end_date < CURRENT_DATE`,
+  );
+
+  for (const row of scheduledDowngrades) {
+    await query(
+      `UPDATE business_module_subscriptions
+       SET plan_id = $3,
+           scheduled_plan_id = NULL,
+           start_date = CURRENT_DATE,
+           end_date = (CURRENT_DATE + INTERVAL '1 month')::date,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE business_id = $1 AND module_key = $2`,
+      [row.business_id, row.module_key, row.scheduled_plan_id],
+    );
+
+    await logSubscriptionEvent(row.business_id, 'downgraded', {
+      module_key: row.module_key,
+      from_plan_id: row.plan_id,
+      to_plan_id: row.scheduled_plan_id,
+    });
+
+    clearSubscriptionCache(row.business_id);
+    clearModuleSubscriptionCache(row.business_id);
+    counts.scheduledDowngrades++;
+  }
+
+  const lapsedSubs = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_id: string;
+    end_date: string;
+  }>(
+    `SELECT business_id, module_key, plan_id, end_date::text AS end_date
+     FROM business_module_subscriptions
+     WHERE status = 'active'
+       AND cancel_at_period_end = false
+       AND scheduled_plan_id IS NULL
+       AND end_date IS NOT NULL
+       AND end_date < CURRENT_DATE
+       AND grace_period_end IS NULL`,
+  );
+
+  for (const row of lapsedSubs) {
+    await query(
+      `UPDATE business_module_subscriptions
+       SET grace_period_end = (end_date + INTERVAL '7 days')::date,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE business_id = $1 AND module_key = $2`,
+      [row.business_id, row.module_key],
+    );
+    await logSubscriptionEvent(row.business_id, 'grace_started', {
+      module_key: row.module_key,
+      from_plan_id: row.plan_id,
+    });
+    counts.graceStarted++;
+  }
+
+  const graceExpired = await queryRows<{
+    business_id: string;
+    module_key: string;
+    plan_id: string;
+  }>(
+    `SELECT business_id, module_key, plan_id
+     FROM business_module_subscriptions
+     WHERE status = 'active'
+       AND grace_period_end IS NOT NULL
+       AND grace_period_end < CURRENT_DATE`,
+  );
+
+  for (const row of graceExpired) {
+    await moveModuleSubscriptionToFree(
+      row.business_id,
+      row.module_key as import('@/lib/platform-modules').PlatformModule,
+      row.plan_id,
+      'grace_expired',
+    );
     counts.graceExpired++;
   }
 

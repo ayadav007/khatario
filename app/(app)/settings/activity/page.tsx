@@ -5,11 +5,10 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Activity, User, Calendar, Filter, Loader2 } from 'lucide-react';
+import { Activity, User, Calendar, Filter, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import Link from 'next/link';
 import { format } from 'date-fns';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface ActivityLog {
   id: string;
@@ -108,22 +107,11 @@ export default function ActivityLogPage() {
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/settings">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">Activity Log</h1>
-              <p className="text-text-secondary text-sm mt-1">Track all user actions and changes</p>
-            </div>
-          </div>
-        </div>
-
+      <SettingsPageShell
+        title="Activity Log"
+        description="Track all user actions and changes"
+        icon={Activity}
+      >
         {/* Filters */}
         <Card padding="md">
           <div className="flex flex-col md:flex-row gap-4">
@@ -239,8 +227,7 @@ export default function ActivityLogPage() {
             </div>
           )}
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

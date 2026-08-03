@@ -3,6 +3,8 @@ import { queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/settings/item-sales-stock?business_id=
  * Default policy: allow invoicing goods when stock is insufficient (backorders).
@@ -10,11 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const row = await queryOne<{ default_allow_sale_when_out_of_stock: boolean }>(
       `SELECT COALESCE(default_allow_sale_when_out_of_stock, false) AS default_allow_sale_when_out_of_stock
@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const business_id = body.business_id as string | undefined;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const default_allow_sale_when_out_of_stock = body.default_allow_sale_when_out_of_stock as boolean | undefined;
 
     if (!business_id) {

@@ -4,6 +4,8 @@ import { queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * POST /api/financial-years/[id]/close
  * Execute year closing process
@@ -14,7 +16,10 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { business_id, tax_rate, user_id } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { tax_rate, user_id } = body;
 
     if (!business_id) {
       return NextResponse.json(
@@ -92,14 +97,9 @@ export async function GET(
 ) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const financialYear = await queryOne<{ year_code: string }>(
       `SELECT year_code FROM financial_years WHERE id = $1 AND business_id = $2`,

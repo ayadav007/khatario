@@ -1,5 +1,7 @@
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import {
@@ -20,7 +22,9 @@ export async function GET(
   try {
     const itemId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const locationId = searchParams.get('location_id');
     const branchId = searchParams.get('branch_id');
 

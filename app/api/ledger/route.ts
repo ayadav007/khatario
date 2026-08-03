@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,12 +9,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/ledger
  * List ledger entries with filters
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
   try {
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
+    const userId = ctx.userId;
 
     try {
       await authorize(userId, 'reports', 'read');
@@ -25,19 +22,12 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const { searchParams } = new URL(ctx.request.url);
+    const businessId = ctx.businessId;
     const accountId = searchParams.get('account_id');
     const fromDate = searchParams.get('from_date');
     const toDate = searchParams.get('to_date');
     const voucherType = searchParams.get('voucher_type');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     // Get user's accessible branch IDs if userId provided
     // Note: ledger_entries table may not have branch_id column (it's in ledger_entry_lines)
@@ -45,12 +35,12 @@ export async function GET(request: NextRequest) {
     let accessibleBranchIds: string[] = [];
     let branchFilter = '';
     let hasBranchIdColumn = false;
-    
+
     if (userId) {
       try {
         const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
         accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-        
+
         // Check if ledger_entries has branch_id column
         const { queryOne } = await import('@/lib/db');
         const columnCheck = await queryOne(`
@@ -61,7 +51,7 @@ export async function GET(request: NextRequest) {
           LIMIT 1
         `);
         hasBranchIdColumn = !!columnCheck;
-        
+
         if (hasBranchIdColumn && accessibleBranchIds.length > 0) {
           branchFilter = `AND le.branch_id = ANY($${accessibleBranchIds.length + 1}::uuid[])`;
         } else if (!hasBranchIdColumn) {
@@ -70,7 +60,7 @@ export async function GET(request: NextRequest) {
           console.warn('ledger_entries table does not have branch_id column. Branch filtering skipped.');
         } else {
           // User has no branch access - return empty result
-          return NextResponse.json({ 
+          return NextResponse.json({
             entries: [],
             pagination: {
               page: 1,
@@ -143,7 +133,7 @@ export async function GET(request: NextRequest) {
 
     const entries = await queryRows(sql, params);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       entries,
       pagination: {
         page,
@@ -159,5 +149,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});

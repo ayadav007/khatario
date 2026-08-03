@@ -87,6 +87,75 @@ export async function ensureMultiBranchWarehouseForPlan(planId: string): Promise
   });
 }
 
+/** Mirrors POST /api/admin/plans/[planId]/limits — upserts a single limit override. */
+export async function upsertPlanLimit(
+  planId: string,
+  limitKey: string,
+  limitValue: number,
+): Promise<void> {
+  await withDbClient(async (c) => {
+    await c.query(
+      `INSERT INTO subscription_plan_limits (plan_id, limit_key, limit_value)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (plan_id, limit_key) DO UPDATE SET limit_value = $3`,
+      [planId, limitKey, limitValue],
+    );
+  });
+}
+
+/** Effective limit (plan override → platform default), same as admin limits UI. */
+export async function getEffectivePlanLimit(
+  planId: string,
+  limitKey: string,
+): Promise<number | null> {
+  return withDbClient(async (c) => {
+    const r = await c.query<{ limit_value: number | string | null }>(
+      `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
+       FROM platform_limits pl
+       LEFT JOIN subscription_plan_limits spl
+         ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
+       WHERE pl.limit_key = $2 AND pl.is_active = true`,
+      [planId, limitKey],
+    );
+    const raw = r.rows[0]?.limit_value;
+    if (raw === null || raw === undefined) return null;
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+    return Number.isNaN(n) ? null : n;
+  });
+}
+
+/** Mirrors POST /api/admin/plans/[planId]/features toggle. */
+export async function setPlanFeatureEnabled(
+  planId: string,
+  featureId: string,
+  enabled: boolean,
+): Promise<void> {
+  await withDbClient(async (c) => {
+    await c.query(
+      `INSERT INTO subscription_plan_features (plan_id, feature_id, enabled)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (plan_id, feature_id) DO UPDATE SET enabled = $3`,
+      [planId, featureId, enabled],
+    );
+  });
+}
+
+/** Entitlement plan for a business module (billing / hr / connect). */
+export async function getModulePlanId(
+  businessId: string,
+  moduleKey: 'billing' | 'hr' | 'connect' = 'billing',
+): Promise<string | null> {
+  return withDbClient(async (c) => {
+    const r = await c.query<{ plan_id: string }>(
+      `SELECT plan_id FROM business_module_subscriptions
+       WHERE business_id = $1 AND module_key = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [businessId, moduleKey],
+    );
+    return r.rows[0]?.plan_id ?? null;
+  });
+}
+
 export async function deleteBusinessCascade(businessId: string): Promise<void> {
   await withDbClient(async (c) => {
     await c.query('DELETE FROM businesses WHERE id = $1', [businessId]);

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
-import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
+import {
+  getUserIdFromRequest,
+  requirePortalSession,
+  requireTenantBusinessId,
+} from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,15 +24,12 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
     }
+    const businessId = tenant.businessId;
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
 
     // Build query: Get notifications for the user OR notifications without user_id (for all users)
     let query = `

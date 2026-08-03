@@ -394,6 +394,7 @@ function ItemsPage() {
                   <th className="table-cell text-center py-4 px-6">Stock</th>
                   <th className="table-cell text-right py-4 px-6">Selling Price</th>
                   <th className="table-cell text-center py-4 px-6">Tax %</th>
+                  <th className="table-cell text-center py-4 px-6">Store</th>
                   <th className="table-cell text-center py-4 px-6">Actions</th>
                 </tr>
               </thead>
@@ -468,6 +469,13 @@ function ItemsPage() {
                         </td>
                         <td className="table-cell text-center py-4 px-6 text-text-secondary">{item.tax_rate}%</td>
                         <td className="table-cell text-center py-4 px-6">
+                          {(item as any).show_in_store ? (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="Visible in store" />
+                          ) : (
+                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-200" title="Not in store" />
+                          )}
+                        </td>
+                        <td className="table-cell text-center py-4 px-6">
                           <div className="flex items-center justify-center gap-1">
                             <Button
                               variant="ghost"
@@ -516,7 +524,7 @@ function ItemsPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-text-secondary">
+                    <td colSpan={9} className="text-center py-12 text-text-secondary">
                       No items found.
                     </td>
                   </tr>

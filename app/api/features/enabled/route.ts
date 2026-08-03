@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { getAllFeatureAccessForBusiness } from '@/lib/subscription/feature-access';
 import * as db from '@/lib/db';
 
@@ -12,15 +13,17 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+
+    const searchParams = request.nextUrl.searchParams;
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const businessId = tenant.businessId;
 
     // Get enabled feature IDs (bulk Set from plan matrix — coalesced per businessId in-flight)
     let enabledFeatureIds: string[] = [];

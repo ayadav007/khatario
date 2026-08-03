@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { getWhatsAppStatus } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -9,10 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/campaigns/[id]
  * Get campaign details with recipients
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const campaignId = params.id;
 
@@ -54,20 +51,15 @@ export async function GET(
     console.error('Error getting campaign:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});
 /**
  * PATCH /api/whatsapp/campaigns/[id]
  * Update campaign (start, pause, resume)
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const campaignId = params.id;
-    const body = await request.json();
-    const { action } = body; // 'start', 'pause', 'resume'
+    const { action } = (body ?? {}) as { action?: string }; // 'start', 'pause', 'resume'
 
     const campaign = await queryOne(`
       SELECT business_id, status FROM whatsapp_campaigns WHERE id = $1
@@ -75,15 +67,6 @@ export async function PATCH(
 
     if (!campaign) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
-    }
-
-    // Check subscription
-    const hasAddon = await hasWhatsAppBotAddon((campaign as any).business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
     }
 
     const currentStatus = (campaign as any).status;
@@ -184,29 +167,15 @@ export async function PATCH(
     console.error('Error updating campaign:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
 /**
  * DELETE /api/whatsapp/campaigns/[id]
  * Delete campaign and all related data
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
     const campaignId = params.id;
-    const businessId = request.nextUrl.searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check subscription
-    const hasAccess = await hasWhatsAppBotAddon(businessId);
-    if (!hasAccess) {
-      return NextResponse.json({ error: 'WhatsApp Bot add-on required' }, { status: 403 });
-    }
 
     // Verify campaign belongs to business
     const campaign = await queryOne(`
@@ -252,5 +221,5 @@ export async function DELETE(
     console.error('Error deleting campaign:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 

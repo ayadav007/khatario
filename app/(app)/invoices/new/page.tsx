@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
-import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth } from 'lucide-react';
+import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
@@ -42,7 +42,13 @@ import {
   thermalPreviewIframeWidthClass,
 } from '@/lib/thermal-preview';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
-import { getPosMode, getPosAutoBluetoothPrint, setPosAutoBluetoothPrint } from '@/lib/pos-settings';
+import {
+  getPosMode,
+  getPosAutoBluetoothPrint,
+  setPosAutoBluetoothPrint,
+  shouldPosPrintViaBluetooth,
+} from '@/lib/pos-settings';
+import { isCapacitorNative } from '@/lib/capacitor/platform';
 import { registerMobileBackInterceptor } from '@/lib/navigation/mobile-back-registry';
 import { POSLayout } from '@/components/pos/POSLayout';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
@@ -59,6 +65,8 @@ import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
 import { searchCustomersForBilling, listCatalogCustomersLocal, OFFLINE_CATALOG_EMPTY_HINT } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
+import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
+import { getInvoiceProfileContext } from '@/lib/business-profile-requirements';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
@@ -269,6 +277,7 @@ function NewInvoiceContent() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const { business, user } = useAuth();
+  const { ensureProfile } = useProfileRequiredGate();
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const toastCtx = useToastContext();
   const { canQueueOffline, queueSalesFinalize, resetIdempotency } =
@@ -1452,6 +1461,16 @@ function NewInvoiceContent() {
   // Handle print bill (POS mode) - must be after totals calculation
   const handlePrintBill = useCallback(async () => {
     console.log('[POS] handlePrintBill called', { savedInvoiceId, rowsCount: rows.length, businessId: business?.id });
+
+    if (documentType !== 'proforma_invoice') {
+      const profileContext = getInvoiceProfileContext(
+        documentType,
+        (business as { gst_registration_type?: string | null })?.gst_registration_type,
+      );
+      if (!ensureProfile(profileContext)) {
+        return;
+      }
+    }
     
     if (!savedInvoiceId) {
       // Save as final first, then print
@@ -1607,11 +1626,11 @@ function NewInvoiceContent() {
               `Invoice ${offlineResult.displayInvoiceNumber} saved offline — will sync automatically`
             );
 
-            const useBluetooth =
-              canBtPrint &&
-              getPosAutoBluetoothPrint() &&
-              bt.supported &&
-              bt.savedPrinters.length > 0;
+            const useBluetooth = shouldPosPrintViaBluetooth({
+              featureEnabled: canBtPrint,
+              btSupported: bt.supported,
+              pairedCount: bt.savedPrinters.length,
+            });
 
             if (useBluetooth) {
               try {
@@ -1622,6 +1641,10 @@ function NewInvoiceContent() {
                   (btErr as Error)?.message || 'Bluetooth print failed for offline bill'
                 );
               }
+            } else if (isCapacitorNative()) {
+              toastCtx.warning(
+                'No Bluetooth printer ready. Pair one in Settings → Print & devices, then try again.'
+              );
             }
 
             setTimeout(() => {
@@ -1757,13 +1780,13 @@ function NewInvoiceContent() {
         setSavedInvoiceId(invoiceId);
         setSavedStatus('final');
 
-        // Decide whether to route to Bluetooth or the classic PDF popup.
-        // We read the localStorage value fresh to avoid stale-closure issues.
-        const useBluetooth =
-          canBtPrint &&
-          getPosAutoBluetoothPrint() &&
-          bt.supported &&
-          bt.savedPrinters.length > 0;
+        // Prefer Bluetooth when a printer is ready (always on Capacitor APK;
+        // on web, honour the auto-print toggle). PDF popups are unreliable in-app.
+        const useBluetooth = shouldPosPrintViaBluetooth({
+          featureEnabled: canBtPrint,
+          btSupported: bt.supported,
+          pairedCount: bt.savedPrinters.length,
+        });
 
         if (useBluetooth) {
           console.log('[POS] Auto-sending receipt to Bluetooth printer...');
@@ -1781,14 +1804,18 @@ function NewInvoiceContent() {
             toastCtx.error(
               `Bluetooth print failed: ${btErr?.message || 'unknown error'}`
             );
-            // Fall back to PDF popup so the user still gets a printable copy.
-            if (user?.id) {
+            // Fall back to PDF popup on web only — Capacitor often swallows window.open.
+            if (user?.id && !isCapacitorNative()) {
               window.open(
                 `/api/invoices/${invoiceId}/pdf?user_id=${user.id}`,
                 '_blank'
               );
             }
           }
+        } else if (isCapacitorNative()) {
+          toastCtx.warning(
+            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
+          );
         } else {
           if (user?.id) {
             console.log('[POS] Opening print dialog...');
@@ -1822,11 +1849,11 @@ function NewInvoiceContent() {
       }
     } else if (user?.id && savedInvoiceId) {
       // Invoice already saved, just print.
-      const useBluetooth =
-        canBtPrint &&
-        getPosAutoBluetoothPrint() &&
-        bt.supported &&
-        bt.savedPrinters.length > 0;
+      const useBluetooth = shouldPosPrintViaBluetooth({
+        featureEnabled: canBtPrint,
+        btSupported: bt.supported,
+        pairedCount: bt.savedPrinters.length,
+      });
 
       try {
         if (useBluetooth) {
@@ -1837,6 +1864,10 @@ function NewInvoiceContent() {
           const receipt = buildReceiptFromState(identifier);
           await bt.printReceipt(receipt);
           toastCtx.success('Bill sent to Bluetooth printer');
+        } else if (isCapacitorNative()) {
+          toastCtx.warning(
+            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
+          );
         } else {
           window.open(
             `/api/invoices/${savedInvoiceId}/pdf?user_id=${user.id}`,
@@ -1859,7 +1890,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -1932,6 +1963,20 @@ function NewInvoiceContent() {
     if (!savedInvoiceId && limitInfo && limitInfo.limit !== -1 && limitInfo.current >= limitInfo.limit) { setShowUpgradePrompt(true); return; }
     if (savedStatus === 'final' && targetStatus === 'final') { setShareModalOpen(true); return; }
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) return setToastMessage({ message: 'Add items', type: 'error' });
+
+    if (
+      targetStatus === 'final' &&
+      documentType !== 'proforma_invoice' &&
+      !ensureProfile(
+        getInvoiceProfileContext(
+          documentType,
+          (business as { gst_registration_type?: string | null })?.gst_registration_type,
+        ),
+      )
+    ) {
+      return;
+    }
+
     setLoading(true);
     try {
       // For proforma invoices: always keep status as 'draft' (estimates are always editable)
@@ -2145,7 +2190,7 @@ function NewInvoiceContent() {
       setToastMessage({ message: errorMsg, type: 'error' }); 
       hotToast.error(errorMsg, { duration: 8000 });
     } finally { setLoading(false); }
-  }, [business?.id, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
 
   const handlePreview = useCallback(async () => {
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) { setToastMessage({ message: 'Add items', type: 'error' }); return; }
@@ -2156,7 +2201,7 @@ function NewInvoiceContent() {
     setPreviewLoading(true);
     try {
       const items = rows.map((r, i) => ({ index: i + 1, item_name: r.name, quantity: r.quantity, unit: r.unit, unit_price: r.price.toFixed(2), discount_percent: r.discountPercent, discount_amount: r.discountAmount.toFixed(2), tax_rate: r.taxPercent, cgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), sgst_rate: (isExport ? 0 : (isIntraState ? r.taxPercent/2 : 0)).toFixed(2), igst_rate: (isExport || !isIntraState ? r.taxPercent : 0).toFixed(2), tax_amount: r.taxAmount.toFixed(2), cgst_amount: r.cgstAmount.toFixed(2), sgst_amount: r.sgstAmount.toFixed(2), igst_amount: r.igstAmount.toFixed(2), taxable_value: (r.quantity * r.price - (r.quantity * r.price * (r.discountPercent || 0)) / 100).toFixed(2), hsn_sac: r.hsnSac, line_total: r.total.toFixed(2) }));
-      const data = { business: { id: business?.id || '', name: business?.name || '', address: business?.address || '', city: business?.city || '', state: business?.state || '', state_code: business?.state_code || getStateCode(business?.state || ''), pincode: business?.pincode || '', phone: business?.phone || '', email: business?.email || '', gstin: business?.gstin || '', logo_url: business?.logo_url || null }, customer: selectedCustomer ? { name: selectedCustomer.name, address: billingAddress || selectedCustomer.address, phone: selectedCustomer.phone, gstin: selectedCustomer.gstin, state: selectedCustomer.state } : { name: '', address: '', state: '' }, invoice: { invoice_number: invoiceNumber || 'PREVIEW', invoice_date: format(new Date(invoiceDate), 'dd-MM-yyyy'), due_date: format(new Date(dueDate || invoiceDate), 'dd-MM-yyyy'), invoice_title: title, document_type: effDoc, is_export: isExport, is_igst: isExport || !isIntraState, place_of_supply: placeOfSupply, subtotal: subtotal.toFixed(2), discount_total: rows.reduce((s, r) => s + r.discountAmount, 0).toFixed(2), additional_charges: totalExtraCharges.toFixed(2), tax_total: totalTax.toFixed(2), grand_total: grandTotal.toFixed(2), amount_in_words: engineNumberToWords(grandTotal), billing_address: billingAddress, shipping_address: shippingAddress }, items, settings: templateSettings || {} };
+      const data = { business: { id: business?.id || '', name: business?.name || '', address: business?.address || '', city: business?.city || '', state: business?.state || '', state_code: business?.state_code || getStateCode(business?.state || ''), pincode: business?.pincode || '', phone: business?.phone || '', email: business?.email || '', gstin: business?.gstin || '', logo_url: business?.logo_url || null }, customer: selectedCustomer ? { name: selectedCustomer.name, address: billingAddress || selectedCustomer.address, phone: selectedCustomer.phone, gstin: selectedCustomer.gstin, state: selectedCustomer.state } : { name: '', address: '', state: '' }, invoice: { invoice_number: invoiceNumber || 'PREVIEW', invoice_date: format(new Date(invoiceDate), 'dd-MM-yyyy'), due_date: format(new Date(dueDate || invoiceDate), 'dd-MM-yyyy'), invoice_title: title, document_type: effDoc, is_export: isExport, is_igst: isExport || !isIntraState, place_of_supply: placeOfSupply, subtotal: subtotal.toFixed(2), discount_total: rows.reduce((s, r) => s + r.discountAmount, 0).toFixed(2), additional_charges: totalExtraCharges.toFixed(2), tax_total: totalTax.toFixed(2), grand_total: grandTotal.toFixed(2), paid_amount: totalPaid.toFixed(2), balance_amount: Math.max(0, balance).toFixed(2), round_off: roundOff.toFixed(2), amount_in_words: engineNumberToWords(grandTotal), billing_address: billingAddress, shipping_address: shippingAddress, custom_fields: invoiceCustomFieldValues, notes }, items, settings: templateSettings || {} };
       const res = await fetch('/api/invoices/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: isExport ? 'export_invoice' : (invoiceTemplate || null), data }) });
       if (res.ok) {
         const resp = await res.json();
@@ -2165,7 +2210,7 @@ function NewInvoiceContent() {
         setPreviewModalOpen(true);
       }
     } catch (e) { console.error(e); } finally { setPreviewLoading(false); }
-  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, templateSettings, documentType, placeOfSupply, isIntraState, invoicePrefix]);
+  }, [rows, invoiceNumber, invoiceDate, dueDate, selectedCustomer, subtotal, totalExtraCharges, totalTax, grandTotal, totalPaid, balance, roundOff, notes, billingAddress, shippingAddress, invoiceTemplate, business, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, templateSettings, documentType, placeOfSupply, isIntraState, invoicePrefix, invoiceCustomFieldValues]);
 
   const handleConfirmReset = (action: 'save' | 'discard' | 'cancel') => {
     if (action === 'cancel') { setShowResetConfirm(false); setPendingTypeChange(null); return; }
@@ -2512,7 +2557,14 @@ function NewInvoiceContent() {
     router.back();
   }, [tryBlockNavigation, router]);
 
-  // Early returns
+  // Early returns — wait for auth/session before showing AccessDenied (avoids flash while loading)
+  if (authLoading || !user?.id || !business?.id) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" aria-label="Loading" />
+      </div>
+    );
+  }
   if (!canCreate) return <AccessDenied module="invoices" action="create" details={reason} code="INVOICE_CREATE_DENIED" />;
 
   // Helper functions
@@ -2867,6 +2919,19 @@ function NewInvoiceContent() {
                 ))}
               </select>
             </div>
+            {invoiceCustomFieldDefs.length > 0 && !isFinal && (
+              <div className="space-y-3 border-b border-border pb-2">
+                <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">
+                  Custom fields
+                </p>
+                <CustomFieldValuesForm
+                  definitions={invoiceCustomFieldDefs}
+                  values={invoiceCustomFieldValues}
+                  onChange={setInvoiceCustomFieldValues}
+                  disabled={isFinal}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-border pb-2">
               <div className="min-w-0 space-y-0.5">
                 <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Prefix</div>

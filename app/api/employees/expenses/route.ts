@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { EmployeeExpense } from '@/types/database';
-import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
+import {
+  getDirectReportIds,
+  getEmployeeIdForUser,
+  resolveListScope,
+} from '@/lib/hr/manager-scope';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+  enforcePortalSelfScope,
+} from '@/lib/employee-portal/portal-api-guard';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +24,20 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   try {
+    const actor = await resolveActorContext(request);
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    const employeeId = searchParams.get('employee_id');
+    let businessId = getBusinessIdFromRequest(request);
+    let userId = getUserIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+      userId = actor.userId;
+    }
+    let employeeId = searchParams.get('employee_id');
     const status = searchParams.get('status');
     const categoryId = searchParams.get('category_id');
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
+    const scopeParam = searchParams.get('scope');
 
     if (!businessId) {
       return NextResponse.json(
@@ -37,15 +53,40 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // AUTHORIZATION: Check read permission (expenses are part of HR module)
-    try {
-      await authorize(userId, 'expenses', 'read', { businessId });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'expenses');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
       }
-      throw error;
+      employeeId = enforcePortalSelfScope(actor, employeeId);
     }
+
+    const { isEmployee } = await import('@/lib/access-boundary');
+    const userIsEmployee = await isEmployee(userId);
+
+    if (userIsEmployee && employeeId && userId === employeeId) {
+      // Self-service
+    } else {
+      try {
+        await authorize(userId, 'expenses', 'read', { businessId });
+      } catch (error) {
+        if (error instanceof AuthorizationError) {
+          const actorEmployeeId = await getEmployeeIdForUser(userId, businessId);
+          const teamIds = actorEmployeeId
+            ? await getDirectReportIds(businessId, actorEmployeeId)
+            : [];
+          if (teamIds.length === 0) {
+            return error.toNextResponse();
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const listScope = await resolveListScope(userId, businessId, 'expense', scopeParam);
 
     let sql = `
       SELECT 
@@ -69,6 +110,22 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       sql += ` AND e.employee_id = $${paramIndex}`;
       params.push(employeeId);
+      paramIndex++;
+    } else if (listScope === 'team') {
+      const actorEmployeeId = await getEmployeeIdForUser(userId, businessId);
+      if (actorEmployeeId) {
+        const teamIds = await getDirectReportIds(businessId, actorEmployeeId);
+        if (teamIds.length === 0) {
+          return NextResponse.json({ expenses: [], totals: { pending: 0, approved: 0, reimbursed: 0, total: 0 } });
+        }
+        const ph = teamIds.map((_, i) => `$${paramIndex + i}`).join(', ');
+        sql += ` AND e.employee_id IN (${ph})`;
+        params.push(...teamIds);
+        paramIndex += teamIds.length;
+      }
+    } else if (listScope === 'self') {
+      sql += ` AND e.employee_id = $${paramIndex}`;
+      params.push(userId);
       paramIndex++;
     }
 
@@ -135,7 +192,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
+    const actor = await resolveActorContext(request, body);
+    let {
       business_id,
       employee_id,
       expense_category_id,
@@ -150,6 +208,19 @@ export async function POST(request: NextRequest) {
       billable_to_customer_id,
       billable_to_project,
     } = body;
+
+    if (actor) {
+      business_id = actor.businessId;
+      if (actor.isPortal) {
+        try {
+          await assertPortalFeatureForRequest(request, actor.businessId, 'expenses');
+        } catch (error) {
+          if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+          throw error;
+        }
+        employee_id = actor.userId;
+      }
+    }
 
     if (!business_id || !employee_id || !expense_date || !amount || !description) {
       return NextResponse.json(

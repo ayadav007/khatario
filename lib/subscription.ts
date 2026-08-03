@@ -15,6 +15,8 @@ import {
   ALL_LIMIT_CHECK_TYPES,
   buildLimitCountQuery,
 } from './subscription/limit-registry';
+import { resolveBusinessLimit } from './subscription/resolve-limit';
+import { clearModuleSubscriptionCache } from './subscription/module-subscriptions';
 
 export type { LimitCheckType } from './subscription/limit-registry';
 export { ALL_LIMIT_CHECK_TYPES } from './subscription/limit-registry';
@@ -177,6 +179,7 @@ export async function getBusinessSubscription(
  */
 export function clearSubscriptionCache(businessId: string) {
   subscriptionCache.delete(businessId);
+  clearModuleSubscriptionCache(businessId);
 }
 
 /**
@@ -197,9 +200,16 @@ export function clearAllSubscriptionCaches() {
 export async function hasFeature(businessId: string, featureKey: string): Promise<boolean> {
   const canonicalKey = normalizeFeatureKey(featureKey);
 
-  // Check addon status first for WhatsApp features (registry may list them as addons)
-  if (canonicalKey === 'whatsapp_bot' || canonicalKey === 'whatsapp_send_message') {
+  // WhatsApp addons (basic connect uses plan feature settings_whatsapp via registry)
+  if (canonicalKey === 'whatsapp_bot') {
     return await hasWhatsAppBotAddon(businessId);
+  }
+  if (canonicalKey === 'whatsapp_send_message' || canonicalKey === 'whatsapp_manual') {
+    const [hasBot, hasSend] = await Promise.all([
+      hasWhatsAppBotAddon(businessId),
+      hasWhatsAppSendMessageAddon(businessId),
+    ]);
+    return hasBot || hasSend;
   }
 
   try {
@@ -302,19 +312,34 @@ export async function checkLimit(
   }
 
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
-  const entitlementPlanId = getEntitlementPlanId(subscription as SubscriptionForEffectivePlan);
-  let maxLimit: number | null = await resolvePlanLimitValue(entitlementPlanId, limitKey);
+  const resolved = await resolveBusinessLimit(businessId, limitType, limitKey);
+  let maxLimit: number = resolved.maxLimit;
 
-  if (maxLimit === null) {
+  if (maxLimit === 0 && resolved.blockedReason) {
+    return {
+      allowed: false,
+      current: 0,
+      limit: 0,
+      message: resolved.blockedReason,
+    };
+  }
+
+  if (maxLimit === 0 && subscription) {
     const limits = subscription.features?.limits;
-    if (!limits) {
-      return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
+    if (limits) {
+      const jsonbKey = LIMIT_JSONB_KEY_MAP[limitKey];
+      const jsonbVal =
+        jsonbKey && limits[jsonbKey as keyof typeof limits] !== undefined
+          ? Number(limits[jsonbKey as keyof typeof limits])
+          : null;
+      if (jsonbVal !== null && !Number.isNaN(jsonbVal)) {
+        maxLimit = jsonbVal;
+      }
     }
-    const jsonbKey = LIMIT_JSONB_KEY_MAP[limitKey];
-    maxLimit =
-      jsonbKey && limits[jsonbKey as keyof typeof limits] !== undefined
-        ? Number(limits[jsonbKey as keyof typeof limits])
-        : 0;
+  }
+
+  if (maxLimit === 0 && !subscription?.features?.limits) {
+    return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
   }
 
   if (maxLimit === -1) {
@@ -420,37 +445,28 @@ export async function checkLimitInTransaction(
   }
 
   const subRow = subscriptionResult.rows[0];
-  const entitlementPlanId = getEntitlementPlanId({
-    plan_id: subRow.plan_id,
-    status: subRow.status,
-    trial_end_date: subRow.trial_end_date,
-    end_date: subRow.end_date,
-    grace_period_end: subRow.grace_period_end,
-  });
-  const limits = subRow.limits;
 
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
 
-  let maxLimit: number | null = null;
-  try {
-    const registryResult = await client.query(
-      `SELECT COALESCE(spl.limit_value, pl.default_value) AS limit_value
-       FROM platform_limits pl
-       LEFT JOIN subscription_plan_limits spl
-         ON spl.limit_key = pl.limit_key AND spl.plan_id = $1
-       WHERE pl.limit_key = $2 AND pl.is_active = true`,
-      [entitlementPlanId, limitKey]
-    );
-    if (registryResult.rows.length > 0 && registryResult.rows[0].limit_value != null) {
-      const raw = registryResult.rows[0].limit_value;
-      maxLimit = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
-      if (Number.isNaN(maxLimit)) maxLimit = null;
-    }
-  } catch (error) {
-    console.error('Error resolving plan limit in transaction:', error);
+  const txQueryOne = async (sql: string, params?: unknown[]) => {
+    const result = await client.query(sql, params ?? []);
+    return result.rows[0] ?? null;
+  };
+
+  const resolved = await resolveBusinessLimit(businessId, limitType, limitKey, txQueryOne);
+  let maxLimit: number = resolved.maxLimit;
+
+  if (maxLimit === 0 && resolved.blockedReason) {
+    return {
+      allowed: false,
+      current: 0,
+      limit: 0,
+      message: resolved.blockedReason,
+    };
   }
 
-  if (maxLimit === null) {
+  if (maxLimit === 0) {
+    const limits = subRow.limits;
     if (!limits) {
       return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
     }

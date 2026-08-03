@@ -26,6 +26,11 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { summarizeInvoiceCorrectionDelta } from '@/lib/services/invoice-extract/invoiceExtractionCorrectionSummary';
 import { normalizeExtractionEnvelope } from '@/lib/purchases/extraction-envelope-normalize';
 import { matchExtractionForPurchase } from '@/lib/purchases/match-extraction-for-purchase';
+import {
+  findAutoLinkLocalSupplierMatch,
+  hasStrongLocalSupplierSuggestions,
+} from '@/lib/matching/find-local-supplier-match';
+import { extractionJobReadyForImport } from '@/lib/purchases/extraction-job-purchase-link';
 import { buildReviewSnapshotFromPurchaseForm } from '@/lib/purchases/build-review-snapshot-from-purchase-form';
 import {
   MobileNewPurchaseScrollForm,
@@ -218,12 +223,14 @@ export default function NewPurchasePage() {
     if ((formData.supplier_id || '').trim()) return false;
     if (selectedSupplier?.id) return false;
     if (!supplierSearch.trim()) return false;
+    if (hasStrongLocalSupplierSuggestions(suppliers, supplierSearch)) return false;
     return true;
   }, [
     supplierUnmatchedFromExtraction,
     formData.supplier_id,
     selectedSupplier?.id,
     supplierSearch,
+    suppliers,
   ]);
   const [userBranchId, setUserBranchId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -543,7 +550,7 @@ export default function NewPurchasePage() {
           return;
         }
         const job = data.job;
-        if (job.status !== 'completed' || job.extraction_data == null) {
+        if (!extractionJobReadyForImport(job.status) || job.extraction_data == null) {
           if (!cancelled) toast.error('That scan is not ready to import yet');
           return;
         }
@@ -591,24 +598,20 @@ export default function NewPurchasePage() {
 
     // Fill supplier information
     if (data.supplier) {
-      const extGstinNorm = (data.supplier.gstin || '').toString().trim().toUpperCase();
-      /** Prefer catalog row that matches invoice GSTIN over a mismatched review radio (common mis-click). */
       let found: Supplier | null = null;
-      if (extGstinNorm.length === 15) {
-        found =
-          suppliers.find(
-            (s) => (s.gstin || '').toString().trim().toUpperCase() === extGstinNorm
-          ) ?? null;
+
+      const autoLink = findAutoLinkLocalSupplierMatch(suppliers, {
+        name: data.supplier.name,
+        gstin: data.supplier.gstin,
+      });
+      if (autoLink) {
+        found = suppliers.find((s) => s.id === autoLink.supplier.id) ?? null;
       }
+
       if (!found && reviewedData.selectedSupplier) {
         found = suppliers.find((s) => s.id === reviewedData.selectedSupplier) ?? null;
       }
-      if (!found && data.supplier.name) {
-        found =
-          suppliers.find(
-            (s) => s.name.toLowerCase() === data.supplier.name?.toLowerCase()
-          ) ?? null;
-      }
+
       matchedSupplier = found ?? null;
 
       const extGstin = (data.supplier.gstin || '').toString().trim().toUpperCase();
@@ -1213,6 +1216,7 @@ export default function NewPurchasePage() {
         grand_total: totals.grandTotal,
         place_of_supply_state_code: formData.place_of_supply_state_code || business.state_code,
         created_by: user?.id,
+        extraction_job_id: extractionLearnRef.current.jobId,
       };
 
       if (canQueueOfflineActions(connectivity.state)) {

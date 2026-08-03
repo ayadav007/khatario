@@ -3,6 +3,20 @@ import { getBusinessIdFromRequest, getSessionScopedBusinessId, getUserIdFromRequ
 import { queryOne, query } from '@/lib/db';
 import { LeaveRequest } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import {
+  canActOnLeaveRequest,
+} from '@/lib/hr/manager-scope';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+  blockPortalAdminAction,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { syncApprovedLeaveToAttendance } from '@/lib/hr/leave-attendance-sync';
+import {
+  decideLeaveRequestApproval,
+  listLeaveRequestApprovals,
+} from '@/lib/hr/leave/leave-request-approval';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +30,13 @@ export async function PATCH(
 ) {
   try {
     const requestId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
     const body = await request.json();
+    const actor = await resolveActorContext(request, body);
+    let businessId =
+      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
+    if (actor) {
+      businessId = actor.businessId;
+    }
 
     if (!businessId) {
       return NextResponse.json(
@@ -28,11 +45,12 @@ export async function PATCH(
       );
     }
 
-    const { action, approved_by, rejection_reason, updated_by_user_id } = body;
+    const { action, approved_by, rejection_reason, hold_reason, comments } = body;
+    const updated_by_user_id = body.updated_by_user_id ?? actor?.userId;
 
-    if (!action || !['approve', 'reject', 'cancel'].includes(action)) {
+    if (!action || !['approve', 'reject', 'cancel', 'hold', 'grant_exception'].includes(action)) {
       return NextResponse.json(
-        { error: 'action must be approve, reject, or cancel' },
+        { error: 'action must be approve, reject, cancel, hold, or grant_exception' },
         { status: 400 }
       );
     }
@@ -44,11 +62,29 @@ export async function PATCH(
       );
     }
 
+    if (actor?.isPortal) {
+      try {
+        await assertPortalFeatureForRequest(request, actor.businessId, 'leaves');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+      const blocked = blockPortalAdminAction(actor, action, ['cancel', 'approve', 'reject', 'hold', 'grant_exception']);
+      if (blocked) return blocked;
+    }
+
     // Get leave request
-    const leaveRequest = await queryOne<LeaveRequest & { business_id: string; employee_id: string }>(
-      `SELECT lr.*, e.business_id, e.id as employee_id
+    const leaveRequest = await queryOne<
+      LeaveRequest & {
+        business_id: string;
+        employee_id: string;
+        leave_name?: string;
+      }
+    >(
+      `SELECT lr.*, e.business_id, e.id as employee_id, lt.leave_name
        FROM leave_requests lr
        INNER JOIN employees e ON lr.employee_id = e.id
+       LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id
        WHERE lr.id = $1 AND e.business_id = $2`,
       [requestId, businessId]
     );
@@ -60,16 +96,61 @@ export async function PATCH(
       );
     }
 
-    // AUTHORIZATION: Check update permission (for approve/reject/cancel)
-    // For cancel action, allow employee to cancel their own request
-    const authAction = action === 'cancel' ? 'update' : (action === 'approve' || action === 'reject' ? 'update' : 'update');
-    try {
-      await authorize(updated_by_user_id, 'leave_requests', authAction, { businessId, resourceId: requestId });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+    // AUTHORIZATION
+    if (action === 'cancel') {
+      if (updated_by_user_id !== leaveRequest.employee_id) {
+        try {
+          await authorize(updated_by_user_id, 'leave_requests', 'update', {
+            businessId,
+            resourceId: requestId,
+          });
+        } catch (error) {
+          if (error instanceof AuthorizationError) return error.toNextResponse();
+          throw error;
+        }
       }
-      throw error;
+    } else if (action === 'approve' || action === 'reject' || action === 'hold' || action === 'grant_exception') {
+      const chainRows = await listLeaveRequestApprovals(requestId);
+      if (chainRows.length > 0) {
+        const chainAction =
+          action === 'approve'
+            ? 'approve'
+            : action === 'reject'
+              ? 'reject'
+              : action === 'hold'
+                ? 'hold'
+                : 'grant_exception';
+        const chainResult = await decideLeaveRequestApproval({
+          leaveRequestId: requestId,
+          businessId,
+          actorUserId: updated_by_user_id,
+          action: chainAction,
+          hold_reason,
+          comments: rejection_reason ?? comments,
+        });
+        if (!chainResult.ok) {
+          return NextResponse.json({ error: chainResult.message }, { status: 400 });
+        }
+        const updated = await queryOne<LeaveRequest>(
+          `SELECT lr.* FROM leave_requests lr
+           INNER JOIN employees e ON lr.employee_id = e.id
+           WHERE lr.id = $1 AND e.business_id = $2`,
+          [requestId, businessId],
+        );
+        return NextResponse.json({ request: updated });
+      }
+
+      const allowed = await canActOnLeaveRequest(
+        updated_by_user_id,
+        requestId,
+        businessId
+      );
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Not authorized to act on this leave request' },
+          { status: 403 }
+        );
+      }
     }
 
     // Validate action based on current status
@@ -88,6 +169,16 @@ export async function PATCH(
          WHERE lr.id = $2 AND lr.employee_id = e.id AND e.business_id = $3`,
         [approved_by || null, requestId, businessId]
       );
+
+      await syncApprovedLeaveToAttendance({
+        businessId,
+        employeeId: leaveRequest.employee_id,
+        leaveRequestId: requestId,
+        startDate: String(leaveRequest.start_date).slice(0, 10),
+        endDate: String(leaveRequest.end_date).slice(0, 10),
+        totalDays: Number(leaveRequest.total_days),
+        leaveName: leaveRequest.leave_name,
+      });
     } else if (action === 'reject') {
       if (leaveRequest.status !== 'pending') {
         return NextResponse.json(

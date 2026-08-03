@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
  * This bypasses database storage and shows chats like WhatsApp Web
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getWhatsAppSocket } from '@/lib/whatsapp';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { queryRows } from '@/lib/db';
 import {
   findStoreMessageJidKey,
@@ -26,7 +26,6 @@ function extractPhoneFromJid(jid: string): string {
   if (cleaned.length < 9 || cleaned.length > 15) return '';
   return cleaned;
 }
-
 /** Per-session timestamp so we only bulk-fetch group metadata at most every 10 minutes. */
 const groupBulkFetchState: Map<string, number> = (globalThis as any).__waGroupBulkFetchState
   || ((globalThis as any).__waGroupBulkFetchState = new Map<string, number>());
@@ -100,23 +99,8 @@ function collectChatsArrayFromStore(store: { chats?: unknown } | null | undefine
   return [];
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     // Get active socket
     const session = await getWhatsAppSocket(businessId);
@@ -793,4 +777,4 @@ export async function GET(request: NextRequest) {
       error: error.message || 'Failed to fetch live conversations' 
     }, { status: 500 });
   }
-}
+});

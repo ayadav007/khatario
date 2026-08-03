@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, getPool } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { getPool } from '@/lib/db';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,27 +8,20 @@ export const dynamic = 'force-dynamic';
  * POST /api/whatsapp/orders/[id]/approve
  * Approve WhatsApp order, convert to invoice, and notify customer
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const POST = withWhatsAppPremiumApi<{ id: string }>(
+  { parseJsonBody: true },
+  async ({ params, businessId }) => {
   const orderId = params.id;
   const pool = getPool();
   const client = await pool.connect();
 
   try {
-    const { business_id } = await request.json();
-
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
     await client.query('BEGIN');
 
     // 1. Get order details
     const orderRes = await client.query(
       `SELECT * FROM sales_orders WHERE id = $1 AND business_id = $2`,
-      [orderId, business_id]
+      [orderId, businessId]
     );
 
     if (orderRes.rowCount === 0) {
@@ -41,7 +35,7 @@ export async function POST(
     try {
       invoiceBranchId = await resolveBranchId({
         branchId: null,
-        businessId: business_id,
+        businessId: businessId,
       });
     } catch (e: any) {
       await client.query('ROLLBACK');
@@ -64,7 +58,7 @@ export async function POST(
     // Get business settings for invoice number
     const businessRes = await client.query(
       `SELECT next_invoice_number, invoice_prefix FROM businesses WHERE id = $1`,
-      [business_id]
+      [businessId]
     );
     const business = businessRes.rows[0];
     const invoiceNumber = `${business.invoice_prefix || 'INV'}-${String(business.next_invoice_number).padStart(4, '0')}`;
@@ -72,7 +66,7 @@ export async function POST(
     const today = new Date().toISOString().split('T')[0];
 
     const { checkLimitInTransaction } = await import('@/lib/subscription');
-    const limitCheck = await checkLimitInTransaction(client, business_id, 'invoices');
+    const limitCheck = await checkLimitInTransaction(client, businessId, 'invoices');
     if (!limitCheck.allowed) {
       await client.query('ROLLBACK');
       return NextResponse.json(
@@ -89,14 +83,14 @@ export async function POST(
     // Create invoice
     const invoiceRes = await client.query(
       `INSERT INTO invoices (
-        business_id, branch_id, customer_id, invoice_number, invoice_date, due_date,
+        businessId, branch_id, customer_id, invoice_number, invoice_date, due_date,
         status, payment_status, subtotal, grand_total, paid_amount, balance_amount,
         document_type, created_at, updated_at
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING id, invoice_number`,
       [
-        business_id,
+        businessId,
         invoiceBranchId,
         order.customer_id,
         invoiceNumber,
@@ -135,11 +129,11 @@ export async function POST(
     // 4. Record Payment
     await client.query(
       `INSERT INTO payments (
-        business_id, branch_id, customer_id, type, amount, payment_mode,
+        businessId, branch_id, customer_id, type, amount, payment_mode,
         payment_date, reference_type, reference_id, notes
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
-        business_id,
+        businessId,
         invoiceBranchId,
         order.customer_id,
         'receivable',
@@ -161,7 +155,7 @@ export async function POST(
     // 6. Increment counters
     await client.query(
       `UPDATE businesses SET next_invoice_number = next_invoice_number + 1 WHERE id = $1`,
-      [business_id]
+      [businessId]
     );
 
     await client.query('COMMIT');
@@ -182,4 +176,4 @@ export async function POST(
   } finally {
     client.release();
   }
-}
+});

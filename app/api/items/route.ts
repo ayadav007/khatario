@@ -6,6 +6,10 @@ import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import {
+  requirePlatformModule,
+  platformModuleErrorResponse,
+} from '@/lib/security/require-platform-module';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +43,14 @@ export async function GET(request: NextRequest) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
+      throw error;
+    }
+
+    try {
+      await requirePlatformModule(businessId, 'billing', 'items');
+    } catch (error) {
+      const denied = platformModuleErrorResponse(error);
+      if (denied) return denied;
       throw error;
     }
 

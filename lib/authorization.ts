@@ -21,15 +21,16 @@
  */
 
 import { NextResponse } from 'next/server';
-import { checkUserPermission } from './permissions';
+import { checkUserPermissionWithAliases } from './permissions';
 import { checkUserBranchPermission } from './branch-access';
 import { checkUserWarehousePermission } from './warehouse-access';
 import { queryOne } from './db';
 import { evaluatePolicy } from './policies/engine';
 import { PolicyUser, PolicyContext } from './policies/types';
 import { getPolicyRegistry } from './policies/registry';
-import { assertFeatureAccess, FeatureAccessDeniedError } from './subscription/feature-access';
+import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError } from './subscription/feature-access';
 import { getHrRegistryFeatureForAuthModule } from './hr-plan-features';
+import { resolvePlatformModuleForAuthModule } from './rbac-permission-catalog';
 import { clearSessionCookie } from './jwt';
 import { assertSessionValidForCookieAuth } from './auth-helpers';
 
@@ -109,6 +110,8 @@ const TABLE_NAME_MAP: Record<string, string> = {
   'work_orders': 'work_orders',
   'employee': 'employees',
   'employees': 'employees',
+  'payroll': 'salary_payments',
+  'salary': 'salary_payments',
 };
 
 export async function authorize(
@@ -153,6 +156,30 @@ export async function authorize(
     'SELECT is_primary_admin, business_id FROM users WHERE id = $1',
     [userId]
   );
+
+  // Platform module gate — applies to all users including primary admin.
+  const platformModule = resolvePlatformModuleForAuthModule(moduleKey);
+  if (platformModule && platformModule !== 'core') {
+    const businessIdForModule = context?.businessId || callingUser?.business_id;
+    if (!businessIdForModule) {
+      throw new AuthorizationError(
+        'businessId is required for module access',
+        'BUSINESS_REQUIRED',
+      );
+    }
+    try {
+      await assertModuleAccess(businessIdForModule, platformModule, moduleKey);
+    } catch (e) {
+      if (e instanceof FeatureAccessDeniedError) {
+        throw new AuthorizationError(
+          'This feature requires an active product subscription.',
+          'FEATURE_NOT_IN_PLAN',
+          e.toResponse(),
+        );
+      }
+      throw e;
+    }
+  }
 
   // Subscription plan must include HR features (applies to all users, including primary admin)
   const hrRegistryFeature = getHrRegistryFeatureForAuthModule(moduleKey);
@@ -212,12 +239,13 @@ export async function authorize(
     'report.financial': 'reports',
     'report.inventory': 'reports',
     'report.gst': 'reports',
+    'hr': 'employees',
   };
   
   const permissionModule = permissionModuleMap[moduleKey] || moduleKey;
   
   if (!skipRBACForBootstrap) {
-    const hasPermission = await checkUserPermission(userId, permissionModule, permissionKey);
+    const hasPermission = await checkUserPermissionWithAliases(userId, permissionModule, permissionKey);
     
     if (!hasPermission) {
       throw new AuthorizationError(

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
+import {
+  getUserIdFromRequest,
+  requirePortalSession,
+  requireTenantBusinessId,
+} from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +24,13 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const businessId = tenant.businessId;
 
-    if (!query || !businessId) {
+    if (!query) {
       return NextResponse.json({ results: [] });
     }
 

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, queryRows } from '@/lib/db';
+import { NextResponse } from 'next/server';
+import { queryOne } from '@/lib/db';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,17 +8,16 @@ export const dynamic = 'force-dynamic';
  * GET /api/bank-statements/reconciliation-report
  * Generate bank reconciliation report
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const bankAccountId = searchParams.get('bank_account_id');
     const branchIdParam = searchParams.get('branch_id');
     const asOnDate = searchParams.get('as_on_date') || new Date().toISOString().split('T')[0];
 
-    if (!businessId || !bankAccountId) {
+    if (!bankAccountId) {
       return NextResponse.json(
-        { error: 'business_id and bank_account_id are required' },
+        { error: 'bank_account_id is required' },
         { status: 400 }
       );
     }
@@ -115,5 +115,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});

@@ -27,6 +27,9 @@ build/
 .env.test.local
 .env.production.local
 
+# gstack local session state (global install uses ~/.gstack)
+.gstack/
+
 # Test / coverage
 coverage/
 .nyc_output/

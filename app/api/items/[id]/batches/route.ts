@@ -3,6 +3,8 @@ import { queryRows, queryOne, query, getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/items/[id]/batches
  * List batches for an item
@@ -14,7 +16,9 @@ export async function GET(
   try {
     const itemId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const locationId = searchParams.get('location_id');
 
     if (!businessId) {
@@ -69,8 +73,10 @@ export async function POST(
   try {
     const itemId = params.id;
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       variant_id,
       batch_number,
       manufacturing_date,

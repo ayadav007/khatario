@@ -4,27 +4,13 @@ export const dynamic = 'force-dynamic';
  * API endpoints for WhatsApp conversations
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon (use cached version)
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
     const status = searchParams.get('status'); // 'active', 'archived', or null for all
@@ -56,7 +42,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+      return NextResponse.json({ error: 'businessId is required' }, { status: 400 });
     }
 
     // Build WHERE clause
@@ -223,5 +209,4 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

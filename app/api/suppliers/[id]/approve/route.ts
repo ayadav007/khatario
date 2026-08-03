@@ -5,6 +5,8 @@ import { Supplier } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * Approve or reject a supplier relationship request
  * POST /api/suppliers/:id/approve
@@ -17,6 +19,13 @@ export async function POST(
   try {
     const supplierId = params.id;
     const body = await request.json();
+    const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(
+      request,
+      searchParams.get('business_id') ?? body.business_id,
+    );
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const { action, rejection_reason } = body;
 
     if (!action || !['approve', 'reject'].includes(action)) {
@@ -45,16 +54,6 @@ export async function POST(
 
     // Verify that the linked_business_id matches the business taking action
     // (Only the linked business can approve/reject)
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
     if (supplier.linked_business_id !== businessId) {
       return NextResponse.json(
         { error: 'Unauthorized. Only the linked business can approve/reject this request' },

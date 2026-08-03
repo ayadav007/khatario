@@ -10,6 +10,7 @@ import {
   shouldShowTrialBadge,
 } from '@/lib/subscription/effective-plan';
 import { shouldOfferTrialExtension, TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,13 +107,20 @@ export async function GET(request: NextRequest) {
     }> = {};
 
     if ((safeUser as any).role_id) {
-      const role = await queryOne<{ role_key?: string }>(
-        'SELECT role_key FROM user_roles WHERE id = $1',
+      const role = await queryOne<{ role_key?: string; role_name?: string }>(
+        'SELECT role_key, role_name FROM user_roles WHERE id = $1',
         [(safeUser as any).role_id]
       );
       if (role?.role_key === 'primary_admin') {
         isPrimaryAdmin = true;
       }
+      if (role) {
+        (safeUser as any).role_name = role.role_name;
+        (safeUser as any).role_key = role.role_key;
+      }
+    } else if (isPrimaryAdmin) {
+      (safeUser as any).role_name = 'Primary Admin';
+      (safeUser as any).role_key = 'primary_admin';
     }
 
     if (isPrimaryAdmin) {
@@ -227,6 +235,15 @@ export async function GET(request: NextRequest) {
       portalTheme = mergePortalTheme(bs?.portal_theme);
     }
 
+    let platform = null;
+    if (row.business_id && business) {
+      platform = await getBusinessPlatformContext(
+        row.business_id,
+        business.product_line,
+        (business as { primary_module?: string | null }).primary_module,
+      );
+    }
+
     return NextResponse.json({
       user: safeUser,
       business,
@@ -237,6 +254,7 @@ export async function GET(request: NextRequest) {
       subscription,
       activeBranchCount,
       portalTheme,
+      platform,
     });
   } catch (error: any) {
     console.error('Session endpoint error:', error);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processAllCampaigns } from '@/lib/campaign-processor';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,21 +12,18 @@ export const dynamic = 'force-dynamic';
  * Recommended: Call every 10-30 seconds when campaigns are running
  */
 export async function GET(request: NextRequest) {
-  return await processCampaigns();
+  return await processCampaigns(request);
 }
 
 export async function POST(request: NextRequest) {
-  return await processCampaigns();
+  return await processCampaigns(request);
 }
 
-async function processCampaigns() {
-  try {
-    // Optional: Add authentication header check for security
-    // const authHeader = request.headers.get('authorization');
-    // if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
+async function processCampaigns(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
 
+  try {
     const result = await processAllCampaigns();
 
     return NextResponse.json({

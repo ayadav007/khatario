@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Save, Eye, EyeOff, Loader2, ExternalLink, Info } from 'lucide-react';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { Button } from '@/components/ui/Button';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 
 interface AIConfigTabProps {
   businessId: string;
@@ -124,15 +125,7 @@ export default function AIConfigTab({ businessId }: AIConfigTabProps) {
   }
 
   return (
-    <div className={SETTINGS_CONTENT_WIDTH}>
-      <div className="rounded-lg border border-border bg-surface p-4 shadow-sm sm:p-6 dark:bg-slate-900/80">
-        <div>
-          <h2 className="text-2xl font-bold mb-2">AI Sales Agent Configuration</h2>
-          <p className="text-text-secondary">
-            Configure your AI provider to enable intelligent chatbot and lead analysis for WhatsApp conversations.
-          </p>
-        </div>
-
+    <div className="rounded-lg border border-border bg-surface p-4 shadow-sm sm:p-6 dark:bg-slate-900/80">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
             {error}
@@ -427,27 +420,12 @@ export default function AIConfigTab({ businessId }: AIConfigTabProps) {
           </div>
         </div>
 
-        {/* Save Button */}
-        <div className="mt-6 flex justify-end border-t border-border pt-6">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                Save Configuration
-              </>
-            )}
-          </button>
-        </div>
+        <SettingsFloatingSaveBar>
+          <Button onClick={handleSave} disabled={saving} isLoading={saving} className="w-full sm:w-auto">
+            <Save className="w-4 h-4" />
+            Save Configuration
+          </Button>
+        </SettingsFloatingSaveBar>
       </div>
-    </div>
   );
 }

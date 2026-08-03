@@ -17,6 +17,7 @@ export async function listActiveSubscriptionPlans() {
       features,
       is_active,
       sort_order,
+      product_line,
       created_at,
       updated_at
     FROM subscription_plans

@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
-import { queryRows, queryOne, query } from '@/lib/db';
-import { Account, AccountGroup } from '@/types/database';
+import { NextResponse } from 'next/server';
+import { queryRows, queryOne } from '@/lib/db';
+import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,29 +10,15 @@ export const dynamic = 'force-dynamic';
  * GET /api/accounts
  * List accounts with filters
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
+    const { searchParams } = new URL(ctx.request.url);
+    const businessId = ctx.businessId;
+    const userId = ctx.userId;
     const accountType = searchParams.get('account_type');
     const groupId = searchParams.get('group_id');
     const isActive = searchParams.get('is_active');
     const tree = searchParams.get('tree') === 'true';
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // AUTHORIZATION: Check read permission (accounts are part of settings/accounting)
     try {
@@ -126,7 +112,7 @@ export async function GET(request: NextRequest) {
 
     const accounts = await queryRows<Account & { account_group_name: string; account_group_code: string }>(sql, params);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       accounts,
       pagination: {
         page,
@@ -142,113 +128,136 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * POST /api/accounts
  * Create a new account
  */
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const {
-      business_id,
-      account_code,
-      account_name,
-      account_type,
-      account_group_id,
-      parent_account_id,
-      nature,
-      opening_balance = 0,
-      opening_balance_type = 'debit',
-      description,
-      sort_order = 0,
-      created_by, // User ID who created the account
-    } = body;
-
-    if (!business_id || !account_code || !account_name || !account_type || !account_group_id || !nature) {
-      return NextResponse.json(
-        { error: 'business_id, account_code, account_name, account_type, account_group_id, and nature are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    // AUTHORIZATION: Check create permission (accounts are part of settings/accounting)
-    try {
-      await authorize(created_by, 'settings', 'create');
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+export const POST = withPremiumSubscriptionApi(
+  {
+    parseJsonBody: true,
+    resolveActingUserId: ({ body, sessionUserId }) => {
+      if (body != null && typeof body === 'object') {
+        return (body as { created_by?: string }).created_by ?? sessionUserId;
       }
-      throw error;
-    }
+      return sessionUserId;
+    },
+  },
+  async (ctx) => {
+    try {
+      const body = ctx.body as Record<string, unknown>;
+      const {
+        account_code,
+        account_name,
+        account_type,
+        account_group_id,
+        parent_account_id,
+        nature,
+        opening_balance = 0,
+        opening_balance_type = 'debit',
+        description,
+        sort_order = 0,
+        created_by,
+      } = body as {
+        account_code?: string;
+        account_name?: string;
+        account_type?: string;
+        account_group_id?: string;
+        parent_account_id?: string;
+        nature?: string;
+        opening_balance?: number;
+        opening_balance_type?: string;
+        description?: string;
+        sort_order?: number;
+        created_by?: string;
+      };
 
-    // Validate account code uniqueness
-    const existing = await queryOne(
-      'SELECT id FROM accounts WHERE business_id = $1 AND account_code = $2',
-      [business_id, account_code]
-    );
+      const business_id = ctx.businessId;
 
-    if (existing) {
-      return NextResponse.json(
-        { error: 'Account code already exists' },
-        { status: 409 }
+      if (!account_code || !account_name || !account_type || !account_group_id || !nature) {
+        return NextResponse.json(
+          { error: 'business_id, account_code, account_name, account_type, account_group_id, and nature are required' },
+          { status: 400 }
+        );
+      }
+
+      if (!created_by) {
+        return NextResponse.json(
+          { error: 'created_by (user_id) is required for authorization' },
+          { status: 400 }
+        );
+      }
+
+      // AUTHORIZATION: Check create permission (accounts are part of settings/accounting)
+      try {
+        await authorize(created_by, 'settings', 'create');
+      } catch (error) {
+        if (error instanceof AuthorizationError) {
+          return error.toNextResponse();
+        }
+        throw error;
+      }
+
+      // Validate account code uniqueness
+      const existing = await queryOne(
+        'SELECT id FROM accounts WHERE business_id = $1 AND account_code = $2',
+        [business_id, account_code]
       );
-    }
 
-    // Validate nature matches account type
-    const validNatures: Record<string, string[]> = {
-      asset: ['debit'],
-      liability: ['credit'],
-      income: ['credit'],
-      expense: ['debit'],
-      capital: ['credit'],
-    };
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Account code already exists' },
+          { status: 409 }
+        );
+      }
 
-    if (!validNatures[account_type]?.includes(nature)) {
-      return NextResponse.json(
-        { error: `Invalid nature for account type ${account_type}. Expected: ${validNatures[account_type]?.join(' or ')}` },
-        { status: 400 }
-      );
-    }
+      // Validate nature matches account type
+      const validNatures: Record<string, string[]> = {
+        asset: ['debit'],
+        liability: ['credit'],
+        income: ['credit'],
+        expense: ['debit'],
+        capital: ['credit'],
+      };
 
-    const account = await queryOne<Account>(
-      `INSERT INTO accounts (
+      if (!validNatures[account_type]?.includes(nature)) {
+        return NextResponse.json(
+          { error: `Invalid nature for account type ${account_type}. Expected: ${validNatures[account_type]?.join(' or ')}` },
+          { status: 400 }
+        );
+      }
+
+      const account = await queryOne<Account>(
+        `INSERT INTO accounts (
         business_id, account_code, account_name, account_type, account_group_id,
         parent_account_id, nature, opening_balance, opening_balance_type,
         description, sort_order
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *`,
-      [
-        business_id,
-        account_code,
-        account_name,
-        account_type,
-        account_group_id,
-        parent_account_id || null,
-        nature,
-        opening_balance,
-        opening_balance_type,
-        description || null,
-        sort_order,
-      ]
-    );
+        [
+          business_id,
+          account_code,
+          account_name,
+          account_type,
+          account_group_id,
+          parent_account_id || null,
+          nature,
+          opening_balance,
+          opening_balance_type,
+          description || null,
+          sort_order,
+        ]
+      );
 
-    return NextResponse.json({ account }, { status: 201 });
-  } catch (error: any) {
-    console.error('Error creating account:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
+      return NextResponse.json({ account }, { status: 201 });
+    } catch (error: any) {
+      console.error('Error creating account:', error);
+      return NextResponse.json(
+        { error: error.message || 'Internal server error' },
+        { status: 500 }
+      );
+    }
+  },
+);

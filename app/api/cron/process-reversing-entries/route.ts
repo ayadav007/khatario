@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { hasFeature } from '@/lib/subscription';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,21 +12,13 @@ export const dynamic = 'force-dynamic';
  * This endpoint should be called by a cron job (e.g., daily at midnight)
  */
 export async function POST(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
+
   const pool = getPool();
   const client = await pool.connect();
 
   try {
-    // Verify cron secret if configured
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const today = new Date().toISOString().split('T')[0];
 
     await client.query('BEGIN');

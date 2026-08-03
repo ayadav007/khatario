@@ -4,14 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { 
-  Download, Upload, Database, AlertCircle, Clock, CheckCircle, 
+  Download, Upload, Database as DatabaseIcon, AlertCircle, Clock, CheckCircle, 
   Cloud, Calendar, Trash2, Eye, Link as LinkIcon, X, Save,
   RefreshCw, FileText, HardDrive, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
-import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface BackupHistory {
   id: string;
@@ -370,12 +369,12 @@ export default function BackupRestorePage() {
   }
 
   return (
-    <div className={`${WIDE_PAGE_CONTENT_CLASS} space-y-6 p-4 sm:p-6`}>
-      <ListPageHeader
-        title="Backup & restore"
-        description="Keep your data safe with automated backups and cloud storage"
-      />
-
+    <SettingsPageShell
+      title="Backup & restore"
+      description="Keep your data safe with automated backups and cloud storage"
+      icon={DatabaseIcon}
+      className="p-4 sm:p-6"
+    >
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl shadow-lg p-6 text-white">
@@ -840,7 +839,7 @@ export default function BackupRestorePage() {
           </div>
         )}
       </div>
-    </div>
+    </SettingsPageShell>
   );
 }
 

@@ -14,6 +14,7 @@ import { TemplateSettings } from '@/types/template';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { useApiErrorHandler } from '@/hooks/useApiErrorHandler';
 import { useToastContext } from '@/contexts/ToastContext';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 
 interface Template {
   id: string;
@@ -861,10 +862,6 @@ export const InvoiceDesignTab: React.FC = () => {
             </Button>
           </div>
         </Card>
-        
-        <Button onClick={handleSave} isLoading={saving} className="w-full sticky bottom-0">
-          <Save className="w-4 h-4 mr-2" /> Save Changes
-        </Button>
       </div>
 
       {/* Preview */}
@@ -890,6 +887,12 @@ export const InvoiceDesignTab: React.FC = () => {
           />
         </div>
       </div>
+
+      <SettingsFloatingSaveBar>
+        <Button onClick={handleSave} isLoading={saving} className="w-full sm:w-auto">
+          <Save className="w-4 h-4 mr-2" /> Save Changes
+        </Button>
+      </SettingsFloatingSaveBar>
 
     </div>
   );

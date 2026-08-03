@@ -1,45 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { InvoiceRenderer } from '@/lib/invoice-renderer';
 import puppeteer from 'puppeteer';
 import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
+import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { accountId: string } }
-) {
-  try {
-    const { accountId } = params;
-    const { searchParams } = new URL(req.url);
-    const businessId = searchParams.get('business_id');
-    const fromDate = searchParams.get('from_date');
-    const toDate = searchParams.get('to_date');
+export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
+  {},
+  async (ctx) => {
+    try {
+      const { accountId } = ctx.params;
+      const { searchParams } = new URL(ctx.request.url);
+      const businessId = ctx.businessId;
+      const fromDate = searchParams.get('from_date');
+      const toDate = searchParams.get('to_date');
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
+      // 1. Fetch Account Data
+      const account = await db.queryOne(
+        `SELECT a.* FROM accounts a WHERE a.id = $1 AND a.business_id = $2`,
+        [accountId, businessId]
+      );
 
-    // 1. Fetch Account Data
-    const account = await db.queryOne(
-      `SELECT a.* FROM accounts a WHERE a.id = $1 AND a.business_id = $2`,
-      [accountId, businessId]
-    );
+      if (!account) {
+        return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+      }
 
-    if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    }
+      // 2. Fetch Business Info
+      const business = await db.queryOne(
+        `SELECT b.name, b.address_line1 as address, b.city FROM businesses b WHERE b.id = $1`,
+        [businessId]
+      );
 
-    // 2. Fetch Business Info
-    const business = await db.queryOne(
-      `SELECT b.name, b.address_line1 as address, b.city FROM businesses b WHERE b.id = $1`,
-      [businessId]
-    );
-
-    // 3. Fetch Ledger Entries
-    const entriesRes = await db.queryRows(
-      `SELECT 
+      // 3. Fetch Ledger Entries
+      const entriesRes = await db.queryRows(
+        `SELECT 
         l.entry_date,
         l.description as particulars,
         l.voucher_number as voucher,
@@ -50,74 +46,74 @@ export async function GET(
        WHERE l.account_id = $1 AND l.business_id = $2
        AND l.entry_date >= $3 AND l.entry_date <= $4
        ORDER BY l.entry_date, l.created_at`,
-      [accountId, businessId, fromDate, toDate]
-    );
+        [accountId, businessId, fromDate, toDate]
+      );
 
-    // Calculate Opening Balance
-    const obRes = await db.queryOne(
-      `SELECT COALESCE(SUM(debit - credit), 0) as ob
+      // Calculate Opening Balance
+      const obRes = await db.queryOne(
+        `SELECT COALESCE(SUM(debit - credit), 0) as ob
        FROM ledger_entries
        WHERE account_id = $1 AND business_id = $2
        AND entry_date < $3`,
-      [accountId, businessId, fromDate]
-    );
-    const openingBalance = Number(obRes.ob);
+        [accountId, businessId, fromDate]
+      );
+      const openingBalance = Number(obRes.ob);
 
-    let currentBalance = openingBalance;
-    const formattedEntries = entriesRes.map(e => {
-      currentBalance += (Number(e.debit) - Number(e.credit));
-      return {
-        date: new Date(e.entry_date).toLocaleDateString('en-IN'),
-        particulars: e.particulars,
-        voucher: e.voucher,
-        debit: Number(e.debit) > 0 ? Number(e.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-        credit: Number(e.credit) > 0 ? Number(e.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
-        balance: currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })
+      let currentBalance = openingBalance;
+      const formattedEntries = entriesRes.map(e => {
+        currentBalance += (Number(e.debit) - Number(e.credit));
+        return {
+          date: new Date(e.entry_date).toLocaleDateString('en-IN'),
+          particulars: e.particulars,
+          voucher: e.voucher,
+          debit: Number(e.debit) > 0 ? Number(e.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
+          credit: Number(e.credit) > 0 ? Number(e.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '',
+          balance: currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })
+        };
+      });
+
+      const totalDebit = entriesRes.reduce((sum, e) => sum + Number(e.debit), 0);
+      const totalCredit = entriesRes.reduce((sum, e) => sum + Number(e.credit), 0);
+
+      const templateData = {
+        account,
+        business,
+        period: { from: fromDate, to: toDate },
+        entries: formattedEntries,
+        opening_balance: openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+        closing_balance: currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+        total_debit: totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+        total_credit: totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+        settings: { primary_color: '#3b82f6' }
       };
-    });
 
-    const totalDebit = entriesRes.reduce((sum, e) => sum + Number(e.debit), 0);
-    const totalCredit = entriesRes.reduce((sum, e) => sum + Number(e.credit), 0);
+      const renderer = new InvoiceRenderer();
+      let html = await renderer.renderHtml('account_statement', templateData as any);
+      const { maybeAppendKhatarioPrintFooter } = await import('@/lib/print-branding');
+      html = await maybeAppendKhatarioPrintFooter(html, businessId);
 
-    const templateData = {
-      account,
-      business,
-      period: { from: fromDate, to: toDate },
-      entries: formattedEntries,
-      opening_balance: openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      closing_balance: currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      total_debit: totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      total_credit: totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
-      settings: { primary_color: '#3b82f6' }
-    };
+      // Generate PDF
+      const browser = await puppeteer.launch(
+        getPuppeteerLaunchOptions({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        })
+      );
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+      await browser.close();
 
-    const renderer = new InvoiceRenderer();
-    let html = await renderer.renderHtml('account_statement', templateData as any);
-    const { maybeAppendKhatarioPrintFooter } = await import('@/lib/print-branding');
-    html = await maybeAppendKhatarioPrintFooter(html, businessId);
+      return new NextResponse(pdfBuffer as any, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="Statement-${account.name || accountId}.pdf"`,
+        },
+      });
 
-    // Generate PDF
-    const browser = await puppeteer.launch(
-      getPuppeteerLaunchOptions({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      })
-    );
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
-    await browser.close();
-
-    return new NextResponse(pdfBuffer as any, {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="Statement-${account.name || accountId}.pdf"`,
-      },
-    });
-
-  } catch (error: any) {
-    console.error('Error downloading statement:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
+    } catch (error: any) {
+      console.error('Error downloading statement:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  },
+);

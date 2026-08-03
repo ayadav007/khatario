@@ -23,6 +23,10 @@ import {
   computePurchaseDocument,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import {
+  requirePlatformModule,
+  platformModuleErrorResponse,
+} from '@/lib/security/require-platform-module';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +67,14 @@ export async function GET(request: NextRequest) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
+      throw error;
+    }
+
+    try {
+      await requirePlatformModule(businessId, 'billing', 'purchases');
+    } catch (error) {
+      const denied = platformModuleErrorResponse(error);
+      if (denied) return denied;
       throw error;
     }
 
@@ -284,6 +296,7 @@ export async function POST(request: NextRequest) {
       supplier_state_code: supplier_state_code_input,
       invoice_number: invoice_number_input,
       supplier_gstin: supplier_gstin_input,
+      extraction_job_id,
     } = body;
 
     const normalizedSupplierId =
@@ -920,6 +933,14 @@ export async function POST(request: NextRequest) {
         ]
       );
     }
+
+    const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
+    await linkExtractionJobToPurchase(client, {
+      extractionJobId: extraction_job_id,
+      purchaseId: purchase.id,
+      businessId: business_id,
+      purchaseStatus: status === 'final' ? 'final' : 'draft',
+    });
 
     await client.query('COMMIT');
 

@@ -12,7 +12,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { Holiday } from '@/types/database';
 import { format } from 'date-fns';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 export default function HolidaysPage() {
   const { business, user } = useAuth();
@@ -118,12 +118,11 @@ export default function HolidaysPage() {
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Holiday Calendar</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage holidays for working day calculations</p>
-          </div>
+      <SettingsPageShell
+        title="Holiday Calendar"
+        description="Manage holidays for working day calculations"
+        icon={Calendar}
+        actions={
           <Button onClick={() => {
             setShowForm(true);
             setEditingHoliday(null);
@@ -137,7 +136,8 @@ export default function HolidaysPage() {
             <Plus className="w-4 h-4 mr-2" />
             Add Holiday
           </Button>
-        </div>
+        }
+      >
 
         {showForm && (
           <Card>
@@ -254,8 +254,7 @@ export default function HolidaysPage() {
             </div>
           )}
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

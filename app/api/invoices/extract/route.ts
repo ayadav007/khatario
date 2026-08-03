@@ -331,7 +331,7 @@ export async function POST(request: NextRequest) {
            extracted_at = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $5`,
-      ['completed', JSON.stringify(frontendData), `${extraction!.provider}/${extraction!.model}`, extraction!.processingTimeMs, extractionJob.id]
+      ['extracted', JSON.stringify(frontendData), `${extraction!.provider}/${extraction!.model}`, extraction!.processingTimeMs, extractionJob.id]
     );
 
     const userId = getUserIdFromRequest(request);

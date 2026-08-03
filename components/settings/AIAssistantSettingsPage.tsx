@@ -17,6 +17,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { 
   WhatsAppBotUIConfig, 
   DefaultUIConfig, 
@@ -34,7 +35,6 @@ import { OffersPromotionsSection } from './ai-assistant/OffersPromotionsSection'
 import { BusinessHoursSection } from './ai-assistant/BusinessHoursSection';
 import { AdvancedSection } from './ai-assistant/AdvancedSection';
 import { PreviewSection } from './ai-assistant/PreviewSection';
-import { WIDE_PAGE_CONTENT_CLASS } from '@/lib/page-layout';
 
 interface AIAssistantSettingsPageProps {
   businessId: string;
@@ -204,15 +204,7 @@ export function AIAssistantSettingsPage({ businessId }: AIAssistantSettingsPageP
   const isValid = validationErrors.length === 0;
 
   return (
-    <div className={WIDE_PAGE_CONTENT_CLASS}>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">AI Assistant Settings</h1>
-        <p className="text-text-secondary">
-          Customize how your AI assistant interacts with customers. Changes are saved automatically when you click Save.
-        </p>
-      </div>
-
+    <>
       {/* Validation Errors Banner */}
       {validationErrors.length > 0 && (
         <Card padding="md" className="mb-6 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900">
@@ -367,46 +359,42 @@ export function AIAssistantSettingsPage({ businessId }: AIAssistantSettingsPageP
         </div>
       </div>
 
-      {/* Sticky Footer */}
-      <div className="sticky bottom-0 mt-8 pt-6 bg-background/95 dark:bg-slate-950/95 backdrop-blur-sm border-t border-border -mx-6 px-6">
-        <Card padding="md" className="shadow-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {hasChanges && (
-                <span className="text-sm text-text-secondary">
-                  You have unsaved changes
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="secondary"
-                onClick={handleRevert}
-                disabled={!hasChanges || isSaving}
-              >
-                <RotateCcw className="w-4 h-4" />
-                Revert Changes
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={handleReset}
-                disabled={isSaving}
-              >
-                Reset to Defaults
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleSave}
-                disabled={!hasChanges || !isValid || isSaving}
-                isLoading={isSaving}
-              >
-                <Save className="w-4 h-4" />
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
+      <SettingsFloatingSaveBar align="between">
+        <div className="min-w-0 flex-1">
+          {hasChanges ? (
+            <span className="text-sm text-text-secondary">You have unsaved changes</span>
+          ) : null}
+        </div>
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap sm:gap-3">
+          <Button
+            variant="secondary"
+            onClick={handleRevert}
+            disabled={!hasChanges || isSaving}
+            className="flex-1 sm:flex-none"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Revert Changes
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleReset}
+            disabled={isSaving}
+            className="flex-1 sm:flex-none"
+          >
+            Reset to Defaults
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={!hasChanges || !isValid || isSaving}
+            isLoading={isSaving}
+            className="w-full flex-1 sm:w-auto sm:flex-none"
+          >
+            <Save className="w-4 h-4" />
+            Save Changes
+          </Button>
+        </div>
+      </SettingsFloatingSaveBar>
+    </>
   );
 }

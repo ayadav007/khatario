@@ -3,6 +3,8 @@ import { queryRows, queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/promotions/active?business_id=xxx&type=banner
  * Fetches active promotions targeted at a specific business
@@ -10,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const type = searchParams.get('type'); // optional: banner, carousel, modal, sidebar
 
     if (!businessId) {

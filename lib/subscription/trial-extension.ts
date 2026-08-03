@@ -10,8 +10,8 @@ import {
   isLocalCalendarBeforeToday,
   parseLocalDateOnly,
 } from '@/lib/subscription/date-only';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { logSubscriptionEvent, moveSubscriptionToFree } from '@/lib/subscription/lifecycle';
+import { isProductLineTrialPlanId } from '@/lib/product-lines';
 
 export const TRIAL_EXTENSION_DAYS = 7;
 
@@ -24,7 +24,7 @@ export interface TrialExtensionFields {
 
 /** Trial calendar end date is in the past (local date). */
 export function isTrialCalendarExpired(sub: TrialExtensionFields): boolean {
-  if (sub.plan_id !== TRIAL_PLAN_ID) return false;
+  if (!isProductLineTrialPlanId(sub.plan_id)) return false;
   const trialEnd = parseLocalDateOnly(sub.trial_end_date);
   if (!trialEnd) return false;
   return isLocalCalendarBeforeToday(trialEnd);
@@ -34,7 +34,7 @@ export function isTrialCalendarExpired(sub: TrialExtensionFields): boolean {
  * Show the extend-or-free modal on login (Option A: any time after expiry until they decide).
  */
 export function shouldOfferTrialExtension(sub: TrialExtensionFields): boolean {
-  if (sub.plan_id !== TRIAL_PLAN_ID) return false;
+  if (!isProductLineTrialPlanId(sub.plan_id)) return false;
   if (sub.trial_extension_granted) return false;
   if (sub.trial_extension_declined_at) return false;
   return isTrialCalendarExpired(sub);
@@ -44,7 +44,7 @@ export function shouldOfferTrialExtension(sub: TrialExtensionFields): boolean {
  * Cron / sync: downgrade stale trial rows (after the one-time extension also expired).
  */
 export function shouldDowngradeStaleTrial(sub: TrialExtensionFields): boolean {
-  if (sub.plan_id !== TRIAL_PLAN_ID) return false;
+  if (!isProductLineTrialPlanId(sub.plan_id)) return false;
   if (sub.trial_extension_declined_at) return false;
   if (!isTrialCalendarExpired(sub)) return false;
   if (!sub.trial_extension_granted) return false;
@@ -89,7 +89,7 @@ export async function grantSelfServeTrialExtension(businessId: string): Promise<
          end_date = NULL,
          updated_at = CURRENT_TIMESTAMP
      WHERE business_id = $1`,
-    [businessId, TRIAL_PLAN_ID, newTrialEnd],
+    [businessId, sub.plan_id, newTrialEnd],
   );
 
   await logSubscriptionEvent(businessId, 'trial_extension_granted', {

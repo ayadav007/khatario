@@ -5,17 +5,20 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Loader2, Phone, User, Edit, Eye, Filter, X, Mail, Briefcase, Calendar } from 'lucide-react';
+import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { Search, Plus, Loader2, Phone, User, Edit, Eye, Filter, X, Mail, Briefcase } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { Employee } from '@/types/database';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { usePermissions } from '@/hooks/usePermissions';
+import { EmployeePortalResetActions } from '@/components/hr/EmployeePortalResetActions';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -46,6 +49,8 @@ export default function EmployeesPage() {
     action: 'read',
     skipCheck: !user?.id || !business?.id,
   });
+  const { canModify } = usePermissions();
+  const canUpdateEmployees = canModify('employees');
 
   const fetchEmployees = async () => {
     if (!business?.id || !user?.id) return;
@@ -124,51 +129,73 @@ export default function EmployeesPage() {
 
   // authStatus === 'allowed' - render page content
 
-  return (
-    
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Employees</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage your team members</p>
-          </div>
-          <Link href="/employees/new">
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Employee
-            </Button>
-          </Link>
-        </div>
+  const statusBadge = (employee: EmployeeWithUser) => {
+    const active = employee.is_active && employee.user_is_active;
+    return (
+      <span
+        className={clsx(
+          'inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-2xs font-medium',
+          active
+            ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/35 dark:text-green-300'
+            : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/35 dark:text-red-300'
+        )}
+      >
+        {active ? 'Active' : 'Inactive'}
+      </span>
+    );
+  };
 
-        {/* Search and Filters */}
-        <Card>
+  return (
+    <div className="space-y-3 md:space-y-6">
+        <ListPageHeader
+          title="Employees"
+          description="Manage your team members"
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => setShowMobileFilters(true)}
+                className="rounded-lg border border-border bg-surface p-2 text-text-secondary md:hidden"
+                aria-label="Filters"
+              >
+                <Filter className="w-5 h-5" />
+              </button>
+              <Link href="/employees/new">
+                <Button className="h-10 px-4">
+                  <Plus className="w-4 h-4 md:mr-2" />
+                  <span className="hidden md:inline">Add Employee</span>
+                </Button>
+              </Link>
+            </>
+          }
+        />
+
+        {/* Desktop search & filters */}
+        <Card padding="md" className="hidden md:block">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <input
                 type="text"
                 placeholder="Search by name, code, phone, designation..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
+                className="input pl-10"
               />
             </div>
-            
             <div className="flex gap-2">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
+                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                 className="input"
               >
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-              
               <select
                 value={accessTypeFilter}
-                onChange={(e) => setAccessTypeFilter(e.target.value as any)}
+                onChange={(e) => setAccessTypeFilter(e.target.value as typeof accessTypeFilter)}
                 className="input"
               >
                 <option value="all">All Access Types</option>
@@ -179,22 +206,90 @@ export default function EmployeesPage() {
           </div>
         </Card>
 
-        {/* Employees List */}
-        <Card>
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+        {/* Mobile search */}
+        <div className="md:hidden relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <input
+            type="text"
+            placeholder="Name, code, or phone"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input pl-10 w-full h-10 rounded-xl"
+          />
+        </div>
+
+        {showMobileFilters && (
+          <div className="fixed inset-0 z-[100] md:hidden">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)} />
+            <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-border bg-surface p-6 shadow-xl animate-slide-up">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-base font-semibold text-text-primary">Filters</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters(false)}
+                  className="rounded-full p-2 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  aria-label="Close filters"
+                >
+                  <X className="w-5 h-5 text-text-muted" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="type-label mb-1.5 block">Status</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                    className="input w-full"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="type-label mb-1.5 block">Access type</label>
+                  <select
+                    value={accessTypeFilter}
+                    onChange={(e) => setAccessTypeFilter(e.target.value as typeof accessTypeFilter)}
+                    className="input w-full"
+                  >
+                    <option value="all">All Access Types</option>
+                    <option value="full">Full Access</option>
+                    <option value="attendance_only">Attendance Only</option>
+                  </select>
+                </div>
+                <Button className="w-full" onClick={() => setShowMobileFilters(false)}>
+                  Apply
+                </Button>
+              </div>
             </div>
-          ) : employees.length === 0 ? (
-            <div className="text-center py-12">
-              <User className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-text-secondary">No employees found</p>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-600 md:w-8 md:h-8" />
+          </div>
+        ) : employees.length === 0 ? (
+          <div className="text-center py-10 md:py-12">
+            <User className="w-10 h-10 text-text-muted mx-auto mb-3 md:w-12 md:h-12 md:mb-4" />
+            <p className="type-body-secondary text-sm">
+              {search || statusFilter !== 'all' || accessTypeFilter !== 'all'
+                ? 'No employees match your filters'
+                : 'No employees yet'}
+            </p>
+            {!search && statusFilter === 'all' && accessTypeFilter === 'all' && (
               <Link href="/employees/new">
-                <Button className="mt-4">Add Your First Employee</Button>
+                <Button size="sm" className="mt-3">
+                  Add Employee
+                </Button>
               </Link>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
+            )}
+          </div>
+        ) : (
+          <>
+            <Card padding="none" className="overflow-hidden hidden md:block">
+              <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
@@ -290,6 +385,16 @@ export default function EmployeesPage() {
                               <Edit className="w-4 h-4" />
                             </Button>
                           </Link>
+                          {canUpdateEmployees && business?.id ? (
+                            <EmployeePortalResetActions
+                              variant="compact"
+                              employeeId={employee.id}
+                              businessId={business.id}
+                              employeeName={employee.user_name}
+                              employeeCode={employee.employee_code}
+                              disabled={!employee.is_active || !employee.user_is_active}
+                            />
+                          ) : null}
                           <DeleteAction
                             entityName="employee"
                             variant="deactivate"
@@ -313,36 +418,176 @@ export default function EmployeesPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* Pagination Controls */}
-          {pagination.totalPages > 1 && (
-            <div className="flex justify-between items-center p-4 border-t border-border">
-              <p className="text-sm text-text-secondary">
-                Page {pagination.page} of {pagination.totalPages} ({pagination.total} employees)
-              </p>
-              <div className="flex space-x-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                  disabled={pagination.page === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
-                  disabled={pagination.page === pagination.totalPages}
-                >
-                  Next
-                </Button>
               </div>
+              {pagination.totalPages > 1 && (
+                <div className="hidden md:flex justify-between items-center p-4 border-t border-border">
+                  <p className="text-sm text-text-secondary">
+                    Page {pagination.page} of {pagination.totalPages} ({pagination.total} employees)
+                  </p>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                      disabled={pagination.page === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
+                      disabled={pagination.page === pagination.totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            <div className="md:hidden space-y-2">
+              {employees.map((employee) => (
+                <div
+                  key={employee.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/employees/${employee.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') router.push(`/employees/${employee.id}`);
+                  }}
+                  className="rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {employee.photo_url ? (
+                        <img
+                          src={employee.photo_url}
+                          alt={employee.user_name}
+                          className="h-8 w-8 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-primary-700 dark:bg-slate-800/40 dark:text-primary-300">
+                          {employee.user_name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold leading-snug text-text-primary">
+                          {employee.user_name}
+                        </p>
+                        {employee.employee_code ? (
+                          <p className="mt-0.5 font-mono text-2xs text-text-muted">{employee.employee_code}</p>
+                        ) : null}
+                        {employee.user_phone ? (
+                          <div className="mt-0.5 flex items-center gap-1 text-xs text-text-muted">
+                            <Phone className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{employee.user_phone}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    {statusBadge(employee)}
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {employee.designation ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
+                        <Briefcase className="h-3 w-3 shrink-0 text-text-muted" />
+                        {employee.designation}
+                      </span>
+                    ) : null}
+                    {employee.department ? (
+                      <span className="text-xs text-text-muted">{employee.department}</span>
+                    ) : null}
+                    <span className="chip text-2xs">
+                      {employee.access_type === 'full' ? 'Full access' : 'Attendance only'}
+                    </span>
+                  </div>
+
+                  <div
+                    className="mt-2 flex flex-col gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="grid grid-cols-3 gap-1.5">
+                    <Link href={`/employees/${employee.id}`}>
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-border text-caption font-medium text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        View
+                      </button>
+                    </Link>
+                    <Link href={`/employees/${employee.id}/edit`}>
+                      <button
+                        type="button"
+                        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-slate-50 text-caption font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    </Link>
+                    <div className="flex items-center justify-center">
+                      <DeleteAction
+                        entityName="employee"
+                        variant="deactivate"
+                        confirmMessage="This employee will be deactivated. Existing records will remain intact."
+                        disabled={!employee.is_active || !employee.user_is_active}
+                        disabledTooltip="Employee is already inactive"
+                        deleteFn={async () => {
+                          if (!business?.id || !user?.id) throw new Error('Missing business/user context');
+                          const res = await fetch(
+                            `/api/employees/${employee.id}?business_id=${business.id}&user_id=${user.id}`,
+                            { method: 'DELETE' }
+                          );
+                          const data = await res.json().catch(() => ({}));
+                          if (!res.ok) throw new Error(data?.error || 'Failed to deactivate employee');
+                        }}
+                        onSuccess={fetchEmployees}
+                      />
+                    </div>
+                    </div>
+                    {canUpdateEmployees && business?.id ? (
+                      <EmployeePortalResetActions
+                        employeeId={employee.id}
+                        businessId={business.id}
+                        employeeName={employee.user_name}
+                        employeeCode={employee.employee_code}
+                        disabled={!employee.is_active || !employee.user_is_active}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </Card>
+          </>
+        )}
+
+        {pagination.totalPages > 1 && employees.length > 0 && (
+          <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-surface p-3 md:hidden">
+            <p className="text-sm text-text-secondary">
+              Page {pagination.page} of {pagination.totalPages} ({pagination.total} employees)
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                disabled={pagination.page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
+                disabled={pagination.page === pagination.totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
 
         {toast && (
           <Toast
@@ -351,8 +596,7 @@ export default function EmployeesPage() {
             onClose={() => setToast(null)}
           />
         )}
-      </div>
-    
+    </div>
   );
 }
 

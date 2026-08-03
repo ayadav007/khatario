@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { BookOpen, ExternalLink, Settings, Sparkles } from 'lucide-react';
 import { PRODUCT_TOUR_CHAIN_PROFILE_SESSION_KEY } from '@/components/onboarding/productTourShared';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 function HelpSettingsPage() {
   const router = useRouter();
@@ -30,14 +30,11 @@ function HelpSettingsPage() {
   };
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-8`}>
-      <div className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight text-text-primary">Help & Support</h1>
-        <p className="text-base text-text-secondary max-w-3xl leading-relaxed">
-          Get comfortable with Khatario — take the guided tour any time, or jump straight into settings.
-        </p>
-      </div>
-
+    <SettingsPageShell
+      title="Help & Support"
+      description="Get comfortable with Khatario — take the guided tour any time, or jump straight into settings."
+      icon={BookOpen}
+    >
       <div className="relative overflow-hidden rounded-2xl border border-primary-100/80 bg-gradient-to-br from-slate-50/90 via-white to-accent-50/40 p-6 shadow-medium sm:p-8 dark:border-primary-800/50 dark:from-slate-900/95 dark:via-slate-900 dark:to-slate-800/90">
         <div
           className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary-200/30 blur-3xl dark:bg-primary-600/20"
@@ -135,7 +132,7 @@ function HelpSettingsPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </SettingsPageShell>
   );
 }
 

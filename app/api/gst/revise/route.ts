@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { calendarMonthBounds } from '@/lib/gst/gst-period-lock';
 import { reviseGstReturn } from '@/lib/gst/gst-filing';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,21 +12,16 @@ export const dynamic = 'force-dynamic';
  * POST /api/gst/revise
  * Move a filed return to `revised` so books can be corrected (GSTR-3B amendment workflow).
  */
-export async function POST(request: NextRequest) {
+export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({ body, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const gst_period = body.gst_period as string | undefined;
-    const branchIdParam = body.branch_id as string | undefined;
-    const notes = body.notes as string | undefined;
+    const parsed = (body ?? {}) as {
+      gst_period?: string;
+      branch_id?: string;
+      notes?: string;
+    };
+    const gst_period = parsed.gst_period;
+    const branchIdParam = parsed.branch_id;
+    const notes = parsed.notes;
 
     if (!gst_period) {
       return NextResponse.json({ error: 'gst_period (YYYY-MM) is required' }, { status: 400 });
@@ -37,7 +32,7 @@ export async function POST(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -53,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'create', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
         entry_date: periodEnd,
       });
@@ -66,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -78,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     const filing = await reviseGstReturn({
-      businessId: business_id,
+      businessId,
       branchId: finalBranchId,
       gstPeriod: gst_period.trim(),
       userId,
@@ -95,4 +90,4 @@ export async function POST(request: NextRequest) {
         : 500;
     return NextResponse.json({ error: msg }, { status });
   }
-}
+});

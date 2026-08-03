@@ -83,7 +83,7 @@ const NotificationContext = createContext<NotificationContextType>({
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('NotificationProvider');
-  const { business, user } = useAuth();
+  const { business, user, loading: authLoading } = useAuth();
   const { isOnline, lastChangedAt } = useNetworkStatus();
   const prevOnlineRef = useRef(isOnline);
 
@@ -110,7 +110,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const notificationsSkipCacheInFlightRef = useRef<Promise<void> | null>(null);
 
   const fetchNotifications = useCallback(async (skipCache: boolean = false) => {
-    if (!business?.id || !user?.id) return;
+    if (authLoading || !business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     const sessionKey = `${business.id}:${user.id}`;
@@ -353,7 +353,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return notificationsSkipCacheInFlightRef.current;
     }
     await p;
-  }, [business?.id, user?.id]);
+  }, [authLoading, business?.id, user?.id]);
 
   const refreshNotifications = useCallback((): Promise<void> => {
     return fetchNotifications(true);
@@ -412,17 +412,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       console.error('Failed to mark all notifications as read:', error);
       await fetchNotifications(true);
     }
-  }, [business?.id, user?.id, fetchNotifications]);
+  }, [authLoading, business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
-    if (!business?.id || !user?.id) return;
+    if (authLoading || !business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     void fetchNotifications();
-  }, [business?.id, user?.id, fetchNotifications]);
+  }, [authLoading, business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
     if (isNotificationSseDisabled()) return;
-    if (!business?.id || !user?.id) return;
+    if (authLoading || !business?.id || !user?.id) return;
 
     const wasOffline = !prevOnlineRef.current;
     prevOnlineRef.current = isOnline;
@@ -435,7 +435,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const sseRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (isNotificationSseDisabled()) return;
-    if (!business?.id || !user?.id) return;
+    if (authLoading || !business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     console.log(`[SSE] Opening EventSource connection for business ${business.id}, user ${user.id}`);
@@ -521,11 +521,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       console.log('[SSE] Closing EventSource connection');
       eventSource.close();
     };
-  }, [business?.id, user?.id, fetchNotifications]);
+  }, [authLoading, business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
     if (isNotificationSseDisabled()) return;
-    if (!business?.id || !user?.id) return;
+    if (authLoading || !business?.id || !user?.id) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -562,7 +562,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       stopPolling();
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [business?.id, user?.id, fetchNotifications]);
+  }, [authLoading, business?.id, user?.id, fetchNotifications]);
 
   useEffect(() => {
     if (business?.id || user) return;

@@ -4,10 +4,14 @@
  */
 
 import {
-  isLocalCalendarBeforeToday,
   isLocalCalendarOnOrBeforeToday,
   parseLocalDateOnly,
 } from '@/lib/subscription/date-only';
+import {
+  HR_FREE_PLAN_ID,
+  HR_TRIAL_PLAN_ID,
+  isProductLineTrialPlanId,
+} from '@/lib/product-lines';
 
 export interface SubscriptionForEffectivePlan {
   plan_id: string;
@@ -17,9 +21,14 @@ export interface SubscriptionForEffectivePlan {
   grace_period_end?: string | null;
 }
 
+function getExpiredTrialFallbackPlanId(planId: string): string {
+  if (planId === HR_TRIAL_PLAN_ID) return HR_FREE_PLAN_ID;
+  return 'free';
+}
+
 /** True while trial calendar is still active (no automatic post-expiry grace). */
 export function isTrialEntitlementActive(sub: SubscriptionForEffectivePlan): boolean {
-  if (sub.plan_id !== 'trial') return false;
+  if (!isProductLineTrialPlanId(sub.plan_id)) return false;
 
   const trialEnd = parseLocalDateOnly(sub.trial_end_date);
   if (!trialEnd) return sub.status === 'trial';
@@ -29,12 +38,12 @@ export function isTrialEntitlementActive(sub: SubscriptionForEffectivePlan): boo
 
 /**
  * Plan id used for badges, labels, and "what plan am I on?" copy.
- * Calendar-expired trials map to `free` until the user extends via the modal.
+ * Calendar-expired trials map to the product-line free plan until the user extends via the modal.
  */
 export function getDisplayPlanId(sub: SubscriptionForEffectivePlan): string {
-  if (sub.plan_id === 'free') return 'free';
-  if (sub.plan_id === 'trial') {
-    if (!isTrialEntitlementActive(sub)) return 'free';
+  if (sub.plan_id === 'free' || sub.plan_id === HR_FREE_PLAN_ID) return sub.plan_id;
+  if (isProductLineTrialPlanId(sub.plan_id) && !isTrialEntitlementActive(sub)) {
+    return getExpiredTrialFallbackPlanId(sub.plan_id);
   }
   return sub.plan_id;
 }
@@ -48,18 +57,20 @@ export function getEffectivePlanId(sub: SubscriptionForEffectivePlan): string {
 
 /** Plan id used for limits and feature enforcement. */
 export function getEntitlementPlanId(sub: SubscriptionForEffectivePlan): string {
-  if (sub.plan_id === 'free') return 'free';
-  if (sub.plan_id === 'trial' && !isTrialEntitlementActive(sub)) return 'free';
+  if (sub.plan_id === 'free' || sub.plan_id === HR_FREE_PLAN_ID) return sub.plan_id;
+  if (isProductLineTrialPlanId(sub.plan_id) && !isTrialEntitlementActive(sub)) {
+    return getExpiredTrialFallbackPlanId(sub.plan_id);
+  }
   return sub.plan_id;
 }
 
 export function shouldShowTrialBadge(sub: SubscriptionForEffectivePlan): boolean {
-  return sub.plan_id === 'trial' && isTrialEntitlementActive(sub);
+  return isProductLineTrialPlanId(sub.plan_id) && isTrialEntitlementActive(sub);
 }
 
 /** @deprecated Use {@link shouldDowngradeStaleTrial} from trial-extension.ts for trial rows. */
 export function shouldMoveStaleTrialToFree(sub: SubscriptionForEffectivePlan): boolean {
-  if (sub.plan_id !== 'trial') return false;
+  if (!isProductLineTrialPlanId(sub.plan_id)) return false;
   return !isTrialEntitlementActive(sub);
 }
 

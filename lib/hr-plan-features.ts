@@ -16,6 +16,7 @@ const HR_AUTH_MODULE_TO_FEATURE: Record<string, HrRegistryFeatureId> = {
   leaves: 'hr_leaves',
   leave_requests: 'hr_leaves',
   commissions: 'hr_employees',
+  recruitment: 'hr_employees',
 };
 
 /** Registry IDs for HR (also valid capability / sidebar keys). */

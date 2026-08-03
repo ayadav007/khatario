@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GSTR2BReconciliationEngine } from '@/lib/gst/gstr2b-reconciliation';
+import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
 
@@ -34,8 +35,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await assertGstr2bApiAccess(request, business_id, 'create');
+    if (!access.ok) return access.response;
     
-    const matches = await reconciliationEngine.reconcile(business_id, filing_period);
+    const matches = await reconciliationEngine.reconcile(access.businessId, filing_period);
     
     return NextResponse.json({
       success: true,
@@ -73,6 +77,9 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await assertGstr2bApiAccess(request, business_id, 'read');
+    if (!access.ok) return access.response;
     
     const { getPool } = await import('@/lib/db');
     const pool = getPool();
@@ -94,7 +101,7 @@ export async function GET(request: NextRequest) {
         WHERE r.business_id = $1 AND r.filing_period = $2
       `;
       
-      const params: any[] = [business_id, filing_period];
+      const params: any[] = [access.businessId, filing_period];
       
       if (match_status) {
         query += ' AND r.match_status = $3';
@@ -115,7 +122,7 @@ export async function GET(request: NextRequest) {
         FROM gstr2b_reconciliation
         WHERE business_id = $1 AND filing_period = $2
         GROUP BY match_status
-      `, [business_id, filing_period]);
+      `, [access.businessId, filing_period]);
       
       const summary = summaryResult.rows.reduce((acc: any, row: any) => {
         acc[row.match_status] = {

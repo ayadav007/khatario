@@ -302,6 +302,18 @@
             <td class="text-right">{{formatCurrency earnings.commission}}</td>
           </tr>
           {{/if}}
+          {{#each earnings.extra_components}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td class="text-right">{{formatCurrency this.amount}}</td>
+          </tr>
+          {{/each}}
+          {{#if earnings.other_earnings}}
+          <tr>
+            <td>Other earnings</td>
+            <td class="text-right">{{formatCurrency earnings.other_earnings}}</td>
+          </tr>
+          {{/if}}
           <tr class="total-row">
             <td><strong>Total Earnings</strong></td>
             <td class="text-right"><strong>{{formatCurrency earnings.total_earnings}}</strong></td>
@@ -323,8 +335,14 @@
         <tbody>
           {{#if deductions.provident_fund}}
           <tr>
-            <td>Provident Fund (PF)</td>
+            <td>Provident Fund (Employee)</td>
             <td class="text-right">{{formatCurrency deductions.provident_fund}}</td>
+          </tr>
+          {{/if}}
+          {{#if deductions.esi_employee}}
+          <tr>
+            <td>ESI (Employee)</td>
+            <td class="text-right">{{formatCurrency deductions.esi_employee}}</td>
           </tr>
           {{/if}}
           {{#if deductions.professional_tax}}
@@ -351,6 +369,12 @@
             <td class="text-right">{{formatCurrency deductions.loan_deduction}}</td>
           </tr>
           {{/if}}
+          {{#each deductions.extra_components}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td class="text-right">{{formatCurrency this.amount}}</td>
+          </tr>
+          {{/each}}
           {{#if deductions.other_deductions}}
           <tr>
             <td>Other Deductions</td>
@@ -364,6 +388,34 @@
         </tbody>
       </table>
     </div>
+
+    {{#if employer_contributions}}
+    <div class="section">
+      <div class="section-title">Employer Contributions (not deducted from net)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th class="text-right">Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#if employer_contributions.employer_provident_fund}}
+          <tr>
+            <td>Provident Fund (Employer)</td>
+            <td class="text-right">{{formatCurrency employer_contributions.employer_provident_fund}}</td>
+          </tr>
+          {{/if}}
+          {{#if employer_contributions.esi_employer}}
+          <tr>
+            <td>ESI (Employer)</td>
+            <td class="text-right">{{formatCurrency employer_contributions.esi_employer}}</td>
+          </tr>
+          {{/if}}
+        </tbody>
+      </table>
+    </div>
+    {{/if}}
 
     <!-- Summary -->
     <div class="section">

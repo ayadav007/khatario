@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offer Letter - {{candidate.full_name}}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px; line-height: 1.65; color: #1e293b; background: #fff; }
+    .page { display: flex; min-height: 1000px; max-width: 760px; margin: 0 auto; }
+    .accent { width: 8px; background: linear-gradient(180deg, #0ea5e9 0%, #6366f1 100%); flex-shrink: 0; }
+    .main { flex: 1; padding: 36px 32px 36px 28px; }
+    .header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+    .logo { max-height: 44px; max-width: 120px; }
+    .company-name { font-size: 16px; font-weight: 700; color: #0f172a; }
+    .company-address { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; margin-bottom: 12px; }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+    .sub { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+    .salutation { font-weight: 600; margin-bottom: 12px; }
+    .body p { margin-bottom: 12px; color: #334155; }
+    .panel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+    .panel-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 10px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; font-size: 12px; }
+    .grid dt { color: #64748b; }
+    .grid dd { font-weight: 600; color: #0f172a; }
+    .ctc-highlight { font-size: 18px; font-weight: 700; color: #0f172a; }
+    .ctc-table { width: 100%; font-size: 11px; margin-top: 8px; border-collapse: collapse; }
+    .ctc-table td { padding: 5px 0; border-bottom: 1px solid #e2e8f0; }
+    .ctc-table td:last-child { text-align: right; font-weight: 600; }
+    .signatures { display: flex; gap: 24px; margin-top: 36px; }
+    .sig-block { flex: 1; background: #fff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; font-size: 11px; }
+    .sig-block img { max-height: 44px; margin: 6px 0; }
+    .sig-name { font-weight: 700; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+    .footer { margin-top: 28px; font-size: 10px; color: #94a3b8; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="accent"></div>
+    <div class="main">
+      <div class="header">
+        {{#if business.logo_url}}<img src="{{business.logo_url}}" class="logo" alt="" />{{/if}}
+        <div>
+          <div class="company-name">{{business.name}}</div>
+          <div class="company-address">{{business.address}}</div>
+        </div>
+      </div>
+      <span class="badge">Offer letter</span>
+      <h1>Welcome aboard, {{candidate.full_name}}!</h1>
+      <p class="sub">We're thrilled to have you join as {{offer.designation}}.</p>
+      <div class="body">
+        <p>{{settings.body_intro}}</p>
+        <div class="panel">
+          <div class="panel-title">Role details</div>
+          <dl class="grid">
+            <dt>Position</dt><dd>{{offer.designation}}</dd>
+            {{#if offer.department}}<dt>Team</dt><dd>{{offer.department}}</dd>{{/if}}
+            {{#if offer.work_location}}<dt>Location</dt><dd>{{offer.work_location}}</dd>{{/if}}
+            <dt>Start date</dt><dd>{{offer.joining_date}}</dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Compensation</div>
+          <div class="ctc-highlight">₹{{offer.ctc_annual}} <span style="font-size:12px;font-weight:500;color:#64748b;">/ year CTC</span></div>
+          {{#if offer.annual_bonus}}<p style="margin-top:6px;font-size:11px;color:#64748b;">+ ₹{{offer.annual_bonus}} annual bonus</p>{{/if}}
+          {{#if settings.show_ctc_breakdown}}
+          <table class="ctc-table">
+            <tr><td>Basic</td><td>₹{{offer.basic_salary_annual}}</td></tr>
+            {{#if offer.hra_annual}}<tr><td>HRA</td><td>₹{{offer.hra_annual}}</td></tr>{{/if}}
+            {{#if offer.transport_annual}}<tr><td>Transport</td><td>₹{{offer.transport_annual}}</td></tr>{{/if}}
+            {{#if offer.medical_annual}}<tr><td>Medical</td><td>₹{{offer.medical_annual}}</td></tr>{{/if}}
+            {{#if offer.special_annual}}<tr><td>Special</td><td>₹{{offer.special_annual}}</td></tr>{{/if}}
+            {{#if offer.other_annual}}<tr><td>Other</td><td>₹{{offer.other_annual}}</td></tr>{{/if}}
+          </table>
+          {{/if}}
+        </div>
+        {{#if settings.probation_clause}}<p>{{settings.probation_clause}}</p>{{/if}}
+        {{#if settings.notice_period_clause}}<p>{{settings.notice_period_clause}}</p>{{/if}}
+        {{#if offer.terms_text}}<p>{{offer.terms_text}}</p>{{/if}}
+        {{#if settings.additional_terms}}<p>{{settings.additional_terms}}</p>{{/if}}
+      </div>
+      <div class="signatures">
+        <div class="sig-block">
+          <div style="color:#64748b;font-size:10px;">Signed for {{business.name}}</div>
+          {{#if business.signature_url}}<img src="{{business.signature_url}}" alt="" />{{/if}}
+          <div class="sig-name">{{signatory.name}}<br><span style="font-weight:400;color:#64748b;">{{signatory.title}}</span></div>
+        </div>
+        <div class="sig-block">
+          {{#if candidate.signature_url}}
+            <div style="color:#64748b;font-size:10px;">Accepted by candidate</div>
+            <img src="{{candidate.signature_url}}" alt="" />
+            <div class="sig-name">{{candidate.full_name}}<br><span style="font-weight:400;color:#64748b;">{{candidate.accepted_date}}</span></div>
+          {{else}}
+            <div style="color:#94a3b8;margin-top:24px;">Your signature here upon acceptance</div>
+          {{/if}}
+        </div>
+      </div>
+      {{#if settings.footer_text}}<div class="footer">{{settings.footer_text}}</div>{{/if}}
+    </div>
+  </div>
+</body>
+</html>

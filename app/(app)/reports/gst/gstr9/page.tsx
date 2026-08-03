@@ -3,15 +3,17 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw, TrendingUp, TrendingDown, MinusCircle, AlertCircle } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ProfileRequiredPanel } from '@/components/profile/ProfileRequiredPanel';
+import { getProfileGaps, isProfileReady } from '@/lib/business-profile-requirements';
+import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
 
 export default function GSTR9Page() {
   const { business, user } = useAuth();
-  const router = useRouter();
   const toast = useToastContext();
+  const { ensureProfile } = useProfileRequiredGate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
   const [overrides, setOverrides] = useState<any>({});
@@ -22,6 +24,10 @@ export default function GSTR9Page() {
   // If current month is Jan-Mar, the financial year started in previous calendar year
   const defaultFY = currentMonth <= 3 ? currentYear - 1 : currentYear;
   const [financialYear, setFinancialYear] = useState(defaultFY);
+
+  const profileContext = 'gst_compliance' as const;
+  const profileGaps = getProfileGaps(business, profileContext);
+  const profileReady = isProfileReady(business, profileContext);
 
   // Helper to get effective data (base + overrides)
   const getEffectiveData = () => {
@@ -57,23 +63,6 @@ export default function GSTR9Page() {
     }
   };
 
-  // Check if business has GSTIN
-  const hasGSTIN = business?.gstin && business.gstin.trim().length > 0;
-
-  // Redirect if GSTIN is missing
-  useEffect(() => {
-    if (business && !hasGSTIN) {
-      const confirmed = window.confirm(
-        'GSTR-9 reports require a business GSTIN. Would you like to add your GSTIN in Settings?'
-      );
-      if (confirmed) {
-        router.push('/settings?tab=tax');
-      } else {
-        router.push('/reports');
-      }
-    }
-  }, [business, hasGSTIN, router]);
-
   const fetchReport = async () => {
     if (!business) return;
     setLoading(true);
@@ -101,10 +90,10 @@ export default function GSTR9Page() {
   };
 
   useEffect(() => {
-    if (business && hasGSTIN) {
+    if (business && profileReady) {
       fetchReport();
     }
-  }, [business, hasGSTIN, financialYear]);
+  }, [business, profileReady, financialYear]);
 
   // Show message if GSTIN is missing
   if (!business) {
@@ -120,33 +109,13 @@ export default function GSTR9Page() {
     );
   }
 
-  if (!hasGSTIN) {
-    return (
-      
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="max-w-md text-center">
-            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="w-8 h-8 text-amber-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">GSTIN Required</h2>
-            <p className="text-text-secondary mb-6">
-              GSTR-9 reports are only available for businesses with a registered GSTIN. 
-              Please add your business GSTIN in Settings to access GST returns.
-            </p>
-            <button
-              onClick={() => router.push('/settings?tab=tax')}
-              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-            >
-              Go to Settings
-            </button>
-          </div>
-        </div>
-      
-    );
+  if (!profileReady) {
+    return <ProfileRequiredPanel context={profileContext} gaps={profileGaps} />;
   }
 
   const handleExport = async (format: 'json' | 'csv') => {
     if (!business) return;
+    if (!ensureProfile(profileContext)) return;
     const query = new URLSearchParams({
       business_id: business.id,
       financial_year: financialYear.toString(),

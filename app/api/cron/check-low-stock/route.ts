@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows } from '@/lib/db';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,9 @@ export const dynamic = 'force-dynamic';
  * Can be triggered by cron job or manually
  */
 export async function POST(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
+
   try {
     // Find all items that are below their thresholds
     const lowStockItems = await queryRows(`

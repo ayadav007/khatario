@@ -180,6 +180,10 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     terms: 'Payment is due within 30 days. Thank you for your business!',
     notes: '',
     footer_text: '',
+
+    // Custom field placement — empty by default; user configures in customize drawer.
+    // Must exist here: mergeTemplateSettings drops keys missing from defaults.
+    custom_field_layout: { invoice_meta: [], item_table: [] },
   };
 }
 

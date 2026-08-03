@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { query, queryRows, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
+import {
+  isSystemRoleVisibleForModules,
+  sortRolesForModules,
+} from '@/lib/rbac-role-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,8 +44,9 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Get roles
-    const roles = await queryRows(`
+    // Get roles (active only; billing presets hidden for HR-only via catalog filter)
+    const platformCtx = await getBusinessPlatformContext(businessId);
+    const allRoles = await queryRows(`
       SELECT 
         id,
         business_id,
@@ -51,17 +57,15 @@ export async function GET(request: NextRequest) {
         is_active,
         created_at
       FROM user_roles
-      WHERE business_id = $1
-      ORDER BY 
-        CASE role_key
-          WHEN 'primary_admin' THEN 1
-          WHEN 'sales' THEN 2
-          WHEN 'accountant' THEN 3
-          WHEN 'inventory_manager' THEN 4
-          ELSE 5
-        END,
-        role_name ASC
+      WHERE business_id = $1 AND is_active = true
     `, [businessId]);
+
+    const roles = sortRolesForModules(
+      allRoles.filter((role) =>
+        isSystemRoleVisibleForModules(role.role_key, platformCtx.enabledModules),
+      ),
+      platformCtx.enabledModules,
+    );
 
     // Get permissions for each role
     for (const role of roles) {

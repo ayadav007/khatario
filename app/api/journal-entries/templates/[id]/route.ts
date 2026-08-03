@@ -3,6 +3,8 @@ import { queryOne, query, getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/journal-entries/templates/[id]
  * Get a specific journal entry template
@@ -14,14 +16,9 @@ export async function GET(
   try {
     const templateId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const template = await queryOne(
       `SELECT 
@@ -72,8 +69,10 @@ export async function PATCH(
   try {
     const templateId = params.id;
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       name,
       description,
       entry_date_offset,
@@ -200,14 +199,9 @@ export async function DELETE(
   try {
     const templateId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     await client.query('BEGIN');
 

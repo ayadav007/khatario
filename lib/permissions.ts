@@ -205,3 +205,33 @@ export async function checkFieldPermission(
     return false;
   }
 }
+
+/**
+ * RBAC module keys that may be granted under alternate permission_modules rows.
+ * Checks each alias until one matches (e.g. leave_requests API → leaves role row).
+ */
+const RBAC_MODULE_ALIASES: Record<string, string[]> = {
+  leave_requests: ['leave_requests', 'leaves'],
+  leaves: ['leaves', 'leave_requests'],
+  hr: ['hr', 'employees'],
+  employees: ['employees', 'hr'],
+  payroll: ['payroll', 'employees'],
+};
+
+/**
+ * Check user permission, trying canonical module keys and known aliases.
+ */
+export async function checkUserPermissionWithAliases(
+  userId: string,
+  moduleKey: string,
+  permissionKey: string
+): Promise<boolean> {
+  const keys = RBAC_MODULE_ALIASES[moduleKey] ?? [moduleKey];
+  const uniqueKeys = [...new Set(keys)];
+  for (const key of uniqueKeys) {
+    if (await checkUserPermission(userId, key, permissionKey)) {
+      return true;
+    }
+  }
+  return false;
+}

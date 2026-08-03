@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, Filter, RefreshCw, ChevronDown, AlertCircle, FileCheck } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -11,6 +10,9 @@ import { format } from 'date-fns';
 import { FeatureRouteGuard } from '@/components/guards/FeatureRouteGuard';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ProfileRequiredPanel } from '@/components/profile/ProfileRequiredPanel';
+import { getProfileGaps, isProfileReady } from '@/lib/business-profile-requirements';
+import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
 
 interface GSTR1Data {
   summary: {
@@ -38,8 +40,8 @@ const MONTHS = [
 
 function GSTR1PageContent() {
   const { business, user } = useAuth();
-  const router = useRouter();
   const toast = useToastContext();
+  const { ensureProfile } = useProfileRequiredGate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<GSTR1Data | null>(null);
   const [filingInfo, setFilingInfo] = useState<any>(null);
@@ -50,22 +52,9 @@ function GSTR1PageContent() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [customerType, setCustomerType] = useState('all'); // all, b2b, b2c
 
-  // Check if business has GSTIN
-  const hasGSTIN = business?.gstin && business.gstin.trim().length > 0;
-
-  // Redirect if GSTIN is missing
-  useEffect(() => {
-    if (business && !hasGSTIN) {
-      const confirmed = window.confirm(
-        'GSTR-1 reports require a business GSTIN. Would you like to add your GSTIN in Settings?'
-      );
-      if (confirmed) {
-        router.push('/settings?tab=tax');
-      } else {
-        router.push('/reports');
-      }
-    }
-  }, [business, hasGSTIN, router]);
+  const profileContext = 'gst_compliance' as const;
+  const profileGaps = getProfileGaps(business, profileContext);
+  const profileReady = isProfileReady(business, profileContext);
 
   const fetchReport = async () => {
     if (!business) return;
@@ -95,7 +84,7 @@ function GSTR1PageContent() {
         console.error(json.error);
         if (json.code === 'GSTIN_MISSING') {
           toast.error(`${json.error} — ${json.message}`);
-          window.location.href = '/settings?tab=tax';
+          ensureProfile(profileContext);
         } else {
           toast.error(json.error || 'Failed to fetch GSTR-1 data');
         }
@@ -108,10 +97,10 @@ function GSTR1PageContent() {
   };
 
   useEffect(() => {
-    if (business) {
+    if (business && profileReady) {
       fetchReport();
     }
-  }, [business, month, year, customerType]);
+  }, [business, profileReady, month, year, customerType]);
 
   const fetchFilingInfo = async (filingId: string) => {
     if (!business) return;
@@ -183,6 +172,7 @@ function GSTR1PageContent() {
 
   const handleExport = async (format: 'xlsx' | 'xlsx_offline_v22' | 'json') => {
     if (!business) return;
+    if (!ensureProfile(profileContext)) return;
     
     try {
       let url: string;
@@ -212,12 +202,8 @@ function GSTR1PageContent() {
       if (!res.ok) {
         const error = await res.json();
         if (error.code === 'GSTIN_MISSING') {
-          const confirm = window.confirm(
-            `${error.error}\n\n${error.message}\n\nWould you like to open Settings to add your GSTIN?`
-          );
-          if (confirm) {
-            window.location.href = '/settings?tab=tax';
-          }
+          toast.error(`${error.error} — ${error.message}`);
+          ensureProfile(profileContext);
           return;
         }
         toast.error(error.error || 'Export failed');
@@ -264,29 +250,8 @@ function GSTR1PageContent() {
     );
   }
 
-  if (!hasGSTIN) {
-    return (
-      
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="max-w-md text-center">
-            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="w-8 h-8 text-amber-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">GSTIN Required</h2>
-            <p className="text-text-secondary mb-6">
-              GSTR-1 reports are only available for businesses with a registered GSTIN. 
-              Please add your business GSTIN in Settings to access GST returns.
-            </p>
-            <button
-              onClick={() => router.push('/settings?tab=tax')}
-              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-            >
-              Go to Settings
-            </button>
-          </div>
-        </div>
-      
-    );
+  if (!profileReady) {
+    return <ProfileRequiredPanel context={profileContext} gaps={profileGaps} />;
   }
 
   return (

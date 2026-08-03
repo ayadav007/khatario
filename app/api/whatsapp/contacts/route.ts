@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { normalizePhone, isValidPhone } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
@@ -9,10 +9,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/contacts
  * List all contacts for a business with pagination, search, and filters
  */
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const search = searchParams.get('search') || '';
     const source = searchParams.get('source'); // manual, csv, group_extractor
     const groupId = searchParams.get('group_id'); // filter by group
@@ -21,15 +20,6 @@ export async function GET(request: NextRequest) {
 
     if (!businessId) {
       return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
     }
 
     const pool = getPool();
@@ -148,32 +138,22 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});
 /**
  * POST /api/whatsapp/contacts
  * Add a new contact (skip if duplicate)
  */
-export async function POST(request: NextRequest) {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
-    const body = await request.json();
-    const { business_id, phone, name, email, tags, notes, custom_fields, source, imported_from_group } = body;
+    const { phone, name, email, tags, notes, custom_fields, source, imported_from_group } = (body ?? {}) as Record<string, any>;
 
-    if (!business_id || !phone) {
+    if (!phone) {
       return NextResponse.json(
         { error: 'Business ID and phone are required' },
         { status: 400 }
       );
     }
 
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     // Normalize and validate phone
     const normalizedPhone = normalizePhone(phone);
@@ -189,7 +169,7 @@ export async function POST(request: NextRequest) {
     // Check if contact already exists (skip if duplicate)
     const existingResult = await pool.query(
       'SELECT id FROM whatsapp_contacts WHERE business_id = $1 AND phone = $2',
-      [business_id, normalizedPhone]
+      [businessId, normalizedPhone]
     );
 
     if (existingResult.rows.length > 0) {
@@ -210,7 +190,7 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
       [
-        business_id,
+        businessId,
         normalizedPhone,
         name || null,
         email || null,
@@ -233,39 +213,30 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * PUT /api/whatsapp/contacts
  * Update an existing contact
  */
-export async function PUT(request: NextRequest) {
+export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
   try {
-    const body = await request.json();
-    const { id, business_id, name, email, tags, notes, custom_fields } = body;
+    const { id, name, email, tags, notes, custom_fields } = (body ?? {}) as Record<string, any>;
 
-    if (!id || !business_id) {
+    if (!id) {
       return NextResponse.json(
         { error: 'Contact ID and Business ID are required' },
         { status: 400 }
       );
     }
 
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(business_id);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
-      );
-    }
 
     const pool = getPool();
 
     // Verify contact belongs to business
     const checkResult = await pool.query(
       'SELECT id FROM whatsapp_contacts WHERE id = $1 AND business_id = $2',
-      [id, business_id]
+      [id, businessId]
     );
 
     if (checkResult.rows.length === 0) {
@@ -288,7 +259,7 @@ export async function PUT(request: NextRequest) {
       RETURNING *`,
       [
         id,
-        business_id,
+        businessId,
         name,
         email,
         tags ? JSON.stringify(tags) : null,
@@ -308,31 +279,21 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 /**
  * DELETE /api/whatsapp/contacts
  * Delete a contact
  */
-export async function DELETE(request: NextRequest) {
+export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const businessId = searchParams.get('business_id');
 
     if (!id || !businessId) {
       return NextResponse.json(
         { error: 'Contact ID and Business ID are required' },
         { status: 400 }
-      );
-    }
-
-    // Check WhatsApp addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required' },
-        { status: 403 }
       );
     }
 
@@ -361,4 +322,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

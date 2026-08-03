@@ -1,8 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
-import { RolePermission, Permission } from '@/types/database';
+import {
+  RBAC_STANDARD_ACTIONS,
+  buildRbacCatalogFromModules,
+  parseSyntheticPermissionId,
+  type PermissionModuleRow,
+} from '@/lib/rbac-permission-catalog';
 
 export const dynamic = 'force-dynamic';
+
+async function usesModuleKeyRolePermissions(): Promise<boolean> {
+  const row = await queryOne(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'role_permissions'
+        AND column_name = 'module_key'
+    ) as exists
+  `);
+  return row?.exists === true;
+}
+
+function permissionsPayloadToModuleFlags(
+  permissions: Array<{ permission_id: string; granted: boolean }>,
+): Record<string, { can_view: boolean; can_add: boolean; can_modify: boolean; can_delete: boolean; can_share: boolean }> {
+  const modulePerms: Record<
+    string,
+    { can_view: boolean; can_add: boolean; can_modify: boolean; can_delete: boolean; can_share: boolean }
+  > = {};
+
+  for (const perm of permissions) {
+    const parsed = parseSyntheticPermissionId(perm.permission_id);
+    if (!parsed) continue;
+
+    if (!modulePerms[parsed.moduleKey]) {
+      modulePerms[parsed.moduleKey] = {
+        can_view: false,
+        can_add: false,
+        can_modify: false,
+        can_delete: false,
+        can_share: false,
+      };
+    }
+
+    const actionDef = RBAC_STANDARD_ACTIONS.find((a) => a.key === parsed.action);
+    if (!actionDef) continue;
+    modulePerms[parsed.moduleKey][actionDef.flag] = perm.granted === true;
+  }
+
+  return modulePerms;
+}
+
+async function saveModuleKeyPermissions(
+  roleId: string,
+  permissions: Array<{ permission_id: string; granted: boolean }>,
+): Promise<void> {
+  await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+
+  const modulePerms = permissionsPayloadToModuleFlags(permissions);
+  for (const [moduleKey, flags] of Object.entries(modulePerms)) {
+    const hasAny =
+      flags.can_view || flags.can_add || flags.can_modify || flags.can_delete || flags.can_share;
+    if (!hasAny) continue;
+
+    await query(
+      `INSERT INTO role_permissions (role_id, module_key, can_view, can_add, can_modify, can_delete, can_share)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (role_id, module_key) DO UPDATE SET
+         can_view = EXCLUDED.can_view,
+         can_add = EXCLUDED.can_add,
+         can_modify = EXCLUDED.can_modify,
+         can_delete = EXCLUDED.can_delete,
+         can_share = EXCLUDED.can_share`,
+      [
+        roleId,
+        moduleKey,
+        flags.can_view,
+        flags.can_add,
+        flags.can_modify,
+        flags.can_delete,
+        flags.can_share,
+      ],
+    );
+  }
+}
 
 /**
  * GET /api/roles/[id]/permissions
@@ -173,60 +254,12 @@ export async function POST(
       )
     `);
 
-    if (!tableExists?.exists) {
-      // Old system: Convert permission_id format (module_key_action) to module permissions
-      await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
-
-      // Group permissions by module
-      const modulePerms: Record<string, { can_view: boolean; can_add: boolean; can_modify: boolean; can_delete: boolean; can_share: boolean }> = {};
-
-      for (const perm of permissions) {
-        if (perm.granted) {
-          // Parse permission_id format: "module_key_action"
-          const parts = perm.permission_id.split('_');
-          if (parts.length >= 2) {
-            const action = parts[parts.length - 1]; // Last part is action
-            const moduleKey = parts.slice(0, -1).join('_'); // Everything else is module
-
-            if (!modulePerms[moduleKey]) {
-              modulePerms[moduleKey] = {
-                can_view: false,
-                can_add: false,
-                can_modify: false,
-                can_delete: false,
-                can_share: false,
-              };
-            }
-
-            // Map actions to flags
-            if (action === 'read') modulePerms[moduleKey].can_view = true;
-            if (action === 'create') modulePerms[moduleKey].can_add = true;
-            if (action === 'update') modulePerms[moduleKey].can_modify = true;
-            if (action === 'delete') modulePerms[moduleKey].can_delete = true;
-            if (action === 'export') modulePerms[moduleKey].can_share = true;
-          }
-        }
-      }
-
-      // Insert module permissions
-      for (const [moduleKey, flags] of Object.entries(modulePerms)) {
-        await query(
-          `INSERT INTO role_permissions (role_id, module_key, can_view, can_add, can_modify, can_delete, can_share)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (role_id, module_key) DO UPDATE SET
-             can_view = EXCLUDED.can_view,
-             can_add = EXCLUDED.can_add,
-             can_modify = EXCLUDED.can_modify,
-             can_delete = EXCLUDED.can_delete,
-             can_share = EXCLUDED.can_share`,
-          [roleId, moduleKey, flags.can_view, flags.can_add, flags.can_modify, flags.can_delete, flags.can_share]
-        );
-      }
-
+    if (!tableExists?.exists || (await usesModuleKeyRolePermissions())) {
+      await saveModuleKeyPermissions(roleId, permissions);
       return NextResponse.json({ success: true, message: 'Permissions updated' });
     }
 
-    // New system: Use permission_id
+    // Legacy permissions-table path (rare environments)
     await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
 
     for (const perm of permissions) {
@@ -238,19 +271,16 @@ export async function POST(
       }
     }
 
-    // Fetch updated permissions
-    const updatedPermissions = await queryRows<RolePermission>(
+    const updatedPermissions = await queryRows(
       'SELECT * FROM role_permissions WHERE role_id = $1',
       [roleId]
     );
 
     return NextResponse.json({ permissions: updatedPermissions });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
     console.error('Error updating role permissions:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

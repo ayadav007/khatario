@@ -7,10 +7,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, query } from '@/lib/db';
 import { fetchProfilePicture } from '@/lib/whatsapp-profile-pictures';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const denied = assertCronAuthorized(request);
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const businessId = searchParams.get('business_id');
   const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);

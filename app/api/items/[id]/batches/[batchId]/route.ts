@@ -3,6 +3,8 @@ import { queryOne, query } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * PATCH /api/items/[id]/batches/[batchId]
  * Update a batch
@@ -14,8 +16,10 @@ export async function PATCH(
   try {
     const { batchId } = params;
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       batch_number,
       manufacturing_date,
       expiry_date,
@@ -91,14 +95,9 @@ export async function DELETE(
   try {
     const { batchId } = params;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Verify batch belongs to business and quantity is 0
     const existing = await queryOne(

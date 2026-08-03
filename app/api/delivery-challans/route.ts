@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/delivery-challans
  * Fetch all delivery challans for a business
@@ -10,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const status = searchParams.get('status');
 
     if (!businessId) {
@@ -67,8 +71,10 @@ export async function POST(request: NextRequest) {
     await client.query('BEGIN');
 
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       customer_id,
       invoice_id,
       sales_order_id,

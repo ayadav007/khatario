@@ -5,35 +5,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/conversations/summary
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
-
-    // Get summary counts
-    // Unread: unread_count > 0 AND status = 'active'
-    // New: last_message_direction = 'incoming' AND no outgoing messages exist AND status = 'active'
-    // Open: conversation_status = 'open' AND status = 'active'
-    // Pending: conversation_status = 'pending' AND status = 'active'
-    // Closed: conversation_status = 'closed' AND status = 'active'
-    // Hot/Warm/Cold/Not Interested: Based on AI lead_status from whatsapp_lead_profiles
     const summary = await queryOne<{
       unread: number;
       new: number;
@@ -72,5 +49,4 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching conversation summary:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

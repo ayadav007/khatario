@@ -79,7 +79,7 @@ export function IntlPhoneInput({
     <div ref={rootRef} className={clsx('w-full', className)}>
       {label ? (
         <div className="mb-1.5 flex items-center gap-1.5">
-          <label className="block text-sm font-medium text-text-primary">
+          <label className="type-label">
             {label}
             {required ? ' *' : ''}
           </label>
@@ -93,7 +93,7 @@ export function IntlPhoneInput({
       ) : null}
       <div
         className={clsx(
-          'flex overflow-hidden rounded-md border bg-surface transition-shadow',
+          'flex min-h-10 overflow-hidden rounded-input border bg-surface transition-shadow md:min-h-11',
           error ? 'border-error ring-1 ring-error' : 'border-border',
           !disabled && 'focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30',
           disabled && 'opacity-60'
@@ -104,7 +104,7 @@ export function IntlPhoneInput({
           onChange={handleDialChange}
           onBlur={emitControlBlur}
           disabled={disabled}
-          className="w-[5.75rem] flex-shrink-0 border-0 border-r border-border bg-surface py-2 pl-2 pr-1 text-sm text-text-primary focus:outline-none disabled:cursor-not-allowed sm:w-[6.25rem]"
+          className="w-[5.75rem] flex-shrink-0 border-0 border-r border-border bg-surface py-2 pl-2 pr-1 text-input text-text-primary focus:outline-none disabled:cursor-not-allowed sm:w-[6.25rem]"
           aria-label="Country calling code"
         >
           {PHONE_DIAL_CODE_OPTIONS.map((o) => (
@@ -122,12 +122,12 @@ export function IntlPhoneInput({
           onBlur={emitControlBlur}
           disabled={disabled}
           placeholder={nationalPlaceholder}
-          className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed"
+          className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-input text-text-primary placeholder:text-text-muted focus:outline-none disabled:cursor-not-allowed"
         />
       </div>
-      {error ? <p className="mt-1.5 text-sm text-error">{error}</p> : null}
+      {error ? <p className="type-body-sm mt-1.5 text-error">{error}</p> : null}
       {!error && helperText ? (
-        <p className="mt-1.5 text-sm text-text-secondary">{helperText}</p>
+        <p className="type-body-sm mt-1.5 text-text-secondary">{helperText}</p>
       ) : null}
     </div>
   );

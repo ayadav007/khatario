@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           { 
             error: 'Business GSTIN is required for GSTR-1 Excel export',
-            message: 'Please set your business GSTIN in Settings → Tax & GST tab before exporting GSTR-1 reports.',
+            message: 'Please set your business GSTIN in Settings → Business Profile (GST & tax) before exporting GSTR-1 reports.',
             code: 'GSTIN_MISSING'
           },
           { status: 400 }

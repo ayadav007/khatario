@@ -312,67 +312,14 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
-    if (!tenant.ok) return tenant.response;
-    const business_id = tenant.businessId;
-
-    const {
-      plan_id,
-      status = 'active',
-      start_date,
-      end_date,
-      trial_end_date,
-      auto_renew = true,
-      payment_method,
-      payment_reference
-    } = body;
-
-    if (!plan_id) {
-      return NextResponse.json({ error: 'plan_id is required' }, { status: 400 });
-    }
-
-    // Verify plan exists
-    const plan = await db.queryOne(`
-      SELECT id FROM subscription_plans WHERE id = $1
-    `, [plan_id]);
-
-    if (!plan) {
-      return NextResponse.json(
-        { error: 'Invalid plan_id' },
-        { status: 400 }
-      );
-    }
-
-    // Deactivate any existing in-good-standing subscription (active paid or trial)
-    await db.query(`
-      UPDATE business_subscriptions 
-      SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-      WHERE business_id = $1 AND status IN ('active', 'trial')
-    `, [business_id]);
-
-    // Create new subscription
-    const subscription = await db.queryOne(`
-      INSERT INTO business_subscriptions (
-        business_id, plan_id, status, start_date, end_date,
-        trial_end_date, auto_renew, payment_method, payment_reference
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *
-    `, [
-      business_id, plan_id, status,
-      start_date || new Date().toISOString().split('T')[0],
-      end_date,
-      trial_end_date,
-      auto_renew,
-      payment_method,
-      payment_reference
-    ]);
-
-    // Clear subscription cache so new/updated subscription is immediately available
-    clearSubscriptionCache(business_id);
-
-    return NextResponse.json({ subscription }, { status: 201 });
+    return NextResponse.json(
+      {
+        error:
+          'Direct subscription assignment is not allowed. Use checkout or contact support.',
+        code: 'SUBSCRIPTION_ASSIGNMENT_FORBIDDEN',
+      },
+      { status: 403 },
+    );
   } catch (error: any) {
     console.error('Error creating subscription:', error);
     return NextResponse.json(

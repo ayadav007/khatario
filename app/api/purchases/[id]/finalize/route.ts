@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, getPool } from '@/lib/db';
+import { completeExtractionJobForFinalizedPurchase } from '@/lib/purchases/extraction-job-purchase-link';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
@@ -331,6 +332,19 @@ export async function PATCH(
      RETURNING *`,
     [id, businessScope]
   );
+
+  if (updated) {
+    const pool = getPool();
+    const linkClient = await pool.connect();
+    try {
+      await completeExtractionJobForFinalizedPurchase(linkClient, {
+        purchaseId: id,
+        businessId: businessScope,
+      });
+    } finally {
+      linkClient.release();
+    }
+  }
 
   return NextResponse.json({ purchase: updated });
 }

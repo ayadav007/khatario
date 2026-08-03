@@ -4,6 +4,8 @@ import { EmployeePerformance } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/employees/performance
  * Get performance metrics for employees
@@ -11,7 +13,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const employeeId = searchParams.get('employee_id');
     const periodType = searchParams.get('period_type') || 'monthly'; // 'daily', 'weekly', 'monthly'
     const startDate = searchParams.get('start_date');

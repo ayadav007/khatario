@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { GSTR2BReconciliationEngine, UserDecision } from '@/lib/gst/gstr2b-reconciliation';
+import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
 
@@ -25,15 +26,17 @@ export async function POST(request: NextRequest) {
       remarks,
       eligible_itc_amount,
       deferred_to_period,
-      decided_by_user_id
     } = body;
     
-    if (!business_id || !reconciliation_id || !decision || !decided_by_user_id) {
+    if (!business_id || !reconciliation_id || !decision) {
       return NextResponse.json(
-        { error: 'business_id, reconciliation_id, decision, and decided_by_user_id are required' },
+        { error: 'business_id, reconciliation_id, and decision are required' },
         { status: 400 }
       );
     }
+
+    const access = await assertGstr2bApiAccess(request, business_id, 'create');
+    if (!access.ok) return access.response;
     
     // Validate decision value
     const validDecisions = [
@@ -67,10 +70,10 @@ export async function POST(request: NextRequest) {
       remarks: remarks || undefined,
       eligible_itc_amount: eligible_itc_amount ? parseFloat(eligible_itc_amount) : undefined,
       deferred_to_period: deferred_to_period || undefined,
-      decided_by_user_id
+      decided_by_user_id: access.userId
     };
     
-    await reconciliationEngine.recordDecision(business_id, userDecision);
+    await reconciliationEngine.recordDecision(access.businessId, userDecision);
     
     return NextResponse.json({
       success: true,
@@ -102,8 +105,11 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await assertGstr2bApiAccess(request, business_id, 'read');
+    if (!access.ok) return access.response;
     
-    const eligibleITC = await reconciliationEngine.getEligibleITC(business_id, filing_period);
+    const eligibleITC = await reconciliationEngine.getEligibleITC(access.businessId, filing_period);
     
     return NextResponse.json({
       filing_period,

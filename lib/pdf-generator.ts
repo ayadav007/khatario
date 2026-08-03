@@ -155,8 +155,21 @@ export async function generateDocumentHtml(
       'sales_orders': 'sales_order',
       'work_orders': 'sales_order'
     };
-    
-    const documentType = documentTypeMap[table] || 'tax_invoice';
+
+    // The invoices table holds multiple document types (tax invoice, proforma,
+    // bill of supply). Template assignments are stored per document type, so use
+    // the row's document_type — otherwise proforma/bill-of-supply documents would
+    // always print with the tax_invoice template assignment.
+    const invoiceDocumentTypeMap: Record<string, string> = {
+      'tax_invoice': 'tax_invoice',
+      'regular': 'tax_invoice',
+      'proforma_invoice': 'proforma_invoice',
+      'bill_of_supply': 'bill_of_supply'
+    };
+
+    const documentType = table === 'invoices'
+      ? (invoiceDocumentTypeMap[doc.document_type] || 'tax_invoice')
+      : (documentTypeMap[table] || 'tax_invoice');
     
     // Fetch template assignment from business_template_assignments
     // Priority: document's template_id > assigned template from DB > export > default

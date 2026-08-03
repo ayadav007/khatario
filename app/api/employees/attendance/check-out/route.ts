@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { EmployeeAttendance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { assertPortalFeatureForRequest } from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { getEmployeePortalSessionFromRequest } from '@/lib/employee-portal/session';
+import { EMPLOYEE_PORTAL_SESSION_HEADER } from '@/lib/employee-portal/ess-api-allowlist';
+import { attendanceDateYmd } from '@/lib/hr/attendance-date';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +28,10 @@ export async function POST(request: NextRequest) {
       ip_address,
     } = body;
 
-    if (!employee_id && !session_token) {
+    const portalHeader = request.headers.get(EMPLOYEE_PORTAL_SESSION_HEADER) === '1';
+    const portalSession = portalHeader ? await getEmployeePortalSessionFromRequest(request) : null;
+
+    if (!employee_id && !session_token && !portalSession) {
       return NextResponse.json(
         { error: 'Either employee_id or session_token is required' },
         { status: 400 }
@@ -31,6 +39,16 @@ export async function POST(request: NextRequest) {
     }
 
     let finalEmployeeId = employee_id;
+
+    if (portalSession) {
+      try {
+        await assertPortalFeatureForRequest(request, portalSession.business_id, 'attendance');
+      } catch (error) {
+        if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+        throw error;
+      }
+      finalEmployeeId = portalSession.employee_id;
+    }
 
     // If session_token provided, verify and get employee_id
     if (session_token) {
@@ -70,17 +88,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // AUTHORIZATION: Check update permission (attendance check-out - self-service allowed)
-    try {
-      await authorize(finalEmployeeId, 'attendance', 'update', { businessId: employee.business_id });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+    // AUTHORIZATION: self-service for employees / portal (same as check-in)
+    if (!session_token && !portalSession) {
+      const { isEmployee } = await import('@/lib/access-boundary');
+      const userIsEmployee = await isEmployee(finalEmployeeId);
+
+      if (!userIsEmployee) {
+        try {
+          await authorize(finalEmployeeId, 'attendance', 'update', {
+            businessId: employee.business_id,
+          });
+        } catch (error) {
+          if (error instanceof AuthorizationError) {
+            return error.toNextResponse();
+          }
+          throw error;
+        }
       }
-      throw error;
     }
 
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = attendanceDateYmd();
 
     // Find today's attendance
     const attendance = await queryOne<EmployeeAttendance>(

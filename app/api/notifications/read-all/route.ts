@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
+import {getUserIdFromRequest, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,22 +19,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Try to get business_id from body first, then query params
-    let businessId: string | null = null;
+    let businessId: string;
 
     try {
       const body = await request.json();
-      businessId = body.business_id || null;
+      const tenant = requireTenantBusinessId(request, body.business_id);
+      if (!tenant.ok) return tenant.response;
+      businessId = tenant.businessId;
     } catch {
       const { searchParams } = new URL(request.url);
-      businessId = searchParams.get('business_id');
-    }
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+      const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+      if (!tenant.ok) return tenant.response;
+      businessId = tenant.businessId;
     }
 
     // Build update query - if user_id provided, only mark that user's notifications as read

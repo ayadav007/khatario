@@ -5,6 +5,8 @@ import { Shift } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/shifts
  * List all shifts for a business
@@ -12,7 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const activeOnly = searchParams.get('active_only') === 'true';
 
     if (!businessId) {
@@ -53,12 +57,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       shift_name,
       start_time,
       end_time,
       break_duration = 0,
+      description,
+      deduct_break_from_hours = true,
     } = body;
 
     if (!business_id || !shift_name || !start_time || !end_time) {
@@ -85,10 +93,10 @@ export async function POST(request: NextRequest) {
     if (shiftLimit) return shiftLimit;
 
     const shift = await queryOne<Shift>(
-      `INSERT INTO shifts (business_id, shift_name, start_time, end_time, break_duration)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO shifts (business_id, shift_name, start_time, end_time, break_duration, description, deduct_break_from_hours)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [business_id, shift_name, start_time, end_time, break_duration]
+      [business_id, shift_name, start_time, end_time, break_duration, description || null, deduct_break_from_hours !== false]
     );
 
     return NextResponse.json({ shift }, { status: 201 });

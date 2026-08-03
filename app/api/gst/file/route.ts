@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { calendarMonthBounds } from '@/lib/gst/gst-period-lock';
 import { fileGstReturn } from '@/lib/gst/gst-filing';
 import { parseGstDueDateBodyOverrides } from '@/lib/gst/gst-org-filing';
+import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,26 +14,15 @@ export const dynamic = 'force-dynamic';
  * Mark GST return as filed after settlement + payment + GSTR-3B critical checks; locks period.
  * Optional body: `interest_as_on_date` (YYYY-MM-DD) caps interest/challan window; defaults to filing date.
  */
-export async function POST(request: NextRequest) {
+export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({ body, businessId, userId }) => {
   try {
-    const business_id = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-    if (!userId) {
-      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const gst_period = body.gst_period as string | undefined;
-    const branchIdParam = body.branch_id as string | undefined;
-    const notes = body.notes as string | undefined;
-    const interest_payment_date = body.interest_payment_date as string | undefined;
-    const interest_as_on_date = body.interest_as_on_date as string | undefined;
-    const { override: dueDateOverride, due_date_inputs_from_request } = parseGstDueDateBodyOverrides(
-      (body ?? {}) as Record<string, unknown>
-    );
+    const parsed = (body ?? {}) as Record<string, unknown>;
+    const gst_period = parsed.gst_period as string | undefined;
+    const branchIdParam = parsed.branch_id as string | undefined;
+    const notes = parsed.notes as string | undefined;
+    const interest_payment_date = parsed.interest_payment_date as string | undefined;
+    const interest_as_on_date = parsed.interest_as_on_date as string | undefined;
+    const { override: dueDateOverride, due_date_inputs_from_request } = parseGstDueDateBodyOverrides(parsed);
 
     if (!gst_period) {
       return NextResponse.json({ error: 'gst_period (YYYY-MM) is required' }, { status: 400 });
@@ -44,7 +33,7 @@ export async function POST(request: NextRequest) {
     try {
       finalBranchId = await resolveBranchId({
         branchId: branchIdParam,
-        businessId: business_id,
+        businessId,
       });
     } catch (error: any) {
       if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
@@ -60,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await authorize(userId, 'journal', 'create', {
-        businessId: business_id,
+        businessId,
         branchId: finalBranchId,
         entry_date: periodEnd,
       });
@@ -73,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await enforceAccess({
-        businessId: business_id,
+        businessId,
         userId,
         branchId: finalBranchId,
         feature: FeatureKeys.LEDGER_ACCOUNTING,
@@ -85,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await fileGstReturn({
-      businessId: business_id,
+      businessId,
       branchId: finalBranchId,
       gstPeriod: gst_period.trim(),
       userId,
@@ -114,4 +103,4 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: msg }, { status });
   }
-}
+});

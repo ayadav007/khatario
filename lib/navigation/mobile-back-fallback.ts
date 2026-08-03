@@ -2,6 +2,8 @@
  * Fallback route when the WebView has no history to pop (e.g. cold start deep link).
  * `router.back()` is preferred when the stack has a prior in-app page.
  */
+import { findMoreMenuRoute, moreMenuHrefForSection } from '@/lib/navigation/more-menu-back';
+
 const MOBILE_BACK_FALLBACKS: Record<string, string> = {
   '/invoices/new': '/dashboard',
   '/items/new': '/items',
@@ -28,6 +30,8 @@ export function getMobileBackFallback(pathname: string | null): string | null {
   if (p.startsWith('/customers/')) return '/customers';
   if (p.startsWith('/purchases')) return '/purchases';
   if (p.startsWith('/settings')) return '/more';
+  const moreMatch = findMoreMenuRoute(p);
+  if (moreMatch) return moreMenuHrefForSection(moreMatch.section);
   return '/dashboard';
 }
 

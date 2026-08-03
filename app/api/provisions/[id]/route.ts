@@ -4,6 +4,8 @@ import { getPool } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/provisions/[id]
  * Get provision by ID
@@ -14,14 +16,9 @@ export async function GET(
 ) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const provision = await getProvisionById(params.id, businessId);
 
@@ -52,7 +49,10 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const { business_id, ...updates } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { ...updates } = body;
 
     if (!business_id) {
       return NextResponse.json(
@@ -132,14 +132,9 @@ export async function DELETE(
 ) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const pool = getPool();
     const client = await pool.connect();

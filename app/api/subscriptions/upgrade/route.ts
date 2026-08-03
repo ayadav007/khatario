@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { isPlatformRazorpayConfigured } from '@/lib/platform-subscription-checkout';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
@@ -9,6 +10,11 @@ import {
   applySubscriptionPlanChange,
   computePlanAmount,
 } from '@/lib/subscription/apply-plan-change';
+import {
+  applyModuleSubscriptionPlanChange,
+} from '@/lib/subscription/apply-module-plan-change';
+import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { normalizePlatformModule, type PlatformModule } from '@/lib/platform-modules';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
 export const dynamic = 'force-dynamic';
@@ -24,8 +30,12 @@ export async function POST(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
 
+    const guard = await applySubscriptionMutationGuard(request, business_id);
+    if (guard) return guard;
+
     const {
       plan_id,
+      module_key: moduleKeyBody,
       billing_cycle = 'monthly',
       payment_method = 'manual',
       payment_reference,
@@ -51,8 +61,9 @@ export async function POST(request: NextRequest) {
       display_name: string;
       price_monthly: number | string;
       price_yearly: number | string;
+      product_line: string | null;
     }>(
-      `SELECT id, display_name, price_monthly, price_yearly
+      `SELECT id, display_name, price_monthly, price_yearly, product_line
        FROM subscription_plans
        WHERE id = $1 AND is_active = true`,
       [plan_id],
@@ -96,21 +107,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subscription = await applySubscriptionPlanChange({
+    const moduleKey: PlatformModule =
+      normalizePlatformModule(moduleKeyBody) ?? (await resolveModuleKeyForPlan(plan_id));
+
+    const subscription = await applyModuleSubscriptionPlanChange({
       businessId: business_id,
+      moduleKey,
       planId: plan_id,
       billingCycle: cycle,
       paymentMethod: payment_method,
       paymentReference: payment_reference,
+    }).catch(async (moduleErr) => {
+      console.warn('[upgrade] module plan change failed, trying legacy row:', moduleErr);
+      return applySubscriptionPlanChange({
+        businessId: business_id,
+        planId: plan_id,
+        billingCycle: cycle,
+        paymentMethod: payment_method,
+        paymentReference: payment_reference,
+      });
     });
 
     void (async () => {
       try {
         await recordUpgradeBilling({
           businessId: business_id,
-          subscriptionId: subscription.subscription_id,
+          subscriptionId: null,
           planId: plan_id,
           planDisplayName: plan.display_name,
+          moduleKey,
           amount: 0,
           billingCycle: cycle,
           paymentMethod: payment_method,

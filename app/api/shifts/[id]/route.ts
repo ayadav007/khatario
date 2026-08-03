@@ -4,6 +4,8 @@ import { Shift } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * PATCH /api/shifts/[id]
  * Update a shift
@@ -14,10 +16,14 @@ export async function PATCH(
 ) {
   try {
     const shiftId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
     const body = await request.json();
-
+    const { searchParams } = new URL(request.url);
+    const tenant = requireTenantBusinessId(
+      request,
+      body.business_id ?? searchParams.get('business_id'),
+    );
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     if (!businessId) {
       return NextResponse.json(
         { error: 'business_id is required' },
@@ -43,6 +49,8 @@ export async function PATCH(
       start_time,
       end_time,
       break_duration,
+      description,
+      deduct_break_from_hours,
       is_active,
     } = body;
 
@@ -65,6 +73,14 @@ export async function PATCH(
     if (break_duration !== undefined) {
       updates.push(`break_duration = $${paramIndex++}`);
       queryParams.push(break_duration);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      queryParams.push(description || null);
+    }
+    if (deduct_break_from_hours !== undefined) {
+      updates.push(`deduct_break_from_hours = $${paramIndex++}`);
+      queryParams.push(deduct_break_from_hours !== false);
     }
     if (is_active !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);
@@ -105,14 +121,9 @@ export async function DELETE(
   try {
     const shiftId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Verify shift belongs to business
     const existing = await queryOne(

@@ -11,7 +11,7 @@ import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { LabelPreview } from '@/components/labels/LabelPreview';
 import { Button } from '@/components/ui/Button';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface LabelTemplate {
   id: string;
@@ -159,25 +159,19 @@ export default function LabelTemplatesPage() {
   const customTemplates = templates.filter((t) => !t.is_system);
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} mx-auto py-6 px-4`}>
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">
-            Label Templates
-          </h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Design barcode label layouts. System templates are read-only —
-            duplicate one to customise.
-          </p>
-        </div>
+    <SettingsPageShell
+      title="Label Templates"
+      description="Design barcode label layouts. System templates are read-only — duplicate one to customise."
+      icon={FileText}
+      actions={
         <Link href="/settings/label-templates/new">
           <Button>
             <Plus className="w-4 h-4 mr-2" />
             New Template
           </Button>
         </Link>
-      </div>
-
+      }
+    >
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
@@ -206,7 +200,7 @@ export default function LabelTemplatesPage() {
           </div>
         </>
       )}
-    </div>
+    </SettingsPageShell>
   );
 }
 

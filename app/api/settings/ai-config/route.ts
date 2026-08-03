@@ -3,6 +3,8 @@ import { queryRows, queryOne } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 // Helper function to check WhatsApp Bot addon
 async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
   try {
@@ -24,11 +26,9 @@ async function hasWhatsAppBotAddon(businessId: string): Promise<boolean> {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     const hasAddon = await hasWhatsAppBotAddon(businessId);
     if (!hasAddon) {
@@ -49,8 +49,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const { 
-      business_id, 
       provider, 
       apiKey, 
       apiBaseUrl, 

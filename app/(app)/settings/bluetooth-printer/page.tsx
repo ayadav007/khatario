@@ -42,7 +42,7 @@ import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { PRINTER_PROFILES } from '@/lib/bluetooth/printer-profiles';
 import type { SavedBluetoothPrinter } from '@/lib/bluetooth/types';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 import { FeatureKeys } from '@/lib/featureKeys';
 
@@ -115,7 +115,11 @@ export default function BluetoothPrinterSettingsPage() {
   // --------------------------------------------------------------------
 
   return (
-    <div className={SETTINGS_CONTENT_WIDTH}>
+    <SettingsPageShell
+      title="Print & devices"
+      description="Choose how this device prints."
+      icon={Printer}
+    >
       <SupportBanner supported={bt.supported} isNative={bt.isNative} />
       <PrintSettingsPanel
         testing={testingId !== null}
@@ -149,7 +153,7 @@ export default function BluetoothPrinterSettingsPage() {
           </ul>
         </Card>
       )}
-    </div>
+    </SettingsPageShell>
   );
 }
 
@@ -300,7 +304,12 @@ function PrinterRow({
 
 function FeatureLockedMessage() {
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} py-10`}>
+    <SettingsPageShell
+      title="Print & devices"
+      description="Choose how this device prints."
+      icon={Printer}
+      className="py-10"
+    >
       <Card padding="lg" className="space-y-4">
         <PlanFeatureDeniedCallout
           featureKey={FeatureKeys.BARCODE_THERMAL_PRINTER}
@@ -312,7 +321,7 @@ function FeatureLockedMessage() {
           Back to settings
         </Link>
       </Card>
-    </div>
+    </SettingsPageShell>
   );
 }
 

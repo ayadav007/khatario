@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { normalizeBarcode } from '@/lib/barcode-validator';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +18,26 @@ function labelBundleNames(rows: any[]) {
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     let query = searchParams.get('q');
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) {
+      return tenant.response;
+    }
+    const businessId = tenant.businessId;
+
+    try {
+      await authorize(userId, 'items', 'read', { businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
     const browse = searchParams.get('browse') === '1';
     const warehouseId = searchParams.get('warehouse_id'); // warehouse-specific stock (location_stock)
     const branchId = searchParams.get('branch_id'); // branch_item_stock / branch_item_variant_stock when no warehouse filter

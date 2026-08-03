@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
-import { queryRows } from '@/lib/db';
+import { queryOne, queryRows } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { MANUAL_BILL_ENTRY_MINUTES } from '@/lib/purchase-scan-constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,26 +53,24 @@ export async function GET(request: NextRequest) {
       [businessId, limit]
     );
 
-    let totalMs = 0;
-    let completed = 0;
-    for (const j of jobs) {
-      if (j.status === 'completed') completed += 1;
-      totalMs += Number(j.processing_time_ms) || 0;
-    }
-
-    const minutesFromProcessing = totalMs / 60000;
-    /** Rough “typing time saved”: ~5 min per completed extract minus extraction time — kept simple for UX */
-    const minutesSavedApprox = Math.max(
-      0,
-      Math.round(completed * 5 - minutesFromProcessing + minutesFromProcessing * 0.2)
+    const countRow = await queryOne<{ completed_count: number }>(
+      `SELECT COUNT(*)::int AS completed_count
+         FROM invoice_extraction_jobs
+        WHERE business_id = $1
+          AND status = 'completed'`,
+      [businessId]
     );
+    const completedCount = countRow?.completed_count ?? 0;
+    const minutesSaved = completedCount * MANUAL_BILL_ENTRY_MINUTES;
 
     return NextResponse.json({
       jobs,
       stats: {
-        billsScanned: jobs.length,
-        completedJobs: completed,
-        minutesSavedApprox: Math.max(minutesSavedApprox, jobs.length > 0 ? 1 : 0),
+        billsScanned: completedCount,
+        completedJobs: completedCount,
+        minutesSaved,
+        /** @deprecated use minutesSaved — kept for older clients */
+        minutesSavedApprox: minutesSaved,
       },
     });
   } catch (error: unknown) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   X,
   Mail,
@@ -50,6 +51,7 @@ export function ShareInvoiceModal({
   const [linkLoading, setLinkLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [nativeFormatLoading, setNativeFormatLoading] = useState<InvoiceShareFormat | null>(null);
+  const [waConnected, setWaConnected] = useState<boolean | null>(null);
   const showNativeShare = canUseNativeInvoiceShare();
 
   const resolvePublicUrl = useCallback(async (): Promise<string | null> => {
@@ -84,6 +86,28 @@ export function ShareInvoiceModal({
       cancelled = true;
     };
   }, [invoiceId]);
+
+  useEffect(() => {
+    if (!business?.id) {
+      setWaConnected(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/whatsapp/status?business_id=${business.id}`);
+        const data = await res.json();
+        if (!cancelled) {
+          setWaConnected(data.status === 'connected');
+        }
+      } catch {
+        if (!cancelled) setWaConnected(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   async function handleEmailSend() {
     if (!customerEmail) {
@@ -160,11 +184,10 @@ export function ShareInvoiceModal({
                 setWaSent(true);
                 setTimeout(() => setWaSent(false), 3000);
             } else {
-                // If backend fails (e.g. not connected), fall back to Web or alert
                 if (data.error && data.error.includes('not connected')) {
-                    if (confirm('WhatsApp API is not connected. Open WhatsApp Web instead?')) {
-                        openWhatsAppWeb(customerPhone, message);
-                    }
+                    toast.warning(
+                      'WhatsApp is not connected yet. Connect your number, then try again.'
+                    );
                 } else {
                     toast.error(data.error || 'Failed to send WhatsApp message');
                 }
@@ -309,6 +332,15 @@ export function ShareInvoiceModal({
 
           {/* WhatsApp */}
           <div className="space-y-2">
+            {sendViaApi && waConnected === false ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                WhatsApp is not connected.{' '}
+                <Link href="/connect/whatsapp" className="font-medium underline hover:text-amber-950">
+                  Connect now
+                </Link>{' '}
+                to send from your business number, or turn off &quot;Use Connected Account&quot; below to open WhatsApp Web.
+              </div>
+            ) : null}
             <button
               onClick={handleWhatsAppSend}
               disabled={!customerPhone || waSending}

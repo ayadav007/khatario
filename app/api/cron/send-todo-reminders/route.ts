@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { triggerTodoReminder, type TodoForReminder } from '@/lib/todo-reminders/triggerTodoReminder';
 import { logTodoReminder } from '@/lib/todo-reminders/reminderLog';
+import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,16 +21,6 @@ const DUE_BATCH_SQL = `SELECT t.*
 const CRON_MAX_WALL_MS = 25_000;
 /** If every batch is full, stop after this many iterations (1e5 rows cap). */
 const CRON_MAX_BATCHES = 1000;
-
-function assertCronAuthorized(request: NextRequest): NextResponse | null {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return null;
-  const auth = request.headers.get('authorization');
-  if (auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return null;
-}
 
 export async function GET(request: NextRequest) {
   const denied = assertCronAuthorized(request);

@@ -57,8 +57,9 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
       ariaLabel: 'WhatsApp settings',
       iconKind: 'whatsapp',
       entries: [
-        { href: '/settings/whatsapp', label: 'WhatsApp bot', description: 'Connection and bot options' },
-        { href: '/settings/integrations?category=whatsapp', label: 'Integrations', description: 'Related extensions' },
+        { href: '/connect/whatsapp', label: 'WhatsApp number', description: 'Link your business number' },
+        { href: '/settings/whatsapp', label: 'Bot & messaging', description: 'Inbox, bot rules, and reminders' },
+        { href: '/settings/products', label: 'Your products', description: 'Enable or manage Connect' },
       ],
     };
   }
@@ -97,7 +98,6 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
           label: 'Number series',
           description: 'Invoice and document numbering',
         },
-        { href: '/settings/tax', label: 'Tax & GST', description: 'Rates and compliance' },
         {
           href: '/settings/business#bp-signature',
           label: 'Logo & signature',
@@ -152,9 +152,8 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
         {
           href: '/settings/business',
           label: 'Business profile',
-          description: 'Company details and branding',
+          description: 'Company details, GSTIN, and branding',
         },
-        { href: '/settings/tax', label: 'Tax & GST', description: 'GSTIN and tax setup' },
         {
           href: '/settings/custom-fields?entity=invoice',
           label: 'Custom fields',
@@ -197,6 +196,8 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
         { href: '/settings/users', label: 'Users', description: 'Team accounts' },
         { href: '/settings/roles', label: 'Roles', description: 'Permissions' },
         { href: '/settings/shifts', label: 'Shifts', description: 'Work schedules' },
+        { href: '/settings/attendance-policy', label: 'Attendance policy', description: 'Late & LWP rules' },
+        { href: '/settings/attendance-regularization', label: 'Regularization', description: 'Employee attendance corrections' },
         { href: '/settings/leave-types', label: 'Leave types', description: 'Time-off categories' },
         { href: '/settings/holidays', label: 'Holidays', description: 'Company holidays' },
         { href: '/settings/commission-rules', label: 'Commission rules', description: 'Sales commissions' },

@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { shouldRotateTokens } from './lib/jwt';
 import { getPlatformSessionFromRequest } from './lib/platform-jwt';
 import { LOCAL_SESSION_COOKIE } from './lib/auth/local-session-cookie';
+import {
+  isPublicBusinessEmployeePath,
+  isEssApiAllowed,
+  EMPLOYEE_PORTAL_SESSION_HEADER,
+  EMPLOYEE_PORTAL_COOKIE,
+} from './lib/employee-portal';
+import { extractStoreSubdomain } from './lib/store/subdomain';
 
 function forwardSetCookies(from: Response, to: NextResponse): void {
   const list = from.headers.getSetCookie?.() ?? [];
@@ -58,10 +65,25 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname === '/') return true;
   if (isCustomerSurfacePath(pathname)) return true;
+  if (isPublicBusinessEmployeePath(pathname)) return true;
   for (const prefix of PUBLIC_API_PREFIXES) {
     if (pathname.startsWith(prefix)) return true;
   }
   return false;
+}
+
+/** Allowlisted ESS APIs with employee portal cookie (session validated in route handlers). */
+function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | null {
+  const token = request.cookies.get(EMPLOYEE_PORTAL_COOKIE)?.value;
+  if (!token) return null;
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith('/api/')) return null;
+  if (!isEssApiAllowed(request.method, pathname)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(EMPLOYEE_PORTAL_SESSION_HEADER, '1');
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 /** Routes that use the platform-admin JWT cookie only (not business user session). */
@@ -130,7 +152,29 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isStaticAsset(pathname)) return NextResponse.next();
+
+  // Online store: subdomain-based routing ({subdomain}.khatario.com → /store pages)
+  const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
+  if (storeSubdomain) {
+    const url = request.nextUrl.clone();
+    // Rewrite /whatever → /(store)/whatever with subdomain in header
+    // Static/API paths within store are prefixed with /api/public/store/
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.next();
+    }
+    url.pathname = `/_store${pathname === '/' ? '' : pathname}`;
+    const response = NextResponse.rewrite(url);
+    response.headers.set('x-store-subdomain', storeSubdomain);
+    return response;
+  }
+
   if (isPublicPath(pathname)) return NextResponse.next();
+
+  /** Employee portal ESS APIs: prefer portal cookie over business JWT when both exist. */
+  if (pathname.startsWith('/api/') && isEssApiAllowed(request.method, pathname)) {
+    const portalPassthrough = tryEmployeePortalApiPassthrough(request);
+    if (portalPassthrough) return portalPassthrough;
+  }
 
   /** Public plan catalog (GET only) — landing page + in-app upgrade before platform-admin gate */
   if (pathname === '/api/admin/subscriptions/plans' && request.method === 'GET') {
@@ -165,6 +209,8 @@ export async function middleware(request: NextRequest) {
 
   if (!payload) {
     if (pathname.startsWith('/api/')) {
+      const portalPassthrough = tryEmployeePortalApiPassthrough(request);
+      if (portalPassthrough) return portalPassthrough;
       const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
       if (catalogPassthrough) return catalogPassthrough;
       return NextResponse.json(
@@ -228,6 +274,11 @@ export async function middleware(request: NextRequest) {
 
     if (!refreshRes.ok) {
       if (pathname.startsWith('/api/')) {
+        const portalPassthrough = tryEmployeePortalApiPassthrough(request);
+        if (portalPassthrough) {
+          forwardSetCookies(refreshRes, portalPassthrough);
+          return portalPassthrough;
+        }
         const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
         if (catalogPassthrough) {
           forwardSetCookies(refreshRes, catalogPassthrough);

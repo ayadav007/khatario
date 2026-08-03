@@ -147,10 +147,12 @@ export async function renderTemplatePreviewHtml(
   };
 
   if (businessId) {
-    data = (await enrichInvoiceRenderData(data as Parameters<typeof enrichInvoiceRenderData>[0])) as Record<
-      string,
-      unknown
-    >;
+    // previewSampleValues: ticked custom fields render with sample data so the
+    // user immediately sees where they will appear on real invoices.
+    data = (await enrichInvoiceRenderData(
+      data as Parameters<typeof enrichInvoiceRenderData>[0],
+      { previewSampleValues: true }
+    )) as Record<string, unknown>;
   }
 
   const renderedHtml = template(data);

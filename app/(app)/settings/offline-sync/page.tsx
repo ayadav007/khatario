@@ -16,7 +16,8 @@ import type {
 } from '@/lib/offline/types';
 import type { OfflineReplayLogRow } from '@/lib/offline-sync/types';
 import { Button } from '@/components/ui/Button';
-import { STACK_PAGE_CLASS } from '@/lib/page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { CloudOff } from 'lucide-react';
 import { formatLastSyncedLabel } from '@/lib/sync-timestamp';
 import { safeJsonParse } from '@/lib/api-utils';
 import { useCatalogSync } from '@/contexts/CatalogSyncContext';
@@ -165,13 +166,12 @@ export default function OfflineSyncDebugPage() {
           : 'Detecting…';
 
   return (
-    <div className={STACK_PAGE_CLASS}>
-      <h1 className="list-page-h1">Offline sync</h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        Download items and customers for offline billing, and view queue diagnostics.
-      </p>
-
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+    <SettingsPageShell
+      title="Offline sync"
+      description="Download items and customers for offline billing, and view queue diagnostics."
+      icon={CloudOff}
+    >
+      <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-lg border border-border bg-surface p-4">
           <h2 className="font-semibold text-text-primary">Connectivity</h2>
           <p className="mt-2 text-sm">State: {connectivity.state}</p>
@@ -411,6 +411,6 @@ export default function OfflineSyncDebugPage() {
           ))}
         </ul>
       </section>
-    </div>
+    </SettingsPageShell>
   );
 }

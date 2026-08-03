@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import {
   createSubscriptionCheckout,
   isPlatformRazorpayConfigured,
@@ -21,11 +22,16 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
 
+    const guard = await applySubscriptionMutationGuard(request, tenant.businessId);
+    if (guard) return guard;
+
     const plan_id = body.plan_id as string | undefined;
     const billing_cycle =
       body.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
     const coupon_code =
       typeof body.coupon_code === 'string' ? body.coupon_code.trim() : '';
+    const module_key =
+      typeof body.module_key === 'string' ? body.module_key : undefined;
 
     if (!plan_id) {
       return NextResponse.json({ error: 'plan_id is required' }, { status: 400 });
@@ -84,6 +90,7 @@ export async function POST(request: NextRequest) {
         billingCycle: billing_cycle,
         pricing,
         paymentMethod: 'coupon',
+        moduleKey: module_key,
       });
       return NextResponse.json({
         success: true,
@@ -108,6 +115,7 @@ export async function POST(request: NextRequest) {
       planId: plan_id,
       billingCycle: billing_cycle,
       couponCode: coupon_code || null,
+      moduleKey: module_key,
     });
 
     return NextResponse.json({

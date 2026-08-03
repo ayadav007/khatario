@@ -4,16 +4,18 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Loader2, Store, Trash2 } from 'lucide-react';
+import { Loader2, Save, Store, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
+import { clsx } from 'clsx';
 
 type Visibility = 'hidden' | 'directory' | 'link_only';
 
@@ -32,6 +34,12 @@ interface ListingRow {
   item_unit: string;
   item_code: string | null;
 }
+
+const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
+  { value: 'hidden', label: 'Hidden — not discoverable' },
+  { value: 'link_only', label: 'Link only — profile by URL, not listed in search' },
+  { value: 'directory', label: 'Directory — searchable in Suppliers Hub' },
+];
 
 export default function SuppliersDirectorySettingsPage() {
   const { business, user } = useAuth();
@@ -232,203 +240,189 @@ export default function SuppliersDirectorySettingsPage() {
   }
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-8`}>
-      <div className="flex items-center gap-2 text-sm text-text-secondary">
-        <Link href="/settings" className="hover:text-primary-600 transition">
-          Settings
-        </Link>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-text-primary font-medium">Suppliers directory</span>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="p-3 bg-teal-100 rounded-xl">
-          <Store className="w-6 h-6 text-teal-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Suppliers directory</h1>
-          <p className="text-sm text-text-secondary">
-            Let other businesses find you in the Suppliers Hub and request a connection.
-          </p>
-        </div>
-      </div>
-
+    <SettingsPageShell
+      title="Suppliers directory"
+      description="Let other businesses find you in the Suppliers Hub and request a connection."
+      icon={Store}
+    >
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
         </div>
       ) : (
         <>
-          <Card padding="md">
-            <h2 className="font-semibold text-text-primary mb-4">Visibility</h2>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="vis"
-                  checked={visibility === 'hidden'}
-                  onChange={() => setVisibility('hidden')}
+          <div className={STACK_PAGE_CLASS}>
+            <section>
+              <h3 className="settings-section-title">Visibility</h3>
+              <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>
+                <div className="space-y-2">
+                  {VISIBILITY_OPTIONS.map((opt) => (
+                    <label key={opt.value} className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="vis"
+                        checked={visibility === opt.value}
+                        onChange={() => setVisibility(opt.value)}
+                        className="mt-0.5 h-4 w-4 shrink-0 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="type-body-sm text-text-primary">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div>
+                  <label htmlFor="profile-summary" className="type-label mb-1.5 block">
+                    Profile summary
+                  </label>
+                  <textarea
+                    id="profile-summary"
+                    className="input min-h-[100px] resize-y"
+                    value={summary}
+                    onChange={(e) => setSummary(e.target.value)}
+                    placeholder="Describe what you supply (required for directory listing, min 10 characters)."
+                  />
+                </div>
+
+                <Input
+                  label="Featured categories"
+                  value={categories}
+                  onChange={(e) => setCategories(e.target.value)}
+                  placeholder="e.g. Groceries, Beverages (comma-separated)"
                 />
-                Hidden — not discoverable
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="vis"
-                  checked={visibility === 'link_only'}
-                  onChange={() => setVisibility('link_only')}
-                />
-                Link only — profile by URL, not listed in search
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="vis"
-                  checked={visibility === 'directory'}
-                  onChange={() => setVisibility('directory')}
-                />
-                Directory — searchable in Suppliers Hub
-              </label>
-            </div>
 
-            <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium text-text-primary">Profile summary</label>
-              <textarea
-                className="w-full border rounded-md p-2 text-sm min-h-[100px]"
-                value={summary}
-                onChange={(e) => setSummary(e.target.value)}
-                placeholder="Describe what you supply (required for directory listing, min 10 characters)."
-              />
-            </div>
+                <div>
+                  <Input
+                    label="Public URL slug (optional)"
+                    value={slug}
+                    onChange={(e) => setSlug(e.target.value)}
+                    placeholder="e.g. prem-traders"
+                  />
+                  {slug ? (
+                    <p className="mt-1.5 text-xs text-text-muted">
+                      Slug saved for future vanity URLs. Profile link today uses your business id:{' '}
+                      <Link href={`/suppliers/hub/${business?.id}`} className="link-primary">
+                        /suppliers/hub/{business?.id?.slice(0, 8)}…
+                      </Link>
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </section>
 
-            <div className="mt-4 space-y-2">
-              <label className="block text-sm font-medium text-text-primary">Featured categories</label>
-              <Input
-                value={categories}
-                onChange={(e) => setCategories(e.target.value)}
-                placeholder="e.g. Groceries, Beverages (comma-separated)"
-              />
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <label className="block text-sm font-medium text-text-primary">Public URL slug (optional)</label>
-              <Input
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="e.g. prem-traders"
-              />
-              {slug ? (
-                <p className="text-xs text-text-muted">
-                  Slug saved for future vanity URLs. Profile link today uses your business id:{' '}
-                  <Link href={`/suppliers/hub/${business?.id}`} className="text-primary-600">
-                    /suppliers/hub/{business?.id?.slice(0, 8)}…
-                  </Link>
-                </p>
-              ) : null}
-            </div>
-
-            <Button className="mt-6" variant="primary" onClick={saveDiscovery} disabled={saving}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save settings'}
-            </Button>
-          </Card>
-
-          <Card padding="md">
-            <h2 className="font-semibold text-text-primary mb-2">Incoming connection requests</h2>
-            <p className="text-sm text-text-secondary mb-4">
-              When a buyer sends a request, accept it to create their supplier record linked to your
-              business.
-            </p>
-            {incoming.length === 0 ? (
-              <p className="text-sm text-text-muted">No pending requests.</p>
-            ) : (
-              <ul className="space-y-3">
-                {incoming.map((r) => (
-                  <li
-                    key={r.id}
-                    className="flex flex-wrap items-center justify-between gap-2 border rounded-lg p-3"
-                  >
-                    <div>
-                      <p className="font-medium text-text-primary">{r.counterparty_name}</p>
-                      {r.message && (
-                        <p className="text-xs text-text-secondary mt-1 whitespace-pre-wrap">{r.message}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="primary" onClick={() => resolveRequest(r.id, 'accept')}>
-                        Accept
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => resolveRequest(r.id, 'decline')}>
-                        Decline
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          <Card padding="md">
-            <h2 className="font-semibold text-text-primary mb-2">Published listings (public preview)</h2>
-            <p className="text-sm text-text-secondary mb-4">
-              Add up to 20 items shown to buyers browsing the hub. Link-only customers see the same preview;
-              after connection, buyers may also see “linked only” lines if you add them (via API for now).
-            </p>
-
-            <div className="mb-4">
-              <Input
-                value={itemSearch}
-                onChange={(e) => setItemSearch(e.target.value)}
-                placeholder="Search your items to publish…"
-              />
-              {itemHits.length > 0 && (
-                <ul className="mt-2 border rounded-md divide-y max-h-48 overflow-auto">
-                  {itemHits.map((it) => (
-                    <li key={it.id} className="flex justify-between items-center px-3 py-2 text-sm">
-                      <span>
-                        {it.name}
-                        {it.code ? ` (${it.code})` : ''}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={adding}
-                        onClick={() => addListing(it.id)}
-                      >
-                        Add
-                      </Button>
+            <section>
+              <h3 className="settings-section-title">Incoming connection requests</h3>
+              <p className="type-body-secondary mb-4 max-w-2xl">
+                When a buyer sends a request, accept it to create their supplier record linked to your
+                business.
+              </p>
+              {incoming.length === 0 ? (
+                <p className="type-body-secondary text-text-muted">No pending requests.</p>
+              ) : (
+                <ul className={STACK_SECTION_CLASS}>
+                  {incoming.map((r) => (
+                    <li
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="type-label text-text-primary">{r.counterparty_name}</p>
+                        {r.message ? (
+                          <p className="mt-1 text-xs text-text-secondary whitespace-pre-wrap">{r.message}</p>
+                        ) : null}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="primary" onClick={() => resolveRequest(r.id, 'accept')}>
+                          Accept
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => resolveRequest(r.id, 'decline')}>
+                          Decline
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
               )}
-            </div>
+            </section>
 
-            <ul className="space-y-2">
-              {listings
-                .filter((l) => l.audience === 'public_preview')
-                .map((l) => (
-                  <li
-                    key={l.id}
-                    className="flex justify-between items-center text-sm border rounded-md px-3 py-2"
-                  >
-                    <span>
-                      {l.display_name || l.item_name} ({l.item_unit})
-                    </span>
-                    <Button variant="ghost" size="sm" onClick={() => removeListing(l.id)} aria-label="Remove">
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </Button>
-                  </li>
-                ))}
-            </ul>
-          </Card>
+            <section>
+              <h3 className="settings-section-title">Published listings (public preview)</h3>
+              <p className="type-body-secondary mb-4 max-w-2xl">
+                Add up to 20 items shown to buyers browsing the hub. Link-only customers see the same preview;
+                after connection, buyers may also see “linked only” lines if you add them (via API for now).
+              </p>
 
-          <p className="text-sm text-text-muted">
-            Browse the directory as a buyer:{' '}
-            <Link href="/suppliers/hub" className="text-primary-600 hover:underline">
-              Suppliers Hub
-            </Link>
-          </p>
+              <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>
+                <Input
+                  value={itemSearch}
+                  onChange={(e) => setItemSearch(e.target.value)}
+                  placeholder="Search your items to publish…"
+                />
+                {itemHits.length > 0 ? (
+                  <ul className="max-h-48 divide-y divide-border overflow-auto rounded-lg border border-border bg-surface">
+                    {itemHits.map((it) => (
+                      <li
+                        key={it.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 type-body-sm"
+                      >
+                        <span className="min-w-0 truncate text-text-primary">
+                          {it.name}
+                          {it.code ? ` (${it.code})` : ''}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={adding}
+                          onClick={() => addListing(it.id)}
+                        >
+                          Add
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <ul className="space-y-2">
+                  {listings
+                    .filter((l) => l.audience === 'public_preview')
+                    .map((l) => (
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 type-body-sm"
+                      >
+                        <span className="min-w-0 truncate text-text-primary">
+                          {l.display_name || l.item_name} ({l.item_unit})
+                        </span>
+                        <Button variant="ghost" size="sm" onClick={() => removeListing(l.id)} aria-label="Remove">
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </section>
+
+            <p className="type-body-secondary">
+              Browse the directory as a buyer:{' '}
+              <Link href="/suppliers/hub" className="link-primary">
+                Suppliers Hub
+              </Link>
+            </p>
+          </div>
+
+          <SettingsFloatingSaveBar>
+            <Button
+              variant="primary"
+              onClick={saveDiscovery}
+              disabled={saving}
+              isLoading={saving}
+              className="w-full sm:w-auto"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Save Changes
+            </Button>
+          </SettingsFloatingSaveBar>
         </>
       )}
-    </div>
+    </SettingsPageShell>
   );
 }

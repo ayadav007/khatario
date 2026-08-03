@@ -11,8 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
-import Link from 'next/link';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface Role {
   id: string;
@@ -27,10 +26,11 @@ interface Permission {
   permission_name: string;
   module_key: string;
   module_name: string;
+  display_order?: number;
 }
 
 export default function RolesPage() {
-  const { business, user } = useAuth();
+  const { business, user, platformSession } = useAuth();
   const toast = useToastContext();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
@@ -43,12 +43,14 @@ export default function RolesPage() {
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
 
+  const enabledModules = platformSession?.enabledModules ?? ['billing'];
+
   useEffect(() => {
     if (business?.id) {
       fetchRoles();
       fetchPermissions();
     }
-  }, [business?.id]);
+  }, [business?.id, enabledModules.join(',')]);
 
   useEffect(() => {
     if (selectedRole && business?.id) {
@@ -80,7 +82,8 @@ export default function RolesPage() {
 
   const fetchPermissions = async () => {
     try {
-      const res = await fetch('/api/permissions');
+      const modulesParam = encodeURIComponent(enabledModules.join(','));
+      const res = await fetch(`/api/permissions?enabled_modules=${modulesParam}`);
       if (res.ok) {
         const data = await res.json();
         setPermissions(data.permissions || []);
@@ -198,25 +201,29 @@ export default function RolesPage() {
     }
   };
 
-  // Group permissions by module
+  // Group permissions by module (preserve display_order from API)
   const permissionsByModule = permissions.reduce((acc, perm) => {
     if (!acc[perm.module_key]) {
       acc[perm.module_key] = {
         module_name: perm.module_name,
+        display_order: perm.display_order ?? 999,
         permissions: [],
       };
     }
     acc[perm.module_key].permissions.push(perm);
     return acc;
-  }, {} as Record<string, { module_name: string; permissions: Permission[] }>);
+  }, {} as Record<string, { module_name: string; display_order: number; permissions: Permission[] }>);
+
+  const sortedModuleEntries = Object.entries(permissionsByModule).sort(
+    (a, b) => a[1].display_order - b[1].display_order || a[1].module_name.localeCompare(b[1].module_name),
+  );
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Roles & Permissions</h1>
-          <p className="text-sm text-text-secondary mt-1">Manage role-based access control</p>
-        </div>
-
+      <SettingsPageShell
+        title="Roles & Permissions"
+        description="Manage role-based access control"
+        icon={Shield}
+      >
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Roles List */}
           <Card>
@@ -301,7 +308,7 @@ export default function RolesPage() {
                             </p>
                           </div>
                         )}
-                        {Object.entries(permissionsByModule).map(([moduleKey, moduleData]) => (
+                        {sortedModuleEntries.map(([moduleKey, moduleData]) => (
                           <div key={moduleKey} className="border-b border-border pb-4 last:border-b-0">
                             <h3 className="font-semibold text-text-primary mb-3">{moduleData.module_name}</h3>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -409,7 +416,6 @@ export default function RolesPage() {
             </Card>
           </div>
         )}
-      </div>
-    
+      </SettingsPageShell>
   );
 }

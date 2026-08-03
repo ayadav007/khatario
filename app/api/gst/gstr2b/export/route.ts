@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateReconciliationExcel } from '@/lib/export/gstr2b-reconciliation-export';
+import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const access = await assertGstr2bApiAccess(request, businessId, 'read');
+    if (!access.ok) return access.response;
+
     const buffer = await generateReconciliationExcel({
-      business_id: businessId,
+      business_id: access.businessId,
       from_date: fromDate,
       to_date: toDate,
       status: status

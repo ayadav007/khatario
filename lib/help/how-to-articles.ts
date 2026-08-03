@@ -95,7 +95,7 @@ const articles: HowToArticle[] = [
       { type: 'h2', text: 'Tax and GST' },
       {
         type: 'p',
-        text: 'Open Settings → Tax & GST and Settings → GST configuration. Set place of business, default tax rates, HSN/SAC behaviour, and e-invoicing or filing preferences that match your process. Invoices, purchases, and GST reports all depend on this being right.',
+        text: 'Open Settings → Business Profile and complete GST & tax information: GSTIN, registration type (regular, composition, or unregistered), and place of business. Set HSN/SAC on each item in Items. Document prefixes and sequences are under Settings → Transaction number series.',
       },
       { type: 'h2', text: 'Templates, invoice design, and printing' },
       {

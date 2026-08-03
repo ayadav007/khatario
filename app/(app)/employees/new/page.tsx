@@ -17,19 +17,13 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import Link from 'next/link';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-
-interface Role {
-  id: string;
-  role_name: string;
-  role_key: string;
-  description: string;
-}
-
-interface Employee {
-  id: string;
-  employee_code: string;
-  name: string;
-}
+import {
+  EmployeePortalInviteCard,
+  EmployeePortalInviteResultBanner,
+} from '@/components/hr/EmployeePortalInviteCard';
+import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
+import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
+import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
 
 export default function NewEmployeePage() {
   const router = useRouter();
@@ -44,11 +38,20 @@ export default function NewEmployeePage() {
     skipCheck: !user?.id || !business?.id
   });
   
-  const [fetchingEmployees, setFetchingEmployees] = useState(true);
-  const [employees, setEmployees] = useState<Employee[]>([]);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [sendPortalInvite, setSendPortalInvite] = useState(true);
+  const [portalInviteVia, setPortalInviteVia] = useState<'email' | 'whatsapp' | 'both'>('whatsapp');
+  const [createdInvite, setCreatedInvite] = useState<{
+    temporary_password: string;
+    portal_url: string;
+    employee_code: string;
+    email_sent: boolean;
+    whatsapp_sent: boolean;
+    errors: string[];
+  } | null>(null);
+  const [createdEmployeeId, setCreatedEmployeeId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     // User fields
@@ -61,6 +64,7 @@ export default function NewEmployeePage() {
     employee_code: '', // Auto-generated if empty
     designation: '',
     department: '',
+    default_shift_id: '',
     joining_date: '',
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
@@ -83,7 +87,6 @@ export default function NewEmployeePage() {
 
   useEffect(() => {
     if (business?.id) {
-      fetchEmployees();
       checkLimits();
     }
   }, [business?.id]);
@@ -99,22 +102,6 @@ export default function NewEmployeePage() {
       }
     } catch (error) {
       console.error('Failed to check limits:', error);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    if (!business?.id) return;
-    
-    try {
-      const res = await fetch(`/api/employees?business_id=${business.id}&status=active&user_id=${user?.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setEmployees(data.employees || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch employees:', error);
-    } finally {
-      setFetchingEmployees(false);
     }
   };
 
@@ -154,6 +141,7 @@ export default function NewEmployeePage() {
         employee_code: formData.employee_code || null, // Auto-generate if empty
         designation: formData.designation || null,
         department: formData.department || null,
+        default_shift_id: formData.default_shift_id || null,
         joining_date: formData.joining_date || null,
         reporting_manager_id: formData.reporting_manager_id || null,
         employment_type: formData.employment_type,
@@ -168,6 +156,8 @@ export default function NewEmployeePage() {
         aadhaar_number: formData.aadhaar_number || null,
         // Note: role_id is not set - employees don't have console access, so no roles
         created_by_user_id: user?.id, // Required for authorization
+        send_portal_invite: sendPortalInvite,
+        portal_invite_via: portalInviteVia,
       };
 
       const res = await fetch('/api/employees', {
@@ -179,10 +169,16 @@ export default function NewEmployeePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setToast({ message: 'Employee created successfully', type: 'success' });
-        setTimeout(() => {
-          router.push(`/employees/${data.employee.id}`);
-        }, 1000);
+        if (data.portal_invite) {
+          setCreatedInvite(data.portal_invite);
+          setCreatedEmployeeId(data.employee.id);
+          setToast({ message: 'Employee created successfully', type: 'success' });
+        } else {
+          setToast({ message: 'Employee created successfully', type: 'success' });
+          setTimeout(() => {
+            router.push(`/employees/${data.employee.id}`);
+          }, 1000);
+        }
       } else {
         // Check if it's a subscription limit error
         if (res.status === 403 && data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') {
@@ -251,12 +247,13 @@ export default function NewEmployeePage() {
                     nationalPlaceholder="Mobile number"
                   />
                   <Input
-                    label="Email (Optional)"
+                    label="Email"
                     name="email"
                     type="email"
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="john@example.com"
+                    helperText="Optional — needed only if you send the portal invite by email"
                   />
                   <Input
                     label="Employee Code (Optional)"
@@ -282,19 +279,28 @@ export default function NewEmployeePage() {
                   <h2 className="text-lg font-semibold text-text-primary">Employment Details</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
+                  <HrOrgCatalogField
+                    businessId={business?.id}
+                    kind="designations"
                     label="Designation"
                     name="designation"
                     value={formData.designation}
-                    onChange={handleChange}
+                    onChange={(v) => setFormData({ ...formData, designation: v })}
                     placeholder="e.g. Sales Executive"
                   />
-                  <Input
+                  <HrOrgCatalogField
+                    businessId={business?.id}
+                    kind="departments"
                     label="Department"
                     name="department"
                     value={formData.department}
-                    onChange={handleChange}
+                    onChange={(v) => setFormData({ ...formData, department: v })}
                     placeholder="e.g. Sales"
+                  />
+                  <EmployeeShiftSelect
+                    businessId={business?.id}
+                    value={formData.default_shift_id}
+                    onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
                   />
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">
@@ -336,31 +342,19 @@ export default function NewEmployeePage() {
                     value={formData.joining_date}
                     onChange={handleChange}
                   />
-                  {fetchingEmployees ? (
-                    <div className="flex items-center gap-2 text-sm text-text-secondary">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading managers...
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-1">
-                        Reporting Manager (Optional)
-                      </label>
-                      <select
-                        name="reporting_manager_id"
-                        value={formData.reporting_manager_id}
-                        onChange={handleChange}
-                        className="input"
-                      >
-                        <option value="">No Manager</option>
-                        {employees.map((emp) => (
-                          <option key={emp.id} value={emp.id}>
-                            {emp.employee_code} - {emp.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  {business?.id && user?.id ? (
+                    <ReportingManagerSelect
+                      businessId={business.id}
+                      userId={user.id}
+                      value={formData.reporting_manager_id}
+                      onChange={(employeeId) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          reporting_manager_id: employeeId,
+                        }))
+                      }
+                    />
+                  ) : null}
                   <Input
                     label="Salary (Optional)"
                     name="salary"
@@ -456,6 +450,20 @@ export default function NewEmployeePage() {
                   />
                 </div>
               </Card>
+
+              {business?.id ? (
+                <EmployeePortalInviteCard
+                  mode="form"
+                  employeeId=""
+                  businessId={business.id}
+                  employeeEmail={formData.email}
+                  employeePhone={formData.phone}
+                  sendPortalInvite={sendPortalInvite}
+                  onSendPortalInviteChange={setSendPortalInvite}
+                  portalInviteVia={portalInviteVia}
+                  onPortalInviteViaChange={setPortalInviteVia}
+                />
+              ) : null}
             </div>
 
             {/* Sidebar - Summary */}
@@ -510,6 +518,17 @@ export default function NewEmployeePage() {
             </div>
           </div>
         </form>
+
+        {createdInvite ? (
+          <div className="space-y-4">
+            <EmployeePortalInviteResultBanner invite={createdInvite} />
+            {createdEmployeeId ? (
+              <Link href={`/employees/${createdEmployeeId}`}>
+                <Button className="w-full sm:w-auto">View employee profile</Button>
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
 
         {toast && (
           <Toast

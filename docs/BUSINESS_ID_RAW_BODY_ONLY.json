@@ -1,0 +1,6 @@
+[
+  {
+    "route": "/api/whatsapp/webhook",
+    "file": "app/api/whatsapp/webhook/route.ts"
+  }
+]

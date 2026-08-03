@@ -3,6 +3,8 @@ import { queryRows } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * Get supplier relationship requests
  * GET /api/suppliers/requests?business_id=xxx&type=received|sent
@@ -10,7 +12,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const type = searchParams.get('type') || 'all'; // 'received', 'sent', or 'all'
 
     if (!businessId) {

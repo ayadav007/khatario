@@ -1,0 +1,529 @@
+{
+  "foundation": {
+    "requireOperationalSubscription": true,
+    "withBusinessApi": true,
+    "productionRefsWithBusinessApi": 66,
+    "directWithBusinessApiRoutes": []
+  },
+  "premiumSummary": {
+    "total": 91,
+    "pass": 70,
+    "fail": 21,
+    "failRoutes": [
+      {
+        "route": "/api/gstin/lookup",
+        "file": "app/api/gstin/lookup/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/gstin/verify",
+        "file": "app/api/gstin/verify/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/bot-rules/[id]/chains",
+        "file": "app/api/whatsapp/bot-rules/[id]/chains/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/conversations/[id]/linked-orders",
+        "file": "app/api/whatsapp/conversations/[id]/linked-orders/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/dashboard/agents",
+        "file": "app/api/whatsapp/dashboard/agents/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/dashboard/overview",
+        "file": "app/api/whatsapp/dashboard/overview/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/disconnect",
+        "file": "app/api/whatsapp/disconnect/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/labels",
+        "file": "app/api/whatsapp/labels/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/labels/[id]",
+        "file": "app/api/whatsapp/labels/[id]/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/media",
+        "file": "app/api/whatsapp/media/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/orders",
+        "file": "app/api/whatsapp/orders/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/orders/[id]/approve",
+        "file": "app/api/whatsapp/orders/[id]/approve/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/orders/[id]/reject",
+        "file": "app/api/whatsapp/orders/[id]/reject/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/qr",
+        "file": "app/api/whatsapp/qr/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/reminders/logs",
+        "file": "app/api/whatsapp/reminders/logs/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/reminders",
+        "file": "app/api/whatsapp/reminders/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/reminders/[type]",
+        "file": "app/api/whatsapp/reminders/[type]/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/send",
+        "file": "app/api/whatsapp/send/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/send-bulk-reminders",
+        "file": "app/api/whatsapp/send-bulk-reminders/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/status",
+        "file": "app/api/whatsapp/status/route.ts",
+        "sub": false,
+        "tenant": false
+      },
+      {
+        "route": "/api/whatsapp/webhook",
+        "file": "app/api/whatsapp/webhook/route.ts",
+        "sub": false,
+        "tenant": false
+      }
+    ]
+  },
+  "whatsAppNotWrapped": [
+    "/api/whatsapp/bot-rules/[id]/chains",
+    "/api/whatsapp/conversations/[id]/linked-orders",
+    "/api/whatsapp/dashboard/agents",
+    "/api/whatsapp/dashboard/overview",
+    "/api/whatsapp/disconnect",
+    "/api/whatsapp/labels",
+    "/api/whatsapp/labels/[id]",
+    "/api/whatsapp/media",
+    "/api/whatsapp/orders",
+    "/api/whatsapp/orders/[id]/approve",
+    "/api/whatsapp/orders/[id]/reject",
+    "/api/whatsapp/qr",
+    "/api/whatsapp/reminders/logs",
+    "/api/whatsapp/reminders",
+    "/api/whatsapp/reminders/[type]",
+    "/api/whatsapp/send",
+    "/api/whatsapp/send-bulk-reminders",
+    "/api/whatsapp/status",
+    "/api/whatsapp/webhook"
+  ],
+  "tenantUnsafeCount": 93,
+  "tenantUnsafeSample": [
+    {
+      "route": "/api/admin/billing/events",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/backup/history",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/backup/history/[id]/download",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/backup/history/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/backup/schedule",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/badges/counts",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/cloud-storage/google/auth",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/cloud-storage/google/credentials",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/cloud-storage/google/list",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/commission-rules",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/commission-rules/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/cron/process-reversing-entries",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/cron/refresh-profile-pictures",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/currencies",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/debug/template-assignment",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/delivery-challans",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/depreciation/calculate",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/document-attachments/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/face-enrollment",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/performance",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/salary/advances/balance",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/salary/advances/[id]/approve",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/targets",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/employees/targets/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/exchange-rates",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/expense-categories",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/features/enabled",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/filters/presets",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/financial-years",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/financial-years/[id]/close",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/fixed-assets/depreciation-schedule",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/fixed-assets",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/holidays",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/holidays/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/inventory-adjustments/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/invoice-template-settings",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/invoice-templates",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/invoices/next-number",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/search",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/[id]/batches",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/[id]/batches/[batchId]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/[id]/serials",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/[id]/serials/[serialId]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/items/[id]/valuation",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/journal-entries/templates",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/journal-entries/templates/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/leave-types",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/leave-types/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/locations",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/notifications/read-all",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/notifications",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/opening-balances",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/payment-methods",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/promotions/active",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/provisions",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/provisions/[id]/entries",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/provisions/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/recurring-invoices",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/search",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/account-mappings",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/ai-config",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/item-sales-stock",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/product-variants",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/user-management",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/warehouses",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/settings/whatsapp-bot",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/shifts",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/shifts/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/suppliers/check-duplicate",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/suppliers/requests",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/suppliers/[id]/approve",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/tasks",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/tasks/[id]",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/tax-provisions",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/template-assignments",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/template-preview",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/todos/check-reminders",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/todos/users",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/tools/whatsapp-groups",
+      "source": "raw query business_id"
+    },
+    {
+      "route": "/api/warehouses/[id]/stock-availability",
+      "source": "raw query business_id"
+    }
+  ],
+  "auditFresh": {
+    "critical": 72,
+    "high": 229,
+    "medium": 222,
+    "pentestExposed": 336
+  },
+  "cronRoutes": [
+    {
+      "route": "/api/cron/check-low-stock",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/check-subscriptions",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/process-campaigns",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/process-reversing-entries",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/process-scheduled-backups",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/refresh-profile-pictures",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/send-daily-invoice-summary",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/send-payment-reminders",
+      "cronAuth": true
+    },
+    {
+      "route": "/api/cron/send-todo-reminders",
+      "cronAuth": true
+    }
+  ]
+}

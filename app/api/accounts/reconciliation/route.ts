@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
+import { withPremiumSubscriptionApi } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,20 +8,13 @@ export const dynamic = 'force-dynamic';
  * GET /api/accounts/reconciliation
  * Get account reconciliation data
  */
-export async function GET(request: NextRequest) {
+export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const { searchParams } = new URL(ctx.request.url);
+    const businessId = ctx.businessId;
     const accountId = searchParams.get('account_id');
     const branchIdParam = searchParams.get('branch_id');
     const asOnDate = searchParams.get('as_on_date') || new Date().toISOString().split('T')[0];
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
 
     if (!accountId) {
       return NextResponse.json(
@@ -64,7 +58,7 @@ export async function GET(request: NextRequest) {
     // Calculate opening balance
     let openingBalance = 0;
     if (account.opening_balance_type === 'debit') {
-      openingBalance = account.nature === 'debit' 
+      openingBalance = account.nature === 'debit'
         ? parseFloat(account.opening_balance || '0')
         : -parseFloat(account.opening_balance || '0');
     } else {
@@ -134,5 +128,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
+});

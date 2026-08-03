@@ -107,6 +107,7 @@
     "check": "npm run check:ui-primary && npm run check:mobile-chrome && npm run check:typography",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "test": "jest",
+    "test:security": "jest tests/security --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "benchmark:invoice-regression": "jest tests/invoice-regression.benchmark.test.ts --runInBand",

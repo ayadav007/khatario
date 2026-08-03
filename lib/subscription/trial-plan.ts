@@ -1,19 +1,26 @@
 /**
  * Trial plan rules (signup-only; not a self-service "Change Plan" target).
- * Signup / migrations assign {@link TRIAL_PLAN_ID}; billing UI hides Trial unless user is already on it.
+ * Signup / migrations assign trial plan ids; billing UI hides Trial unless user is already on it.
  */
+
+import { HR_FREE_PLAN_ID, HR_TRIAL_PLAN_ID, isProductLineTrialPlanId } from '@/lib/product-lines';
 
 export const TRIAL_PLAN_ID = 'trial' as const;
 
 export type PlanChangeAction = 'current' | 'upgrade' | 'downgrade';
 
 export function isTrialPlanId(planId: string | null | undefined): boolean {
-  return planId === TRIAL_PLAN_ID;
+  return isProductLineTrialPlanId(planId);
 }
 
 /** Paid plans selectable in upgrade/checkout UI (signup-only trial and free excluded). */
 export function isPurchasableUpgradePlan(planId: string): boolean {
-  return planId !== 'free' && planId !== TRIAL_PLAN_ID;
+  return (
+    planId !== 'free' &&
+    planId !== HR_FREE_PLAN_ID &&
+    planId !== 'connect' &&
+    !isTrialPlanId(planId)
+  );
 }
 
 /**

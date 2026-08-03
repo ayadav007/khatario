@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { queryOne, query } from '@/lib/db';
 import { clearSubscriptionCache } from '@/lib/subscription';
 
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+
+    const guard = await applySubscriptionMutationGuard(request, business_id);
+    if (guard) return guard;
 
     // Check if subscription already exists
     const existing = await queryOne(`

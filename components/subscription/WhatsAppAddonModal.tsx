@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, Check, Loader2, Lock, MessageSquare, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
+import { startAddonPurchase } from '@/lib/subscription/client-addon-purchase';
 
 interface WhatsAppAddon {
   id: string;
@@ -66,34 +67,16 @@ export function WhatsAppAddonModal({
 
     setPurchasing(addonId);
     try {
-      const response = await fetch(`/api/subscriptions/addons/${addonId}/purchase`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-        }),
+      await startAddonPurchase({
+        businessId: business.id,
+        addonType: addonId as 'whatsapp_bot' | 'whatsapp_send_message',
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        const addonType = data.addon.addon_type;
-        if (addonType === 'whatsapp_bot') {
-          toast.success('Successfully purchased WhatsApp Bot add-on! All WhatsApp features (Conversations, Bot Rules, and Send Message) are now unlocked.');
-        } else {
-          toast.success('Successfully purchased WhatsApp add-on!');
-        }
-        await fetchAddons(); // Refresh addons list first
-        // Small delay to ensure state propagates
-        setTimeout(() => {
-          onPurchaseSuccess?.(); // Then trigger parent refresh
-        }, 200);
-      } else {
-        toast.error(data.error || 'Failed to purchase add-on');
-      }
-    } catch (error: any) {
+      // mode === 'redirect' — browser navigates to Razorpay
+    } catch (error: unknown) {
       console.error('Error purchasing addon:', error);
-      toast.error('Failed to purchase add-on. Please try again.');
+      const message =
+        error instanceof Error ? error.message : 'Failed to purchase add-on. Please try again.';
+      toast.error(message);
     } finally {
       setPurchasing(null);
     }
@@ -222,7 +205,7 @@ export function WhatsAppAddonModal({
         {/* Footer */}
         <div className="p-6 border-t bg-gray-50">
           <p className="text-sm text-gray-600 text-center">
-            Add-ons are billed monthly and can be cancelled anytime.
+            Add-ons are billed monthly. You&apos;ll be redirected to Razorpay for secure payment.
           </p>
         </div>
       </div>

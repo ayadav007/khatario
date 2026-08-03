@@ -27,15 +27,19 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-    env: {
-      ...process.env,
-      // Lets full-journey signup repeat without 429 when Playwright starts this server.
-      E2E_DISABLE_RATE_LIMIT: 'true',
-    },
-  },
+  ...(process.env.PLAYWRIGHT_SKIP_WEBSERVER === '1'
+    ? {}
+    : {
+        webServer: {
+          command: 'npm run dev',
+          url: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+          reuseExistingServer: !process.env.CI,
+          timeout: 120 * 1000,
+          env: {
+            ...process.env,
+            // Lets full-journey signup repeat without 429 when Playwright starts this server.
+            E2E_DISABLE_RATE_LIMIT: 'true',
+          },
+        },
+      }),
 });

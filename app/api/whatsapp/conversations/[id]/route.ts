@@ -6,31 +6,13 @@ export const dynamic = 'force-dynamic';
  * PATCH - Update conversation (archive, pin, mute, block, etc.)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { query, queryOne, queryRows } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
     if (!conversationId) {
@@ -48,35 +30,16 @@ export async function DELETE(
     console.error('Error deleting conversation:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json(
-        { error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' },
-        { status: 403 }
-      );
-    }
 
     const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    const body = await request.json();
     const {
       status, // 'active', 'archived', 'blocked'
       is_pinned,
@@ -87,7 +50,7 @@ export async function PATCH(
       assigned_to, // User ID for agent assignment
       lead_status, // 'new', 'interested', 'follow_up', 'converted', 'lost'
       conversation_status, // 'open', 'pending', 'closed'
-    } = body;
+    } = (body ?? {}) as Record<string, any>;
 
     // Build update query dynamically
     const updates: string[] = [];
@@ -260,5 +223,4 @@ export async function PATCH(
     console.error('Error updating conversation:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
+});

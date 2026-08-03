@@ -39,6 +39,7 @@ import { CommandPalette } from '@/components/search/CommandPalette';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useDarkMode } from '@/contexts/DarkModeContext';
+import { clsx } from 'clsx';
 import { Moon, Sun } from 'lucide-react';
 
 import { format, startOfWeek, startOfMonth } from 'date-fns';
@@ -311,6 +312,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
+  const isSettingsRoute =
+    pathname === '/settings' || (pathname?.startsWith('/settings/') ?? false);
   const searchParams = useSearchParams();
   const [dateRange, setDateRange] = useState<string>('today');
   const [searchQuery, setSearchQuery] = useState('');
@@ -335,8 +338,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   useEffect(() => {
     if (isPrimaryAdmin) {
       setUserRole('Primary Admin');
-    } else if ((user as any)?.role_name) {
-      setUserRole((user as any).role_name);
+    } else if ((user as { role_name?: string })?.role_name) {
+      setUserRole((user as { role_name?: string }).role_name!);
     } else {
       setUserRole('User');
     }
@@ -474,7 +477,10 @@ export const TopBar: React.FC<TopBarProps> = ({
             </Link>
           )}
           <p
-            className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-text-primary"
+            className={clsx(
+              'min-w-0 flex-1 truncate text-center font-semibold text-text-primary',
+              isSettingsRoute ? 'text-caption' : 'text-sm'
+            )}
             title={mobileCenterLabel}
           >
             {mobileCenterLabel}
@@ -492,6 +498,14 @@ export const TopBar: React.FC<TopBarProps> = ({
               </Link>
             ) : null}
             {business?.id && <NotificationCenter businessId={business.id} />}
+            <Link
+              href="/more#account"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-900"
+              aria-label="Your account"
+              title={user?.name || 'Account'}
+            >
+              {user?.name?.charAt(0)?.toUpperCase() || <User className="h-5 w-5 text-text-muted" />}
+            </Link>
             {mobileQuickSettings.moduleMenu ? (
               <button
                 type="button"

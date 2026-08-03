@@ -7,6 +7,7 @@ import { queryOne, query } from '@/lib/db';
 import { EmployeeExpense } from '@/types/database';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { canActOnExpense, isEmployeePortalSession } from '@/lib/hr/manager-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,16 +66,38 @@ export async function PATCH(
       );
     }
 
-    try {
-      await authorize(updated_by_user_id, 'expenses', 'update', {
-        businessId,
-        resourceId: expenseId,
-      });
-    } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
+    if (isEmployeePortalSession(request) && !['approve', 'reject'].includes(action)) {
+      return NextResponse.json({ error: 'Action not allowed in employee portal' }, { status: 403 });
+    }
+
+    if (action === 'update') {
+      try {
+        await authorize(updated_by_user_id, 'expenses', 'update', {
+          businessId,
+          resourceId: expenseId,
+        });
+      } catch (error) {
+        if (error instanceof AuthorizationError) return error.toNextResponse();
+        throw error;
       }
-      throw error;
+    } else if (action === 'approve' || action === 'reject') {
+      const allowed = await canActOnExpense(updated_by_user_id, expenseId, businessId);
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Not authorized to act on this expense' },
+          { status: 403 }
+        );
+      }
+    } else if (action === 'reimburse' || action === 'cancel') {
+      try {
+        await authorize(updated_by_user_id, 'expenses', 'update', {
+          businessId,
+          resourceId: expenseId,
+        });
+      } catch (error) {
+        if (error instanceof AuthorizationError) return error.toNextResponse();
+        throw error;
+      }
     }
 
     if (action === 'update') {

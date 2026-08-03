@@ -153,6 +153,12 @@ export interface TemplateSettings {
   payment_terms?: string;
   notes: string;
   footer_text: string;
+
+  // Custom fields placement on the printed document (keys from custom_field_definitions)
+  custom_field_layout?: {
+    invoice_meta?: string[];
+    item_table?: string[];
+  };
   
   // Legacy support (deprecated, use specific fields above)
   show_gstin?: boolean; // Use show_business_gstin + show_customer_gstin instead

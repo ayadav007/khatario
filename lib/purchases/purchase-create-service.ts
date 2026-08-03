@@ -51,6 +51,7 @@ export interface CreatePurchaseInput {
   supplier_state_code?: string | null;
   invoice_number?: string | null;
   supplier_gstin?: string | null;
+  extraction_job_id?: string | null;
 }
 
 export interface CreatePurchaseResult {
@@ -576,6 +577,14 @@ export async function createPurchaseInTransaction(
     purchase.status = 'final';
     purchase.is_editable = false;
   }
+
+  const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
+  await linkExtractionJobToPurchase(client, {
+    extractionJobId: body.extraction_job_id,
+    purchaseId: String(purchase.id),
+    businessId: business_id,
+    purchaseStatus: status === 'final' ? 'final' : 'draft',
+  });
 
   return {
     purchase,

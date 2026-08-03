@@ -6,13 +6,15 @@ import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { Building2 } from 'lucide-react';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
@@ -127,7 +129,7 @@ export default function NewBranchPage() {
       
         <div className={`${SETTINGS_CONTENT_WIDTH} py-8 flex justify-center`}>
           <div className="max-w-2xl w-full bg-surface dark:bg-slate-900/70 rounded-xl shadow-sm border border-border p-8 text-center">
-            <h2 className="text-2xl font-bold text-text-primary mb-2">
+            <h2 className="settings-section-title mb-2">
               Multi-Branch Feature is Locked
             </h2>
             <p className="text-text-secondary mb-6">
@@ -146,12 +148,12 @@ export default function NewBranchPage() {
   }
 
   return (
-    <FormPageContainer className="py-6 space-y-6">
-        <MobileDuplicatePageChrome
-          title="Create branch"
-          description="Add a new branch office for accounting and compliance purposes"
-        />
-
+    <SettingsPageShell
+      title="Create branch"
+      description="Add a new branch office for accounting and compliance purposes"
+      icon={Building2}
+      className="py-6"
+    >
         <FormCard>
         <form onSubmit={handleSubmit}>
         <div className="form-page-shell">
@@ -298,16 +300,17 @@ export default function NewBranchPage() {
           </FormSection>
         </div>
 
-          <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+          <SettingsFloatingSaveBar align="between">
             <Button
               type="button"
               variant="secondary"
               onClick={() => router.push('/settings/branches')}
               disabled={saving}
+              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving} className="flex-1 sm:flex-none">
               {saving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -317,9 +320,9 @@ export default function NewBranchPage() {
                 'Create Branch'
               )}
             </Button>
-          </div>
+          </SettingsFloatingSaveBar>
         </form>
         </FormCard>
-    </FormPageContainer>
+    </SettingsPageShell>
   );
 }

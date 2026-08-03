@@ -11,7 +11,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { LeaveType } from '@/types/database';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import Link from 'next/link';
 
 export default function LeaveTypesPage() {
   const { business, user } = useAuth();
@@ -147,12 +148,11 @@ export default function LeaveTypesPage() {
   };
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Leave Types</h1>
-            <p className="text-sm text-text-secondary mt-1">Configure leave types for your business</p>
-          </div>
+      <SettingsPageShell
+        title="Leave Types"
+        description="Configure leave types for your business"
+        icon={Calendar}
+        actions={
           <Button onClick={() => {
             // Check authorization before showing form
             if (!canCreate) {
@@ -175,7 +175,16 @@ export default function LeaveTypesPage() {
             <Plus className="w-4 h-4 mr-2" />
             Add Leave Type
           </Button>
-        </div>
+        }
+      >
+
+        <p className="mb-4 text-sm text-text-secondary">
+          Quotas, accrual, sandwich rules, and year-end policy are configured in{' '}
+          <Link href="/settings/leave-plan" className="link-primary">
+            Leave plan
+          </Link>
+          .
+        </p>
 
         {showForm && (
           <Card>
@@ -334,8 +343,7 @@ export default function LeaveTypesPage() {
             </div>
           )}
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 

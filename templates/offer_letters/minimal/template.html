@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offer Letter - {{candidate.full_name}}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #1f2937; background: #fff; }
+    .page { max-width: 640px; margin: 0 auto; padding: 48px 40px; min-height: 900px; }
+    .brand { margin-bottom: 32px; }
+    .logo { max-height: 40px; margin-bottom: 8px; }
+    .company-name { font-size: 15px; font-weight: 600; color: #111; }
+    .company-address { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 24px; color: #111; }
+    .salutation { margin-bottom: 16px; }
+    .body p { margin-bottom: 14px; color: #374151; }
+    .kv { margin: 20px 0; border-top: 1px solid #e5e7eb; }
+    .kv-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+    .kv-row span:first-child { color: #6b7280; }
+    .kv-row span:last-child { font-weight: 500; text-align: right; max-width: 55%; }
+    .kv-total { font-weight: 600; color: #111; }
+    .clause { font-size: 12px; color: #4b5563; margin-top: 12px; }
+    .signatures { margin-top: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .sig-block { font-size: 12px; }
+    .sig-block img { max-height: 44px; margin: 8px 0; }
+    .sig-line { border-top: 1px solid #d1d5db; margin-top: 32px; padding-top: 8px; }
+    .footer { margin-top: 40px; font-size: 11px; color: #9ca3af; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="brand">
+      {{#if business.logo_url}}<img src="{{business.logo_url}}" class="logo" alt="" />{{/if}}
+      <div class="company-name">{{business.name}}</div>
+      <div class="company-address">{{business.address}}</div>
+    </div>
+    <h1>Offer letter</h1>
+    <div class="salutation">Hi {{candidate.full_name}},</div>
+    <div class="body">
+      <p>{{settings.body_intro}}</p>
+      <div class="kv">
+        <div class="kv-row"><span>Role</span><span>{{offer.designation}}</span></div>
+        {{#if offer.department}}<div class="kv-row"><span>Department</span><span>{{offer.department}}</span></div>{{/if}}
+        {{#if offer.work_location}}<div class="kv-row"><span>Location</span><span>{{offer.work_location}}</span></div>{{/if}}
+        <div class="kv-row"><span>Joining date</span><span>{{offer.joining_date}}</span></div>
+        <div class="kv-row kv-total"><span>Annual CTC</span><span>₹{{offer.ctc_annual}}</span></div>
+        {{#if offer.annual_bonus}}<div class="kv-row"><span>Annual bonus</span><span>₹{{offer.annual_bonus}}</span></div>{{/if}}
+      </div>
+      {{#if settings.show_ctc_breakdown}}
+      <p style="font-size:12px;font-weight:600;margin-bottom:8px;">CTC breakdown (annual)</p>
+      <div class="kv">
+        <div class="kv-row"><span>Basic</span><span>₹{{offer.basic_salary_annual}}</span></div>
+        {{#if offer.hra_annual}}<div class="kv-row"><span>HRA</span><span>₹{{offer.hra_annual}}</span></div>{{/if}}
+        {{#if offer.transport_annual}}<div class="kv-row"><span>Transport</span><span>₹{{offer.transport_annual}}</span></div>{{/if}}
+        {{#if offer.medical_annual}}<div class="kv-row"><span>Medical</span><span>₹{{offer.medical_annual}}</span></div>{{/if}}
+        {{#if offer.special_annual}}<div class="kv-row"><span>Special</span><span>₹{{offer.special_annual}}</span></div>{{/if}}
+        {{#if offer.other_annual}}<div class="kv-row"><span>Other</span><span>₹{{offer.other_annual}}</span></div>{{/if}}
+      </div>
+      {{/if}}
+      {{#if settings.probation_clause}}<p class="clause">{{settings.probation_clause}}</p>{{/if}}
+      {{#if settings.notice_period_clause}}<p class="clause">{{settings.notice_period_clause}}</p>{{/if}}
+      {{#if offer.terms_text}}<p class="clause">{{offer.terms_text}}</p>{{/if}}
+      {{#if settings.additional_terms}}<p class="clause">{{settings.additional_terms}}</p>{{/if}}
+    </div>
+    <div class="signatures">
+      <div class="sig-block">
+        <p>{{business.name}}</p>
+        {{#if business.signature_url}}<img src="{{business.signature_url}}" alt="" />{{/if}}
+        <div class="sig-line"><strong>{{signatory.name}}</strong><br>{{signatory.title}}</div>
+      </div>
+      <div class="sig-block">
+        {{#if candidate.signature_url}}
+          <p style="font-size:11px;color:#6b7280;">Accepted</p>
+          <img src="{{candidate.signature_url}}" alt="" />
+          <div class="sig-line"><strong>{{candidate.full_name}}</strong><br>{{candidate.accepted_date}}</div>
+        {{/if}}
+      </div>
+    </div>
+    {{#if settings.footer_text}}<div class="footer">{{settings.footer_text}}</div>{{/if}}
+  </div>
+</body>
+</html>

@@ -6,6 +6,22 @@ import { checkLimit } from '@/lib/subscription';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { wouldCreateReportingCycle } from '@/lib/hr/manager-scope';
+import {
+  buildEmployeeScopeSql,
+  getActorEmployeeId,
+  resolveEmployeeListScope,
+} from '@/lib/hr/employee-access-scope';
+import {
+  filterFieldsByPermission,
+  rejectRestrictedFieldUpdates,
+} from '@/lib/field-permission-filter';
+import {
+  sendEmployeePortalInvite,
+  type PortalInviteChannel,
+} from '@/lib/employee-portal/invite';
+import { hasFeatureAccess } from '@/lib/subscription/feature-access';
+import { generateNextEmployeeCode } from '@/lib/hr/employee-settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +68,10 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
+    const scopeParam = searchParams.get('scope');
+    const listScope = await resolveEmployeeListScope(userId, businessId, scopeParam);
+    const actorEmployeeId = await getActorEmployeeId(userId, businessId);
+
     // Build query - filtered by business_id only (not branch_id)
     // Employees are business-scoped resources
     let sql = `
@@ -70,6 +90,10 @@ export async function GET(request: NextRequest) {
       WHERE e.business_id = $1
     `;
     const params: any[] = [businessId];
+
+    const scopeFilter = buildEmployeeScopeSql(listScope, actorEmployeeId, params.length + 1);
+    sql += scopeFilter.sql;
+    params.push(...scopeFilter.params);
 
     // Add search filter
     if (search) {
@@ -120,8 +144,11 @@ export async function GET(request: NextRequest) {
       reporting_manager_code?: string;
     }>(sql, params);
 
+    const filteredEmployees = await filterFieldsByPermission(employees, userId, 'employees');
+
     return NextResponse.json({ 
-      employees,
+      employees: filteredEmployees,
+      scope: listScope,
       pagination: {
         page,
         limit,
@@ -154,6 +181,7 @@ export async function POST(request: NextRequest) {
       employee_code, // Optional, will auto-generate if not provided
       designation,
       department,
+      default_shift_id,
       joining_date,
       reporting_manager_id,
       employment_type = 'full_time',
@@ -168,6 +196,8 @@ export async function POST(request: NextRequest) {
       pan_number,
       aadhaar_number,
       role_id, // Optional, for role assignment
+      send_portal_invite,
+      portal_invite_via = 'both',
     } = body;
     const createdByUserId = resolveCreatedByUserId(request, body);
 
@@ -195,6 +225,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (send_portal_invite) {
+      const portalEnabled = await hasFeatureAccess(business_id, 'hr_employee_portal');
+      if (!portalEnabled) {
+        return NextResponse.json(
+          { error: 'Employee portal is not enabled on your subscription plan.' },
+          { status: 403 }
+        );
+      }
+    }
+
     // AUTHORIZATION: Check create permission (employees are part of HR module)
     try {
       await authorize(createdByUserId, 'employees', 'create', { businessId: business_id });
@@ -203,6 +243,21 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    const { rejected: restrictedFields } = await rejectRestrictedFieldUpdates(
+      createdByUserId,
+      'employees',
+      body
+    );
+    if (restrictedFields.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'You do not have permission to set restricted employee fields',
+          fields: restrictedFields,
+        },
+        { status: 403 }
+      );
     }
 
     // Check subscription limits
@@ -282,17 +337,7 @@ export async function POST(request: NextRequest) {
     // Generate employee code if not provided
     let finalEmployeeCode = employee_code;
     if (!finalEmployeeCode) {
-      const generatedCode = await queryOne<{ generate_employee_code: string }>(
-        'SELECT generate_employee_code($1) as generate_employee_code',
-        [business_id]
-      );
-      if (!generatedCode) {
-        return NextResponse.json(
-          { error: 'Failed to generate employee code' },
-          { status: 500 }
-        );
-      }
-      finalEmployeeCode = generatedCode.generate_employee_code;
+      finalEmployeeCode = await generateNextEmployeeCode(business_id);
     } else {
       // Check if employee code already exists
       const codeExists = await queryOne(
@@ -307,15 +352,29 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (reporting_manager_id) {
+      const cycle = await wouldCreateReportingCycle(
+        business_id,
+        userId,
+        reporting_manager_id
+      );
+      if (cycle) {
+        return NextResponse.json(
+          { error: 'Invalid reporting manager: would create a cycle in the org hierarchy' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create employee record
     const employee = await queryOne<Employee>(
       `INSERT INTO employees (
         id, business_id, employee_code, designation, department, joining_date,
         reporting_manager_id, employment_type, access_type, salary, photo_url,
         emergency_contact_name, emergency_contact_phone, bank_account_number,
-        bank_ifsc, bank_name, pan_number, aadhaar_number
+        bank_ifsc, bank_name, pan_number, aadhaar_number, default_shift_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *`,
       [
         userId,
@@ -336,6 +395,7 @@ export async function POST(request: NextRequest) {
         bank_name || null,
         pan_number || null,
         aadhaar_number || null,
+        default_shift_id || null,
       ]
     );
 
@@ -363,7 +423,50 @@ export async function POST(request: NextRequest) {
       [employee.id]
     );
 
-    return NextResponse.json({ employee: completeEmployee }, { status: 201 });
+    if (!completeEmployee) {
+      return NextResponse.json(
+        { error: 'Failed to create employee' },
+        { status: 500 }
+      );
+    }
+
+    if (joining_date) {
+      const { applyProbationOnJoin } = await import('@/lib/hr/probation-auto-confirm');
+      await applyProbationOnJoin(business_id, employee.id, joining_date);
+    }
+
+    let portalInvite: Awaited<ReturnType<typeof sendEmployeePortalInvite>> | null = null;
+    if (send_portal_invite) {
+      const channels: PortalInviteChannel =
+        portal_invite_via === 'email' || portal_invite_via === 'whatsapp'
+          ? portal_invite_via
+          : 'both';
+      try {
+        portalInvite = await sendEmployeePortalInvite({
+          businessId: business_id,
+          employeeId: completeEmployee.id,
+          channels,
+        });
+      } catch (inviteError: unknown) {
+        const message =
+          inviteError instanceof Error
+            ? inviteError.message
+            : 'Portal invite failed after employee was created';
+        portalInvite = {
+          temporary_password: '',
+          portal_url: '',
+          employee_code: completeEmployee.employee_code,
+          email_sent: false,
+          whatsapp_sent: false,
+          errors: [message],
+        };
+      }
+    }
+
+    return NextResponse.json(
+      { employee: completeEmployee, portal_invite: portalInvite },
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error('Error creating employee:', error);
     return NextResponse.json(

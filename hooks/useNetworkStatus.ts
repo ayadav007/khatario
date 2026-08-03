@@ -5,6 +5,8 @@ import { useNetworkStatusContext } from '@/contexts/NetworkStatusContext';
 export interface NetworkStatus {
   isOnline: boolean;
   isOffline: boolean;
+  /** False until initial connectivity probe completes (web + native). */
+  networkReady: boolean;
   lastChangedAt?: number;
 }
 

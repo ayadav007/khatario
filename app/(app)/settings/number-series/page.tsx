@@ -6,13 +6,13 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import Link from 'next/link';
-import { ChevronRight, Hash, Save, Building2 } from 'lucide-react';
+import { Hash, Save, Building2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { DOCUMENT_RULES, DocumentType } from '@/lib/invoice-config';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useToastContext } from '@/contexts/ToastContext';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 
 interface DocumentConfig {
   type: DocumentType;
@@ -285,27 +285,11 @@ function NumberSeriesPage() {
   }
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-text-secondary">
-        <Link href="/settings" className="hover:text-primary-600 transition">Settings</Link>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-text-muted">Customization</span>
-        <ChevronRight className="w-4 h-4" />
-        <span className="text-text-primary font-medium">Transaction Number Series</span>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-3 bg-orange-100 rounded-xl">
-          <Hash className="w-6 h-6 text-orange-600" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Transaction Number Series</h1>
-          <p className="text-sm text-text-secondary">Configure prefixes and starting numbers for all transaction types</p>
-        </div>
-      </div>
-
+    <SettingsPageShell
+      title="Transaction Number Series"
+      description="Configure prefixes and starting numbers for all transaction types"
+      icon={Hash}
+    >
       <Card padding="lg">
         {/* Branch Selection (if multiple branches) */}
         {branches.length > 1 && (
@@ -422,19 +406,18 @@ function NumberSeriesPage() {
           </table>
         </div>
 
-        {/* Save Button */}
-        <div className="flex items-center justify-end gap-3 mt-6 pt-6 border-t border-border">
+        <SettingsFloatingSaveBar>
           <Button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2"
+            className="w-full sm:w-auto"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : 'Save'}
           </Button>
-        </div>
+        </SettingsFloatingSaveBar>
       </Card>
-    </div>
+    </SettingsPageShell>
   );
 }
 

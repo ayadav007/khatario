@@ -7,11 +7,23 @@ import { useRouter, usePathname } from 'next/navigation';
 import { User, Business } from '@/types/database';
 import { clearAllBranchStorage } from '@/lib/branch-storage';
 import { mergePortalTheme, type PortalTheme } from '@/lib/portal-theme';
+import {
+  persistPortalThemeToClientStorage,
+  readCachedPortalThemeFromClientStorage,
+  removeAllPortalThemeClientStorage,
+} from '@/lib/portal-theme-storage';
 import { markLocalSessionCookie } from '@/lib/auth/local-session-cookie';
+import { isPublicMarketingSurface } from '@/lib/auth/public-surfaces';
 import { shouldTrustCachedSession } from '@/lib/auth/should-trust-cached-session';
 import { NETWORK_RECONNECT_EVENT } from '@/lib/network/events';
 import { useNetworkStatusContext } from '@/contexts/NetworkStatusContext';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import {
+  deriveModulesFromProductLine,
+  getDefaultHomePath,
+  type PlatformModule,
+} from '@/lib/platform-modules';
+import type { BusinessPlatformContext } from '@/lib/business-modules';
 
 /** Legacy unscoped key — migrated away on successful session fetch to prevent cross-business bleed. */
 const PORTAL_THEME_LEGACY_KEY = 'portalTheme';
@@ -20,25 +32,8 @@ function portalThemeStorageKey(businessId: string): string {
   return `${PORTAL_THEME_LEGACY_KEY}:${businessId}`;
 }
 
-function removeAllPortalThemeStorageKeys(): void {
-  try {
-    const toRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k) continue;
-      if (k === PORTAL_THEME_LEGACY_KEY || k.startsWith(`${PORTAL_THEME_LEGACY_KEY}:`)) {
-        toRemove.push(k);
-      }
-    }
-    for (const k of toRemove) localStorage.removeItem(k);
-  } catch {
-    /* ignore */
-  }
-}
-
 function persistPortalThemeFromSession(portalTheme: PortalTheme, businessId: string): void {
-  localStorage.setItem(portalThemeStorageKey(businessId), JSON.stringify(portalTheme));
-  localStorage.removeItem(PORTAL_THEME_LEGACY_KEY);
+  persistPortalThemeToClientStorage(portalTheme, businessId);
 }
 
 /** Avoid Auth → Sidebar re-render storms when /api/auth/session returns fresh object literals. */
@@ -93,6 +88,9 @@ interface AuthContextType {
   permissions: SessionPermissions;
   isPrimaryAdmin: boolean;
   subscription: any | null;
+  /** Enabled platform modules + default home route from session. */
+  platformSession: BusinessPlatformContext | null;
+  hasPlatformModule: (moduleKey: PlatformModule) => boolean;
   /** Organization portal appearance from session (always defined when user has a business). */
   portalTheme: PortalTheme | null;
   loading: boolean;
@@ -112,6 +110,8 @@ const AuthContext = createContext<AuthContextType>({
   permissions: {},
   isPrimaryAdmin: false,
   subscription: null,
+  platformSession: null,
+  hasPlatformModule: () => false,
   portalTheme: null,
   loading: true,
   login: async () => {},
@@ -119,6 +119,31 @@ const AuthContext = createContext<AuthContextType>({
   refresh: async () => {},
   restoreCachedSession: () => false,
 });
+
+const PLATFORM_SESSION_STORAGE_KEY = 'platformSession';
+
+function derivePlatformSessionFromBusiness(business: Business | null): BusinessPlatformContext {
+  const derived = deriveModulesFromProductLine(business?.product_line);
+  const primary =
+    business?.primary_module && derived.enabled.includes(business.primary_module as PlatformModule)
+      ? (business.primary_module as PlatformModule)
+      : derived.primary;
+  return {
+    enabledModules: derived.enabled,
+    primaryModule: primary,
+    defaultHomePath: getDefaultHomePath({
+      enabledModules: derived.enabled,
+      primaryModule: primary,
+    }),
+  };
+}
+
+function parsePlatformSession(raw: unknown): BusinessPlatformContext | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as BusinessPlatformContext;
+  if (!Array.isArray(o.enabledModules) || !o.primaryModule || !o.defaultHomePath) return null;
+  return o;
+}
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -133,13 +158,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissions, setPermissions] = useState<SessionPermissions>({});
   const [isPrimaryAdmin, setIsPrimaryAdmin] = useState(false);
   const [subscription, setSubscription] = useState<any | null>(null);
-  const [portalTheme, setPortalTheme] = useState<PortalTheme | null>(null);
+  const [platformSession, setPlatformSession] = useState<BusinessPlatformContext | null>(null);
+  const [portalTheme, setPortalTheme] = useState<PortalTheme | null>(() =>
+    readCachedPortalThemeFromClientStorage()
+  );
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
   /** Bumped on login/logout so stale in-flight /api/auth/session calls cannot revoke a new session. */
   const sessionGenerationRef = useRef(0);
   const authBootstrappedRef = useRef(false);
+  const authWasPublicSurfaceRef = useRef<boolean | null>(null);
   const reconnectFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (
@@ -194,6 +223,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const parsedAdmin = JSON.parse(storedIsAdmin) as boolean;
       setIsPrimaryAdmin((prev) => (prev === parsedAdmin ? prev : parsedAdmin));
     }
+    const storedPlatform = localStorage.getItem(PLATFORM_SESSION_STORAGE_KEY);
+    if (storedPlatform) {
+      const parsedPlatform = parsePlatformSession(JSON.parse(storedPlatform));
+      if (parsedPlatform) {
+        setPlatformSession((prev) =>
+          prev && JSON.stringify(prev) === JSON.stringify(parsedPlatform) ? prev : parsedPlatform,
+        );
+      }
+    } else if (storedBusiness) {
+      try {
+        const b = JSON.parse(storedBusiness) as Business;
+        setPlatformSession((prev) => {
+          const next = derivePlatformSessionFromBusiness(b);
+          return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+        });
+      } catch {
+        /* ignore */
+      }
+    }
     let bizIdFromCache: string | undefined;
     if (storedBusiness) {
       try {
@@ -236,6 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPermissions({});
     setIsPrimaryAdmin(false);
     setSubscription(null);
+    setPlatformSession(null);
     setPortalTheme(null);
     localStorage.removeItem('user');
     localStorage.removeItem('businessId');
@@ -245,7 +294,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('branches');
     localStorage.removeItem('permissions');
     localStorage.removeItem('isPrimaryAdmin');
-    removeAllPortalThemeStorageKeys();
+    localStorage.removeItem(PLATFORM_SESSION_STORAGE_KEY);
+    removeAllPortalThemeClientStorage();
     markLocalSessionCookie(false);
   };
 
@@ -293,15 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Do not hijack sign-up / marketing: stale JWT + 401 used to always send users to /login,
       // so they could not complete /signup after a deleted-business incident.
-      const stayOnPublicSurface =
-        p === '/' ||
-        p.startsWith('/signup') ||
-        p.startsWith('/book-demo') ||
-        p.startsWith('/terms') ||
-        p.startsWith('/privacy') ||
-        p.startsWith('/admin/login') ||
-        p.startsWith('/attendance/login') ||
-        p.startsWith('/attendance/kiosk');
+      const stayOnPublicSurface = isPublicMarketingSurface(p);
 
       if (stayOnPublicSurface) {
         const base = p.split('?')[0] || '/';
@@ -380,8 +422,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           persistPortalThemeFromSession(data.portalTheme, data.user.business_id);
         } else {
           setPortalTheme((prev) => (prev === null ? prev : null));
-          removeAllPortalThemeStorageKeys();
+          removeAllPortalThemeClientStorage();
         }
+
+        const nextPlatform =
+          parsePlatformSession(data.platform) ??
+          derivePlatformSessionFromBusiness(data.business ?? null);
+        setPlatformSession((prev) =>
+          prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
+        );
+        localStorage.setItem(PLATFORM_SESSION_STORAGE_KEY, JSON.stringify(nextPlatform));
 
         if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
         if (data.business) {
@@ -400,27 +450,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           loadFromCache();
           return false;
         }
-        // Expired JWT while app shell still has cached user — keep offline navigation working.
+
+        const onPublicSurface = isPublicMarketingSurface(pathname || '');
+
         if (localStorage.getItem('user')) {
           let hardLogout = false;
           try {
             const body = await res.clone().json();
-            // SESSION_REVOKED = single-device session bumped by a newer login
-            // (another device / rebuild). The cached token is permanently dead,
-            // so force a clean re-login instead of trapping the user on an empty
-            // shell where every API returns 401.
             hardLogout =
               body?.code === 'BUSINESS_NOT_FOUND' ||
               body?.code === 'USER_NOT_FOUND' ||
               body?.code === 'SESSION_REVOKED';
           } catch {
+            if (onPublicSurface) {
+              clearLocalState();
+              return false;
+            }
             loadFromCache();
             return false;
           }
-          if (!hardLogout) {
-            loadFromCache();
+          if (hardLogout) {
+            await redirectToLoginAfterSessionFailure(res, generationAtStart);
             return false;
           }
+          if (onPublicSurface) {
+            clearLocalState();
+            return false;
+          }
+          loadFromCache();
+          return false;
         }
         await redirectToLoginAfterSessionFailure(res, generationAtStart);
         return false;
@@ -446,23 +504,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!pathname) return;
     if (isCapacitorNative() && !networkReady) return;
+
+    const onPublicSurface = isPublicMarketingSurface(pathname);
+    const wasPublicSurface = authWasPublicSurfaceRef.current;
+    authWasPublicSurfaceRef.current = onPublicSurface;
+    if (wasPublicSurface === true && !onPublicSurface) {
+      authBootstrappedRef.current = false;
+    }
+
     if (authBootstrappedRef.current) return;
     authBootstrappedRef.current = true;
 
     const initAuth = async () => {
       const storedUser = localStorage.getItem('user');
+      const onPublicSurface = isPublicMarketingSurface(pathname || '');
 
       if (storedUser) {
-        // Show cached data immediately while fetching fresh session
-        loadFromCache();
+        if (!onPublicSurface) {
+          loadFromCache();
+        }
         if (shouldTrustCachedSession()) {
-          // Do not hit /api/auth/session while offline — stale JWT must not logout.
+          if (!onPublicSurface) {
+            loadFromCache();
+          }
+          setLoading(false);
+          return;
+        }
+        if (onPublicSurface) {
+          // Stale local shell on marketing pages — clear quietly (no /api/auth/session 401 in console).
+          // A valid httpOnly session is restored when the user opens an app route.
+          clearLocalState();
+          authBootstrappedRef.current = false;
           setLoading(false);
           return;
         }
         await fetchSession();
       } else {
-        // No cached user - try fetching session (cookie may still be valid)
+        if (onPublicSurface) {
+          setLoading(false);
+          return;
+        }
+        // No cached user — cookie may still be valid (e.g. cleared localStorage).
         const generationAtStart = sessionGenerationRef.current;
         try {
           const res = await fetch('/api/auth/session', { credentials: 'same-origin' });
@@ -516,8 +598,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 persistPortalThemeFromSession(data.portalTheme, data.user.business_id);
               } else {
                 setPortalTheme((prev) => (prev === null ? prev : null));
-                removeAllPortalThemeStorageKeys();
+                removeAllPortalThemeClientStorage();
               }
+
+              const nextPlatform =
+                parsePlatformSession(data.platform) ??
+                derivePlatformSessionFromBusiness(data.business ?? null);
+              setPlatformSession((prev) =>
+                prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
+              );
+              localStorage.setItem(PLATFORM_SESSION_STORAGE_KEY, JSON.stringify(nextPlatform));
 
               localStorage.setItem('user', JSON.stringify(data.user));
               if (data.business) {
@@ -619,16 +709,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.business) setBusiness(data.business);
     if (data.branch) setBranch(data.branch);
 
+    const nextPlatform =
+      parsePlatformSession(data.platform) ??
+      derivePlatformSessionFromBusiness(data.business ?? null);
+    setPlatformSession(nextPlatform);
+
     localStorage.setItem('user', JSON.stringify(data.user));
     localStorage.setItem('businessId', data.user.business_id);
     if (data.business) localStorage.setItem('business', JSON.stringify(data.business));
     if (data.branch) localStorage.setItem('branch', JSON.stringify(data.branch));
+    localStorage.setItem(PLATFORM_SESSION_STORAGE_KEY, JSON.stringify(nextPlatform));
     markLocalSessionCookie(true);
     setLoading(false);
 
     // Full navigation — router.replace() after async fetchSession often leaves the
     // login page mounted (web + Capacitor). Dashboard initAuth hydrates the session.
-    window.location.replace('/dashboard');
+    window.location.replace(nextPlatform.defaultHomePath);
   };
 
   const logout = async () => {
@@ -676,6 +772,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && !shouldTrustCachedSession()) await fetchSession();
   }, [user?.id]);
 
+  const hasPlatformModule = useCallback(
+    (moduleKey: PlatformModule) =>
+      platformSession?.enabledModules.includes(moduleKey) ?? false,
+    [platformSession],
+  );
+
   const value = useMemo(() => ({
     user,
     business,
@@ -685,13 +787,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     permissions,
     isPrimaryAdmin,
     subscription,
+    platformSession,
+    hasPlatformModule,
     portalTheme,
     loading,
     login,
     logout,
     refresh,
     restoreCachedSession,
-  }), [user, business, branch, branches, activeBranchCount, permissions, isPrimaryAdmin, subscription, portalTheme, loading, refresh, restoreCachedSession]);
+  }), [user, business, branch, branches, activeBranchCount, permissions, isPrimaryAdmin, subscription, platformSession, hasPlatformModule, portalTheme, loading, refresh, restoreCachedSession]);
 
   return (
     <AuthContext.Provider value={value}>

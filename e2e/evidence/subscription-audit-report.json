@@ -1,0 +1,253 @@
+{
+  "generatedAt": "2026-06-23T17:45:39.203Z",
+  "baseUrl": "http://localhost:3101",
+  "scenarios": [
+    {
+      "id": "login",
+      "title": "Login: hr",
+      "persona": "hr",
+      "screenshotLabel": "login-hr",
+      "userAction": "Login with phone 88366156091",
+      "result": "Landed on http://localhost:3101/hr/dashboard",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/login",
+      "finalUrl": "http://localhost:3101/hr/dashboard",
+      "modalOrBannerText": "No Internet Connection Found\n\nMB\nMy Business\nMenu & profile tour\nToday\nThis Week\nThis Month\nCustom Range\nHR is not enabled\n\nAdd the HR module from Settings to use this dashboard.\n\nView plans",
+      "screenshots": [
+        "e2e\\evidence\\login-login-hr.png"
+      ]
+    },
+    {
+      "id": "login",
+      "title": "Login: billing",
+      "persona": "billing",
+      "screenshotLabel": "login-billing",
+      "userAction": "Login with phone 88366156092",
+      "result": "Landed on http://localhost:3101/dashboard",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/login",
+      "finalUrl": "http://localhost:3101/dashboard",
+      "modalOrBannerText": "No Internet Connection Found\n\nMB\nMy Business\nMenu & profile tour\nToday\nThis Week\nThis Month\nCustom Range",
+      "screenshots": [
+        "e2e\\evidence\\login-login-billing.png"
+      ]
+    },
+    {
+      "id": "login",
+      "title": "Login: connect",
+      "persona": "connect",
+      "screenshotLabel": "login-connect",
+      "userAction": "Login with phone 88366156093",
+      "result": "Landed on http://localhost:3101/whatsapp/dashboard",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/login",
+      "finalUrl": "http://localhost:3101/whatsapp/dashboard",
+      "modalOrBannerText": "No Internet Connection Found\n\nMB\nMy Business\nMenu & profile tour\n\nPlease select a business",
+      "screenshots": [
+        "e2e\\evidence\\login-login-connect.png"
+      ]
+    },
+    {
+      "id": "login",
+      "title": "Login: multi",
+      "persona": "multi",
+      "screenshotLabel": "login-multi",
+      "userAction": "Login with phone 88366156094",
+      "result": "Landed on http://localhost:3101/dashboard",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/login",
+      "finalUrl": "http://localhost:3101/dashboard",
+      "modalOrBannerText": "No Internet Connection Found\n\nMB\nMy Business\nMenu & profile tour\nToday\nThis Week\nThis Month\nCustom Range",
+      "screenshots": [
+        "e2e\\evidence\\login-login-multi.png"
+      ]
+    },
+    {
+      "id": "A1",
+      "title": "HR → Billing: route guard upsell",
+      "persona": "hr",
+      "screenshotLabel": "hr-billing-upsell",
+      "userAction": "Navigate to /invoices",
+      "result": "Redirected to http://localhost:3101/settings/products?upsell=billing",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [
+        "No pricing on upsell banner"
+      ],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/invoices",
+      "finalUrl": "http://localhost:3101/settings/products?upsell=billing",
+      "modalOrBannerText": "That area needs Billing\n\nGST invoicing, inventory, purchases, and reports.\n\nAdd Billing",
+      "screenshots": [
+        "e2e\\evidence\\A1-hr-billing-upsell.png"
+      ]
+    },
+    {
+      "id": "B1",
+      "title": "Billing → HR: route guard upsell",
+      "persona": "billing",
+      "screenshotLabel": "billing-hr-upsell",
+      "userAction": "Navigate to /employees",
+      "result": "Redirected to http://localhost:3101/settings/products?upsell=hr",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [
+        {
+          "label": "GET /api/employees (billing-only)",
+          "status": 403,
+          "bodySnippet": "{\"error\":\"This HR feature is not included in your subscription plan.\",\"code\":\"FEATURE_NOT_IN_PLAN\",\"details\":{\"error\":\"Feature not available in your plan\",\"code\":\"FEATURE_NOT_IN_PLAN\",\"feature\":\"hr_employees\"}}"
+        }
+      ],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/employees",
+      "finalUrl": "http://localhost:3101/settings/products?upsell=hr",
+      "modalOrBannerText": "Quick tour",
+      "screenshots": [
+        "e2e\\evidence\\B1-billing-hr-upsell.png"
+      ]
+    },
+    {
+      "id": "C1",
+      "title": "Billing → Connect: route guard upsell",
+      "persona": "billing",
+      "screenshotLabel": "billing-connect-upsell",
+      "userAction": "Navigate to /whatsapp/dashboard",
+      "result": "Redirected to http://localhost:3101/settings/products?upsell=connect",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [
+        {
+          "label": "GET /api/subscriptions/addons (billing-only, authenticated)",
+          "status": 200,
+          "bodySnippet": "{\"addons\":[{\"id\":\"whatsapp_bot\",\"name\":\"WhatsApp Bot\",\"display_name\":\"WhatsApp Bot & Conversations\",\"description\":\"Access to WhatsApp Conversations, Bot Rules, and advanced automation features\",\"price_monthly\":499,\"currency\":\"INR\",\"features\":[\"Conversations management\",\"Bot Rules & Automation\",\"Message labeling\",\"Auto-replies\",\"CRM integration\"],\"isActive\":false},{\"id\":\"whatsapp_send_message\",\"nam"
+        }
+      ],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/whatsapp/dashboard",
+      "finalUrl": "http://localhost:3101/settings/products?upsell=connect",
+      "modalOrBannerText": "That area needs Connect\n\nWhatsApp inbox, bot, and customer messaging.\n\nAdd Connect",
+      "screenshots": [
+        "e2e\\evidence\\C1-billing-connect-upsell.png"
+      ]
+    },
+    {
+      "id": "D1",
+      "title": "Connect → Billing: route guard upsell",
+      "persona": "connect",
+      "screenshotLabel": "connect-billing-upsell",
+      "userAction": "Navigate to /invoices",
+      "result": "Redirected to http://localhost:3101/settings/products?upsell=billing",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [
+        {
+          "label": "GET /api/invoices (connect-only, authenticated)",
+          "status": 403,
+          "bodySnippet": "{\"error\":\"Feature not available in your plan\",\"code\":\"FEATURE_NOT_IN_PLAN\",\"feature\":\"invoices\"}"
+        }
+      ],
+      "notes": [
+        "Billing API correctly blocked (403)"
+      ],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/invoices",
+      "finalUrl": "http://localhost:3101/settings/products?upsell=billing",
+      "modalOrBannerText": "That area needs Billing\n\nGST invoicing, inventory, purchases, and reports.\n\nAdd Billing",
+      "screenshots": [
+        "e2e\\evidence\\D1-connect-billing-upsell.png"
+      ]
+    },
+    {
+      "id": "E1",
+      "title": "Revenue leakage: API + direct URL",
+      "persona": "hr",
+      "screenshotLabel": "leakage-connect-url",
+      "userAction": "POST current plan=enterprise; POST modules connect; POST addon purchase; visit /connect/whatsapp",
+      "result": "Plan assign 403; module 403 (MODULE_REQUIRES_CHECKOUT); addon 503; URL=http://localhost:3101/connect/whatsapp",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [
+        {
+          "label": "POST /api/subscriptions/current (enterprise)",
+          "status": 403,
+          "bodySnippet": "{\"error\":\"Direct subscription assignment is not allowed. Use checkout or contact support.\",\"code\":\"SUBSCRIPTION_ASSIGNMENT_FORBIDDEN\"}"
+        },
+        {
+          "label": "POST /api/modules (connect)",
+          "status": 403,
+          "bodySnippet": "{\"error\":\"Adding a product requires subscription checkout. Use the checkout or upgrade API with a valid plan.\",\"code\":\"MODULE_REQUIRES_CHECKOUT\",\"module_key\":\"connect\",\"plan_id\":\"connect\",\"checkout_endpoint\":\"/api/subscriptions/checkout\",\"upgrade_endpoint\":\"/api/subscriptions/upgrade\"}"
+        },
+        {
+          "label": "POST /api/subscriptions/addons/whatsapp_bot/purchase",
+          "status": 503,
+          "bodySnippet": "{\"error\":\"Online payments are not configured yet. Please contact support to purchase add-ons.\",\"code\":\"PAYMENT_NOT_CONFIGURED\"}"
+        }
+      ],
+      "notes": [
+        "Plan assign blocked (403 SUBSCRIPTION_ASSIGNMENT_FORBIDDEN)",
+        "Module add correctly requires checkout",
+        "Addon blocked when payments not configured"
+      ],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/connect/whatsapp",
+      "modalOrBannerText": "No Internet Connection Found\n\nEH\nE2E HR 1782236615609\nSIDEBAR TESTING\nLEARN MORE\nMenu & profile tour\nE\nSend invoices on WhatsApp\n\nLink your business number to send invoices, estimates, and payment reminders from billing.\n\nBasic WhatsApp includes connecting your number and sending invoices from billing. Bot, reminders, and inbox features require the WhatsApp Bot addon.\n\nConnection Status\nDisconnected\n\nNot Connected\n\nConnect your WhatsApp account to send messages\n\nConnect WhatsApp\n\nNeed inbox, bot, and customer messaging? Add Connect on Your products",
+      "finalUrl": "http://localhost:3101/connect/whatsapp",
+      "screenshots": [
+        "e2e\\evidence\\E1-leakage-connect-url.png"
+      ]
+    },
+    {
+      "id": "F1",
+      "title": "Multi-product: subscription settings",
+      "persona": "multi",
+      "screenshotLabel": "multi-subscription-settings",
+      "userAction": "Open /settings/subscription",
+      "result": "Modules: billing, hr",
+      "pricingVisible": false,
+      "ctaText": "",
+      "checkoutReached": false,
+      "apiFindings": [],
+      "notes": [],
+      "passed": true,
+      "urlVisited": "http://localhost:3101/settings/subscription",
+      "modalOrBannerText": "No Internet Connection Found\n\nEM\nE2E MULTI 1782236615609\nSIDEBAR TESTING\nLEARN MORE\nMenu & profile tour\nE\nSubscription & Billing\nSubscription & Billing\n\nManage your plan and billing information",
+      "finalUrl": "http://localhost:3101/settings/subscription",
+      "screenshots": [
+        "e2e\\evidence\\F1-multi-subscription-settings.png"
+      ]
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0
+  }
+}

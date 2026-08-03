@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { User, Business } from '@/types/database';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 import bcrypt from 'bcryptjs';
 import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
@@ -9,9 +10,15 @@ import { FeatureKeys } from '@/lib/featureKeys';
 
 export const dynamic = 'force-dynamic';
 
-// 5 login attempts per IP per 15 minutes
+// 5 login attempts per IP per 15 minutes (skipped in dev / Playwright — see signup route).
 const LOGIN_LIMIT = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function shouldSkipLoginRateLimit(): boolean {
+  if (process.env.E2E_DISABLE_RATE_LIMIT === 'true') return true;
+  if (process.env.NODE_ENV !== 'production') return true;
+  return false;
+}
 
 export async function GET() {
   return NextResponse.json({ message: 'Login API endpoint is working' });
@@ -20,12 +27,14 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const ip = getClientIp(request);
-    const rl = checkRateLimit(`login:${ip}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.', retryAfterMs: rl.retryAfterMs },
-        { status: 429 }
-      );
+    if (!shouldSkipLoginRateLimit()) {
+      const rl = checkRateLimit(`login:${ip}`, LOGIN_LIMIT, LOGIN_WINDOW_MS);
+      if (!rl.allowed) {
+        return NextResponse.json(
+          { error: 'Too many login attempts. Please try again later.', retryAfterMs: rl.retryAfterMs },
+          { status: 429 }
+        );
+      }
     }
 
     const body = await request.json();
@@ -169,10 +178,19 @@ export async function POST(request: NextRequest) {
       signRefreshToken(tokenPayload),
     ]);
 
+    const platform = business?.id
+      ? await getBusinessPlatformContext(
+          business.id,
+          business.product_line,
+          (business as { primary_module?: string | null }).primary_module,
+        )
+      : null;
+
     const response = NextResponse.json({
       success: true,
       user: safeUser,
       business: business || null,
+      platform,
       message: 'Login successful'
     });
 

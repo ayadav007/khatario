@@ -1,3 +1,5 @@
+import { getSettingsMobileTitle } from '@/lib/settings-mobile-title';
+
 function getQueryParam(
   search: string | URLSearchParams | null | undefined,
   key: string
@@ -111,12 +113,16 @@ export function getMobileRouteTitle(
   if (p.startsWith('/opening-balances')) return 'Opening balances';
 
   // —— Employees & HR ——
+  if (p === '/employees/attendance') return 'Mark attendance';
   if (p === '/employees/attendance/mark') return 'Mark attendance';
+  if (p === '/employees/manager/attendance') return 'Roll call';
   if (p === '/employees/expenses/new') return 'Submit expense';
+  if (p === '/employees/leaves/calendar') return 'Team calendar';
   if (p === '/employees/leaves/new') return 'Request leave';
   if (p === '/employees/tasks/new') return 'Create task';
   if (p === '/employees/salary/advances/new') return 'Request advance';
   if (p === '/employees/salary/payments/new') return 'Process payment';
+  if (/\/employees\/[^/]+\/edit$/.test(p)) return 'Edit employee';
   if (p.startsWith('/employees/')) return 'Employee';
   if (p === '/employees') return 'Employees';
 
@@ -147,12 +153,8 @@ export function getMobileRouteTitle(
   if (p.startsWith('/whatsapp')) return 'WhatsApp';
 
   // —— Settings ——
-  if (p === '/settings/backup') return 'Backup & restore';
-  if (p === '/settings/offline-sync') return 'Offline sync';
-  if (p === '/settings/custom-fields') return 'Custom fields';
-  if (p === '/settings/branches/new') return 'Create branch';
-  if (p.startsWith('/settings/branches/') && p.endsWith('/edit')) return 'Edit branch';
-  if (p.startsWith('/settings')) return 'Settings';
+  const settingsTitle = getSettingsMobileTitle(pathname, search);
+  if (settingsTitle) return settingsTitle;
 
   // —— Credit & approvals ——
   if (p.startsWith('/credit-approvals')) return 'Credit approvals';

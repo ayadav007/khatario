@@ -5,13 +5,14 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { MapPin } from 'lucide-react';
 import { INDIAN_STATES } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -206,22 +207,11 @@ export default function NewLocationPage() {
   };
 
   return (
-    
-      <FormPageContainer className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center space-x-4">
-          <Link
-            href="/settings/warehouses"
-            className="p-2 hover:bg-surface rounded-lg transition border border-border"
-          >
-            <ArrowLeft className="w-5 h-5 text-text-secondary" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Add New Warehouse</h1>
-            <p className="text-text-secondary text-sm mt-1">Enter warehouse details</p>
-          </div>
-        </div>
-
+      <SettingsPageShell
+        title="Add New Warehouse"
+        description="Enter warehouse details"
+        icon={MapPin}
+      >
         <FormCard>
         <form onSubmit={handleSubmit}>
         <div className="form-page-shell">
@@ -325,22 +315,24 @@ export default function NewLocationPage() {
           </FormSection>
         </div>
 
-          <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+          <SettingsFloatingSaveBar align="between">
             <Button
               type="button"
               variant="secondary"
               onClick={() => router.push('/locations')}
               disabled={saving}
+              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={saving}
+              className="flex-1 sm:flex-none"
             >
               {saving ? 'Creating...' : 'Create Warehouse'}
             </Button>
-          </div>
+          </SettingsFloatingSaveBar>
         </form>
         </FormCard>
 
@@ -386,8 +378,7 @@ export default function NewLocationPage() {
             }}
           />
         )}
-      </FormPageContainer>
-    
+      </SettingsPageShell>
   );
 }
 

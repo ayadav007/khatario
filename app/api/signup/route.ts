@@ -7,6 +7,11 @@ import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { getDefaultTemplateSettings } from '@/lib/template-defaults';
 import { notifyAdminsNewSignup, sendWelcomeEmail } from '@/lib/platform-email';
+import { getSignupPlanConfig, normalizeProductLine } from '@/lib/product-lines';
+import { productLineToModule } from '@/lib/platform-modules';
+import { seedInitialBusinessModules } from '@/lib/business-modules';
+import { seedInitialModuleSubscription } from '@/lib/subscription/module-subscriptions';
+import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +58,11 @@ export async function POST(request: NextRequest) {
       userName,
       userPhone,
       password,
+      productLine: productLineRaw,
     } = body;
+
+    const productLine = normalizeProductLine(productLineRaw);
+    const signupPlan = getSignupPlanConfig(productLine);
 
     if (!businessName || !userName || !userPhone || !password || !businessType || !industry) {
       return NextResponse.json(
@@ -62,14 +71,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const phoneNorm = normalizePhoneOrNull(userPhone);
+    if (!phoneNorm) {
+      return NextResponse.json(
+        { error: 'Enter a valid 10-digit mobile number' },
+        { status: 400 }
+      );
+    }
+
+    const existingUser = await query(
+      `SELECT id FROM users WHERE phone = $1 LIMIT 1`,
+      [phoneNorm]
+    );
+    if (existingUser.rows.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'This mobile number is already registered. Log in to access your account.',
+          code: 'PHONE_ALREADY_REGISTERED',
+        },
+        { status: 409 }
+      );
+    }
+
     await client.query('BEGIN');
 
     const businessRes = await client.query(
       `INSERT INTO businesses (
          name, email, phone, business_type, industry, business_model,
-         gst_registration_type
+         gst_registration_type, product_line, primary_module
        )
-       VALUES ($1, $2, $3, $4, $5, $6, 'unregistered')
+       VALUES ($1, $2, $3, $4, $5, $6, 'unregistered', $7, $8)
        RETURNING id`,
       [
         businessName,
@@ -78,9 +109,17 @@ export async function POST(request: NextRequest) {
         businessType,
         industry,
         businessModel || null,
+        productLine,
+        productLineToModule(productLine),
       ]
     );
     const businessId = businessRes.rows[0].id;
+
+    try {
+      await seedInitialBusinessModules(client, businessId, productLine);
+    } catch (moduleSeedError: unknown) {
+      console.warn('Signup: business_modules seed skipped (run migration 254):', moduleSeedError);
+    }
 
     await client.query(`
       INSERT INTO permission_modules (module_key, module_name, description, display_order, is_active)
@@ -144,7 +183,7 @@ export async function POST(request: NextRequest) {
       `INSERT INTO users (business_id, name, phone, password_hash, role_id, is_primary_admin) 
        VALUES ($1, $2, $3, $4, $5, true)
        RETURNING id`,
-      [businessId, userName, userPhone, passwordHash, primaryAdminRoleId]
+      [businessId, userName, phoneNorm, passwordHash, primaryAdminRoleId]
     );
     const primaryAdminUserId = userRes.rows[0].id;
 
@@ -184,20 +223,22 @@ export async function POST(request: NextRequest) {
       ON CONFLICT (business_id) DO NOTHING
     `, [businessId, productVariantsEnabled]);
 
-    // Activate GST Standard for tax invoices with full field defaults so PDF/preview use DB settings (no silent fallback).
-    try {
-      const gstStandardSettings = getDefaultTemplateSettings('gst_standard');
-      await client.query(
-        `INSERT INTO business_template_assignments (business_id, document_type, template_id, settings)
-         VALUES ($1::uuid, 'tax_invoice', 'gst_standard', $2::jsonb)
-         ON CONFLICT (business_id, document_type) DO UPDATE SET
-           template_id = EXCLUDED.template_id,
-           settings = EXCLUDED.settings,
-           updated_at = CURRENT_TIMESTAMP`,
-        [businessId, JSON.stringify(gstStandardSettings)]
-      );
-    } catch (templateSeedError: unknown) {
-      console.error('Signup: failed to seed default tax_invoice template assignment:', templateSeedError);
+    // Activate GST Standard for tax invoices (Billing product line only).
+    if (productLine === 'billing') {
+      try {
+        const gstStandardSettings = getDefaultTemplateSettings('gst_standard');
+        await client.query(
+          `INSERT INTO business_template_assignments (business_id, document_type, template_id, settings)
+           VALUES ($1::uuid, 'tax_invoice', 'gst_standard', $2::jsonb)
+           ON CONFLICT (business_id, document_type) DO UPDATE SET
+             template_id = EXCLUDED.template_id,
+             settings = EXCLUDED.settings,
+             updated_at = CURRENT_TIMESTAMP`,
+          [businessId, JSON.stringify(gstStandardSettings)]
+        );
+      } catch (templateSeedError: unknown) {
+        console.error('Signup: failed to seed default tax_invoice template assignment:', templateSeedError);
+      }
     }
     
     try {
@@ -231,32 +272,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const trialPlan = await client.query(`
-      SELECT id, name, display_name FROM subscription_plans WHERE id = 'trial' AND is_active = true
-    `);
+    const targetPlan = await client.query(
+      `SELECT id, name, display_name FROM subscription_plans WHERE id = $1 AND is_active = true`,
+      [signupPlan.planId]
+    );
 
     const freePlan = await client.query(`
-      SELECT id, name, display_name FROM subscription_plans WHERE id = 'free' AND is_active = true
-    `);
+      SELECT id, name, display_name FROM subscription_plans WHERE id = $1 AND is_active = true
+    `, [signupPlan.postTrialPlanId]);
 
-    if (freePlan.rows.length === 0) {
-      console.error('CRITICAL: Default subscription plan (id: "free") not found or inactive.');
-      throw new Error('System configuration error: Default subscription plan not found. Please contact support.');
+    if (targetPlan.rows.length === 0) {
+      console.error(
+        `CRITICAL: Signup plan "${signupPlan.planId}" not found for product line "${productLine}".`
+      );
+      if (freePlan.rows.length === 0) {
+        throw new Error('System configuration error: Default subscription plan not found. Please contact support.');
+      }
     }
 
-    const useTrialPlan = trialPlan.rows.length > 0;
-    const initialPlanId = useTrialPlan ? trialPlan.rows[0].id : freePlan.rows[0].id;
-    const initialStatus = useTrialPlan ? 'trial' : 'active';
+    const useConfiguredPlan = targetPlan.rows.length > 0;
+    const initialPlanId = useConfiguredPlan ? targetPlan.rows[0].id : freePlan.rows[0].id;
+    const initialStatus = signupPlan.status;
 
-    if (!useTrialPlan) {
+    if (!useConfiguredPlan) {
       console.warn(
-        'SIGNUP: subscription plan "trial" not found — new business assigned to "free" without trial. Run migration 154_add_trial_subscription_plan.sql.'
+        `SIGNUP: plan "${signupPlan.planId}" not found — falling back to "${signupPlan.postTrialPlanId}". Run migration 253_product_lines_and_module_plans.sql.`
       );
     }
 
     const existingSubscription = await client.query(`
       SELECT id, plan_id, status FROM business_subscriptions WHERE business_id = $1
     `, [businessId]);
+
+    const trialDays = signupPlan.trialDays;
 
     if (existingSubscription.rows.length > 0) {
       await client.query(
@@ -265,32 +313,37 @@ export async function POST(request: NextRequest) {
         SET plan_id = $1,
             status = $2,
             start_date = CURRENT_DATE,
-            trial_end_date = CASE WHEN $2::text = 'trial' THEN CURRENT_DATE + INTERVAL '30 days' ELSE NULL END,
+            trial_end_date = CASE
+              WHEN $2::text = 'trial' AND $4::int IS NOT NULL
+              THEN CURRENT_DATE + ($4::text || ' days')::interval
+              ELSE NULL
+            END,
             updated_at = CURRENT_TIMESTAMP
         WHERE business_id = $3
         `,
-        [initialPlanId, initialStatus, businessId]
+        [initialPlanId, initialStatus, businessId, trialDays]
       );
 
       clearSubscriptionCache(businessId);
     } else {
-      const insertResult = useTrialPlan
-        ? await client.query(
-            `
+      const insertResult =
+        initialStatus === 'trial' && trialDays
+          ? await client.query(
+              `
             INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-            VALUES ($1, $2, 'trial', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days')
+            VALUES ($1, $2, 'trial', CURRENT_DATE, CURRENT_DATE + ($3::text || ' days')::interval)
             RETURNING id, plan_id, status
             `,
-            [businessId, initialPlanId]
-          )
-        : await client.query(
-            `
+              [businessId, initialPlanId, trialDays]
+            )
+          : await client.query(
+              `
             INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
             VALUES ($1, $2, 'active', CURRENT_DATE, NULL)
             RETURNING id, plan_id, status
             `,
-            [businessId, initialPlanId]
-          );
+              [businessId, initialPlanId]
+            );
 
       if (!insertResult.rows || insertResult.rows.length === 0) {
         throw new Error('Failed to create subscription: INSERT returned no rows');
@@ -298,6 +351,15 @@ export async function POST(request: NextRequest) {
 
       clearSubscriptionCache(businessId);
     }
+
+    await seedInitialModuleSubscription(
+      client,
+      businessId,
+      productLine,
+      initialPlanId,
+      initialStatus,
+      trialDays,
+    );
 
     await client.query('COMMIT');
     clearSubscriptionCache(businessId);
@@ -317,9 +379,8 @@ export async function POST(request: NextRequest) {
 
     setSessionCookies(response, accessToken, refreshToken);
 
-    const planLabel = useTrialPlan
-      ? (trialPlan.rows[0].display_name || 'Trial')
-      : (freePlan.rows[0].display_name || 'Free');
+    const assignedPlanRow = useConfiguredPlan ? targetPlan.rows[0] : freePlan.rows[0];
+    const planLabel = assignedPlanRow?.display_name || signupPlan.planId;
 
     void (async () => {
       try {
@@ -329,7 +390,7 @@ export async function POST(request: NextRequest) {
             businessName,
             recipientEmail: businessEmail.trim(),
             userName,
-            trialDays: useTrialPlan ? 30 : undefined,
+            trialDays: signupPlan.trialDays ?? undefined,
           });
         }
         await notifyAdminsNewSignup({
@@ -337,7 +398,7 @@ export async function POST(request: NextRequest) {
           businessName,
           businessEmail: businessEmail?.trim() || null,
           userName,
-          userPhone,
+          userPhone: phoneNorm,
           planLabel,
         });
       } catch (emailErr) {
@@ -352,8 +413,16 @@ export async function POST(request: NextRequest) {
     console.error('Signup error:', error);
     
     if (error.code === '23505') {
+      const isPhone =
+        error.constraint === 'users_phone_key' ||
+        String(error.detail || '').includes('(phone)');
       return NextResponse.json(
-        { error: 'Phone number or email already registered' },
+        {
+          error: isPhone
+            ? 'This mobile number is already registered. Log in to access your account.'
+            : 'Phone number or email already registered',
+          code: isPhone ? 'PHONE_ALREADY_REGISTERED' : 'DUPLICATE_REGISTRATION',
+        },
         { status: 409 }
       );
     }

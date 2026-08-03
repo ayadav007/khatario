@@ -5,29 +5,12 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/dashboard/campaigns
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export async function GET(request: NextRequest) {
+export const GET = withWhatsAppPremiumApi({}, async ({ businessId }) => {
   try {
-    const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
-
-    // Check if business has WhatsApp Bot addon — return empty data if not available
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
-      return NextResponse.json({
-        campaigns: { messages_sent: 0, delivered: 0, read: 0, failed: 0, responses_received: 0 }
-      });
-    }
-
-    // Campaign performance metrics
-    // Messages sent, delivered, read, failed, responses received
     const campaignStats = await queryOne<{
       messages_sent: number;
       delivered: number;
@@ -64,10 +47,8 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error fetching campaign performance:', error);
-    // Return empty data instead of 500 so the dashboard still loads
     return NextResponse.json({
       campaigns: { messages_sent: 0, delivered: 0, read: 0, failed: 0, responses_received: 0 }
     });
   }
-}
-
+});

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offer Letter - {{candidate.full_name}}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Times New Roman', Times, serif; font-size: 12px; line-height: 1.7; color: #111; background: #fff; }
+    .page { max-width: 700px; margin: 0 auto; padding: 32px 36px; border: 2px solid #222; min-height: 1000px; position: relative; }
+    .watermark { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); opacity: 0.05; max-width: 260px; }
+    .content { position: relative; z-index: 1; }
+    .header { text-align: center; border-bottom: 3px double #222; padding-bottom: 14px; margin-bottom: 22px; }
+    .logo { max-height: 50px; margin-bottom: 8px; }
+    .company-name { font-size: 17px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; }
+    .company-address { font-size: 10px; color: #444; margin-top: 6px; }
+    .date-line { text-align: right; font-size: 11px; margin-bottom: 18px; }
+    .subject { text-align: center; font-weight: bold; text-decoration: underline; margin: 18px 0; letter-spacing: 0.5px; }
+    .salutation { margin-bottom: 14px; font-weight: bold; }
+    .body p { margin-bottom: 12px; text-align: justify; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 11px; }
+    th, td { border: 1.5px solid #222; padding: 7px 9px; text-align: left; }
+    th { background: #f0f0f0; width: 40%; font-weight: bold; }
+    .total td { font-weight: bold; }
+    .signatures { display: flex; justify-content: space-between; gap: 20px; margin-top: 44px; }
+    .sig-block { width: 48%; font-size: 11px; }
+    .sig-block img { max-height: 48px; max-width: 150px; margin: 6px 0; }
+    .sig-line { border-top: 1.5px solid #222; margin-top: 36px; padding-top: 5px; }
+    .footer { margin-top: 32px; border-top: 1px solid #999; padding-top: 10px; text-align: center; font-size: 9px; color: #555; }
+    .accepted-note { font-style: italic; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    {{#if settings.show_watermark}}{{#if business.logo_url}}<img src="{{business.logo_url}}" class="watermark" alt="" />{{/if}}{{/if}}
+    <div class="content">
+      <div class="header">
+        {{#if business.logo_url}}<img src="{{business.logo_url}}" class="logo" alt="" />{{/if}}
+        <div class="company-name">{{business.name}}</div>
+        <div class="company-address">{{business.address}}</div>
+      </div>
+      <div class="subject">OFFER OF EMPLOYMENT</div>
+      <div class="salutation">Dear {{candidate.full_name}},</div>
+      <div class="body">
+        <p>{{settings.body_intro}}</p>
+        <table>
+          <tr><th>Designation</th><td>{{offer.designation}}</td></tr>
+          {{#if offer.department}}<tr><th>Department</th><td>{{offer.department}}</td></tr>{{/if}}
+          {{#if offer.work_location}}<tr><th>Place of Work</th><td>{{offer.work_location}}</td></tr>{{/if}}
+          <tr><th>Commencement Date</th><td>{{offer.joining_date}}</td></tr>
+          <tr><th>Annual Cost to Company</th><td>INR {{offer.ctc_annual}}</td></tr>
+          {{#if offer.annual_bonus}}<tr><th>Variable Pay / Bonus</th><td>INR {{offer.annual_bonus}}</td></tr>{{/if}}
+        </table>
+        {{#if settings.show_ctc_breakdown}}
+        <p><strong>Annual remuneration structure:</strong></p>
+        <table>
+          <tr><th>Component</th><th>Amount (INR)</th></tr>
+          <tr><td>Basic</td><td>{{offer.basic_salary_annual}}</td></tr>
+          {{#if offer.hra_annual}}<tr><td>HRA</td><td>{{offer.hra_annual}}</td></tr>{{/if}}
+          {{#if offer.transport_annual}}<tr><td>Transport</td><td>{{offer.transport_annual}}</td></tr>{{/if}}
+          {{#if offer.medical_annual}}<tr><td>Medical</td><td>{{offer.medical_annual}}</td></tr>{{/if}}
+          {{#if offer.special_annual}}<tr><td>Special Allowance</td><td>{{offer.special_annual}}</td></tr>{{/if}}
+          {{#if offer.other_annual}}<tr><td>Other</td><td>{{offer.other_annual}}</td></tr>{{/if}}
+          <tr class="total"><td>Total CTC</td><td>{{offer.ctc_annual}}</td></tr>
+        </table>
+        {{/if}}
+        {{#if settings.probation_clause}}<p>{{settings.probation_clause}}</p>{{/if}}
+        {{#if settings.notice_period_clause}}<p>{{settings.notice_period_clause}}</p>{{/if}}
+        {{#if offer.terms_text}}<p>{{offer.terms_text}}</p>{{/if}}
+        {{#if settings.additional_terms}}<p>{{settings.additional_terms}}</p>{{/if}}
+      </div>
+      <div class="signatures">
+        <div class="sig-block">
+          <p>For and on behalf of<br><strong>{{business.name}}</strong></p>
+          {{#if business.signature_url}}<img src="{{business.signature_url}}" alt="" />{{/if}}
+          <div class="sig-line"><strong>{{signatory.name}}</strong><br>{{signatory.title}}</div>
+        </div>
+        <div class="sig-block">
+          {{#if candidate.signature_url}}
+            <p class="accepted-note">I accept the terms of this offer letter.</p>
+            <img src="{{candidate.signature_url}}" alt="" />
+            <div class="sig-line"><strong>{{candidate.full_name}}</strong><br>{{candidate.accepted_date}}</div>
+          {{else}}
+            <p style="margin-top:40px;color:#666;">Candidate acceptance</p>
+          {{/if}}
+        </div>
+      </div>
+      {{#if settings.footer_text}}<div class="footer">{{settings.footer_text}}</div>{{/if}}
+    </div>
+  </div>
+</body>
+</html>

@@ -4,6 +4,8 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * GET /api/warehouses/[id]/stock-availability
  * Get stock availability for items in a specific warehouse
@@ -15,7 +17,9 @@ export async function GET(
 ) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const itemId = searchParams.get('item_id'); // Optional: filter by item
 
     if (!businessId) {
@@ -111,7 +115,10 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { business_id, items } = body; // items: [{ item_id, quantity }]
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { items } = body; // items: [{ item_id, quantity }]
 
     if (!business_id || !items || !Array.isArray(items)) {
       return NextResponse.json(

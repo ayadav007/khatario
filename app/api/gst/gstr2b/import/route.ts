@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import crypto from 'crypto';
+import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 
 interface GSTR2BInvoiceData {
   supplier_gstin: string;
@@ -39,7 +40,6 @@ export async function POST(request: NextRequest) {
     const business_id = formData.get('business_id') as string;
     const filing_period = formData.get('filing_period') as string; // YYYY-MM format
     const file = formData.get('file') as File;
-    const user_id = formData.get('user_id') as string; // Current user ID
     
     if (!business_id || !filing_period || !file) {
       return NextResponse.json(
@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const access = await assertGstr2bApiAccess(request, business_id, 'create');
+    if (!access.ok) return access.response;
     
     // Validate filing_period format (YYYY-MM)
     if (!/^\d{4}-\d{2}$/.test(filing_period)) {
@@ -65,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Check for duplicate import
     const duplicateCheck = await client.query(
       'SELECT id FROM gstr2b_imports WHERE business_id = $1 AND filing_period = $2 AND file_hash = $3',
-      [business_id, filing_period, fileHash]
+      [access.businessId, filing_period, fileHash]
     );
     
     if (duplicateCheck.rows.length > 0) {
@@ -100,14 +103,14 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
     `, [
-      business_id,
+      access.businessId,
       filing_period,
       fileType,
       file.name,
       fileHash,
       invoices.length,
       0, // Will calculate total ITC
-      user_id || null
+      access.userId
     ]);
     
     const importId = importResult.rows[0].id;
@@ -143,7 +146,7 @@ export async function POST(request: NextRequest) {
         DO NOTHING
       `, [
         importId,
-        business_id,
+        access.businessId,
         filing_period,
         invoice.supplier_gstin,
         invoice.supplier_name || null,

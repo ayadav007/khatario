@@ -132,9 +132,12 @@ export function useAuthorizationGuard(
         const data = await res.json();
 
         if (!res.ok) {
-          setStatus('denied');
-          setReason(data.reason || 'Authorization check failed');
-          setCode(data.code);
+          // Only override cached allow on explicit auth denial — keep snapshot on transient/network errors
+          if (res.status === 401 || res.status === 403) {
+            setStatus('denied');
+            setReason(data.reason || 'Authorization check failed');
+            setCode(data.code);
+          }
           return;
         }
 

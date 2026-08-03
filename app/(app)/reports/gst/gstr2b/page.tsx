@@ -3,11 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download, FileText, RefreshCw, AlertCircle } from 'lucide-react';
+import { Download, FileText, RefreshCw } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useToastContext } from '@/contexts/ToastContext';
+import { ProfileRequiredPanel } from '@/components/profile/ProfileRequiredPanel';
+import { getProfileGaps, isProfileReady } from '@/lib/business-profile-requirements';
+import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -16,30 +18,17 @@ const MONTHS = [
 
 export default function GSTR2BPage() {
   const { business, user } = useAuth();
-  const router = useRouter();
   const toast = useToastContext();
+  const { ensureProfile } = useProfileRequiredGate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
   
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
 
-  // Check if business has GSTIN
-  const hasGSTIN = business?.gstin && business.gstin.trim().length > 0;
-
-  // Redirect if GSTIN is missing
-  useEffect(() => {
-    if (business && !hasGSTIN) {
-      const confirmed = window.confirm(
-        'GSTR-2B reports require a business GSTIN. Would you like to add your GSTIN in Settings?'
-      );
-      if (confirmed) {
-        router.push('/settings?tab=tax');
-      } else {
-        router.push('/reports');
-      }
-    }
-  }, [business, hasGSTIN, router]);
+  const profileContext = 'gst_compliance' as const;
+  const profileGaps = getProfileGaps(business, profileContext);
+  const profileReady = isProfileReady(business, profileContext);
 
   const fetchReport = async () => {
     if (!business) return;
@@ -70,10 +59,10 @@ export default function GSTR2BPage() {
   };
 
   useEffect(() => {
-    if (business && hasGSTIN) {
+    if (business && profileReady) {
       fetchReport();
     }
-  }, [business, hasGSTIN, month, year]);
+  }, [business, profileReady, month, year]);
 
   // Show message if GSTIN is missing
   if (!business) {
@@ -89,33 +78,13 @@ export default function GSTR2BPage() {
     );
   }
 
-  if (!hasGSTIN) {
-    return (
-      
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="max-w-md text-center">
-            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="w-8 h-8 text-amber-600" />
-            </div>
-            <h2 className="text-xl font-semibold text-text-primary mb-2">GSTIN Required</h2>
-            <p className="text-text-secondary mb-6">
-              GSTR-2B reports are only available for businesses with a registered GSTIN. 
-              Please add your business GSTIN in Settings to access GST returns.
-            </p>
-            <button
-              onClick={() => router.push('/settings?tab=tax')}
-              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-            >
-              Go to Settings
-            </button>
-          </div>
-        </div>
-      
-    );
+  if (!profileReady) {
+    return <ProfileRequiredPanel context={profileContext} gaps={profileGaps} />;
   }
 
   const handleExport = async (format: 'csv' | 'json') => {
     if (!business) return;
+    if (!ensureProfile(profileContext)) return;
     const query = new URLSearchParams({
       business_id: business.id,
       month: month.toString(),

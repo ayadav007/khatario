@@ -4,6 +4,8 @@ import { EmployeeTarget } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * DELETE /api/employees/targets/[id]
  * Delete an employee target
@@ -15,14 +17,9 @@ export async function DELETE(
   try {
     const targetId = params.id;
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Verify target belongs to business
     const existing = await queryOne(

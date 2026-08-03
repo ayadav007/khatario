@@ -20,10 +20,22 @@ import { NextResponse } from 'next/server';
 import {
   getBusinessSubscription,
   hasWhatsAppBotAddon,
+  hasWhatsAppSendMessageAddon,
   isSubscriptionOperationalStatus,
 } from '../subscription';
-import { checkTrialExpiry } from './lifecycle';
 import { getEntitlementPlanId } from './effective-plan';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
+import {
+  getEntitlementPlanIdForModuleSub,
+  getModuleSubscription,
+  getOperationalModuleSubscriptions,
+} from '@/lib/subscription/module-subscriptions';
+import {
+  CORE_BILLING_FEATURE_KEYS,
+  getFeatureRequiredModule,
+} from '@/lib/subscription/module-entitlements';
+import { isModuleSubscriptionOperational } from '@/lib/subscription/module-operational-check';
+import type { PlatformModule } from '@/lib/platform-modules';
 import * as db from '../db';
 import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
 
@@ -123,10 +135,129 @@ export function resolveRegistryFeatureId(featureKey: string): string {
   return registryMapping[canonicalKey] || canonicalKey;
 }
 
+async function loadUnionEnabledRegistryFeatureIds(businessId: string): Promise<string[]> {
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  const merged = new Set<string>();
+
+  if (operational.length > 0) {
+    for (const modSub of operational) {
+      const planId = getEntitlementPlanIdForModuleSub(modSub);
+      const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
+      ids.forEach((id) => merged.add(id));
+    }
+    return [...merged];
+  }
+
+  const subscription = await getBusinessSubscription(businessId, true);
+  if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
+    return [];
+  }
+  const planId = getEntitlementPlanId(subscription);
+  const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
+  ids.forEach((id) => merged.add(id));
+  return [...merged];
+}
+
+async function resolveModuleSubForFeature(
+  businessId: string,
+  featureKey: string,
+): Promise<Awaited<ReturnType<typeof getModuleSubscription>>> {
+  const canonical = normalizeFeatureKey(featureKey);
+  let requiredModule: PlatformModule | null = getFeatureRequiredModule(featureKey);
+  if (isCoreEntitlementKey(canonical) || CORE_BILLING_FEATURE_KEYS.has(canonical)) {
+    requiredModule = 'billing';
+  }
+  if (!requiredModule) return null;
+  return getModuleSubscription(businessId, requiredModule, true);
+}
+
+/** Assert a specific product module is enabled and subscription-accessible. */
+export async function assertModuleAccess(
+  businessId: string,
+  moduleKey: PlatformModule,
+  contextKey = 'access',
+): Promise<void> {
+  const ctx = await getBusinessPlatformContext(businessId);
+  if (!ctx.enabledModules.includes(moduleKey)) {
+    throw new FeatureAccessDeniedError(contextKey, businessId, 'FEATURE_NOT_ENABLED');
+  }
+  const sub = await getModuleSubscription(businessId, moduleKey, true);
+  if (!sub) {
+    throw new FeatureAccessDeniedError(contextKey, businessId, 'NO_SUBSCRIPTION');
+  }
+  if (sub.status === 'cancelled' || sub.status === 'expired') {
+    throw new FeatureAccessDeniedError(
+      contextKey,
+      businessId,
+      sub.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+    );
+  }
+  if (!isModuleSubscriptionOperational(sub)) {
+    throw new FeatureAccessDeniedError(contextKey, businessId, 'SUBSCRIPTION_EXPIRED');
+  }
+}
+
+async function assertModuleOperationalForFeature(
+  businessId: string,
+  featureKey: string,
+): Promise<void> {
+  const canonical = normalizeFeatureKey(featureKey);
+  let requiredModule: PlatformModule | null = getFeatureRequiredModule(featureKey);
+
+  if (isCoreEntitlementKey(canonical) || CORE_BILLING_FEATURE_KEYS.has(canonical)) {
+    requiredModule = 'billing';
+  }
+
+  const ctx = await getBusinessPlatformContext(businessId);
+
+  if (requiredModule) {
+    if (!ctx.enabledModules.includes(requiredModule)) {
+      throw new FeatureAccessDeniedError(featureKey, businessId, 'FEATURE_NOT_ENABLED');
+    }
+    const sub = await getModuleSubscription(businessId, requiredModule, true);
+    if (!sub) {
+      throw new FeatureAccessDeniedError(featureKey, businessId, 'NO_SUBSCRIPTION');
+    }
+    if (sub.status === 'cancelled' || sub.status === 'expired') {
+      throw new FeatureAccessDeniedError(
+        featureKey,
+        businessId,
+        sub.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+      );
+    }
+    if (!isModuleSubscriptionOperational(sub)) {
+      throw new FeatureAccessDeniedError(featureKey, businessId, 'SUBSCRIPTION_EXPIRED');
+    }
+    return;
+  }
+
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  if (operational.length === 0) {
+    const subscription = await getBusinessSubscription(businessId, true);
+    if (!subscription) {
+      throw new FeatureAccessDeniedError(featureKey, businessId, 'NO_SUBSCRIPTION');
+    }
+    if (!isSubscriptionOperationalStatus(subscription.status)) {
+      throw new FeatureAccessDeniedError(
+        featureKey,
+        businessId,
+        subscription.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+      );
+    }
+  }
+}
+
+async function assertOperationalSubscriptionExists(
+  businessId: string,
+  featureKey: string,
+): Promise<void> {
+  await assertModuleOperationalForFeature(businessId, featureKey);
+}
+
 /**
  * Get enabled features for a business from Feature Registry
  * NO FALLBACKS - Registry is the only source of truth
- * 
+ *
  * @throws {Error} If registry is incomplete and registry_complete = true
  */
 async function getEnabledFeaturesFromRegistry(
@@ -261,59 +392,29 @@ export async function assertFeatureAccess(
     );
   }
 
-  // Always skip cache: enforcement must match DB (subscription page uses direct SQL;
-  // cached getBusinessSubscription can lag up to SUBSCRIPTION_CACHE_TTL after plan changes).
-  const subscription = await getBusinessSubscription(businessId, true);
-
-  // Check if subscription exists
-  if (!subscription) {
-    throw new FeatureAccessDeniedError(
-      featureKey,
-      businessId,
-      'NO_SUBSCRIPTION'
-    );
-  }
-
-  // Align with enforceAccess + getEnabledFeatures: trial is entitled like active
-  if (!isSubscriptionOperationalStatus(subscription.status)) {
-    throw new FeatureAccessDeniedError(
-      featureKey,
-      businessId,
-      subscription.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE'
-    );
-  }
-
-  if (subscription.status === 'trial') {
-    const trialInfo = await checkTrialExpiry(businessId);
-    if (trialInfo.isExpired && !trialInfo.isInGracePeriod) {
-      throw new FeatureAccessDeniedError(
-        featureKey,
-        businessId,
-        'SUBSCRIPTION_EXPIRED'
-      );
-    }
-  }
-
-  // Check if subscription has expired (if end_date is set)
-  if (subscription.end_date) {
-    const endDate = new Date(subscription.end_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (endDate < today) {
-      throw new FeatureAccessDeniedError(
-        featureKey,
-        businessId,
-        'SUBSCRIPTION_EXPIRED'
-      );
-    }
-  }
+  await assertOperationalSubscriptionExists(businessId, featureKey);
 
   const canonicalKey = normalizeFeatureKey(featureKey);
-  const entitlementPlanId = getEntitlementPlanId(subscription);
+  const platformCtx = await getBusinessPlatformContext(businessId);
 
-  if (isCoreEntitlementKey(canonicalKey)) {
+  if (isCoreEntitlementKey(canonicalKey) || CORE_BILLING_FEATURE_KEYS.has(canonicalKey)) {
+    if (!platformCtx.enabledModules.includes('billing')) {
+      throw new FeatureAccessDeniedError(
+        canonicalKey,
+        businessId,
+        'FEATURE_NOT_ENABLED',
+      );
+    }
     return;
+  }
+
+  const requiredModule = getFeatureRequiredModule(featureKey);
+  if (requiredModule && !platformCtx.enabledModules.includes(requiredModule)) {
+    throw new FeatureAccessDeniedError(
+      canonicalKey,
+      businessId,
+      'FEATURE_NOT_ENABLED',
+    );
   }
 
   // Check if feature exists in Feature Registry (for addon detection)
@@ -331,71 +432,98 @@ export async function assertFeatureAccess(
     );
   }
   
-  // Handle addon-based features (WhatsApp)
-  if (featureInfo?.is_addon || 
-      canonicalKey === FeatureKeys.WHATSAPP_BOT || 
-      canonicalKey === FeatureKeys.WHATSAPP_SEND_MESSAGE ||
-      featureKey === 'integration_whatsapp_manual' ||
-      featureKey === 'integration_whatsapp_bot') {
-    const hasAddon = await hasWhatsAppBotAddon(businessId);
-    if (!hasAddon) {
+  // WhatsApp Bot / CRM / inbox — addon only
+  if (
+    featureKey === 'integration_whatsapp_bot' ||
+    canonicalKey === FeatureKeys.WHATSAPP_BOT ||
+    canonicalKey === FeatureKeys.WHATSAPP_AUTO_REMINDERS ||
+    canonicalKey === FeatureKeys.WHATSAPP_CREDIT_ALERTS
+  ) {
+    if (!(await hasWhatsAppBotAddon(businessId))) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
         businessId,
-        'FEATURE_NOT_ENABLED'
+        'FEATURE_NOT_ENABLED',
       );
     }
-    // WhatsApp feature granted via addon - return early
     return;
   }
 
-  // Check if plan is marked as registry_complete
-  // Handle case where column doesn't exist (graceful degradation)
-  let isRegistryComplete = false;
-  try {
-    const planCheck = await db.queryOne(
-      `SELECT registry_complete FROM subscription_plans WHERE id = $1`,
-      [entitlementPlanId]
-    );
-    isRegistryComplete = planCheck?.registry_complete === true;
-  } catch (error: any) {
-    // Column doesn't exist - treat as not complete (transition period)
-    if (error.code === '42703' && error.message?.includes('registry_complete')) {
-      console.warn('[assertFeatureAccess] registry_complete column does not exist, treating as incomplete');
-      isRegistryComplete = false;
-    } else {
-      throw error; // Re-throw if it's a different error
-    }
-  }
-
-  const enabledFeatures = await getEnabledFeaturesFromRegistry(businessId, entitlementPlanId);
-  
-  // Map canonical feature key to registry ID (e.g., 'template_customization' -> 'settings_template_customization')
-  const registryFeatureId = resolveRegistryFeatureId(canonicalKey);
-  
-  // HARD FAIL: If registry_complete = true and feature not found, fail fast
-  if (isRegistryComplete && !enabledFeatures.includes(registryFeatureId)) {
+  // Custom manual sends — Send Message addon OR Bot addon (bot includes send)
+  if (
+    featureKey === 'integration_whatsapp_manual' ||
+    canonicalKey === FeatureKeys.WHATSAPP_MANUAL ||
+    canonicalKey === FeatureKeys.WHATSAPP_SEND_MESSAGE
+  ) {
+    const [hasBot, hasSend] = await Promise.all([
+      hasWhatsAppBotAddon(businessId),
+      hasWhatsAppSendMessageAddon(businessId),
+    ]);
+    if (!hasBot && !hasSend) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
         businessId,
-        'FEATURE_NOT_ENABLED'
+        'FEATURE_NOT_ENABLED',
       );
+    }
+    return;
   }
 
-  // If registry is not complete, still check registry but log warning
+  // Other registry addons (non-WhatsApp) — fall through to plan matrix below.
+  if (featureInfo?.is_addon) {
+    throw new FeatureAccessDeniedError(
+      canonicalKey,
+      businessId,
+      'FEATURE_NOT_ENABLED',
+    );
+  }
+
+  // `settings_whatsapp` and plan features — registry matrix below
+
+  const registryFeatureId = resolveRegistryFeatureId(canonicalKey);
+  const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
+  const moduleSub = await resolveModuleSubForFeature(businessId, featureKey);
+  const legacySub = moduleSub ? null : await getBusinessSubscription(businessId, true);
+  const entitlementPlanId = moduleSub
+    ? getEntitlementPlanIdForModuleSub(moduleSub)
+    : legacySub
+      ? getEntitlementPlanId(legacySub)
+      : 'unknown';
+  const planIdForRegistry = moduleSub?.plan_id ?? legacySub?.plan_id;
+
+  // Check if plan is marked as registry_complete (primary / legacy plan)
+  let isRegistryComplete = false;
+  try {
+    if (planIdForRegistry) {
+      const planCheck = await db.queryOne(
+        `SELECT registry_complete FROM subscription_plans WHERE id = $1`,
+        [planIdForRegistry],
+      );
+      isRegistryComplete = planCheck?.registry_complete === true;
+    }
+  } catch (error: any) {
+    if (error.code !== '42703') throw error;
+  }
+
+  if (isRegistryComplete && !enabledFeatures.includes(registryFeatureId)) {
+    throw new FeatureAccessDeniedError(
+      canonicalKey,
+      businessId,
+      'FEATURE_NOT_ENABLED',
+    );
+  }
+
   if (!isRegistryComplete && !enabledFeatures.includes(registryFeatureId)) {
     console.warn(
-      `Feature ${registryFeatureId} not found in registry for plan ${entitlementPlanId}. ` +
-      `Plan is not marked registry_complete. This should be addressed.`
+      `Feature ${registryFeatureId} not found in enabled set for business ${businessId} (plan ${entitlementPlanId}).`,
     );
     throw new FeatureAccessDeniedError(
       canonicalKey,
       businessId,
-      'FEATURE_NOT_ENABLED'
+      'FEATURE_NOT_ENABLED',
     );
   }
 
-  // Feature found in registry - access granted
   return;
 }
 
@@ -466,61 +594,42 @@ export async function getEnabledFeatures(businessId: string): Promise<string[]> 
 async function loadEnabledFeatureIdsForBusinessInternal(
   businessId: string
 ): Promise<string[]> {
-  const subscription = await getBusinessSubscription(businessId, true);
-  // Allow 'active' and 'trial' status (trial users should have feature access)
-  if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[getEnabledFeatures] No active/trial subscription found:', {
-        businessId,
-        subscription: subscription
-          ? { status: subscription.status, plan_id: subscription.plan_id }
-          : null,
-      });
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  if (operational.length === 0) {
+    const subscription = await getBusinessSubscription(businessId, true);
+    if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
+      return [];
     }
-    return [];
+    if (subscription.end_date) {
+      const endDate = new Date(subscription.end_date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (endDate < today) return [];
+    }
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[getEnabledFeatures] Found subscription:', {
-      businessId,
-      planId: subscription.plan_id,
-      status: subscription.status,
-    });
-  }
+  const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
+  const platformCtx = await getBusinessPlatformContext(businessId);
 
-  // Check if subscription has expired
-  if (subscription.end_date) {
-    const endDate = new Date(subscription.end_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (endDate < today) return [];
-  }
-
-  const entitlementPlanId = getEntitlementPlanId(subscription);
-  const enabledFeatures = await getEnabledFeaturesFromRegistry(businessId, entitlementPlanId);
-
-  for (const coreKey of CORE_ENTITLEMENT_CANONICAL_KEYS) {
-    if (!enabledFeatures.includes(coreKey)) {
-      enabledFeatures.push(coreKey);
+  if (platformCtx.enabledModules.includes('billing')) {
+    for (const coreKey of CORE_ENTITLEMENT_CANONICAL_KEYS) {
+      if (!enabledFeatures.includes(coreKey)) {
+        enabledFeatures.push(coreKey);
+      }
     }
   }
   
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[getEnabledFeatures] Features from registry:', {
-      planId: subscription.plan_id,
-      enabledCount: enabledFeatures.length,
-      enabledIds: enabledFeatures
-    });
-  }
-  
-  // Add addon-based features dynamically
-  // Check for WhatsApp addon
-  const hasWhatsAppAddon = await hasWhatsAppBotAddon(businessId);
-  if (hasWhatsAppAddon) {
-    // Add WhatsApp features if not already present
+  // Inject addon-based integration features for UI/capability snapshots
+  const [hasBotAddon, hasSendAddon] = await Promise.all([
+    hasWhatsAppBotAddon(businessId),
+    hasWhatsAppSendMessageAddon(businessId),
+  ]);
+  if (hasBotAddon || hasSendAddon) {
     if (!enabledFeatures.includes('integration_whatsapp_manual')) {
       enabledFeatures.push('integration_whatsapp_manual');
     }
+  }
+  if (hasBotAddon) {
     if (!enabledFeatures.includes('integration_whatsapp_bot')) {
       enabledFeatures.push('integration_whatsapp_bot');
     }

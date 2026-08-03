@@ -497,7 +497,7 @@ export function POSLayout({
                     ? 'Bluetooth not supported in this browser'
                     : bluetooth.pairedCount === 0
                       ? 'Pair a printer in Settings → Print & devices first'
-                      : 'Automatically send receipt to the default Bluetooth printer after each save'
+                      : 'On desktop: send receipt to Bluetooth after PRINT BILL. The Android app always uses Bluetooth when a printer is paired.'
                 }
               >
                 <span className="flex items-center gap-2">

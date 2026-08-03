@@ -5,6 +5,8 @@ import { logTodoReminder } from '@/lib/todo-reminders/reminderLog';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 const BATCH_LIMIT = 100;
 const MAX_WALL_MS = 25_000;
 const CRON_MAX_BATCHES = 1000;
@@ -46,15 +48,17 @@ function assertCronAuthorized(request: NextRequest): NextResponse | null {
 export async function GET(request: NextRequest) {
   const started = Date.now();
   const { searchParams } = new URL(request.url);
-  const business_id = searchParams.get('business_id');
+  const claimedBusinessId = searchParams.get('business_id');
 
-  if (!business_id) {
+  if (!claimedBusinessId) {
     const denied = assertCronAuthorized(request);
     if (denied) return denied;
     return runGlobalCheckReminders(started);
   }
 
-  return runPerBusinessCheckReminders(business_id, started);
+  const tenant = requireTenantBusinessId(request, claimedBusinessId);
+  if (!tenant.ok) return tenant.response;
+  return runPerBusinessCheckReminders(tenant.businessId, started);
 }
 
 /** Manual / per-tenant: ?business_id= required (no CRON header needed). */

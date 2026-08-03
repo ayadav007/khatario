@@ -22,7 +22,13 @@ export async function loginAsTestUser(page: Page) {
   await page.getByPlaceholder(/enter your password/i).waitFor({ state: 'visible', timeout: 10000 });
   await page.getByPlaceholder(/enter your password/i).fill(password);
   await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL(/\/dashboard/, { timeout: 20000 });
+  await page.waitForURL(
+    (url) => {
+      const path = url.pathname;
+      return path !== '/login' && !path.startsWith('/login/');
+    },
+    { timeout: 30000 },
+  );
 }
 
 export const test = base.extend<{ authenticatedPage: Page }>({

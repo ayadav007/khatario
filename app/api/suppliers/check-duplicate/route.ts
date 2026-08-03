@@ -4,6 +4,8 @@ import { normalizeBusinessName, normalizePhone } from '@/lib/supplier-matching';
 
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * Check for duplicate suppliers before creation
  * GET /api/suppliers/check-duplicate?business_id=xxx&name=xxx&phone=xxx&gstin=xxx
@@ -12,7 +14,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const name = searchParams.get('name');
     const phone = searchParams.get('phone');
     const gstin = searchParams.get('gstin');

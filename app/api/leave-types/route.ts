@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { LeaveType } from '@/types/database';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import {
+  resolveActorContext,
+  assertPortalFeatureForRequest,
+} from '@/lib/employee-portal/portal-api-guard';
+import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,15 +18,33 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-    const activeOnly = searchParams.get('active_only') === 'true';
+    const actor = await resolveActorContext(request);
+    let businessId: string | null = null;
 
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    if (actor) {
+      businessId = actor.businessId;
+      if (actor.isPortal) {
+        try {
+          await assertPortalFeatureForRequest(request, actor.businessId, 'leaves');
+        } catch (error) {
+          if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+          throw error;
+        }
+      } else {
+        try {
+          await authorize(actor.userId, 'leave_requests', 'read', { businessId: actor.businessId });
+        } catch (error) {
+          if (error instanceof AuthorizationError) return error.toNextResponse();
+          throw error;
+        }
+      }
+    } else {
+      const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+      if (!tenant.ok) return tenant.response;
+      businessId = tenant.businessId;
     }
+
+    const activeOnly = searchParams.get('active_only') === 'true';
 
     let sql = 'SELECT * FROM leave_types WHERE business_id = $1';
     const params: any[] = [businessId];
@@ -49,8 +74,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     const {
-      business_id,
       leave_name,
       leave_code,
       max_days_per_year,

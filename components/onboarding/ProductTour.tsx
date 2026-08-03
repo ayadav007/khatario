@@ -326,7 +326,17 @@ function ProductTourInner() {
     startSpotlightTour,
   ]);
 
-  // First login: welcome modal (DB has no completion)
+  // Reset the schedule guard only when the actual user identity changes (re-login / different user).
+  const prevUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    if (uid !== prevUserIdRef.current) {
+      prevUserIdRef.current = uid;
+      welcomeScheduledRef.current = false;
+    }
+  }, [user?.id]);
+
+  // First login: welcome modal (DB has no completion) — runs once per user session.
   useEffect(() => {
     if (authLoading || !user || !snapshotLoaded || !lg || posBlocking) return;
     if (user.product_tour_completed_at) return;
@@ -341,8 +351,6 @@ function ProductTourInner() {
     }, 1200);
     return () => {
       clearTimeout(t);
-      /* Allow scheduling again when `user` updates (e.g. session refetch after DB cleared stale cached flag). */
-      welcomeScheduledRef.current = false;
     };
   }, [
     authLoading,

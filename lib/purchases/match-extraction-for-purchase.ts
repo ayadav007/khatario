@@ -1,6 +1,19 @@
 import { matchSupplier } from '@/lib/matching/supplier-matcher';
 import { matchItem, type ItemMatchResult } from '@/lib/matching/item-matcher';
 
+const AUTO_SELECT_MATCH_TYPES = new Set(['exact_gstin', 'exact_name', 'alias']);
+
+function shouldAutoSelectSupplierMatch(
+  match: { matchType: string; similarityScore: number; confidence: string } | undefined
+): boolean {
+  if (!match) return false;
+  if (AUTO_SELECT_MATCH_TYPES.has(match.matchType)) return true;
+  if (match.matchType === 'fuzzy' && match.similarityScore >= 88 && match.confidence === 'high') {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Mirrors ExtractionReviewModal matching: GSTIN/name exact picks supplier; parallel item fuzzy/HSN.
  */
@@ -19,7 +32,7 @@ export async function matchExtractionForPurchase(businessId: string, envelope: a
         gstin: supplier.gstin,
       });
       const bestMatch = matches[0];
-      if (bestMatch && (bestMatch.matchType === 'exact_gstin' || bestMatch.matchType === 'exact_name')) {
+      if (shouldAutoSelectSupplierMatch(bestMatch)) {
         selectedSupplier = bestMatch.supplierId;
       }
     } catch {

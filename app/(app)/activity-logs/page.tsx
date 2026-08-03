@@ -10,6 +10,7 @@ import { Activity, Filter, Loader2, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ActivityLog } from '@/types/database';
 import { format } from 'date-fns';
+import { HrMobileSubNav } from '@/components/hr/HrMobileSubNav';
 
 interface ActivityLogWithDetails extends ActivityLog {
   employee_code?: string;
@@ -67,8 +68,8 @@ export default function ActivityLogsPage() {
   };
 
   return (
-    
-      <div className="space-y-6">
+      <div className="space-y-3 md:space-y-6">
+        <HrMobileSubNav />
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-text-primary">Activity Logs</h1>

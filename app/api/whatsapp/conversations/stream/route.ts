@@ -1,6 +1,6 @@
-import { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { wsEventEmitter } from '@/lib/whatsapp-websocket';
-import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,22 +12,7 @@ export const dynamic = 'force-dynamic';
  * - Connection is kept alive until client disconnects
  * - Events are pushed only when they occur, not polled
  */
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const businessId = searchParams.get('business_id');
-
-  if (!businessId) {
-    return new Response('business_id is required', { status: 400 });
-  }
-
-  // Check addon ONCE (cached, won't query DB repeatedly)
-  const hasAddon = await hasWhatsAppBotAddon(businessId);
-  if (!hasAddon) {
-    return new Response(JSON.stringify({ error: 'WhatsApp Bot addon is required. Please upgrade to unlock this feature.' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
+export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
 
   // Create a readable stream for SSE
   const stream = new ReadableStream({
@@ -55,7 +40,7 @@ export async function GET(request: NextRequest) {
 
       // Listen for all WebSocket events for this business.
       // `emitWSEvent` already emits to `event:business:<id>` for every event; it ALSO emits
-      // to `<type>:<businessId>`. Subscribing to both caused duplicate SSE payloads per client
+      // to `<type>:<business_id>`. Subscribing to both caused duplicate SSE payloads per client
       // (and ×2 in React Strict Mode with two dev connections) — a "never-ending" noisy loop in logs.
       const roomName = `business:${businessId}`;
       const roomEventName = `event:${roomName}`;
@@ -132,5 +117,5 @@ export async function GET(request: NextRequest) {
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no', // Disable buffering in nginx
     },
-  });
-}
+  }) as NextResponse;
+});

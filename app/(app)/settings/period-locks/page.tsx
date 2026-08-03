@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { format } from 'date-fns';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface PeriodLock {
   id: string;
@@ -169,13 +169,11 @@ export default function PeriodLocksPage() {
   }
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Period Locks</h1>
-            <p className="text-text-secondary text-sm mt-1">Lock accounting periods to prevent backdated entries</p>
-          </div>
+      <SettingsPageShell
+        title="Period Locks"
+        description="Lock accounting periods to prevent backdated entries"
+        icon={Lock}
+        actions={
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
@@ -183,7 +181,8 @@ export default function PeriodLocksPage() {
             <Plus className="w-5 h-5" />
             <span>Lock Period</span>
           </button>
-        </div>
+        }
+      >
 
         {/* Info Banner */}
         <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
@@ -383,7 +382,6 @@ export default function PeriodLocksPage() {
             </tbody>
           </table>
         </div>
-      </div>
-    
+      </SettingsPageShell>
   );
 }

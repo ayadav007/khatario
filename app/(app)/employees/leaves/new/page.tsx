@@ -52,7 +52,9 @@ export default function NewLeaveRequestPage() {
     start_date: '',
     end_date: '',
     reason: '',
+    attachment_url: '',
   });
+  const [sandwichDays, setSandwichDays] = useState<number | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -106,34 +108,22 @@ export default function NewLeaveRequestPage() {
   };
 
   const calculateDays = async () => {
-    if (!business?.id || !formData.start_date || !formData.end_date) return;
+    if (!business?.id || !formData.start_date || !formData.end_date || !formData.leave_type_id) return;
 
     try {
-      const res = await fetch('/api/employees/leave-calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
-        }),
+      const params = new URLSearchParams({
+        business_id: business.id,
+        start_date: formData.start_date,
+        end_date: formData.end_date,
+        leave_type_id: formData.leave_type_id,
+        user_id: user?.id ?? '',
       });
-
-      // For now, calculate client-side (simplified)
-      const start = new Date(formData.start_date);
-      const end = new Date(formData.end_date);
-      let days = 0;
-      const current = new Date(start);
-
-      while (current <= end) {
-        const dayOfWeek = current.getDay();
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-          days++;
-        }
-        current.setDate(current.getDate() + 1);
+      const res = await fetch(`/api/hr/leave/preview-days?${params}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setCalculatedDays(data.total_days);
+        setSandwichDays(data.sandwich_days ?? null);
       }
-
-      setCalculatedDays(days);
     } catch (error) {
       console.error('Error calculating days:', error);
     }
@@ -325,8 +315,11 @@ export default function NewLeaveRequestPage() {
               <Card className="p-4 bg-slate-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-text-secondary">Working Days</p>
+                    <p className="text-sm text-text-secondary">Leave days (incl. sandwich)</p>
                     <p className="text-lg font-semibold text-text-primary">{calculatedDays} days</p>
+                    {sandwichDays != null && sandwichDays > 0 && (
+                      <p className="text-xs text-text-muted">Includes {sandwichDays} sandwich day(s)</p>
+                    )}
                   </div>
                   {balanceInfo && (
                     <div className={`p-3 rounded-lg ${balanceInfo.sufficient ? 'bg-green-100' : 'bg-red-100'}`}>
@@ -353,6 +346,18 @@ export default function NewLeaveRequestPage() {
                 className="input"
                 rows={4}
                 placeholder="Enter reason for leave..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">
+                Attachment URL (if required by policy)
+              </label>
+              <Input
+                type="url"
+                value={formData.attachment_url}
+                onChange={(e) => setFormData({ ...formData, attachment_url: e.target.value })}
+                placeholder="https://…"
               />
             </div>
 

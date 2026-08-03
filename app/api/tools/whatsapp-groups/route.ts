@@ -1,5 +1,7 @@
 export const dynamic = 'force-dynamic';
 
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+
 /**
  * API endpoint for fetching WhatsApp groups and extracting participant phone numbers
  */
@@ -317,11 +319,9 @@ async function extractParticipantsFromMetadata(socket: any, metadata: any): Prom
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = searchParams.get('business_id');
-
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
+    const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     // Check if business has WhatsApp Bot addon
     const hasAddon = await hasWhatsAppBotAddon(businessId);
@@ -446,7 +446,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, group_jid } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
+    const { group_jid } = body;
 
     if (!business_id || !group_jid) {
       return NextResponse.json(

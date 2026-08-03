@@ -1058,6 +1058,7 @@ export default function CustomizeTemplateDrawer({
                 <CustomFieldsTemplateLayout
                   settings={settings as Record<string, unknown>}
                   onChange={(next) => setSettings(next as TemplateSettings)}
+                  supportsInvoiceFields={['tax_invoice', 'proforma_invoice', 'bill_of_supply'].includes(documentType)}
                 />
 
                 <FieldToggleGroup title="Customer Information" color="#3b82f6" fields={[

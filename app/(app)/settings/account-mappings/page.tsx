@@ -6,10 +6,10 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Loader2, Save, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Loader2, Save, RefreshCw, CheckCircle2, BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Account } from '@/types/database';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 
 interface AccountMappings {
   sales_account_id?: string;
@@ -134,14 +134,11 @@ export default function AccountMappingsPage() {
   }
 
   return (
-      <div className={`${SETTINGS_CONTENT_WIDTH} space-y-6`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Account Mappings</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              Configure which accounts are used for different transaction types
-            </p>
-          </div>
+      <SettingsPageShell
+        title="Account Mappings"
+        description="Configure which accounts are used for different transaction types"
+        icon={BookOpen}
+        actions={
           <div className="flex gap-3">
             <Button variant="secondary" onClick={handleAutoDetect} disabled={saving}>
               <RefreshCw className="w-4 h-4 mr-2" />
@@ -156,7 +153,8 @@ export default function AccountMappingsPage() {
               Save Changes
             </Button>
           </div>
-        </div>
+        }
+      >
 
         {success && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-2">
@@ -395,8 +393,7 @@ export default function AccountMappingsPage() {
             </div>
           </div>
         </Card>
-      </div>
-    
+      </SettingsPageShell>
   );
 }
 
