@@ -39,6 +39,40 @@ function isStagingSignupDebug(): boolean {
   );
 }
 
+type PgClient = { query: (text: string, params?: unknown[]) => Promise<unknown> };
+
+/**
+ * Optional steps inside BEGIN must use SAVEPOINT. Catching a failed query without
+ * ROLLBACK TO SAVEPOINT leaves the transaction aborted (Postgres 25P02).
+ */
+async function withSignupSavepoint(
+  client: PgClient,
+  name: string,
+  fn: () => Promise<void>,
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  await client.query(`SAVEPOINT ${name}`);
+  try {
+    await fn();
+    await client.query(`RELEASE SAVEPOINT ${name}`);
+    return { ok: true };
+  } catch (error) {
+    try {
+      await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+    } catch (rollbackErr) {
+      console.error(`Signup: failed to rollback savepoint ${name}:`, rollbackErr);
+    }
+    return { ok: false, error };
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   if (!shouldSkipSignupRateLimit()) {
@@ -116,6 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query('BEGIN');
+    const softFailures: string[] = [];
 
     const businessRes = await client.query(
       `INSERT INTO businesses (
@@ -137,10 +172,14 @@ export async function POST(request: NextRequest) {
     );
     const businessId = businessRes.rows[0].id;
 
-    try {
-      await seedInitialBusinessModules(client, businessId, productLine);
-    } catch (moduleSeedError: unknown) {
-      console.warn('Signup: business_modules seed skipped (run migration 254):', moduleSeedError);
+    {
+      const seeded = await withSignupSavepoint(client, 'sp_business_modules', async () => {
+        await seedInitialBusinessModules(client, businessId, productLine);
+      });
+      if (!seeded.ok) {
+        softFailures.push(`business_modules: ${errorMessage(seeded.error)}`);
+        console.warn('Signup: business_modules seed skipped (run migration 254):', seeded.error);
+      }
     }
 
     await client.query(`
@@ -217,21 +256,34 @@ export async function POST(request: NextRequest) {
     );
     const primaryAdminUserId = userRes.rows[0].id;
 
-    try {
-      await client.query(`
-        INSERT INTO user_branches (user_id, branch_id, can_view, can_edit, can_delete, can_create_transactions)
-        VALUES ($1, $2, true, true, true, true)
-        ON CONFLICT (user_id, branch_id) DO NOTHING
-      `, [primaryAdminUserId, defaultBranchId]);
-    } catch (error: any) {
-      if (error.code === '42703' || error.message?.includes('can_create_transactions')) {
-        await client.query(`
-          INSERT INTO user_branches (user_id, branch_id, can_view, can_edit, can_delete)
-          VALUES ($1, $2, true, true, true)
+    {
+      const ub = await withSignupSavepoint(client, 'sp_user_branches', async () => {
+        await client.query(
+          `
+          INSERT INTO user_branches (user_id, branch_id, can_view, can_edit, can_delete, can_create_transactions)
+          VALUES ($1, $2, true, true, true, true)
           ON CONFLICT (user_id, branch_id) DO NOTHING
-        `, [primaryAdminUserId, defaultBranchId]);
-      } else {
-        throw error;
+        `,
+          [primaryAdminUserId, defaultBranchId],
+        );
+      });
+      if (!ub.ok) {
+        const err = ub.error as { code?: string; message?: string };
+        if (err?.code === '42703' || String(err?.message || '').includes('can_create_transactions')) {
+          const fallback = await withSignupSavepoint(client, 'sp_user_branches_fb', async () => {
+            await client.query(
+              `
+              INSERT INTO user_branches (user_id, branch_id, can_view, can_edit, can_delete)
+              VALUES ($1, $2, true, true, true)
+              ON CONFLICT (user_id, branch_id) DO NOTHING
+            `,
+              [primaryAdminUserId, defaultBranchId],
+            );
+          });
+          if (!fallback.ok) throw fallback.error;
+        } else {
+          throw ub.error;
+        }
       }
     }
 
@@ -255,7 +307,7 @@ export async function POST(request: NextRequest) {
 
     // Activate GST Standard for tax invoices (Billing product line only).
     if (productLine === 'billing') {
-      try {
+      const tpl = await withSignupSavepoint(client, 'sp_tax_invoice_template', async () => {
         const gstStandardSettings = getDefaultTemplateSettings('gst_standard');
         await client.query(
           `INSERT INTO business_template_assignments (business_id, document_type, template_id, settings)
@@ -264,17 +316,23 @@ export async function POST(request: NextRequest) {
              template_id = EXCLUDED.template_id,
              settings = EXCLUDED.settings,
              updated_at = CURRENT_TIMESTAMP`,
-          [businessId, JSON.stringify(gstStandardSettings)]
+          [businessId, JSON.stringify(gstStandardSettings)],
         );
-      } catch (templateSeedError: unknown) {
-        console.error('Signup: failed to seed default tax_invoice template assignment:', templateSeedError);
+      });
+      if (!tpl.ok) {
+        softFailures.push(`tax_invoice_template: ${errorMessage(tpl.error)}`);
+        console.error('Signup: failed to seed default tax_invoice template assignment:', tpl.error);
       }
     }
-    
-    try {
-      await client.query(`SELECT create_default_chart_of_accounts($1)`, [businessId]);
-    } catch (coaError: any) {
-      console.error('Error creating default Chart of Accounts:', coaError);
+
+    {
+      const coa = await withSignupSavepoint(client, 'sp_coa', async () => {
+        await client.query(`SELECT create_default_chart_of_accounts($1)`, [businessId]);
+      });
+      if (!coa.ok) {
+        softFailures.push(`chart_of_accounts: ${errorMessage(coa.error)}`);
+        console.error('Error creating default Chart of Accounts:', coa.error);
+      }
     }
     
     if (workflowDefaults.invoice_prefix || workflowDefaults.default_tax_rate) {
@@ -382,20 +440,28 @@ export async function POST(request: NextRequest) {
       clearSubscriptionCache(businessId);
     }
 
-    try {
-      await seedInitialModuleSubscription(
-        client,
-        businessId,
-        productLine,
-        initialPlanId,
-        initialStatus,
-        trialDays,
-      );
-    } catch (moduleSubError: unknown) {
-      console.warn(
-        'Signup: business_module_subscriptions seed skipped (run migration 256 / check plan ids):',
-        moduleSubError,
-      );
+    {
+      const modSub = await withSignupSavepoint(client, 'sp_module_sub', async () => {
+        await seedInitialModuleSubscription(
+          client,
+          businessId,
+          productLine,
+          initialPlanId,
+          initialStatus,
+          trialDays,
+        );
+      });
+      if (!modSub.ok) {
+        softFailures.push(`module_subscription: ${errorMessage(modSub.error)}`);
+        console.warn(
+          'Signup: business_module_subscriptions seed skipped (run migration 256 / check plan ids):',
+          modSub.error,
+        );
+      }
+    }
+
+    if (softFailures.length > 0) {
+      console.warn('Signup soft failures (non-fatal):', softFailures);
     }
 
     await client.query('COMMIT');
