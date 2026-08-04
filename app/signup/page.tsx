@@ -135,9 +135,10 @@ function SignupPageContent() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const payload = data as { error?: string; code?: string };
+        const payload = data as { error?: string; code?: string; details?: string };
         setErrorCode(payload.code ?? null);
-        throw new Error(payload.error || 'Signup failed');
+        const base = payload.error || 'Signup failed';
+        throw new Error(payload.details ? `${base}: ${payload.details}` : base);
       }
 
       // Full page navigation (not client-side router.push): guarantees the next document

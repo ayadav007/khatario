@@ -30,6 +30,15 @@ function shouldSkipSignupRateLimit(): boolean {
   return false;
 }
 
+function isStagingSignupDebug(): boolean {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  return (
+    process.env.SIGNUP_DEBUG === 'true' ||
+    appUrl.includes('staging.') ||
+    process.env.NODE_ENV !== 'production'
+  );
+}
+
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   if (!shouldSkipSignupRateLimit()) {
@@ -42,8 +51,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Fail fast with a clear message instead of creating a business then 500ing on cookies.
+  if (!process.env.JWT_SECRET) {
+    console.error('Signup error: JWT_SECRET is not set');
+    return NextResponse.json(
+      {
+        error: 'Server misconfiguration: JWT_SECRET is not set',
+        ...(isStagingSignupDebug() ? { details: 'JWT_SECRET environment variable is not set' } : {}),
+      },
+      { status: 500 },
+    );
+  }
+
   const pool = getPool();
   const client = await pool.connect();
+  let committed = false;
 
   try {
     const body = await request.json();
@@ -134,7 +156,15 @@ export async function POST(request: NextRequest) {
         ('items', 'Items & Inventory', 'Manage items and stock', 8, true),
         ('payments', 'Payments', 'Manage payments (in/out)', 9, true),
         ('reports', 'Reports', 'View and export reports', 10, true),
-        ('settings', 'Settings', 'Access business settings', 11, true)
+        ('settings', 'Settings', 'Access business settings', 11, true),
+        ('warehouses', 'Warehouses', 'Warehouse and inventory management', 12, true),
+        ('employees', 'Employees', 'Employee records and profiles', 13, true),
+        ('attendance', 'Attendance', 'Attendance tracking and roll call', 14, true),
+        ('leaves', 'Leaves', 'Leave balances and policies', 15, true),
+        ('leave_requests', 'Leave Requests', 'Leave applications and approvals', 16, true),
+        ('payroll', 'Payroll', 'Salary payments and payslips', 17, true),
+        ('recruitment', 'Recruitment', 'Jobs, candidates, interviews, and offers', 18, true),
+        ('commissions', 'Commissions', 'Employee commissions and incentives', 19, true)
       ON CONFLICT (module_key) DO NOTHING
     `);
 
@@ -352,16 +382,24 @@ export async function POST(request: NextRequest) {
       clearSubscriptionCache(businessId);
     }
 
-    await seedInitialModuleSubscription(
-      client,
-      businessId,
-      productLine,
-      initialPlanId,
-      initialStatus,
-      trialDays,
-    );
+    try {
+      await seedInitialModuleSubscription(
+        client,
+        businessId,
+        productLine,
+        initialPlanId,
+        initialStatus,
+        trialDays,
+      );
+    } catch (moduleSubError: unknown) {
+      console.warn(
+        'Signup: business_module_subscriptions seed skipped (run migration 256 / check plan ids):',
+        moduleSubError,
+      );
+    }
 
     await client.query('COMMIT');
+    committed = true;
     clearSubscriptionCache(businessId);
 
     const tokenPayload = { userId: primaryAdminUserId, businessId, sessionVersion: 1 };
@@ -409,7 +447,13 @@ export async function POST(request: NextRequest) {
     return response;
 
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    if (!committed) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Signup rollback failed:', rollbackErr);
+      }
+    }
     console.error('Signup error:', error);
     
     if (error.code === '23505') {
@@ -427,8 +471,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const details =
+      error instanceof Error
+        ? error.message
+        : typeof error?.message === 'string'
+          ? error.message
+          : String(error);
+
     return NextResponse.json(
-      { error: 'Internal server error' },
+      {
+        error: 'Internal server error',
+        ...(isStagingSignupDebug()
+          ? {
+              details,
+              code: error?.code || undefined,
+              constraint: error?.constraint || undefined,
+            }
+          : {}),
+      },
       { status: 500 }
     );
   } finally {
