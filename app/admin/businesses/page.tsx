@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { DeleteTenantModal } from '@/components/admin/DeleteTenantModal';
 
 interface Business {
   id: string;
@@ -87,6 +88,11 @@ export default function BusinessesManagement() {
       const response = await fetch(`/api/admin/businesses/${deleteConfirm.id}`, {
         ...platformAdminFetchInit,
         method: 'DELETE',
+        headers: {
+          ...(platformAdminFetchInit.headers || {}),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ confirmName: deleteConfirm.name }),
       });
 
       if (!response.ok) {
@@ -95,9 +101,9 @@ export default function BusinessesManagement() {
         return;
       }
 
-      // Remove from list
-      setBusinesses(businesses.filter(b => b.id !== deleteConfirm.id));
+      setBusinesses(businesses.filter((b) => b.id !== deleteConfirm.id));
       setDeleteConfirm(null);
+      toast.success('Tenant deleted');
     } catch (error) {
       console.error('Error deleting business:', error);
       toast.error('Failed to delete business');
@@ -296,39 +302,14 @@ export default function BusinessesManagement() {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Confirm Delete</h2>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete <strong>{deleteConfirm.name}</strong>? 
-              This action cannot be undone and will delete all associated data including:
-            </p>
-            <ul className="list-disc list-inside text-sm text-gray-600 mb-6 space-y-1">
-              <li>All users and accounts</li>
-              <li>All customers, suppliers, and items</li>
-              <li>All invoices, purchases, and expenses</li>
-              <li>All subscriptions and addons</li>
-              <li>All financial records and ledger entries</li>
-            </ul>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                disabled={deletingId !== null}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {deletingId ? 'Deleting...' : 'Delete Business'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeleteTenantModal
+          businessId={deleteConfirm.id}
+          businessName={deleteConfirm.name}
+          deleting={deletingId === deleteConfirm.id}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={() => void confirmDelete()}
+        />
       )}
     </div>
   );

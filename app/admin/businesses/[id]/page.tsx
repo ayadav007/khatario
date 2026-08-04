@@ -317,6 +317,7 @@ export default function BusinessDetailPage({ params }: { params: { id: string } 
           planId={business.plan_id}
           trialEndDate={business.trial_end_date}
           onUpdated={fetchBusiness}
+          onDeleted={() => router.push('/admin/businesses')}
         />
         </div>
       </div>

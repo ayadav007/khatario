@@ -8,10 +8,12 @@ import {
   Loader2,
   LogIn,
   Shield,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
 import { useToastContext } from '@/contexts/ToastContext';
+import { DeleteTenantModal } from '@/components/admin/DeleteTenantModal';
 
 type Plan = { id: string; display_name: string };
 
@@ -45,6 +47,8 @@ export interface BusinessAdminPanelProps {
   planId: string | null;
   trialEndDate: string | null;
   onUpdated: () => void;
+  /** Called after a successful hard-delete (e.g. navigate away). */
+  onDeleted?: () => void;
 }
 
 export function BusinessAdminPanel({
@@ -56,6 +60,7 @@ export function BusinessAdminPanel({
   planId,
   trialEndDate,
   onUpdated,
+  onDeleted,
 }: BusinessAdminPanelProps) {
   const toast = useToastContext();
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -63,6 +68,7 @@ export function BusinessAdminPanel({
   const [billing, setBilling] = useState<BillingTx[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const [selectedPlan, setSelectedPlan] = useState(planId || 'free');
   const [selectedStatus, setSelectedStatus] = useState(subscriptionStatus || 'active');
@@ -144,6 +150,27 @@ export function BusinessAdminPanel({
       onUpdated();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmDeleteTenant() {
+    setBusy('delete');
+    try {
+      const res = await fetch(`/api/admin/businesses/${businessId}`, {
+        ...platformAdminFetchInit,
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmName: businessName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+      toast.success('Tenant deleted');
+      setShowDeleteModal(false);
+      onDeleted?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete');
     } finally {
       setBusy(null);
     }
@@ -371,7 +398,7 @@ export function BusinessAdminPanel({
         </div>
       </div>
 
-      {/* Suspend + impersonate */}
+      {/* Suspend + impersonate + delete */}
       <div className="bg-white rounded-xl border border-border p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Access control</h2>
         <div className="space-y-3">
@@ -406,8 +433,33 @@ export function BusinessAdminPanel({
               {busy === 'impersonate' ? 'Opening…' : 'Login as primary admin'}
             </button>
           </div>
+
+          <div className="pt-4 mt-2 border-t border-border">
+            <p className="text-sm text-gray-600 mb-2">
+              Permanently remove this tenant and all related data. Prefer suspend if you may need to restore access later.
+            </p>
+            <button
+              type="button"
+              disabled={busy != null}
+              onClick={() => setShowDeleteModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg border border-red-300 text-red-800 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete tenant permanently
+            </button>
+          </div>
         </div>
       </div>
+
+      {showDeleteModal && (
+        <DeleteTenantModal
+          businessId={businessId}
+          businessName={businessName}
+          deleting={busy === 'delete'}
+          onCancel={() => setShowDeleteModal(false)}
+          onConfirm={() => void confirmDeleteTenant()}
+        />
+      )}
 
       {/* Users */}
       <div className="bg-white rounded-xl border border-border p-6">

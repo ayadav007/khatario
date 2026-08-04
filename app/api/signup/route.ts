@@ -172,15 +172,9 @@ export async function POST(request: NextRequest) {
     );
     const businessId = businessRes.rows[0].id;
 
-    {
-      const seeded = await withSignupSavepoint(client, 'sp_business_modules', async () => {
-        await seedInitialBusinessModules(client, businessId, productLine);
-      });
-      if (!seeded.ok) {
-        softFailures.push(`business_modules: ${errorMessage(seeded.error)}`);
-        console.warn('Signup: business_modules seed skipped (run migration 254):', seeded.error);
-      }
-    }
+    // Required for product-line entitlements (HR/Connect). Soft-fail left tenants
+    // looking like Billing with zero HR features / employee limits.
+    await seedInitialBusinessModules(client, businessId, productLine);
 
     await client.query(`
       INSERT INTO permission_modules (module_key, module_name, description, display_order, is_active)
@@ -440,25 +434,14 @@ export async function POST(request: NextRequest) {
       clearSubscriptionCache(businessId);
     }
 
-    {
-      const modSub = await withSignupSavepoint(client, 'sp_module_sub', async () => {
-        await seedInitialModuleSubscription(
-          client,
-          businessId,
-          productLine,
-          initialPlanId,
-          initialStatus,
-          trialDays,
-        );
-      });
-      if (!modSub.ok) {
-        softFailures.push(`module_subscription: ${errorMessage(modSub.error)}`);
-        console.warn(
-          'Signup: business_module_subscriptions seed skipped (run migration 256 / check plan ids):',
-          modSub.error,
-        );
-      }
-    }
+    await seedInitialModuleSubscription(
+      client,
+      businessId,
+      productLine,
+      initialPlanId,
+      initialStatus,
+      trialDays,
+    );
 
     if (softFailures.length > 0) {
       console.warn('Signup soft failures (non-fatal):', softFailures);

@@ -23,7 +23,7 @@ import {
   hasWhatsAppSendMessageAddon,
   isSubscriptionOperationalStatus,
 } from '../subscription';
-import { getEntitlementPlanId } from './effective-plan';
+import { getEntitlementPlanId, isTrialEntitlementActive } from './effective-plan';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import {
   getEntitlementPlanIdForModuleSub,
@@ -38,6 +38,28 @@ import { isModuleSubscriptionOperational } from '@/lib/subscription/module-opera
 import type { PlatformModule } from '@/lib/platform-modules';
 import * as db from '../db';
 import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
+
+/** Built-in matrix when `subscription_plan_features` rows are missing (migration drift). */
+const HR_PLAN_FEATURE_FALLBACKS: Record<string, string[]> = {
+  hr_starter: ['hr_employees', 'hr_attendance', 'settings_multi_user'],
+  hr_pro: [
+    'hr_employees',
+    'hr_attendance',
+    'hr_payroll',
+    'hr_leaves',
+    'hr_employee_portal',
+    'settings_multi_user',
+  ],
+  hr_trial: [
+    'hr_employees',
+    'hr_attendance',
+    'hr_payroll',
+    'hr_leaves',
+    'hr_employee_portal',
+    'settings_multi_user',
+  ],
+  hr_free: [],
+};
 
 /**
  * Canonical keys not present in platform_features / subscription_plan_features by design.
@@ -141,20 +163,36 @@ async function loadUnionEnabledRegistryFeatureIds(businessId: string): Promise<s
 
   if (operational.length > 0) {
     for (const modSub of operational) {
-      const planId = getEntitlementPlanIdForModuleSub(modSub);
-      const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
-      ids.forEach((id) => merged.add(id));
+      try {
+        // Active calendar trials must use the trial plan matrix (not post-trial free).
+        const planId = isTrialEntitlementActive(modSub)
+          ? modSub.plan_id
+          : getEntitlementPlanIdForModuleSub(modSub);
+        const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
+        ids.forEach((id) => merged.add(id));
+      } catch (error) {
+        console.error(
+          `[loadUnionEnabledRegistryFeatureIds] Failed for module ${modSub.module_key}:`,
+          error,
+        );
+      }
     }
-    return [...merged];
+    if (merged.size > 0) return [...merged];
   }
 
   const subscription = await getBusinessSubscription(businessId, true);
   if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-    return [];
+    return [...merged];
   }
-  const planId = getEntitlementPlanId(subscription);
-  const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
-  ids.forEach((id) => merged.add(id));
+  try {
+    const planId = isTrialEntitlementActive(subscription)
+      ? subscription.plan_id
+      : getEntitlementPlanId(subscription);
+    const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
+    ids.forEach((id) => merged.add(id));
+  } catch (error) {
+    console.error('[loadUnionEnabledRegistryFeatureIds] Legacy subscription failed:', error);
+  }
   return [...merged];
 }
 
@@ -318,7 +356,19 @@ async function getEnabledFeaturesFromRegistry(
     [planId]
   );
 
-  const enabledIds = result.rows.map((r: any) => r.id);
+  let enabledIds = result.rows.map((r: any) => r.id);
+
+  // Safety net when staging/prod matrix rows are missing (migration drift).
+  // Keeps HR trial usable instead of locking every HR nav item.
+  if (enabledIds.length === 0) {
+    const fallback = HR_PLAN_FEATURE_FALLBACKS[planId];
+    if (fallback) {
+      console.warn(
+        `[getEnabledFeaturesFromRegistry] No subscription_plan_features for ${planId}; using built-in fallback`,
+      );
+      enabledIds = [...fallback];
+    }
+  }
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[getEnabledFeaturesFromRegistry] Query result:', {
@@ -328,8 +378,11 @@ async function getEnabledFeaturesFromRegistry(
     });
   }
 
+  // Free plans are intentionally empty even when registry_complete=true.
+  const intentionallyEmpty = planId === 'hr_free' || planId === 'free';
+
   // HARD FAIL: If registry_complete = true and no features found, this is a critical error
-  if (isRegistryComplete && enabledIds.length === 0) {
+  if (isRegistryComplete && enabledIds.length === 0 && !intentionallyEmpty) {
     throw new Error(
       `Feature Registry is incomplete for plan ${planId}. ` +
       `Plan is marked registry_complete=true but has zero enabled features. ` +

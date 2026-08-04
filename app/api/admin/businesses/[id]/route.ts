@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,53 +80,56 @@ export async function GET(
 
 /**
  * DELETE /api/admin/businesses/[id]
- * Delete a business and all associated data (CASCADE)
- * WARNING: This is a destructive operation that will delete all related data
+ * Permanently delete a business and cascaded tenant data.
+ * Body (optional): { confirmName: string } — must match business name exactly.
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = await requirePlatformRequest(request, 'viewer', 'can_manage_businesses');
+    const auth = await requirePlatformRequest(request, 'admin', 'can_manage_businesses');
     if (!auth.ok) return auth.response;
 
     const businessId = params.id;
 
-    // Verify business exists
-    const existing = await db.queryOne(`
-      SELECT id, name FROM businesses WHERE id = $1
-    `, [businessId]);
+    const existing = await db.queryOne<{ id: string; name: string }>(
+      `SELECT id, name FROM businesses WHERE id = $1`,
+      [businessId],
+    );
 
     if (!existing) {
+      return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    }
+
+    let confirmName: string | undefined;
+    try {
+      const body = await request.json();
+      if (body && typeof body.confirmName === 'string') {
+        confirmName = body.confirmName;
+      }
+    } catch {
+      /* no body — still allow if older clients omit it */
+    }
+
+    if (confirmName !== undefined && confirmName.trim() !== existing.name.trim()) {
       return NextResponse.json(
-        { error: 'Business not found' },
-        { status: 404 }
+        { error: 'Confirmation name does not match business name' },
+        { status: 400 },
       );
     }
 
-    // Delete business (CASCADE will handle all related data)
-    // Note: This will delete:
-    // - All users, customers, suppliers, items
-    // - All invoices, purchases, expenses
-    // - All subscriptions, addons
-    // - All ledger entries, journal entries
-    // - All other business-related data
-    await db.query(`
-      DELETE FROM businesses WHERE id = $1
-    `, [businessId]);
+    const deleted = await deleteBusinessCompletely(businessId, auth.admin.id);
+    console.log(`Business ${businessId} (${deleted.name}) deleted successfully`);
 
-    console.log(`Business ${businessId} (${existing.name}) deleted successfully`);
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      message: 'Business deleted successfully'
+      message: 'Business deleted successfully',
     });
   } catch (error: any) {
     console.error('Error deleting business:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete business', details: error.message },
-      { status: 500 }
-    );
+    const message = error?.message || 'Failed to delete business';
+    const status = message === 'Business not found' ? 404 : 500;
+    return NextResponse.json({ error: message, details: message }, { status });
   }
 }

@@ -35,6 +35,52 @@ export async function isBusinessPlatformSuspended(businessId: string): Promise<b
   return Boolean(row?.platform_suspended_at);
 }
 
+/**
+ * Hard-delete a tenant business. Relies on ON DELETE CASCADE FKs.
+ * Clears subscription caches and writes an admin audit log.
+ */
+export async function deleteBusinessCompletely(
+  businessId: string,
+  adminId: string,
+): Promise<{ name: string }> {
+  const existing = await queryOne<{ id: string; name: string }>(
+    `SELECT id, name FROM businesses WHERE id = $1`,
+    [businessId],
+  );
+  if (!existing) {
+    throw new Error('Business not found');
+  }
+
+  try {
+    await query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    const detail = (error as { detail?: string; message?: string })?.detail
+      || (error as { message?: string })?.message
+      || 'Unknown database error';
+    if (code === '23503') {
+      throw new Error(
+        `Cannot delete tenant: a related table is missing ON DELETE CASCADE (${detail}).`,
+      );
+    }
+    throw new Error(`Failed to delete tenant: ${detail}`);
+  }
+
+  clearSubscriptionCache(businessId);
+  try {
+    const { clearModuleSubscriptionCache } = await import('@/lib/subscription/module-subscriptions');
+    clearModuleSubscriptionCache(businessId);
+  } catch {
+    /* optional */
+  }
+
+  await logAdminAction(adminId, 'delete_business', 'business', businessId, {
+    name: existing.name,
+  });
+
+  return { name: existing.name };
+}
+
 export async function setBusinessSuspended(
   businessId: string,
   suspended: boolean,

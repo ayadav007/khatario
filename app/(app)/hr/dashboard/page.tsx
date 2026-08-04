@@ -18,7 +18,7 @@ export default function HrDashboardPage() {
   const [overview, setOverview] = useState<HrAdminOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { status: authStatus } = useAuthorizationGuard({
+  const { status: authStatus, reason: authReason, code: authCode } = useAuthorizationGuard({
     resource: 'employees',
     action: 'read',
     skipCheck: !user?.id || !business?.id,
@@ -70,7 +70,14 @@ export default function HrDashboardPage() {
   }
 
   if (authStatus === 'denied') {
-    return <AccessDenied module="employees" action="read" />;
+    return (
+      <AccessDenied
+        module="employees"
+        action="read"
+        details={authReason}
+        code={authCode || 'PAGE_ACCESS_DENIED'}
+      />
+    );
   }
 
   if (authStatus === 'loading') {
