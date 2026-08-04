@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { STACK_SECTION_CLASS } from '@/lib/page-layout';
-import type { HrPayrollSettings } from '@/lib/hr/hr-payroll-settings';
-import { DEFAULT_HR_PAYROLL_SETTINGS } from '@/lib/hr/hr-payroll-settings';
+import type { HrPayrollSettings } from '@/lib/hr/hr-payroll-settings-shared';
+import { DEFAULT_HR_PAYROLL_SETTINGS } from '@/lib/hr/hr-payroll-settings-shared';
 
 export function HrPayrollSettingsPanel() {
   const { business } = useAuth();
