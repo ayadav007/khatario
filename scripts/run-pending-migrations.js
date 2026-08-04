@@ -261,6 +261,30 @@ async function main() {
       }
     }
 
+    // Migrations often run as postgres; app connects as khatario_user.
+    // Re-grant so newly created tables are usable without a manual script.
+    if (ok > 0) {
+      try {
+        await client.query(`
+          DO $$
+          BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'khatario_user') THEN
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO khatario_user;
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO khatario_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO khatario_user;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO khatario_user;
+            END IF;
+          END $$;
+        `);
+        console.log('\n🔑 Granted public schema tables/sequences to khatario_user (if role exists)');
+      } catch (grantErr) {
+        console.warn(
+          '\n⚠️  Post-migrate GRANT skipped:',
+          grantErr instanceof Error ? grantErr.message : grantErr,
+        );
+      }
+    }
+
     console.log('\n' + '='.repeat(60));
     console.log(`✅ Applied: ${ok}`);
     console.log(`⏭️  Skipped/idempotent: ${skipped}`);
