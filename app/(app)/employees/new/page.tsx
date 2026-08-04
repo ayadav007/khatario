@@ -540,7 +540,8 @@ export default function NewEmployeePage() {
 
         {showUpgradePrompt && limitInfo && (
           <UpgradeModal
-            limitType="users"
+            limitType="employees"
+            moduleKey="hr"
             currentCount={limitInfo.current}
             limit={limitInfo.limit}
             onClose={() => setShowUpgradePrompt(false)}

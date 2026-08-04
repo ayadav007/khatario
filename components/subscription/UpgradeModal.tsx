@@ -33,7 +33,7 @@ interface SubscriptionPlan {
 }
 
 interface UpgradeModalProps {
-  limitType?: 'invoices' | 'customers' | 'items' | 'users' | 'whatsapp' | 'feature';
+  limitType?: 'invoices' | 'customers' | 'items' | 'users' | 'employees' | 'whatsapp' | 'feature';
   currentCount?: number;
   limit?: number;
   featureName?: string;
@@ -222,6 +222,7 @@ export function UpgradeModal({
       customers: `You've reached your limit of ${limit} customers.`,
       items: `You've reached your limit of ${limit} items/products.`,
       users: `You've reached your limit of ${limit} user(s).`,
+      employees: `You've reached your limit of ${limit} employee(s).`,
       whatsapp: 'WhatsApp integration is not available in your current plan.',
       feature: `${featureName} is not available in your current plan.`,
     };

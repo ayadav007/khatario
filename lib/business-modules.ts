@@ -32,6 +32,22 @@ export async function getBusinessPlatformContext(
   productLineFallback?: string | null,
   primaryModuleFallback?: string | null,
 ): Promise<BusinessPlatformContext> {
+  let businessRow: { primary_module: string | null; product_line: string | null } | null = null;
+  try {
+    const business = await query<{ primary_module: string | null; product_line: string | null }>(
+      `SELECT primary_module, product_line FROM businesses WHERE id = $1`,
+      [businessId],
+    );
+    businessRow = business.rows[0] ?? null;
+  } catch (error: unknown) {
+    console.warn('[getBusinessPlatformContext] businesses lookup failed:', error);
+  }
+
+  const productLine =
+    businessRow?.product_line ?? productLineFallback ?? null;
+  const primaryFallback =
+    businessRow?.primary_module ?? primaryModuleFallback ?? null;
+
   try {
     const rows = await queryRows<{ module_key: string }>(
       `SELECT module_key FROM business_modules
@@ -41,18 +57,12 @@ export async function getBusinessPlatformContext(
     );
 
     if (rows.length > 0) {
-      const business = await query<{ primary_module: string | null; product_line: string | null }>(
-        `SELECT primary_module, product_line FROM businesses WHERE id = $1`,
-        [businessId],
-      );
-      const row = business.rows[0];
       const enabled = rows
         .map((r) => normalizePlatformModule(r.module_key))
         .filter((m): m is PlatformModule => m !== null);
       const primary =
-        normalizePlatformModule(row?.primary_module) ||
-        normalizePlatformModule(primaryModuleFallback) ||
-        productLineToModule(normalizeProductLine(row?.product_line ?? productLineFallback));
+        normalizePlatformModule(primaryFallback) ||
+        productLineToModule(normalizeProductLine(productLine));
       return buildContext(enabled, primary);
     }
   } catch (error: unknown) {
@@ -62,9 +72,11 @@ export async function getBusinessPlatformContext(
     }
   }
 
-  const derived = deriveModulesFromProductLine(productLineFallback);
+  // No business_modules rows (e.g. signup seed failed) — derive from businesses.product_line
+  // so HR/Connect trials are not treated as Billing-only with zero limits.
+  const derived = deriveModulesFromProductLine(productLine);
   const primary =
-    normalizePlatformModule(primaryModuleFallback) ?? derived.primary;
+    normalizePlatformModule(primaryFallback) ?? derived.primary;
   return buildContext(derived.enabled, primary);
 }
 
