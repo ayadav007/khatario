@@ -5,12 +5,11 @@
  * Google Vision stays OCR-only; Groq produces JSON that is coerced + normalized here.
  */
 
-import {
-  inclusiveLineTotal,
-  inclusiveLineTotalWithDiscountAmount,
-  deriveUnitPriceFromInvoiceLine,
-} from '@/lib/invoice-line-math';
 import { getStateCode } from '@/lib/gst-utils';
+import {
+  mapExtractedLineToPurchaseLine,
+  type MappedPurchaseExtractLine,
+} from '@/lib/purchases/map-extracted-line';
 import { applyNumericOcrReconciliationToExtract } from '@/lib/services/invoice-extract/numericReconciliationEngine';
 import type { NumericReconciliationDebug } from '@/lib/services/invoice-extract/numericReconciliationEngine';
 import {
@@ -20,7 +19,6 @@ import {
   matchesExclusivePosPattern,
   reconcilePriceModeFromEvidence,
 } from '@/lib/services/invoice-extract/priceModeReconciliationEngine';
-import { roundExclusiveUnitPrice, roundRetailQty } from '@/lib/numeric-precision';
 
 // --- Canonical extraction types (LLM target + internal pipeline) ---
 
@@ -100,24 +98,7 @@ export interface PurchaseReviewExtractPayload {
     price_mode: InvoicePriceMode | null;
     buyer_gstin: string | null;
   };
-  items: Array<{
-    item_name: string | null;
-    hsn_sac: string | null;
-    quantity: number;
-    unit_price: number;
-    amount: number;
-    unit: string;
-    discount_percent: number;
-    discount_amount: number;
-    discount_on_tax_inclusive: boolean;
-    tax_rate: number;
-    tax_mode?: InvoicePriceMode | null;
-    /** From model when present */
-    taxable_value?: number | null;
-    cgst_amount?: number | null;
-    sgst_amount?: number | null;
-    igst_amount?: number | null;
-  }>;
+  items: MappedPurchaseExtractLine[];
   totals: {
     subtotal: number | null;
     grand_total: number | null;
@@ -1264,175 +1245,9 @@ export function transformExtractToPurchaseReviewFormat(
 
   const headerPriceMode = extraction.price_mode ?? 'exclusive';
 
-  const items = (extraction.items || []).map((item) => {
-    const unitPriceRaw = item.rate ?? 0;
-    const discount = item.discount_amount ?? 0;
-    const qRaw = item.qty;
-    const qParsed = typeof qRaw === 'number' && Number.isFinite(qRaw) && qRaw > 0 ? qRaw : 1;
-    const quantity = Math.max(0.0001, roundRetailQty(qParsed));
-    const taxRate = item.gst_rate ?? 0;
-    const amountRaw =
-      typeof item.line_total === 'number' && Number.isFinite(item.line_total)
-        ? item.line_total
-        : 0;
-
-    if (amountRaw < 0 && taxRate === 0) {
-      const up = roundExclusiveUnitPrice(amountRaw / quantity);
-      return {
-        item_name: item.description,
-        hsn_sac: item.hsn_code,
-        quantity,
-        unit_price: up,
-        amount: round2(amountRaw),
-        unit: item.unit || 'PCS',
-        discount_percent: 0,
-        discount_amount: 0,
-        discount_on_tax_inclusive: false,
-        tax_rate: 0,
-        tax_mode: item.tax_mode ?? headerPriceMode,
-        taxable_value: item.taxable_value,
-        cgst_amount: item.cgst_amount,
-        sgst_amount: item.sgst_amount,
-        igst_amount: item.igst_amount,
-      };
-    }
-
-    /**
-     * TRUST PRINTED VALUES FIRST.
-     *
-     * When the invoice already prints a Taxable Amount column (marketplace, B2B, etc.)
-     * use it directly: unit_price = taxable / qty, discount = 0, amount = line_total.
-     * This avoids all the MRP-reconstruction math below and matches what the user sees on
-     * the invoice. The form computes the rest: amount = unit_price * qty * (1 + gst%).
-     *
-     * Conditions: taxable_value printed and positive, makes sense vs line_total (within 2%),
-     * and the line is not a pure-discount / exchange row.
-     */
-    const printedTaxable =
-      typeof item.taxable_value === 'number' && Number.isFinite(item.taxable_value) && item.taxable_value > 0
-        ? item.taxable_value
-        : null;
-
-    if (printedTaxable != null && quantity > 0) {
-      const upFromTaxable = roundExclusiveUnitPrice(printedTaxable / quantity);
-      // Verify: taxable * (1 + gst%) should be close to line_total when both are available
-      const impliedAmount = taxRate > 0 ? round2(printedTaxable * (1 + taxRate / 100)) : printedTaxable;
-      const ltOk = amountRaw <= 0 || Math.abs(impliedAmount - amountRaw) / Math.max(amountRaw, 1) <= 0.03;
-      if (ltOk && upFromTaxable > 0) {
-        const amount = amountRaw > 0 ? round2(amountRaw) : impliedAmount;
-        return {
-          item_name: item.description,
-          hsn_sac: item.hsn_code,
-          quantity,
-          unit_price: upFromTaxable,
-          amount,
-          unit: item.unit || 'PCS',
-          discount_percent: 0,
-          discount_amount: 0,
-          discount_on_tax_inclusive: false,
-          tax_rate: taxRate,
-          tax_mode: 'exclusive' as InvoicePriceMode,
-          taxable_value: item.taxable_value,
-          cgst_amount: item.cgst_amount ?? undefined,
-          sgst_amount: item.sgst_amount ?? undefined,
-          igst_amount: item.igst_amount ?? undefined,
-        };
-      }
-    }
-
-    const grossAmount = unitPriceRaw * quantity;
-    const discountPercentForMath =
-      grossAmount > 0 && discount > 0
-        ? Math.round((discount / grossAmount) * 100 * 100) / 100
-        : 0;
-    const discountAmountRounded = discount > 0 ? round2(discount) : 0;
-
-    /**
-     * E‑commerce / MRP lines: list price is **exclusive**; printed **Gross** is list×(1+GST);
-     * rupee discount comes off that inclusive gross so `grossInc − discount ≈ line_total`.
-     * If `discount_on_tax_inclusive` was not set in normalize (model omission), infer here so
-     * we do not recompute `amount` as `(exclusive − discount)×(1+GST)` (too low).
-     */
-    let discOffInc = item.discount_on_tax_inclusive === true;
-    if (
-      !discOffInc &&
-      headerPriceMode === 'exclusive' &&
-      discountAmountRounded > 0 &&
-      taxRate > 0 &&
-      amountRaw > 0 &&
-      unitPriceRaw > 0
-    ) {
-      const grossInc = quantity * unitPriceRaw * (1 + taxRate / 100);
-      const errOffInclusiveGross = Math.abs(grossInc - discountAmountRounded - amountRaw);
-      const netExclAfterDisc = quantity * unitPriceRaw - discountAmountRounded;
-      const errOffExclusive = Math.abs(netExclAfterDisc * (1 + taxRate / 100) - amountRaw);
-      const tol = Math.max(2, Math.abs(amountRaw) * 0.02);
-      /** Prefer MRP-style only when it fits better than discount-off-exclusive (avoids 2% tol false positives). */
-      if (errOffInclusiveGross <= tol && errOffInclusiveGross < errOffExclusive) {
-        discOffInc = true;
-      }
-    }
-
-    let unit_price = unitPriceRaw;
-    if (
-      discOffInc &&
-      discountAmountRounded > 0 &&
-      amountRaw > 0 &&
-      taxRate > 0 &&
-      quantity > 0
-    ) {
-      unit_price = roundExclusiveUnitPrice(
-        (amountRaw + discountAmountRounded) / quantity / (1 + taxRate / 100),
-      );
-    } else if (amountRaw > 0 && quantity > 0) {
-      const derived = deriveUnitPriceFromInvoiceLine(
-        amountRaw,
-        quantity,
-        discountPercentForMath,
-        taxRate,
-        unitPriceRaw
-      );
-      if (derived > 0) unit_price = roundExclusiveUnitPrice(derived);
-    }
-
-    const amount =
-      unit_price > 0
-        ? discountAmountRounded > 0
-          ? round2(
-              inclusiveLineTotalWithDiscountAmount(
-                quantity,
-                unit_price,
-                discountAmountRounded,
-                taxRate,
-                discOffInc
-              )
-            )
-          : round2(inclusiveLineTotal(quantity, unit_price, discountPercentForMath, taxRate))
-        : 0;
-
-    return {
-      item_name: item.description,
-      hsn_sac: item.hsn_code,
-      quantity,
-      unit_price,
-      amount,
-      unit: item.unit || 'PCS',
-      discount_percent: discountAmountRounded > 0 ? 0 : discountPercentForMath,
-      discount_amount: discountAmountRounded,
-      discount_on_tax_inclusive: Boolean(discOffInc && discountAmountRounded > 0 && taxRate > 0),
-      tax_rate: taxRate,
-      tax_mode:
-        taxRate > 0 && amountRaw > 0
-          ? 'exclusive'
-          : item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive'
-            ? item.tax_mode
-            : headerPriceMode,
-      taxable_value: item.taxable_value,
-      cgst_amount: item.cgst_amount,
-      sgst_amount: item.sgst_amount,
-      igst_amount: item.igst_amount,
-    };
-  });
+  const items = (extraction.items || []).map((item) =>
+    mapExtractedLineToPurchaseLine(item, { headerPriceMode })
+  );
 
   const sumLineTaxable = items.reduce((s, it) => {
     const tr = it.tax_rate ?? 0;

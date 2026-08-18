@@ -10,7 +10,7 @@ export function normalizeExtractionEnvelope(payload: any): any {
   const items = Array.isArray(data.items)
     ? data.items.map((it: Record<string, unknown>) => {
         const amount = it.amount;
-        return {
+        const rounded: Record<string, unknown> = {
           ...it,
           quantity: roundRetailQty(Number(it.quantity) || 0),
           unit_price: roundExclusiveUnitPrice(Number(it.unit_price) || 0),
@@ -24,6 +24,19 @@ export function normalizeExtractionEnvelope(payload: any): any {
           discount_percent: round2(Number(it.discount_percent) || 0),
           tax_rate: round2(Number(it.tax_rate) || 0),
         };
+        if (it.printed_rate != null && Number.isFinite(Number(it.printed_rate))) {
+          rounded.printed_rate = roundExclusiveUnitPrice(Number(it.printed_rate));
+        }
+        if (it.printed_taxable != null && Number.isFinite(Number(it.printed_taxable))) {
+          rounded.printed_taxable = round2(Number(it.printed_taxable));
+        }
+        if (it.printed_line_total != null && Number.isFinite(Number(it.printed_line_total))) {
+          rounded.printed_line_total = round2(Number(it.printed_line_total));
+        }
+        if (it.printed_gst_rate != null && Number.isFinite(Number(it.printed_gst_rate))) {
+          rounded.printed_gst_rate = round2(Number(it.printed_gst_rate));
+        }
+        return rounded;
       })
     : data.items;
 

@@ -47,7 +47,6 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import {
   inclusiveLineTotal,
   inclusiveLineTotalWithDiscountAmount,
-  deriveUnitPriceFromInvoiceLine,
 } from '@/lib/invoice-line-math';
 import {
   computePurchaseDocument,
@@ -55,6 +54,7 @@ import {
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
 import { round2, roundRetailQty, roundExclusiveUnitPrice } from '@/lib/numeric-precision';
+import { resolvePurchaseFormLineFromExtractItem } from '@/lib/purchases/map-extracted-line';
 import { PURCHASE_PENDING_EXTRACT_STORAGE_KEY, PURCHASE_ITEM_PICK_RESULT_KEY } from '@/lib/purchase-scan-constants';
 
 interface PurchaseItem {
@@ -689,7 +689,7 @@ export default function NewPurchasePage() {
     }
 
     let newItems: PurchaseItem[] = [];
-    // Fill line items — derive pre-tax unit_price from tax-inclusive line amount so purchase totals don't double-count GST
+    // Fill line items — mapper already emits exclusive unit_price; do not re-derive when provenance exists.
     if (data.items && data.items.length > 0) {
       newItems = data.items.map((item: any, index: number) => {
         let qty = roundRetailQty(Number(item.quantity));
@@ -710,21 +710,13 @@ export default function NewPurchasePage() {
             : discAmt > 0
               ? round2(inclusiveLineTotalWithDiscountAmount(qty, rawUp, discAmt, tr, offInc))
               : round2(inclusiveLineTotal(qty, rawUp, discPct, tr));
-        let unitPrice = rawUp;
-        let derivedPreGstApplied = false;
-        if (amt > 0 && qty > 0) {
-          const derived = deriveUnitPriceFromInvoiceLine(amt, qty, discForDerive, tr, rawUp);
-          if (derived > 0) {
-            unitPrice = roundExclusiveUnitPrice(derived);
-            derivedPreGstApplied = true;
-          }
-        }
-        const lineTaxMode: 'exclusive' | 'inclusive' | undefined =
-          derivedPreGstApplied && tr > 0
-            ? 'exclusive'
-            : item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive'
-              ? item.tax_mode
-              : undefined;
+        const resolved = resolvePurchaseFormLineFromExtractItem(item, {
+          quantity: qty,
+          unitPrice: rawUp,
+          taxRate: tr,
+          discountPercentForDerive: discForDerive,
+          amount: amt,
+        });
         return {
           id: `item-${Date.now()}-${index}`,
           item_id: reviewedData.itemMatches?.[index]?.[0]?.itemId || '',
@@ -732,14 +724,13 @@ export default function NewPurchasePage() {
           hsn_sac: item.hsn_sac || '',
           quantity: qty,
           unit: item.unit || 'PCS',
-          unit_price: roundExclusiveUnitPrice(Number(unitPrice) || 0),
+          unit_price: roundExclusiveUnitPrice(Number(resolved.unitPrice) || 0),
           discount_percent: discAmt > 0 ? 0 : discPct,
           discount_amount: discAmt,
           discount_on_tax_inclusive: item.discount_on_tax_inclusive === true,
           tax_rate: tr,
-          tax_mode: lineTaxMode,
-          invoice_inclusive_line_total:
-            amt !== 0 && Number.isFinite(amt) ? round2(amt) : undefined,
+          tax_mode: resolved.taxMode,
+          invoice_inclusive_line_total: resolved.invoiceInclusiveLineTotal,
           fromBillExtract: true,
         };
       });
