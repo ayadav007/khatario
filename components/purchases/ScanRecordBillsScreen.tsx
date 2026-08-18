@@ -21,6 +21,7 @@ import { DocumentCropScreen } from '@/components/purchases/scan-flow/DocumentCro
 import { ScanPreviewScreen } from '@/components/purchases/scan-flow/ScanPreviewScreen';
 import { ScanLoadingScreen } from '@/components/purchases/scan-flow/ScanLoadingScreen';
 import { ScanSuccessScreen } from '@/components/purchases/scan-flow/ScanSuccessScreen';
+import { prepareInvoiceVisionImageClientOrPassthrough } from '@/lib/invoice-extract/latency/prepare-vision-image-client';
 
 const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -308,10 +309,11 @@ export function ScanRecordBillsScreen() {
   };
 
   // Add extra page in preview
-  const handleAddPage = (file: File) => {
+  const handleAddPage = async (file: File) => {
+    const prepared = await prepareInvoiceVisionImageClientOrPassthrough(file);
     setScanPhase(prev =>
       prev.type === 'preview'
-        ? { ...prev, pages: [...prev.pages, file] }
+        ? { ...prev, pages: [...prev.pages, prepared] }
         : prev,
     );
   };

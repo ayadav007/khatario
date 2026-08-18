@@ -14,6 +14,8 @@ import {
   normalizeIndianGstInvoiceExtract,
 } from '@/lib/indian-gst-invoice-extract';
 import { VISION_PROMPT } from '@/lib/gst-invoice-vision-prompt';
+import { buildGeminiVisionGenerateContentBody } from '@/lib/invoice-extract/latency/gemini-generation-config';
+import { prepareInvoiceVisionImageServer } from '@/lib/invoice-extract/latency/prepare-vision-image-server';
 import { repairExtractSectionsDeterministic } from '@/lib/services/invoice-extract/repair/sectionRepairEngine';
 import { pipelineFromLlmContent } from '@/lib/services/invoice-extract/pipeline/llmExtractParse';
 import type { ExtractionPipelineResult } from '@/lib/services/invoice-extract/pipeline/extractionPipelineTypes';
@@ -31,10 +33,27 @@ export async function runGeminiVisionPipeline(
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
   const model = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
-  const mimeType = (file.type && file.type.startsWith('image/')) ? file.type : 'image/jpeg';
+  const rawBuffer = Buffer.from(await file.arrayBuffer());
+  const fallbackMime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const base64 = buffer.toString('base64');
+  let prepared: Awaited<ReturnType<typeof prepareInvoiceVisionImageServer>>;
+  try {
+    prepared = await prepareInvoiceVisionImageServer(rawBuffer, fallbackMime);
+  } catch {
+    prepared = {
+      buffer: rawBuffer,
+      mimeType: fallbackMime,
+      width: 0,
+      height: 0,
+      originalWidth: 0,
+      originalHeight: 0,
+      resized: false,
+      reencoded: false,
+      oriented: false,
+    };
+  }
+
+  const base64 = prepared.buffer.toString('base64');
 
   const startTime = Date.now();
 
@@ -43,20 +62,13 @@ export async function runGeminiVisionPipeline(
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: VISION_PROMPT },
-            { inline_data: { mime_type: mimeType, data: base64 } },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-      },
-    }),
+    body: JSON.stringify(
+      buildGeminiVisionGenerateContentBody({
+        prompt: VISION_PROMPT,
+        mimeType: prepared.mimeType,
+        base64,
+      }),
+    ),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
@@ -122,6 +134,17 @@ export async function runGeminiVisionPipeline(
       processing_time_ms: processingTimeMs,
       deterministic_repairs: repairNotes,
       note: 'Gemini Vision reads the image directly — no OCR step, no column reconstructor, no GST propagation engine needed.',
+      vision_image: {
+        width: prepared.width,
+        height: prepared.height,
+        original_width: prepared.originalWidth,
+        original_height: prepared.originalHeight,
+        bytes: prepared.buffer.length,
+        mime_type: prepared.mimeType,
+        resized: prepared.resized,
+        reencoded: prepared.reencoded,
+        oriented: prepared.oriented,
+      },
     },
   };
 }

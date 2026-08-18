@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactCrop, { type Crop, convertToPixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { Upload, X, FileText, Image as ImageIcon, AlertCircle, Loader2, Camera, FolderOpen } from 'lucide-react';
+import { prepareInvoiceVisionImageClientOrPassthrough } from '@/lib/invoice-extract/latency/prepare-vision-image-client';
 
 async function cropImageRegionToBlob(
   imageSrc: string,
@@ -83,96 +84,6 @@ export function InvoiceUploader({ businessId, onExtractionComplete, onError }: I
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  }, []);
-
-  const preprocessImage = useCallback((file: File): Promise<File> => {
-    return new Promise((resolve, reject) => {
-      const img = new window.Image();
-      const objectUrl = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        try {
-          const MIN_LONG_SIDE = 1500;
-          const MAX_LONG_SIDE = 3000;
-          let { width, height } = img;
-          const longSide = Math.max(width, height);
-
-          if (longSide < MIN_LONG_SIDE) {
-            const scale = MIN_LONG_SIDE / longSide;
-            width = Math.round(width * scale);
-            height = Math.round(height * scale);
-          } else if (longSide > MAX_LONG_SIDE) {
-            const scale = MAX_LONG_SIDE / longSide;
-            width = Math.round(width * scale);
-            height = Math.round(height * scale);
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d')!;
-
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Unsharp mask: sharpen text edges
-          const imageData = ctx.getImageData(0, 0, width, height);
-          const blurred = ctx.getImageData(0, 0, width, height);
-          const src = imageData.data;
-          const dst = blurred.data;
-
-          // Simple 3x3 box blur for the "blurred" copy
-          for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
-              const i = (y * width + x) * 4;
-              for (let c = 0; c < 3; c++) {
-                dst[i + c] = (
-                  src[((y - 1) * width + x - 1) * 4 + c] +
-                  src[((y - 1) * width + x) * 4 + c] +
-                  src[((y - 1) * width + x + 1) * 4 + c] +
-                  src[(y * width + x - 1) * 4 + c] +
-                  src[(y * width + x) * 4 + c] +
-                  src[(y * width + x + 1) * 4 + c] +
-                  src[((y + 1) * width + x - 1) * 4 + c] +
-                  src[((y + 1) * width + x) * 4 + c] +
-                  src[((y + 1) * width + x + 1) * 4 + c]
-                ) / 9;
-              }
-            }
-          }
-
-          // Apply unsharp: original + amount * (original - blurred)
-          const amount = 0.4;
-          for (let i = 0; i < src.length; i += 4) {
-            for (let c = 0; c < 3; c++) {
-              const val = src[i + c] + amount * (src[i + c] - dst[i + c]);
-              src[i + c] = Math.max(0, Math.min(255, Math.round(val)));
-            }
-          }
-          ctx.putImageData(imageData, 0, 0);
-
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) { resolve(file); return; }
-              const processed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
-                type: 'image/jpeg',
-              });
-              resolve(processed);
-            },
-            'image/jpeg',
-            0.85
-          );
-        } catch {
-          resolve(file);
-        }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
-      };
-      img.src = objectUrl;
-    });
   }, []);
 
   const revokePreviewUrl = useCallback((url: string | null) => {
@@ -268,14 +179,14 @@ export function InvoiceUploader({ businessId, onExtractionComplete, onError }: I
           }
         }
 
-        let processed = await preprocessImage(fileBeforePreprocess);
+        const processed = await prepareInvoiceVisionImageClientOrPassthrough(fileBeforePreprocess);
         discardStagedImage();
         setSelectedFile(processed);
       } finally {
         setCropUiBusy(false);
       }
     },
-    [discardStagedImage, onError, preprocessImage, reactImgCrop, stagedImageFile, stagedPreviewUrl],
+    [discardStagedImage, onError, reactImgCrop, stagedImageFile, stagedPreviewUrl],
   );
 
   const handleDrop = useCallback(

@@ -14,6 +14,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RotateCcw, Check } from 'lucide-react';
+import { prepareInvoiceVisionImageClientOrPassthrough } from '@/lib/invoice-extract/latency/prepare-vision-image-client';
 
 interface Point { x: number; y: number } // 0–1 proportional to rendered image
 
@@ -115,8 +116,13 @@ export function DocumentCropScreen({ imageFile, onCrop, onRetake }: Props) {
           blob => {
             if (!blob) { reject(new Error('Crop failed')); return; }
             const base = imageFile.name.replace(/\.[^.]+$/, '');
-            onCrop(new File([blob], `${base}_cropped.jpg`, { type: 'image/jpeg' }));
-            resolve();
+            const cropped = new File([blob], `${base}_cropped.jpg`, { type: 'image/jpeg' });
+            void prepareInvoiceVisionImageClientOrPassthrough(cropped)
+              .then((prepared) => {
+                onCrop(prepared);
+                resolve();
+              })
+              .catch(reject);
           },
           'image/jpeg',
           0.92,
