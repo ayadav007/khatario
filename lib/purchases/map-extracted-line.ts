@@ -2,6 +2,8 @@
  * Classify printed Gemini line fields and map them to exclusive purchase-form unit_price.
  * Never treats qty × rate ≈ line_total alone as proof that rate is GST-inclusive
  * (that identity is also exclusive taxable vs a copied line_total).
+ * Gemini tax_mode=inclusive is not enough to rewrite a printed rate; inclusive_rate
+ * requires qty×rate ≈ line_total, taxable ≈ line_total/(1+GST), and line_total ≉ taxable.
  */
 
 import type { ExtractedInvoiceLine, InvoicePriceMode } from '@/lib/indian-gst-invoice-extract';
@@ -308,16 +310,23 @@ export function mapExtractedLineToPurchaseLine(
     rate <= 0 ||
     !amountsNear(printedTaxable, qtyTimesRate, printedTaxable);
 
-  const declaredInclusive = printedTaxMode === 'inclusive';
-  const inferredInclusive =
-    !declaredInclusive &&
-    !exclusiveRateVsTaxable &&
+  // D-Mart / POS: Value column is taxable and is often copied into line_total. That is
+  // exclusive (GST lives in the footer), not proof that N/Rate is tax-inclusive.
+  const printedLineTotalEqualsTaxable =
+    printedTaxable != null &&
+    printedTaxable > 0 &&
+    lineTotal > 0 &&
+    amountsNear(lineTotal, printedTaxable, printedTaxable);
+
+  const strongInclusiveEvidence =
     inclusiveRateVsLine &&
     taxableMatchesInclusiveBackout &&
-    taxableNotExclusiveIdentity;
+    taxableNotExclusiveIdentity &&
+    !printedLineTotalEqualsTaxable;
 
-  // Inclusive only when declared/inferred AND taxable is not the exclusive identity qty×rate.
-  const useInclusive = (declaredInclusive || inferredInclusive) && !exclusiveRateVsTaxable;
+  // Inclusive only with printed-column identities. tax_mode=inclusive alone must not
+  // replace N/Rate with taxable/qty (Gemini often marks D-Mart lines inclusive).
+  const useInclusive = !exclusiveRateVsTaxable && strongInclusiveEvidence;
 
   // --- Inclusive rate (printed or identities; never if qty×rate ≈ taxable) ---
   if (useInclusive) {

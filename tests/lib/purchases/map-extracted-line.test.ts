@@ -215,6 +215,49 @@ describe('mapExtractedLineToPurchaseLine — GST modes', () => {
     expect(out.discrepancy_codes).toContain('LINE_TOTAL_EQUALS_TAXABLE');
   });
 
+  it('D-Mart N/Rate vs Value: keeps 440 when tax_mode is inclusive but line_total equals taxable', () => {
+    const out = map(
+      line({
+        description: 'TATA AGNI TEA-1kg',
+        qty: 1,
+        rate: 440,
+        taxable_value: 425.11,
+        gst_rate: 2.9,
+        tax_mode: 'inclusive',
+        line_total: 425.11,
+      })
+    );
+    expect(out.printed_rate).toBe(440);
+    expect(out.unit_price).toBe(440);
+    expect(out.mapping_rule).toBe('exclusive_rate');
+    expect(out.tax_mode).toBe('exclusive');
+    expect(out.printed_tax_mode).toBe('inclusive');
+    expect(out.tax_rate).toBe(2.9);
+    expect(out.validation_status).toBe('discrepancy');
+    expect(out.discrepancy_codes).toContain('LINE_TOTAL_EQUALS_TAXABLE');
+  });
+
+  it('weighted D-Mart line keeps printed N/Rate instead of taxable/qty', () => {
+    const out = map(
+      line({
+        description: 'BIRYANI RICE',
+        qty: 3.326,
+        rate: 95,
+        taxable_value: 298.01,
+        gst_rate: 2.9,
+        tax_mode: 'inclusive',
+        line_total: 298.01,
+      })
+    );
+    expect(out.printed_rate).toBe(95);
+    expect(out.unit_price).toBe(95);
+    expect(out.mapping_rule).toBe('exclusive_rate');
+    expect(out.tax_mode).toBe('exclusive');
+    expect(out.validation_status).toBe('discrepancy');
+    expect(out.discrepancy_codes).toContain('LINE_TOTAL_EQUALS_TAXABLE');
+    expect(out.unit_price).not.toBeCloseTo(298.01 / 3.326, 2);
+  });
+
   it('zero GST keeps printed rate', () => {
     const out = map(
       line({
