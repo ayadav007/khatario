@@ -9,6 +9,8 @@ Output ONLY one JSON object. No markdown fences, no prose — raw JSON only.
 
 ## CRITICAL
 - Do NOT guess taxes or slabs. If a value is illegible or absent, use null.
+- gst_rate ALWAYS means TOTAL GST percent for that line or slab (CGST% + SGST%, or the IGST%). Never store a single CGST or SGST *component* as gst_rate. Never assign a blended invoice-wide effective rate (total tax ÷ taxable, e.g. 2.9%) to each item.
+- If the bill prints CGST X% and SGST X% (section header or columns), set gst_rate = 2X. Examples: CGST 2.50% + SGST 2.50% => gst_rate 5. CGST 9.00% + SGST 9.00% => gst_rate 18. CGST 0% + SGST 0% => gst_rate 0.
 - Never output both meaningful IGST and meaningful CGST+SGST on the same invoice unless the document clearly shows all (rare); prefer the printed tax columns.
 - Never hallucinate CGST/SGST on an IGST-only invoice or vice versa.
 - If the invoice footer has a GST breakup / HSN tax summary table, treat those figures as source of truth for gst_summary and for total_cgst, total_sgst, total_igst, and subtotal (taxable) when they are consistent with the printed Grand Total.
@@ -39,7 +41,7 @@ Output ONLY one JSON object. No markdown fences, no prose — raw JSON only.
       "unit": "string|null — NOS, PCS, KGS, etc.",
       "rate": "number|null — printed unit rate (often MRP / list rate; may be tax-inclusive on retail bills — set tax_mode and price_mode accordingly)",
       "discount_amount": "number|null — absolute rupees; 0 or null if none",
-      "gst_rate": "number|null — full GST % (e.g. 18). If only CGST% and SGST% shown, add them.",
+      "gst_rate": "number|null — TOTAL GST % only (e.g. 0, 5, 12, 18, 28). If the bill shows CGST% and SGST%, ADD them (2.5+2.5=5, 9+9=18). Never use one half-rate. Never use total_tax/subtotal blended %.",
       "tax_mode": "string|null — 'exclusive' or 'inclusive' for THIS line when you can infer from columns (null if unknown)",
       "taxable_value": "number|null — line taxable if printed; else null (do not invent)",
       "cgst_amount": "number|null",
@@ -51,7 +53,7 @@ Output ONLY one JSON object. No markdown fences, no prose — raw JSON only.
   ],
   "gst_summary": [
     {
-      "gst_rate": "number — slab rate e.g. 5, 12, 18, 28, 0",
+      "gst_rate": "number — TOTAL GST slab (0, 5, 12, 18, 28). If the footer prints CGST 2.5% + SGST 2.5%, this row is 5 not 2.5.",
       "taxable_value": "number",
       "cgst": "number",
       "sgst": "number",

@@ -136,6 +136,55 @@ export function nearestGstRate(rate: number): number {
   return best;
 }
 
+/**
+ * Gemini often copies a printed CGST (or SGST) *component* into gst_rate
+ * (2.5, 6, 9, 14) instead of TOTAL GST (5, 12, 18, 28). Double those halves
+ * for CGST+SGST invoices. Never apply to IGST. Already-total slabs (5, 12, 18)
+ * are left unchanged.
+ */
+export function combineCgstSgstComponentGstRate(
+  rate: number | null | undefined,
+  taxType: IndianGstInvoiceExtract['tax_type'] | string | null,
+): number | null {
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+    return rate == null || !Number.isFinite(rate) ? null : 0;
+  }
+  if (taxType === 'igst') return round2(rate);
+  const halves: Array<{ half: number; total: number }> = [
+    { half: 2.5, total: 5 },
+    { half: 6, total: 12 },
+    { half: 9, total: 18 },
+    { half: 14, total: 28 },
+  ];
+  for (const { half, total } of halves) {
+    if (Math.abs(rate - half) <= 0.15) return total;
+  }
+  return round2(rate);
+}
+
+function extractHasMixedOrSectionGstSlabs(items: ExtractedInvoiceLine[]): boolean {
+  const positives = items.filter(
+    (it) => it.line_total != null && Number.isFinite(it.line_total) && it.line_total > 0,
+  );
+  const rates = positives.map((it) => round2(it.gst_rate ?? 0));
+  const distinctPositive = [...new Set(rates.filter((r) => r > 0.01))];
+  if (distinctPositive.length > 1) return true;
+  if (distinctPositive.length === 1 && rates.some((r) => r <= 0.01)) return true;
+  return false;
+}
+
+function applyCombinedCgstSgstGstRates(e: IndianGstInvoiceExtract): void {
+  if (e.tax_type === 'igst') return;
+  e.items = (e.items ?? []).map((it) => ({
+    ...it,
+    gst_rate: combineCgstSgstComponentGstRate(it.gst_rate, e.tax_type),
+  }));
+  e.gst_summary = (e.gst_summary ?? []).map((row) => ({
+    ...row,
+    gst_rate: combineCgstSgstComponentGstRate(row.gst_rate, e.tax_type) ?? 0,
+  }));
+}
+
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -698,6 +747,8 @@ function scaleExclusiveLinesToFooterTaxableWhenDiscounted(e: IndianGstInvoiceExt
   if (e.price_mode !== 'exclusive') return;
   /** Consolidated‑tax split inflates lines to tax‑inclusive; do not rescale those. */
   if (e.document_combined_gst_rate != null && e.document_combined_gst_rate > 0.01) return;
+  /** Mixed 0/5/18 (or 0% + a slab): do not wipe section gst_rate so header smear can invent 2.9%. */
+  if (extractHasMixedOrSectionGstSlabs(e.items ?? [])) return;
 
   const sub = e.subtotal ?? 0;
   if (!Number.isFinite(sub) || sub < 50) return;
@@ -758,6 +809,11 @@ function distributePrintedHeaderGstToExclusiveLines(e: IndianGstInvoiceExtract):
     (it) => Math.abs(it.cgst_amount ?? 0) > 0.05 || Math.abs(it.sgst_amount ?? 0) > 0.05,
   );
   if (hasPrintedLineSplit || positiveLines.length === 0) return;
+  if (extractHasMixedOrSectionGstSlabs(positiveLines)) return;
+
+  const lineRates = positiveLines.map((it) => round2(it.gst_rate ?? 0));
+  const distinctPositive = [...new Set(lineRates.filter((r) => r > 0.01))];
+  const preserveLineGstRates = distinctPositive.length >= 1;
 
   let sumTaxable = 0;
   for (const it of positiveLines) sumTaxable = round2(sumTaxable + (it.line_total ?? 0));
@@ -783,7 +839,9 @@ function distributePrintedHeaderGstToExclusiveLines(e: IndianGstInvoiceExtract):
     it.sgst_amount = sg;
     it.igst_amount = null;
     it.taxable_value = base;
-    it.gst_rate = combined > 0 ? combined : null;
+    if (!preserveLineGstRates) {
+      it.gst_rate = combined > 0 ? combined : null;
+    }
   });
 }
 
@@ -893,6 +951,7 @@ export function normalizeIndianGstInvoiceExtract(
   preferTaxableSubtotalFromGrand(e);
 
   e.tax_type = detectTaxType(e);
+  applyCombinedCgstSgstGstRates(e);
 
   const priceRecon = reconcilePriceModeFromEvidence(e);
   e.price_mode = priceRecon.priceMode;
@@ -940,6 +999,8 @@ export function normalizeIndianGstInvoiceExtract(
       };
     });
 
+  applyCombinedCgstSgstGstRates(e);
+
   /** Deterministic qty/rate OCR repair vs line_total (thermal / retail). */
   applyNumericOcrReconciliationToExtract(e);
 
@@ -973,10 +1034,18 @@ export function normalizeIndianGstInvoiceExtract(
     return { ...it, taxable_value };
   });
 
-  // Infer missing line gst_rate from gst_summary when many lines lack rate
+  // Infer missing line gst_rate from gst_summary when many lines lack rate.
+  // Do not treat a genuine 0% section as "missing" when other lines already have slabs.
   const headerTaxSum = (e.total_cgst ?? 0) + (e.total_sgst ?? 0) + (e.total_igst ?? 0);
   const slabs = e.gst_summary.length > 0 ? e.gst_summary : null;
-  if (headerTaxSum > 0.01 && slabs && slabs.length > 0 && e.items.length > 0) {
+  const hasPositiveLineGstSlabs = (e.items ?? []).some((it) => (it.gst_rate ?? 0) > 0.01);
+  if (
+    headerTaxSum > 0.01 &&
+    slabs &&
+    slabs.length > 0 &&
+    e.items.length > 0 &&
+    !hasPositiveLineGstSlabs
+  ) {
     const zeroRateCount = e.items.filter((it) => !it.gst_rate || it.gst_rate <= 0).length;
     const mostlyMissing = zeroRateCount / e.items.length >= 0.5;
     if (mostlyMissing && slabs.length === 1) {

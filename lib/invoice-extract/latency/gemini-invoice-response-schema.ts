@@ -31,7 +31,11 @@ const LINE_ITEM_SCHEMA: GeminiSchema = {
     unit: nullableString(),
     rate: nullableNumber(),
     discount_amount: nullableNumber(),
-    gst_rate: nullableNumber(),
+    gst_rate: {
+      ...nullableNumber(),
+      description:
+        'TOTAL GST percent (CGST+SGST or IGST). CGST 2.5 + SGST 2.5 => 5; CGST 9 + SGST 9 => 18. Never a single component half-rate or a blended invoice-wide effective rate.',
+    },
     tax_mode: nullableEnum(['exclusive', 'inclusive']),
     taxable_value: nullableNumber(),
     cgst_amount: nullableNumber(),
@@ -61,7 +65,11 @@ const LINE_ITEM_SCHEMA: GeminiSchema = {
 const GST_SUMMARY_ROW_SCHEMA: GeminiSchema = {
   type: 'OBJECT',
   properties: {
-    gst_rate: { type: 'NUMBER' },
+    gst_rate: {
+      type: 'NUMBER',
+      description:
+        'TOTAL GST slab percent. CGST 2.5% + SGST 2.5% => 5, not 2.5. Never a blended effective rate.',
+    },
     taxable_value: { type: 'NUMBER' },
     cgst: { type: 'NUMBER' },
     sgst: { type: 'NUMBER' },
