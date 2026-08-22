@@ -19,6 +19,11 @@ import { prepareInvoiceVisionImageServer } from '@/lib/invoice-extract/latency/p
 import { repairExtractSectionsDeterministic } from '@/lib/services/invoice-extract/repair/sectionRepairEngine';
 import { pipelineFromLlmContent } from '@/lib/services/invoice-extract/pipeline/llmExtractParse';
 import type { ExtractionPipelineResult } from '@/lib/services/invoice-extract/pipeline/extractionPipelineTypes';
+import {
+  buildInvoiceGeminiMetricsLine,
+  logInvoiceGeminiMetrics,
+  parseGeminiUsageMetadata,
+} from '@/lib/invoice-extract/latency/gemini-metrics-diagnostic';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
@@ -29,6 +34,7 @@ export async function runGeminiVisionPipeline(
   includeDebug: boolean,
   _extractionCtx?: { businessId?: string },
 ): Promise<ExtractionPipelineResult> {
+  const pipelineStartedAt = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
 
@@ -55,6 +61,7 @@ export async function runGeminiVisionPipeline(
 
   const base64 = prepared.buffer.toString('base64');
 
+  const beforeFetchMs = Date.now() - pipelineStartedAt;
   const startTime = Date.now();
 
   const url = `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -79,7 +86,10 @@ export async function runGeminiVisionPipeline(
     throw new Error(`Gemini API error (${res.status}): ${body.slice(0, 600)}`);
   }
 
+  const bodyReadStartedAt = Date.now();
   const json = await res.json();
+  const bodyReadMs = Date.now() - bodyReadStartedAt;
+  const usage = parseGeminiUsageMetadata(json);
 
   // Gemini response shape: candidates[0].content.parts[0].text
   const candidate = json?.candidates?.[0];
@@ -87,6 +97,17 @@ export async function runGeminiVisionPipeline(
 
   if (typeof content !== 'string' || !content.trim()) {
     const finishReason: string = candidate?.finishReason ?? 'unknown';
+    logInvoiceGeminiMetrics(
+      buildInvoiceGeminiMetricsLine({
+        model,
+        httpMs: processingTimeMs,
+        beforeFetchMs,
+        bodyReadMs,
+        parseMs: 0,
+        processingTimeMs,
+        usage,
+      }),
+    );
     // Log the full response so we can debug unexpected shapes
     const snippet = JSON.stringify(json ?? {}).slice(0, 800);
     throw new Error(`Gemini returned no content (finishReason: ${finishReason}). Response: ${snippet}`);
@@ -94,12 +115,37 @@ export async function runGeminiVisionPipeline(
 
   // Parse JSON + normalize
   let data: ReturnType<typeof pipelineFromLlmContent>;
+  const parseStartedAt = Date.now();
   try {
     data = pipelineFromLlmContent(content);
   } catch (parseErr: unknown) {
+    logInvoiceGeminiMetrics(
+      buildInvoiceGeminiMetricsLine({
+        model,
+        httpMs: processingTimeMs,
+        beforeFetchMs,
+        bodyReadMs,
+        parseMs: Date.now() - parseStartedAt,
+        processingTimeMs,
+        usage,
+      }),
+    );
     const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
     throw new Error(`Gemini response JSON parse failed: ${msg}. Raw content (first 500): ${content.slice(0, 500)}`);
   }
+  const parseMs = Date.now() - parseStartedAt;
+
+  logInvoiceGeminiMetrics(
+    buildInvoiceGeminiMetricsLine({
+      model,
+      httpMs: processingTimeMs,
+      beforeFetchMs,
+      bodyReadMs,
+      parseMs,
+      processingTimeMs,
+      usage,
+    }),
+  );
 
   // Deterministic repairs: fix obvious field-level inconsistencies
   const repaired = repairExtractSectionsDeterministic(data);
