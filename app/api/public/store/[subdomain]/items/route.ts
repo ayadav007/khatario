@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
+import { buildStoreItemsQuery } from '@/lib/store/store-items-query';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,82 +54,16 @@ export async function GET(
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '40', 10)));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [
-      'i.business_id = $1',
-      'i.show_in_store = true',
-      '(i.is_active IS NULL OR i.is_active = true)',
-      'i.deleted_at IS NULL',
-    ];
-    const queryParams: unknown[] = [store.business_id];
-    let paramIdx = 1;
-    let whereParamCount = 1;
+    const q = buildStoreItemsQuery({
+      businessId: store.business_id,
+      categoryId,
+      search,
+      branchId,
+      limit,
+      offset,
+    });
 
-    if (categoryId) {
-      paramIdx++;
-      conditions.push(`i.category_id = $${paramIdx}`);
-      queryParams.push(categoryId);
-      whereParamCount = paramIdx;
-    }
-
-    if (search) {
-      paramIdx++;
-      conditions.push(`(i.name ILIKE $${paramIdx} OR i.code ILIKE $${paramIdx})`);
-      queryParams.push(`%${search}%`);
-      whereParamCount = paramIdx;
-    }
-
-    // Build stock expression with proper param index for branch
-    let finalStockExpr = 'COALESCE(i.current_stock, 0)';
-    let variantStockExpr = 'COALESCE(iv.current_stock, 0)';
-    if (branchId) {
-      paramIdx++;
-      queryParams.push(branchId);
-      finalStockExpr = `COALESCE((SELECT bis.quantity FROM branch_item_stock bis
-        WHERE bis.business_id = i.business_id AND bis.item_id = i.id
-          AND bis.branch_id = $${paramIdx}), i.current_stock, 0)`;
-      variantStockExpr = `COALESCE((SELECT biv.quantity FROM branch_item_variant_stock biv
-        WHERE biv.business_id = i.business_id AND biv.item_variant_id = iv.id
-          AND biv.branch_id = $${paramIdx}), iv.current_stock, 0)`;
-    }
-
-    paramIdx++;
-    queryParams.push(limit);
-    const limitParam = paramIdx;
-
-    paramIdx++;
-    queryParams.push(offset);
-    const offsetParam = paramIdx;
-
-    const sql = `
-      SELECT
-        i.id, i.name, i.code, i.description,
-        i.selling_price::text, i.mrp::text, i.unit,
-        i.image_url, i.category_id, c.name AS category_name,
-        ${finalStockExpr}::text AS current_stock,
-        COALESCE(i.has_variants, false) AS has_variants,
-        i.tax_rate::text,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', iv.id,
-              'variant_name', iv.variant_name,
-              'selling_price', iv.selling_price,
-              'current_stock', ${variantStockExpr},
-              'attributes', iv.attributes
-            )
-          ) FILTER (WHERE iv.id IS NOT NULL),
-          '[]'::json
-        ) AS variants
-      FROM items i
-      LEFT JOIN categories c ON c.id = i.category_id
-      LEFT JOIN item_variants iv ON iv.item_id = i.id
-      WHERE ${conditions.join(' AND ')}
-      GROUP BY i.id, c.name
-      ORDER BY i.name ASC
-      LIMIT $${limitParam} OFFSET $${offsetParam}
-    `;
-
-    const rows = await queryRows<Record<string, unknown>>(sql, queryParams);
+    const rows = await queryRows<Record<string, unknown>>(q.listSql, q.listParams);
 
     const items: StoreItem[] = rows.map((r) => ({
       id: r.id as string,
@@ -147,25 +82,12 @@ export async function GET(
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
 
-    // Get categories for this store
     const categories = await queryRows<{ id: string; name: string }>(
-      `SELECT DISTINCT c.id, c.name
-       FROM categories c
-       INNER JOIN items i ON i.category_id = c.id
-       WHERE i.business_id = $1 AND i.show_in_store = true
-         AND (i.is_active IS NULL OR i.is_active = true)
-         AND i.deleted_at IS NULL
-       ORDER BY c.name`,
-      [store.business_id],
+      q.categorySql,
+      q.categoryParams,
     );
 
-    // Total count for pagination (only WHERE bind values — not branch/limit/offset)
-    const countRow = await queryOne<{ count: string }>(
-      `SELECT COUNT(DISTINCT i.id)::text AS count
-       FROM items i
-       WHERE ${conditions.join(' AND ')}`,
-      queryParams.slice(0, whereParamCount),
-    );
+    const countRow = await queryOne<{ count: string }>(q.countSql, q.countParams);
 
     return NextResponse.json({
       items,
@@ -176,8 +98,12 @@ export async function GET(
     });
   } catch (error) {
     console.error('[store items]', error);
+    const details = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: 'Failed to load items' },
+      {
+        error: 'Failed to load items',
+        ...(process.env.NODE_ENV !== 'production' ? { details } : {}),
+      },
       { status: 500 },
     );
   }
