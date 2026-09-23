@@ -53,30 +53,28 @@ export async function GET(
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '40', 10)));
     const offset = (page - 1) * limit;
 
-    const stockExpr = branchId
-      ? `COALESCE((SELECT bis.quantity FROM branch_item_stock bis
-          WHERE bis.business_id = i.business_id AND bis.item_id = i.id
-            AND bis.branch_id = $${branchId ? 'BRANCH' : 'X'}), i.current_stock, 0)`
-      : 'COALESCE(i.current_stock, 0)';
-
     const conditions: string[] = [
       'i.business_id = $1',
       'i.show_in_store = true',
       '(i.is_active IS NULL OR i.is_active = true)',
+      'i.deleted_at IS NULL',
     ];
     const queryParams: unknown[] = [store.business_id];
     let paramIdx = 1;
+    let whereParamCount = 1;
 
     if (categoryId) {
       paramIdx++;
       conditions.push(`i.category_id = $${paramIdx}`);
       queryParams.push(categoryId);
+      whereParamCount = paramIdx;
     }
 
     if (search) {
       paramIdx++;
       conditions.push(`(i.name ILIKE $${paramIdx} OR i.code ILIKE $${paramIdx})`);
       queryParams.push(`%${search}%`);
+      whereParamCount = paramIdx;
     }
 
     // Build stock expression with proper param index for branch
@@ -156,16 +154,17 @@ export async function GET(
        INNER JOIN items i ON i.category_id = c.id
        WHERE i.business_id = $1 AND i.show_in_store = true
          AND (i.is_active IS NULL OR i.is_active = true)
+         AND i.deleted_at IS NULL
        ORDER BY c.name`,
       [store.business_id],
     );
 
-    // Total count for pagination
+    // Total count for pagination (only WHERE bind values — not branch/limit/offset)
     const countRow = await queryOne<{ count: string }>(
       `SELECT COUNT(DISTINCT i.id)::text AS count
        FROM items i
        WHERE ${conditions.join(' AND ')}`,
-      queryParams.slice(0, conditions.length),
+      queryParams.slice(0, whereParamCount),
     );
 
     return NextResponse.json({
