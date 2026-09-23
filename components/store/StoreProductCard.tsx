@@ -35,14 +35,13 @@ interface StoreProductCardProps {
 }
 
 export function StoreProductCard({ product, onViewDetail }: StoreProductCardProps) {
-  const { cart, addToCart, updateCartQuantity } = useStore();
+  const { cart, addToCart, updateCartQuantity, store } = useStore();
+  const accent = (store?.store_theme?.accent as string) || '#16a34a';
 
   const inCart = useMemo(() => {
     if (product.has_variants) {
       return product.variants.reduce((sum, v) => {
-        const found = cart.find(
-          (c) => c.itemId === product.id && c.variantId === v.id,
-        );
+        const found = cart.find((c) => c.itemId === product.id && c.variantId === v.id);
         return sum + (found?.quantity ?? 0);
       }, 0);
     }
@@ -60,37 +59,51 @@ export function StoreProductCard({ product, onViewDetail }: StoreProductCardProp
       ? Math.round(((product.mrp - product.selling_price) / product.mrp) * 100)
       : 0;
 
-  const handleAdd = useCallback(() => {
-    if (product.has_variants) {
-      onViewDetail?.(product);
-      return;
-    }
-    addToCart({
-      itemId: product.id,
-      name: product.name,
-      price: product.selling_price,
-      quantity: 1,
-      imageUrl: product.image_url ?? undefined,
-      unit: product.unit,
-      maxStock: product.current_stock,
-      taxRate: product.tax_rate,
-    });
-  }, [product, addToCart, onViewDetail]);
+  const handleAdd = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (product.has_variants) {
+        onViewDetail?.(product);
+        return;
+      }
+      addToCart({
+        itemId: product.id,
+        name: product.name,
+        price: product.selling_price,
+        quantity: 1,
+        imageUrl: product.image_url ?? undefined,
+        unit: product.unit,
+        maxStock: product.current_stock,
+        taxRate: product.tax_rate,
+      });
+    },
+    [product, addToCart, onViewDetail],
+  );
 
-  const handleIncrement = useCallback(() => {
-    if (!cartItem) return;
-    updateCartQuantity(product.id, undefined, cartItem.quantity + 1);
-  }, [product.id, cartItem, updateCartQuantity]);
+  const handleIncrement = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!cartItem) return;
+      updateCartQuantity(product.id, undefined, cartItem.quantity + 1);
+    },
+    [product.id, cartItem, updateCartQuantity],
+  );
 
-  const handleDecrement = useCallback(() => {
-    if (!cartItem) return;
-    updateCartQuantity(product.id, undefined, cartItem.quantity - 1);
-  }, [product.id, cartItem, updateCartQuantity]);
+  const handleDecrement = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!cartItem) return;
+      updateCartQuantity(product.id, undefined, cartItem.quantity - 1);
+    },
+    [product.id, cartItem, updateCartQuantity],
+  );
 
   return (
-    <div className="flex gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
-      {/* Image */}
-      <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100">
+    <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <Link href={`/products/${product.id}`} className="relative block aspect-square bg-gray-50">
         {product.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -101,74 +114,76 @@ export function StoreProductCard({ product, onViewDetail }: StoreProductCardProp
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <Package className="h-8 w-8 text-gray-300" />
+            <Package className="h-10 w-10 text-gray-300" />
           </div>
         )}
         {discount > 0 ? (
-          <span className="absolute left-1 top-1 rounded bg-green-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+          <span
+            className="absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
+            style={{ backgroundColor: accent }}
+          >
             {discount}% OFF
           </span>
         ) : null}
-      </div>
+        {outOfStock ? (
+          <span className="absolute inset-x-2 bottom-2 rounded bg-white/90 px-2 py-0.5 text-center text-[10px] font-medium text-gray-500">
+            Out of stock
+          </span>
+        ) : null}
+      </Link>
 
-      {/* Info */}
-      <div className="flex flex-1 flex-col justify-between">
-        <div>
-          <Link href={`/products/${product.id}`}>
-            <h3 className="line-clamp-2 text-sm font-medium text-gray-900 hover:underline">
-              {product.name}
-            </h3>
-          </Link>
-          {product.unit !== 'PCS' ? (
-            <p className="mt-0.5 text-xs text-gray-400">per {product.unit}</p>
-          ) : null}
-        </div>
+      <div className="flex flex-1 flex-col p-2.5">
+        <Link href={`/products/${product.id}`}>
+          <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-gray-900">
+            {product.name}
+          </h3>
+        </Link>
+        <p className="mt-0.5 text-xs text-gray-400">{product.unit}</p>
 
-        <div className="flex items-end justify-between">
-          <div>
-            <span className="text-base font-bold text-gray-900">
-              &#x20B9;{product.selling_price.toLocaleString('en-IN')}
-            </span>
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-gray-900">
+              ₹{product.selling_price.toLocaleString('en-IN')}
+            </p>
             {product.mrp && product.mrp > product.selling_price ? (
-              <span className="ml-1.5 text-xs text-gray-400 line-through">
-                &#x20B9;{product.mrp.toLocaleString('en-IN')}
-              </span>
+              <p className="text-[11px] text-gray-400 line-through">
+                ₹{product.mrp.toLocaleString('en-IN')}
+              </p>
             ) : null}
           </div>
 
-          {/* Add / Qty control */}
-          {outOfStock ? (
-            <span className="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-400">
-              Out of stock
-            </span>
-          ) : inCart > 0 && !product.has_variants ? (
-            <div className="flex items-center gap-1">
+          {outOfStock ? null : inCart > 0 && !product.has_variants ? (
+            <div className="flex items-center rounded-lg" style={{ backgroundColor: accent }}>
               <button
+                type="button"
                 onClick={handleDecrement}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-green-600 text-green-600"
+                className="flex h-8 w-8 items-center justify-center text-white"
+                aria-label="Decrease"
               >
                 <Minus className="h-3.5 w-3.5" />
               </button>
-              <span className="w-6 text-center text-sm font-semibold text-green-700">
-                {inCart}
-              </span>
+              <span className="w-5 text-center text-xs font-bold text-white">{inCart}</span>
               <button
+                type="button"
                 onClick={handleIncrement}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-600 text-white"
+                className="flex h-8 w-8 items-center justify-center text-white"
+                aria-label="Increase"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
           ) : (
             <button
+              type="button"
               onClick={handleAdd}
-              className="rounded-lg border border-green-600 px-4 py-1.5 text-sm font-semibold text-green-600 transition-colors hover:bg-green-50"
+              className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+              style={{ borderColor: accent, color: accent }}
             >
-              {product.has_variants ? 'Options' : 'ADD'}
+              {product.has_variants ? 'Options' : 'Add'}
             </button>
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

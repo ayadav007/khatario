@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { StoreShell } from '@/components/store/StoreShell';
 import { useStore } from '@/lib/store/store-context';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
-import { Loader2, Package } from 'lucide-react';
+import { Loader2, Package, Minus, Plus } from 'lucide-react';
 
 export default function StoreProductPage() {
   const params = useParams<{ id: string }>();
-  const { store, addToCart } = useStore();
+  const { store, addToCart, cart, updateCartQuantity } = useStore();
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
+  const accent = (store?.store_theme?.accent as string) || '#16a34a';
 
   useEffect(() => {
     if (!store || !params.id) return;
@@ -23,6 +24,11 @@ export default function StoreProductPage() {
       setLoading(false);
     })();
   }, [store, params.id]);
+
+  const cartItem = useMemo(() => {
+    if (!product) return null;
+    return cart.find((c) => c.itemId === product.id && !c.variantId) ?? null;
+  }, [cart, product]);
 
   if (loading) {
     return (
@@ -42,44 +48,97 @@ export default function StoreProductPage() {
     );
   }
 
+  const discount =
+    product.mrp && product.mrp > product.selling_price
+      ? Math.round(((product.mrp - product.selling_price) / product.mrp) * 100)
+      : 0;
+  const outOfStock = product.current_stock <= 0 && !product.has_variants;
+
   return (
     <StoreShell>
       <div className="grid gap-8 md:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl bg-gray-100">
+        <div className="relative overflow-hidden rounded-2xl bg-gray-100">
           {product.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.image_url} alt="" className="h-80 w-full object-cover" />
+            <img src={product.image_url} alt="" className="h-72 w-full object-cover md:h-96" />
           ) : (
-            <div className="flex h-80 items-center justify-center">
+            <div className="flex h-72 items-center justify-center md:h-96">
               <Package className="h-16 w-16 text-gray-300" />
             </div>
           )}
+          {discount > 0 ? (
+            <span className="absolute left-3 top-3 rounded-md px-2 py-1 text-xs font-bold text-white" style={{ backgroundColor: accent }}>
+              {discount}% OFF
+            </span>
+          ) : null}
         </div>
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">{product.name}</h1>
-          <p className="mt-2 text-2xl font-bold">
-            ₹{product.selling_price.toLocaleString('en-IN')}
+          {product.category_name ? (
+            <p className="mt-1 text-sm text-gray-500">{product.category_name}</p>
+          ) : null}
+          <p className="mt-1 text-sm text-gray-400">{product.unit}</p>
+          <div className="mt-4 flex items-baseline gap-2">
+            <p className="text-3xl font-bold text-gray-900">
+              ₹{product.selling_price.toLocaleString('en-IN')}
+            </p>
+            {product.mrp && product.mrp > product.selling_price ? (
+              <p className="text-sm text-gray-400 line-through">
+                ₹{product.mrp.toLocaleString('en-IN')}
+              </p>
+            ) : null}
+          </div>
+          {product.tax_rate > 0 ? (
+            <p className="mt-1 text-xs text-gray-500">
+              GST {product.tax_rate}%{product.gst_included ? ' included' : ' extra'}
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm text-gray-600">
+            {outOfStock ? 'Out of stock' : 'In stock'}
           </p>
           {product.description ? (
             <p className="mt-4 whitespace-pre-wrap text-sm text-gray-600">{product.description}</p>
           ) : null}
-          <button
-            className="mt-6 rounded-xl bg-green-600 px-6 py-3 text-sm font-semibold text-white"
-            onClick={() =>
-              addToCart({
-                itemId: product.id,
-                name: product.name,
-                price: product.selling_price,
-                quantity: 1,
-                imageUrl: product.image_url ?? undefined,
-                unit: product.unit,
-                maxStock: product.current_stock,
-                taxRate: product.tax_rate,
-              })
-            }
-          >
-            Add to cart
-          </button>
+
+          {outOfStock ? null : cartItem && !product.has_variants ? (
+            <div className="mt-6 inline-flex items-center rounded-xl text-white" style={{ backgroundColor: accent }}>
+              <button
+                type="button"
+                className="px-4 py-3"
+                onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity - 1)}
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <span className="min-w-[2rem] text-center font-semibold">{cartItem.quantity}</span>
+              <button
+                type="button"
+                className="px-4 py-3"
+                onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity + 1)}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="mt-6 rounded-xl px-6 py-3 text-sm font-semibold text-white"
+              style={{ backgroundColor: accent }}
+              onClick={() =>
+                addToCart({
+                  itemId: product.id,
+                  name: product.name,
+                  price: product.selling_price,
+                  quantity: 1,
+                  imageUrl: product.image_url ?? undefined,
+                  unit: product.unit,
+                  maxStock: product.current_stock,
+                  taxRate: product.tax_rate,
+                })
+              }
+            >
+              {product.has_variants ? 'Choose options on home' : 'Add to cart'}
+            </button>
+          )}
         </div>
       </div>
     </StoreShell>
