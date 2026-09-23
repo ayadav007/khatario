@@ -625,14 +625,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           } else if (res.status === 401 || res.status === 404) {
             const p = pathname || '';
-            const isPublicPage =
-              p === '/' ||
-              p.startsWith('/login') ||
-              p.startsWith('/signup') ||
-              p.startsWith('/book-demo') ||
-              p.startsWith('/admin') ||
-              p.startsWith('/attendance') ||
-              p === '/offline';
+            const isPublicPage = isPublicMarketingSurface(p);
 
             // No cached user on a public page is the normal logged-out state.
             // Redirecting /login -> /login?reason=... causes a navigation loop
@@ -658,14 +651,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setLoading(false);
         const isOffline = shouldTrustCachedSession();
-        const isPublicPage =
-          pathname === '/' ||
-          pathname.startsWith('/login') ||
-          pathname.startsWith('/signup') ||
-          pathname.startsWith('/book-demo') ||
-          pathname.startsWith('/admin') ||
-          pathname.startsWith('/attendance') ||
-          pathname === '/offline';
+        const isPublicPage = isPublicMarketingSurface(pathname || '');
         if (!isPublicPage && !isOffline) router.replace('/login');
       }
     };

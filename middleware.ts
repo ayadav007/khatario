@@ -154,13 +154,26 @@ export async function middleware(request: NextRequest) {
 
   if (isStaticAsset(pathname)) return NextResponse.next();
 
-  // Online store: {store}.staging.khatario.com or {store}.khatario.com → /store
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
     const url = request.nextUrl.clone();
-    // Static/API paths within store are prefixed with /api/public/store/
     if (pathname.startsWith('/api/')) {
       return NextResponse.next();
+    }
+    // Merchant AuthContext used to bounce guests to /login on the store host.
+    // There is no merchant login here — send them to the storefront (or the
+    // original store path in `redirect`).
+    if (pathname === '/login' || pathname === '/signup') {
+      const dest = url.searchParams.get('redirect') || '/';
+      const safe =
+        dest.startsWith('/') && !dest.startsWith('//') && !dest.startsWith('/login')
+          ? dest.split('?')[0]
+          : '/';
+      url.pathname = safe === '/' ? '/store' : `/store${safe}`;
+      url.search = '';
+      const response = NextResponse.rewrite(url);
+      response.headers.set('x-store-subdomain', storeSubdomain);
+      return response;
     }
     url.pathname = pathname === '/' ? '/store' : `/store${pathname}`;
     const response = NextResponse.rewrite(url);
