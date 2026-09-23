@@ -19,6 +19,7 @@ interface StoreItem {
   current_stock: number;
   has_variants: boolean;
   tax_rate: number;
+  gst_included: boolean;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -79,6 +80,7 @@ export async function GET(
       current_stock: parseFloat(r.current_stock as string) || 0,
       has_variants: r.has_variants as boolean,
       tax_rate: parseFloat(r.tax_rate as string) || 0,
+      gst_included: !!(r as { gst_included?: boolean }).gst_included,
       variants: Array.isArray(r.variants) ? r.variants : [],
     }));
 

@@ -1,4 +1,10 @@
 import { queryOne, queryRows } from '@/lib/db';
+import { hasFeatureAccess } from '@/lib/subscription/feature-access';
+import { FeatureKeys } from '@/lib/featureKeys';
+import {
+  sanitizeStorePromoSheet,
+  type StorePromoSheetConfig,
+} from '@/lib/store/promo-sheet';
 
 export interface StoreBusinessContext {
   business_id: string;
@@ -11,6 +17,13 @@ export interface StoreBusinessContext {
   store_hero_image_url: string | null;
   store_min_order_amount: number;
   portal_theme: Record<string, unknown> | null;
+  store_theme: Record<string, unknown> | null;
+  store_about_md: string | null;
+  store_contact_md: string | null;
+  store_allow_cod: boolean;
+  store_hide_khatario_badge: boolean;
+  online_pay_enabled: boolean;
+  store_promo_sheet: StorePromoSheetConfig;
 }
 
 export interface StoreBranch {
@@ -61,12 +74,24 @@ export async function resolveStoreBySubdomain(
     store_hero_image_url: string | null;
     store_min_order_amount: string | null;
     portal_theme: unknown;
+    store_theme: unknown;
+    store_about_md: string | null;
+    store_contact_md: string | null;
+    store_allow_cod: boolean | null;
+    store_hide_khatario_badge: boolean | null;
+    store_promo_sheet: unknown;
   }>(
     `SELECT
        b.id AS business_id, b.name, b.logo_url, b.phone, b.email,
        bs.store_subdomain, bs.store_tagline, bs.store_hero_image_url,
        bs.store_min_order_amount::text,
-       bs.portal_theme
+       bs.portal_theme,
+       bs.store_theme,
+       bs.store_about_md,
+       bs.store_contact_md,
+       COALESCE(bs.store_allow_cod, true) AS store_allow_cod,
+       COALESCE(bs.store_hide_khatario_badge, false) AS store_hide_khatario_badge,
+       bs.store_promo_sheet
      FROM businesses b
      INNER JOIN business_settings bs ON bs.business_id = b.id
      WHERE lower(trim(bs.store_subdomain)) = $1
@@ -75,6 +100,11 @@ export async function resolveStoreBySubdomain(
   );
 
   if (!row) return null;
+
+  const [customBranding, paymentGateway] = await Promise.all([
+    hasFeatureAccess(row.business_id, FeatureKeys.CUSTOM_BRANDING).catch(() => false),
+    hasFeatureAccess(row.business_id, FeatureKeys.PAYMENT_GATEWAY).catch(() => false),
+  ]);
 
   return {
     business_id: row.business_id,
@@ -87,6 +117,13 @@ export async function resolveStoreBySubdomain(
     store_hero_image_url: row.store_hero_image_url,
     store_min_order_amount: parseFloat(row.store_min_order_amount ?? '0') || 0,
     portal_theme: (row.portal_theme as Record<string, unknown>) ?? null,
+    store_theme: (row.store_theme as Record<string, unknown>) ?? null,
+    store_about_md: row.store_about_md,
+    store_contact_md: row.store_contact_md,
+    store_allow_cod: row.store_allow_cod !== false,
+    store_hide_khatario_badge: !!row.store_hide_khatario_badge || customBranding,
+    online_pay_enabled: paymentGateway,
+    store_promo_sheet: sanitizeStorePromoSheet(row.store_promo_sheet),
   };
 }
 

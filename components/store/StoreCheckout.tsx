@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
-  X, ArrowLeft, MapPin, User, Phone, Mail, FileText,
+  ArrowLeft, MapPin, User, Phone, Mail, FileText,
   Truck, Package, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
@@ -28,8 +28,63 @@ export function StoreCheckout({
   const [pincode, setPincode] = useState('');
   const [deliveryMode, setDeliveryMode] = useState<'delivery' | 'pickup'>('delivery');
   const [notes, setNotes] = useState('');
+  const [coupon, setCoupon] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'razorpay'>('cod');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<{
+    subtotal: number;
+    tax_total: number;
+    delivery_charge: number;
+    discount: number;
+    grand_total: number;
+    eta_text: string;
+    serviceable: boolean;
+    error?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (store?.store_allow_cod === false) setPaymentMethod('razorpay');
+  }, [store?.store_allow_cod]);
+
+  useEffect(() => {
+    if (!store) return;
+    try {
+      const saved = sessionStorage.getItem(`khatario-store-coupon:${store.store_subdomain}`);
+      if (saved) setCoupon(saved);
+    } catch {
+      /* ignore */
+    }
+  }, [store]);
+
+  useEffect(() => {
+    if (!store || cart.length === 0) return;
+    const t = setTimeout(() => {
+      void (async () => {
+        const res = await fetch(
+          `/api/public/store/${encodeURIComponent(store.store_subdomain)}/quote`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              branch_id: selectedBranchId,
+              delivery_mode: deliveryMode,
+              customer_pincode: pincode,
+              coupon_code: coupon || undefined,
+              items: cart.map((c) => ({
+                item_id: c.itemId,
+                variant_id: c.variantId,
+                quantity: c.quantity,
+              })),
+            }),
+          },
+        );
+        const data = await res.json();
+        setQuote(data);
+      })();
+    }, 350);
+    return () => clearTimeout(t);
+  }, [store, cart, selectedBranchId, deliveryMode, pincode, coupon]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -54,15 +109,12 @@ export function StoreCheckout({
               customer_pincode: pincode || undefined,
               delivery_mode: deliveryMode,
               notes: notes || undefined,
+              payment_method: paymentMethod,
+              coupon_code: coupon || undefined,
               items: cart.map((c) => ({
                 item_id: c.itemId,
                 variant_id: c.variantId,
-                item_name: c.name,
-                variant_name: c.variantName,
                 quantity: c.quantity,
-                unit: c.unit,
-                unit_price: c.price,
-                tax_rate: 0,
               })),
             }),
           },
@@ -75,6 +127,10 @@ export function StoreCheckout({
         }
 
         const data = await res.json();
+        if (data.payment_url) {
+          window.location.href = data.payment_url as string;
+          return;
+        }
         clearCart();
         onOrderPlaced(data.order_number, data.grand_total);
       } catch {
@@ -83,10 +139,10 @@ export function StoreCheckout({
         setSubmitting(false);
       }
     },
-    [store, cart, selectedBranchId, name, phone, email, address, pincode, deliveryMode, notes, clearCart, onOrderPlaced],
+    [store, cart, selectedBranchId, name, phone, email, address, pincode, deliveryMode, notes, coupon, paymentMethod, clearCart, onOrderPlaced],
   );
 
-  if (!open) return null;
+  if (!open || !store) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -230,6 +286,49 @@ export function StoreCheckout({
               </div>
             </div>
 
+            {/* Coupon */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Coupon</label>
+              <input
+                value={coupon}
+                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Optional"
+              />
+            </div>
+
+            {store.store_allow_cod !== false || store.online_pay_enabled ? (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-2">Payment</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {store.store_allow_cod !== false ? (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('cod')}
+                      className={clsx(
+                        'rounded-lg border px-3 py-2 text-sm',
+                        paymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
+                      )}
+                    >
+                      Pay on delivery
+                    </button>
+                  ) : null}
+                  {store.online_pay_enabled !== false ? (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('razorpay')}
+                      className={clsx(
+                        'rounded-lg border px-3 py-2 text-sm',
+                        paymentMethod === 'razorpay' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
+                      )}
+                    >
+                      UPI / card
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             {/* Order summary */}
             <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
               <h3 className="text-xs font-medium text-gray-500 mb-3">Order Summary</h3>
@@ -250,11 +349,54 @@ export function StoreCheckout({
                   </div>
                 ))}
               </div>
-              <div className="mt-3 border-t border-gray-200 pt-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Total</span>
-                <span className="text-lg font-bold text-gray-900">
-                  &#x20B9;{cartTotal.toLocaleString('en-IN')}
-                </span>
+              <div className="mt-3 border-t border-gray-200 pt-3 space-y-1">
+                {quote ? (
+                  <>
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Subtotal</span>
+                      <span>₹{quote.subtotal.toLocaleString('en-IN')}</span>
+                    </div>
+                    {quote.tax_total > 0 ? (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>Tax</span>
+                        <span>₹{quote.tax_total.toLocaleString('en-IN')}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Delivery</span>
+                      <span>
+                        {quote.delivery_charge === 0
+                          ? 'Free'
+                          : `₹${quote.delivery_charge.toLocaleString('en-IN')}`}
+                      </span>
+                    </div>
+                    {quote.discount > 0 ? (
+                      <div className="flex justify-between text-sm text-green-700">
+                        <span>Discount</span>
+                        <span>-₹{quote.discount.toLocaleString('en-IN')}</span>
+                      </div>
+                    ) : null}
+                    {quote.eta_text ? (
+                      <p className="text-xs text-gray-400">{quote.eta_text}</p>
+                    ) : null}
+                    {!quote.serviceable && quote.error ? (
+                      <p className="text-xs text-red-600">{quote.error}</p>
+                    ) : null}
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-sm font-medium text-gray-700">Total</span>
+                      <span className="text-lg font-bold text-gray-900">
+                        ₹{quote.grand_total.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Total</span>
+                    <span className="text-lg font-bold text-gray-900">
+                      ₹{cartTotal.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -263,13 +405,15 @@ export function StoreCheckout({
           <div className="border-t border-gray-200 px-4 py-4">
             <button
               type="submit"
-              disabled={submitting || cart.length === 0}
+              disabled={submitting || cart.length === 0 || quote?.serviceable === false}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
-              {submitting ? 'Placing Order...' : `Place Order · ₹${cartTotal.toLocaleString('en-IN')}`}
+              {submitting
+                ? 'Placing Order...'
+                : `Place Order · ₹${(quote?.grand_total ?? cartTotal).toLocaleString('en-IN')}`}
             </button>
           </div>
         </form>

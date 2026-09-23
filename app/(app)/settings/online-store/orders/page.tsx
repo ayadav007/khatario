@@ -24,6 +24,9 @@ interface StoreOrder {
   subtotal: number;
   grand_total: number;
   delivery_charge: number;
+  payment_status?: string;
+  awb?: string | null;
+  tracking_url?: string | null;
   cancelled_reason: string | null;
   created_at: string;
   branch_name: string | null;
@@ -382,6 +385,26 @@ export default function StoreOrdersPage() {
                 </div>
               ) : null}
 
+              {selectedOrder.payment_status ? (
+                <p className="mt-2 text-xs text-gray-500">
+                  Payment: {selectedOrder.payment_status}
+                </p>
+              ) : null}
+              {selectedOrder.awb || selectedOrder.tracking_url ? (
+                <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">
+                  {selectedOrder.awb ? <p>AWB: {selectedOrder.awb}</p> : null}
+                  {selectedOrder.tracking_url ? (
+                    <a
+                      className="text-blue-600 hover:underline"
+                      href={selectedOrder.tracking_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Track shipment
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
               {selectedOrder.cancelled_reason ? (
                 <p className="text-xs text-red-600">
                   Cancelled: {selectedOrder.cancelled_reason}

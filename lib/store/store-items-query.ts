@@ -85,6 +85,7 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
         ${finalStockExpr}::text AS current_stock,
         COALESCE(i.has_variants, false) AS has_variants,
         i.tax_rate::text,
+        COALESCE(i.gst_included, false) AS gst_included,
         COALESCE(
           json_agg(
             json_build_object(

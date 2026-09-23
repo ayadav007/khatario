@@ -3,6 +3,7 @@
 import { Plus, Minus, Package } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
 import { useCallback, useMemo } from 'react';
+import Link from 'next/link';
 
 export interface StoreProduct {
   id: string;
@@ -18,6 +19,7 @@ export interface StoreProduct {
   current_stock: number;
   has_variants: boolean;
   tax_rate: number;
+  gst_included?: boolean;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -71,6 +73,7 @@ export function StoreProductCard({ product, onViewDetail }: StoreProductCardProp
       imageUrl: product.image_url ?? undefined,
       unit: product.unit,
       maxStock: product.current_stock,
+      taxRate: product.tax_rate,
     });
   }, [product, addToCart, onViewDetail]);
 
@@ -111,12 +114,11 @@ export function StoreProductCard({ product, onViewDetail }: StoreProductCardProp
       {/* Info */}
       <div className="flex flex-1 flex-col justify-between">
         <div>
-          <h3
-            className="line-clamp-2 text-sm font-medium text-gray-900 cursor-pointer hover:underline"
-            onClick={() => onViewDetail?.(product)}
-          >
-            {product.name}
-          </h3>
+          <Link href={`/products/${product.id}`}>
+            <h3 className="line-clamp-2 text-sm font-medium text-gray-900 hover:underline">
+              {product.name}
+            </h3>
+          </Link>
           {product.unit !== 'PCS' ? (
             <p className="mt-0.5 text-xs text-gray-400">per {product.unit}</p>
           ) : null}

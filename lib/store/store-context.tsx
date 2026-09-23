@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
 
-interface StoreCartItem {
+export interface StoreCartItem {
   itemId: string;
   variantId?: string;
   name: string;
@@ -13,6 +13,7 @@ interface StoreCartItem {
   imageUrl?: string;
   unit: string;
   maxStock: number;
+  taxRate?: number;
 }
 
 interface StoreContextValue {
@@ -44,6 +45,10 @@ function cartKey(itemId: string, variantId?: string) {
   return variantId ? `${itemId}::${variantId}` : itemId;
 }
 
+function storageKey(subdomain: string) {
+  return `khatario-store-cart:${subdomain}`;
+}
+
 export function StoreProvider({
   subdomain,
   children,
@@ -57,6 +62,26 @@ export function StoreProvider({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<StoreCartItem[]>([]);
+  const [cartReady, setCartReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey(subdomain));
+      if (raw) setCart(JSON.parse(raw) as StoreCartItem[]);
+    } catch {
+      /* ignore */
+    }
+    setCartReady(true);
+  }, [subdomain]);
+
+  useEffect(() => {
+    if (!cartReady) return;
+    try {
+      localStorage.setItem(storageKey(subdomain), JSON.stringify(cart));
+    } catch {
+      /* ignore */
+    }
+  }, [cart, cartReady, subdomain]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +165,8 @@ export function StoreProvider({
   const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
 
+  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+
   return (
     <StoreContext.Provider
       value={{
@@ -158,7 +185,7 @@ export function StoreProvider({
         cartCount,
       }}
     >
-      {children}
+      <div style={{ ['--store-accent' as string]: accent }}>{children}</div>
     </StoreContext.Provider>
   );
 }

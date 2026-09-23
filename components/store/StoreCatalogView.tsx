@@ -144,6 +144,7 @@ export function StoreCatalogView() {
       <StoreShell
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
+        showSearch
         onCartOpen={() => setCartOpen(true)}
       >
         {/* Hero image */}
@@ -153,7 +154,7 @@ export function StoreCatalogView() {
             <img
               src={store.store_hero_image_url}
               alt={store.name}
-              className="h-40 w-full object-cover"
+              className="h-40 w-full object-cover md:h-56"
             />
           </div>
         ) : null}
@@ -203,7 +204,7 @@ export function StoreCatalogView() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {items.map((item) => (
               <StoreProductCard
                 key={item.id}
@@ -238,7 +239,7 @@ export function StoreCatalogView() {
         onClose={() => setCartOpen(false)}
         onCheckout={() => {
           setCartOpen(false);
-          setCheckoutOpen(true);
+          window.location.href = '/checkout';
         }}
       />
 
