@@ -64,6 +64,7 @@ const PUBLIC_API_PREFIXES = [
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname === '/') return true;
+  if (pathname === '/store' || pathname.startsWith('/store/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
   if (isPublicBusinessEmployeePath(pathname)) return true;
   for (const prefix of PUBLIC_API_PREFIXES) {
@@ -153,16 +154,15 @@ export async function middleware(request: NextRequest) {
 
   if (isStaticAsset(pathname)) return NextResponse.next();
 
-  // Online store: {store}.staging.khatario.com or {store}.khatario.com → /_store
+  // Online store: {store}.staging.khatario.com or {store}.khatario.com → /store
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
     const url = request.nextUrl.clone();
-    // Rewrite /whatever → /(store)/whatever with subdomain in header
     // Static/API paths within store are prefixed with /api/public/store/
     if (pathname.startsWith('/api/')) {
       return NextResponse.next();
     }
-    url.pathname = `/_store${pathname === '/' ? '' : pathname}`;
+    url.pathname = pathname === '/' ? '/store' : `/store${pathname}`;
     const response = NextResponse.rewrite(url);
     response.headers.set('x-store-subdomain', storeSubdomain);
     return response;
