@@ -155,7 +155,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/online-store',
             label: 'Online Store',
             featureKey: 'online_store',
-            searchKeywords: ['store', 'storefront', 'e-commerce', 'catalog', 'subdomain'],
+            searchKeywords: ['store', 'storefront', 'e-commerce', 'catalog', 'subdomain', 'theme', 'editor'],
           },
           {
             href: '/settings/online-store/orders',

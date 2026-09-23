@@ -3,6 +3,7 @@ import {
   isStorePromoActive,
   shouldShowStorePromo,
   storePromoStorageKey,
+  nextPromoSheetVersion,
 } from '@/lib/store/promo-sheet';
 
 describe('sanitizeStorePromoSheet', () => {
@@ -73,5 +74,19 @@ describe('shouldShowStorePromo', () => {
 
   it('keys by subdomain and version', () => {
     expect(storePromoStorageKey('shop', 'v2')).toBe('khatario-store-promo:shop:v2');
+  });
+});
+
+describe('nextPromoSheetVersion', () => {
+  it('keeps version when only version would change', () => {
+    const a = sanitizeStorePromoSheet({ enabled: true, title: 'Sale', version: '10' });
+    const b = sanitizeStorePromoSheet({ enabled: true, title: 'Sale', version: '99' });
+    expect(nextPromoSheetVersion(a, b)).toBe(a.version);
+  });
+
+  it('bumps version when copy changes', () => {
+    const a = sanitizeStorePromoSheet({ enabled: true, title: 'Sale', version: '10' });
+    const b = sanitizeStorePromoSheet({ enabled: true, title: 'New sale', version: '10' });
+    expect(nextPromoSheetVersion(a, b)).not.toBe(a.version);
   });
 });

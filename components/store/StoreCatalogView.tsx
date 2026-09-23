@@ -7,25 +7,20 @@ import { StoreCartDrawer } from './StoreCartDrawer';
 import { StoreProductDetailModal } from './StoreProductDetailModal';
 import { StoreCheckout, OrderConfirmation } from './StoreCheckout';
 import { StoreTrustSection } from './StoreTrustSection';
+import { StoreCategoryPills } from './StoreCategoryPills';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
-import clsx from 'clsx';
 
 interface StoreCategory {
   id: string;
   name: string;
 }
 
-function categoryTone(name: string): string {
-  const tones = ['bg-emerald-50 text-emerald-800', 'bg-amber-50 text-amber-800', 'bg-sky-50 text-sky-800', 'bg-rose-50 text-rose-800', 'bg-violet-50 text-violet-800'];
-  let n = 0;
-  for (let i = 0; i < name.length; i++) n += name.charCodeAt(i);
-  return tones[n % tones.length];
-}
-
 export function StoreCatalogView() {
   const { store, loading: storeLoading, error, selectedBranchId } = useStore();
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const theme = sanitizeStoreTheme(store?.store_theme);
+  const accent = theme.accent;
 
   const [items, setItems] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<StoreCategory[]>([]);
@@ -153,6 +148,10 @@ export function StoreCatalogView() {
 
   const hasMore = items.length < total;
   const browsing = Boolean(searchQuery || selectedCategory);
+  const productGrid =
+    theme.mobile_columns === 3
+      ? 'grid grid-cols-3 gap-2 sm:grid-cols-3 lg:grid-cols-4 sm:gap-3'
+      : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4';
 
   return (
     <>
@@ -162,6 +161,7 @@ export function StoreCatalogView() {
         showSearch
         onCartOpen={() => setCartOpen(true)}
       >
+        {theme.show_hero ? (
         <section className="relative mb-5 overflow-hidden rounded-2xl bg-gray-900">
           {store.store_hero_image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -175,71 +175,38 @@ export function StoreCatalogView() {
             <p className="text-xl font-semibold text-white md:text-3xl">
               {store.store_tagline || `Shop from ${store.name}`}
             </p>
-            <p className="mt-1 max-w-lg text-sm text-white/80">
-              Fresh products from your local store. Add to cart in one tap.
-            </p>
+            {theme.hero_subtitle ? (
+              <p className="mt-1 max-w-lg text-sm text-white/80">{theme.hero_subtitle}</p>
+            ) : (
+              <p className="mt-1 max-w-lg text-sm text-white/80">
+                Fresh products from your local store. Add to cart in one tap.
+              </p>
+            )}
             <button
               type="button"
               className="mt-4 rounded-full px-5 py-2 text-sm font-semibold text-white"
               style={{ backgroundColor: accent }}
               onClick={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
             >
-              Shop now
+              {theme.hero_cta}
             </button>
           </div>
         </section>
-
-        {categories.length > 0 ? (
-          <section id="categories" className="mb-6">
-            <h2 className="mb-3 text-sm font-semibold text-gray-900">Shop by category</h2>
-            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide lg:flex-wrap lg:overflow-visible">
-              <button
-                type="button"
-                onClick={() => handleCategoryChange(null)}
-                className={clsx(
-                  'flex w-20 flex-shrink-0 flex-col items-center gap-1.5',
-                  selectedCategory === null ? 'opacity-100' : 'opacity-80',
-                )}
-              >
-                <span
-                  className={clsx(
-                    'flex h-14 w-14 items-center justify-center rounded-2xl text-lg font-bold',
-                    selectedCategory === null ? 'ring-2 ring-offset-2' : 'bg-white text-gray-700 border border-gray-100',
-                  )}
-                  style={selectedCategory === null ? { backgroundColor: `${accent}22`, color: accent, ['--tw-ring-color' as string]: accent } : undefined}
-                >
-                  All
-                </span>
-                <span className="text-[11px] font-medium text-gray-700">All</span>
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => handleCategoryChange(cat.id)}
-                  className="flex w-20 flex-shrink-0 flex-col items-center gap-1.5"
-                >
-                  <span
-                    className={clsx(
-                      'flex h-14 w-14 items-center justify-center rounded-2xl text-lg font-semibold',
-                      categoryTone(cat.name),
-                      selectedCategory === cat.id && 'ring-2 ring-offset-2',
-                    )}
-                    style={selectedCategory === cat.id ? { ['--tw-ring-color' as string]: accent } : undefined}
-                  >
-                    {cat.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="line-clamp-2 text-center text-[11px] font-medium text-gray-700">{cat.name}</span>
-                </button>
-              ))}
-            </div>
-          </section>
         ) : null}
 
-        {!browsing && offerItems.length > 0 ? (
+        <StoreCategoryPills
+          categories={categories}
+          selectedId={selectedCategory}
+          onSelect={handleCategoryChange}
+          accent={accent}
+          style={theme.category_style}
+          images={theme.category_images}
+        />
+
+        {!browsing && theme.show_offers && offerItems.length > 0 ? (
           <section className="mb-6">
             <h2 className="mb-3 text-sm font-semibold text-gray-900">Today&apos;s offers</h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className={productGrid}>
               {offerItems.map((item) => (
                 <StoreProductCard key={`offer-${item.id}`} product={item} onViewDetail={setDetailProduct} />
               ))}
@@ -257,7 +224,7 @@ export function StoreCatalogView() {
           </h2>
 
           {itemsLoading && items.length === 0 ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className={productGrid}>
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="aspect-[3/4] animate-pulse rounded-2xl bg-gray-200" />
               ))}
@@ -267,11 +234,11 @@ export function StoreCatalogView() {
               <p className="text-sm text-gray-500">
                 {searchQuery
                   ? `No products found for “${searchQuery}”`
-                  : 'No products in this store yet. Ask the shop to enable “Show in Store” on items.'}
+                  : 'No products in this store yet.'}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className={productGrid}>
               {items.map((item) => (
                 <StoreProductCard key={item.id} product={item} onViewDetail={setDetailProduct} />
               ))}
@@ -292,7 +259,7 @@ export function StoreCatalogView() {
           ) : null}
         </section>
 
-        <StoreTrustSection />
+        {theme.show_trust ? <StoreTrustSection /> : null}
       </StoreShell>
 
       <StoreCartDrawer

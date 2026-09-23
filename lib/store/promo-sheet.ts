@@ -61,6 +61,13 @@ function clip(s: unknown, max: number): string {
   return String(s ?? '').trim().slice(0, max);
 }
 
+function clipMediaUrl(value: unknown): string {
+  const v = String(value ?? '').trim();
+  if (!v) return '';
+  if (v.startsWith('data:image/')) return v.slice(0, 1_800_000);
+  return v.slice(0, 2000);
+}
+
 function hex(value: unknown, fallback: string): string {
   const v = String(value ?? '').trim();
   return HEX.test(v) ? (v.length === 4
@@ -90,7 +97,7 @@ export function sanitizeStorePromoSheet(raw: unknown): StorePromoSheetConfig {
     version: clip(src.version, 64) || String(Date.now()),
     title: clip(src.title, 80),
     body: clip(src.body, 400),
-    image_url: clip(src.image_url, 2000),
+    image_url: clipMediaUrl(src.image_url),
     background_color: hex(src.background_color, DEFAULT_STORE_PROMO.background_color),
     text_color: hex(src.text_color, DEFAULT_STORE_PROMO.text_color),
     button_color: hex(src.button_color, DEFAULT_STORE_PROMO.button_color),
@@ -120,6 +127,20 @@ export function isStorePromoActive(
 
 export function storePromoStorageKey(subdomain: string, version: string): string {
   return `khatario-store-promo:${subdomain}:${version}`;
+}
+
+export function promoSheetFingerprint(promo: StorePromoSheetConfig): string {
+  const { version: _version, ...rest } = promo;
+  return JSON.stringify(rest);
+}
+
+export function nextPromoSheetVersion(
+  previous: StorePromoSheetConfig,
+  next: StorePromoSheetConfig,
+): string {
+  return promoSheetFingerprint(previous) === promoSheetFingerprint(next)
+    ? previous.version || '1'
+    : String(Date.now());
 }
 
 export function shouldShowStorePromo(input: {

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { StoreBusinessContext, StoreBranch } from './resolve-store';
+import { sanitizeStoreTheme } from './store-theme';
 
 export interface StoreCartItem {
   itemId: string;
@@ -164,8 +165,7 @@ export function StoreProvider({
 
   const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
-
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const accent = sanitizeStoreTheme(store?.store_theme).accent;
 
   return (
     <StoreContext.Provider

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne } from '@/lib/db';
+import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
+import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,28 +13,44 @@ export async function GET(request: NextRequest) {
   if (!tenant.ok) return tenant.response;
   const businessId = tenant.businessId;
 
-  const row = await queryOne<{
-    store_subdomain: string | null;
-    store_enabled: boolean;
-    store_tagline: string | null;
-    store_hero_image_url: string | null;
-    store_min_order_amount: string | null;
-  }>(
-    `SELECT
-       store_subdomain, store_enabled,
-       store_tagline, store_hero_image_url,
-       store_min_order_amount::text,
-       COALESCE(store_allow_cod, true) AS store_allow_cod,
-       COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
-       store_theme, store_about_md, store_contact_md,
-       store_shiprocket_email,
-       (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
-       COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
-       store_promo_sheet
-     FROM business_settings
-     WHERE business_id = $1`,
-    [businessId],
-  );
+  const [row, logoRow, categories] = await Promise.all([
+    queryOne<{
+      store_subdomain: string | null;
+      store_enabled: boolean;
+      store_tagline: string | null;
+      store_hero_image_url: string | null;
+      store_min_order_amount: string | null;
+    }>(
+      `SELECT
+         store_subdomain, store_enabled,
+         store_tagline, store_hero_image_url,
+         store_min_order_amount::text,
+         COALESCE(store_allow_cod, true) AS store_allow_cod,
+         COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
+         store_theme, store_about_md, store_contact_md,
+         store_shiprocket_email,
+         (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
+         COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
+         store_promo_sheet
+       FROM business_settings
+       WHERE business_id = $1`,
+      [businessId],
+    ),
+    queryOne<{ logo_url: string | null }>(
+      `SELECT logo_url FROM businesses WHERE id = $1`,
+      [businessId],
+    ),
+    queryRows<{ id: string; name: string }>(
+      `SELECT DISTINCT c.id, c.name
+       FROM categories c
+       INNER JOIN items i ON i.category_id = c.id
+       WHERE i.business_id = $1 AND i.show_in_store = true
+         AND (i.is_active IS NULL OR i.is_active = true)
+         AND i.deleted_at IS NULL
+       ORDER BY c.name`,
+      [businessId],
+    ),
+  ]);
 
   return NextResponse.json({
     store_subdomain: row?.store_subdomain ?? null,
@@ -43,7 +60,7 @@ export async function GET(request: NextRequest) {
     store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
     store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
     store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
-    store_theme: (row as { store_theme?: unknown })?.store_theme ?? null,
+    store_theme: sanitizeStoreTheme((row as { store_theme?: unknown })?.store_theme),
     store_about_md: (row as { store_about_md?: string | null })?.store_about_md ?? null,
     store_contact_md: (row as { store_contact_md?: string | null })?.store_contact_md ?? null,
     store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
@@ -52,6 +69,8 @@ export async function GET(request: NextRequest) {
     store_promo_sheet: sanitizeStorePromoSheet(
       (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
     ),
+    logo_url: logoRow?.logo_url ?? null,
+    categories,
   });
 }
 
@@ -132,7 +151,7 @@ export async function PATCH(request: NextRequest) {
   if (store_hero_image_url !== undefined) {
     idx++;
     sets.push(`store_hero_image_url = $${idx}`);
-    params.push(store_hero_image_url ?? null);
+    params.push(clipStoreMediaUrl(store_hero_image_url) || null);
   }
   if (store_min_order_amount !== undefined) {
     idx++;
@@ -152,7 +171,7 @@ export async function PATCH(request: NextRequest) {
   if (store_theme !== undefined) {
     idx++;
     sets.push(`store_theme = $${idx}`);
-    params.push(store_theme ? JSON.stringify(store_theme) : null);
+    params.push(JSON.stringify(sanitizeStoreTheme(store_theme)));
   }
   if (store_about_md !== undefined) {
     idx++;

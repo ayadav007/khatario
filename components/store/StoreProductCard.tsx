@@ -2,6 +2,7 @@
 
 import { Plus, Minus, Package } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 
@@ -36,7 +37,7 @@ interface StoreProductCardProps {
 
 export function StoreProductCard({ product, onViewDetail }: StoreProductCardProps) {
   const { cart, addToCart, updateCartQuantity, store } = useStore();
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const accent = sanitizeStoreTheme(store?.store_theme).accent;
 
   const inCart = useMemo(() => {
     if (product.has_variants) {

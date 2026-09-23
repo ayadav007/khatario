@@ -2,6 +2,7 @@
 
 import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 
 interface StoreCartDrawerProps {
@@ -12,7 +13,7 @@ interface StoreCartDrawerProps {
 
 export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerProps) {
   const { cart, updateCartQuantity, cartTotal, store, cartCount } = useStore();
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const accent = sanitizeStoreTheme(store?.store_theme).accent;
 
   if (!open) return null;
 

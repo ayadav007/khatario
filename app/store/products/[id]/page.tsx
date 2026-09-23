@@ -6,13 +6,14 @@ import { StoreShell } from '@/components/store/StoreShell';
 import { useStore } from '@/lib/store/store-context';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 import { Loader2, Package, Minus, Plus } from 'lucide-react';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 export default function StoreProductPage() {
   const params = useParams<{ id: string }>();
   const { store, addToCart, cart, updateCartQuantity } = useStore();
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const accent = sanitizeStoreTheme(store?.store_theme).accent;
 
   useEffect(() => {
     if (!store || !params.id) return;

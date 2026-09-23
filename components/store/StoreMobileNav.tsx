@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import { useStore } from '@/lib/store/store-context';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 export function StoreMobileNav({
   onSearch,
@@ -15,7 +16,7 @@ export function StoreMobileNav({
 }) {
   const pathname = usePathname();
   const { cartCount, store } = useStore();
-  const accent = (store?.store_theme?.accent as string) || '#16a34a';
+  const accent = sanitizeStoreTheme(store?.store_theme).accent;
 
   const item = (active: boolean) =>
     clsx('flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium', active ? '' : 'text-gray-400');

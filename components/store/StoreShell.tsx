@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
+import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 interface StoreShellProps {
   children: React.ReactNode;
@@ -49,7 +50,10 @@ export function StoreShell({
   const selectedBranch = branches.find((b) => b.id === selectedBranchId);
   const showBranchPicker = branches.length > 1;
   const hideBadge = store.store_hide_khatario_badge;
-  const accent = (store.store_theme?.accent as string) || '#16a34a';
+  const theme = sanitizeStoreTheme(store.store_theme);
+  const accent = theme.accent;
+  const logoUrl = theme.logo_url || store.logo_url;
+  const searchPlaceholder = theme.search_placeholder || 'Search products...';
   const pins = selectedBranch?.serviceable_pincodes ?? [];
   const pinOk =
     !pincode ||
@@ -75,14 +79,14 @@ export function StoreShell({
   const locationLabel = selectedBranch?.name || store.name;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ backgroundColor: theme.background }}>
       <header className="sticky top-0 z-30 border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto max-w-6xl px-4 py-2.5">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
-              {store.logo_url ? (
+              {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={store.logo_url} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg object-contain sm:h-10 sm:w-10" />
+                <img src={logoUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg object-contain sm:h-10 sm:w-10" />
               ) : (
                 <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm font-bold text-gray-700 sm:h-10 sm:w-10">
                   {store.name.slice(0, 1).toUpperCase()}
@@ -119,7 +123,7 @@ export function StoreShell({
                   type="search"
                   value={searchQuery}
                   onChange={(e) => onSearchChange?.(e.target.value)}
-                  placeholder="Search rice, milk, biscuits..."
+                  placeholder={searchPlaceholder}
                   className="w-full rounded-full border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
                 />
               </div>
@@ -210,7 +214,7 @@ export function StoreShell({
                 type="search"
                 value={searchQuery}
                 onChange={(e) => onSearchChange?.(e.target.value)}
-                placeholder="Search products..."
+                placeholder={searchPlaceholder}
                 className="w-full rounded-full border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
               />
             </div>
