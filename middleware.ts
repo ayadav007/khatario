@@ -153,7 +153,7 @@ export async function middleware(request: NextRequest) {
 
   if (isStaticAsset(pathname)) return NextResponse.next();
 
-  // Online store: subdomain-based routing ({subdomain}.khatario.com → /store pages)
+  // Online store: {store}.staging.khatario.com or {store}.khatario.com → /_store
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
     const url = request.nextUrl.clone();

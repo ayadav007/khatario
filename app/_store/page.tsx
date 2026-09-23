@@ -3,25 +3,11 @@
 import { useEffect, useState } from 'react';
 import { StoreProvider } from '@/lib/store/store-context';
 import { StoreCatalogView } from '@/components/store/StoreCatalogView';
+import { extractStoreSubdomain } from '@/lib/store/subdomain';
 
 function getSubdomainFromHeaders(): string | null {
   if (typeof window === 'undefined') return null;
-  const hostname = window.location.hostname;
-  // {subdomain}.khatario.com
-  const prodMatch = hostname.match(
-    /^([a-z0-9][a-z0-9-]{1,61}[a-z0-9])\.khatario\.com$/,
-  );
-  if (prodMatch && !['staging', 'app', 'www', 'api'].includes(prodMatch[1])) {
-    return prodMatch[1];
-  }
-  // Dev mode: {subdomain}.localhost
-  const devMatch = hostname.match(
-    /^([a-z0-9][a-z0-9-]{1,61}[a-z0-9])\.localhost$/,
-  );
-  if (devMatch && !['staging', 'app', 'www', 'api'].includes(devMatch[1])) {
-    return devMatch[1];
-  }
-  return null;
+  return extractStoreSubdomain(window.location.host);
 }
 
 export default function StoreHomePage() {

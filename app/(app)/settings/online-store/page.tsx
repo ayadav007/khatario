@@ -7,6 +7,7 @@ import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor';
+import { storeHostSuffix } from '@/lib/store/subdomain';
 
 interface StoreSettings {
   store_subdomain: string | null;
@@ -24,6 +25,7 @@ export default function OnlineStoreSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hostSuffix, setHostSuffix] = useState('.khatario.com');
 
   const [subdomain, setSubdomain] = useState('');
   const [enabled, setEnabled] = useState(false);
@@ -56,6 +58,10 @@ export default function OnlineStoreSettingsPage() {
   useEffect(() => {
     void fetchSettings();
   }, [fetchSettings]);
+
+  useEffect(() => {
+    setHostSuffix(storeHostSuffix(window.location.hostname));
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!business?.id) return;
@@ -93,9 +99,7 @@ export default function OnlineStoreSettingsPage() {
     }
   }, [business?.id, subdomain, enabled, tagline, minOrder, fetchSettings]);
 
-  const storeUrl = subdomain
-    ? `${subdomain}.khatario.com`
-    : null;
+  const storeUrl = subdomain ? `${subdomain}${hostSuffix}` : null;
 
   const handleCopy = useCallback(() => {
     if (storeUrl) {
@@ -154,7 +158,7 @@ export default function OnlineStoreSettingsPage() {
                 className="flex-1 border-0 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
               />
               <span className="flex-shrink-0 border-l border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                .khatario.com
+                {hostSuffix}
               </span>
             </div>
           </div>
