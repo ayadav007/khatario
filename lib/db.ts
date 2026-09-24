@@ -1,21 +1,48 @@
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+import { config as loadEnv } from 'dotenv';
 import { Pool, QueryResult, QueryResultRow } from 'pg';
+
+function loadDbEnvFiles() {
+  const local = resolve(process.cwd(), '.env.local');
+  const base = resolve(process.cwd(), '.env');
+  if (existsSync(local)) loadEnv({ path: local });
+  if (existsSync(base)) loadEnv({ path: base, override: false });
+}
+
+function envString(name: string, fallback = ''): string {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  return String(raw);
+}
 
 // Database connection pool
 let pool: Pool | null = null;
 
 export function getPool(): Pool {
   if (!pool) {
-    pool = new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'khatario',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || '',
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      max: 50, // Maximum number of clients in the pool
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
+    loadDbEnvFiles();
+    const connectionString = envString('DATABASE_URL');
+    const ssl = envString('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false;
+    pool = connectionString
+      ? new Pool({
+          connectionString,
+          ssl,
+          max: 50,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 5000,
+        })
+      : new Pool({
+          host: envString('DB_HOST', 'localhost'),
+          port: parseInt(envString('DB_PORT', '5432'), 10),
+          database: envString('DB_NAME', 'khatario'),
+          user: envString('DB_USER', 'postgres'),
+          password: envString('DB_PASSWORD'),
+          ssl,
+          max: 50,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 5000,
+        });
 
     // Handle pool errors
     pool.on('error', (err) => {
@@ -45,6 +72,10 @@ export async function query<T extends QueryResultRow = any>(
     return res;
   } catch (error) {
     console.error('Database query error:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('password must be a string') || message.includes('SASL')) {
+      pool = null;
+    }
     throw error;
   }
 }

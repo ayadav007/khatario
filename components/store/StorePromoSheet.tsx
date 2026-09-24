@@ -92,75 +92,91 @@ export function StorePromoSheet() {
     }
   };
 
+  const hasImage = Boolean(promo.image_url);
+
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-[80] flex flex-col items-center justify-end sm:justify-center">
       <button
         type="button"
-        className="absolute inset-0 bg-black/45"
+        className="absolute inset-0 bg-black/70"
         aria-label="Dismiss promotion"
         onClick={() => {
           if (promo.dismissible) close();
         }}
       />
+
+      {promo.dismissible ? (
+        <button
+          type="button"
+          onClick={close}
+          className="relative z-[82] mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-black/80 text-white"
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      ) : null}
+
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="store-promo-title"
-        className="relative z-[81] w-full max-w-md animate-[slideUp_280ms_ease-out] rounded-t-3xl px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-2xl sm:mb-8 sm:rounded-3xl"
-        style={{ backgroundColor: promo.background_color, color: promo.text_color }}
+        className="relative z-[81] w-full max-w-lg overflow-hidden rounded-t-[1.75rem] sm:mb-8 sm:rounded-[1.75rem]"
+        style={{
+          backgroundColor: promo.background_color,
+          color: promo.text_color,
+          height: 'min(78vh, 640px)',
+          minHeight: '52vh',
+        }}
       >
-        <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-black/15" />
-        {promo.dismissible ? (
-          <button
-            type="button"
-            onClick={close}
-            className="absolute right-3 top-3 rounded-full p-1.5 opacity-70 hover:opacity-100"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        ) : null}
-        {promo.image_url ? (
+        {hasImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={promo.image_url}
             alt=""
-            className="mb-4 h-40 w-full rounded-2xl object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
           />
         ) : null}
-        {promo.title ? (
-          <h2 id="store-promo-title" className="pr-8 text-xl font-semibold">
-            {promo.title}
-          </h2>
-        ) : null}
-        {promo.body ? (
-          <p className="mt-2 whitespace-pre-wrap text-sm opacity-90">{promo.body}</p>
-        ) : null}
-        {promo.coupon_code ? (
-          <p className="mt-3 rounded-lg bg-black/5 px-3 py-2 text-center text-sm font-semibold tracking-wide">
-            {promo.coupon_code}
-          </p>
-        ) : null}
-        {promo.cta_action !== 'none' ? (
-          <button
-            type="button"
-            onClick={runCta}
-            className="mt-5 w-full rounded-xl py-3 text-sm font-semibold"
-            style={{
-              backgroundColor: promo.button_color,
-              color: promo.button_text_color,
-            }}
-          >
-            {promo.cta_label}
-          </button>
-        ) : null}
+
+        <div
+          className={
+            hasImage
+              ? 'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-24'
+              : 'flex h-full flex-col justify-end px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-8'
+          }
+          style={hasImage ? { color: '#fff' } : undefined}
+        >
+          {promo.title ? (
+            <h2 id="store-promo-title" className="text-2xl font-bold leading-tight sm:text-3xl">
+              {promo.title}
+            </h2>
+          ) : (
+            <h2 id="store-promo-title" className="sr-only">
+              Promotion
+            </h2>
+          )}
+          {promo.body ? (
+            <p className="mt-2 whitespace-pre-wrap text-sm opacity-90 sm:text-base">{promo.body}</p>
+          ) : null}
+          {promo.coupon_code ? (
+            <p className="mt-3 rounded-lg bg-white/15 px-3 py-2 text-center text-sm font-semibold tracking-wide">
+              {promo.coupon_code}
+            </p>
+          ) : null}
+          {promo.cta_action !== 'none' ? (
+            <button
+              type="button"
+              onClick={runCta}
+              className="mt-4 w-full rounded-xl py-3.5 text-sm font-semibold"
+              style={{
+                backgroundColor: promo.button_color,
+                color: promo.button_text_color,
+              }}
+            >
+              {promo.cta_label}
+            </button>
+          ) : null}
+        </div>
       </div>
-      <style>{`
-        @keyframes slideUp {
-          from { transform: translateY(100%); opacity: 0.6; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

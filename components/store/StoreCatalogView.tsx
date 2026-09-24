@@ -8,7 +8,8 @@ import { StoreProductDetailModal } from './StoreProductDetailModal';
 import { StoreCheckout, OrderConfirmation } from './StoreCheckout';
 import { StoreTrustSection } from './StoreTrustSection';
 import { StoreCategoryPills } from './StoreCategoryPills';
-import { sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { StoreHeroCarousel } from './StoreHeroCarousel';
+import { resolveHeroSlides, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 
@@ -162,36 +163,16 @@ export function StoreCatalogView() {
         onCartOpen={() => setCartOpen(true)}
       >
         {theme.show_hero ? (
-        <section className="relative mb-5 overflow-hidden rounded-2xl bg-gray-900">
-          {store.store_hero_image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={store.store_hero_image_url}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover opacity-50"
-            />
-          ) : null}
-          <div className="relative px-5 py-8 md:px-10 md:py-12">
-            <p className="text-xl font-semibold text-white md:text-3xl">
-              {store.store_tagline || `Shop from ${store.name}`}
-            </p>
-            {theme.hero_subtitle ? (
-              <p className="mt-1 max-w-lg text-sm text-white/80">{theme.hero_subtitle}</p>
-            ) : (
-              <p className="mt-1 max-w-lg text-sm text-white/80">
-                Fresh products from your local store. Add to cart in one tap.
-              </p>
-            )}
-            <button
-              type="button"
-              className="mt-4 rounded-full px-5 py-2 text-sm font-semibold text-white"
-              style={{ backgroundColor: accent }}
-              onClick={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
-            >
-              {theme.hero_cta}
-            </button>
-          </div>
-        </section>
+          <StoreHeroCarousel
+            slides={resolveHeroSlides(theme, {
+              image_url: store.store_hero_image_url,
+              title: store.store_tagline || `Shop from ${store.name}`,
+              subtitle: theme.hero_subtitle || 'Fresh products from your local store. Add to cart in one tap.',
+            })}
+            ctaLabel={theme.hero_cta}
+            accent={accent}
+            onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
+          />
         ) : null}
 
         <StoreCategoryPills

@@ -1,6 +1,12 @@
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
 export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'custom';
 
+export interface StoreHeroSlide {
+  image_url: string;
+  title: string;
+  subtitle: string;
+}
+
 export interface StoreTheme {
   accent: string;
   background: string;
@@ -14,6 +20,7 @@ export interface StoreTheme {
   search_placeholder: string;
   hero_cta: string;
   hero_subtitle: string;
+  hero_slides: StoreHeroSlide[];
   category_images: Record<string, string>;
 }
 
@@ -39,6 +46,7 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   search_placeholder: '',
   hero_cta: 'Shop now',
   hero_subtitle: '',
+  hero_slides: [],
   category_images: {},
 };
 
@@ -65,6 +73,33 @@ export function normalizeHexColor(value: unknown, fallback: string): string {
   return v.length === 4
     ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`.toLowerCase()
     : v.toLowerCase();
+}
+
+export function sanitizeHeroSlides(raw: unknown): StoreHeroSlide[] {
+  if (!Array.isArray(raw)) return [];
+  const slides: StoreHeroSlide[] = [];
+  for (const item of raw.slice(0, 6)) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const image_url = clipStoreMediaUrl(row.image_url);
+    const title = clip(row.title, 80);
+    const subtitle = clip(row.subtitle, 160);
+    if (!image_url && !title && !subtitle) continue;
+    slides.push({ image_url, title, subtitle });
+  }
+  return slides;
+}
+
+export function resolveHeroSlides(
+  theme: StoreTheme,
+  fallback: { image_url?: string | null; title?: string | null; subtitle?: string | null },
+): StoreHeroSlide[] {
+  if (theme.hero_slides.length > 0) return theme.hero_slides;
+  const image_url = clipStoreMediaUrl(fallback.image_url);
+  const title = clip(fallback.title, 80);
+  const subtitle = clip(fallback.subtitle ?? theme.hero_subtitle, 160);
+  if (!image_url && !title && !subtitle) return [];
+  return [{ image_url, title, subtitle }];
 }
 
 function sanitizeCategoryImages(raw: unknown): Record<string, string> {
@@ -112,6 +147,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     search_placeholder: clip(src.search_placeholder, 80),
     hero_cta: clip(src.hero_cta, 32) || DEFAULT_STORE_THEME.hero_cta,
     hero_subtitle: clip(src.hero_subtitle, 160),
+    hero_slides: sanitizeHeroSlides(src.hero_slides),
     category_images: sanitizeCategoryImages(src.category_images),
   };
 }

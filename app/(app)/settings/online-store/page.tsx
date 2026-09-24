@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Store, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
+import { Store, ExternalLink, Loader2, Copy, Check, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -130,6 +130,15 @@ export default function OnlineStoreSettingsPage() {
         setAllowCod(data.store_allow_cod !== false);
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
         const nextTheme = sanitizeStoreTheme(data.store_theme);
+        if (nextTheme.hero_slides.length === 0 && data.store_hero_image_url) {
+          nextTheme.hero_slides = [
+            {
+              image_url: data.store_hero_image_url,
+              title: data.store_tagline ?? '',
+              subtitle: nextTheme.hero_subtitle,
+            },
+          ];
+        }
         setTheme(nextTheme);
         setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
@@ -171,7 +180,7 @@ export default function OnlineStoreSettingsPage() {
           store_enabled: enabled,
           store_tagline: tagline.trim() || null,
           store_min_order_amount: parseFloat(minOrder) || 0,
-          store_hero_image_url: heroUrl.trim() || null,
+          store_hero_image_url: theme.hero_slides[0]?.image_url || heroUrl.trim() || null,
           store_about_md: aboutMd || null,
           store_contact_md: contactMd || null,
           store_allow_cod: allowCod,
@@ -426,24 +435,40 @@ export default function OnlineStoreSettingsPage() {
                 </div>
               </Card>
               <Card className="p-5 space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900">Hero</h3>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Hero carousel</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Add up to 6 banners. They rotate on the store home.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={theme.hero_slides.length >= 6}
+                    onClick={() =>
+                      setTheme((t) => ({
+                        ...t,
+                        hero_slides: [
+                          ...t.hero_slides,
+                          { image_url: '', title: tagline, subtitle: t.hero_subtitle },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add slide
+                  </Button>
+                </div>
                 <label className="block text-xs text-gray-500">
-                  Tagline
+                  Default tagline
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                     value={tagline}
                     maxLength={120}
                     onChange={(e) => setTagline(e.target.value)}
                     placeholder="Fresh groceries at your door"
-                  />
-                </label>
-                <label className="block text-xs text-gray-500">
-                  Subtitle
-                  <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                    value={theme.hero_subtitle}
-                    onChange={(e) => setTheme((t) => ({ ...t, hero_subtitle: e.target.value }))}
-                    placeholder="Add to cart in one tap"
                   />
                 </label>
                 <label className="block text-xs text-gray-500">
@@ -454,12 +479,72 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setTheme((t) => ({ ...t, hero_cta: e.target.value }))}
                   />
                 </label>
-                <StoreImageField
-                  label="Hero image"
-                  hint="Upload a photo. A URL also works."
-                  value={heroUrl}
-                  onChange={setHeroUrl}
-                />
+                {theme.hero_slides.length === 0 ? (
+                  <p className="text-xs text-gray-400">No slides yet. Add one to show a banner.</p>
+                ) : (
+                  theme.hero_slides.map((slide, i) => (
+                    <div key={i} className="rounded-xl border border-gray-100 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-gray-700">Slide {i + 1}</p>
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Remove slide ${i + 1}`}
+                          onClick={() =>
+                            setTheme((t) => ({
+                              ...t,
+                              hero_slides: t.hero_slides.filter((_, idx) => idx !== i),
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <StoreImageField
+                        label="Banner image"
+                        value={slide.image_url}
+                        onChange={(url) =>
+                          setTheme((t) => ({
+                            ...t,
+                            hero_slides: t.hero_slides.map((s, idx) =>
+                              idx === i ? { ...s, image_url: url } : s,
+                            ),
+                          }))
+                        }
+                      />
+                      <label className="block text-xs text-gray-500">
+                        Title
+                        <input
+                          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                          value={slide.title}
+                          onChange={(e) =>
+                            setTheme((t) => ({
+                              ...t,
+                              hero_slides: t.hero_slides.map((s, idx) =>
+                                idx === i ? { ...s, title: e.target.value } : s,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="block text-xs text-gray-500">
+                        Subtitle
+                        <input
+                          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                          value={slide.subtitle}
+                          onChange={(e) =>
+                            setTheme((t) => ({
+                              ...t,
+                              hero_slides: t.hero_slides.map((s, idx) =>
+                                idx === i ? { ...s, subtitle: e.target.value } : s,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  ))
+                )}
               </Card>
               <Card className="p-5 space-y-4">
                 <h3 className="text-sm font-semibold text-gray-900">Categories</h3>
@@ -520,7 +605,7 @@ export default function OnlineStoreSettingsPage() {
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">Opening promo sheet</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Slides up when a customer opens your store.
+                    Slides up as a large poster (about half to three-quarters of the screen). A full-bleed photo works best.
                   </p>
                 </div>
                 <Toggle

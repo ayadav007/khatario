@@ -200,6 +200,23 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Login error:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes('password must be a string') ||
+      message.includes('SASL') ||
+      error?.code === '28P01' ||
+      error?.code === 'ECONNREFUSED'
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            process.env.NODE_ENV === 'production'
+              ? 'Internal server error'
+              : 'Cannot connect to the database. Create a .env file from env.example, set DB_PASSWORD, and restart npm run dev.',
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -36,6 +36,20 @@ describe('sanitizeStoreTheme', () => {
     expect(t.background).toBe(STORE_THEME_PRESETS.saffron.background);
   });
 
+  it('keeps up to six hero slides', () => {
+    const t = sanitizeStoreTheme({
+      hero_slides: [
+        { image_url: 'https://cdn.example/a.jpg', title: 'Sale', subtitle: 'This week' },
+        { image_url: 'javascript:alert(1)', title: '', subtitle: '' },
+        { title: 'Only text' },
+      ],
+    });
+    expect(t.hero_slides).toEqual([
+      { image_url: 'https://cdn.example/a.jpg', title: 'Sale', subtitle: 'This week' },
+      { image_url: '', title: 'Only text', subtitle: '' },
+    ]);
+  });
+
   it('drops unsafe category image keys', () => {
     const t = sanitizeStoreTheme({
       category_images: {

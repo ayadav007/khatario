@@ -2,7 +2,9 @@
 
 import { MapPin, Search, ShoppingCart } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
+import { resolveHeroSlides } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
+import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
 const SAMPLE_PRODUCTS = [
   { name: 'Tata Salt 1 kg', price: 28, mrp: 32, unit: '1 kg' },
@@ -70,24 +72,16 @@ export function StoreLivePreview({
           </div>
           <div className="px-2 pb-3 pt-2">
             {theme.show_hero ? (
-              <div className="relative mb-2 overflow-hidden rounded-xl bg-gray-900">
-                {heroUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={heroUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />
-                ) : null}
-                <div className="relative px-3 py-4">
-                  <p className="text-[12px] font-semibold text-white">{tagline || `Shop from ${name}`}</p>
-                  <p className="mt-0.5 text-[9px] text-white/80">
-                    {theme.hero_subtitle || 'Add to cart in one tap.'}
-                  </p>
-                  <span
-                    className="mt-2 inline-block rounded-full px-2.5 py-0.5 text-[9px] font-semibold text-white"
-                    style={{ backgroundColor: theme.accent }}
-                  >
-                    {theme.hero_cta}
-                  </span>
-                </div>
-              </div>
+              <StoreHeroCarousel
+                compact
+                slides={resolveHeroSlides(theme, {
+                  image_url: heroUrl,
+                  title: tagline || `Shop from ${name}`,
+                  subtitle: theme.hero_subtitle || 'Add to cart in one tap.',
+                })}
+                ctaLabel={theme.hero_cta}
+                accent={theme.accent}
+              />
             ) : null}
 
             <div className="scale-[0.92] origin-top">
