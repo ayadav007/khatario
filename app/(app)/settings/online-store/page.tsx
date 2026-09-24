@@ -646,13 +646,21 @@ export default function OnlineStoreSettingsPage() {
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                     value={promo.cta_label}
                     onChange={(e) => setPromo((p) => ({ ...p, cta_label: e.target.value }))}
+                    placeholder="Shop now"
                   />
                 </label>
                 <label className="block text-xs text-gray-500">
-                  Button opens
+                  When they tap it
                   <select
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                    value={promo.cta_action}
+                    value={
+                      promo.cta_action === 'shop' ||
+                      promo.cta_action === 'whatsapp' ||
+                      promo.cta_action === 'url' ||
+                      promo.cta_action === 'none'
+                        ? promo.cta_action
+                        : 'shop'
+                    }
                     onChange={(e) =>
                       setPromo((p) => ({
                         ...p,
@@ -660,12 +668,20 @@ export default function OnlineStoreSettingsPage() {
                       }))
                     }
                   >
-                    <option value="checkout">Checkout</option>
-                    <option value="cart">Cart</option>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="url">Custom link</option>
+                    <option value="shop">Shop the store (catalog)</option>
+                    <option value="whatsapp">Message on WhatsApp</option>
+                    <option value="url">Open a product or page</option>
                     <option value="none">No button</option>
                   </select>
+                  <span className="mt-1 block text-[11px] text-gray-400">
+                    {promo.cta_action === 'shop'
+                      ? 'Closes the promo and scrolls to products. A coupon code is saved for checkout.'
+                      : promo.cta_action === 'whatsapp'
+                        ? 'Opens a WhatsApp chat with this store’s phone number.'
+                        : promo.cta_action === 'url'
+                          ? 'Use a product link like /products/… or a full https URL.'
+                          : 'Poster only. Customers close it with the X.'}
+                  </span>
                 </label>
                 {promo.cta_action === 'url' ? (
                   <label className="block text-xs text-gray-500 sm:col-span-2">
@@ -674,18 +690,23 @@ export default function OnlineStoreSettingsPage() {
                       className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                       value={promo.cta_url}
                       onChange={(e) => setPromo((p) => ({ ...p, cta_url: e.target.value }))}
+                      placeholder="/products/… or https://"
                     />
                   </label>
                 ) : null}
                 <label className="block text-xs text-gray-500">
-                  Coupon to apply
+                  Coupon to apply at checkout
                   <input
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm uppercase"
                     value={promo.coupon_code}
                     onChange={(e) =>
                       setPromo((p) => ({ ...p, coupon_code: e.target.value.toUpperCase() }))
                     }
+                    placeholder="Optional"
                   />
+                  <span className="mt-1 block text-[11px] text-gray-400">
+                    Saved when they tap the button. It is applied when they actually check out — not by opening an empty cart.
+                  </span>
                 </label>
                 <label className="block text-xs text-gray-500">
                   How often

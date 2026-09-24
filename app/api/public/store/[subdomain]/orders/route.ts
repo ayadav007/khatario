@@ -187,6 +187,14 @@ export async function POST(
 
     await client.query('COMMIT');
 
+    const { notifyStoreMerchantNewOrder } = await import('@/lib/store/notify-merchant');
+    void notifyStoreMerchantNewOrder({
+      businessId: store.business_id,
+      orderNumber: orderNum,
+      grandTotal: quote.grand_total,
+      customerName: customer_name,
+    });
+
     if (paymentMethod === 'cod') {
       const { createInvoiceForStoreOrder } = await import('@/lib/store/fulfill-paid-order');
       const { incrementStoreCouponUse } = await import('@/lib/store/coupons');

@@ -38,6 +38,18 @@ describe('sanitizeStorePromoSheet', () => {
     expect(p.cta_action).toBe('whatsapp');
     expect(p.delay_ms).toBe(250);
   });
+
+  it('maps empty cart/checkout buttons to shop the catalog', () => {
+    const p = sanitizeStorePromoSheet({
+      enabled: true,
+      title: 'Sale',
+      cta_action: 'checkout',
+      cta_label: 'Checkout',
+    });
+    expect(p.cta_action).toBe('shop');
+    expect(p.cta_label).toBe('Shop now');
+    expect(sanitizeStorePromoSheet({ cta_action: 'cart' }).cta_action).toBe('shop');
+  });
 });
 
 describe('isStorePromoActive', () => {

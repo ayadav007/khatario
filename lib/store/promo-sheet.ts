@@ -4,7 +4,7 @@ export type StorePromoFrequency =
   | 'once_per_day'
   | 'until_dismissed';
 
-export type StorePromoCtaAction = 'url' | 'checkout' | 'cart' | 'whatsapp' | 'none';
+export type StorePromoCtaAction = 'shop' | 'url' | 'whatsapp' | 'none';
 
 export interface StorePromoSheetConfig {
   enabled: boolean;
@@ -34,7 +34,8 @@ const FREQUENCIES: StorePromoFrequency[] = [
   'once_per_day',
   'until_dismissed',
 ];
-const ACTIONS: StorePromoCtaAction[] = ['url', 'checkout', 'cart', 'whatsapp', 'none'];
+const ACTIONS: StorePromoCtaAction[] = ['shop', 'url', 'whatsapp', 'none'];
+const LEGACY_ACTIONS = new Set(['checkout', 'cart']);
 
 export const DEFAULT_STORE_PROMO: StorePromoSheetConfig = {
   enabled: false,
@@ -47,7 +48,7 @@ export const DEFAULT_STORE_PROMO: StorePromoSheetConfig = {
   button_color: '#16a34a',
   button_text_color: '#ffffff',
   cta_label: 'Shop now',
-  cta_action: 'checkout',
+  cta_action: 'shop',
   cta_url: '',
   coupon_code: '',
   frequency: 'once_per_day',
@@ -83,15 +84,23 @@ function isoOrNull(value: unknown): string | null {
   return d.toISOString();
 }
 
+export function normalizePromoCtaAction(raw: unknown): StorePromoCtaAction {
+  if (LEGACY_ACTIONS.has(String(raw))) return 'shop';
+  if (ACTIONS.includes(raw as StorePromoCtaAction)) return raw as StorePromoCtaAction;
+  return DEFAULT_STORE_PROMO.cta_action;
+}
+
 export function sanitizeStorePromoSheet(raw: unknown): StorePromoSheetConfig {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const delay = Number(src.delay_ms);
   const frequency = FREQUENCIES.includes(src.frequency as StorePromoFrequency)
     ? (src.frequency as StorePromoFrequency)
     : DEFAULT_STORE_PROMO.frequency;
-  const cta_action = ACTIONS.includes(src.cta_action as StorePromoCtaAction)
-    ? (src.cta_action as StorePromoCtaAction)
-    : DEFAULT_STORE_PROMO.cta_action;
+  const cta_action = normalizePromoCtaAction(src.cta_action);
+  let cta_label = clip(src.cta_label, 40) || DEFAULT_STORE_PROMO.cta_label;
+  if (/^(cart|checkout)$/i.test(cta_label.trim())) {
+    cta_label = DEFAULT_STORE_PROMO.cta_label;
+  }
   return {
     enabled: src.enabled === true,
     version: clip(src.version, 64) || String(Date.now()),
@@ -102,7 +111,7 @@ export function sanitizeStorePromoSheet(raw: unknown): StorePromoSheetConfig {
     text_color: hex(src.text_color, DEFAULT_STORE_PROMO.text_color),
     button_color: hex(src.button_color, DEFAULT_STORE_PROMO.button_color),
     button_text_color: hex(src.button_text_color, DEFAULT_STORE_PROMO.button_text_color),
-    cta_label: clip(src.cta_label, 40) || DEFAULT_STORE_PROMO.cta_label,
+    cta_label,
     cta_action,
     cta_url: clip(src.cta_url, 2000),
     coupon_code: clip(src.coupon_code, 64).toUpperCase(),

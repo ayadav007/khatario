@@ -4,12 +4,90 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { resolveDeliveryProvider } from '@/lib/store/delivery';
 import { canBookShipment } from '@/lib/store/fulfillment-rules';
 import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
+import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
+import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
 
 export const dynamic = 'force-dynamic';
 
+const VALID_STATUSES = ['pending', 'confirmed', 'ready', 'delivered', 'cancelled'];
+const VALID_DISPATCH = ['pickup', 'self', 'shiprocket'];
+
+const ORDER_SELECT = `
+  so.id, so.order_number, so.customer_name, so.customer_phone,
+  so.customer_email, so.customer_address, so.customer_pincode,
+  so.delivery_mode, so.status, so.notes, so.payment_status,
+  so.subtotal::text, so.tax_total::text, so.delivery_charge::text, so.grand_total::text,
+  so.cancelled_reason, so.created_at, so.awb, so.tracking_url, so.shipment_id,
+  so.invoice_id, so.dispatch_mode, so.courier_scanned_at, so.cash_collected_at,
+  br.name AS branch_name,
+  (SELECT COUNT(*)::int FROM store_order_items soi WHERE soi.order_id = so.id) AS line_count,
+  (SELECT COUNT(*)::int FROM store_order_items soi
+    WHERE soi.order_id = so.id AND COALESCE(soi.packed_qty, 0) >= soi.quantity) AS packed_lines
+`;
+
+function mapOrder(o: Record<string, unknown>) {
+  return {
+    ...o,
+    subtotal: parseFloat(o.subtotal as string) || 0,
+    tax_total: parseFloat(o.tax_total as string) || 0,
+    delivery_charge: parseFloat(o.delivery_charge as string) || 0,
+    grand_total: parseFloat(o.grand_total as string) || 0,
+    line_count: Number(o.line_count) || 0,
+    packed_lines: Number(o.packed_lines) || 0,
+  };
+}
+
+async function loadItems(orderId: string) {
+  const rows = await queryRows<{
+    id: string;
+    item_id: string;
+    variant_id: string | null;
+    item_name: string;
+    variant_name: string | null;
+    quantity: string;
+    packed_qty: string;
+    unit: string;
+    unit_price: string;
+    line_total: string;
+    barcode: string | null;
+    code: string | null;
+  }>(
+    `SELECT
+       soi.id, soi.item_id, soi.variant_id, soi.item_name, soi.variant_name,
+       soi.quantity::text, COALESCE(soi.packed_qty, 0)::text AS packed_qty,
+       soi.unit, soi.unit_price::text, soi.line_total::text,
+       COALESCE(iv.barcode, i.barcode) AS barcode,
+       COALESCE(NULLIF(iv.sku, ''), NULLIF(i.code, '')) AS code
+     FROM store_order_items soi
+     INNER JOIN items i ON i.id = soi.item_id
+     LEFT JOIN item_variants iv ON iv.id = soi.variant_id
+     WHERE soi.order_id = $1
+     ORDER BY soi.item_name`,
+    [orderId],
+  );
+  return rows.map((r) => ({
+    ...r,
+    quantity: parseFloat(r.quantity) || 0,
+    packed_qty: parseFloat(r.packed_qty) || 0,
+    unit_price: parseFloat(r.unit_price) || 0,
+    line_total: parseFloat(r.line_total) || 0,
+  }));
+}
+
+async function loadOrder(orderId: string, businessId: string) {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${ORDER_SELECT}
+     FROM store_orders so
+     LEFT JOIN branches br ON br.id = so.branch_id
+     WHERE so.id = $1 AND so.business_id = $2`,
+    [orderId, businessId],
+  );
+  if (!row) return null;
+  return { order: mapOrder(row), items: await loadItems(orderId) };
+}
+
 /**
- * GET /api/settings/online-store/orders?business_id=...&status=...&page=1
- * List store orders for admin.
+ * GET /api/settings/online-store/orders
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -17,9 +95,17 @@ export async function GET(request: NextRequest) {
   if (!tenant.ok) return tenant.response;
   const businessId = tenant.businessId;
 
+  const orderId = searchParams.get('order_id');
+  if (orderId) {
+    const detail = await loadOrder(orderId, businessId);
+    if (!detail) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    return NextResponse.json(detail);
+  }
+
   const status = searchParams.get('status');
+  const q = searchParams.get('q')?.trim();
   const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-  const limit = 20;
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '20', 10)));
   const offset = (page - 1) * limit;
 
   const conditions = ['so.business_id = $1'];
@@ -31,7 +117,15 @@ export async function GET(request: NextRequest) {
     conditions.push(`so.status = $${idx}`);
     params.push(status);
   }
+  if (q) {
+    idx++;
+    conditions.push(
+      `(so.order_number ILIKE $${idx} OR so.customer_phone ILIKE $${idx} OR so.customer_name ILIKE $${idx} OR COALESCE(so.awb,'') ILIKE $${idx})`,
+    );
+    params.push(`%${q}%`);
+  }
 
+  const where = conditions.join(' AND ');
   idx++;
   params.push(limit);
   const limitIdx = idx;
@@ -40,67 +134,74 @@ export async function GET(request: NextRequest) {
   const offsetIdx = idx;
 
   const orders = await queryRows<Record<string, unknown>>(
-    `SELECT
-       so.id, so.order_number, so.customer_name, so.customer_phone,
-       so.customer_email, so.customer_address, so.customer_pincode,
-       so.delivery_mode, so.status, so.notes, so.payment_status,
-       so.subtotal::text, so.tax_total::text, so.delivery_charge::text, so.grand_total::text,
-       so.cancelled_reason, so.created_at, so.awb, so.tracking_url, so.shipment_id,
-       so.invoice_id,
-       br.name AS branch_name
+    `SELECT ${ORDER_SELECT}
      FROM store_orders so
      LEFT JOIN branches br ON br.id = so.branch_id
-     WHERE ${conditions.join(' AND ')}
+     WHERE ${where}
      ORDER BY so.created_at DESC
      LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
     params,
   );
 
   const countRow = await queryOne<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM store_orders so WHERE ${conditions.slice(0, status ? 2 : 1).join(' AND ')}`,
-    params.slice(0, status ? 2 : 1),
+    `SELECT COUNT(*)::text AS count FROM store_orders so WHERE ${where}`,
+    params.slice(0, params.length - 2),
   );
 
   return NextResponse.json({
-    orders: orders.map((o) => ({
-      ...o,
-      subtotal: parseFloat(o.subtotal as string) || 0,
-      tax_total: parseFloat(o.tax_total as string) || 0,
-      delivery_charge: parseFloat(o.delivery_charge as string) || 0,
-      grand_total: parseFloat(o.grand_total as string) || 0,
-    })),
+    orders: orders.map(mapOrder),
     total: parseInt(countRow?.count ?? '0', 10),
     page,
     limit,
   });
 }
 
-/**
- * PATCH /api/settings/online-store/orders
- * Update order status.
- */
 export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
   const businessId = tenant.businessId;
 
-  const { order_id, status, cancelled_reason } = body;
+  const action = typeof body.action === 'string' ? body.action : null;
+  const orderId = body.order_id as string | undefined;
 
-  if (!order_id) {
+  if (action === 'scan') {
+    return handleScan(businessId, body);
+  }
+  if (action === 'collect_cash') {
+    if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
+    const updated = await queryOne(
+      `UPDATE store_orders
+       SET cash_collected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND payment_status = 'cod'
+       RETURNING id`,
+      [orderId, businessId],
+    );
+    if (!updated) {
+      return NextResponse.json({ error: 'COD order not found' }, { status: 404 });
+    }
+    const detail = await loadOrder(orderId, businessId);
+    return NextResponse.json({ success: true, kind: 'cash', ...detail });
+  }
+
+  if (!orderId) {
     return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
   }
 
-  const validStatuses = ['pending', 'confirmed', 'ready', 'delivered', 'cancelled'];
-  if (!validStatuses.includes(status)) {
+  const { status, cancelled_reason } = body;
+  const dispatchMode =
+    typeof body.dispatch_mode === 'string' && VALID_DISPATCH.includes(body.dispatch_mode)
+      ? (body.dispatch_mode as string)
+      : null;
+
+  if (!VALID_STATUSES.includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 
-  // If cancelling, restore stock (only when it was actually reserved)
   if (status === 'cancelled') {
     const current = await queryOne<{ payment_status: string; shipment_id: string | null }>(
       `SELECT payment_status, shipment_id FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [order_id, businessId],
+      [orderId, businessId],
     );
     if (current?.shipment_id && current.shipment_id !== 'self') {
       try {
@@ -120,7 +221,7 @@ export async function PATCH(request: NextRequest) {
          FROM store_order_items soi
          INNER JOIN store_orders so ON so.id = soi.order_id
          WHERE soi.order_id = $1 AND so.business_id = $2 AND so.status != 'cancelled'`,
-        [order_id, businessId],
+        [orderId, businessId],
       );
 
       for (const item of items) {
@@ -143,7 +244,7 @@ export async function PATCH(request: NextRequest) {
   if (status === 'ready') {
     const payRow = await queryOne<{ payment_status: string }>(
       `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [order_id, businessId],
+      [orderId, businessId],
     );
     if (payRow && !canBookShipment(payRow.payment_status)) {
       return NextResponse.json(
@@ -155,10 +256,13 @@ export async function PATCH(request: NextRequest) {
 
   const updated = await queryOne(
     `UPDATE store_orders
-     SET status = $1, cancelled_reason = $2, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $3 AND business_id = $4
+     SET status = $1,
+         cancelled_reason = $2,
+         dispatch_mode = COALESCE($3, dispatch_mode),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $4 AND business_id = $5
      RETURNING id, status`,
-    [status, cancelled_reason ?? null, order_id, businessId],
+    [status, cancelled_reason ?? null, dispatchMode, orderId, businessId],
   );
 
   if (!updated) {
@@ -166,73 +270,147 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (status === 'confirmed') {
-    await createInvoiceForStoreOrder(order_id, businessId).catch((err) => {
+    await createInvoiceForStoreOrder(orderId, businessId).catch((err) => {
       console.error('[store invoice on confirm]', err);
     });
   }
 
   if (status === 'ready') {
-    const ship = await queryOne<{
-      order_number: string;
-      grand_total: string;
-      payment_status: string;
-      customer_name: string;
-      customer_phone: string;
-      customer_email: string | null;
-      customer_address: string | null;
-      customer_pincode: string | null;
-      delivery_mode: string;
-      shipment_id: string | null;
-    }>(
-      `SELECT order_number, grand_total::text, payment_status, customer_name, customer_phone,
-              customer_email, customer_address, customer_pincode, delivery_mode, shipment_id
-       FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [order_id, businessId],
-    );
-    if (ship && ship.delivery_mode === 'delivery' && !ship.shipment_id) {
-      try {
-        const provider = await resolveDeliveryProvider(businessId);
-        const booked = await provider.createShipment({
-          orderId: order_id,
-          orderNumber: ship.order_number,
-          grandTotal: parseFloat(ship.grand_total) || 0,
-          paymentStatus: ship.payment_status as 'unpaid' | 'paid' | 'cod',
-          customerName: ship.customer_name,
-          customerPhone: ship.customer_phone,
-          customerEmail: ship.customer_email,
-          customerAddress: ship.customer_address || '',
-          customerPincode: ship.customer_pincode || '',
-        });
-        if (booked.ok) {
-          await query(
-            `UPDATE store_orders
-             SET shipment_id = $1, awb = $2, tracking_url = $3, delivery_provider = $4,
-                 billed_delivery_fee = COALESCE($5, billed_delivery_fee),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $6`,
-            [
-              booked.shipmentId ?? null,
-              booked.awb ?? null,
-              booked.trackingUrl ?? null,
-              provider.id,
-              booked.billedFee ?? null,
-              order_id,
-            ],
-          );
-          if (booked.trackingUrl) {
-            const { notifyStoreCustomerWhatsApp } = await import('@/lib/store/notify-whatsapp');
-            void notifyStoreCustomerWhatsApp({
-              businessId,
-              phone: ship.customer_phone,
-              text: `Your order ${ship.order_number} is ready to ship.${booked.awb ? ` AWB ${booked.awb}.` : ''} Track: ${booked.trackingUrl}`,
-            });
-          }
-        }
-      } catch (err) {
-        console.error('[store shipment]', err);
+    if (dispatchMode === 'self' || dispatchMode === 'pickup') {
+      await markSelfDispatch(orderId, businessId);
+      if (dispatchMode === 'pickup') {
+        await query(
+          `UPDATE store_orders SET dispatch_mode = 'pickup', updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 AND business_id = $2`,
+          [orderId, businessId],
+        );
       }
+    } else {
+      await bookStoreCourierIfNeeded(orderId, businessId);
     }
   }
 
-  return NextResponse.json({ success: true });
+  const detail = await loadOrder(orderId, businessId);
+  return NextResponse.json({ success: true, ...detail });
+}
+
+async function handleScan(businessId: string, body: Record<string, unknown>) {
+  const code = String(body.barcode ?? '').trim();
+  if (code.length < 2) {
+    return NextResponse.json({ error: 'barcode is required' }, { status: 400 });
+  }
+  const preferredOrderId = typeof body.order_id === 'string' ? body.order_id : null;
+
+  const byNumber = await queryOne<{ id: string }>(
+    `SELECT id FROM store_orders
+     WHERE business_id = $1 AND UPPER(order_number) = UPPER($2)
+       AND status != 'cancelled'
+     LIMIT 1`,
+    [businessId, code],
+  );
+  if (byNumber) {
+    const detail = await loadOrder(byNumber.id, businessId);
+    return NextResponse.json({ success: true, kind: 'select_order', ...detail });
+  }
+
+  const byAwb = await queryOne<{ id: string }>(
+    `SELECT id FROM store_orders
+     WHERE business_id = $1 AND awb IS NOT NULL AND UPPER(awb) = UPPER($2)
+     LIMIT 1`,
+    [businessId, code],
+  );
+  if (byAwb) {
+    const detail = await loadOrder(byAwb.id, businessId);
+    return NextResponse.json({ success: true, kind: 'select_order', ...detail });
+  }
+
+  const packCandidates = preferredOrderId
+    ? await loadItems(preferredOrderId)
+    : [];
+  let packHit = preferredOrderId ? matchPackScan(packCandidates, code) : null;
+  let packOrderId = preferredOrderId;
+
+  if (!packHit) {
+    const fifo = await queryOne<{
+      id: string;
+      order_id: string;
+      item_name: string;
+      quantity: string;
+      packed_qty: string;
+      barcode: string | null;
+      code: string | null;
+    }>(
+      `SELECT soi.id, soi.order_id, soi.item_name, soi.quantity::text,
+              COALESCE(soi.packed_qty, 0)::text AS packed_qty,
+              COALESCE(iv.barcode, i.barcode) AS barcode,
+              COALESCE(NULLIF(iv.sku, ''), NULLIF(i.code, '')) AS code
+       FROM store_order_items soi
+       INNER JOIN store_orders so ON so.id = soi.order_id
+       INNER JOIN items i ON i.id = soi.item_id
+       LEFT JOIN item_variants iv ON iv.id = soi.variant_id
+       WHERE so.business_id = $1
+         AND so.status IN ('pending', 'confirmed', 'ready')
+         AND COALESCE(soi.packed_qty, 0) < soi.quantity
+         AND (
+           UPPER(COALESCE(iv.barcode, i.barcode, '')) = UPPER($2)
+           OR UPPER(COALESCE(iv.sku, i.code, '')) = UPPER($2)
+         )
+       ORDER BY so.created_at ASC
+       LIMIT 1`,
+      [businessId, code],
+    );
+    if (fifo) {
+      packHit = {
+        id: fifo.id,
+        item_name: fifo.item_name,
+        quantity: parseFloat(fifo.quantity) || 0,
+        packed_qty: parseFloat(fifo.packed_qty) || 0,
+        barcode: fifo.barcode,
+        code: fifo.code,
+      };
+      packOrderId = fifo.order_id;
+    }
+  }
+
+  if (packHit && packOrderId) {
+    await query(
+      `UPDATE store_order_items
+       SET packed_qty = LEAST(quantity, COALESCE(packed_qty, 0) + 1)
+       WHERE id = $1`,
+      [packHit.id],
+    );
+    const detail = await loadOrder(packOrderId, businessId);
+    const fully = (detail?.items ?? []).every((l) => l.packed_qty >= l.quantity);
+    return NextResponse.json({
+      success: true,
+      kind: 'packed',
+      item_name: packHit.item_name,
+      fully_packed: fully,
+      ...detail,
+    });
+  }
+
+  const awbTarget = preferredOrderId;
+  if (awbTarget && looksLikeCourierBarcode(code)) {
+    const own = await queryOne<{ id: string }>(
+      `SELECT id FROM store_orders WHERE id = $1 AND business_id = $2`,
+      [awbTarget, businessId],
+    );
+    if (!own) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    await query(
+      `UPDATE store_orders
+       SET awb = $1, courier_scanned_at = CURRENT_TIMESTAMP,
+           dispatch_mode = COALESCE(dispatch_mode, 'self'),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND business_id = $3`,
+      [code, awbTarget, businessId],
+    );
+    const detail = await loadOrder(awbTarget, businessId);
+    return NextResponse.json({ success: true, kind: 'awb', ...detail });
+  }
+
+  return NextResponse.json(
+    { error: 'Unknown barcode. Scan an item, packing-slip order number, or courier AWB.' },
+    { status: 404 },
+  );
 }

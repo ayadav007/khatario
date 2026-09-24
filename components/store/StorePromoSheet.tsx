@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useStore } from '@/lib/store/store-context';
 import {
   isStorePromoActive,
@@ -32,6 +32,7 @@ function readStored(key: string, frequency: StorePromoSheetConfig['frequency']):
 export function StorePromoSheet() {
   const { store } = useStore();
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const promo = store?.store_promo_sheet;
 
@@ -65,12 +66,13 @@ export function StorePromoSheet() {
     }
     close();
     if (promo.cta_action === 'none') return;
-    if (promo.cta_action === 'cart') {
-      router.push('/cart');
-      return;
-    }
-    if (promo.cta_action === 'checkout') {
-      router.push('/checkout');
+    if (promo.cta_action === 'shop') {
+      const onHome = pathname === '/' || pathname === '/store';
+      if (onHome) {
+        document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        router.push('/#all-products');
+      }
       return;
     }
     if (promo.cta_action === 'whatsapp' && store.phone) {
