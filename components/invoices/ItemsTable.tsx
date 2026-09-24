@@ -163,8 +163,32 @@ const ItemsTable = React.memo(function ItemsTable({
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-text-primary truncate">{row.name || 'Item'}</p>
                       <p className="text-xs text-text-secondary mt-0.5">
-                        Qty × Rate · {row.quantity} {unit} × ₹{Number(row.price).toFixed(2)}
+                        {row.quantity} {unit} × ₹{Number(row.price).toFixed(2)}
                       </p>
+                      {!isFinal && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label="Decrease quantity"
+                            disabled={Number(row.quantity) <= 1}
+                            onClick={() => onUpdateRow(i, 'quantity', Number(row.quantity) - 1)}
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-lg leading-none text-text-primary disabled:opacity-40"
+                          >
+                            −
+                          </button>
+                          <span className="min-w-[1.5rem] text-center text-sm font-semibold tabular-nums text-text-primary">
+                            {row.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="Increase quantity"
+                            onClick={() => onUpdateRow(i, 'quantity', Number(row.quantity) + 1)}
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-lg leading-none text-text-primary"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right shrink-0 flex flex-col items-end gap-1">
                       <span className="font-semibold text-text-primary tabular-nums">₹{row.total.toFixed(2)}</span>

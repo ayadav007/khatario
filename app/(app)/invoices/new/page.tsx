@@ -27,6 +27,11 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { useToastContext } from '@/contexts/ToastContext';
+import {
+  useMobileHeaderRightAccessory,
+  useMobileHeaderTitleOverride,
+} from '@/contexts/MobileHeaderTitleContext';
+import { customerBalanceHint, isPartyBalanceSettled } from '@/lib/party-balance-ui';
 import { useOfflineSalesFinalize } from '@/hooks/useOfflineSalesFinalize';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -384,6 +389,7 @@ function NewInvoiceContent() {
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
   const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
   const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
@@ -2512,6 +2518,26 @@ function NewInvoiceContent() {
   }, [searchParams, customers, business?.id, savedInvoiceId, customerId, rows, calculateRow, prefilled, user?.id]);
 
   const showMobileInvoiceUi = invoiceMobileLayout && !posMode;
+  const mobileBillLabel =
+    documentType === 'proforma_invoice'
+      ? 'Estimate'
+      : documentType === 'bill_of_supply'
+        ? 'Bill of supply'
+        : 'Invoice';
+  const mobileBillNo = offlineDisplayNumber || [invoicePrefix, invoiceNumber].filter(Boolean).join('-');
+
+  useMobileHeaderTitleOverride(showMobileInvoiceUi ? mobileBillLabel : null);
+
+  const mobileBillNoAccessory = useMemo(() => {
+    if (!showMobileInvoiceUi || !mobileBillNo) return null;
+    return (
+      <span className="max-w-[6.5rem] truncate text-[11px] font-semibold tabular-nums text-text-secondary">
+        {mobileBillNo}
+      </span>
+    );
+  }, [showMobileInvoiceUi, mobileBillNo]);
+
+  useMobileHeaderRightAccessory(mobileBillNoAccessory);
 
   const handleConfirmLeavePage = useCallback(() => {
     let targetDocType: DocumentType | null = null;
@@ -2846,11 +2872,17 @@ function NewInvoiceContent() {
   );
 
   const renderMobileComposer = () => {
-    const billNo = offlineDisplayNumber || [invoicePrefix, invoiceNumber].filter(Boolean).join('-');
     const money = (n: number) =>
       `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    const addressOpen = addressSupplyOpen || isFinal;
-    const notesOpen = mobileAdjustmentsOpen || isFinal;
+    const partyBalance =
+      selectedCustomer?.current_balance == null ? null : Number(selectedCustomer.current_balance);
+    const partyBalanceLabel =
+      partyBalance != null && Number.isFinite(partyBalance) && !isPartyBalanceSettled(partyBalance)
+        ? `${customerBalanceHint(partyBalance)} ₹${Math.abs(partyBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+        : '';
+    const customerSubtitle = selectedCustomer
+      ? [selectedCustomer.phone, partyBalanceLabel].filter(Boolean).join(' · ') || 'Tap to change customer'
+      : 'Tap to add customer';
     return (
     <div className="relative pb-72">
       <div className="space-y-3">
@@ -2860,42 +2892,61 @@ function NewInvoiceContent() {
             <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
           </div>
         )}
-        {billNo ? (
-          <p className="text-right text-sm font-semibold tabular-nums text-text-secondary">{billNo}</p>
-        ) : null}
         <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <CustomerAutocomplete
-                compact
-                customers={customers}
-                value={customerId}
-                onChange={setCustomerId}
-                onSelect={(c) => {
-                  if (c) {
-                    setBillingAddress(c.billing_address || c.address || '');
-                    setShippingAddress(c.shipping_address || c.address || '');
-                  }
-                }}
-                disabled={isFinal}
-                onAddNew={() => setCreateCustomerModalOpen(true)}
-              />
-              <p className="mt-1 text-xs text-text-muted">
-                {selectedCustomer?.phone
-                  ? selectedCustomer.phone
-                  : 'Optional. Leave blank for a cash sale.'}
-              </p>
+              {customerPickerOpen && !isFinal ? (
+                <div className="space-y-2">
+                  <CustomerAutocomplete
+                    compact
+                    customers={customers}
+                    value={customerId}
+                    onChange={setCustomerId}
+                    onSelect={(c) => {
+                      if (c) {
+                        setSelectedCustomer(c);
+                        setBillingAddress(c.billing_address || c.address || '');
+                        setShippingAddress(c.shipping_address || c.address || '');
+                        setCustomerPickerOpen(false);
+                      }
+                    }}
+                    disabled={isFinal}
+                    onAddNew={() => setCreateCustomerModalOpen(true)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCustomerPickerOpen(false)}
+                    className="text-xs font-semibold text-primary-600"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="w-full text-left disabled:opacity-100"
+                  onClick={() => {
+                    if (!isFinal) setCustomerPickerOpen(true);
+                  }}
+                  disabled={isFinal}
+                >
+                  <p className="truncate text-base font-semibold text-text-primary">
+                    {selectedCustomer?.name || 'Cash sale'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-text-muted">{customerSubtitle}</p>
+                </button>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setAddressSupplyOpen((open) => !open)}
               className="shrink-0 pt-0.5 text-sm font-semibold text-primary-600"
-              aria-expanded={addressOpen}
+              aria-expanded={addressSupplyOpen}
             >
               Address & supply
             </button>
           </div>
-          {addressOpen && (
+          {addressSupplyOpen && (
             <div className="space-y-2 border-t border-border pt-2">
               <div className="space-y-0.5">
                 <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
@@ -2968,13 +3019,13 @@ function NewInvoiceContent() {
           onReplaceRow={(idx, row) => setRows((prev) => { const next = [...prev]; next[idx] = row; return next; })}
         />
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <button type="button" onClick={() => setMobileAdjustmentsOpen((open) => !open)} className="flex w-full items-center justify-between p-3 text-left" aria-expanded={notesOpen}>
+          <button type="button" onClick={() => setMobileAdjustmentsOpen((open) => !open)} className="flex w-full items-center justify-between p-3 text-left" aria-expanded={mobileAdjustmentsOpen}>
             <span className="text-sm font-semibold text-text-primary">Notes & charges</span>
-            <ChevronDown className={`h-5 w-5 text-text-muted transition-transform ${notesOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-5 w-5 text-text-muted transition-transform ${mobileAdjustmentsOpen ? 'rotate-180' : ''}`} />
           </button>
-          {notesOpen && (
+          {mobileAdjustmentsOpen && (
             <div className="space-y-3 border-t border-border p-3">
-        <Card padding="sm" className="space-y-3 border-border">
+        <div className="space-y-3">
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2">
               <div className="min-w-0 space-y-0.5">
@@ -3016,24 +3067,6 @@ function NewInvoiceContent() {
                 />
               </div>
             )}
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-border pb-2">
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Prefix</div>
-                <Input
-                  value={invoicePrefix ?? ''}
-                  readOnly
-                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm font-semibold"
-                />
-              </div>
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Number</div>
-                <Input
-                  value={invoiceNumber ?? ''}
-                  readOnly
-                  className="h-9 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm font-semibold"
-                />
-              </div>
-            </div>
             {documentType === 'proforma_invoice' && !isFinal && (
               <div className="space-y-0.5 border-b border-border pb-2">
                 <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -3098,18 +3131,17 @@ function NewInvoiceContent() {
               </label>
             )}
           </div>
-        </Card>
-        <Card padding="md">
+        </div>
+        <div>
           <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Notes / Terms</label>
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
-        </Card>
+        </div>
         <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
         {!isFinal && (
-          <div className="rounded-lg border border-border bg-surface">
-            <button type="button" onClick={() => setShowAdditionalInfo(!showAdditionalInfo)} className="w-full flex items-center justify-between p-3 text-left"><h3 className="text-sm font-semibold text-text-primary">More details</h3><ChevronDown className={`w-5 h-5 text-text-muted transition-transform ${showAdditionalInfo ? 'rotate-180' : ''}`} /></button>
-            {showAdditionalInfo && (
-              <div className="px-3 pb-3 pt-0 space-y-3 border-t border-border">
-                <div className="grid grid-cols-1 gap-3 pt-3">
+          <div className="space-y-3 border-t border-border pt-3">
+            <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">More details</p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} disabled={isFinal} /></div>
@@ -3141,7 +3173,6 @@ function NewInvoiceContent() {
                   </div>
                 </div>
               </div>
-            )}
           </div>
         )}
         {!isFinal && isExport && (
@@ -3184,10 +3215,10 @@ function NewInvoiceContent() {
           </button>
           {!isFinal ? (
             <>
-              <Button variant="ghost" className="h-9 w-full text-sm" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
+              <button type="button" onClick={handlePreview} disabled={previewLoading || !isSeriesResolved} className="w-full py-1 text-sm font-semibold text-primary-600 disabled:opacity-50">{previewLoading ? 'Opening preview…' : 'Preview'}</button>
               <Button variant="primary" className="h-12 w-full font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="mr-2 h-5 w-5" /> Generate</Button>
               <p className="text-center text-2xs text-text-muted">Generate finalizes the document for GST.</p>
-              <Button variant="ghost" className="h-10 w-full text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
+              <button type="button" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved || loading} className="w-full py-1 text-sm font-semibold text-primary-600 disabled:opacity-50">Save &amp; new</button>
             </>
           ) : (
             <div className="flex gap-2">
