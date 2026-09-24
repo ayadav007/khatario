@@ -58,11 +58,11 @@ export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
-  const pool = getPool();
+  const dbPool = getPool();
   const start = Date.now();
   
   try {
-    const res = await pool.query<T>(text, params);
+    const res = await dbPool.query<T>(text, params);
     const duration = Date.now() - start;
     
     if (process.env.NODE_ENV === 'development') {
