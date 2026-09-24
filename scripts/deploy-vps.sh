@@ -79,10 +79,13 @@ if [[ "$NO_PULL" == false ]]; then
 fi
 
 echo ">> npm ci"
+# The VPS shell often has NODE_ENV=production, which makes npm skip
+# devDependencies. The build needs TypeScript and Tailwind, and postinstall
+# runs patch-package from devDependencies.
 if [[ -f package-lock.json ]]; then
-  npm ci
+  NODE_ENV=development npm ci --include=dev
 else
-  npm install
+  NODE_ENV=development npm install --include=dev
 fi
 echo ""
 
