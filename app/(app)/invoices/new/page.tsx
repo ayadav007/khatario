@@ -169,7 +169,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                   ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 pl-0 pr-7 pt-0.5 text-sm font-medium text-text-primary placeholder:text-text-muted shadow-none outline-none ring-0 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60'
                   : 'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60'
               }
-              placeholder={compact ? 'Search customer…' : 'Search Customer...'}
+              placeholder={compact ? 'Cash sale' : 'Search Customer...'}
               value={query}
               disabled={disabled}
               onChange={(e) => { setQuery(e.target.value); setIsOpen(true); if (e.target.value === '') onChange(''); }}
@@ -382,7 +382,8 @@ function NewInvoiceContent() {
   const [formKey, setFormKey] = useState(0);
   const [invoiceMobileLayout, setInvoiceMobileLayout] = useState(false);
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
-  const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(true);
+  const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
+  const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
@@ -2844,8 +2845,14 @@ function NewInvoiceContent() {
     </div>
   );
 
-  const renderMobileComposer = () => (
-    <div className="relative pb-44">
+  const renderMobileComposer = () => {
+    const billNo = offlineDisplayNumber || [invoicePrefix, invoiceNumber].filter(Boolean).join('-');
+    const money = (n: number) =>
+      `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    const addressOpen = addressSupplyOpen || isFinal;
+    const notesOpen = mobileAdjustmentsOpen || isFinal;
+    return (
+    <div className="relative pb-72">
       <div className="space-y-3">
         {isInvoiceLocked && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
@@ -2853,11 +2860,12 @@ function NewInvoiceContent() {
             <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
           </div>
         )}
-        <Card padding="sm" className="space-y-3 border-border">
-          <h2 className="border-b border-border pb-1.5 text-caption font-bold uppercase tracking-wider text-text-primary">Bill details</h2>
-          <div className="space-y-3">
-            <div className="space-y-0.5 border-b border-border pb-2">
-              <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">Customer</div>
+        {billNo ? (
+          <p className="text-right text-sm font-semibold tabular-nums text-text-secondary">{billNo}</p>
+        ) : null}
+        <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <CustomerAutocomplete
                 compact
                 customers={customers}
@@ -2872,7 +2880,102 @@ function NewInvoiceContent() {
                 disabled={isFinal}
                 onAddNew={() => setCreateCustomerModalOpen(true)}
               />
+              <p className="mt-1 text-xs text-text-muted">
+                {selectedCustomer?.phone
+                  ? selectedCustomer.phone
+                  : 'Optional. Leave blank for a cash sale.'}
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setAddressSupplyOpen((open) => !open)}
+              className="shrink-0 pt-0.5 text-sm font-semibold text-primary-600"
+              aria-expanded={addressOpen}
+            >
+              Address & supply
+            </button>
+          </div>
+          {addressOpen && (
+            <div className="space-y-2 border-t border-border pt-2">
+              <div className="space-y-0.5">
+                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
+                <select
+                  className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  value={placeOfSupply}
+                  onChange={(e) => {
+                    setPlaceOfSupply(e.target.value);
+                    setRows((prev) => prev.map((r) => calculateRow(r, true)));
+                  }}
+                  disabled={isFinal || isExport}
+                >
+                  <option value="">State</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedCustomer && (
+                <>
+                  <div>
+                    <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
+                    <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
+                  </div>
+                  <div>
+                    <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
+                    <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        {(business as any)?.gst_registration_type === 'composition' && (
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg text-sm text-amber-800">Composition scheme: documents are Bill of Supply without GST on supplies.</div>
+        )}
+        {customerId && selectedCustomer && creditMetrics?.current && (
+          <CreditWarningBanner metrics={creditMetrics.current} projectedMetrics={creditMetrics.projected} partyType="customer" partyName={selectedCustomer.name} />
+        )}
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-text-primary">Items</h2>
+          <div className="flex gap-2">
+            {!isFinal && (
+              <>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setShowMobileItemPicker(true)} className="flex items-center gap-1"><Search className="w-4 h-4" /> Search</Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setShowContinuousScanner(true)} className="flex items-center gap-1"><ScanLine className="w-4 h-4" /> Scan</Button>
+              </>
+            )}
+          </div>
+        </div>
+        <ItemsTable
+          rows={rows}
+          onUpdateRow={updateRow}
+          onItemSelect={handleItemSelect}
+          onAddRow={() => setShowMobileItemPicker(true)}
+          onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))}
+          isFinal={isFinal}
+          documentType={documentType}
+          itemInputRefs={itemInputRefs.current}
+          onAddNewItem={() => setCreateItemModalOpen(true)}
+          posMode={false}
+          subtotal={subtotal}
+          totalTax={totalTax}
+          grandTotal={grandTotal}
+          warehouseId={selectedWarehouseId}
+          layout="compact"
+          recalculateRow={calculateRow}
+          onReplaceRow={(idx, row) => setRows((prev) => { const next = [...prev]; next[idx] = row; return next; })}
+        />
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+          <button type="button" onClick={() => setMobileAdjustmentsOpen((open) => !open)} className="flex w-full items-center justify-between p-3 text-left" aria-expanded={notesOpen}>
+            <span className="text-sm font-semibold text-text-primary">Notes & charges</span>
+            <ChevronDown className={`h-5 w-5 text-text-muted transition-transform ${notesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {notesOpen && (
+            <div className="space-y-3 border-t border-border p-3">
+        <Card padding="sm" className="space-y-3 border-border">
+          <div className="space-y-3">
             <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2">
               <div className="min-w-0 space-y-0.5">
                 <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
@@ -2899,25 +3002,6 @@ function NewInvoiceContent() {
                   className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
                 />
               </div>
-            </div>
-            <div className="space-y-0.5 border-b border-border pb-2">
-              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
-              <select
-                className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                value={placeOfSupply}
-                onChange={(e) => {
-                  setPlaceOfSupply(e.target.value);
-                  setRows((prev) => prev.map((r) => calculateRow(r, true)));
-                }}
-                disabled={isFinal || isExport}
-              >
-                <option value="">State</option>
-                {INDIAN_STATES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
             </div>
             {invoiceCustomFieldDefs.length > 0 && !isFinal && (
               <div className="space-y-3 border-b border-border pb-2">
@@ -3015,25 +3099,11 @@ function NewInvoiceContent() {
             )}
           </div>
         </Card>
-        {(business as any)?.gst_registration_type === 'composition' && (
-          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg text-sm text-amber-800">Composition scheme: documents are Bill of Supply without GST on supplies.</div>
-        )}
-        {customerId && selectedCustomer && creditMetrics?.current && (
-          <CreditWarningBanner metrics={creditMetrics.current} projectedMetrics={creditMetrics.projected} partyType="customer" partyName={selectedCustomer.name} />
-        )}
-        {selectedCustomer && (
-          <Card padding="sm" className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-primary">Addresses</h3>
-            <div>
-              <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
-              <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
-            </div>
-            <div>
-              <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
-              <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
-            </div>
-          </Card>
-        )}
+        <Card padding="md">
+          <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Notes / Terms</label>
+          <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
+        </Card>
+        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
         {!isFinal && (
           <div className="rounded-lg border border-border bg-surface">
             <button type="button" onClick={() => setShowAdditionalInfo(!showAdditionalInfo)} className="w-full flex items-center justify-between p-3 text-left"><h3 className="text-sm font-semibold text-text-primary">More details</h3><ChevronDown className={`w-5 h-5 text-text-muted transition-transform ${showAdditionalInfo ? 'rotate-180' : ''}`} /></button>
@@ -3096,67 +3166,40 @@ function NewInvoiceContent() {
             </div>
           </Card>
         )}
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-bold text-text-primary">Items</h2>
-          <div className="flex gap-2">
-            {!isFinal && (
-              <>
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowMobileItemPicker(true)} className="flex items-center gap-1"><Search className="w-4 h-4" /> Search</Button>
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowContinuousScanner(true)} className="flex items-center gap-1"><ScanLine className="w-4 h-4" /> Scan</Button>
-              </>
-            )}
-          </div>
-        </div>
-        <ItemsTable
-          rows={rows}
-          onUpdateRow={updateRow}
-          onItemSelect={handleItemSelect}
-          onAddRow={() => setShowMobileItemPicker(true)}
-          onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))}
-          isFinal={isFinal}
-          documentType={documentType}
-          itemInputRefs={itemInputRefs.current}
-          onAddNewItem={() => setCreateItemModalOpen(true)}
-          posMode={false}
-          subtotal={subtotal}
-          totalTax={totalTax}
-          grandTotal={grandTotal}
-          warehouseId={selectedWarehouseId}
-          layout="compact"
-          recalculateRow={calculateRow}
-          onReplaceRow={(idx, row) => setRows((prev) => { const next = [...prev]; next[idx] = row; return next; })}
-        />
-        <Card padding="md">
-          <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Notes / Terms</label>
-          <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
-        </Card>
-        <div className="rounded-lg border border-border">
-          <button type="button" onClick={() => setMobileAdjustmentsOpen(!mobileAdjustmentsOpen)} className="w-full flex items-center justify-between p-3 text-left bg-surface rounded-t-lg"><span className="text-sm font-semibold">Adjustments & taxes</span><ChevronDown className={`w-5 h-5 transition-transform ${mobileAdjustmentsOpen ? 'rotate-180' : ''}`} /></button>
-          {mobileAdjustmentsOpen && (
-            <div className="p-3 pt-0 border-t border-border bg-surface">
-              <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
             </div>
           )}
         </div>
-        {isFinal && (
-          <div className="flex gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
-            <Button variant="primary" className="flex-1" onClick={() => setShareModalOpen(true)}><Send className="w-4 h-4 mr-2" /> Share</Button>
-          </div>
-        )}
       </div>
-      {!isFinal && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))] px-3 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
-          <div className="max-w-[1600px] mx-auto space-y-2">
-            <Button variant="secondary" className="h-11 w-full" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
-            <Button variant="primary" className="w-full h-12 font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="w-5 h-5 mr-2" /> Generate</Button>
-            <p className="text-2xs text-center text-text-muted">Generate finalizes the document for GST.</p>
-            <Button variant="ghost" className="w-full h-10 text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
-          </div>
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background px-3 py-3 supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="mx-auto max-w-[1600px] space-y-2">
+          <button
+            type="button"
+            onClick={() => { if (!isFinal) setPaymentModalOpen(true); }}
+            disabled={isFinal}
+            className="grid w-full grid-cols-3 gap-2 rounded-lg border border-border bg-surface px-2 py-2 text-left disabled:cursor-default"
+          >
+            <span><span className="block text-2xs text-text-muted">Received</span><span className="text-sm font-semibold tabular-nums text-text-primary">{money(totalPaid)}</span></span>
+            <span className="text-center"><span className="block text-2xs text-text-muted">Balance</span><span className="text-sm font-semibold tabular-nums text-text-primary">{money(balance)}</span></span>
+            <span className="text-right"><span className="block text-2xs text-text-muted">Total</span><span className="text-sm font-bold tabular-nums text-text-primary">{money(grandTotal)}</span></span>
+          </button>
+          {!isFinal ? (
+            <>
+              <Button variant="ghost" className="h-9 w-full text-sm" onClick={handlePreview} isLoading={previewLoading} disabled={previewLoading || !isSeriesResolved}>Preview</Button>
+              <Button variant="primary" className="h-12 w-full font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="mr-2 h-5 w-5" /> Generate</Button>
+              <p className="text-center text-2xs text-text-muted">Generate finalizes the document for GST.</p>
+              <Button variant="ghost" className="h-10 w-full text-sm" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved}>Save &amp; new</Button>
+            </>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="mr-2 h-4 w-4" /> Print</Button>
+              <Button variant="primary" className="flex-1" onClick={() => setShareModalOpen(true)}><Send className="mr-2 h-4 w-4" /> Share</Button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
-  );
+    );
+  };
 
   return (
     <>
