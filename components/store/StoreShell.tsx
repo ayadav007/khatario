@@ -28,7 +28,7 @@ export function StoreShell({
   showSearch = false,
   onCartOpen,
 }: StoreShellProps) {
-  const { store, branches, selectedBranchId, selectBranch, cartCount, cartTotal } = useStore();
+  const { store, branches, selectedBranchId, selectBranch, cartCount, cartTotal, customer } = useStore();
   const pathname = usePathname();
   const hideCartBar = pathname === '/checkout' || pathname === '/cart' || pathname?.startsWith('/store/checkout') || pathname?.startsWith('/store/cart');
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
@@ -136,7 +136,13 @@ export function StoreShell({
             </nav>
 
             <Link href="/account" className="hidden h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 sm:flex" aria-label="Account">
-              <User className="h-4 w-4" />
+              {customer?.name || customer?.phone ? (
+                <span className="text-xs font-semibold" style={{ color: accent }}>
+                  {(customer.name || customer.phone).slice(0, 1).toUpperCase()}
+                </span>
+              ) : (
+                <User className="h-4 w-4" />
+              )}
             </Link>
             {store.phone ? (
               <a href={`tel:${store.phone}`} className="hidden h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 sm:flex" aria-label="Call store">

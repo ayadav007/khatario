@@ -5,6 +5,7 @@ import { buildStoreQuote } from '@/lib/store/quote';
 import { getBusinessPaymentProviderConfig } from '@/lib/payments/business-provider-config';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
+import { storePhonesMatch, storePhoneDigits } from '@/lib/store/store-phone';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { shouldDecrementStockOnPlace } from '@/lib/store/fulfillment-rules';
@@ -73,11 +74,11 @@ export async function POST(
     }
 
     const customer_name = String(body.customer_name ?? '').trim();
-    const customer_phone = String(body.customer_phone ?? '').trim();
+    const customer_phone = storePhoneDigits(String(body.customer_phone ?? ''));
     if (!customer_name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
-    if (!customer_phone) {
+    if (customer_phone.length !== 10) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
     }
     if (body.delivery_mode !== 'pickup' && !String(body.customer_address ?? '').trim()) {
@@ -85,8 +86,23 @@ export async function POST(
     }
 
     const session = readStoreCustomer(request.cookies.get(STORE_CUSTOMER_COOKIE)?.value);
-    const storeCustomerId =
-      session && session.businessId === store.business_id ? session.customerId : null;
+    if (!session || session.businessId !== store.business_id) {
+      return NextResponse.json(
+        { error: 'Verify your number to place an order' },
+        { status: 401 },
+      );
+    }
+    const verified = await queryOne<{ id: string; phone: string }>(
+      `SELECT id, phone FROM store_customers WHERE id = $1 AND business_id = $2`,
+      [session.customerId, store.business_id],
+    );
+    if (!verified || !storePhonesMatch(verified.phone, customer_phone)) {
+      return NextResponse.json(
+        { error: 'Verify the mobile number you entered' },
+        { status: 401 },
+      );
+    }
+    const storeCustomerId = verified.id;
     const countRow = await queryOne<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM store_orders WHERE business_id = $1`,
       [store.business_id],
@@ -182,6 +198,27 @@ export async function POST(
           line.tax_rate,
           line.line_total,
         ],
+      );
+    }
+
+    await client.query(
+      `UPDATE store_customers
+       SET name = COALESCE(NULLIF($1, ''), name),
+           email = COALESCE($2, email),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [customer_name, body.customer_email?.trim() || null, storeCustomerId],
+    );
+    const addr = String(body.customer_address ?? '').trim();
+    if (addr && body.delivery_mode !== 'pickup') {
+      await client.query(
+        `UPDATE store_customer_addresses SET is_default = false WHERE customer_id = $1`,
+        [storeCustomerId],
+      );
+      await client.query(
+        `INSERT INTO store_customer_addresses (customer_id, address, pincode, is_default)
+         VALUES ($1, $2, $3, true)`,
+        [storeCustomerId, addr, body.customer_pincode?.trim() || null],
       );
     }
 

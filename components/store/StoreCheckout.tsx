@@ -6,6 +6,8 @@ import {
   Truck, Package, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
+import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
+import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
 import clsx from 'clsx';
 
 interface StoreCheckoutProps {
@@ -19,7 +21,7 @@ export function StoreCheckout({
   onClose,
   onOrderPlaced,
 }: StoreCheckoutProps) {
-  const { store, cart, cartTotal, selectedBranchId, clearCart } = useStore();
+  const { store, cart, cartTotal, selectedBranchId, clearCart, customer, refreshCustomer } = useStore();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -42,6 +44,16 @@ export function StoreCheckout({
     serviceable: boolean;
     error?: string;
   } | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    if (!customer) return;
+    setPhone(storePhoneDigits(customer.phone));
+    if (customer.name) setName(customer.name);
+    if (customer.email) setEmail(customer.email);
+    if (customer.last_address) setAddress(customer.last_address);
+    if (customer.last_pincode) setPincode(customer.last_pincode);
+  }, [customer]);
 
   useEffect(() => {
     if (store?.store_allow_cod === false) setPaymentMethod('razorpay');
@@ -86,19 +98,17 @@ export function StoreCheckout({
     return () => clearTimeout(t);
   }, [store, cart, selectedBranchId, deliveryMode, pincode, coupon]);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
+  const placeOrder = useCallback(
+    async () => {
       if (!store || cart.length === 0) return;
-
       setSubmitting(true);
       setError(null);
-
       try {
         const res = await fetch(
           `/api/public/store/${encodeURIComponent(store.store_subdomain)}/orders`,
           {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               branch_id: selectedBranchId,
@@ -120,13 +130,17 @@ export function StoreCheckout({
           },
         );
 
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setAuthOpen(true);
+          setError(data.error || 'Verify your number to place an order');
+          return;
+        }
         if (!res.ok) {
-          const data = await res.json();
           setError(data.error || 'Failed to place order');
           return;
         }
 
-        const data = await res.json();
         if (data.payment_url) {
           window.location.href = data.payment_url as string;
           return;
@@ -140,6 +154,19 @@ export function StoreCheckout({
       }
     },
     [store, cart, selectedBranchId, name, phone, email, address, pincode, deliveryMode, notes, coupon, paymentMethod, clearCart, onOrderPlaced],
+  );
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!store || cart.length === 0) return;
+      if (!customer || !storePhonesMatch(customer.phone, phone)) {
+        setAuthOpen(true);
+        return;
+      }
+      await placeOrder();
+    },
+    [store, cart.length, customer, phone, placeOrder],
   );
 
   if (!open || !store) return null;
@@ -206,6 +233,18 @@ export function StoreCheckout({
             {/* Customer details */}
             <div className="space-y-3">
               <h3 className="text-xs font-medium text-gray-500">Your Details</h3>
+              {customer && storePhonesMatch(customer.phone, phone) ? (
+                <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800">
+                  Signed in as +91 {storePhoneDigits(customer.phone)}.{' '}
+                  <button type="button" className="underline" onClick={() => setAuthOpen(true)}>
+                    Change
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  We will send a WhatsApp code to this number before the order is placed.
+                </p>
+              )}
 
               <div className="relative">
                 <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -413,10 +452,28 @@ export function StoreCheckout({
               ) : null}
               {submitting
                 ? 'Placing Order...'
-                : `Place Order · ₹${(quote?.grand_total ?? cartTotal).toLocaleString('en-IN')}`}
+                : customer && storePhonesMatch(customer.phone, phone)
+                  ? `Place Order · ₹${(quote?.grand_total ?? cartTotal).toLocaleString('en-IN')}`
+                  : `Verify & place order · ₹${(quote?.grand_total ?? cartTotal).toLocaleString('en-IN')}`}
             </button>
           </div>
         </form>
+        {store ? (
+          <StorePhoneAuth
+            store={store}
+            open={authOpen}
+            initialPhone={phone}
+            initialName={name}
+            onClose={() => setAuthOpen(false)}
+            onVerified={async (profile) => {
+              setAuthOpen(false);
+              setPhone(storePhoneDigits(profile.phone));
+              if (profile.name) setName(profile.name);
+              await refreshCustomer();
+              await placeOrder();
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

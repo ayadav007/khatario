@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { query, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { signStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+const OTP_LIMIT = 8;
+const OTP_WINDOW_MS = 15 * 60 * 1000;
+const VERIFY_LIMIT = 20;
+const VERIFY_WINDOW_MS = 15 * 60 * 1000;
 
 function cookieOptions() {
   return {
@@ -30,7 +37,14 @@ export async function POST(
   }
 
   if (action === 'request') {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const rl = checkRateLimit(`store-otp-req:${store.business_id}:${getClientIp(request)}:${phone}`, OTP_LIMIT, OTP_WINDOW_MS);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many codes. Try again in a few minutes.' },
+        { status: 429 },
+      );
+    }
+    const code = String(crypto.randomInt(100000, 1000000));
     await query(
       `INSERT INTO store_customer_otp (business_id, phone, code, expires_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
@@ -46,6 +60,18 @@ export async function POST(
       ok: true,
       ...(process.env.NODE_ENV !== 'production' ? { debug_otp: code } : {}),
     });
+  }
+
+  const verifyRl = checkRateLimit(
+    `store-otp-verify:${store.business_id}:${getClientIp(request)}:${phone}`,
+    VERIFY_LIMIT,
+    VERIFY_WINDOW_MS,
+  );
+  if (!verifyRl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many attempts. Try again in a few minutes.' },
+      { status: 429 },
+    );
   }
 
   const code = String(body.code ?? '').trim();
@@ -73,6 +99,12 @@ export async function POST(
        VALUES ($1, $2, $3) RETURNING id, name, email`,
       [store.business_id, phone, body.name ?? null],
     );
+  } else if (!customer.name && body.name) {
+    await query(
+      `UPDATE store_customers SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [String(body.name).trim(), customer.id],
+    );
+    customer = { ...customer, name: String(body.name).trim() };
   }
 
   const token = signStoreCustomer(store.business_id, customer!.id);

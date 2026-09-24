@@ -17,6 +17,15 @@ export interface StoreCartItem {
   taxRate?: number;
 }
 
+export type StoreShopper = {
+  id: string;
+  phone: string;
+  name: string | null;
+  email: string | null;
+  last_address?: string | null;
+  last_pincode?: string | null;
+};
+
 interface StoreContextValue {
   store: StoreBusinessContext | null;
   branches: StoreBranch[];
@@ -24,6 +33,9 @@ interface StoreContextValue {
   selectBranch: (branchId: string) => void;
   loading: boolean;
   error: string | null;
+  customer: StoreShopper | null;
+  refreshCustomer: () => Promise<StoreShopper | null>;
+  signOutCustomer: () => Promise<void>;
 
   cart: StoreCartItem[];
   addToCart: (item: StoreCartItem) => void;
@@ -64,6 +76,7 @@ export function StoreProvider({
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<StoreCartItem[]>([]);
   const [cartReady, setCartReady] = useState(false);
+  const [customer, setCustomer] = useState<StoreShopper | null>(null);
 
   useEffect(() => {
     try {
@@ -163,6 +176,39 @@ export function StoreProvider({
 
   const clearCart = useCallback(() => setCart([]), []);
 
+  const refreshCustomer = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/account`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        setCustomer(null);
+        return null;
+      }
+      const data = await res.json();
+      const next = (data.customer as StoreShopper) ?? null;
+      setCustomer(next);
+      return next;
+    } catch {
+      setCustomer(null);
+      return null;
+    }
+  }, [subdomain]);
+
+  useEffect(() => {
+    void refreshCustomer();
+  }, [refreshCustomer]);
+
+  const signOutCustomer = useCallback(async () => {
+    await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/account`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'logout' }),
+    });
+    setCustomer(null);
+  }, [subdomain]);
+
   const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
   const accent = sanitizeStoreTheme(store?.store_theme).accent;
@@ -176,6 +222,9 @@ export function StoreProvider({
         selectBranch,
         loading,
         error,
+        customer,
+        refreshCustomer,
+        signOutCustomer,
         cart,
         addToCart,
         updateCartQuantity,

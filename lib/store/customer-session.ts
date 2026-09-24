@@ -1,4 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
+
+export { storePhoneDigits, storePhonesMatch };
 
 export const STORE_CUSTOMER_COOKIE = 'khatario_store_cust';
 
