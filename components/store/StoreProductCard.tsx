@@ -187,6 +187,8 @@ function AtelierAddControl({
     </div>
   );
 }
+
+export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
   const { cart, addToCart, updateCartQuantity, store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
