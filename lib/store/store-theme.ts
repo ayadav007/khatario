@@ -1,5 +1,6 @@
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
-export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'custom';
+export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'custom';
+export type StoreThemePack = 'classic' | 'chowk';
 
 export interface StoreHeroSlide {
   image_url: string;
@@ -11,6 +12,7 @@ export interface StoreTheme {
   accent: string;
   background: string;
   preset: StoreThemePreset;
+  pack: StoreThemePack;
   logo_url: string;
   show_hero: boolean;
   show_offers: boolean;
@@ -24,19 +26,24 @@ export interface StoreTheme {
   category_images: Record<string, string>;
 }
 
+/** Theme-owned ink. Merchant accent never replaces this. */
+export const CHOWK_INK = '#1c1917';
+
 export const STORE_THEME_PRESETS: Record<
   Exclude<StoreThemePreset, 'custom'>,
-  { accent: string; background: string; label: string }
+  { accent: string; background: string; label: string; pack: StoreThemePack }
 > = {
-  green: { accent: '#16a34a', background: '#f9fafb', label: 'Green' },
-  saffron: { accent: '#ea580c', background: '#fff7ed', label: 'Saffron' },
-  blue: { accent: '#2563eb', background: '#f8fafc', label: 'Blue' },
+  green: { accent: '#16a34a', background: '#f9fafb', label: 'Green', pack: 'classic' },
+  saffron: { accent: '#ea580c', background: '#fff7ed', label: 'Saffron', pack: 'classic' },
+  blue: { accent: '#2563eb', background: '#f8fafc', label: 'Blue', pack: 'classic' },
+  chowk: { accent: '#c45c26', background: '#f3eee6', label: 'Chowk', pack: 'chowk' },
 };
 
 export const DEFAULT_STORE_THEME: StoreTheme = {
   accent: STORE_THEME_PRESETS.green.accent,
   background: STORE_THEME_PRESETS.green.background,
   preset: 'green',
+  pack: 'classic',
   logo_url: '',
   show_hero: true,
   show_offers: true,
@@ -51,7 +58,8 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'custom'];
+const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'custom'];
+const PACKS: StoreThemePack[] = ['classic', 'chowk'];
 const STYLES: StoreCategoryStyle[] = ['letter', 'icon', 'photo'];
 const ID_KEY = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -113,6 +121,43 @@ function sanitizeCategoryImages(raw: unknown): Record<string, string> {
   return out;
 }
 
+function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack {
+  if (preset === 'chowk') return 'chowk';
+  if (preset === 'custom') {
+    return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'classic';
+  }
+  return 'classic';
+}
+
+export function isChowkPack(theme: StoreTheme): boolean {
+  return theme.pack === 'chowk';
+}
+
+export function hexLuminance(hex: string): number {
+  const raw = hex.replace('#', '');
+  const n =
+    raw.length === 3
+      ? raw
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : raw;
+  if (n.length !== 6) return 1;
+  const r = parseInt(n.slice(0, 2), 16) / 255;
+  const g = parseInt(n.slice(2, 4), 16) / 255;
+  const b = parseInt(n.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Ink that stays readable on a merchant-chosen paper colour. */
+export function chowkInkOn(background: string): string {
+  return hexLuminance(background) > 0.42 ? CHOWK_INK : '#f4efe6';
+}
+
+export function chowkOnAccent(accent: string): string {
+  return hexLuminance(accent) > 0.55 ? CHOWK_INK : '#f4efe6';
+}
+
 export function sanitizeStoreTheme(raw: unknown): StoreTheme {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const preset = PRESETS.includes(src.preset as StoreThemePreset)
@@ -138,6 +183,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     background:
       presetColors && preset !== 'custom' ? presetColors.background : background,
     preset,
+    pack: resolvePack(preset, src.pack),
     logo_url: clipStoreMediaUrl(src.logo_url),
     show_hero: src.show_hero !== false,
     show_offers: src.show_offers !== false,
@@ -154,7 +200,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
 
 export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): Partial<StoreTheme> {
   const p = STORE_THEME_PRESETS[preset];
-  return { preset, accent: p.accent, background: p.background };
+  return { preset, accent: p.accent, background: p.background, pack: p.pack };
 }
 
 export function storeThemeFingerprint(theme: StoreTheme): string {

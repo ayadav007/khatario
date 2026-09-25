@@ -3,6 +3,9 @@ import {
   applyStorePreset,
   DEFAULT_STORE_THEME,
   STORE_THEME_PRESETS,
+  CHOWK_INK,
+  chowkInkOn,
+  chowkOnAccent,
 } from '@/lib/store/store-theme';
 
 describe('sanitizeStoreTheme', () => {
@@ -70,6 +73,51 @@ describe('applyStorePreset', () => {
       preset: 'blue',
       accent: STORE_THEME_PRESETS.blue.accent,
       background: STORE_THEME_PRESETS.blue.background,
+      pack: 'classic',
     });
+  });
+
+  it('applies Chowk pack with paper and chilli', () => {
+    expect(applyStorePreset('chowk')).toEqual({
+      preset: 'chowk',
+      accent: STORE_THEME_PRESETS.chowk.accent,
+      background: STORE_THEME_PRESETS.chowk.background,
+      pack: 'chowk',
+    });
+  });
+});
+
+describe('store theme pack', () => {
+  it('keeps classic pack for existing themes without pack', () => {
+    const t = sanitizeStoreTheme({ preset: 'green' });
+    expect(t.pack).toBe('classic');
+  });
+
+  it('keeps Chowk pack when colours are customised', () => {
+    const t = sanitizeStoreTheme({
+      preset: 'custom',
+      pack: 'chowk',
+      accent: '#112233',
+      background: '#f3eee6',
+    });
+    expect(t.pack).toBe('chowk');
+    expect(t.accent).toBe('#112233');
+  });
+});
+
+describe('chowkInkOn', () => {
+  it('keeps dark ink on paper backgrounds', () => {
+    expect(chowkInkOn('#f3eee6')).toBe(CHOWK_INK);
+    expect(chowkInkOn('#ffffff')).toBe(CHOWK_INK);
+  });
+
+  it('switches to light ink on dark merchant backgrounds', () => {
+    expect(chowkInkOn('#1c1917')).toBe('#f4efe6');
+    expect(chowkInkOn('#111827')).toBe('#f4efe6');
+  });
+
+  it('picks readable type on chilli and pale accents', () => {
+    expect(chowkOnAccent('#c45c26')).toBe('#f4efe6');
+    expect(chowkOnAccent('#fbbf24')).toBe(CHOWK_INK);
   });
 });

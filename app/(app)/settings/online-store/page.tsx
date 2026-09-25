@@ -307,8 +307,10 @@ export default function OnlineStoreSettingsPage() {
           {tab === 'design' ? (
             <Card className="p-5 space-y-5">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">Colour preset</h3>
-                <p className="mt-1 text-xs text-gray-500">Pick a look, or set your own colours.</p>
+                <h3 className="text-sm font-semibold text-gray-900">Theme</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Chowk is the editorial storefront. Green, Saffron, and Blue keep the classic layout. Colours can still be customised.
+                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(Object.keys(STORE_THEME_PRESETS) as Array<Exclude<StoreThemePreset, 'custom'>>).map(
                     (key) => (

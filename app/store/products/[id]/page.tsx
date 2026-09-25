@@ -6,14 +6,17 @@ import { StoreShell } from '@/components/store/StoreShell';
 import { useStore } from '@/lib/store/store-context';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 import { Loader2, Package, Minus, Plus } from 'lucide-react';
-import { sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { CHOWK_INK, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import clsx from 'clsx';
 
 export default function StoreProductPage() {
   const params = useParams<{ id: string }>();
   const { store, addToCart, cart, updateCartQuantity } = useStore();
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
-  const accent = sanitizeStoreTheme(store?.store_theme).accent;
+  const theme = sanitizeStoreTheme(store?.store_theme);
+  const accent = theme.accent;
+  const chowk = isChowkPack(theme);
 
   useEffect(() => {
     if (!store || !params.id) return;
@@ -58,7 +61,10 @@ export default function StoreProductPage() {
   return (
     <StoreShell>
       <div className="grid gap-8 md:grid-cols-2">
-        <div className="relative overflow-hidden rounded-2xl bg-gray-100">
+        <div
+          className={`relative overflow-hidden ${chowk ? '' : 'rounded-2xl bg-gray-100'}`}
+          style={chowk ? { backgroundColor: theme.background } : undefined}
+        >
           {product.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={product.image_url} alt="" className="h-72 w-full object-cover md:h-96" />
@@ -74,13 +80,13 @@ export default function StoreProductPage() {
           ) : null}
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">{product.name}</h1>
+          <h1 className={chowk ? 'font-chowk-display text-3xl leading-[0.95] sm:text-5xl' : 'text-2xl font-semibold text-gray-900'} style={chowk ? { color: CHOWK_INK } : undefined}>{product.name}</h1>
           {product.category_name ? (
             <p className="mt-1 text-sm text-gray-500">{product.category_name}</p>
           ) : null}
           <p className="mt-1 text-sm text-gray-400">{product.unit}</p>
           <div className="mt-4 flex items-baseline gap-2">
-            <p className="text-3xl font-bold text-gray-900">
+            <p className={chowk ? 'text-3xl font-medium tabular-nums' : 'text-3xl font-bold text-gray-900'} style={chowk ? { color: CHOWK_INK } : undefined}>
               ₹{product.selling_price.toLocaleString('en-IN')}
             </p>
             {product.mrp && product.mrp > product.selling_price ? (
@@ -102,18 +108,25 @@ export default function StoreProductPage() {
           ) : null}
 
           {outOfStock ? null : cartItem && !product.has_variants ? (
-            <div className="mt-6 inline-flex items-center rounded-xl text-white" style={{ backgroundColor: accent }}>
+            <div
+              className={clsx('mt-6 inline-flex items-center', !chowk && 'rounded-xl text-white')}
+              style={chowk ? { border: `1px solid color-mix(in srgb, ${CHOWK_INK} 20%, transparent)` } : { backgroundColor: accent }}
+            >
               <button
                 type="button"
-                className="px-4 py-3"
+                className="flex h-12 w-12 items-center justify-center"
+                aria-label="Decrease quantity"
                 onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity - 1)}
               >
                 <Minus className="h-4 w-4" />
               </button>
-              <span className="min-w-[2rem] text-center font-semibold">{cartItem.quantity}</span>
+              <span className="min-w-[2rem] text-center font-medium tabular-nums" aria-live="polite">
+                {cartItem.quantity}
+              </span>
               <button
                 type="button"
-                className="px-4 py-3"
+                className="flex h-12 w-12 items-center justify-center"
+                aria-label="Increase quantity"
                 onClick={() => updateCartQuantity(product.id, undefined, cartItem.quantity + 1)}
               >
                 <Plus className="h-4 w-4" />
@@ -122,8 +135,8 @@ export default function StoreProductPage() {
           ) : (
             <button
               type="button"
-              className="mt-6 rounded-xl px-6 py-3 text-sm font-semibold text-white"
-              style={{ backgroundColor: accent }}
+              className={clsx('mt-6 min-h-12 px-6 py-3 text-sm font-medium', !chowk && 'rounded-xl font-semibold text-white')}
+              style={{ backgroundColor: accent, color: chowk ? theme.background : undefined }}
               onClick={() =>
                 addToCart({
                   itemId: product.id,
@@ -137,7 +150,7 @@ export default function StoreProductPage() {
                 })
               }
             >
-              {product.has_variants ? 'Choose options on home' : 'Add to cart'}
+              {product.has_variants ? 'Choose options on home' : chowk ? 'Add to bag' : 'Add to cart'}
             </button>
           )}
         </div>

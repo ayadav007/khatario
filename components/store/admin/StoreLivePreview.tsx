@@ -1,8 +1,8 @@
 'use client';
 
-import { MapPin, Search, ShoppingCart } from 'lucide-react';
+import { Search } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
-import { resolveHeroSlides } from '@/lib/store/store-theme';
+import { CHOWK_INK, chowkInkOn, isChowkPack, resolveHeroSlides } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
 import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
@@ -37,6 +37,10 @@ export function StoreLivePreview({
           { id: 'dairy', name: 'Dairy' },
           { id: 'snacks', name: 'Snacks' },
         ];
+  const chowk = isChowkPack(theme);
+  const paper = theme.background;
+  const ink = chowk ? chowkInkOn(paper) : CHOWK_INK;
+  const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
   return (
     <div className="mx-auto w-[280px]">
@@ -45,46 +49,48 @@ export function StoreLivePreview({
       </p>
       <div className="overflow-hidden rounded-[28px] border-[8px] border-gray-900 bg-white shadow-xl">
         <div className="h-5 bg-gray-900" />
-        <div className="max-h-[520px] overflow-y-auto" style={{ backgroundColor: theme.background }}>
-          <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-3 py-2">
-            {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="" className="h-7 w-7 rounded-md object-contain" />
-            ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold">
-                {name.slice(0, 1).toUpperCase()}
+        <div className="max-h-[520px] overflow-y-auto" style={{ backgroundColor: paper }}>
+          {chowk ? (
+            <>
+              {theme.show_offers ? (
+                <p
+                  className="px-2 py-1 text-center text-[8px] font-medium uppercase tracking-wider"
+                  style={{
+                    color: ink,
+                    backgroundColor: `color-mix(in srgb, ${theme.accent} 8%, ${paper})`,
+                  }}
+                >
+                  {tagline || 'In the shop today'}
+                </p>
+              ) : null}
+              <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: `1px solid ${hair}` }}>
+                {logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logo} alt="" className="h-7 max-h-7 w-auto max-w-[4.5rem] object-contain object-left" />
+                ) : (
+                  <div
+                    className="flex h-7 w-7 items-center justify-center text-[12px]"
+                    style={{ border: `1px solid ${hair}`, fontFamily: 'Georgia, serif' }}
+                  >
+                    {name.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <p className="min-w-0 flex-1 truncate text-[11px] font-semibold" style={{ color: ink }}>
+                  {name}
+                </p>
+                <span className="text-[10px]" style={{ color: ink }}>
+                  Bag
+                </span>
               </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-semibold text-gray-900">{name}</p>
-              <p className="flex items-center gap-0.5 text-[9px] text-gray-500">
-                <MapPin className="h-2.5 w-2.5" style={{ color: theme.accent }} />
-                Deliver to
-              </p>
-            </div>
-            <ShoppingCart className="h-3.5 w-3.5 text-gray-500" />
-          </div>
-          <div className="relative mx-2 mt-2">
-            <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
-            <div className="rounded-full border border-gray-200 bg-white py-1.5 pl-7 pr-2 text-[10px] text-gray-400">
-              {theme.search_placeholder || 'Search products...'}
-            </div>
-          </div>
-          <div className="px-2 pb-3 pt-2">
-            {theme.show_hero ? (
-              <StoreHeroCarousel
-                compact
-                slides={resolveHeroSlides(theme, {
-                  image_url: heroUrl,
-                  title: tagline || `Shop from ${name}`,
-                  subtitle: theme.hero_subtitle || 'Add to cart in one tap.',
-                })}
-                ctaLabel={theme.hero_cta}
-                accent={theme.accent}
-              />
-            ) : null}
-
-            <div className="scale-[0.92] origin-top">
+              <div className="px-3 py-2">
+                <div
+                  className="flex items-center gap-1 border-b pb-1 text-[10px]"
+                  style={{ borderColor: hair, color: `color-mix(in srgb, ${ink} 40%, transparent)` }}
+                >
+                  <Search className="h-3 w-3" />
+                  {theme.search_placeholder || 'Search the shop'}
+                </div>
+              </div>
               <StoreCategoryPills
                 categories={previewCats}
                 selectedId={null}
@@ -92,42 +98,134 @@ export function StoreLivePreview({
                 accent={theme.accent}
                 style={theme.category_style}
                 images={theme.category_images}
+                variant="chowk"
+                paper={paper}
               />
-            </div>
-
-            {theme.show_offers ? (
-              <p className="mb-1 text-[10px] font-semibold text-gray-900">Today&apos;s offers</p>
-            ) : null}
-
-            <div className={`grid ${cols} gap-1.5`}>
-              {SAMPLE_PRODUCTS.slice(0, theme.mobile_columns === 3 ? 3 : 4).map((p) => (
-                <div key={p.name} className="overflow-hidden rounded-lg border border-gray-100 bg-white">
-                  <div className="relative aspect-square bg-gray-100">
-                    {p.mrp > p.price ? (
+              {theme.show_hero ? (
+                <StoreHeroCarousel
+                  compact
+                  variant="chowk"
+                  paper={paper}
+                  slides={resolveHeroSlides(theme, {
+                    image_url: heroUrl,
+                    title: tagline || name,
+                    subtitle: theme.hero_subtitle,
+                  })}
+                  ctaLabel={theme.hero_cta}
+                  accent={theme.accent}
+                />
+              ) : null}
+              <div className={`grid ${cols} gap-px`} style={{ backgroundColor: hair }}>
+                {SAMPLE_PRODUCTS.slice(0, theme.mobile_columns === 3 ? 3 : 4).map((p) => (
+                  <div key={p.name} className="pb-2" style={{ backgroundColor: paper }}>
+                    <div className="relative aspect-square">
+                      {p.mrp > p.price ? (
+                        <span
+                          className="absolute left-0 top-0 px-1 text-[8px]"
+                          style={{ backgroundColor: theme.accent, color: paper }}
+                        >
+                          {Math.round(((p.mrp - p.price) / p.mrp) * 100)}%
+                        </span>
+                      ) : null}
                       <span
-                        className="absolute left-1 top-1 rounded px-1 text-[8px] font-bold text-white"
-                        style={{ backgroundColor: theme.accent }}
+                        className="absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center text-[10px]"
+                        style={{ border: `1px solid ${hair}`, color: theme.accent }}
                       >
-                        {Math.round(((p.mrp - p.price) / p.mrp) * 100)}% OFF
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="p-1.5">
-                    <p className="line-clamp-2 min-h-[1.6rem] text-[9px] font-medium text-gray-900">{p.name}</p>
-                    <div className="mt-1 flex items-end justify-between">
-                      <p className="text-[10px] font-bold">₹{p.price}</p>
-                      <span
-                        className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
-                        style={{ border: `1px solid ${theme.accent}`, color: theme.accent }}
-                      >
-                        Add
+                        +
                       </span>
                     </div>
+                    <p className="mt-1 line-clamp-2 px-1 text-[9px]" style={{ color: ink }}>
+                      {p.name}
+                    </p>
+                    <p className="px-1 text-[10px] font-semibold" style={{ color: theme.accent }}>
+                      ₹{p.price}
+                    </p>
                   </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-3 py-2">
+                {logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logo} alt="" className="h-7 w-7 rounded-md object-contain" />
+                ) : (
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold">
+                    {name.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-semibold text-gray-900">{name}</p>
+                  <p className="text-[9px] text-gray-500">Deliver to</p>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+              <div className="relative mx-2 mt-2">
+                <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                <div className="rounded-full border border-gray-200 bg-white py-1.5 pl-7 pr-2 text-[10px] text-gray-400">
+                  {theme.search_placeholder || 'Search products...'}
+                </div>
+              </div>
+              <div className="px-2 pb-3 pt-2">
+                {theme.show_hero ? (
+                  <StoreHeroCarousel
+                    compact
+                    slides={resolveHeroSlides(theme, {
+                      image_url: heroUrl,
+                      title: tagline || `Shop from ${name}`,
+                      subtitle: theme.hero_subtitle || 'Add to cart in one tap.',
+                    })}
+                    ctaLabel={theme.hero_cta}
+                    accent={theme.accent}
+                  />
+                ) : null}
+
+                <div className="origin-top scale-[0.92]">
+                  <StoreCategoryPills
+                    categories={previewCats}
+                    selectedId={null}
+                    onSelect={() => undefined}
+                    accent={theme.accent}
+                    style={theme.category_style}
+                    images={theme.category_images}
+                  />
+                </div>
+
+                {theme.show_offers ? (
+                  <p className="mb-1 text-[10px] font-semibold text-gray-900">Today&apos;s offers</p>
+                ) : null}
+
+                <div className={`grid ${cols} gap-1.5`}>
+                  {SAMPLE_PRODUCTS.slice(0, theme.mobile_columns === 3 ? 3 : 4).map((p) => (
+                    <div key={p.name} className="overflow-hidden rounded-lg border border-gray-100 bg-white">
+                      <div className="relative aspect-square bg-gray-100">
+                        {p.mrp > p.price ? (
+                          <span
+                            className="absolute left-1 top-1 rounded px-1 text-[8px] font-bold text-white"
+                            style={{ backgroundColor: theme.accent }}
+                          >
+                            {Math.round(((p.mrp - p.price) / p.mrp) * 100)}% OFF
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="p-1.5">
+                        <p className="line-clamp-2 min-h-[1.6rem] text-[9px] font-medium text-gray-900">{p.name}</p>
+                        <div className="mt-1 flex items-end justify-between">
+                          <p className="text-[10px] font-bold">₹{p.price}</p>
+                          <span
+                            className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
+                            style={{ border: `1px solid ${theme.accent}`, color: theme.accent }}
+                          >
+                            Add
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
