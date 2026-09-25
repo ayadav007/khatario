@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
-import { chowkInkOn, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 interface StoreShellProps {
   children: React.ReactNode;
@@ -70,11 +70,19 @@ export function StoreShell({
   const hideBadge = store.store_hide_khatario_badge;
   const theme = sanitizeStoreTheme(store.store_theme);
   const chowk = isChowkPack(theme);
+  const atelier = isAtelierPack(theme);
+  const pack = chowk || atelier;
   const accent = theme.accent;
   const paper = theme.background;
   const ink = chowkInkOn(paper);
   const logoUrl = theme.logo_url || store.logo_url;
-  const searchPlaceholder = theme.search_placeholder || (chowk ? 'Search for rice, oil, milk…' : 'Search products...');
+  const searchPlaceholder =
+    theme.search_placeholder ||
+    (atelier
+      ? 'Search jackets, cashmere, accessories…'
+      : chowk
+        ? 'Search for rice, oil, milk…'
+        : 'Search products...');
   const pins = selectedBranch?.serviceable_pincodes ?? [];
   const pinOk =
     !pincode ||
@@ -103,8 +111,8 @@ export function StoreShell({
 
   const branchPanel = branchPickerOpen ? (
     <div
-      className={clsx('mt-2 p-3', chowk ? 'border' : 'rounded-xl border border-gray-200 bg-white shadow-lg')}
-      style={chowk ? { borderColor: hair, backgroundColor: paper } : undefined}
+      className={clsx('mt-2 p-3', pack ? 'border' : 'rounded-xl border border-gray-200 bg-white shadow-lg')}
+      style={pack ? { borderColor: hair, backgroundColor: paper } : undefined}
     >
       {showBranchPicker ? (
         <div className="mb-3 space-y-1">
@@ -117,10 +125,10 @@ export function StoreShell({
               }}
               className={clsx(
                 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-                !chowk && 'rounded-lg',
-                b.id === selectedBranchId ? (chowk ? 'font-medium' : 'bg-gray-50 font-medium') : chowk ? '' : 'hover:bg-gray-50',
+                !pack && 'rounded-lg',
+                b.id === selectedBranchId ? (pack ? 'font-medium' : 'bg-gray-50 font-medium') : pack ? '' : 'hover:bg-gray-50',
               )}
-              style={chowk && b.id === selectedBranchId ? { color: accent } : undefined}
+              style={pack && b.id === selectedBranchId ? { color: accent } : undefined}
             >
               <MapPin className="h-3.5 w-3.5 text-gray-400" />
               {b.name}
@@ -134,8 +142,8 @@ export function StoreShell({
         value={pincode}
         onChange={(e) => persistPin(e.target.value)}
         placeholder="6-digit pincode"
-        className={clsx('mt-1 w-full px-3 py-2 text-sm', chowk ? 'border-0 border-b bg-transparent' : 'rounded-lg border border-gray-200')}
-        style={chowk ? { borderColor: hair, color: ink } : undefined}
+        className={clsx('mt-1 w-full px-3 py-2 text-sm', pack ? 'border-0 border-b bg-transparent' : 'rounded-lg border border-gray-200')}
+        style={pack ? { borderColor: hair, color: ink } : undefined}
         maxLength={6}
       />
       {pincode.length === 6 && !pinOk ? (
@@ -153,13 +161,85 @@ export function StoreShell({
 
   return (
     <div
-      className={clsx('min-h-screen', chowk && 'store-chowk font-chowk')}
-      style={{ backgroundColor: paper, color: chowk ? ink : undefined }}
+      className={clsx(
+        'min-h-screen',
+        chowk && 'store-chowk font-chowk',
+        atelier && 'store-atelier font-atelier',
+      )}
+      style={{ backgroundColor: paper, color: pack ? ink : undefined }}
     >
       {announcement}
 
-      <div className="sticky top-0 z-30" style={chowk ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : undefined}>
-        {chowk ? (
+      <div className="sticky top-0 z-30" style={pack ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : undefined}>
+        {atelier ? (
+          <header style={{ backgroundColor: paper }}>
+            <div className="mx-auto max-w-6xl px-4">
+              <div className="flex items-center gap-3 py-3">
+                <Link href="/" className="min-w-0">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoUrl} alt="" className="h-8 w-auto max-w-[8rem] object-contain object-left" />
+                  ) : (
+                    <span className="font-atelier-display block truncate text-[1.15rem] tracking-[0.18em]">
+                      {store.name}
+                    </span>
+                  )}
+                </Link>
+                <div className="ml-auto flex items-center gap-1">
+                  <Link
+                    href="/account"
+                    className="hidden h-9 w-9 items-center justify-center rounded-full sm:flex"
+                    aria-label="Account"
+                    style={{ backgroundColor: `color-mix(in srgb, ${ink} 6%, ${paper})` }}
+                  >
+                    {customer?.name || customer?.phone ? (
+                      <span className="text-[11px] font-medium">
+                        {(customer.name || customer.phone).slice(0, 1).toUpperCase()}
+                      </span>
+                    ) : (
+                      <User className="h-4 w-4" strokeWidth={1.5} />
+                    )}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={openCart}
+                    className="relative flex h-9 w-9 items-center justify-center"
+                    aria-label={cartCount > 0 ? `Bag, ${cartCount} items` : 'Bag'}
+                  >
+                    <ShoppingCart className="h-4 w-4" strokeWidth={1.5} />
+                    {cartCount > 0 ? (
+                      <span
+                        className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: accent }}
+                      />
+                    ) : null}
+                  </button>
+                </div>
+              </div>
+              {showSearch ? (
+                <div className="relative pb-3" role="search">
+                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ opacity: 0.35 }} />
+                  <input
+                    id="store-search"
+                    ref={searchRef}
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    placeholder={searchPlaceholder}
+                    aria-label={searchPlaceholder}
+                    className="w-full rounded-full border-0 py-2.5 pl-10 pr-4 text-[13px] outline-none"
+                    style={{
+                      color: ink,
+                      backgroundColor: `color-mix(in srgb, ${ink} 5%, ${paper})`,
+                    }}
+                  />
+                </div>
+              ) : null}
+              {branchPanel}
+            </div>
+            {subnav ? <div className="mx-auto max-w-6xl px-4">{subnav}</div> : null}
+          </header>
+        ) : chowk ? (
           <header className="bg-white/80 backdrop-blur-sm" style={{ backgroundColor: paper }}>
             <div className="mx-auto max-w-6xl px-4">
               <div className="hidden items-center justify-between py-1.5 text-[11px] md:flex" style={{ color: ink, opacity: 0.55 }}>
@@ -200,7 +280,7 @@ export function StoreShell({
                   <div className="relative hidden min-w-0 flex-1 md:block" role="search">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ opacity: 0.35 }} />
                     <input
-          ref={undefined}
+                      ref={searchRef}
                       type="search"
                       value={searchQuery}
                       onChange={(e) => onSearchChange?.(e.target.value)}
@@ -384,18 +464,18 @@ export function StoreShell({
 
       <main
         className={clsx(
-          chowk
+          pack
             ? hideCartBar
               ? 'pb-[calc(var(--chowk-nav)+var(--chowk-safe)+1rem)] sm:pb-10'
               : 'pb-[var(--chowk-chrome)]'
             : 'mx-auto max-w-6xl px-4 pb-36 pt-4 sm:pb-24',
-          chowk && padded && 'mx-auto max-w-6xl px-4 pt-6',
+          pack && padded && 'mx-auto max-w-6xl px-4 pt-6',
         )}
       >
         {children}
       </main>
 
-      {chowk && !hideCartBar ? null : cartCount > 0 && !hideCartBar ? (
+      {pack && !hideCartBar ? null : cartCount > 0 && !hideCartBar ? (
         <div className="fixed bottom-14 left-0 right-0 z-30 px-3 sm:bottom-4 sm:px-4">
           <div className="mx-auto max-w-6xl">
             <button
@@ -426,14 +506,14 @@ export function StoreShell({
         onCart={openCart}
       />
 
-      {chowk ? (
+      {pack ? (
         <footer
           className="hidden border-t px-4 pt-12 md:block sm:px-0"
           style={{ borderColor: hair, paddingBottom: 'calc(2.5rem + var(--chowk-chrome))' }}
         >
           <div className="mx-auto grid max-w-6xl gap-8 sm:px-4 md:grid-cols-4">
             <div>
-              <p className="text-[15px] font-semibold">{store.name}</p>
+              <p className={atelier ? 'font-atelier-display text-[1.05rem] tracking-[0.12em]' : 'text-[15px] font-semibold'}>{store.name}</p>
               {store.store_tagline ? (
                 <p className="mt-2 text-[13px] leading-relaxed" style={{ opacity: 0.55 }}>
                   {store.store_tagline}

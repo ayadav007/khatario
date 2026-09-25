@@ -29,6 +29,8 @@ module.exports = {
           'sans-serif',
         ],
         'chowk-display': ['var(--font-chowk-display)', 'Georgia', 'ui-serif', 'serif'],
+        atelier: ['var(--font-atelier-ui)', 'ui-sans-serif', 'sans-serif'],
+        'atelier-display': ['var(--font-atelier-display)', 'Georgia', 'ui-serif', 'serif'],
       },
       colors: {
         /** Driven by business portal theme via --color-primary-* on :root (fallbacks = default teal). */

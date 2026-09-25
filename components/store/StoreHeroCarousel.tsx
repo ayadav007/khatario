@@ -19,7 +19,7 @@ export function StoreHeroCarousel({
   accent: string;
   onCta?: () => void;
   compact?: boolean;
-  variant?: 'classic' | 'chowk';
+  variant?: 'classic' | 'chowk' | 'atelier';
   paper?: string;
 }) {
   const [index, setIndex] = useState(0);
@@ -40,6 +40,56 @@ export function StoreHeroCarousel({
 
   if (count === 0) return null;
   const slide = slides[Math.min(index, count - 1)];
+
+  if (variant === 'atelier') {
+    const panel = paper || '#f6f3ef';
+    return (
+      <section className={compact ? 'mb-2 px-3' : 'mx-auto max-w-6xl px-4 pt-3'}>
+        <div className={clsx('relative overflow-hidden rounded-[1.75rem]', compact ? 'h-36' : 'h-[26rem] sm:h-[32rem]')}>
+          {slides.map((s, i) => (
+            <div
+              key={`${s.image_url}-${i}`}
+              className="atelier-hero-slide absolute inset-0 transition-opacity duration-700"
+              style={{ opacity: i === index ? 1 : 0 }}
+              aria-hidden={i !== index}
+            >
+              {s.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={s.image_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full" style={{ backgroundColor: panel }} />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+            </div>
+          ))}
+          <div className={clsx('relative z-10 flex h-full flex-col justify-end', compact ? 'px-4 pb-4' : 'px-5 pb-6 sm:px-8 sm:pb-8')}>
+            {slide.title ? (
+              <h1
+                className={`font-atelier-display text-white ${compact ? 'text-xl leading-tight' : 'text-[clamp(1.9rem,7vw,3.4rem)] leading-[1.05]'}`}
+                aria-live="polite"
+              >
+                {slide.title}
+              </h1>
+            ) : null}
+            {slide.subtitle ? (
+              <p className={`max-w-sm text-white/80 ${compact ? 'mt-1 text-[10px]' : 'mt-2 text-[13px] leading-relaxed'}`}>
+                {slide.subtitle}
+              </p>
+            ) : null}
+            {ctaLabel && !compact ? (
+              <button
+                type="button"
+                className="mt-4 min-h-11 w-fit rounded-full bg-white px-5 text-[13px] font-medium text-[#171412]"
+                onClick={onCta}
+              >
+                {ctaLabel} →
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (variant === 'chowk') {
     const panel = paper || '#f7f1e8';

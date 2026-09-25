@@ -2,7 +2,7 @@
 
 import { Search } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
-import { CHOWK_INK, chowkInkOn, isChowkPack, resolveHeroSlides } from '@/lib/store/store-theme';
+import { CHOWK_INK, chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
 import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
@@ -11,6 +11,13 @@ const SAMPLE_PRODUCTS = [
   { name: 'Amul Milk 500 ml', price: 29, mrp: 29, unit: '500 ml' },
   { name: 'Parle-G 250 g', price: 25, mrp: 30, unit: '250 g' },
   { name: 'Toor Dal 1 kg', price: 168, mrp: 189, unit: '1 kg' },
+];
+
+const SAMPLE_ATELIER = [
+  { name: 'Merino Crewneck', price: 195, mrp: 195, unit: 'Sand' },
+  { name: 'Linen Overshirt', price: 145, mrp: 180, unit: 'Olive' },
+  { name: 'Pleated Wool Trouser', price: 160, mrp: 160, unit: 'Grey' },
+  { name: 'Brushed Mohair Cardigan', price: 210, mrp: 240, unit: 'Heather' },
 ];
 
 export function StoreLivePreview({
@@ -38,8 +45,9 @@ export function StoreLivePreview({
           { id: 'snacks', name: 'Snacks' },
         ];
   const chowk = isChowkPack(theme);
+  const atelier = isAtelierPack(theme);
   const paper = theme.background;
-  const ink = chowk ? chowkInkOn(paper) : CHOWK_INK;
+  const ink = chowk || atelier ? chowkInkOn(paper) : CHOWK_INK;
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
   return (
@@ -50,7 +58,95 @@ export function StoreLivePreview({
       <div className="overflow-hidden rounded-[28px] border-[8px] border-gray-900 bg-white shadow-xl">
         <div className="h-5 bg-gray-900" />
         <div className="max-h-[520px] overflow-y-auto" style={{ backgroundColor: paper }}>
-          {chowk ? (
+          {atelier ? (
+            <>
+              <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${hair}` }}>
+                {logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logo} alt="" className="h-6 w-auto max-w-[5rem] object-contain object-left" />
+                ) : (
+                  <p className="truncate font-serif text-[12px] tracking-[0.16em]" style={{ color: ink }}>
+                    {name}
+                  </p>
+                )}
+                <span className="text-[9px]" style={{ color: ink, opacity: 0.55 }}>
+                  Bag
+                </span>
+              </div>
+              <div className="px-3 py-2">
+                <div
+                  className="flex items-center gap-1 rounded-full px-2 py-1.5 text-[9px]"
+                  style={{ backgroundColor: `color-mix(in srgb, ${ink} 6%, ${paper})`, color: ink, opacity: 0.5 }}
+                >
+                  <Search className="h-3 w-3" />
+                  {theme.search_placeholder || 'Search jackets…'}
+                </div>
+              </div>
+              <StoreCategoryPills
+                categories={
+                  categories.length > 0
+                    ? previewCats
+                    : [
+                        { id: 'knit', name: 'Knitwear' },
+                        { id: 'tailor', name: 'Tailoring' },
+                        { id: 'outer', name: 'Outerwear' },
+                      ]
+                }
+                selectedId={null}
+                onSelect={() => undefined}
+                accent={theme.accent}
+                style={theme.category_style}
+                images={theme.category_images}
+                variant="atelier"
+                paper={paper}
+              />
+              {theme.show_hero ? (
+                <StoreHeroCarousel
+                  compact
+                  variant="atelier"
+                  paper={paper}
+                  slides={resolveHeroSlides(theme, {
+                    image_url: heroUrl,
+                    title: tagline || name,
+                    subtitle: theme.hero_subtitle,
+                  })}
+                  ctaLabel={theme.hero_cta}
+                  accent={theme.accent}
+                />
+              ) : null}
+              <p className="px-3 pt-2 font-serif text-[11px]" style={{ color: ink }}>
+                Trending Now
+              </p>
+              <div className="grid grid-cols-2 gap-2 px-3 pb-3 pt-1">
+                {SAMPLE_ATELIER.slice(0, 4).map((p) => (
+                  <div key={p.name}>
+                    <div className="relative aspect-[3/4] rounded-xl" style={{ backgroundColor: `color-mix(in srgb, ${ink} 8%, ${paper})` }}>
+                      {p.mrp > p.price ? (
+                        <span
+                          className="absolute left-1 top-1 rounded-full px-1 text-[7px]"
+                          style={{ backgroundColor: theme.accent, color: paper }}
+                        >
+                          {Math.round(((p.mrp - p.price) / p.mrp) * 100)}%
+                        </span>
+                      ) : null}
+                      <span
+                        className="absolute bottom-1 right-1 rounded-full px-1.5 py-0.5 text-[7px]"
+                        style={{ backgroundColor: theme.accent, color: paper }}
+                      >
+                        + Add
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[8px]" style={{ color: ink }}>
+                      {p.name}
+                    </p>
+                    <p className="text-[9px] font-medium" style={{ color: ink }}>
+                      ₹{p.price}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : chowk ? (
             <>
               {theme.show_offers ? (
                 <p

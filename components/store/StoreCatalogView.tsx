@@ -10,7 +10,7 @@ import { StoreTrustSection } from './StoreTrustSection';
 import { StoreCategoryPills } from './StoreCategoryPills';
 import { StoreCategoryMasonry } from './StoreCategoryMasonry';
 import { StoreHeroCarousel } from './StoreHeroCarousel';
-import { chowkInkOn, isChowkPack, resolveHeroSlides, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,6 +25,8 @@ export function StoreCatalogView() {
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const chowk = isChowkPack(theme);
+  const atelier = isAtelierPack(theme);
+  const pack = chowk || atelier;
 
   const [items, setItems] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<StoreCategory[]>([]);
@@ -167,9 +169,9 @@ export function StoreCatalogView() {
 
   const home = !searchQuery && !selectedCategory;
   const popular =
-    chowk && home ? items.filter((p) => p.image_url).slice(0, 6) : [];
+    pack && home ? items.filter((p) => p.image_url).slice(0, atelier ? 4 : 6) : [];
   const promoSlides =
-    chowk && home
+    pack && home
       ? heroSlides.filter((s, i) => i > 0 && s.image_url).slice(0, 2)
       : [];
   const showMasonry = chowk && home && categories.length > 0;
@@ -194,6 +196,11 @@ export function StoreCatalogView() {
           'grid grid-cols-2 gap-x-2.5 gap-y-6 sm:grid-cols-3',
           sparseCatalog ? 'lg:grid-cols-3' : 'lg:grid-cols-4',
         );
+  const atelierGrid = clsx(
+    'grid grid-cols-2 gap-x-3 gap-y-8',
+    sparseCatalog ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3',
+  );
+  const packGrid = atelier ? atelierGrid : chowkGrid;
 
   return (
     <>
@@ -202,7 +209,7 @@ export function StoreCatalogView() {
         onSearchChange={handleSearchChange}
         showSearch
         onCartOpen={() => setCartOpen(true)}
-        padded={!chowk}
+        padded={!pack}
         announcement={
           chowk && tinLine ? (
             <div
@@ -217,7 +224,7 @@ export function StoreCatalogView() {
           ) : null
         }
         subnav={
-          chowk ? (
+          pack ? (
             <StoreCategoryPills
               categories={categories}
               selectedId={selectedCategory}
@@ -225,13 +232,13 @@ export function StoreCatalogView() {
               accent={accent}
               style={theme.category_style}
               images={theme.category_images}
-              variant="chowk"
+              variant={atelier ? 'atelier' : 'chowk'}
               paper={theme.background}
             />
           ) : null
         }
       >
-        {chowk ? (
+        {pack ? (
           <>
             {home && heroSlides.length > 0 ? (
               <StoreHeroCarousel
@@ -239,12 +246,12 @@ export function StoreCatalogView() {
                 ctaLabel={theme.hero_cta}
                 accent={accent}
                 paper={theme.background}
-                variant="chowk"
+                variant={atelier ? 'atelier' : 'chowk'}
                 onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
               />
             ) : null}
 
-            {home && theme.show_trust ? <StoreTrustSection /> : null}
+            {home && theme.show_trust && !atelier ? <StoreTrustSection /> : null}
 
             {showMasonry ? (
               <StoreCategoryMasonry
@@ -257,21 +264,71 @@ export function StoreCatalogView() {
 
             {popular.length > 0 ? (
               <section className="mx-auto max-w-6xl px-4 pt-8">
-                <h2 className="mb-3 text-[1.05rem] font-semibold">Popular products</h2>
-                <div className="store-chowk-rail flex snap-x gap-3 overflow-x-auto pb-1">
-                  {popular.map((item) => (
-                    <StoreProductCard
-                      key={`pop-${item.id}`}
-                      product={item}
-                      variant="shelf"
-                      onViewDetail={setDetailProduct}
-                    />
+                <div className="mb-4 flex items-end justify-between gap-3">
+                  <div>
+                    <h2 className={atelier ? 'font-atelier-display text-[1.35rem] leading-none' : 'text-[1.05rem] font-semibold'}>
+                      {atelier ? 'Trending Now' : 'Popular products'}
+                    </h2>
+                    {atelier ? (
+                      <p className="mt-1 text-[12px]" style={{ opacity: 0.45 }}>
+                        Curated from this store
+                      </p>
+                    ) : null}
+                  </div>
+                  {atelier ? (
+                    <button
+                      type="button"
+                      className="text-[12px]"
+                      style={{ opacity: 0.55 }}
+                      onClick={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
+                    >
+                      See all
+                    </button>
+                  ) : null}
+                </div>
+                {atelier ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {popular.map((item) => (
+                      <StoreProductCard
+                        key={`pop-${item.id}`}
+                        product={item}
+                        variant="grid"
+                        onViewDetail={setDetailProduct}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="store-chowk-rail flex snap-x gap-3 overflow-x-auto pb-1">
+                    {popular.map((item) => (
+                      <StoreProductCard
+                        key={`pop-${item.id}`}
+                        product={item}
+                        variant="shelf"
+                        onViewDetail={setDetailProduct}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            {atelier && home && theme.show_offers && offerItems.length > 0 ? (
+              <section className="mx-auto max-w-6xl px-4 pt-10">
+                <div className="mb-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.14em]" style={{ color: accent, opacity: 0.7 }}>
+                    Flash Drop
+                  </p>
+                  <h2 className="font-atelier-display mt-1 text-[1.2rem] leading-none">Limited pieces</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {offerItems.slice(0, 2).map((item) => (
+                    <StoreProductCard key={`flash-${item.id}`} product={item} variant="grid" onViewDetail={setDetailProduct} />
                   ))}
                 </div>
               </section>
             ) : null}
 
-            {promoSlides.length > 0 ? (
+            {promoSlides.length > 0 && !atelier ? (
               <section className="mx-auto grid max-w-6xl gap-3 px-4 pt-8 md:grid-cols-2">
                 {promoSlides.map((slide, i) => (
                   <button
@@ -293,23 +350,32 @@ export function StoreCatalogView() {
               </section>
             ) : null}
 
+            {home && theme.show_trust && atelier ? <StoreTrustSection /> : null}
+
             <div className="mx-auto max-w-6xl px-4">
               <section id="all-products" className="pt-8">
                 {searchQuery || selectedCategory ? (
                   <div className="mb-4">
-                    <h2 className="text-[1.15rem] font-semibold">{selectedName || `Results for “${searchQuery}”`}</h2>
+                    <h2 className={atelier ? 'font-atelier-display text-[1.35rem]' : 'text-[1.15rem] font-semibold'}>
+                      {selectedName || `Results for “${searchQuery}”`}
+                    </h2>
                     <p className="mt-0.5 text-[12px]" style={{ opacity: 0.45 }}>
-                      {total} products
+                      {total} {atelier ? 'curated pieces' : 'products'}
                     </p>
                   </div>
                 ) : (
-                  <h2 className="mb-3 text-[1.05rem] font-semibold">All products</h2>
+                  <h2 className={atelier ? 'mb-4 font-atelier-display text-[1.2rem] leading-none' : 'mb-3 text-[1.05rem] font-semibold'}>
+                    {atelier ? 'The Edit' : 'All products'}
+                  </h2>
                 )}
 
                 {itemsLoading && items.length === 0 ? (
-                  <div className={chowkGrid}>
+                  <div className={packGrid}>
                     {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="aspect-square animate-pulse rounded-2xl bg-white" />
+                      <div
+                        key={i}
+                        className={clsx('animate-pulse rounded-[1.35rem] bg-white', atelier ? 'aspect-[3/4]' : 'aspect-square')}
+                      />
                     ))}
                   </div>
                 ) : items.length === 0 ? (
@@ -320,7 +386,7 @@ export function StoreCatalogView() {
                   </p>
                 ) : (
                   <div
-                    className={clsx(chowkGrid, 'chowk-catalog', itemsLoading && items.length > 0 && 'is-wait')}
+                    className={clsx(packGrid, 'chowk-catalog', itemsLoading && items.length > 0 && 'is-wait')}
                     aria-busy={itemsLoading}
                   >
                     {items.map((item) => (
@@ -330,15 +396,28 @@ export function StoreCatalogView() {
                 )}
 
                 {hasMore ? (
-                  <div className="mt-6">
+                  <div className="mt-8">
                     <button
                       type="button"
                       onClick={handleLoadMore}
                       disabled={itemsLoading}
-                      className="rounded-full bg-white px-5 py-2 text-[13px] font-medium shadow-sm disabled:opacity-50"
-                      style={{ color: ink }}
+                      className={clsx(
+                        'text-[13px] font-medium disabled:opacity-50',
+                        atelier ? 'w-full rounded-full py-3' : 'rounded-full bg-white px-5 py-2 shadow-sm',
+                      )}
+                      style={
+                        atelier
+                          ? { color: ink, border: `1px solid color-mix(in srgb, ${ink} 14%, transparent)` }
+                          : { color: ink }
+                      }
                     >
-                      {itemsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load more'}
+                      {itemsLoading ? (
+                        <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                      ) : atelier ? (
+                        `Discover More (${Math.max(0, total - items.length)})`
+                      ) : (
+                        'Load more'
+                      )}
                     </button>
                   </div>
                 ) : null}

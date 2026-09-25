@@ -1,19 +1,54 @@
 'use client';
 
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { Truck, ShieldCheck, Headphones, MapPin } from 'lucide-react';
 
 export function StoreTrustSection() {
   const { store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const chowk = isChowkPack(theme);
+  const atelier = isAtelierPack(theme);
   const items = [
     { icon: Truck, title: 'Fast delivery', body: 'From your local store' },
     { icon: ShieldCheck, title: 'Secure payments', body: store?.online_pay_enabled ? 'UPI & cards via Razorpay' : 'Pay on delivery available' },
     { icon: Headphones, title: 'Easy support', body: store?.phone ? `Call ${store.phone}` : 'Contact the store' },
     { icon: MapPin, title: 'Local business', body: store?.name ?? 'Shop nearby' },
   ];
+
+  if (atelier) {
+    const ink = chowkInkOn(theme.background);
+    const line = [
+      { icon: ShieldCheck, title: 'Secure checkout' },
+      { icon: Truck, title: '30-day returns' },
+      { icon: MapPin, title: 'From your local atelier' },
+    ];
+    return (
+      <section className="mx-auto max-w-6xl px-4 pt-10">
+        <blockquote
+          className="rounded-[1.75rem] px-6 py-8 text-center"
+          style={{ backgroundColor: `color-mix(in srgb, ${ink} 4%, ${theme.background})` }}
+        >
+          <p className="font-atelier-display text-[1.35rem] leading-snug" style={{ color: ink }}>
+            “Simplicity is the keynote of all true elegance.”
+          </p>
+          <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.18em]" style={{ opacity: 0.4 }}>
+            {store?.name || 'Atelier'} design ethos
+          </p>
+        </blockquote>
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          {line.map(({ icon: Icon, title }) => (
+            <div key={title} className="flex flex-col items-center gap-1.5 px-1 py-2 text-center">
+              <Icon className="h-4 w-4" strokeWidth={1.5} style={{ opacity: 0.55 }} />
+              <p className="text-[10px] leading-tight" style={{ color: ink, opacity: 0.55 }}>
+                {title}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   if (chowk) {
     const ink = chowkInkOn(theme.background);

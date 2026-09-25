@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store/store-context';
 import { useCallback, useEffect, useState } from 'react';
 import type { StoreProduct } from './StoreProductCard';
 import clsx from 'clsx';
-import { chowkInkOn, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 interface StoreProductDetailModalProps {
   product: StoreProduct;
@@ -19,6 +19,8 @@ export function StoreProductDetailModal({
   const { cart, addToCart, updateCartQuantity, store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const chowk = isChowkPack(theme);
+  const atelier = isAtelierPack(theme);
+  const pack = chowk || atelier;
   const paper = theme.background;
   const accent = theme.accent;
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
@@ -58,14 +60,14 @@ export function StoreProductDetailModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  if (chowk) {
+  if (pack) {
     const ink = chowkInkOn(paper);
     const hair = `1px solid color-mix(in srgb, ${ink} 14%, transparent)`;
     return (
-      <div className="store-chowk fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={{ color: ink }}>
+      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', chowk && 'store-chowk', atelier && 'store-atelier')} style={{ color: ink }}>
         <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
         <div
-          className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"
+          className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"
           style={{ backgroundColor: paper }}
           role="dialog"
           aria-modal="true"
@@ -80,20 +82,20 @@ export function StoreProductDetailModal({
           >
             <X className="h-5 w-5" strokeWidth={1.5} />
           </button>
-          <div className="relative aspect-[4/5] w-full max-h-[48vh]">
+          <div className={clsx('relative w-full max-h-[48vh]', atelier ? 'aspect-[3/4]' : 'aspect-[4/5]')}>
             {product.image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
-                <span className="font-chowk-display text-6xl" style={{ opacity: 0.25 }}>
+                <span className={atelier ? 'font-atelier-display text-6xl' : 'font-chowk-display text-6xl'} style={{ opacity: 0.25 }}>
                   {product.name.slice(0, 1).toUpperCase()}
                 </span>
               </div>
             )}
           </div>
           <div className="px-5 py-5">
-            <h2 id="chowk-product-title" className="text-[1.15rem] leading-snug">
+            <h2 id="chowk-product-title" className={atelier ? 'font-atelier-display text-[1.55rem] leading-snug' : 'text-[1.15rem] leading-snug'}>
               {product.name}
             </h2>
             {product.unit ? (
@@ -180,10 +182,10 @@ export function StoreProductDetailModal({
                 <button
                   type="button"
                   onClick={handleAdd}
-                  className="min-h-12 w-full py-3.5 text-[14px] font-medium"
-                  style={{ backgroundColor: accent, color: paper }}
+                  className={clsx('min-h-12 w-full py-3.5 text-[14px] font-medium', atelier && 'rounded-2xl')}
+                  style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
                 >
-                  Add to bag · ₹{displayPrice.toLocaleString('en-IN')}
+                  {atelier ? 'Add to Bag' : 'Add to bag'} · ₹{displayPrice.toLocaleString('en-IN')}
                 </button>
               )}
             </div>

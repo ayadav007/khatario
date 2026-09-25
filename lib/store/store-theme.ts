@@ -1,6 +1,6 @@
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
-export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'custom';
-export type StoreThemePack = 'classic' | 'chowk';
+export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'atelier' | 'custom';
+export type StoreThemePack = 'classic' | 'chowk' | 'atelier';
 
 export interface StoreHeroSlide {
   image_url: string;
@@ -37,6 +37,7 @@ export const STORE_THEME_PRESETS: Record<
   saffron: { accent: '#ea580c', background: '#fff7ed', label: 'Saffron', pack: 'classic' },
   blue: { accent: '#2563eb', background: '#f8fafc', label: 'Blue', pack: 'classic' },
   chowk: { accent: '#e07030', background: '#f7f1e8', label: 'Chowk', pack: 'chowk' },
+  atelier: { accent: '#171412', background: '#f6f3ef', label: 'Atelier', pack: 'atelier' },
 };
 
 export const DEFAULT_STORE_THEME: StoreTheme = {
@@ -58,8 +59,8 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'custom'];
-const PACKS: StoreThemePack[] = ['classic', 'chowk'];
+const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'atelier', 'custom'];
+const PACKS: StoreThemePack[] = ['classic', 'chowk', 'atelier'];
 const STYLES: StoreCategoryStyle[] = ['letter', 'icon', 'photo'];
 const ID_KEY = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -123,6 +124,7 @@ function sanitizeCategoryImages(raw: unknown): Record<string, string> {
 
 function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack {
   if (preset === 'chowk') return 'chowk';
+  if (preset === 'atelier') return 'atelier';
   if (preset === 'custom') {
     return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'classic';
   }
@@ -131,6 +133,10 @@ function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack
 
 export function isChowkPack(theme: StoreTheme): boolean {
   return theme.pack === 'chowk';
+}
+
+export function isAtelierPack(theme: StoreTheme): boolean {
+  return theme.pack === 'atelier';
 }
 
 export function hexLuminance(hex: string): number {
@@ -200,6 +206,16 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
 
 export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): Partial<StoreTheme> {
   const p = STORE_THEME_PRESETS[preset];
+  if (preset === 'atelier') {
+    return {
+      preset,
+      accent: p.accent,
+      background: p.background,
+      pack: p.pack,
+      hero_cta: 'Explore Collection',
+      search_placeholder: 'Search jackets, cashmere, accessories…',
+    };
+  }
   return { preset, accent: p.accent, background: p.background, pack: p.pack };
 }
 

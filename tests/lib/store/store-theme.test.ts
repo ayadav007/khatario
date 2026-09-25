@@ -85,6 +85,17 @@ describe('applyStorePreset', () => {
       pack: 'chowk',
     });
   });
+
+  it('applies Atelier pack with ivory paper and ink', () => {
+    expect(applyStorePreset('atelier')).toEqual({
+      preset: 'atelier',
+      accent: STORE_THEME_PRESETS.atelier.accent,
+      background: STORE_THEME_PRESETS.atelier.background,
+      pack: 'atelier',
+      hero_cta: 'Explore Collection',
+      search_placeholder: 'Search jackets, cashmere, accessories…',
+    });
+  });
 });
 
 describe('store theme pack', () => {
@@ -102,6 +113,17 @@ describe('store theme pack', () => {
     });
     expect(t.pack).toBe('chowk');
     expect(t.accent).toBe('#112233');
+  });
+
+  it('keeps Atelier pack when colours are customised', () => {
+    const t = sanitizeStoreTheme({
+      preset: 'custom',
+      pack: 'atelier',
+      accent: '#3b2f2a',
+      background: '#f6f3ef',
+    });
+    expect(t.pack).toBe('atelier');
+    expect(t.accent).toBe('#3b2f2a');
   });
 });
 

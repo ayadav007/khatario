@@ -14,7 +14,7 @@ import {
 import clsx from 'clsx';
 import { useEffect, useRef } from 'react';
 import type { StoreCategoryStyle } from '@/lib/store/store-theme';
-import { chowkInkOn } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent } from '@/lib/store/store-theme';
 
 export interface StoreCategoryOption {
   id: string;
@@ -58,6 +58,7 @@ function ChowkCategoryRail({
   accent,
   style,
   paper,
+  look,
 }: {
   items: Array<{ id: string | null; name: string }>;
   selectedId: string | null;
@@ -65,6 +66,7 @@ function ChowkCategoryRail({
   accent: string;
   style: StoreCategoryStyle;
   paper: string;
+  look: 'chowk' | 'atelier';
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -91,11 +93,14 @@ function ChowkCategoryRail({
               type="button"
               onClick={() => onSelect(cat.id)}
               aria-current={selected ? true : undefined}
-              className="h-9 max-w-[min(70vw,14rem)] flex-shrink-0 truncate rounded-full px-3.5 text-[13px] font-medium"
+              className={clsx(
+                'h-9 max-w-[min(70vw,14rem)] flex-shrink-0 truncate rounded-full px-3.5 text-[13px] font-medium',
+                look === 'atelier' && !selected && 'bg-white/70',
+              )}
               style={
                 selected
-                  ? { backgroundColor: accent, color: '#fff7ed' }
-                  : { backgroundColor: 'transparent', color: ink, opacity: 0.7 }
+                  ? { backgroundColor: accent, color: chowkOnAccent(accent) }
+                  : { backgroundColor: look === 'atelier' ? undefined : 'transparent', color: ink, opacity: 0.7 }
               }
             >
               <span className="truncate">{cat.name}</span>
@@ -123,12 +128,12 @@ export function StoreCategoryPills({
   accent: string;
   style: StoreCategoryStyle;
   images: Record<string, string>;
-  variant?: 'classic' | 'chowk';
+  variant?: 'classic' | 'chowk' | 'atelier';
   paper?: string;
 }) {
   if (categories.length === 0) return null;
 
-  if (variant === 'chowk') {
+  if (variant === 'chowk' || variant === 'atelier') {
     const items: Array<{ id: string | null; name: string }> = [{ id: null, name: 'All' }, ...categories];
     return (
       <ChowkCategoryRail
@@ -138,6 +143,7 @@ export function StoreCategoryPills({
         accent={accent}
         style={style}
         paper={paper || '#f3eee6'}
+        look={variant}
       />
     );
   }

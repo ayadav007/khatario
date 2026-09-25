@@ -1,11 +1,11 @@
 'use client';
 
-import { Home, Search, LayoutGrid, Tag, User, ShoppingCart } from 'lucide-react';
+import { Home, Search, LayoutGrid, Tag, User, ShoppingBag, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 export function StoreMobileNav({
   onSearch,
@@ -19,14 +19,58 @@ export function StoreMobileNav({
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const chowk = theme.pack === 'chowk';
+  const atelier = theme.pack === 'atelier';
+  const pack = chowk || atelier;
   const ink = chowkInkOn(theme.background);
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
   const item = (active: boolean) =>
     clsx(
       'flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium',
-      active ? '' : chowk ? 'opacity-40' : 'text-gray-400',
+      active ? '' : pack ? 'opacity-40' : 'text-gray-400',
     );
+
+  if (atelier) {
+    return (
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:hidden"
+        style={{ borderColor: hair, color: ink }}
+      >
+        <div className="flex">
+          <Link href="/" className={item(pathname === '/' || pathname === '/store')} style={pathname === '/' || pathname === '/store' ? { color: accent, opacity: 1 } : undefined}>
+            <Home className="h-5 w-5" strokeWidth={1.5} />
+            Home
+          </Link>
+          <a href="#all-products" className={item(false)}>
+            <LayoutGrid className="h-5 w-5" strokeWidth={1.5} />
+            Shop
+          </a>
+          <button type="button" onClick={onCart} className={item(pathname === '/cart')} aria-label="Bag">
+            <span className="relative">
+              <ShoppingBag className="h-5 w-5" strokeWidth={1.5} />
+              {cartCount > 0 ? (
+                <span
+                  className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[9px] font-bold"
+                  style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
+                >
+                  {cartCount}
+                </span>
+              ) : null}
+            </span>
+            Bag
+          </button>
+          <button type="button" onClick={onSearch} className={item(false)} aria-label="Search">
+            <Search className="h-5 w-5" strokeWidth={1.5} />
+            Search
+          </button>
+          <Link href="/account" className={item(pathname === '/account')} style={pathname === '/account' ? { color: accent, opacity: 1 } : undefined}>
+            <User className="h-5 w-5" strokeWidth={1.5} />
+            Profile
+          </Link>
+        </div>
+      </nav>
+    );
+  }
 
   if (chowk) {
     return (

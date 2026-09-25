@@ -2,7 +2,7 @@
 
 import { Plus, Minus, Package } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -116,12 +116,83 @@ function ChowkAddControl({
   );
 }
 
-export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
+function AtelierAddControl({
+  accent,
+  paper,
+  ink,
+  outOfStock,
+  inCart,
+  hasVariants,
+  canInc,
+  onAdd,
+  onInc,
+  onDec,
+}: {
+  accent: string;
+  paper: string;
+  ink: string;
+  outOfStock: boolean;
+  inCart: number;
+  hasVariants: boolean;
+  canInc: boolean;
+  onAdd: (e: React.MouseEvent) => void;
+  onInc: (e: React.MouseEvent) => void;
+  onDec: (e: React.MouseEvent) => void;
+}) {
+  const onAccent = chowkOnAccent(accent);
+  if (outOfStock) {
+    return (
+      <span
+        className="pointer-events-none absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-[10px]"
+        style={{ backgroundColor: paper, color: ink, opacity: 0.7 }}
+      >
+        Out
+      </span>
+    );
+  }
+  const open = inCart > 0 && !hasVariants;
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={onAdd}
+        className="absolute bottom-3 right-3 rounded-full px-3 py-1.5 text-[11px] font-medium shadow-sm"
+        style={{ backgroundColor: accent, color: onAccent }}
+        aria-label={hasVariants ? 'Choose options' : 'Add to bag'}
+      >
+        + Add
+      </button>
+    );
+  }
+  return (
+    <div
+      className="absolute bottom-3 right-3 flex h-8 items-center rounded-full shadow-sm"
+      style={{ backgroundColor: accent, color: onAccent }}
+    >
+      <button type="button" onClick={onDec} className="flex h-8 w-8 items-center justify-center" aria-label="Decrease quantity">
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <span className="min-w-[1.1rem] text-center text-[12px] font-semibold tabular-nums" aria-live="polite">
+        {inCart}
+      </span>
+      <button
+        type="button"
+        onClick={onInc}
+        disabled={!canInc}
+        className="flex h-8 w-8 items-center justify-center disabled:opacity-40"
+        aria-label="Increase quantity"
+      >
+        <Plus className="h-3.5 w-3.5" strokeWidth={2.4} />
+      </button>
+    </div>
+  );
+}
   const { cart, addToCart, updateCartQuantity, store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
+  const atelier = isAtelierPack(theme);
   const layout: StoreProductCardVariant =
-    variant ?? (isChowkPack(theme) ? 'grid' : 'classic');
+    variant ?? (isChowkPack(theme) || atelier ? 'grid' : 'classic');
 
   const inCart = useMemo(() => {
     if (product.has_variants) {
@@ -193,8 +264,13 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
     const imageBlock = (
       <div
         className={clsx(
-          'relative overflow-hidden bg-white',
-          layout === 'featured' ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full' : 'aspect-square',
+          'relative overflow-hidden',
+          atelier ? 'bg-[#eee8e0]' : 'bg-white',
+          layout === 'featured'
+            ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full'
+            : atelier
+              ? 'aspect-[3/4] rounded-[1.35rem]'
+              : 'aspect-square',
         )}
       >
         <Link
@@ -206,12 +282,15 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             <img
               src={product.image_url}
               alt={product.name}
-              className="chowk-product-img h-full w-full object-contain p-2"
+              className={clsx(
+                'h-full w-full',
+                atelier ? 'atelier-product-img object-cover' : 'chowk-product-img object-contain p-2',
+              )}
               loading="lazy"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[#f3ebe0]">
-              <span className="font-chowk-display text-4xl leading-none" style={{ color: ink, opacity: 0.28 }}>
+            <div className="flex h-full w-full items-center justify-center" style={{ backgroundColor: atelier ? '#eee8e0' : '#f3ebe0' }}>
+              <span className={clsx(atelier ? 'font-atelier-display text-5xl' : 'font-chowk-display text-4xl leading-none')} style={{ color: ink, opacity: 0.28 }}>
                 {product.name.slice(0, 1).toUpperCase()}
               </span>
             </div>
@@ -225,23 +304,38 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             {discount}%
           </span>
         ) : null}
-        <ChowkAddControl
-          accent={accent}
-          paper={paper}
-          ink={ink}
-          outOfStock={outOfStock}
-          inCart={inCart}
-          hasVariants={product.has_variants}
-          canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
-          onAdd={handleAdd}
-          onInc={handleIncrement}
-          onDec={handleDecrement}
-        />
+        {atelier ? (
+          <AtelierAddControl
+            accent={accent}
+            paper={paper}
+            ink={ink}
+            outOfStock={outOfStock}
+            inCart={inCart}
+            hasVariants={product.has_variants}
+            canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
+            onAdd={handleAdd}
+            onInc={handleIncrement}
+            onDec={handleDecrement}
+          />
+        ) : (
+          <ChowkAddControl
+            accent={accent}
+            paper={paper}
+            ink={ink}
+            outOfStock={outOfStock}
+            inCart={inCart}
+            hasVariants={product.has_variants}
+            canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
+            onAdd={handleAdd}
+            onInc={handleIncrement}
+            onDec={handleDecrement}
+          />
+        )}
       </div>
     );
 
     const meta = (
-      <div className={clsx(layout === 'featured' ? 'flex flex-col justify-center px-5 py-6 md:px-10' : 'px-2.5 pb-3 pt-2')}>
+      <div className={clsx(layout === 'featured' ? 'flex flex-col justify-center px-5 py-6 md:px-10' : atelier ? 'px-0.5 pb-1 pt-3' : 'px-2.5 pb-3 pt-2')}>
         {layout === 'featured' ? (
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>
             Popular
@@ -251,7 +345,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
           <h3
             className={clsx(
               'chowk-name line-clamp-2 font-medium',
-              layout === 'featured' ? 'text-[17px] leading-snug sm:text-xl' : 'min-h-[2.5em] text-[12px] leading-[1.3] sm:text-[13px]',
+              layout === 'featured' ? 'text-[17px] leading-snug sm:text-xl' : atelier ? 'min-h-[2.4em] text-[13px] leading-[1.35] font-normal' : 'min-h-[2.5em] text-[12px] leading-[1.3] sm:text-[13px]',
               layout === 'shelf' && 'min-h-0 line-clamp-2',
             )}
             style={{ color: ink }}
@@ -299,6 +393,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         className={clsx(
           'overflow-hidden rounded-2xl bg-white shadow-sm',
           layout === 'shelf' && 'w-[42vw] max-w-[12.5rem] flex-shrink-0 snap-start sm:w-44',
+          atelier && 'rounded-[1.35rem] bg-transparent shadow-none',
         )}
       >
         {imageBlock}
