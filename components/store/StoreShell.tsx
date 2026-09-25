@@ -171,7 +171,7 @@ export function StoreShell({
     >
       {announcement}
 
-      <div className="sticky top-0 z-30" style={pack ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : undefined}>
+      <div className="sticky top-0 z-30" style={pack ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : { backgroundColor: accent }}>
         {atelier ? (
           <header style={{ backgroundColor: paper }}>
             <div className="mx-auto max-w-6xl px-4">
@@ -355,7 +355,7 @@ export function StoreShell({
             {subnav ? <div className="mx-auto max-w-6xl px-4">{subnav}</div> : null}
           </header>
         ) : (
-          <header className="shadow-sm" style={{ backgroundColor: accent, color: onAccent }}>
+          <header className="relative z-30" style={{ backgroundColor: accent, color: onAccent }}>
             <div className="mx-auto max-w-6xl px-4 py-2.5">
               <div className="flex items-center gap-3">
                 <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -473,7 +473,7 @@ export function StoreShell({
             ? hideCartBar
               ? 'pb-[calc(var(--chowk-nav)+var(--chowk-safe)+1rem)] sm:pb-10'
               : 'pb-[var(--chowk-chrome)]'
-            : 'mx-auto max-w-6xl px-4 pb-36 pt-4 sm:pb-24',
+            : 'mx-auto max-w-6xl px-4 pb-36 pt-0 sm:pb-24',
           pack && padded && 'mx-auto max-w-6xl px-4 pt-6',
         )}
       >

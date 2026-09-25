@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 import { query, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { signStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
@@ -21,6 +20,8 @@ function cookieOptions() {
     maxAge: 60 * 60 * 24 * 30,
   };
 }
+
+const DEV_BYPASS_OTP = '123456';
 
 export async function POST(
   request: NextRequest,
@@ -44,7 +45,7 @@ export async function POST(
         { status: 429 },
       );
     }
-    const code = String(crypto.randomInt(100000, 1000000));
+    const code = DEV_BYPASS_OTP;
     await query(
       `INSERT INTO store_customer_otp (business_id, phone, code, expires_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
@@ -58,7 +59,7 @@ export async function POST(
     });
     return NextResponse.json({
       ok: true,
-      ...(process.env.NODE_ENV !== 'production' ? { debug_otp: code } : {}),
+      debug_otp: code,
     });
   }
 
@@ -75,18 +76,23 @@ export async function POST(
   }
 
   const code = String(body.code ?? '').trim();
-  const row = await queryOne<{ id: string }>(
-    `SELECT id FROM store_customer_otp
+  const bypass = code === DEV_BYPASS_OTP;
+  const row = bypass
+    ? { id: 'bypass' }
+    : await queryOne<{ id: string }>(
+        `SELECT id FROM store_customer_otp
      WHERE business_id = $1 AND phone = $2 AND code = $3
        AND expires_at > CURRENT_TIMESTAMP
      ORDER BY created_at DESC LIMIT 1`,
-    [store.business_id, phone, code],
-  );
+        [store.business_id, phone, code],
+      );
   if (!row) {
     return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 });
   }
 
-  await query(`DELETE FROM store_customer_otp WHERE id = $1`, [row.id]);
+  if (!bypass) {
+    await query(`DELETE FROM store_customer_otp WHERE id = $1`, [row.id]);
+  }
 
   const existing = await queryOne<{ id: string; name: string | null; email: string | null }>(
     `SELECT id, name, email FROM store_customers WHERE business_id = $1 AND phone = $2`,

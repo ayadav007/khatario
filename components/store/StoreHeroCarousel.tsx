@@ -13,6 +13,7 @@ export function StoreHeroCarousel({
   compact = false,
   variant = 'classic',
   paper,
+  flush = false,
 }: {
   slides: StoreHeroSlide[];
   ctaLabel: string;
@@ -21,6 +22,7 @@ export function StoreHeroCarousel({
   compact?: boolean;
   variant?: 'classic' | 'chowk' | 'atelier';
   paper?: string;
+  flush?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const count = slides.length;
@@ -45,7 +47,7 @@ export function StoreHeroCarousel({
     const panel = paper || '#f6f3ef';
     return (
       <section className={compact ? 'mb-2 px-3' : 'mx-auto max-w-6xl px-4 pt-3'}>
-        <div className={clsx('relative overflow-hidden rounded-[1.75rem]', compact ? 'h-36' : 'h-[26rem] sm:h-[32rem]')}>
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[1.75rem]">
           {slides.map((s, i) => (
             <div
               key={`${s.image_url}-${i}`}
@@ -55,31 +57,40 @@ export function StoreHeroCarousel({
             >
               {s.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={s.image_url} alt="" className="h-full w-full object-cover" />
+                <img src={s.image_url} alt="" className="h-full w-full object-cover object-center" />
               ) : (
                 <div className="h-full w-full" style={{ backgroundColor: panel }} />
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
             </div>
           ))}
-          <div className={clsx('relative z-10 flex h-full flex-col justify-end', compact ? 'px-4 pb-4' : 'px-5 pb-6 sm:px-8 sm:pb-8')}>
+          <div
+            className={clsx(
+              'relative z-10 flex h-full min-h-0 flex-col justify-end',
+              compact ? 'px-3 pb-3' : 'px-4 pb-4 sm:px-6 sm:pb-5',
+            )}
+          >
             {slide.title ? (
               <h1
-                className={`font-atelier-display text-white ${compact ? 'text-xl leading-tight' : 'text-[clamp(1.9rem,7vw,3.4rem)] leading-[1.05]'}`}
+                className={`font-atelier-display line-clamp-3 text-white ${
+                  compact ? 'text-base leading-tight' : 'text-[clamp(1.35rem,5.2vw,2.35rem)] leading-[1.12]'
+                }`}
                 aria-live="polite"
               >
                 {slide.title}
               </h1>
             ) : null}
             {slide.subtitle ? (
-              <p className={`max-w-sm text-white/80 ${compact ? 'mt-1 text-[10px]' : 'mt-2 text-[13px] leading-relaxed'}`}>
+              <p
+                className={`line-clamp-2 max-w-sm text-white/80 ${compact ? 'mt-0.5 text-[9px]' : 'mt-1.5 text-[13px] leading-snug'}`}
+              >
                 {slide.subtitle}
               </p>
             ) : null}
             {ctaLabel && !compact ? (
               <button
                 type="button"
-                className="mt-4 min-h-11 w-fit rounded-full bg-white px-5 text-[13px] font-medium text-[#171412]"
+                className="mt-3 min-h-10 w-fit shrink-0 rounded-full bg-white px-4 text-[13px] font-medium text-[#171412]"
                 onClick={onCta}
               >
                 {ctaLabel} →
@@ -169,7 +180,7 @@ export function StoreHeroCarousel({
   }
 
   return (
-    <section className={`relative overflow-hidden rounded-2xl bg-gray-900 ${compact ? 'mb-2' : 'mb-5'}`}>
+    <section className={`relative overflow-hidden rounded-2xl bg-gray-900 ${compact || flush ? 'mb-0' : 'mb-5'}`}>
       <div className={compact ? 'relative h-28' : 'relative h-52 sm:h-64 md:h-72'}>
         {slides.map((s, i) => (
           <div

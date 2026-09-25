@@ -242,7 +242,10 @@ export function StoreLivePreview({
             </>
           ) : (
             <>
-              <div className="px-3 py-2" style={{ backgroundColor: theme.accent, color: chowkOnAccent(theme.accent) }}>
+              <div
+                className="rounded-b-2xl px-3 pb-2 pt-2"
+                style={{ backgroundColor: theme.accent, color: chowkOnAccent(theme.accent) }}
+              >
                 <div className="flex items-center gap-2">
                 {logo ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -266,20 +269,23 @@ export function StoreLivePreview({
                     {theme.search_placeholder || 'Search products...'}
                   </div>
                 </div>
+                {theme.show_hero ? (
+                  <div className="mt-2">
+                    <StoreHeroCarousel
+                      compact
+                      flush
+                      slides={resolveHeroSlides(theme, {
+                        image_url: heroUrl,
+                        title: tagline || `Shop from ${name}`,
+                        subtitle: theme.hero_subtitle || 'Add to cart in one tap.',
+                      })}
+                      ctaLabel={theme.hero_cta}
+                      accent={theme.accent}
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="px-2 pb-3 pt-2">
-                {theme.show_hero ? (
-                  <StoreHeroCarousel
-                    compact
-                    slides={resolveHeroSlides(theme, {
-                      image_url: heroUrl,
-                      title: tagline || `Shop from ${name}`,
-                      subtitle: theme.hero_subtitle || 'Add to cart in one tap.',
-                    })}
-                    ctaLabel={theme.hero_cta}
-                    accent={theme.accent}
-                  />
-                ) : null}
 
                 <div className="origin-top scale-[0.92]">
                   <StoreCategoryPills

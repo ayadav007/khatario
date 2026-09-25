@@ -428,16 +428,22 @@ export function StoreCatalogView() {
         ) : (
           <>
             {theme.show_hero ? (
-              <StoreHeroCarousel
-                slides={resolveHeroSlides(theme, {
-                  image_url: store.store_hero_image_url,
-                  title: store.store_tagline || `Shop from ${store.name}`,
-                  subtitle: theme.hero_subtitle || 'Fresh products from your local store. Add to cart in one tap.',
-                })}
-                ctaLabel={theme.hero_cta}
-                accent={accent}
-                onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
-              />
+              <div
+                className="-mx-4 mb-5 rounded-b-[1.75rem] px-4 pb-4 pt-3"
+                style={{ backgroundColor: accent }}
+              >
+                <StoreHeroCarousel
+                  flush
+                  slides={resolveHeroSlides(theme, {
+                    image_url: store.store_hero_image_url,
+                    title: store.store_tagline || `Shop from ${store.name}`,
+                    subtitle: theme.hero_subtitle || 'Fresh products from your local store. Add to cart in one tap.',
+                  })}
+                  ctaLabel={theme.hero_cta}
+                  accent={accent}
+                  onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
+                />
+              </div>
             ) : null}
 
             <StoreCategoryPills
