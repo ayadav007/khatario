@@ -166,38 +166,19 @@ export function StoreCatalogView() {
     : [];
 
   const home = !searchQuery && !selectedCategory;
-  const featured =
-    chowk && home && items.length >= 6
-      ? items.find((p) => p.image_url && (p.current_stock > 0 || p.has_variants))
-      : undefined;
-  const rest = featured ? items.filter((p) => p.id !== featured.id) : items;
-  let shelfItems: StoreProduct[] = [];
-  let gridItems: StoreProduct[] = rest;
-  if (chowk && !searchQuery && rest.length > 8) {
-    const take = 8;
-    const leftover = rest.length - take;
-    if (leftover >= 4) {
-      shelfItems = rest.slice(0, take);
-      gridItems = rest.slice(take);
-    } else {
-      shelfItems = rest;
-      gridItems = [];
-    }
-  }
-  const showShelf = shelfItems.length > 0;
-  const promoSlide =
-    chowk && home && heroSlides.length > 1 && heroSlides[1].image_url ? heroSlides[1] : null;
-  const showMasonry =
-    chowk &&
-    home &&
-    theme.category_style === 'photo' &&
-    categories.some((c) => theme.category_images[c.id]);
+  const popular =
+    chowk && home ? items.filter((p) => p.image_url).slice(0, 6) : [];
+  const promoSlides =
+    chowk && home
+      ? heroSlides.filter((s, i) => i > 0 && s.image_url).slice(0, 2)
+      : [];
+  const showMasonry = chowk && home && categories.length > 0;
   const selectedName = selectedCategory
     ? categories.find((c) => c.id === selectedCategory)?.name
     : null;
   const tinLine = theme.show_offers
     ? offerItems[0]
-      ? `${offerItems[0].name} · ${Math.round((((offerItems[0].mrp ?? 0) - offerItems[0].selling_price) / (offerItems[0].mrp ?? 1)) * 100)}% off`
+      ? `Free delivery on orders · ${offerItems[0].name} ${Math.round((((offerItems[0].mrp ?? 0) - offerItems[0].selling_price) / (offerItems[0].mrp ?? 1)) * 100)}% off`
       : store.store_tagline?.trim() || ''
     : '';
 
@@ -252,7 +233,7 @@ export function StoreCatalogView() {
       >
         {chowk ? (
           <>
-            {heroSlides.length > 0 ? (
+            {home && heroSlides.length > 0 ? (
               <StoreHeroCarousel
                 slides={heroSlides}
                 ctaLabel={theme.hero_cta}
@@ -263,6 +244,8 @@ export function StoreCatalogView() {
               />
             ) : null}
 
+            {home && theme.show_trust ? <StoreTrustSection /> : null}
+
             {showMasonry ? (
               <StoreCategoryMasonry
                 categories={categories}
@@ -272,77 +255,79 @@ export function StoreCatalogView() {
               />
             ) : null}
 
-            {promoSlide ? (
-              <section className="relative h-[52vh] min-h-[280px] w-full overflow-hidden md:h-[58vh]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={promoSlide.image_url} alt="" className="h-full w-full object-cover object-[center_35%]" />
-                {promoSlide.title ? (
-                  <div
-                    className="absolute inset-x-4 bottom-0 max-w-md px-4 py-5 md:inset-y-0 md:left-0 md:right-auto md:flex md:w-[38%] md:max-w-none md:items-end md:px-8 md:py-10"
-                    style={{ backgroundColor: theme.background }}
+            {popular.length > 0 ? (
+              <section className="mx-auto max-w-6xl px-4 pt-8">
+                <h2 className="mb-3 text-[1.05rem] font-semibold">Popular products</h2>
+                <div className="store-chowk-rail flex snap-x gap-3 overflow-x-auto pb-1">
+                  {popular.map((item) => (
+                    <StoreProductCard
+                      key={`pop-${item.id}`}
+                      product={item}
+                      variant="shelf"
+                      onViewDetail={setDetailProduct}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {promoSlides.length > 0 ? (
+              <section className="mx-auto grid max-w-6xl gap-3 px-4 pt-8 md:grid-cols-2">
+                {promoSlides.map((slide, i) => (
+                  <button
+                    key={`${slide.image_url}-${i}`}
+                    type="button"
+                    onClick={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="relative h-40 overflow-hidden rounded-[1.5rem] text-left md:h-52"
                   >
-                    <p className="font-chowk-display line-clamp-4 text-[clamp(1.5rem,5vw,3rem)] leading-[0.92]" style={{ color: ink }}>
-                      {promoSlide.title}
-                    </p>
-                  </div>
-                ) : null}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={slide.image_url} alt="" className="h-full w-full object-cover" />
+                    <span className="absolute inset-0 bg-gradient-to-r from-black/55 to-transparent" />
+                    {slide.title ? (
+                      <span className="absolute bottom-4 left-4 max-w-[70%] font-chowk-display text-2xl leading-[1.05] text-white">
+                        {slide.title}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
               </section>
             ) : null}
 
             <div className="mx-auto max-w-6xl px-4">
-              {shelfItems.length > 0 ? (
-                <section className="pt-5 md:pt-6">
-                  {selectedName ? (
-                    <h2 className="font-chowk-display mb-3 text-[1.75rem] leading-none">{selectedName}</h2>
-                  ) : null}
-                  <div className="store-chowk-rail store-chowk-rail-fade flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1">
-                    {shelfItems.map((item) => (
-                      <StoreProductCard
-                        key={`shelf-${item.id}`}
-                        product={item}
-                        variant="shelf"
-                        onViewDetail={setDetailProduct}
-                      />
-                    ))}
+              <section id="all-products" className="pt-8">
+                {searchQuery || selectedCategory ? (
+                  <div className="mb-4">
+                    <h2 className="text-[1.15rem] font-semibold">{selectedName || `Results for “${searchQuery}”`}</h2>
+                    <p className="mt-0.5 text-[12px]" style={{ opacity: 0.45 }}>
+                      {total} products
+                    </p>
                   </div>
-                </section>
-              ) : null}
-
-              <section
-                id="all-products"
-                className={clsx(
-                  showShelf && gridItems.length > 0 && 'pt-7 md:pt-10',
-                  !showShelf && 'pt-5',
+                ) : (
+                  <h2 className="mb-3 text-[1.05rem] font-semibold">All products</h2>
                 )}
-              >
-                {searchQuery || (selectedCategory && !showShelf) ? (
-                  <p className="mb-3 text-[12px]" style={{ opacity: 0.45 }}>
-                    {selectedName || `Results for “${searchQuery}”`}
-                  </p>
-                ) : null}
 
                 {itemsLoading && items.length === 0 ? (
                   <div className={chowkGrid}>
                     {Array.from({ length: 8 }).map((_, i) => (
-                      <div key={i} className="aspect-square animate-pulse" style={{ backgroundColor: `color-mix(in srgb, ${ink} 6%, ${theme.background})` }} />
+                      <div key={i} className="aspect-square animate-pulse rounded-2xl bg-white" />
                     ))}
                   </div>
-                ) : gridItems.length === 0 && shelfItems.length === 0 && !featured ? (
+                ) : items.length === 0 ? (
                   <p className="py-10 text-[13px]" style={{ opacity: 0.5 }}>
                     {searchQuery
                       ? `No products found for “${searchQuery}”`
                       : 'No products in this store yet.'}
                   </p>
-                ) : gridItems.length > 0 ? (
+                ) : (
                   <div
                     className={clsx(chowkGrid, 'chowk-catalog', itemsLoading && items.length > 0 && 'is-wait')}
                     aria-busy={itemsLoading}
                   >
-                    {gridItems.map((item) => (
+                    {items.map((item) => (
                       <StoreProductCard key={item.id} product={item} variant="grid" onViewDetail={setDetailProduct} />
                     ))}
                   </div>
-                ) : null}
+                )}
 
                 {hasMore ? (
                   <div className="mt-6">
@@ -350,32 +335,15 @@ export function StoreCatalogView() {
                       type="button"
                       onClick={handleLoadMore}
                       disabled={itemsLoading}
-                      className="text-[13px] disabled:opacity-50"
+                      className="rounded-full bg-white px-5 py-2 text-[13px] font-medium shadow-sm disabled:opacity-50"
                       style={{ color: ink }}
                     >
-                      {itemsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'More in the shop →'}
+                      {itemsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load more'}
                     </button>
                   </div>
                 ) : null}
               </section>
             </div>
-
-              {featured ? (
-                <section
-                  className="mt-12 md:mt-16"
-                  style={{ backgroundColor: `color-mix(in srgb, ${ink} 4%, ${theme.background})` }}
-                >
-                  <div className="mx-auto max-w-6xl">
-                    <StoreProductCard product={featured} variant="featured" onViewDetail={setDetailProduct} />
-                  </div>
-                </section>
-              ) : null}
-
-              {theme.show_trust ? (
-                <div className="mx-auto max-w-6xl px-4">
-                  <StoreTrustSection />
-                </div>
-              ) : null}
           </>
         ) : (
           <>

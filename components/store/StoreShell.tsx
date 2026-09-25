@@ -74,7 +74,7 @@ export function StoreShell({
   const paper = theme.background;
   const ink = chowkInkOn(paper);
   const logoUrl = theme.logo_url || store.logo_url;
-  const searchPlaceholder = theme.search_placeholder || (chowk ? 'Search the shop' : 'Search products...');
+  const searchPlaceholder = theme.search_placeholder || (chowk ? 'Search for rice, oil, milk…' : 'Search products...');
   const pins = selectedBranch?.serviceable_pincodes ?? [];
   const pinOk =
     !pincode ||
@@ -160,70 +160,70 @@ export function StoreShell({
 
       <div className="sticky top-0 z-30" style={chowk ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : undefined}>
         {chowk ? (
-          <header style={{ backgroundColor: paper }}>
+          <header className="bg-white/80 backdrop-blur-sm" style={{ backgroundColor: paper }}>
             <div className="mx-auto max-w-6xl px-4">
-              <div className="flex items-start gap-3 pt-3">
-                <div className="flex min-w-0 flex-1 gap-2.5">
-                  <Link href="/" className="flex-shrink-0 pt-0.5">
-                    {logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={logoUrl}
-                        alt=""
-                        className="h-8 w-auto max-h-8 max-w-[6.75rem] object-contain object-left sm:h-9 sm:max-h-9 sm:max-w-[8.5rem]"
-                      />
-                    ) : (
-                      <span className="font-chowk-display block w-7 text-[1.35rem] leading-none sm:text-[1.5rem]">
-                        {store.name.slice(0, 1).toUpperCase()}
+              <div className="hidden items-center justify-between py-1.5 text-[11px] md:flex" style={{ color: ink, opacity: 0.55 }}>
+                <span className="truncate">{store.store_tagline || 'Fresh groceries from your local store'}</span>
+                <button type="button" onClick={() => setBranchPickerOpen((o) => !o)} className="shrink-0">
+                  {pincode ? `Deliver to ${pincode}` : showPlace ? locationLabel : 'Set delivery area'}
+                  <ChevronDown className="ml-0.5 inline h-3 w-3" />
+                </button>
+              </div>
+              <div className="flex items-center gap-3 py-2.5">
+                <Link href="/" className="flex min-w-0 items-center gap-2.5">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logoUrl}
+                      alt=""
+                      className="h-9 w-9 rounded-full object-cover sm:h-10 sm:w-10"
+                    />
+                  ) : (
+                    <span
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold sm:h-10 sm:w-10"
+                      style={{ backgroundColor: accent, color: '#fff7ed' }}
+                    >
+                      {store.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] font-semibold leading-tight sm:text-base">{store.name}</span>
+                    {store.store_tagline ? (
+                      <span className="hidden truncate text-[11px] md:block" style={{ opacity: 0.5 }}>
+                        {store.store_tagline}
                       </span>
-                    )}
-                  </Link>
-                  <div className="min-w-0">
-                    <Link
-                      href="/"
-                      className="font-chowk-display block text-[1.05rem] leading-[1.08] tracking-tight sm:text-[1.28rem]"
-                      style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {store.name}
-                    </Link>
-                    {showPlace ? (
-                    <button
-                      type="button"
-                      onClick={() => setBranchPickerOpen((o) => !o)}
-                      className="mt-1.5 max-w-full truncate text-left text-[11px] leading-none"
-                      style={{ opacity: 0.48 }}
-                    >
-                      {pincode || locationLabel}
-                      <ChevronDown className="ml-0.5 inline h-2.5 w-2.5" />
-                    </button>
-                    ) : (
-                    <button
-                      type="button"
-                      onClick={() => setBranchPickerOpen((o) => !o)}
-                      className="mt-1.5 text-left text-[11px] leading-none"
-                      style={{ opacity: 0.4 }}
-                      aria-label="Set pincode"
-                    >
-                      Area
-                      <ChevronDown className="ml-0.5 inline h-2.5 w-2.5" />
-                    </button>
-                    )}
-                  </div>
-                </div>
+                    ) : null}
+                  </span>
+                </Link>
 
-                <Link href="/account" className="hidden pt-1 text-[12px] sm:inline" style={{ color: ink, opacity: 0.7 }}>
+                {showSearch ? (
+                  <div className="relative hidden min-w-0 flex-1 md:block" role="search">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ opacity: 0.35 }} />
+                    <input
+          ref={undefined}
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => onSearchChange?.(e.target.value)}
+                      placeholder={searchPlaceholder}
+                      aria-label={searchPlaceholder}
+                      className="w-full rounded-full border-0 bg-white py-2.5 pl-10 pr-4 text-sm outline-none shadow-sm"
+                      style={{ color: ink }}
+                    />
+                  </div>
+                ) : null}
+
+                <Link href="/account" className="hidden text-[13px] font-medium sm:inline" style={{ color: ink, opacity: 0.75 }}>
                   Account
                 </Link>
-                <button type="button" onClick={openCart} className="shrink-0 pt-1 text-[12px]" aria-label={cartCount > 0 ? `Bag, ${cartCount} items` : 'Bag'}>
+                <button
+                  type="button"
+                  onClick={openCart}
+                  className="relative shrink-0 rounded-full bg-white px-3 py-1.5 text-[13px] font-medium shadow-sm"
+                  aria-label={cartCount > 0 ? `Bag, ${cartCount} items` : 'Bag'}
+                >
                   Bag
                   {cartCount > 0 ? (
-                    <span className="tabular-nums" style={{ color: accent }}>
-                      {' · '}
+                    <span className="ml-1 tabular-nums" style={{ color: accent }}>
                       {cartCount}
                     </span>
                   ) : null}
@@ -231,7 +231,8 @@ export function StoreShell({
               </div>
 
               {showSearch ? (
-                <div className="relative pb-2 pt-3" role="search">
+                <div className="relative pb-2 md:hidden" role="search">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ opacity: 0.35 }} />
                   <input
                     id="store-search"
                     ref={searchRef}
@@ -248,19 +249,13 @@ export function StoreShell({
                     aria-label={searchPlaceholder}
                     enterKeyHint="search"
                     autoComplete="off"
-                    className="w-full border-0 border-b bg-transparent py-2 pr-8 text-[15px] outline-none"
-                    style={{ borderColor: hair, color: ink }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = accent;
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = hair;
-                    }}
+                    className="w-full rounded-full border-0 bg-white py-2.5 pl-10 pr-10 text-[15px] outline-none shadow-sm"
+                    style={{ color: ink }}
                   />
                   {searchQuery ? (
                     <button
                       type="button"
-                      className="absolute right-0 top-1/2 min-h-11 min-w-11 -translate-y-1/2 text-[12px]"
+                      className="absolute right-1 top-1/2 min-h-11 min-w-11 -translate-y-1/2 text-[12px]"
                       style={{ color: ink, opacity: 0.45 }}
                       aria-label="Clear search"
                       onClick={() => {
@@ -400,33 +395,7 @@ export function StoreShell({
         {children}
       </main>
 
-      {chowk && !hideCartBar ? (
-        <div className={clsx('chowk-bag-dock fixed left-0 right-0 z-30', cartCount > 0 ? 'pointer-events-auto' : 'pointer-events-none')}>
-          <button
-            type="button"
-            onClick={openCart}
-            className={clsx('chowk-bag-strip flex w-full items-center justify-between px-4 py-3 text-[13px]', cartCount > 0 && 'is-on')}
-            style={{
-              backgroundColor: paper,
-              color: ink,
-              borderTop: `1px solid ${hair}`,
-            }}
-            aria-hidden={cartCount === 0}
-            tabIndex={cartCount > 0 ? 0 : -1}
-            aria-label={cartCount > 0 ? `Open bag, ${cartCount} items, ₹${cartTotal.toLocaleString('en-IN')}` : 'Bag'}
-          >
-            <span>
-              Bag · {cartCount}
-            </span>
-            <span className="tabular-nums">
-              ₹{cartTotal.toLocaleString('en-IN')}
-              <span className="ml-2" style={{ color: accent }}>
-                View
-              </span>
-            </span>
-          </button>
-        </div>
-      ) : cartCount > 0 && !hideCartBar ? (
+      {chowk && !hideCartBar ? null : cartCount > 0 && !hideCartBar ? (
         <div className="fixed bottom-14 left-0 right-0 z-30 px-3 sm:bottom-4 sm:px-4">
           <div className="mx-auto max-w-6xl">
             <button
@@ -459,23 +428,33 @@ export function StoreShell({
 
       {chowk ? (
         <footer
-          className="border-t px-4 pt-12 sm:px-0"
+          className="hidden border-t px-4 pt-12 md:block sm:px-0"
           style={{ borderColor: hair, paddingBottom: 'calc(2.5rem + var(--chowk-chrome))' }}
         >
-          <div className="mx-auto max-w-6xl sm:px-4">
-            <p className="font-chowk-display line-clamp-3 break-words text-[clamp(1.65rem,8vw,2.75rem)] leading-[0.95]">{store.name}</p>
-            {store.store_tagline ? (
-              <p className="mt-2 line-clamp-3 max-w-md text-[13px] leading-relaxed" style={{ opacity: 0.55 }}>
-                {store.store_tagline}
+          <div className="mx-auto grid max-w-6xl gap-8 sm:px-4 md:grid-cols-4">
+            <div>
+              <p className="text-[15px] font-semibold">{store.name}</p>
+              {store.store_tagline ? (
+                <p className="mt-2 text-[13px] leading-relaxed" style={{ opacity: 0.55 }}>
+                  {store.store_tagline}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-1 text-[13px]" style={{ opacity: 0.75 }}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ opacity: 0.5 }}>
+                Quick links
               </p>
-            ) : null}
-            <div className="mt-6 flex flex-col gap-1 text-[13px]" style={{ opacity: 0.7 }}>
-              {store.phone ? <a href={`tel:${store.phone}`}>{store.phone}</a> : null}
               <Link href="/about">About</Link>
               <Link href="/contact">Contact</Link>
               <Link href="/account">Your orders</Link>
             </div>
-            <p className="mt-8 text-[11px]" style={{ opacity: 0.4 }}>
+            <div className="text-[13px]" style={{ opacity: 0.75 }}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ opacity: 0.5 }}>
+                Contact
+              </p>
+              {store.phone ? <a href={`tel:${store.phone}`}>{store.phone}</a> : null}
+            </div>
+            <p className="text-[11px] md:text-right" style={{ opacity: 0.4 }}>
               {hideBadge ? store.name : 'Powered by Khatario'}
             </p>
           </div>

@@ -36,7 +36,7 @@ export const STORE_THEME_PRESETS: Record<
   green: { accent: '#16a34a', background: '#f9fafb', label: 'Green', pack: 'classic' },
   saffron: { accent: '#ea580c', background: '#fff7ed', label: 'Saffron', pack: 'classic' },
   blue: { accent: '#2563eb', background: '#f8fafc', label: 'Blue', pack: 'classic' },
-  chowk: { accent: '#c45c26', background: '#f3eee6', label: 'Chowk', pack: 'chowk' },
+  chowk: { accent: '#e07030', background: '#f7f1e8', label: 'Chowk', pack: 'chowk' },
 };
 
 export const DEFAULT_STORE_THEME: StoreTheme = {

@@ -1041,7 +1041,7 @@
   font-family: var(--font-chowk-ui), var(--font-chowk-devanagari), ui-sans-serif, sans-serif;
   overflow-x: hidden;
   --chowk-nav: 3.75rem;
-  --chowk-bag: 3.25rem;
+  --chowk-bag: 0px;
   --chowk-safe: env(safe-area-inset-bottom, 0px);
   --chowk-chrome: calc(var(--chowk-nav) + var(--chowk-bag) + var(--chowk-safe) + 0.75rem);
 }

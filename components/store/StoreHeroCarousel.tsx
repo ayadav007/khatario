@@ -42,53 +42,24 @@ export function StoreHeroCarousel({
   const slide = slides[Math.min(index, count - 1)];
 
   if (variant === 'chowk') {
-    const panel = paper || '#f3eee6';
+    const panel = paper || '#f7f1e8';
     const ink = chowkInkOn(panel);
     const idx = String(index + 1).padStart(2, '0');
     const total = String(count).padStart(2, '0');
-    const hasPhoto = slides.some((s) => s.image_url);
+    const hasPhoto = Boolean(slide.image_url);
     return (
-      <section className={compact ? 'mb-2' : 'mb-0'}>
-        <div className={clsx('mx-auto flex w-full max-w-[90rem] flex-col', hasPhoto && 'md:flex-row md:min-h-[480px]')}>
-          {hasPhoto ? (
-          <div
-            className={`relative w-full overflow-hidden md:w-[58%] ${
-              compact ? 'h-28' : 'h-[52vw] max-h-[280px] md:max-h-none md:h-auto md:min-h-[480px]'
-            }`}
-          >
-            {slides.map((s, i) => (
-              <div
-                key={`${s.image_url}-${i}`}
-                className="chowk-hero-slide absolute inset-0 transition-opacity duration-700"
-                style={{ opacity: i === index ? 1 : 0 }}
-                aria-hidden={i !== index}
-              >
-                {s.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={s.image_url} alt="" className="h-full w-full object-cover object-[center_40%]" />
-                ) : (
-                  <div className="h-full w-full" style={{ backgroundColor: panel }} />
-                )}
-              </div>
-            ))}
-          </div>
-          ) : null}
-          <div
-            className={`relative z-[1] w-full ${hasPhoto ? 'md:flex md:w-[42%] md:flex-col md:justify-end' : ''} ${
-              compact
-                ? 'px-3 py-2'
-                : hasPhoto
-                  ? '-mt-9 mx-4 mb-1 px-4 pb-6 pt-5 md:mx-0 md:mb-0 md:mt-0 md:px-10 md:py-14 lg:px-12'
-                  : 'px-4 py-8 md:mx-auto md:max-w-3xl md:px-8 md:py-16'
-            }`}
-            style={{ backgroundColor: panel }}
-          >
+      <section className={compact ? 'mb-2 px-3' : 'mx-auto max-w-6xl px-4 pt-3 md:pt-5'}>
+        <div
+          className={clsx(
+            'overflow-hidden rounded-[1.75rem] bg-white shadow-sm',
+            compact ? '' : 'md:grid md:min-h-[340px] md:grid-cols-2',
+          )}
+        >
+          <div className={clsx('relative flex flex-col justify-center', compact ? 'px-4 py-4' : 'px-5 py-6 md:px-10 md:py-12')}>
             {slide.title ? (
               <h1
-                className={`font-chowk-display line-clamp-3 tracking-tight ${
-                  compact
-                    ? 'text-xl leading-none'
-                    : 'text-[clamp(1.75rem,7vw,3.35rem)] leading-[0.94]'
+                className={`font-chowk-display mt-2 line-clamp-4 tracking-tight ${
+                  compact ? 'text-xl leading-none' : 'text-[clamp(1.85rem,5vw,3.4rem)] leading-[1.02]'
                 }`}
                 style={{ color: ink }}
                 aria-live="polite"
@@ -97,26 +68,18 @@ export function StoreHeroCarousel({
               </h1>
             ) : null}
             {slide.subtitle ? (
-              <p
-                className={`line-clamp-3 max-w-sm ${compact ? 'mt-1 text-[10px]' : 'mt-4 text-[13px] leading-[1.55]'}`}
-                style={{ color: ink, opacity: 0.55 }}
-              >
+              <p className={`line-clamp-3 max-w-md ${compact ? 'mt-1 text-[10px]' : 'mt-3 text-[13px] leading-relaxed'}`} style={{ color: ink, opacity: 0.62 }}>
                 {slide.subtitle}
               </p>
             ) : null}
             {ctaLabel && !compact ? (
               <button
                 type="button"
-                className="mt-5 min-h-11 max-w-full text-left text-[13px]"
-                style={{ color: ink }}
+                className="mt-5 min-h-11 w-fit rounded-full px-5 text-[13px] font-semibold"
+                style={{ backgroundColor: accent, color: '#fff7ed' }}
                 onClick={onCta}
               >
-                <span className="inline-block max-w-full truncate border-b pb-px" style={{ borderColor: ink }}>
-                  {ctaLabel}
-                </span>
-                <span aria-hidden className="ml-1.5 opacity-60">
-                  →
-                </span>
+                {ctaLabel} →
               </button>
             ) : null}
             {count > 1 ? (
@@ -124,13 +87,32 @@ export function StoreHeroCarousel({
                 type="button"
                 onClick={() => setIndex((i) => (i + 1) % count)}
                 aria-label={`Next slide, ${index + 1} of ${count}`}
-                className={`tabular-nums tracking-[0.14em] ${compact ? 'mt-2 text-[9px]' : 'mt-8 min-h-11 text-left text-[11px]'}`}
+                className={`tabular-nums ${compact ? 'mt-2 text-[9px]' : 'mt-6 min-h-11 text-left text-[12px] font-medium'}`}
                 style={{ color: ink, opacity: 0.4 }}
               >
                 {idx} / {total}
               </button>
             ) : null}
           </div>
+          {hasPhoto || slides.some((s) => s.image_url) ? (
+            <div className={clsx('relative overflow-hidden', compact ? 'h-28' : 'h-52 md:h-auto')}>
+              {slides.map((s, i) => (
+                <div
+                  key={`${s.image_url}-${i}`}
+                  className="chowk-hero-slide absolute inset-0 transition-opacity duration-700"
+                  style={{ opacity: i === index ? 1 : 0 }}
+                  aria-hidden={i !== index}
+                >
+                  {s.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={s.image_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full" style={{ backgroundColor: panel }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
     );

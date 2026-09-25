@@ -70,16 +70,16 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
         onClick={onClose}
       />
       <aside
-        className={clsx('chowk-drawer relative flex h-full w-full max-w-md flex-col pb-[env(safe-area-inset-bottom,0px)]', open && 'is-on')}
-        style={{ backgroundColor: paper, color: ink }}
+        className={clsx('chowk-drawer relative flex h-full w-full max-w-md flex-col rounded-l-3xl pb-[env(safe-area-inset-bottom,0px)]', open && 'is-on')}
+        style={{ backgroundColor: '#fffdf9', color: ink }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="chowk-bag-title"
       >
         <div className="flex items-center justify-between px-4 py-4" style={{ borderBottom: hair }}>
           <div>
-            <h2 id="chowk-bag-title" className="font-chowk-display text-[1.65rem] leading-none">
-              Bag
+            <h2 id="chowk-bag-title" className="text-[1.35rem] font-semibold leading-none">
+              Your bag
             </h2>
             <p className="mt-1 text-[12px]" style={{ opacity: 0.5 }}>
               {cartCount} {cartCount === 1 ? 'item' : 'items'}
@@ -169,7 +169,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
               type="button"
               onClick={onCheckout}
               disabled={!!(store?.store_min_order_amount && cartTotal < store.store_min_order_amount)}
-              className="mt-4 min-h-12 w-full py-3.5 text-center text-[14px] font-medium disabled:opacity-40"
+              className="mt-4 min-h-12 w-full rounded-full py-3.5 text-center text-[14px] font-semibold disabled:opacity-40"
               style={{
                 backgroundColor:
                   store?.store_min_order_amount && cartTotal < store.store_min_order_amount

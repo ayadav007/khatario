@@ -13,51 +13,43 @@ export function StoreCategoryMasonry({
   paper: string;
   onSelect: (id: string) => void;
 }) {
-  const withPhoto = categories.filter((c) => images[c.id]);
-  if (withPhoto.length === 0) return null;
-
+  if (categories.length === 0) return null;
   const ink = chowkInkOn(paper);
-  const [first, second, third] = withPhoto;
-  const gap = `color-mix(in srgb, ${ink} 12%, transparent)`;
-
-  const tile = (cat: { id: string; name: string }, className: string) => (
-    <button
-      key={cat.id}
-      type="button"
-      onClick={() => onSelect(cat.id)}
-      className={`relative overflow-hidden ${className}`}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={images[cat.id]} alt="" className="h-full w-full object-cover" />
-      <span
-        className="absolute bottom-0 left-0 line-clamp-2 max-w-[90%] px-2 py-1.5 text-left text-[13px] leading-tight"
-        style={{ backgroundColor: paper, color: ink }}
-      >
-        {cat.name}
-      </span>
-    </button>
-  );
-
-  if (withPhoto.length === 1) {
-    return <div className="h-64 w-full sm:h-[28rem]">{tile(first, 'h-full w-full')}</div>;
-  }
-
-  if (withPhoto.length === 2) {
-    return (
-      <div className="grid h-[280px] grid-cols-2 gap-px sm:h-[420px]" style={{ backgroundColor: gap }}>
-        {tile(first, 'h-full w-full')}
-        {tile(second, 'h-full w-full')}
-      </div>
-    );
-  }
 
   return (
-    <div className="grid h-[320px] grid-cols-2 gap-px sm:h-[480px]" style={{ backgroundColor: gap }}>
-      {tile(first, 'h-full w-full')}
-      <div className="grid grid-rows-2 gap-px" style={{ backgroundColor: gap }}>
-        {tile(second, 'h-full w-full')}
-        {tile(third, 'h-full w-full')}
+    <section id="shop-categories" className="mx-auto max-w-6xl px-4 pt-7">
+      <div className="mb-4 flex items-end justify-between">
+        <h2 className="text-[1.05rem] font-semibold" style={{ color: ink }}>
+          Shop by category
+        </h2>
       </div>
-    </div>
+      <div className="flex gap-4 overflow-x-auto pb-2 md:flex-wrap md:overflow-visible">
+        {categories.map((cat) => {
+          const photo = images[cat.id];
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => onSelect(cat.id)}
+              className="w-[4.5rem] flex-shrink-0 md:w-24"
+            >
+              <span className="mx-auto flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full bg-white shadow-sm md:h-24 md:w-24">
+                {photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photo} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="font-chowk-display text-xl" style={{ color: ink, opacity: 0.45 }}>
+                    {cat.name.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+              </span>
+              <span className="mt-2 line-clamp-2 text-center text-[11px] font-medium leading-tight" style={{ color: ink }}>
+                {cat.name}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }

@@ -81,25 +81,24 @@ function ChowkCategoryRail({
   const ink = chowkInkOn(paper);
 
   return (
-    <nav id="categories" className="store-chowk-rail-fade" aria-label="Categories">
-      <div ref={railRef} className="store-chowk-rail flex gap-4 overflow-x-auto pb-2.5 pr-8 pt-1.5">
+    <nav id="categories" className="pb-1" aria-label="Categories">
+      <div ref={railRef} className="store-chowk-rail flex gap-1.5 overflow-x-auto pb-2 pr-6 pt-1">
         {items.map((cat) => {
           const selected = selectedId === cat.id;
-          const Icon = iconFor(cat.name);
           return (
             <button
               key={cat.id ?? 'all'}
               type="button"
               onClick={() => onSelect(cat.id)}
               aria-current={selected ? true : undefined}
-              className="relative flex h-11 max-w-[min(70vw,16rem)] flex-shrink-0 items-center gap-1.5 text-[13px]"
-              style={{ color: selected ? ink : `color-mix(in srgb, ${ink} 42%, transparent)` }}
+              className="h-9 max-w-[min(70vw,14rem)] flex-shrink-0 truncate rounded-full px-3.5 text-[13px] font-medium"
+              style={
+                selected
+                  ? { backgroundColor: accent, color: '#fff7ed' }
+                  : { backgroundColor: 'transparent', color: ink, opacity: 0.7 }
+              }
             >
-              {style === 'icon' ? <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} /> : null}
               <span className="truncate">{cat.name}</span>
-              {selected ? (
-                <span className="absolute inset-x-0 bottom-0 h-px" style={{ backgroundColor: accent }} />
-              ) : null}
             </button>
           );
         })}

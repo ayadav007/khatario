@@ -117,7 +117,7 @@ describe('chowkInkOn', () => {
   });
 
   it('picks readable type on chilli and pale accents', () => {
-    expect(chowkOnAccent('#c45c26')).toBe('#f4efe6');
+    expect(chowkOnAccent('#e07030')).toBe('#f4efe6');
     expect(chowkOnAccent('#fbbf24')).toBe(CHOWK_INK);
   });
 });

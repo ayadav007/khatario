@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Fraunces, IBM_Plex_Sans, Noto_Sans_Devanagari } from 'next/font/google';
+import { Fraunces, Nunito, Noto_Sans_Devanagari } from 'next/font/google';
 import { StoreApp } from '@/components/store/StoreApp';
 
 const fraunces = Fraunces({
@@ -9,9 +9,8 @@ const fraunces = Fraunces({
   display: 'swap',
 });
 
-const plex = IBM_Plex_Sans({
+const nunito = Nunito({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
   variable: '--font-chowk-ui',
   display: 'swap',
 });
@@ -33,7 +32,7 @@ export default function StoreLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`${fraunces.variable} ${plex.variable} ${notoDevanagari.variable}`}>
+    <div className={`${fraunces.variable} ${nunito.variable} ${notoDevanagari.variable}`}>
       <StoreApp>{children}</StoreApp>
     </div>
   );

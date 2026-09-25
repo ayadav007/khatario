@@ -65,7 +65,7 @@ export function StoreProductDetailModal({
       <div className="store-chowk fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={{ color: ink }}>
         <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
         <div
-          className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh]"
+          className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"
           style={{ backgroundColor: paper }}
           role="dialog"
           aria-modal="true"

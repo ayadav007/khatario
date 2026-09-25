@@ -17,20 +17,27 @@ export function StoreTrustSection() {
 
   if (chowk) {
     const ink = chowkInkOn(theme.background);
-    const line = [
-      'From your local store',
-      store?.online_pay_enabled ? 'UPI & cards' : 'Pay on delivery',
-      store?.phone ? store.phone : null,
-    ].filter(Boolean) as string[];
-
-    if (line.length === 0) return null;
-
+    const pills = [
+      { icon: Truck, title: 'Free delivery', body: 'From your local store' },
+      { icon: ShieldCheck, title: 'Fresh products', body: store?.online_pay_enabled ? 'UPI & cards' : 'Pay on delivery' },
+      { icon: Headphones, title: 'Easy support', body: store?.phone ? store.phone : 'Contact the store' },
+      { icon: MapPin, title: 'Local store', body: 'Best prices nearby' },
+    ];
     return (
-      <section
-        className="mt-8 border-t py-4 text-[12px] leading-relaxed md:mt-10"
-        style={{ borderColor: `color-mix(in srgb, ${ink} 12%, transparent)`, color: ink, opacity: 0.55 }}
-      >
-        {line.join('  ·  ')}
+      <section className="mx-auto grid max-w-6xl grid-cols-2 gap-2 px-4 pt-5 md:grid-cols-4 md:gap-3">
+        {pills.map(({ icon: Icon, title, body }) => (
+          <div key={title} className="flex items-start gap-2.5 rounded-2xl bg-white px-3 py-3 shadow-sm">
+            <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: theme.accent }} strokeWidth={1.75} />
+            <div>
+              <p className="text-[12px] font-semibold leading-tight" style={{ color: ink }}>
+                {title}
+              </p>
+              <p className="mt-0.5 text-[11px] leading-snug" style={{ color: ink, opacity: 0.5 }}>
+                {body}
+              </p>
+            </div>
+          </div>
+        ))}
       </section>
     );
   }
