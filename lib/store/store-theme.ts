@@ -29,16 +29,27 @@ export interface StoreTheme {
 /** Theme-owned ink. Merchant accent never replaces this. */
 export const CHOWK_INK = '#1c1917';
 
+/** Pack-owned page paper. Brand colour never paints the body. */
+export const PACK_CANVAS: Record<StoreThemePack, string> = {
+  classic: '#f7f7f8',
+  chowk: '#f7f1e8',
+  atelier: '#f6f3ef',
+};
+
 export const STORE_THEME_PRESETS: Record<
   Exclude<StoreThemePreset, 'custom'>,
   { accent: string; background: string; label: string; pack: StoreThemePack }
 > = {
-  green: { accent: '#16a34a', background: '#f9fafb', label: 'Green', pack: 'classic' },
-  saffron: { accent: '#ea580c', background: '#fff7ed', label: 'Saffron', pack: 'classic' },
-  blue: { accent: '#2563eb', background: '#f8fafc', label: 'Blue', pack: 'classic' },
-  chowk: { accent: '#e07030', background: '#f7f1e8', label: 'Chowk', pack: 'chowk' },
-  atelier: { accent: '#171412', background: '#f6f3ef', label: 'Atelier', pack: 'atelier' },
+  green: { accent: '#16a34a', background: PACK_CANVAS.classic, label: 'Green', pack: 'classic' },
+  saffron: { accent: '#ea580c', background: PACK_CANVAS.classic, label: 'Saffron', pack: 'classic' },
+  blue: { accent: '#2563eb', background: PACK_CANVAS.classic, label: 'Blue', pack: 'classic' },
+  chowk: { accent: '#e07030', background: PACK_CANVAS.chowk, label: 'Chowk', pack: 'chowk' },
+  atelier: { accent: '#171412', background: PACK_CANVAS.atelier, label: 'Atelier', pack: 'atelier' },
 };
+
+export function storeCanvas(theme: Pick<StoreTheme, 'pack'>): string {
+  return PACK_CANVAS[theme.pack] ?? PACK_CANVAS.classic;
+}
 
 export const DEFAULT_STORE_THEME: StoreTheme = {
   accent: STORE_THEME_PRESETS.green.accent,
@@ -169,15 +180,12 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
   const preset = PRESETS.includes(src.preset as StoreThemePreset)
     ? (src.preset as StoreThemePreset)
     : 'custom';
+  const pack = resolvePack(preset, src.pack);
   const presetColors =
     preset !== 'custom' ? STORE_THEME_PRESETS[preset] : null;
   const accent = normalizeHexColor(
     src.accent,
     presetColors?.accent ?? DEFAULT_STORE_THEME.accent,
-  );
-  const background = normalizeHexColor(
-    src.background,
-    presetColors?.background ?? DEFAULT_STORE_THEME.background,
   );
   const cols = Number(src.mobile_columns);
   const category_style = STYLES.includes(src.category_style as StoreCategoryStyle)
@@ -186,10 +194,9 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
 
   return {
     accent: presetColors && preset !== 'custom' ? presetColors.accent : accent,
-    background:
-      presetColors && preset !== 'custom' ? presetColors.background : background,
+    background: storeCanvas({ pack }),
     preset,
-    pack: resolvePack(preset, src.pack),
+    pack,
     logo_url: clipStoreMediaUrl(src.logo_url),
     show_hero: src.show_hero !== false,
     show_offers: src.show_offers !== false,

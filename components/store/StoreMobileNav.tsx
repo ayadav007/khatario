@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 
 export function StoreMobileNav({
   onSearch,
@@ -21,7 +21,7 @@ export function StoreMobileNav({
   const chowk = theme.pack === 'chowk';
   const atelier = theme.pack === 'atelier';
   const pack = chowk || atelier;
-  const ink = chowkInkOn(theme.background);
+  const ink = chowkInkOn(storeCanvas(theme));
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
   const item = (active: boolean) =>

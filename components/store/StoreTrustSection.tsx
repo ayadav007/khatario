@@ -1,12 +1,13 @@
 'use client';
 
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import { Truck, ShieldCheck, Headphones, MapPin } from 'lucide-react';
 
 export function StoreTrustSection() {
   const { store } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
+  const paper = storeCanvas(theme);
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const items = [
@@ -17,7 +18,7 @@ export function StoreTrustSection() {
   ];
 
   if (atelier) {
-    const ink = chowkInkOn(theme.background);
+    const ink = chowkInkOn(paper);
     const line = [
       { icon: ShieldCheck, title: 'Secure checkout' },
       { icon: Truck, title: '30-day returns' },
@@ -27,7 +28,7 @@ export function StoreTrustSection() {
       <section className="mx-auto max-w-6xl px-4 pt-10">
         <blockquote
           className="rounded-[1.75rem] px-6 py-8 text-center"
-          style={{ backgroundColor: `color-mix(in srgb, ${ink} 4%, ${theme.background})` }}
+          style={{ backgroundColor: `color-mix(in srgb, ${ink} 4%, ${paper})` }}
         >
           <p className="font-atelier-display text-[1.35rem] leading-snug" style={{ color: ink }}>
             “Simplicity is the keynote of all true elegance.”
@@ -51,7 +52,7 @@ export function StoreTrustSection() {
   }
 
   if (chowk) {
-    const ink = chowkInkOn(theme.background);
+    const ink = chowkInkOn(paper);
     const pills = [
       { icon: Truck, title: 'Free delivery', body: 'From your local store' },
       { icon: ShieldCheck, title: 'Fresh products', body: store?.online_pay_enabled ? 'UPI & cards' : 'Pay on delivery' },

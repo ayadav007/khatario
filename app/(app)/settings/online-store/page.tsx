@@ -22,6 +22,7 @@ import {
   STORE_THEME_PRESETS,
   applyStorePreset,
   sanitizeStoreTheme,
+  storeCanvas,
   type StoreTheme,
   type StoreThemePreset,
 } from '@/lib/store/store-theme';
@@ -309,7 +310,7 @@ export default function OnlineStoreSettingsPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Theme</h3>
                 <p className="mt-1 text-xs text-gray-500">
-                  Chowk is the grocery market look. Atelier is quiet luxury for apparel. Green, Saffron, and Blue keep the classic layout. Colours can still be customised.
+                  Brand colour tints the header, chips, and buttons. The page body stays the theme paper (white, cream, or ivory) and does not follow the brand colour.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(Object.keys(STORE_THEME_PRESETS) as Array<Exclude<StoreThemePreset, 'custom'>>).map(
@@ -345,24 +346,18 @@ export default function OnlineStoreSettingsPage() {
               </div>
               <div className="flex flex-wrap gap-6">
                 <label className="text-xs text-gray-500">
-                  Accent
+                  Brand colour
                   <input
                     type="color"
                     className="mt-1 block h-10 w-16"
                     value={theme.accent}
                     onChange={(e) =>
-                      setTheme((t) => ({ ...t, preset: 'custom', accent: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="text-xs text-gray-500">
-                  Page background
-                  <input
-                    type="color"
-                    className="mt-1 block h-10 w-16"
-                    value={theme.background}
-                    onChange={(e) =>
-                      setTheme((t) => ({ ...t, preset: 'custom', background: e.target.value }))
+                      setTheme((t) => ({
+                        ...t,
+                        preset: 'custom',
+                        accent: e.target.value,
+                        background: storeCanvas(t),
+                      }))
                     }
                   />
                 </label>

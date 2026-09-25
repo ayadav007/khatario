@@ -2,7 +2,7 @@
 
 import { Search } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
-import { CHOWK_INK, chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides } from '@/lib/store/store-theme';
+import { CHOWK_INK, chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, resolveHeroSlides, storeCanvas } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
 import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
@@ -46,7 +46,7 @@ export function StoreLivePreview({
         ];
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const paper = theme.background;
+  const paper = storeCanvas(theme);
   const ink = chowk || atelier ? chowkInkOn(paper) : CHOWK_INK;
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
@@ -242,24 +242,29 @@ export function StoreLivePreview({
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-3 py-2">
+              <div className="px-3 py-2" style={{ backgroundColor: theme.accent, color: chowkOnAccent(theme.accent) }}>
+                <div className="flex items-center gap-2">
                 {logo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logo} alt="" className="h-7 w-7 rounded-md object-contain" />
+                  <img src={logo} alt="" className="h-7 w-7 rounded-md bg-white object-contain p-0.5" />
                 ) : (
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold">
+                  <div
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-[10px] font-bold"
+                    style={{ backgroundColor: chowkOnAccent(theme.accent), color: theme.accent }}
+                  >
                     {name.slice(0, 1).toUpperCase()}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-semibold text-gray-900">{name}</p>
-                  <p className="text-[9px] text-gray-500">Deliver to</p>
+                  <p className="truncate text-[11px] font-semibold">{name}</p>
+                  <p className="text-[9px] opacity-80">Deliver to</p>
                 </div>
-              </div>
-              <div className="relative mx-2 mt-2">
-                <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
-                <div className="rounded-full border border-gray-200 bg-white py-1.5 pl-7 pr-2 text-[10px] text-gray-400">
-                  {theme.search_placeholder || 'Search products...'}
+                </div>
+                <div className="relative mt-2">
+                  <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                  <div className="rounded-full bg-white py-1.5 pl-7 pr-2 text-[10px] text-gray-400">
+                    {theme.search_placeholder || 'Search products...'}
+                  </div>
                 </div>
               </div>
               <div className="px-2 pb-3 pt-2">

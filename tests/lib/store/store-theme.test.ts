@@ -1,8 +1,9 @@
 import {
   sanitizeStoreTheme,
   applyStorePreset,
-  DEFAULT_STORE_THEME,
   STORE_THEME_PRESETS,
+  PACK_CANVAS,
+  storeCanvas,
   CHOWK_INK,
   chowkInkOn,
   chowkOnAccent,
@@ -27,7 +28,7 @@ describe('sanitizeStoreTheme', () => {
       search_placeholder: 'Search atta',
     });
     expect(t.accent).toBe('#00ff00');
-    expect(t.background).toBe(DEFAULT_STORE_THEME.background);
+    expect(t.background).toBe(PACK_CANVAS.classic);
     expect(t.mobile_columns).toBe(3);
     expect(t.category_style).toBe('photo');
     expect(t.search_placeholder).toBe('Search atta');
@@ -113,6 +114,7 @@ describe('store theme pack', () => {
     });
     expect(t.pack).toBe('chowk');
     expect(t.accent).toBe('#112233');
+    expect(t.background).toBe(PACK_CANVAS.chowk);
   });
 
   it('keeps Atelier pack when colours are customised', () => {
@@ -124,6 +126,19 @@ describe('store theme pack', () => {
     });
     expect(t.pack).toBe('atelier');
     expect(t.accent).toBe('#3b2f2a');
+    expect(t.background).toBe(PACK_CANVAS.atelier);
+  });
+
+  it('never paints the body with brand colour', () => {
+    const t = sanitizeStoreTheme({
+      preset: 'custom',
+      pack: 'classic',
+      accent: '#e11d48',
+      background: '#22c55e',
+    });
+    expect(t.accent).toBe('#e11d48');
+    expect(t.background).toBe(PACK_CANVAS.classic);
+    expect(storeCanvas(t)).toBe(PACK_CANVAS.classic);
   });
 });
 

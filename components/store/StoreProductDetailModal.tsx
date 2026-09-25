@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store/store-context';
 import { useCallback, useEffect, useState } from 'react';
 import type { StoreProduct } from './StoreProductCard';
 import clsx from 'clsx';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 
 interface StoreProductDetailModalProps {
   product: StoreProduct;
@@ -21,7 +21,7 @@ export function StoreProductDetailModal({
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const pack = chowk || atelier;
-  const paper = theme.background;
+  const paper = storeCanvas(theme);
   const accent = theme.accent;
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     product.variants[0]?.id ?? null,

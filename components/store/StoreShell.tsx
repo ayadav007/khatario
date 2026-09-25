@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
-import { chowkInkOn, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 
 interface StoreShellProps {
   children: React.ReactNode;
@@ -73,8 +73,9 @@ export function StoreShell({
   const atelier = isAtelierPack(theme);
   const pack = chowk || atelier;
   const accent = theme.accent;
-  const paper = theme.background;
+  const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
+  const onAccent = chowkOnAccent(accent);
   const logoUrl = theme.logo_url || store.logo_url;
   const searchPlaceholder =
     theme.search_placeholder ||
@@ -354,22 +355,25 @@ export function StoreShell({
             {subnav ? <div className="mx-auto max-w-6xl px-4">{subnav}</div> : null}
           </header>
         ) : (
-          <header className="border-b border-gray-200 bg-white shadow-sm">
+          <header className="shadow-sm" style={{ backgroundColor: accent, color: onAccent }}>
             <div className="mx-auto max-w-6xl px-4 py-2.5">
               <div className="flex items-center gap-3">
                 <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
                   {logoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logoUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg object-contain sm:h-10 sm:w-10" />
+                    <img src={logoUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded-lg bg-white object-contain p-0.5 sm:h-10 sm:w-10" />
                   ) : (
-                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm font-bold text-gray-700 sm:h-10 sm:w-10">
+                    <div
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-bold sm:h-10 sm:w-10"
+                      style={{ backgroundColor: onAccent, color: accent }}
+                    >
                       {store.name.slice(0, 1).toUpperCase()}
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900 sm:text-base">{store.name}</p>
+                    <p className="truncate text-sm font-semibold sm:text-base">{store.name}</p>
                     {store.store_tagline ? (
-                      <p className="hidden truncate text-xs text-gray-500 md:block">{store.store_tagline}</p>
+                      <p className="hidden truncate text-xs opacity-80 md:block">{store.store_tagline}</p>
                     ) : null}
                   </div>
                 </Link>
@@ -377,14 +381,15 @@ export function StoreShell({
                 <button
                   type="button"
                   onClick={() => setBranchPickerOpen((o) => !o)}
-                  className="ml-auto flex min-w-0 max-w-[42%] items-center gap-1 rounded-lg px-2 py-1.5 text-left hover:bg-gray-50 sm:ml-0 sm:max-w-xs sm:flex-1"
+                  className="ml-auto flex min-w-0 max-w-[42%] items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-left sm:ml-0 sm:max-w-xs sm:flex-1"
+                  style={{ color: accent }}
                 >
-                  <MapPin className="h-4 w-4 flex-shrink-0" style={{ color: accent }} />
+                  <MapPin className="h-4 w-4 flex-shrink-0" />
                   <span className="min-w-0">
-                    <span className="block text-[10px] uppercase tracking-wide text-gray-400">Deliver to</span>
-                    <span className="flex items-center gap-1 truncate text-xs font-medium text-gray-800">
+                    <span className="block text-[10px] uppercase tracking-wide opacity-70">Deliver to</span>
+                    <span className="flex items-center gap-1 truncate text-xs font-medium">
                       {pincode || locationLabel}
-                      <ChevronDown className="h-3 w-3 text-gray-400" />
+                      <ChevronDown className="h-3 w-3 opacity-70" />
                     </span>
                   </span>
                 </button>
@@ -398,20 +403,20 @@ export function StoreShell({
                       value={searchQuery}
                       onChange={(e) => onSearchChange?.(e.target.value)}
                       placeholder={searchPlaceholder}
-                      className="w-full rounded-full border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                      className="w-full rounded-full border-0 bg-white py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
                     />
                   </div>
                 ) : null}
 
-                <nav className="hidden items-center gap-1 text-sm text-gray-600 lg:flex">
-                  <Link href="/" className="rounded-lg px-2 py-1 hover:bg-gray-50">Home</Link>
-                  <a href="#categories" className="rounded-lg px-2 py-1 hover:bg-gray-50">Categories</a>
-                  <Link href="/contact" className="rounded-lg px-2 py-1 hover:bg-gray-50">Contact</Link>
+                <nav className="hidden items-center gap-1 text-sm lg:flex">
+                  <Link href="/" className="rounded-lg px-2 py-1 opacity-90 hover:opacity-100">Home</Link>
+                  <a href="#categories" className="rounded-lg px-2 py-1 opacity-90 hover:opacity-100">Categories</a>
+                  <Link href="/contact" className="rounded-lg px-2 py-1 opacity-90 hover:opacity-100">Contact</Link>
                 </nav>
 
-                <Link href="/account" className="hidden h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 sm:flex" aria-label="Account">
+                <Link href="/account" className="hidden h-9 w-9 items-center justify-center rounded-full bg-white/15 sm:flex" aria-label="Account">
                   {customer?.name || customer?.phone ? (
-                    <span className="text-xs font-semibold" style={{ color: accent }}>
+                    <span className="text-xs font-semibold">
                       {(customer.name || customer.phone).slice(0, 1).toUpperCase()}
                     </span>
                   ) : (
@@ -419,21 +424,21 @@ export function StoreShell({
                   )}
                 </Link>
                 {store.phone ? (
-                  <a href={`tel:${store.phone}`} className="hidden h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 sm:flex" aria-label="Call store">
+                  <a href={`tel:${store.phone}`} className="hidden h-9 w-9 items-center justify-center rounded-full bg-white/15 sm:flex" aria-label="Call store">
                     <Phone className="h-4 w-4" />
                   </a>
                 ) : null}
                 <button
                   type="button"
                   onClick={openCart}
-                  className="relative flex h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
+                  className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/15"
                   aria-label="Cart"
                 >
                   <ShoppingCart className="h-4 w-4" />
                   {cartCount > 0 ? (
                     <span
-                      className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
-                      style={{ backgroundColor: accent }}
+                      className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold"
+                      style={{ backgroundColor: onAccent, color: accent }}
                     >
                       {cartCount}
                     </span>
@@ -453,7 +458,7 @@ export function StoreShell({
                     value={searchQuery}
                     onChange={(e) => onSearchChange?.(e.target.value)}
                     placeholder={searchPlaceholder}
-                    className="w-full rounded-full border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+                    className="w-full rounded-full border-0 bg-white py-2.5 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
                   />
                 </div>
               ) : null}

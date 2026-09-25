@@ -2,7 +2,7 @@
 
 import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -19,7 +19,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const pack = chowk || atelier;
-  const paper = theme.background;
+  const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;
 

@@ -6,7 +6,7 @@ import { StoreShell } from '@/components/store/StoreShell';
 import { useStore } from '@/lib/store/store-context';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 import { Loader2, Package, Minus, Plus } from 'lucide-react';
-import { CHOWK_INK, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { CHOWK_INK, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 
 export default function StoreProductPage() {
@@ -16,6 +16,7 @@ export default function StoreProductPage() {
   const [loading, setLoading] = useState(true);
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
+  const paper = storeCanvas(theme);
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const pack = chowk || atelier;
@@ -65,7 +66,7 @@ export default function StoreProductPage() {
       <div className="grid gap-8 md:grid-cols-2">
         <div
           className={`relative overflow-hidden ${pack ? '' : 'rounded-2xl bg-gray-100'} ${atelier ? 'rounded-[1.75rem]' : ''}`}
-          style={pack ? { backgroundColor: theme.background } : undefined}
+          style={pack ? { backgroundColor: paper } : undefined}
         >
           {product.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -138,7 +139,7 @@ export default function StoreProductPage() {
             <button
               type="button"
               className={clsx('mt-6 min-h-12 px-6 py-3 text-sm font-medium', !pack && 'rounded-xl font-semibold text-white', atelier && 'rounded-2xl')}
-              style={{ backgroundColor: accent, color: pack ? theme.background : undefined }}
+              style={{ backgroundColor: accent, color: pack ? paper : undefined }}
               onClick={() =>
                 addToCart({
                   itemId: product.id,

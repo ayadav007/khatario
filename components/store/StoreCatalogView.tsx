@@ -10,7 +10,7 @@ import { StoreTrustSection } from './StoreTrustSection';
 import { StoreCategoryPills } from './StoreCategoryPills';
 import { StoreCategoryMasonry } from './StoreCategoryMasonry';
 import { StoreHeroCarousel } from './StoreHeroCarousel';
-import { chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -184,7 +184,8 @@ export function StoreCatalogView() {
       : store.store_tagline?.trim() || ''
     : '';
 
-  const ink = chowkInkOn(theme.background);
+  const paper = storeCanvas(theme);
+  const ink = chowkInkOn(paper);
   const sparseCatalog = items.length > 0 && items.length < 12;
   const chowkGrid =
     theme.mobile_columns === 3
@@ -216,7 +217,7 @@ export function StoreCatalogView() {
               className="truncate px-4 py-1.5 text-[11px] tracking-[0.02em]"
               style={{
                 color: ink,
-                backgroundColor: `color-mix(in srgb, ${accent} 7%, ${theme.background})`,
+                backgroundColor: `color-mix(in srgb, ${accent} 7%, ${paper})`,
               }}
             >
               {tinLine}
@@ -233,7 +234,7 @@ export function StoreCatalogView() {
               style={theme.category_style}
               images={theme.category_images}
               variant={atelier ? 'atelier' : 'chowk'}
-              paper={theme.background}
+              paper={paper}
             />
           ) : null
         }
@@ -245,7 +246,7 @@ export function StoreCatalogView() {
                 slides={heroSlides}
                 ctaLabel={theme.hero_cta}
                 accent={accent}
-                paper={theme.background}
+                paper={paper}
                 variant={atelier ? 'atelier' : 'chowk'}
                 onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
               />
@@ -257,7 +258,7 @@ export function StoreCatalogView() {
               <StoreCategoryMasonry
                 categories={categories}
                 images={theme.category_images}
-                paper={theme.background}
+                paper={paper}
                 onSelect={(id) => handleCategoryChange(id)}
               />
             ) : null}

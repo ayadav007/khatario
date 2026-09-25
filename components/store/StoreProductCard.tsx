@@ -2,7 +2,7 @@
 
 import { Plus, Minus, Package } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -260,7 +260,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
   );
 
   if (layout !== 'classic') {
-    const paper = theme.background;
+    const paper = storeCanvas(theme);
     const ink = chowkInkOn(paper);
     const excerpt = (product.description || '').trim().slice(0, 140);
     const imageBlock = (
