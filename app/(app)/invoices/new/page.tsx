@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
-import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2 } from 'lucide-react';
+import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
@@ -388,6 +388,7 @@ function NewInvoiceContent() {
   const [invoiceMobileLayout, setInvoiceMobileLayout] = useState(false);
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
   const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
+  const [mobileBillMetaOpen, setMobileBillMetaOpen] = useState(false);
   const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
@@ -2881,122 +2882,168 @@ function NewInvoiceContent() {
         ? `${customerBalanceHint(partyBalance)} ₹${Math.abs(partyBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
         : '';
     const customerSubtitle = selectedCustomer
-      ? [selectedCustomer.phone, partyBalanceLabel].filter(Boolean).join(' · ') || 'Tap to change customer'
+      ? [
+          selectedCustomer.gstin ? `GSTIN ${selectedCustomer.gstin}` : selectedCustomer.phone,
+          partyBalanceLabel,
+        ].filter(Boolean).join(' · ') || 'Tap to change customer'
       : 'Tap to add customer';
+    const itemCount = rows.filter((r) => r.itemId || r.name).length;
+    const payMode = String(payments[0]?.mode || 'upi');
+    const settlement = totalPaid <= 0.009 ? 'credit' : Math.abs(balance) < 0.05 ? 'full' : 'partial';
+    const applySettlement = (kind: 'full' | 'credit' | 'partial') => {
+      if (isFinal) return;
+      if (kind === 'credit') {
+        setPayments([]);
+        return;
+      }
+      if (kind === 'partial') {
+        setPaymentModalOpen(true);
+        return;
+      }
+      setPayments([{
+        id: Date.now().toString(),
+        amount: grandTotal,
+        mode: payMode === 'credit' ? 'upi' : payMode,
+        date: format(new Date(), 'yyyy-MM-dd'),
+        reference: '',
+      }]);
+    };
+    const applyPayMode = (mode: string) => {
+      if (isFinal) return;
+      if (payments.length === 0) {
+        setPayments([{
+          id: Date.now().toString(),
+          amount: grandTotal,
+          mode,
+          date: format(new Date(), 'yyyy-MM-dd'),
+          reference: '',
+        }]);
+        return;
+      }
+      setPayments(payments.map((p, i) => (i === 0 ? { ...p, mode } : p)));
+    };
+    const words = engineNumberToWords(grandTotal);
     return (
-    <div className="relative pb-72">
-      <div className="space-y-3">
+    <div className="relative pb-[4.5rem]">
+      <div className="space-y-1.5">
         {isInvoiceLocked && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
             <div className="flex-shrink-0 mt-0.5"><svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg></div>
             <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
           </div>
         )}
-        <div className="space-y-2 rounded-xl border border-border bg-surface p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              {customerPickerOpen && !isFinal ? (
-                <div className="space-y-2">
-                  <CustomerAutocomplete
-                    compact
-                    customers={customers}
-                    value={customerId}
-                    onChange={setCustomerId}
-                    onSelect={(c) => {
-                      if (c) {
-                        setSelectedCustomer(c);
-                        setBillingAddress(c.billing_address || c.address || '');
-                        setShippingAddress(c.shipping_address || c.address || '');
-                        setCustomerPickerOpen(false);
-                      }
-                    }}
-                    disabled={isFinal}
-                    onAddNew={() => setCreateCustomerModalOpen(true)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCustomerPickerOpen(false)}
-                    className="text-xs font-semibold text-primary-600"
-                  >
-                    Done
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="w-full text-left disabled:opacity-100"
-                  onClick={() => {
-                    if (!isFinal) setCustomerPickerOpen(true);
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
+          <div className="min-w-0 flex-1">
+            {customerPickerOpen && !isFinal ? (
+              <div className="space-y-1">
+                <CustomerAutocomplete
+                  compact
+                  customers={customers}
+                  value={customerId}
+                  onChange={setCustomerId}
+                  onSelect={(c) => {
+                    if (c) {
+                      setSelectedCustomer(c);
+                      setBillingAddress(c.billing_address || c.address || '');
+                      setShippingAddress(c.shipping_address || c.address || '');
+                      setCustomerPickerOpen(false);
+                    }
                   }}
                   disabled={isFinal}
-                >
-                  <p className="truncate text-base font-semibold text-text-primary">
-                    {selectedCustomer?.name || 'Cash sale'}
-                  </p>
-                  <p className="mt-0.5 text-xs text-text-muted">{customerSubtitle}</p>
+                  onAddNew={() => setCreateCustomerModalOpen(true)}
+                />
+                <button type="button" onClick={() => setCustomerPickerOpen(false)} className="text-xs font-semibold text-primary-600">
+                  Done
                 </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAddressSupplyOpen((open) => !open)}
-              className="shrink-0 pt-0.5 text-sm font-semibold text-primary-600"
-              aria-expanded={addressSupplyOpen}
-            >
-              Address & supply
-            </button>
-          </div>
-          {addressSupplyOpen && (
-            <div className="space-y-2 border-t border-border pt-2">
-              <div className="space-y-0.5">
-                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
-                <select
-                  className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                  value={placeOfSupply}
-                  onChange={(e) => {
-                    setPlaceOfSupply(e.target.value);
-                    setRows((prev) => prev.map((r) => calculateRow(r, true)));
-                  }}
-                  disabled={isFinal || isExport}
-                >
-                  <option value="">State</option>
-                  {INDIAN_STATES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
               </div>
-              {selectedCustomer && (
-                <>
-                  <div>
-                    <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
-                    <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
-                  </div>
-                  <div>
-                    <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
-                    <textarea className="min-h-[68px] w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        {(business as any)?.gst_registration_type === 'composition' && (
-          <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg text-sm text-amber-800">Composition scheme: documents are Bill of Supply without GST on supplies.</div>
-        )}
-        {customerId && selectedCustomer && creditMetrics?.current && (
-          <CreditWarningBanner metrics={creditMetrics.current} projectedMetrics={creditMetrics.projected} partyType="customer" partyName={selectedCustomer.name} />
-        )}
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-bold text-text-primary">Items</h2>
-          <div className="flex gap-2">
-            {!isFinal && (
-              <>
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowMobileItemPicker(true)} className="flex items-center gap-1"><Search className="w-4 h-4" /> Search</Button>
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowContinuousScanner(true)} className="flex items-center gap-1"><ScanLine className="w-4 h-4" /> Scan</Button>
-              </>
+            ) : (
+              <button
+                type="button"
+                className="w-full text-left disabled:opacity-100"
+                onClick={() => { if (!isFinal) setCustomerPickerOpen(true); }}
+                disabled={isFinal}
+              >
+                <p className="truncate text-sm font-semibold leading-tight text-text-primary">
+                  {selectedCustomer?.name || 'Cash sale'}
+                </p>
+                <p className="truncate text-[10px] leading-tight text-text-muted">{customerSubtitle}</p>
+              </button>
             )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAddressSupplyOpen((open) => !open)}
+            className="shrink-0 text-[11px] font-semibold text-primary-700"
+            aria-expanded={addressSupplyOpen}
+          >
+            Address
+          </button>
+        </div>
+        {addressSupplyOpen ? (
+          <div className="space-y-2 rounded-lg border border-border bg-surface p-2">
+            <div className="space-y-0.5">
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Place of supply</label>
+              <select
+                className="input h-9 w-full min-h-0 cursor-pointer border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm text-text-primary shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                value={placeOfSupply}
+                onChange={(e) => {
+                  setPlaceOfSupply(e.target.value);
+                  setRows((prev) => prev.map((r) => calculateRow(r, true)));
+                }}
+                disabled={isFinal || isExport}
+              >
+                <option value="">State</option>
+                {INDIAN_STATES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            {selectedCustomer ? (
+              <>
+                <div>
+                  <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Bill To</label>
+                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} disabled={isFinal} />
+                </div>
+                <div>
+                  <label className="mb-0.5 block text-2xs font-semibold uppercase text-text-secondary">Ship To</label>
+                  <textarea className="min-h-[56px] w-full resize-none rounded-lg border border-border bg-background px-2 py-1 text-sm" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} disabled={isFinal} />
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {mobileBillMetaOpen ? (
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface p-2">
+            <div className="min-w-0 space-y-0.5">
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
+              <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Due date</label>
+              <Input type="date" value={dueDate} onChange={(e) => { dueDateUserEditedRef.current = true; setDueDate(e.target.value); }} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
+            </div>
+          </div>
+        ) : null}
+        <div className="flex items-center gap-1">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-text-primary">Items</h2>
+          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-text-secondary">{itemCount}</span>
+          <div className="ml-auto flex items-center gap-0.5">
+            <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={handlePreview} disabled={previewLoading || !isSeriesResolved}>
+              {previewLoading ? '…' : 'Preview'}
+            </button>
+            <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={() => setMobileBillMetaOpen((o) => !o)}>
+              Date
+            </button>
+            {!isFinal ? (
+              <>
+                <button type="button" onClick={() => setShowContinuousScanner(true)} className="flex h-8 items-center gap-0.5 px-1.5 text-[11px] font-semibold text-primary-700">
+                  <ScanLine className="h-3.5 w-3.5" /> Scan
+                </button>
+                <button type="button" onClick={() => setShowMobileItemPicker(true)} className="flex h-8 items-center gap-0.5 rounded-lg bg-primary-50 px-2 text-[11px] font-bold text-primary-800">
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
         <ItemsTable
@@ -3015,12 +3062,27 @@ function NewInvoiceContent() {
           grandTotal={grandTotal}
           warehouseId={selectedWarehouseId}
           layout="compact"
+          hideChrome
           recalculateRow={calculateRow}
           onReplaceRow={(idx, row) => setRows((prev) => { const next = [...prev]; next[idx] = row; return next; })}
+          onDuplicateRow={(idx) => {
+            const src = rows[idx];
+            if (!src) return;
+            setRows((prev) => {
+              const copy = calculateRow({ ...src, priceUserOverride: true });
+              return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
+            });
+          }}
         />
+        {(business as any)?.gst_registration_type === 'composition' && (
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-2 rounded-r-lg text-xs text-amber-800">Composition scheme: documents are Bill of Supply without GST on supplies.</div>
+        )}
+        {customerId && selectedCustomer && creditMetrics?.current && (
+          <CreditWarningBanner metrics={creditMetrics.current} projectedMetrics={creditMetrics.projected} partyType="customer" partyName={selectedCustomer.name} />
+        )}
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <button type="button" onClick={() => setMobileAdjustmentsOpen((open) => !open)} className="flex w-full items-center justify-between p-3 text-left" aria-expanded={mobileAdjustmentsOpen}>
-            <span className="text-sm font-semibold text-text-primary">Notes & charges</span>
+          <button type="button" onClick={() => setMobileAdjustmentsOpen((open) => !open)} className="flex w-full items-center justify-between px-2.5 py-2 text-left" aria-expanded={mobileAdjustmentsOpen}>
+            <span className="text-xs font-semibold text-text-primary">Notes, tax & more</span>
             <ChevronDown className={`h-5 w-5 text-text-muted transition-transform ${mobileAdjustmentsOpen ? 'rotate-180' : ''}`} />
           </button>
           {mobileAdjustmentsOpen && (
@@ -3134,9 +3196,65 @@ function NewInvoiceContent() {
         </div>
         <div>
           <label className="text-xs font-semibold uppercase text-text-secondary mb-2 block">Notes / Terms</label>
+          {!isFinal ? (
+            <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+              {[
+                { label: 'Due on receipt', text: 'Payment due upon receipt.' },
+                { label: 'Net 30', text: 'Net 30 days. Interest may apply on delayed remittances.' },
+                { label: 'E. & O.E.', text: 'Subject to jurisdiction. E. & O.E.' },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="whitespace-nowrap rounded-full bg-background px-2.5 py-1 text-[11px] font-medium text-text-secondary"
+                  onClick={() => setNotes(p.text)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
         </div>
         <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+        {words ? <p className="text-[10px] leading-snug text-text-muted">{words}</p> : null}
+        {!isFinal && documentType !== 'proforma_invoice' ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {([
+              { id: 'full' as const, label: 'Paid' },
+              { id: 'credit' as const, label: 'Credit' },
+              { id: 'partial' as const, label: 'Partial' },
+            ]).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => applySettlement(opt.id)}
+                className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                  settlement === opt.id ? 'bg-primary-600 text-white' : 'bg-background text-text-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <span className="mx-0.5 h-3 w-px bg-border" />
+            {([
+              { id: 'upi', label: 'UPI' },
+              { id: 'cash', label: 'Cash' },
+              { id: 'bank', label: 'Bank' },
+            ]).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => applyPayMode(m.id)}
+                className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                  payMode === m.id && settlement !== 'credit' ? 'bg-slate-200 text-text-primary' : 'text-text-muted'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {!isFinal && (
           <div className="space-y-3 border-t border-border pt-3">
             <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">More details</p>
@@ -3201,30 +3319,49 @@ function NewInvoiceContent() {
           )}
         </div>
       </div>
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background px-3 py-3 supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
-        <div className="mx-auto max-w-[1600px] space-y-2">
-          <button
-            type="button"
-            onClick={() => { if (!isFinal) setPaymentModalOpen(true); }}
-            disabled={isFinal}
-            className="grid w-full grid-cols-3 gap-2 rounded-lg border border-border bg-surface px-2 py-2 text-left disabled:cursor-default"
-          >
-            <span><span className="block text-2xs text-text-muted">Received</span><span className="text-sm font-semibold tabular-nums text-text-primary">{money(totalPaid)}</span></span>
-            <span className="text-center"><span className="block text-2xs text-text-muted">Balance</span><span className="text-sm font-semibold tabular-nums text-text-primary">{money(balance)}</span></span>
-            <span className="text-right"><span className="block text-2xs text-text-muted">Total</span><span className="text-sm font-bold tabular-nums text-text-primary">{money(grandTotal)}</span></span>
-          </button>
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 px-2 py-1.5 supports-[padding:max(0px)]:pb-[max(6px,env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-1.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-text-muted">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
+            <p className="truncate text-base font-bold leading-tight tabular-nums text-primary-700">{money(grandTotal)}</p>
+          </div>
           {!isFinal ? (
             <>
-              <button type="button" onClick={handlePreview} disabled={previewLoading || !isSeriesResolved} className="w-full py-1 text-sm font-semibold text-primary-600 disabled:opacity-50">{previewLoading ? 'Opening preview…' : 'Preview'}</button>
-              <Button variant="primary" className="h-12 w-full font-bold" onClick={() => handleSave('final')} isLoading={loading} disabled={!isSeriesResolved && !canQueueOffline}><Send className="mr-2 h-5 w-5" /> Generate</Button>
-              <p className="text-center text-2xs text-text-muted">Generate finalizes the document for GST.</p>
-              <button type="button" onClick={async () => { await handleSave('draft'); resetFormForNewInvoice(); }} disabled={!isSeriesResolved || loading} className="w-full py-1 text-sm font-semibold text-primary-600 disabled:opacity-50">Save &amp; new</button>
+              <button
+                type="button"
+                title="Save draft"
+                onClick={() => handleSave('draft')}
+                disabled={!isSeriesResolved || loading}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-50"
+              >
+                <Bookmark className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (savedInvoiceId) setShareModalOpen(true);
+                  else toastCtx.error('Save a draft or generate first, then share on WhatsApp.');
+                }}
+                className="flex h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-text-secondary"
+              >
+                <MessageCircle className="h-4 w-4" />
+              </button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="h-10 shrink-0 font-bold"
+                onClick={() => handleSave('final')}
+                isLoading={loading}
+                disabled={!isSeriesResolved && !canQueueOffline}
+              >
+                <Printer className="mr-1 h-4 w-4" /> Save
+              </Button>
             </>
           ) : (
-            <div className="flex gap-2">
-              <Button variant="secondary" className="flex-1" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="mr-2 h-4 w-4" /> Print</Button>
-              <Button variant="primary" className="flex-1" onClick={() => setShareModalOpen(true)}><Send className="mr-2 h-4 w-4" /> Share</Button>
-            </div>
+            <>
+              <Button variant="secondary" size="sm" className="h-10" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="h-4 w-4" /></Button>
+              <Button variant="primary" size="sm" className="h-10" onClick={() => setShareModalOpen(true)}>Share</Button>
+            </>
           )}
         </div>
       </div>
@@ -3331,7 +3468,7 @@ function NewInvoiceContent() {
       >
         <div
           key={`${documentType}-${formKey}`}
-          className="max-w-[1600px] mx-auto space-y-3 md:space-y-4 -mt-2 md:-mt-1"
+          className={`max-w-[1600px] mx-auto ${showMobileInvoiceUi ? 'space-y-1.5 -mt-1' : 'space-y-3 md:space-y-4 -mt-2 md:-mt-1'}`}
         >
           {!posMode && (
             <MobileDuplicatePageChrome

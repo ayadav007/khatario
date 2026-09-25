@@ -68,6 +68,9 @@ interface ItemsTableProps {
   /** Recalculate row totals when editing in compact edit sheet */
   recalculateRow?: (row: InvoiceItemRow, skipDiscountRecalc?: boolean) => InvoiceItemRow;
   onReplaceRow?: (index: number, row: InvoiceItemRow) => void;
+  onDuplicateRow?: (index: number) => void;
+  /** Hide built-in Items header / Add item when the parent composer owns them. */
+  hideChrome?: boolean;
 }
 
 const ItemsTable = React.memo(function ItemsTable({
@@ -88,6 +91,8 @@ const ItemsTable = React.memo(function ItemsTable({
   layout = 'table',
   recalculateRow,
   onReplaceRow,
+  onDuplicateRow,
+  hideChrome = false,
 }: ItemsTableProps) {
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
   const [editDraft, setEditDraft] = React.useState<InvoiceItemRow | null>(null);
@@ -149,76 +154,81 @@ const ItemsTable = React.memo(function ItemsTable({
 
     return (
       <>
-        <div className="bg-surface rounded-lg border border-border shadow-sm overflow-hidden">
-          <div className="p-3 border-b border-border bg-gray-50 dark:bg-slate-800">
-            <h3 className="text-sm font-semibold text-text-primary">Items ({rows.filter((r) => r.itemId).length})</h3>
-          </div>
-          {rows.filter((r) => r.itemId || r.name).length > 0 ? (
-            <div className="divide-y divide-border">
-              {rows.map((row, i) => {
-                if (!row.itemId && !row.name) return null;
-                const unit = row.unit || 'PCS';
-                return (
-                  <div key={i} className="px-3 py-3 flex gap-3 items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-text-primary truncate">{row.name || 'Item'}</p>
-                      <p className="text-xs text-text-secondary mt-0.5">
-                        {row.quantity} {unit} × ₹{Number(row.price).toFixed(2)}
-                      </p>
-                      {!isFinal && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            type="button"
-                            aria-label="Decrease quantity"
-                            disabled={Number(row.quantity) <= 1}
-                            onClick={() => onUpdateRow(i, 'quantity', Number(row.quantity) - 1)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-lg leading-none text-text-primary disabled:opacity-40"
-                          >
-                            −
-                          </button>
-                          <span className="min-w-[1.5rem] text-center text-sm font-semibold tabular-nums text-text-primary">
-                            {row.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label="Increase quantity"
-                            onClick={() => onUpdateRow(i, 'quantity', Number(row.quantity) + 1)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-lg leading-none text-text-primary"
-                          >
-                            +
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                      <span className="font-semibold text-text-primary tabular-nums">₹{row.total.toFixed(2)}</span>
-                      {!isFinal && (
-                        <button
-                          type="button"
-                          onClick={() => openEdit(i)}
-                          className="text-xs font-semibold text-primary-600 border border-primary-300 rounded-full px-3 py-0.5"
-                        >
-                          EDIT
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        <div className="space-y-1">
+          {!hideChrome ? (
+            <h3 className="text-sm font-semibold text-text-primary">
+              Items ({rows.filter((r) => r.itemId).length})
+            </h3>
           ) : null}
-          {!isFinal && (
-            <div
-              className={clsx(
-                'p-3 bg-gray-50 dark:bg-slate-800',
-                rows.filter((r) => r.itemId || r.name).length > 0 && 'border-t border-border'
-              )}
+          {rows.map((row, i) => {
+            if (!row.itemId && !row.name) return null;
+            const unit = row.unit || 'PCS';
+            return (
+              <div
+                key={`${row.itemId || 'row'}-${i}`}
+                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5"
+              >
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openEdit(i)}>
+                  <p className="truncate text-sm font-semibold leading-tight text-text-primary">
+                    {row.name || 'Item'}
+                    {row.variantName ? ` · ${row.variantName}` : ''}
+                  </p>
+                  <p className="truncate text-[10px] leading-tight text-text-muted">
+                    {row.hsnSac ? `HSN ${row.hsnSac} · ` : ''}GST {Number(row.taxPercent) || 0}%
+                    {' · '}₹{Number(row.price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}/{unit}
+                  </p>
+                </button>
+                {!isFinal ? (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      aria-label="Decrease quantity"
+                      disabled={Number(row.quantity) <= 0.001}
+                      onClick={() => onUpdateRow(i, 'quantity', Math.max(0, Number(row.quantity) - 1))}
+                      className="flex h-7 w-7 items-center justify-center rounded text-base font-bold leading-none text-text-primary disabled:opacity-40"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[1.35rem] text-center text-sm font-semibold tabular-nums">
+                      {row.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Increase quantity"
+                      onClick={() => onUpdateRow(i, 'quantity', Number(row.quantity) + 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded text-base font-bold leading-none text-text-primary"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <span className="shrink-0 text-sm tabular-nums text-text-secondary">{row.quantity} {unit}</span>
+                )}
+                <p className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums leading-tight text-text-primary">
+                  ₹{Number(row.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                {!isFinal ? (
+                  <button
+                    type="button"
+                    aria-label="Delete item"
+                    onClick={() => onRemoveRow(i)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          {!isFinal && !hideChrome ? (
+            <button
+              type="button"
+              onClick={onAddRow}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-primary-50 py-2.5 text-sm font-semibold text-primary-700"
             >
-              <button type="button" onClick={onAddRow} className="flex items-center gap-2 text-primary-600 text-sm font-medium w-full justify-center py-2">
-                <Plus className="w-4 h-4" /> Add item
-              </button>
-            </div>
-          )}
+              <Plus className="h-4 w-4" /> Add item
+            </button>
+          ) : null}
         </div>
         {editIndex !== null && editDraft && recalculateRow && onReplaceRow && (
           <>
