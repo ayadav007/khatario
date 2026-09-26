@@ -102,6 +102,18 @@ export async function POST(request: NextRequest) {
       console.error('[Demo Booking] Notification error (non-blocking):', err);
     });
 
+    void import('@/lib/platform-push')
+      .then(({ raisePlatformIncident }) =>
+        raisePlatformIncident({
+          kind: 'demo_booking',
+          title: `Demo booking ${bookingNumber}`,
+          body: `${name} · ${cleanPhone} · ${scheduled_date} ${scheduled_time}`,
+          url: '/admin/bookings',
+          metadata: { booking_number: bookingNumber },
+        }),
+      )
+      .catch((err) => console.error('[Demo Booking] incident notify failed', err));
+
     return NextResponse.json({ 
       booking,
       message: 'Booking created successfully'

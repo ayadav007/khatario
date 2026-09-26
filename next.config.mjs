@@ -98,7 +98,7 @@ const nextConfig = {
     NEXT_PUBLIC_APP_BUILD_ID: APP_BUILD_ID,
   },
   reactStrictMode: true,
-  serverExternalPackages: ["pdf-parse", "tesseract.js", "@techstark/opencv-js", "sharp"],
+  serverExternalPackages: ["pdf-parse", "tesseract.js", "@techstark/opencv-js", "sharp", "web-push"],
   images: {
     domains: [],
   },

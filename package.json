@@ -65,6 +65,7 @@
     "socket.io-client": "^4.8.1",
     "tesseract.js": "^7.0.0",
     "utf-8-validate": "^5.0.10",
+    "web-push": "^3.6.7",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -78,6 +79,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.16",
     "cross-env": "^10.1.0",
     "eslint": "^8.55.0",

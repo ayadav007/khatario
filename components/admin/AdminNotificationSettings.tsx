@@ -7,6 +7,9 @@ type Settings = {
   notify_new_signup: boolean;
   notify_subscription_changes: boolean;
   notify_payment_failures: boolean;
+  notify_incidents: boolean;
+  notify_push_signup: boolean;
+  notify_push_incident: boolean;
   platform_notify_email: string | null;
 };
 
@@ -76,8 +79,14 @@ export function AdminNotificationSettings() {
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-gray-900">Notification Settings</h2>
       <p className="text-sm text-gray-600">
-        Platform emails use SMTP from server environment (<code className="text-xs">SMTP_USER</code>,{' '}
-        <code className="text-xs">SMTP_PASSWORD</code>). Leave override empty to email all active admins.
+        Emails use SMTP from the server env (<code className="text-xs">SMTP_USER</code>,{' '}
+        <code className="text-xs">SMTP_PASSWORD</code>). The customer does not get a welcome email unless they
+        entered a business email. You get an admin email only if an active platform admin has an email, or you
+        set the inbox override below. Check <strong>Email logs</strong> on this page if a signup was silent.
+      </p>
+      <p className="text-sm text-gray-600">
+        Install this admin console on your phone (staging and production are separate apps). Then tap{' '}
+        <strong>Enable alerts</strong> in the top bar while logged in. iPhone needs Add to Home Screen first.
       </p>
 
       <div className="space-y-4">
@@ -95,8 +104,23 @@ export function AdminNotificationSettings() {
             },
             {
               key: 'notify_payment_failures' as const,
-              title: 'Payment Failures',
+              title: 'Payment Failures (email)',
               desc: 'Alert when a subscription payment fails',
+            },
+            {
+              key: 'notify_incidents' as const,
+              title: 'Incidents (email)',
+              desc: 'Demo bookings and other operator incidents',
+            },
+            {
+              key: 'notify_push_signup' as const,
+              title: 'Push: new signup',
+              desc: 'Phone notification when a business registers',
+            },
+            {
+              key: 'notify_push_incident' as const,
+              title: 'Push: incidents',
+              desc: 'Phone notification for demo bookings and payment failures',
             },
           ] as const
         ).map((item) => (
@@ -142,7 +166,7 @@ export function AdminNotificationSettings() {
         <p className={`text-sm ${message === 'Saved.' ? 'text-green-700' : 'text-red-600'}`}>{message}</p>
       )}
 
-      <div className="pt-2">
+      <div className="pt-2 flex flex-wrap gap-3">
         <button
           type="button"
           onClick={() => void save()}
@@ -150,6 +174,19 @@ export function AdminNotificationSettings() {
           className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            setMessage(null);
+            const res = await fetch('/api/admin/push/test', { method: 'POST', credentials: 'include' });
+            const data = await res.json();
+            if (res.ok) setMessage(data.sent ? `Test push sent to ${data.sent} device(s).` : 'No phones subscribed yet. Enable alerts in the top bar.');
+            else setMessage(data.error || 'Test push failed');
+          }}
+          className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+        >
+          Send test push
         </button>
       </div>
     </div>

@@ -113,6 +113,17 @@ export async function notifyAdminsPaymentFailure(params: {
     });
     if (ok) sent++;
   }
+  try {
+    const { sendPlatformAdminPush } = await import('@/lib/platform-push');
+    await sendPlatformAdminPush({
+      event: 'incident',
+      title: `Payment failed: ${params.businessName}`,
+      body: `${params.planName} · ₹${params.amount}`,
+      url: `/admin/businesses/${params.businessId}`,
+    });
+  } catch (err) {
+    console.warn('[billing] admin push failed', err instanceof Error ? err.message : err);
+  }
   return sent;
 }
 
