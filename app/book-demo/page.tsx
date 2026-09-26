@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { format, addDays, startOfToday } from 'date-fns';
 import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
+import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
 
 interface TimeSlot {
   id: string;
@@ -55,6 +56,7 @@ export default function BookDemoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [otpVerified, setOtpVerified] = useState(false);
   const [bookingNumber, setBookingNumber] = useState('');
 
   const minDate = format(addDays(startOfToday(), 1), 'yyyy-MM-dd');
@@ -102,9 +104,16 @@ export default function BookDemoPage() {
     setError('');
     setSubmitting(true);
 
+    if (!otpVerified) {
+      setError('Verify your mobile number with the WhatsApp code first');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const res = await fetch('/api/bookings/create', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
@@ -278,6 +287,12 @@ export default function BookDemoPage() {
                           placeholder="+91 98765 43210"
                         />
                       </div>
+                      <PublicWhatsAppOtp
+                        purpose="demo_booking"
+                        phone={formData.phone}
+                        verified={otpVerified}
+                        onVerified={setOtpVerified}
+                      />
                     </div>
 
                     <div>

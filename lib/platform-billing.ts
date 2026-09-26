@@ -19,7 +19,7 @@ import {
   type PlatformTemplateId,
 } from '@/lib/platform-email-templates';
 
-import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
+import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import type { VerifyWebhookResult } from '@/lib/payments/types';
 import {
   completeAddonCheckoutPayment,
@@ -329,6 +329,14 @@ async function dispatchBillingEmails(
         },
         'payment_failed',
       );
+    }
+    const waPhone = await lookupTenantWhatsAppPhone(tx.business_id);
+    if (waPhone) {
+      await sendPlatformEventWhatsApp({
+        eventKey: 'subscription_payment_failed',
+        toPhone: waPhone,
+        vars: [recipient?.businessName || '', planName, String(amount)],
+      });
     }
     await notifyAdminsPaymentFailure({
       businessId: tx.business_id,

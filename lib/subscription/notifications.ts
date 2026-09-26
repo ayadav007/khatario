@@ -9,6 +9,7 @@
 import { query, queryOne, queryRows } from '@/lib/db';
 import { sendPlatformEmail } from '@/lib/platform-email';
 import { getBusinessSubscription, checkLimit } from '@/lib/subscription';
+import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,16 @@ async function sendToRecipients(
     if (ok) anySent = true;
   }
   return anySent;
+}
+
+async function tryTenantWhatsApp(
+  businessId: string,
+  eventKey: 'trial_ending' | 'subscription_ended' | 'subscription_payment_failed',
+  vars: string[],
+): Promise<void> {
+  const phone = await lookupTenantWhatsAppPhone(businessId);
+  if (!phone) return;
+  await sendPlatformEventWhatsApp({ eventKey, toPhone: phone, vars });
 }
 
 /**
@@ -231,6 +242,7 @@ export async function sendTrialExpiringEmail(
     if (sent) {
       await logNotification(businessId, notifType, { daysRemaining });
     }
+    await tryTenantWhatsApp(businessId, 'trial_ending', [recipients.businessName, String(daysRemaining)]);
   } catch (err) {
     console.error(`[notifications] sendTrialExpiringEmail failed for business ${businessId}:`, err);
   }
@@ -273,6 +285,7 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
     if (sent) {
       await logNotification(businessId, 'trial_expired');
     }
+    await tryTenantWhatsApp(businessId, 'subscription_ended', [recipients.businessName]);
   } catch (err) {
     console.error(`[notifications] sendTrialExpiredEmail failed for business ${businessId}:`, err);
   }
@@ -322,6 +335,7 @@ export async function sendGraceExpiredEmail(businessId: string): Promise<void> {
     if (sent) {
       await logNotification(businessId, 'grace_expired');
     }
+    await tryTenantWhatsApp(businessId, 'subscription_ended', [recipients.businessName]);
   } catch (err) {
     console.error(`[notifications] sendGraceExpiredEmail failed for business ${businessId}:`, err);
   }

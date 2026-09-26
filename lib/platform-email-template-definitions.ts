@@ -16,6 +16,12 @@ export interface TemplateDefinition {
   defaultBodyHtml: string;
 }
 
+export type StoredEmailTemplate = {
+  label?: string;
+  subject?: string;
+  body_html?: string;
+};
+
 export const PLATFORM_TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
   {
     id: 'welcome',
@@ -74,3 +80,16 @@ export const PLATFORM_TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     `,
   },
 ];
+
+export const SYSTEM_TEMPLATE_IDS: PlatformTemplateId[] = PLATFORM_TEMPLATE_DEFINITIONS.map(
+  (d) => d.id,
+);
+
+export function isSystemTemplateId(id: string): id is PlatformTemplateId {
+  return SYSTEM_TEMPLATE_IDS.includes(id as PlatformTemplateId);
+}
+
+export function isAllowedTemplateId(id: string): boolean {
+  if (isSystemTemplateId(id)) return true;
+  return /^custom_[a-zA-Z0-9-]{1,80}$/.test(id);
+}

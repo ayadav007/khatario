@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
+import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -100,6 +101,7 @@ function SignupPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [otpVerified, setOtpVerified] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -123,6 +125,11 @@ function SignupPageContent() {
     setLoading(true);
     setError('');
     setErrorCode(null);
+    if (!otpVerified) {
+      setError('Verify your mobile number with the WhatsApp code first');
+      setLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch('/api/signup', {
@@ -390,6 +397,12 @@ function SignupPageContent() {
                         className="min-w-0 flex-1 border-0 bg-transparent px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/30 dark:text-slate-100"
                       />
                     </div>
+                    <PublicWhatsAppOtp
+                      purpose="signup"
+                      phone={formData.userPhone}
+                      verified={otpVerified}
+                      onVerified={setOtpVerified}
+                    />
                   </div>
 
                   <div className="mt-5">

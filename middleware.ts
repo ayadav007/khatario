@@ -61,10 +61,13 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/refresh',
   '/api/auth/impersonate',
   '/api/signup',
+  '/api/bookings/create',
+  '/api/bookings/available-slots',
   '/api/admin/auth/login',
   '/api/admin/auth/logout',
   '/api/cron/',
   '/api/webhooks/',
+  '/api/webhooks/meta-whatsapp',
   '/api/webhooks/platform-billing/',
   /** Razorpay / PayU / etc. POST here; must not require business user session */
   '/api/payments/webhook',

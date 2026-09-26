@@ -34,6 +34,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid phone format' }, { status: 400 });
     }
 
+    const { nationalPhone10, requestHasVerifiedPlatformOtp } = await import('@/lib/platform-public-otp');
+    const phone10 = nationalPhone10(cleanPhone);
+    const skipOtp =
+      process.env.E2E_DISABLE_RATE_LIMIT === 'true' || process.env.PLATFORM_SKIP_OTP === '1';
+    if (!skipOtp && (!phone10 || !(await requestHasVerifiedPlatformOtp(request, 'demo_booking', phone10)))) {
+      return NextResponse.json(
+        { error: 'Verify your mobile number with the WhatsApp code first' },
+        { status: 403 },
+      );
+    }
+
     // Get IP address and user agent
     const ipAddress = request.headers.get('x-forwarded-for') || 
                      request.headers.get('x-real-ip') || 

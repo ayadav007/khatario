@@ -135,6 +135,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { nationalPhone10, requestHasVerifiedPlatformOtp } = await import('@/lib/platform-public-otp');
+    const phone10 = nationalPhone10(phoneNorm);
+    const skipOtp =
+      process.env.E2E_DISABLE_RATE_LIMIT === 'true' || process.env.PLATFORM_SKIP_OTP === '1';
+    if (!skipOtp && (!phone10 || !(await requestHasVerifiedPlatformOtp(request, 'signup', phone10)))) {
+      return NextResponse.json(
+        { error: 'Verify your mobile number with the WhatsApp code first', code: 'OTP_REQUIRED' },
+        { status: 403 },
+      );
+    }
+
     const existingUser = await query(
       `SELECT id FROM users WHERE phone = $1 LIMIT 1`,
       [phoneNorm]
