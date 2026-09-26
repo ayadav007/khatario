@@ -150,7 +150,22 @@ export async function updatePlatformWhatsAppDraft(
   const existing = await getPlatformWhatsAppTemplate(id);
   if (!existing) throw new Error('Template not found');
   if (existing.status !== 'draft' && existing.status !== 'rejected') {
-    throw new Error('Only draft or rejected templates can be edited');
+    const event_key =
+      input.event_key !== undefined
+        ? input.event_key && PLATFORM_WA_EVENT_KEYS.includes(input.event_key as PlatformWaEventKey)
+          ? input.event_key
+          : null
+        : existing.event_key;
+    const example_vars = input.example_vars ?? existing.example_vars;
+    const row = await queryOne<Record<string, unknown>>(
+      `UPDATE platform_whatsapp_templates SET
+         event_key = $2, example_vars = $3::jsonb, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [existing.id, event_key, JSON.stringify(example_vars)],
+    );
+    if (!row) throw new Error('Update failed');
+    return mapRow(row);
   }
 
   const name = input.name != null ? sanitizeTemplateName(input.name) : existing.name;
@@ -231,11 +246,17 @@ export async function syncPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppT
   }
   const remote = await listMessageTemplates();
   const local = await listPlatformWhatsAppTemplates();
+
+  const langOf = (r: { language?: string }) => {
+    if (!r.language) return 'en_US';
+    return typeof r.language === 'string' ? r.language : String(r.language);
+  };
+
   for (const row of local) {
     const match = remote.find((r) => {
       if (r.name !== row.name) return false;
       if (!r.language) return true;
-      const lang = typeof r.language === 'string' ? r.language : String(r.language);
+      const lang = langOf(r);
       return lang === row.language || lang.startsWith(row.language);
     });
     if (!match) continue;
@@ -243,10 +264,31 @@ export async function syncPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppT
     await query(
       `UPDATE platform_whatsapp_templates
        SET meta_template_id = COALESCE($2, meta_template_id), status = $3, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND status <> 'draft'`,
+       WHERE id = $1`,
       [row.id, match.id, status],
     );
   }
+
+  const localAfter = await listPlatformWhatsAppTemplates();
+  for (const r of remote) {
+    const lang = langOf(r);
+    const exists = localAfter.some((row) => row.name === r.name && row.language === lang);
+    if (exists) continue;
+    const category = ['AUTHENTICATION', 'UTILITY', 'MARKETING'].includes(String(r.category || ''))
+      ? String(r.category)
+      : 'UTILITY';
+    await query(
+      `INSERT INTO platform_whatsapp_templates
+         (name, language, category, body_text, meta_template_id, status)
+       VALUES ($1, $2, $3, '', $4, $5)
+       ON CONFLICT (name, language) DO UPDATE SET
+         meta_template_id = EXCLUDED.meta_template_id,
+         status = EXCLUDED.status,
+         updated_at = CURRENT_TIMESTAMP`,
+      [r.name, lang, category, r.id, mapMetaStatus(r.status)],
+    );
+  }
+
   return listPlatformWhatsAppTemplates();
 }
 

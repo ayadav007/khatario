@@ -61,8 +61,6 @@ export function toPublicMetaWaCredentials(secrets: MetaWaSecrets): MetaWaPublicC
   if (!secrets.accessToken) missing.push('Access token');
   if (!secrets.wabaId) missing.push('WhatsApp Business Account ID');
   if (!secrets.phoneNumberId) missing.push('Phone number ID');
-  if (!secrets.appSecret) missing.push('App secret');
-  if (!secrets.verifyToken) missing.push('Webhook verify token');
   return {
     waba_id: secrets.wabaId,
     phone_number_id: secrets.phoneNumberId,

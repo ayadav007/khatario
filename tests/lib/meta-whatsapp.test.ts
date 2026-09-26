@@ -108,6 +108,7 @@ describe('meta whatsapp public credentials', () => {
     expect(pub.ready).toBe(false);
     expect(pub.waba_id).toBe('w');
     expect(pub.has_verify_token).toBe(true);
-    expect(pub.missing).toEqual(expect.arrayContaining(['Access token', 'Phone number ID', 'App secret']));
+    expect(pub.missing).toEqual(expect.arrayContaining(['Access token', 'Phone number ID']));
+    expect(pub.missing).not.toContain('App secret');
   });
 });

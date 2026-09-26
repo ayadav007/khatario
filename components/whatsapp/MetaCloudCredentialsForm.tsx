@@ -55,12 +55,15 @@ export function MetaCloudCredentialsForm({
       </div>
       {!credentials?.ready && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Save all five fields here (leave a secret blank only if it is already stored). Missing:{' '}
-          {(credentials?.missing || ['credentials']).join(', ')}.
+          To create templates on Meta you need WABA ID, Phone number ID, and Access token (same three as Digitable).
+          Missing: {(credentials?.missing || ['credentials']).join(', ')}. App secret and verify token are optional
+          (only for Khatario webhooks — leave Digitable&apos;s webhook URL unchanged).
         </p>
       )}
       {credentials?.ready && (
-        <p className="text-sm text-green-800">Cloud API credentials are saved. Leave secret fields blank to keep the current values.</p>
+        <p className="text-sm text-green-800">
+          Cloud API can submit and send. App secret / verify token are optional while Digitable keeps the Meta webhook.
+        </p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <label className="text-sm">

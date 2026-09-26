@@ -138,7 +138,7 @@ export function AdminWhatsAppTemplatesEditor() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      setMessage('Draft saved');
+      setMessage('Draft saved in Khatario only. Click Submit to Meta below to create it on WhatsApp.');
       await load();
       if (data.template?.id) openExisting(data.template);
     } catch (e) {
@@ -453,14 +453,14 @@ export function AdminWhatsAppTemplatesEditor() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            {(!locked || selectedId === 'new') && (
+            {(selectedId === 'new' || selected) && (
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void saveDraft()}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm disabled:opacity-50"
               >
-                Save draft
+                {locked ? 'Save event mapping' : 'Save draft'}
               </button>
             )}
             {selected && (selected.status === 'draft' || selected.status === 'rejected') && (
@@ -468,10 +468,16 @@ export function AdminWhatsAppTemplatesEditor() {
                 type="button"
                 disabled={busy || !setup.configured}
                 onClick={() => void submitMeta()}
-                className="px-4 py-2 border rounded-lg text-sm disabled:opacity-50"
+                className="px-4 py-2 border border-primary-600 text-primary-700 rounded-lg text-sm disabled:opacity-50"
+                title={!setup.configured ? 'Save WABA ID, phone number ID, and access token first' : undefined}
               >
                 Submit to Meta
               </button>
+            )}
+            {selected && (selected.status === 'draft' || selected.status === 'rejected') && !setup.configured && (
+              <p className="text-sm text-amber-800 w-full">
+                Submit stays disabled until Cloud API credentials (the three Digitable fields) are saved at the top of this page.
+              </p>
             )}
             {selected && (
               <button type="button" disabled={busy} onClick={() => void remove()} className="px-4 py-2 text-red-700 text-sm">

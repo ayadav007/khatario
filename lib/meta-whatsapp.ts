@@ -83,14 +83,16 @@ export async function createMessageTemplate(input: {
 }
 
 export async function listMessageTemplates(): Promise<
-  Array<{ id: string; name: string; status: string; language?: string }>
+  Array<{ id: string; name: string; status: string; language?: string; category?: string }>
 > {
   const cfg = await getMetaWaConfig();
   if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   const json = (await graphFetch(
-    `/${cfg.wabaId}/message_templates?fields=id,name,status,language&limit=100`,
+    `/${cfg.wabaId}/message_templates?fields=id,name,status,language,category&limit=100`,
     { token: cfg.accessToken, method: 'GET' },
-  )) as { data?: Array<{ id: string; name: string; status: string; language?: string }> };
+  )) as {
+    data?: Array<{ id: string; name: string; status: string; language?: string; category?: string }>;
+  };
   return json.data || [];
 }
 
