@@ -50,23 +50,26 @@ if [[ ! -f "$STAGING_ROOT/.env.production" ]]; then
   exit 1
 fi
 port_in_use() {
-  ss -lnt | grep -qE ":${1}[[:space:]]"
+  ss -H -lnt 2>/dev/null | awk '{print $4}' | grep -Eq ":${1}$"
 }
 
 if pm2 describe khatario >/dev/null 2>&1; then
   echo ">> PM2 khatario already exists — will rebuild/restart it"
 elif port_in_use "$PROD_PORT"; then
   echo ">> port $PROD_PORT is busy:"
-  ss -lntp | grep -E ":${PROD_PORT}[[:space:]]" || true
-  for try in 3003 3004 3005 3010; do
+  ss -lntp | grep -E ":${PROD_PORT}([[:space:]]|$)" || true
+  FOUND=""
+  for try in 3100 3101 3200 3300 3400 3500 4002; do
     if ! port_in_use "$try"; then
       echo "   using PROD_PORT=$try instead"
       PROD_PORT="$try"
+      FOUND=1
       break
     fi
+    echo "   $try also busy"
   done
-  if port_in_use "$PROD_PORT"; then
-    echo "No free port in 3002–3005/3010. Set PROD_PORT and re-run." >&2
+  if [[ -z "$FOUND" ]]; then
+    echo "Set a free port: PROD_PORT=3100 bash scripts/setup-khatario-production.sh --with-certbot" >&2
     exit 1
   fi
 fi
