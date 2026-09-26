@@ -7,9 +7,15 @@
  * On VPS staging:
  *   cd /var/www/khatario
  *   node scripts/reset-platform-admin-password.js admin@khatario.com 'YourNewPassword'
+ *   Login: https://staging.khatario.com/admin/login
  *
- * Login at: https://staging.khatario.com/admin/login
- * (Use /admin/login — not the tenant /login page.)
+ * On VPS production (uses /var/www/khatario-prod/.env.production → khatario_prod):
+ *   cd /var/www/khatario-prod
+ *   node scripts/reset-platform-admin-password.js admin@khatario.com 'YourNewPassword'
+ *   Login: https://khatario.com/admin/login
+ *
+ * Use /admin/login — not the tenant /login page. Do not run this from the staging clone
+ * when you mean production (that would change staging.khatario.com).
  */
 
 const bcrypt = require('bcryptjs');

@@ -9,6 +9,17 @@ import {
   EMPLOYEE_PORTAL_COOKIE,
 } from './lib/employee-portal';
 import { extractStoreSubdomain } from './lib/store/subdomain';
+import { resolvePublicRequestOrigin } from './lib/http/public-request-origin';
+
+function redirectToBrowserLogin(request: NextRequest, loginPath: string, redirectPath: string) {
+  const dest = new URL(loginPath, `${resolvePublicRequestOrigin(request)}/`);
+  dest.searchParams.set('redirect', redirectPath);
+  const res = NextResponse.redirect(dest);
+  // Next requires an absolute URL, but Location must stay on the public host.
+  // A path-only Location keeps the browser on khatario.com even if dest was localhost.
+  res.headers.set('Location', `${loginPath}?${dest.searchParams.toString()}`);
+  return res;
+}
 
 function forwardSetCookies(from: Response, to: NextResponse): void {
   const list = from.headers.getSetCookie?.() ?? [];
@@ -213,9 +224,7 @@ export async function middleware(request: NextRequest) {
         { status: 401 }
       );
     }
-    const loginUrl = new URL('/admin/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
+    return redirectToBrowserLogin(request, '/admin/login', pathname);
   }
 
   const { rotate, payload } = await shouldRotateTokens(request);
@@ -234,9 +243,7 @@ export async function middleware(request: NextRequest) {
     if (allowOfflineAppShellNavigation(request)) {
       return NextResponse.next();
     }
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
+    return redirectToBrowserLogin(request, '/login', pathname);
   }
 
   if (typeof payload.sv !== 'number') {
@@ -249,9 +256,7 @@ export async function middleware(request: NextRequest) {
     if (allowOfflineAppShellNavigation(request)) {
       return NextResponse.next();
     }
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
+    return redirectToBrowserLogin(request, '/login', pathname);
   }
 
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -309,9 +314,7 @@ export async function middleware(request: NextRequest) {
         forwardSetCookies(refreshRes, res);
         return res;
       }
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('redirect', pathname);
-      const res = NextResponse.redirect(loginUrl);
+      const res = redirectToBrowserLogin(request, '/login', pathname);
       forwardSetCookies(refreshRes, res);
       return res;
     }

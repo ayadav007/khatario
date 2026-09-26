@@ -20,4 +20,10 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/store/cart', 'staging.khatario.com')).toBe(true);
     expect(isPublicMarketingSurface('/signup', 'staging.khatario.com')).toBe(true);
   });
+
+  it('does not send platform admin routes through business /login', () => {
+    expect(isPublicMarketingSurface('/admin', 'khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/admin/plans', 'khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/admin/login', 'khatario.com')).toBe(true);
+  });
 });

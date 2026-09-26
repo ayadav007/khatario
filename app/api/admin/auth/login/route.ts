@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { authenticatePlatformAdmin, logAdminAction } from '@/lib/platform-auth';
 import {
   signPlatformAccessToken,
   setPlatformSessionCookie,
-  PLATFORM_ACCESS_COOKIE,
 } from '@/lib/platform-jwt';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
@@ -81,15 +79,6 @@ export async function POST(request: NextRequest) {
     });
 
     setPlatformSessionCookie(response, token);
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
-    const secure = process.env.NODE_ENV === 'production' && appUrl.startsWith('https://');
-    cookies().set(PLATFORM_ACCESS_COOKIE, token, {
-      httpOnly: true,
-      secure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 24 * 60 * 60,
-    });
 
     return response;
   } catch (error: any) {

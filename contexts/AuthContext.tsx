@@ -351,6 +351,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (p.startsWith('/admin')) {
+        return;
+      }
+
       if (p.startsWith('/login')) {
         // Already on the login page — never self-navigate. router.replace to the
         // same route remounts the form (clearing typed input) and can produce a

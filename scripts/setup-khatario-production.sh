@@ -174,10 +174,16 @@ set_key("PM2_ECOSYSTEM", "deploy/pm2/khatario.config.cjs")
 set_key("JWT_SECRET", secrets.token_urlsafe(48))
 set_key("CRON_SECRET", secrets.token_urlsafe(32))
 
-mig = vals.get("MIGRATION_DATABASE_URL", "")
-if mig:
-    parts = urlsplit(mig)
-    set_key("MIGRATION_DATABASE_URL", urlunsplit(parts._replace(path="/" + db_name)))
+def rewrite_db_url(key):
+    raw = vals.get(key, "")
+    if not raw:
+        return
+    parts = urlsplit(raw)
+    set_key(key, urlunsplit(parts._replace(path="/" + db_name)))
+
+rewrite_db_url("MIGRATION_DATABASE_URL")
+rewrite_db_url("DATABASE_URL_MIGRATE")
+rewrite_db_url("DATABASE_URL")
 
 redis = vals.get("REDIS_URL", "redis://127.0.0.1:6379")
 if redis:
