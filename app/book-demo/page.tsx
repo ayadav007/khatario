@@ -392,7 +392,6 @@ export default function BookDemoPage() {
                       </div>
                     </div>
                   </div>
-                </div>
 
                 <div className="shrink-0 space-y-5 border-t border-slate-200 pt-8 dark:border-slate-700">
                   <h3 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-50">
