@@ -55,7 +55,7 @@ const RESERVED_SUBDOMAINS = new Set([
   'ftp', 'cdn', 'assets', 'static', 'status', 'help', 'support',
   'docs', 'blog', 'dev', 'test', 'demo', 'sandbox', 'ns1', 'ns2',
   'mx', 'pop', 'imap', 'webmail', 'cpanel', 'whm',
-  'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir',
+  'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether',
 ]);
 
 export function isReservedStoreSubdomain(subdomain: string): boolean {

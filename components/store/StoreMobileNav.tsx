@@ -21,7 +21,8 @@ export function StoreMobileNav({
   const chowk = theme.pack === 'chowk';
   const atelier = theme.pack === 'atelier';
   const khatario = theme.pack === 'khatario';
-  const pack = chowk || atelier || khatario;
+  const aether = theme.pack === 'aether';
+  const pack = chowk || atelier || khatario || aether;
   const ink = chowkInkOn(storeCanvas(theme));
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
 
@@ -64,6 +65,47 @@ export function StoreMobileNav({
           <Link href="/account" className={item(false)}>
             <MoreHorizontal className="h-5 w-5" />
             More
+          </Link>
+        </div>
+      </nav>
+    );
+  }
+
+  if (aether) {
+    const paper = storeCanvas(theme);
+    return (
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t pb-[env(safe-area-inset-bottom)] sm:hidden"
+        style={{ borderColor: `${accent}33`, backgroundColor: paper, color: ink }}
+      >
+        <div className="flex">
+          <Link
+            href="/"
+            className={item(pathname === '/' || pathname === '/store')}
+            style={pathname === '/' || pathname === '/store' ? { color: accent, opacity: 1 } : undefined}
+          >
+            <Home className="h-5 w-5" strokeWidth={1.4} />
+            Home
+          </Link>
+          <a href="#all-products" className={item(false)}>
+            <LayoutGrid className="h-5 w-5" strokeWidth={1.4} />
+            Shop
+          </a>
+          <button type="button" onClick={onCart} className={item(pathname === '/cart')} aria-label="Bag">
+            <span className="relative">
+              <ShoppingBag className="h-5 w-5" strokeWidth={1.4} />
+              {cartCount > 0 ? (
+                <span
+                  className="absolute -right-2 -top-1 h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: accent }}
+                />
+              ) : null}
+            </span>
+            Bag
+          </button>
+          <Link href="/account" className={item(pathname === '/account')} style={pathname === '/account' ? { color: accent, opacity: 1 } : undefined}>
+            <User className="h-5 w-5" strokeWidth={1.4} />
+            Account
           </Link>
         </div>
       </nav>

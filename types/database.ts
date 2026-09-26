@@ -33,6 +33,7 @@ export interface Business {
   state?: string;
   pincode?: string;
   gstin?: string;
+  gst_registration_type?: 'regular' | 'composition' | 'unregistered';
   pan?: string;
   cin?: string;
   logo_url?: string;

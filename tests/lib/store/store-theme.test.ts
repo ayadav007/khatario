@@ -149,6 +149,28 @@ describe('applyStorePreset', () => {
     });
   });
 
+  it('applies Aether pack with gold on ink', () => {
+    const t = applyStorePreset('aether');
+    expect(t).toEqual({
+      preset: 'aether',
+      accent: STORE_THEME_PRESETS.aether.accent,
+      background: STORE_THEME_PRESETS.aether.background,
+      pack: 'aether',
+      mobile_columns: 2,
+      category_style: 'photo',
+      hero_cta: 'Shop collection',
+      hero_subtitle: 'Quiet luxury, considered pieces.',
+      search_placeholder: 'Coats, pearls, chronograph…',
+      appearance_mode: 'dark',
+      font_family: 'cormorant',
+      announcement: 'Free express shipping  ·  Handcrafted  ·  Lifetime repairs',
+      hero_slides: expect.any(Array),
+      homepage_sections: expect.any(Array),
+    });
+    expect(t.hero_slides?.[0]?.image_url).toMatch(/^https:\/\//);
+    expect(t.hero_slides?.[0]?.title).toBe('The art of less.');
+  });
+
   it('applies Khatario pack from Digitable store-app chrome', () => {
     expect(applyStorePreset('khatario')).toEqual({
       preset: 'khatario',

@@ -46,15 +46,13 @@ function sessionUserUnchanged(prev: User | null, next: User | null): boolean {
 function sessionBusinessUnchanged(prev: Business | null, next: Business | null): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return prev.id === next.id && prev.name === next.name;
+  return JSON.stringify(prev) === JSON.stringify(next);
 }
 
 function sessionBranchUnchanged(prev: unknown, next: unknown): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  const a = prev as { id?: string; name?: string; branch_code?: string };
-  const b = next as { id?: string; name?: string; branch_code?: string };
-  return a.id === b.id && a.name === b.name && a.branch_code === b.branch_code;
+  return JSON.stringify(prev) === JSON.stringify(next);
 }
 
 function sessionBranchesUnchanged(prev: unknown[], next: unknown[]): boolean {

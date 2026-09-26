@@ -11,7 +11,7 @@ import { StoreCategoryPills } from './StoreCategoryPills';
 import { StoreCategoryMasonry } from './StoreCategoryMasonry';
 import { StoreHeroCarousel } from './StoreHeroCarousel';
 import { StoreProductShelves } from './StoreProductShelves';
-import { chowkInkOn, isAtelierPack, isChowkPack, isKhatarioPack, isNoirPack, isPackChrome, resolveHeroSlides, sanitizeStoreTheme, sectionEnabled, storeCanvas, type StoreOverlayBand, type StoreTheme } from '@/lib/store/store-theme';
+import { chowkInkOn, isAetherPack, isAtelierPack, isChowkPack, isKhatarioPack, isPackChrome, resolveHeroSlides, sanitizeStoreTheme, sectionEnabled, storeCanvas, type StoreOverlayBand, type StoreTheme } from '@/lib/store/store-theme';
 import { isStoreOfferItem, storeDiscountPercent } from '@/lib/store/map-store-product';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
@@ -22,8 +22,58 @@ interface StoreCategory {
   name: string;
 }
 
+function AetherMarquee({ text, accent }: { text: string; accent: string }) {
+  const parts = text
+    .split(/\s*[·|•]\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const bits = parts.length > 0 ? parts : [text];
+  const loop = [...bits, ...bits, ...bits, ...bits];
+  return (
+    <div className="overflow-hidden border-y" style={{ borderColor: `${accent}33` }}>
+      <div
+        className="store-aether-marquee flex w-max gap-10 py-3 text-[11px] uppercase tracking-[0.28em]"
+        style={{ color: accent }}
+      >
+        {loop.map((bit, i) => (
+          <span key={`${bit}-${i}`}>{bit}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StoreOverlayBands({ bands, home, theme }: { bands: StoreOverlayBand[]; home: boolean; theme: StoreTheme }) {
   if (!home || !sectionEnabled(theme, 'overlay') || bands.length === 0) return null;
+  const aether = isAetherPack(theme);
+  if (aether) {
+    return (
+      <section className="mx-auto max-w-6xl px-4 pt-16">
+        <p className="text-[11px] uppercase tracking-[0.35em]" style={{ color: theme.accent }}>
+          Campaigns
+        </p>
+        <div className="mt-6 grid gap-px md:grid-cols-2">
+          {bands.map((band, i) => (
+            <div key={`${band.image_url}-${i}`} className="relative min-h-[280px] overflow-hidden bg-[#161310]">
+              {band.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={band.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              ) : null}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0c0b09]/85 via-[#0c0b09]/20 to-transparent" />
+              <div className="relative z-10 flex h-full min-h-[280px] flex-col justify-end p-6 text-[#f6f1e8]">
+                {band.caption ? <p className="font-noir-display text-3xl leading-none">{band.caption}</p> : null}
+                {band.cta ? (
+                  <p className="mt-3 text-[11px] uppercase tracking-[0.22em]" style={{ color: theme.accent }}>
+                    {band.cta}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="mx-auto grid max-w-6xl gap-3 px-3 pt-4 sm:px-4 md:grid-cols-2">
       {bands.map((band, i) => (
@@ -49,7 +99,7 @@ export function StoreCatalogView() {
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const khatario = isKhatarioPack(theme);
-  const noir = isNoirPack(theme);
+  const aether = isAetherPack(theme);
   const pack = isPackChrome(theme);
   const [device, setDevice] = useState<'mobile' | 'desktop'>('desktop');
   useEffect(() => {
@@ -207,10 +257,16 @@ export function StoreCatalogView() {
         theme,
         {
           image_url: store.store_hero_image_url,
-          title: store.store_tagline || `Shop from ${store.name}`,
-          subtitle: theme.hero_subtitle || 'Fresh products from your local store. Add to cart in one tap.',
+          title: store.store_tagline || (aether ? store.name : `Shop from ${store.name}`),
+          subtitle:
+            theme.hero_subtitle ||
+            (aether ? '' : 'Fresh products from your local store. Add to cart in one tap.'),
         },
         device,
+      ).map((s, i) =>
+        aether && !s.image_url && i === 0 && store.store_hero_image_url
+          ? { ...s, image_url: store.store_hero_image_url }
+          : s,
       )
     : [];
 
@@ -248,7 +304,7 @@ export function StoreCatalogView() {
     'grid grid-cols-2 gap-x-3 gap-y-8',
     sparseCatalog ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3',
   );
-  const packGrid = atelier ? atelierGrid : chowkGrid;
+  const packGrid = atelier || aether ? atelierGrid : chowkGrid;
 
   return (
     <>
@@ -284,7 +340,7 @@ export function StoreCatalogView() {
           ) : null
         }
         subnav={
-          pack && !khatario && sectionEnabled(theme, 'categories') ? (
+          pack && !khatario && !aether && sectionEnabled(theme, 'categories') ? (
             <StoreCategoryPills
               categories={categories}
               selectedId={selectedCategory}
@@ -306,9 +362,51 @@ export function StoreCatalogView() {
                 ctaLabel={theme.hero_cta}
                 accent={accent}
                 paper={paper}
-                variant={atelier ? 'atelier' : 'chowk'}
+                variant={aether ? 'aether' : atelier ? 'atelier' : 'chowk'}
                 onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
               />
+            ) : null}
+
+            {aether && home && theme.announcement ? (
+              <AetherMarquee text={theme.announcement} accent={accent} />
+            ) : null}
+
+            {aether && home && sectionEnabled(theme, 'categories') && categories.length > 0 ? (
+              <section className="mx-auto max-w-6xl px-4 pt-16">
+                <p className="text-[11px] uppercase tracking-[0.35em]" style={{ color: accent }}>
+                  The house
+                </p>
+                <h2 className="font-noir-display mt-2 text-[clamp(1.8rem,4vw,3rem)] leading-none">Rooms</h2>
+                <div className="mt-8 grid gap-px md:grid-cols-2">
+                  {categories.slice(0, 4).map((c) => {
+                    const cover = theme.category_images[c.id] || items.find((p) => p.category_id === c.id)?.image_url;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleCategoryChange(c.id)}
+                        className="group relative min-h-[240px] overflow-hidden text-left"
+                      >
+                        {cover ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={cover}
+                            alt=""
+                            className="h-full min-h-[240px] w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div
+                            className="min-h-[240px]"
+                            style={{ backgroundColor: `color-mix(in srgb, ${accent} 14%, ${paper})` }}
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0b09]/80 to-transparent" />
+                        <span className="absolute bottom-5 left-5 font-noir-display text-2xl text-[#f6f1e8]">{c.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             ) : null}
 
             {khatario ? (
@@ -333,7 +431,7 @@ export function StoreCatalogView() {
 
             <StoreOverlayBands bands={theme.overlay_bands} home={home} theme={theme} />
 
-            {home && theme.show_trust && !atelier && !khatario ? <StoreTrustSection /> : null}
+            {home && theme.show_trust && !atelier && !khatario && !aether ? <StoreTrustSection /> : null}
 
             {showMasonry ? (
               <StoreCategoryMasonry
@@ -344,7 +442,7 @@ export function StoreCatalogView() {
               />
             ) : null}
 
-            {popular.length > 0 ? (
+            {popular.length > 0 && !aether ? (
               <section className={clsx('mx-auto max-w-6xl px-4', khatario ? 'pt-5' : 'pt-8')}>
                 <div className={clsx('flex items-end justify-between gap-3', khatario ? 'mb-3' : 'mb-4')}>
                   <div>
@@ -394,13 +492,15 @@ export function StoreCatalogView() {
               </section>
             ) : null}
 
-            {atelier && home && sectionEnabled(theme, 'offers') && offerItems.length > 0 ? (
+            {(atelier || aether) && home && sectionEnabled(theme, 'offers') && offerItems.length > 0 ? (
               <section className="mx-auto max-w-6xl px-4 pt-10">
                 <div className="mb-4">
                   <p className="text-[11px] font-medium uppercase tracking-[0.14em]" style={{ color: accent, opacity: 0.7 }}>
-                    Flash Drop
+                    {aether ? 'Private sale' : 'Flash Drop'}
                   </p>
-                  <h2 className="font-atelier-display mt-1 text-[1.2rem] leading-none">Limited pieces</h2>
+                  <h2 className={aether ? 'font-noir-display mt-2 text-[clamp(1.8rem,4vw,3rem)] leading-none' : 'font-atelier-display mt-1 text-[1.2rem] leading-none'}>
+                    {aether ? 'Offers' : 'Limited pieces'}
+                  </h2>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {offerItems.slice(0, 2).map((item) => (
@@ -410,7 +510,7 @@ export function StoreCatalogView() {
               </section>
             ) : null}
 
-            {promoSlides.length > 0 && !atelier ? (
+            {promoSlides.length > 0 && !atelier && !aether ? (
               <section className={clsx('mx-auto grid max-w-6xl gap-3 px-4 md:grid-cols-2', khatario ? 'pt-3' : 'pt-8')}>
                 {promoSlides.map((slide, i) => (
                   <button
@@ -435,16 +535,25 @@ export function StoreCatalogView() {
             {home && theme.show_trust && atelier ? <StoreTrustSection /> : null}
 
             {home && sectionEnabled(theme, 'featured') && featuredItems.length > 0 ? (
-              <section className="mx-auto max-w-6xl px-4 pt-8">
-                <h2 className={clsx(khatario ? 'mb-3 text-[1.05rem] font-semibold' : 'mb-4 text-[1.05rem] font-semibold')}>
-                  Featured
-                </h2>
-                <div className={clsx('grid gap-3', featuredItems.length === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+              <section className={clsx('mx-auto max-w-6xl px-4', aether ? 'pt-16' : 'pt-8')}>
+                {aether ? (
+                  <>
+                    <p className="text-[11px] uppercase tracking-[0.35em]" style={{ color: accent }}>
+                      This season
+                    </p>
+                    <h2 className="font-noir-display mt-2 mb-8 text-[clamp(1.8rem,4vw,3rem)] leading-none">Featured</h2>
+                  </>
+                ) : (
+                  <h2 className={clsx(khatario ? 'mb-3 text-[1.05rem] font-semibold' : 'mb-4 text-[1.05rem] font-semibold')}>
+                    Featured
+                  </h2>
+                )}
+                <div className={clsx('grid gap-3', aether ? atelierGrid : featuredItems.length === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
                   {featuredItems.map((item) => (
                     <StoreProductCard
                       key={`feat-${item.id}`}
                       product={item}
-                      variant={featuredItems.length === 1 ? 'featured' : 'grid'}
+                      variant={aether || featuredItems.length > 1 ? 'grid' : 'featured'}
                       onViewDetail={setDetailProduct}
                     />
                   ))}
@@ -463,16 +572,23 @@ export function StoreCatalogView() {
                   const row = items.filter((p) => p.category_id === cat.id).slice(0, 8);
                   if (row.length === 0) return null;
                   return (
-                    <section key={`shelf-${cat.id}`} className="mx-auto max-w-6xl px-4 pt-8">
+                    <section key={`shelf-${cat.id}`} className={clsx('mx-auto max-w-6xl px-4', aether ? 'pt-16' : 'pt-8')}>
                       <div className="mb-3 flex items-end justify-between">
-                        <h2 className="text-[1.05rem] font-semibold">{cat.name}</h2>
+                        <h2 className={aether ? 'font-noir-display text-[1.8rem] leading-none' : 'text-[1.05rem] font-semibold'}>
+                          {cat.name}
+                        </h2>
                         <button type="button" className="text-[12px] opacity-60" onClick={() => handleCategoryChange(cat.id)}>
                           View all
                         </button>
                       </div>
-                      <div className="flex gap-3 overflow-x-auto pb-1">
+                      <div className={aether ? clsx('grid', atelierGrid) : 'flex gap-3 overflow-x-auto pb-1'}>
                         {row.map((item) => (
-                          <StoreProductCard key={item.id} product={item} variant="shelf" onViewDetail={setDetailProduct} />
+                          <StoreProductCard
+                            key={item.id}
+                            product={item}
+                            variant={aether ? 'grid' : 'shelf'}
+                            onViewDetail={setDetailProduct}
+                          />
                         ))}
                       </div>
                     </section>
@@ -481,12 +597,27 @@ export function StoreCatalogView() {
               : null}
 
             {home && sectionEnabled(theme, 'testimonials') && theme.testimonials.length > 0 ? (
-              <section className="mx-auto max-w-6xl px-4 pt-10">
-                <h2 className="mb-4 text-[1.05rem] font-semibold">Customer testimonials</h2>
+              <section className={clsx('mx-auto max-w-6xl px-4', aether ? 'pt-16' : 'pt-10')}>
+                {aether ? (
+                  <>
+                    <p className="text-[11px] uppercase tracking-[0.35em]" style={{ color: accent }}>
+                      Voices
+                    </p>
+                    <h2 className="font-noir-display mt-2 mb-8 text-[clamp(1.8rem,4vw,3rem)] leading-none">
+                      Customer notes
+                    </h2>
+                  </>
+                ) : (
+                  <h2 className="mb-4 text-[1.05rem] font-semibold">Customer testimonials</h2>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   {theme.testimonials.map((tm, i) => (
-                    <blockquote key={i} className="rounded-2xl bg-white/80 p-4 text-sm" style={{ color: ink }}>
-                      <p className="leading-relaxed">“{tm.text}”</p>
+                    <blockquote
+                      key={i}
+                      className={aether ? 'border border-[#c4a46a]/20 p-6 text-sm' : 'rounded-2xl bg-white/80 p-4 text-sm'}
+                      style={{ color: ink }}
+                    >
+                      <p className={clsx('leading-relaxed', aether && 'font-noir-display text-lg')}>“{tm.text}”</p>
                       <footer className="mt-2 text-[12px] opacity-60">~ {tm.name}</footer>
                     </blockquote>
                   ))}
@@ -495,8 +626,22 @@ export function StoreCatalogView() {
             ) : null}
 
             {home && sectionEnabled(theme, 'brand_story') && (theme.brand_story || store.store_about_md) ? (
-              <section className="mx-auto max-w-3xl px-4 pt-10 text-sm leading-relaxed" style={{ color: ink, opacity: 0.8 }}>
-                <h2 className="mb-3 text-[1.05rem] font-semibold">Our story</h2>
+              <section
+                className={clsx(
+                  aether ? 'mx-auto max-w-3xl px-4 pt-16 text-base leading-8' : 'mx-auto max-w-3xl px-4 pt-10 text-sm leading-relaxed',
+                )}
+                style={{ color: ink, opacity: aether ? 0.88 : 0.8 }}
+              >
+                {aether ? (
+                  <>
+                    <p className="text-[11px] uppercase tracking-[0.35em]" style={{ color: accent }}>
+                      Atelier
+                    </p>
+                    <h2 className="font-noir-display mt-2 mb-6 text-[clamp(1.8rem,4vw,3rem)] leading-none">Our story</h2>
+                  </>
+                ) : (
+                  <h2 className="mb-3 text-[1.05rem] font-semibold">Our story</h2>
+                )}
                 <p className="whitespace-pre-wrap">{theme.brand_story || store.store_about_md}</p>
               </section>
             ) : null}
@@ -505,16 +650,16 @@ export function StoreCatalogView() {
               <section id="all-products" className="pt-8">
                 {searchQuery || selectedCategory ? (
                   <div className="mb-4">
-                    <h2 className={atelier ? 'font-atelier-display text-[1.35rem]' : 'text-[1.15rem] font-semibold'}>
+                    <h2 className={atelier || aether ? (aether ? 'font-noir-display text-[1.8rem]' : 'font-atelier-display text-[1.35rem]') : 'text-[1.15rem] font-semibold'}>
                       {selectedName || `Results for “${searchQuery}”`}
                     </h2>
                     <p className="mt-0.5 text-[12px]" style={{ opacity: 0.45 }}>
-                      {total} {atelier ? 'curated pieces' : 'products'}
+                      {total} {atelier || aether ? 'curated pieces' : 'products'}
                     </p>
                   </div>
                 ) : (
-                  <h2 className={atelier ? 'mb-4 font-atelier-display text-[1.2rem] leading-none' : 'mb-3 text-[1.05rem] font-semibold'}>
-                    {atelier ? 'The Edit' : 'All products'}
+                  <h2 className={atelier || aether ? (aether ? 'mb-8 font-noir-display text-[clamp(1.8rem,4vw,3rem)] leading-none' : 'mb-4 font-atelier-display text-[1.2rem] leading-none') : 'mb-3 text-[1.05rem] font-semibold'}>
+                    {aether ? 'The collection' : atelier ? 'The Edit' : 'All products'}
                   </h2>
                 )}
 
@@ -523,7 +668,7 @@ export function StoreCatalogView() {
                     {Array.from({ length: 8 }).map((_, i) => (
                       <div
                         key={i}
-                        className={clsx('animate-pulse rounded-[1.35rem] bg-white', atelier ? 'aspect-[3/4]' : 'aspect-square')}
+                        className={clsx('animate-pulse rounded-[1.35rem] bg-white', atelier || aether ? 'aspect-[3/4]' : 'aspect-square')}
                       />
                     ))}
                   </div>
@@ -552,17 +697,21 @@ export function StoreCatalogView() {
                       disabled={itemsLoading}
                       className={clsx(
                         'text-[13px] font-medium disabled:opacity-50',
-                        atelier ? 'w-full rounded-full py-3' : 'rounded-full bg-white px-5 py-2 shadow-sm',
+                        atelier || aether ? 'w-full rounded-full py-3' : 'rounded-full bg-white px-5 py-2 shadow-sm',
                       )}
                       style={
-                        atelier
-                          ? { color: ink, border: `1px solid color-mix(in srgb, ${ink} 14%, transparent)` }
+                        atelier || aether
+                          ? {
+                              color: aether ? '#0c0b09' : ink,
+                              backgroundColor: aether ? accent : undefined,
+                              border: aether ? undefined : `1px solid color-mix(in srgb, ${ink} 14%, transparent)`,
+                            }
                           : { color: ink }
                       }
                     >
                       {itemsLoading ? (
                         <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                      ) : atelier ? (
+                      ) : atelier || aether ? (
                         `Discover More (${Math.max(0, total - items.length)})`
                       ) : (
                         'Load more'

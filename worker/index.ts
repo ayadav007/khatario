@@ -1,31 +1,34 @@
-/* Platform admin PWA — lives under /admin/. Handles Web Push if root /sw.js is unavailable. */
+/// <reference lib="webworker" />
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting());
-});
+/**
+ * Bundled into public/sw.js by @ducanh2912/next-pwa so FCM can wake a
+ * root-scoped worker after the admin WebAPK is swiped away.
+ */
+declare const self: ServiceWorkerGlobalScope;
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('push', (event) => {
-  let data = { title: 'Khatario Admin', body: 'New notification', url: '/admin' };
+function parsePushPayload(event: PushEvent): { title: string; body: string; url: string } {
+  const fallback = { title: 'Khatario Admin', body: 'New notification', url: '/admin' };
   try {
-    if (event.data) data = { ...data, ...event.data.json() };
+    if (event.data) return { ...fallback, ...event.data.json() };
   } catch {
     try {
-      data.body = event.data ? event.data.text() : data.body;
+      fallback.body = event.data ? event.data.text() : fallback.body;
     } catch {
       /* ignore */
     }
   }
+  return fallback;
+}
+
+self.addEventListener('push', (event) => {
+  const data = parsePushPayload(event);
   event.waitUntil(
     self.registration.showNotification(data.title || 'Khatario Admin', {
       body: data.body || 'New notification',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       data: { url: data.url || '/admin' },
-      tag: 'khatario-admin',
+      tag: data.url?.startsWith('/admin') ? 'khatario-admin' : 'khatario',
       renotify: true,
       silent: false,
       vibrate: [200, 100, 200],
@@ -39,7 +42,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes('/admin') && 'focus' in client) {
+        if (client.url.includes(url.split('?')[0]) && 'focus' in client) {
           return client.focus();
         }
       }

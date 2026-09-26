@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
-import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle } from 'lucide-react';
+import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle, Phone } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
@@ -31,13 +31,13 @@ import {
   useMobileHeaderRightAccessory,
   useMobileHeaderTitleOverride,
 } from '@/contexts/MobileHeaderTitleContext';
-import { customerBalanceHint, isPartyBalanceSettled } from '@/lib/party-balance-ui';
 import { useOfflineSalesFinalize } from '@/hooks/useOfflineSalesFinalize';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { InvoicePaymentModal } from '@/components/modals/InvoicePaymentModal';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-import { CreateCustomerModal } from '@/components/modals/CreateCustomerModal';
+import { CreateCustomerModal, customerDraftFromSearchQuery, type CreateCustomerDraft } from '@/components/modals/CreateCustomerModal';
+import { canPickDeviceCustomer, pickDeviceCustomer, phonesLikelyMatch } from '@/lib/capacitor/device-contacts';
 import { CreateItemModal } from '@/components/modals/CreateItemModal';
 import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
 import { useCustomFieldDefinitions, parseItemCustomFieldsFromApi } from '@/components/custom-fields/CustomFieldsManager';
@@ -105,7 +105,7 @@ interface CustomerAutocompleteProps {
   onChange: (value: string) => void;
   onSelect: (customer: Customer) => void;
   disabled?: boolean;
-  onAddNew?: () => void;
+  onAddNew?: (searchQuery?: string) => void;
   /** Underline-style field (mobile invoice bill details). */
   compact?: boolean;
 }
@@ -174,7 +174,7 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                   ? 'focus-primary w-full border-0 border-b border-border bg-transparent pb-1.5 pl-0 pr-7 pt-0.5 text-sm font-medium text-text-primary placeholder:text-text-muted shadow-none outline-none ring-0 focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60'
                   : 'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60'
               }
-              placeholder={compact ? 'Cash sale' : 'Search Customer...'}
+              placeholder={compact ? 'Optional — cash sale if empty' : 'Search Customer...'}
               value={query}
               disabled={disabled}
               onChange={(e) => { setQuery(e.target.value); setIsOpen(true); if (e.target.value === '') onChange(''); }}
@@ -197,9 +197,9 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                         {c.company_name && <div className="text-xs text-text-secondary">{c.company_name}</div>}
                         <div className="text-xs text-text-muted">{c.phone || 'No phone'}</div>
                     </div>))}
-                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400 border-t border-border" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(); } else { window.location.href = '/customers/new'; } }}>+ Add New Customer</div></>
+                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400 border-t border-border" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(query); } else { window.location.href = '/customers/new'; } }}>+ Add New Customer</div></>
                 ) : (
-                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(); } else { window.location.href = '/customers/new'; } }}>
+                    <div className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-primary-600 dark:text-sky-400" onMouseDown={(e) => { e.preventDefault(); if (onAddNew) { onAddNew(query); } else { window.location.href = '/customers/new'; } }}>
                         {isSearching ? <div className="font-medium text-text-muted">Searching...</div> : <><div className="font-medium text-text-primary">No customer found for "{query}"</div><div className="text-xs text-text-muted mt-1">+ Add New Customer</div></>}
                     </div>
                 )}
@@ -388,9 +388,7 @@ function NewInvoiceContent() {
   const [invoiceMobileLayout, setInvoiceMobileLayout] = useState(false);
   const [showMobileItemPicker, setShowMobileItemPicker] = useState(false);
   const [mobileAdjustmentsOpen, setMobileAdjustmentsOpen] = useState(false);
-  const [mobileBillMetaOpen, setMobileBillMetaOpen] = useState(false);
   const [addressSupplyOpen, setAddressSupplyOpen] = useState(false);
-  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
@@ -403,6 +401,7 @@ function NewInvoiceContent() {
   const [isInvoiceLocked, setIsInvoiceLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [createCustomerModalOpen, setCreateCustomerModalOpen] = useState(false);
+  const [createCustomerDraft, setCreateCustomerDraft] = useState<CreateCustomerDraft>({});
   const [createItemModalOpen, setCreateItemModalOpen] = useState(false);
   const [posMode, setPosMode] = useState(false);
   const [customerPhone, setCustomerPhone] = useState('');
@@ -2585,6 +2584,119 @@ function NewInvoiceContent() {
     router.back();
   }, [tryBlockNavigation, router]);
 
+  const openCreateCustomer = useCallback((searchQuery?: string) => {
+    const fromSearch = customerDraftFromSearchQuery(searchQuery || '');
+    setCreateCustomerDraft({
+      ...fromSearch,
+      ...(posMode && customerPhone ? { phone: customerPhone } : {}),
+    });
+    setCreateCustomerModalOpen(true);
+  }, [posMode, customerPhone]);
+
+  const applyInvoiceCustomer = useCallback((customer: Customer) => {
+    setCustomerId(customer.id);
+    setSelectedCustomer(customer);
+    setCustomerPhone(customer.phone || '');
+    setBillingAddress(customer.billing_address || customer.address || '');
+    setShippingAddress(customer.shipping_address || customer.address || '');
+    if (customer.state) {
+      setPlaceOfSupply(customer.state);
+      setRows((prev) => prev.map((r) => calculateRow(r, true)));
+    }
+  }, [calculateRow]);
+
+  const handleMobileCustomerTap = useCallback(async () => {
+    if (isFinal) return;
+    if (!canPickDeviceCustomer()) return;
+    try {
+      const picked = await pickDeviceCustomer();
+      if (!picked) return;
+      if (!picked.name && !picked.phone) {
+        toastCtx.error('That contact has no name or number');
+        return;
+      }
+
+      const matchLocal = picked.phone
+        ? customers.find((c) => phonesLikelyMatch(c.phone, picked.phone))
+        : undefined;
+      if (matchLocal) {
+        applyInvoiceCustomer(matchLocal);
+        return;
+      }
+
+      if (picked.phone && business?.id && user?.id) {
+        const query = picked.phone.replace(/\D/g, '').slice(-10);
+        const scope = { businessId: business.id, userId: user.id };
+        const fromCatalog = await searchCustomersForBilling(scope, query);
+        const catalogHit = (fromCatalog || []).find((c) => phonesLikelyMatch((c as Customer).phone, picked.phone)) as Customer | undefined;
+        if (catalogHit) {
+          applyInvoiceCustomer(catalogHit);
+          return;
+        }
+        if (!isAppOffline()) {
+          const res = await fetch(
+            `/api/customers?business_id=${business.id}&search=${encodeURIComponent(query)}&limit=20&user_id=${user.id}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const hit = (data.customers || []).find((c: Customer) => phonesLikelyMatch(c.phone, picked.phone));
+            if (hit) {
+              applyInvoiceCustomer(hit);
+              return;
+            }
+          }
+        }
+      }
+
+      if (!picked.phone || !business?.id || !user?.id || isAppOffline()) {
+        setCreateCustomerDraft({
+          name: picked.name,
+          phone: picked.phone,
+          email: picked.email,
+        });
+        setCreateCustomerModalOpen(true);
+        return;
+      }
+
+      const createRes = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: picked.name || picked.phone,
+          phone: picked.phone,
+          email: picked.email || '',
+          business_id: business.id,
+          created_by: user.id,
+        }),
+      });
+      if (createRes.ok) {
+        const data = await createRes.json();
+        if (data.customer) {
+          setCustomers((prev) => [...prev, data.customer]);
+          applyInvoiceCustomer(data.customer);
+          toastCtx.success(`Customer "${data.customer.name}" added`);
+          return;
+        }
+      }
+      setCreateCustomerDraft({
+        name: picked.name,
+        phone: picked.phone,
+        email: picked.email,
+      });
+      setCreateCustomerModalOpen(true);
+    } catch (err) {
+      console.error(err);
+      toastCtx.error('Could not open contacts. Update the Khatario app if this is an older APK.');
+    }
+  }, [
+    applyInvoiceCustomer,
+    business?.id,
+    customers,
+    isFinal,
+    toastCtx,
+    user?.id,
+  ]);
+
   // Early returns — wait for auth/session before showing AccessDenied (avoids flash while loading)
   if (authLoading || !user?.id || !business?.id) {
     return (
@@ -2628,7 +2740,7 @@ function NewInvoiceContent() {
                   setShippingAddress(c.shipping_address || c.address || ''); 
                 }
               }} 
-              onAddNewCustomer={() => setCreateCustomerModalOpen(true)}
+              onAddNewCustomer={openCreateCustomer}
               placeOfSupply={placeOfSupply} 
               onPlaceOfSupplyChange={(v) => { setPlaceOfSupply(v); setRows(prev => prev.map(r => calculateRow(r, true))); }} 
               isFinal={isFinal} 
@@ -2875,18 +2987,6 @@ function NewInvoiceContent() {
   const renderMobileComposer = () => {
     const money = (n: number) =>
       `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    const partyBalance =
-      selectedCustomer?.current_balance == null ? null : Number(selectedCustomer.current_balance);
-    const partyBalanceLabel =
-      partyBalance != null && Number.isFinite(partyBalance) && !isPartyBalanceSettled(partyBalance)
-        ? `${customerBalanceHint(partyBalance)} ₹${Math.abs(partyBalance).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-        : '';
-    const customerSubtitle = selectedCustomer
-      ? [
-          selectedCustomer.gstin ? `GSTIN ${selectedCustomer.gstin}` : selectedCustomer.phone,
-          partyBalanceLabel,
-        ].filter(Boolean).join(' · ') || 'Tap to change customer'
-      : 'Tap to add customer';
     const itemCount = rows.filter((r) => r.itemId || r.name).length;
     const payMode = String(payments[0]?.mode || 'upi');
     const settlement = totalPaid <= 0.009 ? 'credit' : Math.abs(balance) < 0.05 ? 'full' : 'partial';
@@ -2932,48 +3032,71 @@ function NewInvoiceContent() {
             <div className="flex-1"><h3 className="text-sm font-semibold text-amber-900 mb-1">Invoice Locked</h3><p className="text-sm text-amber-700">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p></div>
           </div>
         )}
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
-          <div className="min-w-0 flex-1">
-            {customerPickerOpen && !isFinal ? (
-              <div className="space-y-1">
-                <CustomerAutocomplete
-                  compact
-                  customers={customers}
-                  value={customerId}
-                  onChange={setCustomerId}
-                  onSelect={(c) => {
-                    if (c) {
-                      setSelectedCustomer(c);
-                      setBillingAddress(c.billing_address || c.address || '');
-                      setShippingAddress(c.shipping_address || c.address || '');
-                      setCustomerPickerOpen(false);
-                    }
-                  }}
-                  disabled={isFinal}
-                  onAddNew={() => setCreateCustomerModalOpen(true)}
-                />
-                <button type="button" onClick={() => setCustomerPickerOpen(false)} className="text-xs font-semibold text-primary-600">
-                  Done
-                </button>
-              </div>
-            ) : (
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
+          <div className="min-w-0 space-y-0.5">
+            <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
+            <Input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              disabled={isFinal || isInvoiceLocked}
+              className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            />
+          </div>
+          <div className="min-w-0 space-y-0.5">
+            <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
+              Due date <span className="font-normal normal-case text-text-muted">(optional)</span>
+            </label>
+            <Input
+              type="date"
+              value={dueDate}
+              onChange={(e) => {
+                dueDateUserEditedRef.current = true;
+                setDueDate(e.target.value);
+              }}
+              disabled={isFinal || isInvoiceLocked}
+              className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
+            />
+          </div>
+        </div>
+        <div className="w-full rounded-lg border border-border bg-surface">
+          <div className="flex w-full items-end gap-1 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Customer</label>
+              <CustomerAutocomplete
+                compact
+                customers={customers}
+                value={customerId}
+                onChange={(id) => {
+                  setCustomerId(id);
+                  if (!id) setSelectedCustomer(null);
+                }}
+                onSelect={(c) => {
+                  if (c) {
+                    setSelectedCustomer(c);
+                    setBillingAddress(c.billing_address || c.address || '');
+                    setShippingAddress(c.shipping_address || c.address || '');
+                  }
+                }}
+                disabled={isFinal}
+                onAddNew={openCreateCustomer}
+              />
+            </div>
+            {canPickDeviceCustomer() && !isFinal ? (
               <button
                 type="button"
-                className="w-full text-left disabled:opacity-100"
-                onClick={() => { if (!isFinal) setCustomerPickerOpen(true); }}
-                disabled={isFinal}
+                title="Choose from phone contacts"
+                onClick={() => { void handleMobileCustomerTap(); }}
+                className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-700"
               >
-                <p className="truncate text-sm font-semibold leading-tight text-text-primary">
-                  {selectedCustomer?.name || 'Cash sale'}
-                </p>
-                <p className="truncate text-[10px] leading-tight text-text-muted">{customerSubtitle}</p>
+                <Phone className="h-4 w-4" />
               </button>
-            )}
+            ) : null}
           </div>
           <button
             type="button"
             onClick={() => setAddressSupplyOpen((open) => !open)}
-            className="shrink-0 text-[11px] font-semibold text-primary-700"
+            className="w-full border-t border-border px-2 py-1.5 text-left text-[11px] font-semibold text-primary-700"
             aria-expanded={addressSupplyOpen}
           >
             Address
@@ -3012,27 +3135,12 @@ function NewInvoiceContent() {
             ) : null}
           </div>
         ) : null}
-        {mobileBillMetaOpen ? (
-          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-surface p-2">
-            <div className="min-w-0 space-y-0.5">
-              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
-              <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
-            </div>
-            <div className="min-w-0 space-y-0.5">
-              <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Due date</label>
-              <Input type="date" value={dueDate} onChange={(e) => { dueDateUserEditedRef.current = true; setDueDate(e.target.value); }} disabled={isFinal || isInvoiceLocked} className="h-9 min-h-0 text-sm" />
-            </div>
-          </div>
-        ) : null}
         <div className="flex items-center gap-1">
           <h2 className="text-xs font-bold uppercase tracking-wider text-text-primary">Items</h2>
           <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-text-secondary">{itemCount}</span>
           <div className="ml-auto flex items-center gap-0.5">
             <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={handlePreview} disabled={previewLoading || !isSeriesResolved}>
               {previewLoading ? '…' : 'Preview'}
-            </button>
-            <button type="button" className="px-1.5 py-1 text-[11px] font-semibold text-primary-700" onClick={() => setMobileBillMetaOpen((o) => !o)}>
-              Date
             </button>
             {!isFinal ? (
               <>
@@ -3089,33 +3197,6 @@ function NewInvoiceContent() {
             <div className="space-y-3 border-t border-border p-3">
         <div className="space-y-3">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-border pb-2">
-              <div className="min-w-0 space-y-0.5">
-                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">Invoice date</label>
-                <Input
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                />
-              </div>
-              <div className="min-w-0 space-y-0.5">
-                <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
-                  Due date <span className="text-text-muted normal-case font-normal">(optional)</span>
-                </label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => {
-                    dueDateUserEditedRef.current = true;
-                    setDueDate(e.target.value);
-                  }}
-                  disabled={isFinal || isInvoiceLocked}
-                  className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                />
-              </div>
-            </div>
             {invoiceCustomFieldDefs.length > 0 && !isFinal && (
               <div className="space-y-3 border-b border-border pb-2">
                 <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -3319,11 +3400,11 @@ function NewInvoiceContent() {
           )}
         </div>
       </div>
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 px-2 py-1.5 supports-[padding:max(0px)]:pb-[max(6px,env(safe-area-inset-bottom))]">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-primary-600 px-2 py-1.5 shadow-[0_-6px_20px_rgba(15,23,42,0.18)] supports-[padding:max(0px)]:pb-[max(6px,env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-[1600px] items-center gap-1.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] font-semibold uppercase tracking-wide text-text-muted">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
-            <p className="truncate text-base font-bold leading-tight tabular-nums text-primary-700">{money(grandTotal)}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-white/80">Due{totalTax > 0 ? ` · GST ${money(totalTax)}` : ''}</p>
+            <p className="truncate text-base font-bold leading-tight tabular-nums text-white">{money(grandTotal)}</p>
           </div>
           {!isFinal ? (
             <>
@@ -3332,7 +3413,7 @@ function NewInvoiceContent() {
                 title="Save draft"
                 onClick={() => handleSave('draft')}
                 disabled={!isSeriesResolved || loading}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/40 text-white disabled:opacity-50"
               >
                 <Bookmark className="h-4 w-4" />
               </button>
@@ -3342,14 +3423,14 @@ function NewInvoiceContent() {
                   if (savedInvoiceId) setShareModalOpen(true);
                   else toastCtx.error('Save a draft or generate first, then share on WhatsApp.');
                 }}
-                className="flex h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-text-secondary"
+                className="flex h-10 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-white"
               >
                 <MessageCircle className="h-4 w-4" />
               </button>
               <Button
                 variant="primary"
                 size="sm"
-                className="h-10 shrink-0 font-bold"
+                className="h-10 shrink-0 font-bold !bg-white !text-primary-700 hover:!bg-primary-50"
                 onClick={() => handleSave('final')}
                 isLoading={loading}
                 disabled={!isSeriesResolved && !canQueueOffline}
@@ -3359,8 +3440,8 @@ function NewInvoiceContent() {
             </>
           ) : (
             <>
-              <Button variant="secondary" size="sm" className="h-10" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="h-4 w-4" /></Button>
-              <Button variant="primary" size="sm" className="h-10" onClick={() => setShareModalOpen(true)}>Share</Button>
+              <Button variant="secondary" size="sm" className="h-10 !bg-white/15 !text-white !border-white/40" onClick={() => window.open(`/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}`, '_blank')}><Printer className="h-4 w-4" /></Button>
+              <Button variant="primary" size="sm" className="h-10 !bg-white !text-primary-700 hover:!bg-primary-50" onClick={() => setShareModalOpen(true)}>Share</Button>
             </>
           )}
         </div>
@@ -3443,7 +3524,7 @@ function NewInvoiceContent() {
         customerPhone={customerPhone}
         onCustomerPhoneChange={handleCustomerPhoneChange}
         onCustomerSelect={handleCustomerSelectFromPhone}
-        onAddNewCustomer={() => setCreateCustomerModalOpen(true)}
+        onAddNewCustomer={() => openCreateCustomer()}
         onResumeBill={(bill) => {
           restoreInvoiceState(bill.data);
         }}
@@ -3464,6 +3545,11 @@ function NewInvoiceContent() {
           },
           onReprint: handleBluetoothReprint,
           isReprinting: btPrinting,
+          printerHint: bt.activePrinter
+            ? `Connected to ${bt.activePrinter.name}`
+            : bt.savedPrinters[0]
+              ? `${bt.savedPrinters[0].name} — turn it on; it connects when you print`
+              : undefined,
         }}
       >
         <div
@@ -3549,7 +3635,10 @@ function NewInvoiceContent() {
       {createCustomerModalOpen && (
         <CreateCustomerModal
           isOpen={createCustomerModalOpen}
-          onClose={() => setCreateCustomerModalOpen(false)}
+          onClose={() => {
+            setCreateCustomerModalOpen(false);
+            setCreateCustomerDraft({});
+          }}
           onSuccess={(customer) => {
             // Add the new customer to the customers list
             setCustomers(prev => [...prev, customer]);
@@ -3581,7 +3670,7 @@ function NewInvoiceContent() {
               }, 100);
             }
           }}
-          initialData={posMode && customerPhone ? { phone: customerPhone } : {}}
+          initialData={createCustomerDraft}
         />
       )}
 

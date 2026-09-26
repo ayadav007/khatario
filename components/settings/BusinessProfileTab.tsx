@@ -141,8 +141,22 @@ export const BusinessProfileTab: React.FC = () => {
   // Handle URL parameter for field highlighting
   useEffect(() => {
     const highlightParam = searchParams.get('highlight');
-    if (highlightParam) {
-      setHighlightedField(highlightParam);
+    if (!highlightParam) return;
+
+    const skipGstin =
+      highlightParam === 'gstin' &&
+      ((business as { gst_registration_type?: string } | null)?.gst_registration_type === 'unregistered' ||
+        formData.gst_registration_type === 'unregistered');
+
+    if (skipGstin || highlightParam === 'pan' || highlightParam === 'logo_url') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('highlight');
+      window.history.replaceState({}, '', url.toString());
+      setHighlightedField(null);
+      return;
+    }
+
+    setHighlightedField(highlightParam);
       // Scroll to field after a short delay to ensure DOM is ready
       setTimeout(() => {
         const fieldElement = fieldRefs.current[highlightParam];
@@ -160,20 +174,30 @@ export const BusinessProfileTab: React.FC = () => {
           }
         }
       }, 300);
-    }
-  }, [searchParams]);
+  }, [searchParams, business, formData.gst_registration_type]);
 
-  // Helper to check if a field is filled
+  // Helper to check if a field is filled (optional GSTIN when unregistered)
   const isFieldFilled = (fieldName: string): boolean => {
+    if (fieldName === 'gstin' && formData.gst_registration_type === 'unregistered') {
+      return true;
+    }
+    if (fieldName === 'pan' || fieldName === 'logo_url') {
+      return true;
+    }
     if (fieldName === 'address_line1') {
       return !!formData.address_line1;
     }
     return !!(formData as any)[fieldName];
   };
 
+  const wizardFieldOrder =
+    formData.gst_registration_type === 'unregistered'
+      ? ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode']
+      : ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode', 'gstin'];
+
   // Get the next missing field
   const getNextMissingField = (): string | null => {
-    const fieldOrder = ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode', 'gstin', 'pan', 'logo_url'];
+    const fieldOrder = wizardFieldOrder;
     
     if (highlightedField) {
       const currentIndex = fieldOrder.indexOf(highlightedField);
@@ -251,7 +275,7 @@ export const BusinessProfileTab: React.FC = () => {
   // Update next field name when highlighted field or formData changes
   useEffect(() => {
     if (highlightedField) {
-      const fieldOrder = ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode', 'gstin', 'pan', 'logo_url'];
+      const fieldOrder = wizardFieldOrder;
       const currentIndex = fieldOrder.indexOf(highlightedField);
       
       // Find next missing field after current
@@ -272,7 +296,7 @@ export const BusinessProfileTab: React.FC = () => {
     } else {
       setNextFieldName(null);
     }
-  }, [highlightedField, formData.name, formData.email, formData.phone, formData.address_line1, formData.city, formData.state, formData.pincode, formData.gstin, formData.pan, formData.logo_url]);
+  }, [highlightedField, formData.name, formData.email, formData.phone, formData.address_line1, formData.city, formData.state, formData.pincode, formData.gstin, formData.gst_registration_type, formData.pan, formData.logo_url]);
 
   const fetchProductVariantsSetting = async () => {
     if (!business?.id) return;
@@ -606,7 +630,18 @@ export const BusinessProfileTab: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'gst_registration_type' && value === 'unregistered' ? { gstin: '' } : {}),
+    }));
+    if (name === 'gst_registration_type' && value === 'unregistered' && highlightedField === 'gstin') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('highlight');
+      window.history.replaceState({}, '', url.toString());
+      setHighlightedField(null);
+      setNextFieldName(null);
+    }
   };
 
   const handleFieldBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>, fieldName: string) => {
@@ -694,10 +729,19 @@ export const BusinessProfileTab: React.FC = () => {
 
         if (res.ok) {
           toast.success('Business profile updated successfully!');
-          if (highlightedField) {
-            setTimeout(() => checkAndMoveToNextField(), 500);
+          if (formData.gst_registration_type === 'unregistered') {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('highlight');
+            window.history.replaceState({}, '', url.toString());
+            setHighlightedField(null);
+            setNextFieldName(null);
+            setTimeout(() => window.location.assign(`${url.pathname}${url.search}`), 800);
+          } else {
+            if (highlightedField) {
+              setTimeout(() => checkAndMoveToNextField(), 500);
+            }
+            setTimeout(() => window.location.reload(), 1000);
           }
-          setTimeout(() => window.location.reload(), 1000);
         } else {
           const data = await res.json();
           toast.error(`Failed to update profile: ${data.error}`);
@@ -764,10 +808,19 @@ export const BusinessProfileTab: React.FC = () => {
       }
 
       toast.success('Profile updated successfully!');
-      if (highlightedField) {
-        setTimeout(() => checkAndMoveToNextField(), 500);
+      if (formData.gst_registration_type === 'unregistered') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('highlight');
+        window.history.replaceState({}, '', url.toString());
+        setHighlightedField(null);
+        setNextFieldName(null);
+        setTimeout(() => window.location.assign(`${url.pathname}${url.search}`), 800);
+      } else {
+        if (highlightedField) {
+          setTimeout(() => checkAndMoveToNextField(), 500);
+        }
+        setTimeout(() => window.location.reload(), 1000);
       }
-      setTimeout(() => window.location.reload(), 1000);
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
@@ -1276,6 +1329,11 @@ export const BusinessProfileTab: React.FC = () => {
 
           {/* GSTIN and PAN */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {formData.gst_registration_type === 'unregistered' ? (
+              <p className="type-body-sm text-text-muted md:col-span-2">
+                GSTIN is not required for unregistered businesses. You can save without it.
+              </p>
+            ) : (
             <Input
               label="GSTIN"
               name="gstin"
@@ -1288,6 +1346,7 @@ export const BusinessProfileTab: React.FC = () => {
               inputRef={(el) => { fieldRefs.current['gstin'] = el; }}
               className={highlightedField === 'gstin' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
             />
+            )}
 
             <Input
               label="PAN"

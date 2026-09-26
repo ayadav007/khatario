@@ -122,6 +122,7 @@ export default function BluetoothPrinterSettingsPage() {
     >
       <SupportBanner supported={bt.supported} isNative={bt.isNative} />
       <PrintSettingsPanel
+        bluetooth={bt}
         testing={testingId !== null}
         onTestPrint={async () => {
           const p = bt.activePrinter || bt.savedPrinters[0];
@@ -135,6 +136,9 @@ export default function BluetoothPrinterSettingsPage() {
         <Activity className="w-4 h-4" />
         Printer diagnostics
       </Link>
+      <div className="mt-6">
+        <HelpCard />
+      </div>
       {bt.savedPrinters.length > 0 && (
         <Card padding="md" className="mt-6">
           <h2 className="text-lg font-semibold mb-3">Saved printers</h2>
@@ -332,33 +336,25 @@ function HelpCard() {
       <p className="text-sm text-text-secondary mb-3">{PRINTER_ANDROID_APP_NOTE}</p>
       <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
         <li>
-          Turn on your printer and make sure its Bluetooth light is blinking
-          before pairing.
+          Turn the printer on so its Bluetooth light is on before you connect.
         </li>
         <li>
-          Hold the printer within 2–3 metres of this device during pairing.
+          Stay within 2–3 metres of the printer.
         </li>
         <li>
-          If the picker shows no devices, try an alternate profile (Xprinter
-          / Rongta / Goojprt) or choose "Auto-detect".
+          If the list is empty, pair the printer in phone Bluetooth settings, then tap Refresh.
         </li>
         <li>
-          After pairing, the printer auto-connects before each print. If the
-          connection is lost mid-day, the next print will re-open it; no
-          action is needed.
+          After you tap Connect, keep the printer on. If it sleeps, the next print will reconnect automatically.
         </li>
         <li>
-          Paired printers are remembered on this device only. If you clear
-          the browser data or switch devices, pair again.
+          Paired printers are remembered on this phone only. If you clear app data or switch phones, connect again.
         </li>
         <li>
-          iPhones/iPads cannot use Web Bluetooth. Use the Khatario Android app
-          or a laptop with Chrome/Edge instead.
+          iPhones cannot use Web Bluetooth. Use the Khatario Android app.
         </li>
         <li>
-          Many budget thermal printers are Classic Bluetooth (SPP) only — they
-          will not appear in the BLE picker. See &quot;BLE vs Classic
-          Bluetooth&quot; above.
+          Headphones and watches also appear in the paired list — choose the name that looks like a printer.
         </li>
       </ul>
     </Card>

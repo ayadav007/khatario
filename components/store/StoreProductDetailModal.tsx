@@ -103,7 +103,7 @@ export function StoreProductDetailModal({
     const ink = chowkInkOn(paper);
     const hair = `1px solid color-mix(in srgb, ${ink} 14%, transparent)`;
     return (
-      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', chowk && 'store-chowk', atelier && 'store-atelier', theme.pack === 'khatario' && 'store-khatario', theme.pack === 'noir' && 'store-noir')} style={{ color: ink }}>
+      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', chowk && 'store-chowk', atelier && 'store-atelier', theme.pack === 'khatario' && 'store-khatario', theme.pack === 'noir' && 'store-noir', theme.pack === 'aether' && 'store-aether')} style={{ color: ink }}>
         <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
         <div
           className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"

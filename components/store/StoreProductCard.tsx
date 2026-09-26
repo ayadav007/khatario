@@ -3,7 +3,7 @@
 import { Heart, Minus, Package, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAetherPack, isAtelierPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
 import { storeDiscountPercent } from '@/lib/store/map-store-product';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
@@ -203,6 +203,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
   const accent = theme.accent;
   const atelier = isAtelierPack(theme);
   const khatario = isKhatarioPack(theme);
+  const aether = isAetherPack(theme);
   const layout: StoreProductCardVariant =
     variant ?? (isPackChrome(theme) ? 'grid' : 'classic');
 
@@ -276,10 +277,10 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
       <div
         className={clsx(
           'relative overflow-hidden',
-          atelier ? 'bg-[#eee8e0]' : 'bg-white',
-          layout === 'featured'
+          aether ? 'bg-[#161310]' : atelier ? 'bg-[#eee8e0]' : 'bg-white',
+          layout === 'featured' && !aether
             ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full'
-            : atelier
+            : atelier || aether
               ? 'aspect-[3/4] rounded-[1.35rem]'
               : khatario && layout === 'shelf'
                 ? 'aspect-[4/3]'
@@ -297,18 +298,27 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
               alt={product.name}
               className={clsx(
                 'h-full w-full',
-                atelier ? 'atelier-product-img object-cover' : 'chowk-product-img object-contain p-2',
+                aether
+                  ? 'aether-product-img object-cover'
+                  : atelier
+                    ? 'atelier-product-img object-cover'
+                    : 'chowk-product-img object-contain p-2',
               )}
               loading="lazy"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center" style={{ backgroundColor: atelier ? '#eee8e0' : '#f3ebe0' }}>
-              <span className={clsx(atelier ? 'font-atelier-display text-5xl' : 'font-chowk-display text-4xl leading-none')} style={{ color: ink, opacity: 0.28 }}>
+            <div className="flex h-full w-full items-center justify-center" style={{ backgroundColor: aether ? '#161310' : atelier ? '#eee8e0' : '#f3ebe0' }}>
+              <span className={clsx(aether ? 'font-noir-display text-5xl' : atelier ? 'font-atelier-display text-5xl' : 'font-chowk-display text-4xl leading-none')} style={{ color: aether ? accent : ink, opacity: 0.28 }}>
                 {product.name.slice(0, 1).toUpperCase()}
               </span>
             </div>
           )}
         </Link>
+        {aether ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#0c0b09]/80 to-transparent pb-4 pt-10 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+            <span className="text-[10px] uppercase tracking-[0.28em] text-[#c4a46a]">View</span>
+          </div>
+        ) : null}
         {discount > 0 ? (
           <span
             className="pointer-events-none absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
@@ -335,7 +345,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             }}
           />
         </button>
-        {theme.show_listing_add && atelier ? (
+        {theme.show_listing_add && (atelier || aether) ? (
           <AtelierAddControl
             accent={accent}
             paper={paper}
@@ -366,7 +376,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
     );
 
     const meta = (
-      <div className={clsx(layout === 'featured' ? 'flex flex-col justify-center px-5 py-6 md:px-10' : atelier ? 'px-0.5 pb-1 pt-3' : 'px-2.5 pb-3 pt-2')}>
+      <div className={clsx(layout === 'featured' && !aether ? 'flex flex-col justify-center px-5 py-6 md:px-10' : atelier || aether ? 'px-0.5 pb-1 pt-3' : 'px-2.5 pb-3 pt-2')}>
         {layout === 'featured' ? (
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>
             Popular
@@ -375,12 +385,23 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         {layout !== 'featured' ? (
           <div className="flex items-start justify-between gap-1.5">
             <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
-              <h3 className="chowk-name line-clamp-2 text-[11px] font-medium leading-tight" style={{ color: ink }}>
+              {aether && product.category_name ? (
+                <p className="mb-1 text-[10px] uppercase tracking-[0.22em]" style={{ color: accent, opacity: 0.8 }}>
+                  {product.category_name}
+                </p>
+              ) : null}
+              <h3
+                className={clsx(
+                  'line-clamp-2 leading-tight',
+                  aether ? 'font-noir-display text-[15px]' : 'chowk-name text-[11px] font-medium',
+                )}
+                style={{ color: ink }}
+              >
                 {product.name}
               </h3>
             </Link>
             <div className="shrink-0 text-right">
-              <p className="text-[13px] font-semibold tabular-nums" style={{ color: ink }}>
+              <p className="text-[13px] font-semibold tabular-nums" style={{ color: aether ? accent : ink }}>
                 ₹{product.selling_price.toLocaleString('en-IN')}
               </p>
               {discount > 0 && product.mrp != null ? (
@@ -434,7 +455,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
       </div>
     );
 
-    if (layout === 'featured') {
+    if (layout === 'featured' && !aether) {
       return (
         <article className="overflow-hidden rounded-3xl bg-white shadow-sm">
           <div className="grid md:grid-cols-2">
@@ -448,9 +469,9 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
     return (
       <article
         className={clsx(
-          'overflow-hidden rounded-2xl bg-white shadow-sm',
+          'group overflow-hidden rounded-2xl bg-white shadow-sm',
           layout === 'shelf' && 'w-[42vw] max-w-[12.5rem] flex-shrink-0 snap-start sm:w-44',
-          atelier && 'rounded-[1.35rem] bg-transparent shadow-none',
+          (atelier || aether) && 'rounded-[1.35rem] bg-transparent shadow-none',
         )}
       >
         {imageBlock}

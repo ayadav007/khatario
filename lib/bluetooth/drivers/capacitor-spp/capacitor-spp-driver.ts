@@ -21,6 +21,7 @@ import {
   sppWrite,
 } from '../../native/khatario-bluetooth-spp';
 import { guessProfileFromName, getProfile } from '../../printer-profiles';
+import { mapBluetoothUserMessage } from '../../user-errors';
 
 export class CapacitorBluetoothNotAvailableError extends Error {
   constructor(msg = 'Classic Bluetooth (SPP) is not available') {
@@ -114,7 +115,12 @@ export class CapacitorSppDriver implements BluetoothPrinterDriver {
     }
 
     await sppDisconnect();
-    await sppConnect(printer.id);
+    try {
+      await sppConnect(printer.id);
+    } catch (err) {
+      this.connectedAddress = null;
+      throw new Error(mapBluetoothUserMessage(err));
+    }
     this.connectedAddress = printer.id;
     this.connectedProfileId = printer.profileId;
   }
@@ -136,7 +142,13 @@ export class CapacitorSppDriver implements BluetoothPrinterDriver {
 
     for (let offset = 0; offset < bytes.length; offset += chunkSize) {
       const slice = bytes.subarray(offset, offset + chunkSize);
-      await sppWrite(slice);
+      try {
+        await sppWrite(slice);
+      } catch (err) {
+        this.connectedAddress = null;
+        await sppDisconnect();
+        throw new Error(mapBluetoothUserMessage(err));
+      }
       if (chunkDelay) await sleep(chunkDelay);
     }
   }

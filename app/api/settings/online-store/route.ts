@@ -124,7 +124,7 @@ export async function PATCH(request: NextRequest) {
     const reserved = new Set([
       'www', 'staging', 'app', 'api', 'admin', 'mail', 'cdn',
       'assets', 'static', 'status', 'help', 'support', 'docs',
-      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir',
+      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir', 'theme-aether',
     ]);
     if (reserved.has(sd)) {
       return NextResponse.json(

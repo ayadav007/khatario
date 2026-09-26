@@ -87,7 +87,9 @@ export function AdminNotificationSettings() {
       <p className="text-sm text-gray-600">
         Install this admin console on your phone from Chrome (not WhatsApp/Gmail in-app browser). Staging
         installs as <strong>Khatario STG</strong>. Then open that icon and tap <strong>Enable alerts</strong>{' '}
-        while logged in. If Android says permission was not granted, Chrome → lock icon → Notifications → Allow.
+        while logged in. After a deploy, tap Enable alerts again so the phone re-subscribes. Test with the app
+        fully closed (not just in the background). If Android battery settings restrict Chrome or Khatario STG,
+        background alerts will wait until you open the app.
       </p>
 
       <div className="space-y-4">

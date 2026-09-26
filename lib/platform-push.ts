@@ -118,6 +118,9 @@ export async function sendPlatformAdminPush(input: {
       publicKey: keys.publicKey,
       privateKey: keys.privateKey,
     },
+    // Default urgency is "normal"; Android Doze holds those until the app/Chrome is opened.
+    TTL: 24 * 60 * 60,
+    urgency: 'high' as const,
   };
 
   let sent = 0;

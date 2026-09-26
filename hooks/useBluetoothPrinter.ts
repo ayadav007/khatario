@@ -63,6 +63,7 @@ import {
 } from '@/lib/bluetooth/invoice-to-escpos';
 import { EscPosBuilder } from '@/lib/bluetooth/escpos';
 import { shouldShowKhatarioFooterFromSubscription } from '@/lib/print-branding-rules';
+import { mapBluetoothUserMessage } from '@/lib/bluetooth/user-errors';
 
 export interface UseBluetoothPrinterResult {
   /** True when the current runtime can use Bluetooth at all. */
@@ -212,19 +213,28 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
       language: PrinterLanguage
     ): Promise<void> => {
       const driver = await getDriverForPrinter(printer);
-      setStatus('connecting');
-      await driver.connect(printer);
-      setActivePrinter(printer);
-      setStatus('printing');
-      try {
+      const attempt = async () => {
+        setStatus('connecting');
+        await driver.connect(printer);
+        setActivePrinter(printer);
+        setStatus('printing');
         await driver.print({ bytes, language, label: printer.name });
+      };
+      try {
+        try {
+          await attempt();
+        } catch {
+          await driver.disconnect().catch(() => undefined);
+          await attempt();
+        }
         touchPrinter(businessId, printer.id);
         refreshList();
         setStatus('connected');
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Print failed');
-        throw err;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [businessId, refreshList]
@@ -252,20 +262,22 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     async (device, profileId) => {
       if (!businessId) {
         setError('No active business');
-        return null;
+        throw new Error('No active business');
       }
       if (!supportsClassicBluetooth) {
-        setError('Classic Bluetooth is only available in the Android app');
-        return null;
+        const msg = 'Classic Bluetooth is only available in the Android app';
+        setError(msg);
+        throw new Error(msg);
       }
       try {
         setStatus('connecting');
         setError(null);
         const ok = await ensureSppPermissions();
         if (!ok) {
-          setError('Bluetooth permissions not granted');
+          const msg = mapBluetoothUserMessage('Bluetooth permissions not granted');
+          setError(msg);
           setStatus('error');
-          return null;
+          throw new Error(msg);
         }
         const spp = createCapacitorSppDriver();
         const resolvedProfile =
@@ -284,10 +296,11 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         setStatus('connected');
         refreshList();
         return printer;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Connection failed');
-        return null;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [businessId, supportsClassicBluetooth, refreshList]
@@ -317,9 +330,10 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
         setStatus('connected');
         refreshList();
         return printer;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Pairing cancelled');
+        setError(msg);
         return null;
       }
     },
@@ -348,10 +362,11 @@ export function useBluetoothPrinter(): UseBluetoothPrinterResult {
     async (printer) => {
       try {
         await connectInternal(printer);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const msg = mapBluetoothUserMessage(err);
         setStatus('error');
-        setError(err?.message || 'Connection failed');
-        throw err;
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [connectInternal]

@@ -20,7 +20,7 @@ export function StoreHeroCarousel({
   accent: string;
   onCta?: () => void;
   compact?: boolean;
-  variant?: 'classic' | 'chowk' | 'atelier' | 'khatario';
+  variant?: 'classic' | 'chowk' | 'atelier' | 'khatario' | 'aether';
   paper?: string;
   flush?: boolean;
 }) {
@@ -43,6 +43,110 @@ export function StoreHeroCarousel({
 
   if (count === 0) return null;
   const slide = slides[Math.min(index, count - 1)];
+
+  if (variant === 'aether') {
+    return (
+      <section
+        className={clsx(
+          'relative isolate overflow-hidden bg-[#0c0b09]',
+          compact ? 'h-48' : 'min-h-[88svh]',
+        )}
+      >
+        {slides.map((s, i) => (
+          <div
+            key={`${s.image_url}-${i}`}
+            className="absolute inset-0 transition-opacity duration-1000"
+            style={{ opacity: i === index ? 1 : 0 }}
+            aria-hidden={i !== index}
+          >
+            {s.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={s.image_url}
+                alt=""
+                className={clsx(
+                  'h-full w-full object-cover',
+                  i === index && 'store-aether-kenburns',
+                )}
+              />
+            ) : (
+              <div className="h-full w-full" style={{ backgroundColor: accent }} />
+            )}
+          </div>
+        ))}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0b09] via-[#0c0b09]/50 to-[#0c0b09]/20" />
+        <div
+          className={clsx(
+            'relative z-10 flex flex-col justify-end',
+            compact ? 'h-48 px-4 pb-4' : 'min-h-[88svh] px-5 pb-16 pt-28 md:px-10 md:pb-24',
+          )}
+        >
+          <p
+            className={clsx(
+              'uppercase tracking-[0.42em] text-[#c4a46a]',
+              compact ? 'text-[8px]' : 'text-[11px]',
+            )}
+          >
+            {count > 1 ? `${String(index + 1).padStart(2, '0')}  /  ${String(count).padStart(2, '0')}` : 'Lookbook'}
+          </p>
+          {slide.title ? (
+            <h1
+              className={clsx(
+                'font-noir-display mt-3 max-w-4xl leading-[0.92] text-[#f6f1e8]',
+                compact ? 'text-2xl' : 'text-[16vw] md:text-[7rem]',
+              )}
+              aria-live="polite"
+            >
+              {slide.title}
+            </h1>
+          ) : null}
+          {slide.subtitle ? (
+            <p
+              className={clsx(
+                'max-w-md leading-relaxed text-[#f6f1e8]/75',
+                compact ? 'mt-1 line-clamp-2 text-[9px]' : 'mt-6 text-sm md:text-base md:leading-7',
+              )}
+            >
+              {slide.subtitle}
+            </p>
+          ) : null}
+          {ctaLabel && !compact ? (
+            <button
+              type="button"
+              className="store-aether-shine mt-8 min-h-11 w-fit px-6 text-[12px] font-medium uppercase tracking-[0.22em] text-[#0c0b09]"
+              style={{ backgroundColor: accent }}
+              onClick={onCta}
+            >
+              {ctaLabel}
+            </button>
+          ) : null}
+          {!compact ? (
+            <p className="mt-14 flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-[#f6f1e8]/45">
+              <span className="block h-12 w-px bg-[#c4a46a]" />
+              Scroll
+            </p>
+          ) : null}
+        </div>
+        {count > 1 ? (
+          <div className="absolute bottom-4 left-0 right-0 z-10 flex justify-center gap-1.5">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Slide ${i + 1}`}
+                onClick={() => setIndex(i)}
+                className="h-1 rounded-full transition-all"
+                style={{
+                  width: i === index ? 22 : 6,
+                  backgroundColor: i === index ? accent : 'rgba(246,241,232,0.35)',
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
+    );
+  }
 
   if (variant === 'khatario') {
     return (

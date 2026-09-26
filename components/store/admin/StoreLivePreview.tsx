@@ -2,7 +2,7 @@
 
 import { Search } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
-import { CHOWK_INK, chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isKhatarioPack, resolveHeroSlides, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { CHOWK_INK, chowkInkOn, chowkOnAccent, isAetherPack, isAtelierPack, isChowkPack, isKhatarioPack, resolveHeroSlides, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
 import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
@@ -51,8 +51,9 @@ export function StoreLivePreview({
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const khatario = isKhatarioPack(theme);
+  const aether = isAetherPack(theme);
   const paper = storeCanvas(theme);
-  const ink = chowk || atelier || khatario ? chowkInkOn(paper) : CHOWK_INK;
+  const ink = chowk || atelier || khatario || aether ? chowkInkOn(paper) : CHOWK_INK;
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
   const showCats = sectionEnabled(theme, 'categories');
 
@@ -149,6 +150,59 @@ export function StoreLivePreview({
                     </div>
                   ))}
                 </div>
+              </div>
+            </>
+          ) : aether ? (
+            <>
+              <div className="relative px-3 py-3" style={{ color: ink }}>
+                <p className="text-center font-noir-display text-[13px] tracking-[0.28em]">{name}</p>
+              </div>
+              {theme.show_hero ? (
+                <StoreHeroCarousel
+                  compact
+                  variant="aether"
+                  paper={paper}
+                  slides={resolveHeroSlides(theme, {
+                    image_url: heroUrl,
+                    title: tagline || name,
+                    subtitle: theme.hero_subtitle,
+                  })}
+                  ctaLabel={theme.hero_cta}
+                  accent={theme.accent}
+                />
+              ) : null}
+              {theme.announcement ? (
+                <p
+                  className="truncate px-3 py-1.5 text-center text-[8px] uppercase tracking-[0.22em]"
+                  style={{ color: theme.accent, borderTop: `1px solid ${theme.accent}33`, borderBottom: `1px solid ${theme.accent}33` }}
+                >
+                  {theme.announcement}
+                </p>
+              ) : null}
+              <p className="px-3 pt-3 font-noir-display text-[12px]" style={{ color: ink }}>
+                This season
+              </p>
+              <div className="grid grid-cols-2 gap-2 px-3 pb-3 pt-1">
+                {SAMPLE_ATELIER.slice(0, 4).map((p) => (
+                  <div key={p.name}>
+                    <div className="relative aspect-[3/4]" style={{ backgroundColor: `color-mix(in srgb, ${theme.accent} 14%, ${paper})` }}>
+                      {p.mrp > p.price ? (
+                        <span
+                          className="absolute left-1 top-1 px-1 text-[7px]"
+                          style={{ backgroundColor: theme.accent, color: paper }}
+                        >
+                          {Math.round(((p.mrp - p.price) / p.mrp) * 100)}%
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1.5 font-noir-display text-[10px] leading-tight" style={{ color: ink }}>
+                      {p.name}
+                    </p>
+                    <p className="text-[9px] tabular-nums" style={{ color: theme.accent }}>
+                      ₹{p.price}
+                    </p>
+                  </div>
+                ))}
               </div>
             </>
           ) : atelier ? (

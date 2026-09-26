@@ -31,6 +31,23 @@ async function waitForActiveWorker(reg: ServiceWorkerRegistration) {
   });
 }
 
+/** Prefer origin-scoped /sw.js so FCM can wake Chrome after the admin WebAPK is killed. */
+async function registrationForPush(): Promise<ServiceWorkerRegistration> {
+  try {
+    const root = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    await waitForActiveWorker(root);
+    if (root.active) return root;
+  } catch {
+    /* next-pwa does not emit /sw.js in local development */
+  }
+  const admin = await navigator.serviceWorker.register(ADMIN_SW, { scope: '/admin' });
+  await waitForActiveWorker(admin);
+  if (!admin.active) {
+    throw new Error('Push worker is not ready yet. Refresh this page in Chrome and tap Enable alerts again.');
+  }
+  return admin;
+}
+
 export function AdminPwaChrome() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -68,6 +85,9 @@ export function AdminPwaChrome() {
       });
       void navigator.serviceWorker.register(ADMIN_SW, { scope: '/admin' }).catch((err) => {
         console.warn('[admin-sw]', err);
+      });
+      void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+        /* /sw.js is only generated on production builds */
       });
     }
     return () => {
@@ -125,11 +145,7 @@ export function AdminPwaChrome() {
       const vapid = await vapidRes.json();
       if (!vapidRes.ok) throw new Error(vapid.error || 'Could not load push keys');
 
-      const reg = await navigator.serviceWorker.register(ADMIN_SW, { scope: '/admin' });
-      await waitForActiveWorker(reg);
-      if (!reg.active) {
-        throw new Error('Admin app worker is not ready yet. Refresh this page in Chrome and tap Enable alerts again.');
-      }
+      const reg = await registrationForPush();
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
@@ -143,7 +159,9 @@ export function AdminPwaChrome() {
       });
       const saveData = await save.json();
       if (!save.ok) throw new Error(saveData.error || 'Could not save subscription');
-      setHint('This phone will get signup and incident alerts.');
+      setHint(
+        'Alerts enabled. Close Khatario STG completely (swipe it away), then send a test push from Settings — it should still appear in the notification shade.',
+      );
     } catch (err) {
       setHint(err instanceof Error ? err.message : 'Could not enable notifications');
     } finally {

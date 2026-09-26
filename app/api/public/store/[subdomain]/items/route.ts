@@ -68,9 +68,18 @@ export async function GET(
     const offset = (page - 1) * limit;
 
     if (store.is_demo) {
-      const { filterDemoCatalog } = await import('@/lib/store/theme-demo');
+      const { filterDemoCatalog, themeDemoPack } = await import('@/lib/store/theme-demo');
       return NextResponse.json(
-        filterDemoCatalog({ categoryId, search, page, limit, featuredOnly, discountedOnly, maxPrice }),
+        filterDemoCatalog({
+          categoryId,
+          search,
+          page,
+          limit,
+          featuredOnly,
+          discountedOnly,
+          maxPrice,
+          pack: themeDemoPack(params.subdomain),
+        }),
       );
     }
 

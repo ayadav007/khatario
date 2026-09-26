@@ -13,6 +13,7 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === 'development',
   // We register the SW ourselves via ServiceWorkerRegistration.tsx
   register: false,
+  customWorkerSrc: 'worker',
   // Fallback page when navigation fails offline and page hasn't been cached yet
   fallbacks: {
     document: '/offline',

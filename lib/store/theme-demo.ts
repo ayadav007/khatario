@@ -1,6 +1,6 @@
 import { DEFAULT_STORE_PROMO } from '@/lib/store/promo-sheet';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
-import { applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
+import { AETHER_DEFAULT_HERO, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 
 export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset, 'custom'>; pack: StoreThemePack }> = {
@@ -9,6 +9,7 @@ export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset
   'theme-atelier': { preset: 'atelier', pack: 'atelier' },
   'theme-khatario': { preset: 'khatario', pack: 'khatario' },
   'theme-noir': { preset: 'noir', pack: 'noir' },
+  'theme-aether': { preset: 'aether', pack: 'aether' },
 };
 
 const DEMO_BUSINESS: Record<StoreThemePack, string> = {
@@ -17,6 +18,7 @@ const DEMO_BUSINESS: Record<StoreThemePack, string> = {
   atelier: '00000000-0000-4000-8000-000000000003',
   khatario: '00000000-0000-4000-8000-000000000004',
   noir: '00000000-0000-4000-8000-000000000005',
+  aether: '00000000-0000-4000-8000-000000000006',
 };
 
 const STORE_LABEL: Record<StoreThemePack, string> = {
@@ -25,6 +27,7 @@ const STORE_LABEL: Record<StoreThemePack, string> = {
   atelier: 'Atelier',
   khatario: 'Khatario',
   noir: 'Noir',
+  aether: 'Aether',
 };
 
 export function isThemeDemoSubdomain(subdomain: string): boolean {
@@ -50,6 +53,7 @@ export function themeDemoProducts(): StoreProduct[] {
     cat: string,
     catName: string,
     featured = false,
+    image: string | null = null,
   ): StoreProduct => ({
     id,
     name,
@@ -58,7 +62,7 @@ export function themeDemoProducts(): StoreProduct[] {
     selling_price: price,
     mrp,
     unit: 'PCS',
-    image_url: null,
+    image_url: image,
     category_id: cat,
     category_name: catName,
     current_stock: 20,
@@ -72,39 +76,58 @@ export function themeDemoProducts(): StoreProduct[] {
     variants: [],
   });
   return [
-    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true),
-    mk('demo-2', 'Linen overshirt', 2450, null, 'cat-one', 'New in', true),
-    mk('demo-3', 'Everyday tote', 890, 990, 'cat-two', 'Essentials'),
-    mk('demo-4', 'Cotton tee', 650, null, 'cat-two', 'Essentials'),
-    mk('demo-5', 'Gift box', 1290, 1490, 'cat-three', 'Gifts'),
-    mk('demo-6', 'Wool scarf', 1100, null, 'cat-three', 'Gifts'),
-    mk('demo-7', 'Canvas slip-on', 3200, 3600, 'cat-two', 'Essentials'),
-    mk('demo-8', 'Studio mug', 420, null, 'cat-three', 'Gifts'),
+    mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-2', 'Linen overshirt', 2450, null, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-3', 'Everyday tote', 890, 990, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-4', 'Cotton tee', 650, null, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-5', 'Gift box', 1290, 1490, 'cat-three', 'Gifts', false, 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-6', 'Wool scarf', 1100, null, 'cat-three', 'Gifts', false, 'https://images.unsplash.com/photo-1520903920243-00d872a2d1c9?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-7', 'Canvas slip-on', 3200, 3600, 'cat-two', 'Essentials', false, 'https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=900&q=80'),
+    mk('demo-8', 'Studio mug', 420, null, 'cat-three', 'Gifts', false, 'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?auto=format&fit=crop&w=900&q=80'),
   ];
 }
 
 export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   const spec = THEME_DEMO_SLUGS[subdomain.toLowerCase().trim()];
   if (!spec) return null;
+  const presetTheme = applyStorePreset(spec.preset);
   const theme = sanitizeStoreTheme({
-    ...applyStorePreset(spec.preset),
+    ...presetTheme,
     preset: spec.preset,
     pack: spec.pack,
-    hero_slides: [
-      {
-        image_url: '',
-        title: spec.pack === 'noir' ? 'Winter Collection' : 'Welcome',
-        subtitle: 'Theme preview — sample catalog, checkout off.',
-        viewport: 'both',
-      },
-    ],
+    hero_slides:
+      spec.pack === 'aether' && presetTheme.hero_slides?.length
+        ? presetTheme.hero_slides
+        : [
+            {
+              image_url: '',
+              title: spec.pack === 'noir' ? 'Winter Collection' : 'Welcome',
+              subtitle: 'Theme preview — sample catalog, checkout off.',
+              viewport: 'both',
+            },
+          ],
     testimonials: [
       { name: 'Asha K.', text: 'Lovely pieces and quick delivery.', photo_url: '' },
       { name: 'Rahul M.', text: 'The store looks premium and easy to shop.', photo_url: '' },
     ],
-    brand_story: 'This is a preview store so you can judge the layout before you apply it to your products.',
-    overlay_bands: [{ image_url: '', caption: 'New season', cta: 'Shop now' }],
-    show_listing_add: true,
+    brand_story:
+      spec.pack === 'aether'
+        ? 'Quiet luxury for people who already know what they like. Coats, objects, and numbered pieces — made slowly, meant to last.'
+        : 'This is a preview store so you can judge the layout before you apply it to your products.',
+    overlay_bands:
+      spec.pack === 'aether'
+        ? [{ image_url: AETHER_DEFAULT_HERO, caption: 'New season', cta: 'Shop now' }]
+        : [{ image_url: '', caption: 'New season', cta: 'Shop now' }],
+    announcement: spec.pack === 'aether' ? presetTheme.announcement : undefined,
+    category_images:
+      spec.pack === 'aether'
+        ? {
+            'cat-one': 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80',
+            'cat-two': 'https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?auto=format&fit=crop&w=1200&q=80',
+            'cat-three': 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=1200&q=80',
+          }
+        : {},
+    show_listing_add: spec.pack !== 'aether',
   });
   return {
     business_id: DEMO_BUSINESS[spec.pack],

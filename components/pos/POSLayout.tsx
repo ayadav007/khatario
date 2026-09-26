@@ -71,6 +71,8 @@ interface POSLayoutProps {
     onReprint: () => void | Promise<void>;
     /** True while a BT job is in flight. */
     isReprinting?: boolean;
+    /** Short status under the BT buttons (connected / will connect on print). */
+    printerHint?: string;
   };
 }
 
@@ -540,6 +542,9 @@ export function POSLayout({
                   ? 'Printing to Bluetooth…'
                   : 'Print to Bluetooth'}
               </Button>
+              {bluetooth.printerHint && (
+                <p className="text-caption text-gray-600 text-center">{bluetooth.printerHint}</p>
+              )}
               {!bluetooth.supported && (
                 <p className="text-caption text-gray-500 text-center">
                   Browser has no Bluetooth support

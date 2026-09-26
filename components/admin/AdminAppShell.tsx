@@ -17,6 +17,7 @@ import {
   Calendar,
   BarChart3,
   CircleDollarSign,
+  GitBranch,
   Menu,
   X,
 } from 'lucide-react';
@@ -35,6 +36,7 @@ const navigation = [
   { name: 'PBAC Policies', href: '/admin/policies', icon: Shield },
   { name: 'HSN/SAC Codes', href: '/admin/hsn-codes', icon: Hash },
   { name: 'Logs', href: '/admin/logs', icon: FileText },
+  { name: 'Releases', href: '/admin/releases', icon: GitBranch },
   { name: 'Settings', href: '/admin/settings', icon: Settings },
 ];
 

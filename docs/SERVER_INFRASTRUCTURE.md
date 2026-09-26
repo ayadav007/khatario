@@ -78,6 +78,7 @@ Staging should still be `https://staging.khatario.com`. Production has no tenant
 
 - **`main`** = staging only (`/var/www/khatario`). WhatsApp Cloud templates, signup OTP experiments, and other sandbox work stay here until you explicitly copy them.
 - **`production`** = what `khatario.com` should run (`/var/www/khatario-prod`). `git pull` on production must **not** use `main`.
+- Admin **Releases** (`/admin/releases`) lists commits on `main` that are not on `production`.
 
 To ship one fix to production after it is on `main`:
 
@@ -140,7 +141,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Android builds
 
-The APK is a **thin Capacitor shell**. Rebuild only when native plugins, permissions, `server.errorPath`, or `CAP_SERVER_URL` change.
+The APK is a **thin Capacitor shell**. Rebuild only when native plugins, permissions, `server.errorPath`, or `CAP_SERVER_URL` change. Picking a customer from the phone book needs `@capacitor/contacts` in the APK (`READ_CONTACTS`).
 
 ```bash
 npm run cap:android:staging:install

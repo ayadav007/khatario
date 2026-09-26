@@ -1,6 +1,6 @@
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
-export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'atelier' | 'khatario' | 'noir' | 'custom';
-export type StoreThemePack = 'classic' | 'chowk' | 'atelier' | 'khatario' | 'noir';
+export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'atelier' | 'khatario' | 'noir' | 'aether' | 'custom';
+export type StoreThemePack = 'classic' | 'chowk' | 'atelier' | 'khatario' | 'noir' | 'aether';
 export type StoreAppearanceMode = 'light' | 'dim' | 'dark';
 export type StoreHeroViewport = 'both' | 'mobile' | 'desktop';
 export type StoreHomepageSectionId =
@@ -107,7 +107,12 @@ export const PACK_CANVAS: Record<StoreThemePack, string> = {
   atelier: '#f6f3ef',
   khatario: '#f4f5f7',
   noir: '#0c0c0d',
+  aether: '#0c0b09',
 };
+
+/** Quiet-luxury lookbook still — merchants replace this from Online Store settings. */
+export const AETHER_DEFAULT_HERO =
+  'https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=2000&q=80';
 
 export const PACK_CANVAS_MODE: Record<StoreThemePack, Record<StoreAppearanceMode, string>> = {
   classic: { light: '#f7f7f8', dim: '#e8eaee', dark: '#121316' },
@@ -115,6 +120,7 @@ export const PACK_CANVAS_MODE: Record<StoreThemePack, Record<StoreAppearanceMode
   atelier: { light: '#f6f3ef', dim: '#e7e0d7', dark: '#171412' },
   khatario: { light: '#f4f5f7', dim: '#e4e7eb', dark: '#111827' },
   noir: { light: '#f4f4f5', dim: '#1f1f22', dark: '#0c0c0d' },
+  aether: { light: '#f6f1e8', dim: '#1a1714', dark: '#0c0b09' },
 };
 
 export const STORE_THEME_PRESETS: Record<
@@ -128,6 +134,7 @@ export const STORE_THEME_PRESETS: Record<
   atelier: { accent: '#171412', background: PACK_CANVAS.atelier, label: 'Atelier', pack: 'atelier' },
   khatario: { accent: '#00897b', background: PACK_CANVAS.khatario, label: 'Khatario', pack: 'khatario' },
   noir: { accent: '#d4af37', background: PACK_CANVAS.noir, label: 'Noir', pack: 'noir' },
+  aether: { accent: '#c4a46a', background: PACK_CANVAS.aether, label: 'Aether', pack: 'aether' },
 };
 
 export const DEFAULT_HOMEPAGE_SECTIONS: StoreHomepageSection[] = [
@@ -145,7 +152,7 @@ export const DEFAULT_HOMEPAGE_SECTIONS: StoreHomepageSection[] = [
 ];
 
 export function storeCanvas(theme: Pick<StoreTheme, 'pack'> & { appearance_mode?: StoreAppearanceMode }): string {
-  const mode = theme.appearance_mode ?? (theme.pack === 'noir' ? 'dark' : 'light');
+  const mode = theme.appearance_mode ?? (theme.pack === 'noir' || theme.pack === 'aether' ? 'dark' : 'light');
   return PACK_CANVAS_MODE[theme.pack]?.[mode] ?? PACK_CANVAS[theme.pack] ?? PACK_CANVAS.classic;
 }
 
@@ -184,8 +191,8 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'atelier', 'khatario', 'noir', 'custom'];
-const PACKS: StoreThemePack[] = ['classic', 'chowk', 'atelier', 'khatario', 'noir'];
+const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'atelier', 'khatario', 'noir', 'aether', 'custom'];
+const PACKS: StoreThemePack[] = ['classic', 'chowk', 'atelier', 'khatario', 'noir', 'aether'];
 const STYLES: StoreCategoryStyle[] = ['letter', 'icon', 'photo'];
 const MODES: StoreAppearanceMode[] = ['light', 'dim', 'dark'];
 const VIEWPORTS: StoreHeroViewport[] = ['both', 'mobile', 'desktop'];
@@ -382,6 +389,7 @@ function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack
   if (preset === 'atelier') return 'atelier';
   if (preset === 'khatario') return 'khatario';
   if (preset === 'noir') return 'noir';
+  if (preset === 'aether') return 'aether';
   if (preset === 'custom') {
     return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'classic';
   }
@@ -404,9 +412,18 @@ export function isNoirPack(theme: StoreTheme): boolean {
   return theme.pack === 'noir';
 }
 
+export function isAetherPack(theme: StoreTheme): boolean {
+  return theme.pack === 'aether';
+}
+
+/** Dark editorial packs. Aether has its own hero/cards; Noir keeps slim chrome. */
+export function isEditorialPack(theme: StoreTheme): boolean {
+  return theme.pack === 'noir' || theme.pack === 'aether';
+}
+
 /** Themed storefront chrome (not the classic colour-tint layout). */
 export function isPackChrome(theme: StoreTheme): boolean {
-  return theme.pack === 'chowk' || theme.pack === 'atelier' || theme.pack === 'khatario' || theme.pack === 'noir';
+  return theme.pack === 'chowk' || theme.pack === 'atelier' || theme.pack === 'khatario' || theme.pack === 'noir' || theme.pack === 'aether';
 }
 
 export function hexLuminance(hex: string): number {
@@ -473,7 +490,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     : DEFAULT_STORE_THEME.category_style;
   const appearance_mode = MODES.includes(src.appearance_mode as StoreAppearanceMode)
     ? (src.appearance_mode as StoreAppearanceMode)
-    : pack === 'noir'
+    : pack === 'noir' || pack === 'aether'
       ? 'dark'
       : 'light';
   const font_family = STORE_FONT_FAMILIES.includes(src.font_family as StoreFontFamily)
@@ -578,6 +595,40 @@ export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): P
       ),
     };
   }
+  if (preset === 'aether') {
+    return {
+      preset,
+      accent: p.accent,
+      background: p.background,
+      pack: p.pack,
+      mobile_columns: 2,
+      category_style: 'photo',
+      hero_cta: 'Shop collection',
+      hero_subtitle: 'Quiet luxury, considered pieces.',
+      search_placeholder: 'Coats, pearls, chronograph…',
+      appearance_mode: 'dark',
+      font_family: 'cormorant',
+      announcement: 'Free express shipping  ·  Handcrafted  ·  Lifetime repairs',
+      hero_slides: [
+        {
+          image_url: AETHER_DEFAULT_HERO,
+          title: 'The art of less.',
+          subtitle: 'Quiet luxury for people who already know what they like.',
+          viewport: 'both' as const,
+        },
+      ],
+      homepage_sections: DEFAULT_HOMEPAGE_SECTIONS.map((s) =>
+        s.id === 'categories' ||
+        s.id === 'category_shelves' ||
+        s.id === 'featured' ||
+        s.id === 'offers' ||
+        s.id === 'overlay' ||
+        s.id === 'brand_story'
+          ? { ...s, enabled: true }
+          : s,
+      ),
+    };
+  }
   return {
     preset,
     accent: p.accent,
@@ -605,4 +656,5 @@ export const GALLERY_PACKS: Array<{
   { preset: 'atelier', pack: 'atelier', label: 'Atelier', blurb: 'Portrait lookbook for apparel.' },
   { preset: 'khatario', pack: 'khatario', label: 'Khatario', blurb: 'Brand header, carousel, bottom tabs.' },
   { preset: 'noir', pack: 'noir', label: 'Noir', blurb: 'Dark editorial home, portrait categories, slim nav.' },
+  { preset: 'aether', pack: 'aether', label: 'Aether', blurb: 'Quiet luxury — gold on ink, Cormorant type, lookbook motion.' },
 ];

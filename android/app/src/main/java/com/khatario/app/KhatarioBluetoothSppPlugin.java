@@ -22,6 +22,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.Set;
@@ -47,6 +48,7 @@ public class KhatarioBluetoothSppPlugin extends Plugin {
 
     private static final UUID SPP_UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final int CONNECT_TIMEOUT_MS = 12_000;
 
     private BluetoothSocket socket;
     private OutputStream outputStream;
@@ -102,6 +104,10 @@ public class KhatarioBluetoothSppPlugin extends Plugin {
             call.reject("Bluetooth is not available on this device");
             return;
         }
+        if (!adapter.isEnabled()) {
+            call.reject("Bluetooth is turned off");
+            return;
+        }
 
         JSArray devices = new JSArray();
         Set<BluetoothDevice> bonded = adapter.getBondedDevices();
@@ -116,6 +122,23 @@ public class KhatarioBluetoothSppPlugin extends Plugin {
         }
         JSObject ret = new JSObject();
         ret.put("devices", devices);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void isEnabled(PluginCall call) {
+        JSObject ret = new JSObject();
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        ret.put("enabled", adapter != null && adapter.isEnabled());
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void isConnected(PluginCall call) {
+        JSObject ret = new JSObject();
+        synchronized (ioLock) {
+            ret.put("connected", socket != null && socket.isConnected() && outputStream != null);
+        }
         call.resolve(ret);
     }
 
@@ -188,22 +211,102 @@ public class KhatarioBluetoothSppPlugin extends Plugin {
                 }
                 resolveOnMain(call);
             } catch (Exception e) {
+                synchronized (ioLock) {
+                    disconnectInternal();
+                }
                 rejectOnMain(call, "Write failed: " + e.getMessage());
             }
         }).start();
     }
 
     private BluetoothSocket openSocket(BluetoothDevice device) throws Exception {
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter != null && adapter.isDiscovering()) {
+            adapter.cancelDiscovery();
+        }
+
+        Exception last = null;
+        BluetoothSocket sock = tryCreateSecure(device);
+        if (sock != null) {
+            try {
+                return connectWithTimeout(sock);
+            } catch (Exception e) {
+                last = e;
+                closeQuietly(sock);
+            }
+        }
+        sock = tryCreateInsecure(device);
+        if (sock != null) {
+            try {
+                return connectWithTimeout(sock);
+            } catch (Exception e) {
+                last = e;
+                closeQuietly(sock);
+            }
+        }
+        sock = tryCreateChannel1(device);
+        if (sock != null) {
+            try {
+                return connectWithTimeout(sock);
+            } catch (Exception e) {
+                last = e;
+                closeQuietly(sock);
+            }
+        }
+        if (last != null) throw last;
+        throw new IOException("Could not open a printer connection");
+    }
+
+    private BluetoothSocket tryCreateSecure(BluetoothDevice device) {
         try {
-            BluetoothSocket sock = device.createRfcommSocketToServiceRecord(SPP_UUID);
-            sock.connect();
-            return sock;
-        } catch (Exception primary) {
-            // Fallback for printers that only expose insecure RFCOMM channel 1.
+            return device.createRfcommSocketToServiceRecord(SPP_UUID);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private BluetoothSocket tryCreateInsecure(BluetoothDevice device) {
+        try {
+            return device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private BluetoothSocket tryCreateChannel1(BluetoothDevice device) {
+        try {
             Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-            BluetoothSocket sock = (BluetoothSocket) m.invoke(device, 1);
-            sock.connect();
+            return (BluetoothSocket) m.invoke(device, 1);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private BluetoothSocket connectWithTimeout(final BluetoothSocket sock) throws Exception {
+        final Exception[] fail = new Exception[1];
+        Thread t = new Thread(() -> {
+            try {
+                sock.connect();
+            } catch (Exception e) {
+                fail[0] = e;
+            }
+        }, "khatario-spp-connect");
+        t.start();
+        t.join(CONNECT_TIMEOUT_MS);
+        if (sock.isConnected()) {
             return sock;
+        }
+        closeQuietly(sock);
+        if (fail[0] != null) {
+            throw fail[0];
+        }
+        throw new IOException("Printer did not respond in time");
+    }
+
+    private void closeQuietly(BluetoothSocket sock) {
+        try {
+            sock.close();
+        } catch (Exception ignored) {
         }
     }
 

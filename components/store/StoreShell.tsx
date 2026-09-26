@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isKhatarioPack, isNoirPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAetherPack, isAtelierPack, isChowkPack, isEditorialPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 
 interface StoreShellProps {
   children: React.ReactNode;
@@ -74,7 +74,8 @@ export function StoreShell({
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
   const khatario = isKhatarioPack(theme);
-  const noir = isNoirPack(theme);
+  const editorial = isEditorialPack(theme);
+  const aether = isAetherPack(theme);
   const pack = isPackChrome(theme);
   const accent = theme.accent;
   const paper = storeCanvas(theme);
@@ -173,7 +174,7 @@ export function StoreShell({
         chowk && 'store-chowk font-chowk',
         atelier && 'store-atelier font-atelier',
         khatario && 'store-khatario',
-        noir && 'store-noir',
+        editorial && (theme.pack === 'aether' ? 'store-aether' : 'store-noir'),
       )}
       style={{
         backgroundColor: paper,
@@ -193,7 +194,56 @@ export function StoreShell({
               : { backgroundColor: accent }
         }
       >
-        {noir ? (
+        {aether ? (
+          <header className="store-aether" style={{ backgroundColor: paper, color: ink }}>
+            <div className="relative mx-auto flex h-[4.5rem] max-w-6xl items-center px-4">
+              <nav className="hidden items-center gap-6 text-[11px] uppercase tracking-[0.22em] md:flex" style={{ opacity: 0.7 }}>
+                <Link href="/">Home</Link>
+                <Link href="/">Shop</Link>
+                <Link href="/about">About</Link>
+              </nav>
+              <Link
+                href="/"
+                className="absolute left-1/2 flex min-w-0 -translate-x-1/2 items-center gap-2"
+              >
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="" className="h-8 w-auto max-w-[8rem] object-contain" />
+                ) : (
+                  <span className="font-noir-display text-[1.35rem] tracking-[0.28em]">{store.name.slice(0, 18)}</span>
+                )}
+                {theme.show_store_name && logoUrl ? (
+                  <span className="font-noir-display truncate text-sm tracking-[0.18em]">{store.name}</span>
+                ) : null}
+              </Link>
+              <div className="ml-auto flex items-center gap-1">
+                <Link href="/wishlist" className="flex h-9 w-9 items-center justify-center" aria-label="Wishlist">
+                  <Heart className="h-4 w-4" strokeWidth={1.5} />
+                </Link>
+                <Link href="/account" className="flex h-9 w-9 items-center justify-center" aria-label="Account">
+                  <User className="h-4 w-4" strokeWidth={1.5} />
+                </Link>
+                <button type="button" onClick={openCart} className="relative flex h-9 w-9 items-center justify-center" aria-label="Bag">
+                  <ShoppingCart className="h-4 w-4" strokeWidth={1.5} />
+                  {cartCount > 0 ? <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} /> : null}
+                </button>
+              </div>
+            </div>
+            {showSearch ? (
+              <div className="mx-auto max-w-6xl px-4 pb-3">
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange?.(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="h-10 w-full border-b bg-transparent px-0 text-sm outline-none"
+                  style={{ borderColor: `${accent}44` }}
+                />
+              </div>
+            ) : null}
+          </header>
+        ) : editorial ? (
           <header className="store-noir" style={{ backgroundColor: paper, color: ink }}>
             {theme.announcement ? (
               <p className="truncate px-4 py-1.5 text-center text-[11px] tracking-wide" style={{ backgroundColor: ink, color: paper }}>

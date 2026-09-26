@@ -4,6 +4,7 @@
 
 import { registerPlugin } from '@capacitor/core';
 import { isCapacitorNative } from '@/lib/bluetooth/driver-registry';
+import { rankBondedBluetoothDevices } from '@/lib/bluetooth/bonded-device-rank';
 
 export type BondedBluetoothDevice = {
   address: string;
@@ -13,6 +14,8 @@ export type BondedBluetoothDevice = {
 export interface KhatarioBluetoothSppPlugin {
   checkPermissions(): Promise<{ granted: boolean }>;
   requestPermissions(): Promise<{ granted: boolean }>;
+  isEnabled(): Promise<{ enabled: boolean }>;
+  isConnected(): Promise<{ connected: boolean }>;
   openBluetoothSettings(): Promise<void>;
   listBondedDevices(): Promise<{ devices: BondedBluetoothDevice[] }>;
   connect(options: { address: string }): Promise<void>;
@@ -39,7 +42,7 @@ export async function listBondedBluetoothDevices(): Promise<BondedBluetoothDevic
   const ok = await ensureSppPermissions();
   if (!ok) throw new Error('Bluetooth permissions not granted');
   const { devices } = await plugin.listBondedDevices();
-  return devices ?? [];
+  return rankBondedBluetoothDevices(devices ?? []);
 }
 
 export async function openAndroidBluetoothSettings(): Promise<void> {
