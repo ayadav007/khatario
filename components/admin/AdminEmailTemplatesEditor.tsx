@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { SimpleRichTextEditor } from '@/components/email/SimpleRichTextEditor';
 import { PLATFORM_TEMPLATE_DEFINITIONS } from '@/lib/platform-email-template-definitions';
 
 type Stored = Record<string, { subject?: string; body_html?: string }>;
@@ -58,8 +59,8 @@ export function AdminEmailTemplatesEditor() {
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Email templates</h2>
         <p className="text-sm text-gray-600 mt-1">
-          Placeholders:{' '}
-          <code className="text-xs">{'{{businessName}} {{planName}} {{amount}} {{billingCycle}} {{paymentReference}} {{reason}} {{appUrl}}'}</code>
+          Format with the toolbar (bold, lists, links). Placeholders:{' '}
+          <code className="text-xs">{'{{businessName}} {{userName}} {{trialLine}} {{planName}} {{amount}} {{billingCycle}} {{paymentReference}} {{reason}} {{planLabel}} {{userPhone}} {{businessEmail}} {{appUrl}} {{supportEmail}}'}</code>
         </p>
       </div>
 
@@ -82,18 +83,16 @@ export function AdminEmailTemplatesEditor() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Body (HTML fragment)</label>
-            <textarea
-              rows={5}
-              value={templates[def.id]?.body_html ?? ''}
-              placeholder={def.defaultBodyHtml.trim()}
-              onChange={(e) =>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Body</label>
+            <SimpleRichTextEditor
+              value={templates[def.id]?.body_html || def.defaultBodyHtml.trim()}
+              onChange={(html) =>
                 setTemplates((t) => ({
                   ...t,
-                  [def.id]: { ...t[def.id], body_html: e.target.value },
+                  [def.id]: { ...t[def.id], body_html: html },
                 }))
               }
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
+              minHeightClass="min-h-[180px]"
             />
           </div>
         </div>

@@ -64,9 +64,14 @@ export default function AdminSettingsPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Support Email</label>
+              <p className="text-xs text-gray-500 mb-2">
+                Customer-facing address is <code>help@khatario.com</code> (set{' '}
+                <code>NEXT_PUBLIC_SUPPORT_EMAIL</code> in staging <code>.env.production</code>, then rebuild).
+                This box is not saved yet.
+              </p>
               <input
                 type="email"
-                defaultValue="support@khatario.com"
+                defaultValue="help@khatario.com"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>

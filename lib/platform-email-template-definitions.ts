@@ -3,6 +3,8 @@
  */
 
 export type PlatformTemplateId =
+  | 'welcome'
+  | 'admin_new_signup'
   | 'payment_success'
   | 'payment_failed'
   | 'subscription_upgraded';
@@ -15,6 +17,30 @@ export interface TemplateDefinition {
 }
 
 export const PLATFORM_TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
+  {
+    id: 'welcome',
+    label: 'Welcome (new signup)',
+    defaultSubject: 'Welcome to Khatario, {{businessName}}!',
+    defaultBodyHtml: `<p>Hi {{userName}},</p>
+<p>Your account for <strong>{{businessName}}</strong> is ready.</p>
+<p>{{trialLine}}</p>
+<p>Sign in anytime to start billing, inventory, and GST workflows.</p>
+<p><a href="{{appUrl}}/login">Sign in to Khatario</a></p>
+<p>Need help? Email us at <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>.</p>`,
+  },
+  {
+    id: 'admin_new_signup',
+    label: 'Admin alert — new business',
+    defaultSubject: '[Khatario Admin] New signup: {{businessName}}',
+    defaultBodyHtml: `<p>A new business registered on Khatario.</p>
+<ul>
+  <li><strong>Business:</strong> {{businessName}}</li>
+  <li><strong>Contact:</strong> {{userName}} ({{userPhone}})</li>
+  <li><strong>Email:</strong> {{businessEmail}}</li>
+  <li><strong>Plan:</strong> {{planLabel}}</li>
+</ul>
+<p><a href="{{appUrl}}/admin/businesses">View in admin panel</a></p>`,
+  },
   {
     id: 'payment_success',
     label: 'Payment received (tenant)',

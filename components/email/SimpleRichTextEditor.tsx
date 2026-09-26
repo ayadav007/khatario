@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Bold, Italic, List, ListOrdered, Underline } from 'lucide-react';
+import { Bold, Italic, Link as LinkIcon, List, ListOrdered, Underline } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface SimpleRichTextEditorProps {
@@ -63,7 +63,20 @@ export function SimpleRichTextEditor({
 
   return (
     <div className={clsx('overflow-hidden rounded-lg border border-border bg-white', className)}>
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-border bg-gray-50 px-2 py-1">
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-gray-200 bg-white px-2 py-1.5">
+        <select
+          className="mr-1 h-8 rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-800"
+          defaultValue="p"
+          aria-label="Paragraph"
+          onChange={(e) => {
+            const v = e.target.value;
+            exec('formatBlock', v === 'p' ? 'p' : v);
+          }}
+        >
+          <option value="p">Paragraph</option>
+          <option value="h2">Heading</option>
+          <option value="h3">Subheading</option>
+        </select>
         <ToolbarButton onClick={() => exec('bold')} label="Bold">
           <Bold className="h-4 w-4" />
         </ToolbarButton>
@@ -79,6 +92,15 @@ export function SimpleRichTextEditor({
         </ToolbarButton>
         <ToolbarButton onClick={() => exec('insertOrderedList')} label="Numbered list">
           <ListOrdered className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => {
+            const url = window.prompt('Link URL', 'https://');
+            if (url) exec('createLink', url);
+          }}
+          label="Insert link"
+        >
+          <LinkIcon className="h-4 w-4" />
         </ToolbarButton>
         <select
           className="ml-1 h-8 rounded border border-gray-200 bg-white px-1 text-xs text-gray-700"
@@ -99,7 +121,7 @@ export function SimpleRichTextEditor({
         role="textbox"
         aria-multiline
         className={clsx(
-          'px-4 py-3 text-base text-gray-900 outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500',
+          'prose prose-sm max-w-none px-4 py-3 text-base text-gray-900 outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500',
           minHeightClass
         )}
         onInput={() => {

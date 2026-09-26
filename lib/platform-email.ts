@@ -5,6 +5,10 @@
 
 import { query, queryOne, queryRows } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
+import {
+  getPlatformEmailTemplates,
+  resolveTemplate,
+} from '@/lib/platform-email-templates';
 
 export type PlatformEmailTemplateKey =
   | 'welcome'
@@ -219,25 +223,21 @@ export async function sendWelcomeEmail(params: {
   const { businessId, businessName, recipientEmail, userName, trialDays } = params;
   const trialLine =
     trialDays != null && trialDays > 0
-      ? `<p>You have a <strong>${trialDays}-day trial</strong> with full access.</p>`
-      : `<p>Your workspace is active and ready to use.</p>`;
-  const subject = `Welcome to Khatario, ${businessName}!`;
-  const html = platformEmailLayout('Welcome to Khatario', `
-    <p>Hi ${userName},</p>
-    <p>Your account for <strong>${businessName}</strong> is ready.</p>
-    ${trialLine}
-    <p>Sign in anytime to start billing, inventory, and GST workflows.</p>
-    <p><a href="${APP_URL()}/login" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Sign in to Khatario</a></p>
-    <p>Need help? Reply to this email or visit our support page from the app.</p>
-  `);
+      ? `You have a ${trialDays}-day trial with full access.`
+      : 'Your workspace is active and ready to use.';
+  const stored = await getPlatformEmailTemplates();
+  const { subject, html: bodyHtml } = resolveTemplate('welcome', stored, {
+    businessName,
+    userName,
+    trialLine,
+  });
+  const html = platformEmailLayout('Welcome to Khatario', bodyHtml);
   const text = [
     `Hi ${userName},`,
     `Your account for ${businessName} is ready.`,
-    trialDays != null && trialDays > 0 ? `Trial: ${trialDays} days.` : '',
+    trialLine,
     `Sign in: ${APP_URL()}/login`,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  ].join('\n\n');
 
   return sendPlatformEmail({
     to: recipientEmail,
@@ -263,17 +263,15 @@ export async function notifyAdminsNewSignup(params: {
   const recipients = await getPlatformAdminRecipientEmails();
   if (recipients.length === 0) return 0;
 
-  const subject = `[Khatario Admin] New signup: ${params.businessName}`;
-  const html = platformEmailLayout('New business signup', `
-    <p>A new business registered on Khatario.</p>
-    <ul>
-      <li><strong>Business:</strong> ${params.businessName}</li>
-      <li><strong>Contact:</strong> ${params.userName} (${params.userPhone})</li>
-      <li><strong>Email:</strong> ${params.businessEmail || '—'}</li>
-      <li><strong>Plan:</strong> ${params.planLabel}</li>
-    </ul>
-    <p><a href="${APP_URL()}/admin/businesses">View in admin panel</a></p>
-  `);
+  const stored = await getPlatformEmailTemplates();
+  const { subject, html: bodyHtml } = resolveTemplate('admin_new_signup', stored, {
+    businessName: params.businessName,
+    userName: params.userName,
+    userPhone: params.userPhone,
+    businessEmail: params.businessEmail || '—',
+    planLabel: params.planLabel,
+  });
+  const html = platformEmailLayout('New business signup', bodyHtml);
   const text = `New signup: ${params.businessName} — ${params.userName} — plan ${params.planLabel}`;
 
   let sent = 0;

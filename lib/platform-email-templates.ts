@@ -17,11 +17,22 @@ export { PLATFORM_TEMPLATE_DEFINITIONS } from '@/lib/platform-email-template-def
 
 const APP_URL = () => process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com';
 
+export function defaultSupportEmail(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() ||
+    process.env.EMAIL_FROM?.trim() ||
+    'help@khatario.com'
+  );
+}
+
 export function renderTemplateString(
   template: string,
   vars: Record<string, string | number | undefined | null>,
 ): string {
-  const merged: Record<string, string> = { appUrl: APP_URL() };
+  const merged: Record<string, string> = {
+    appUrl: APP_URL(),
+    supportEmail: defaultSupportEmail(),
+  };
   for (const [k, v] of Object.entries(vars)) {
     merged[k] = v == null ? '' : String(v);
   }
