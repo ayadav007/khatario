@@ -1,31 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function PublicWhatsAppOtp({
   purpose,
   phone,
   verified,
   onVerified,
+  autoSend = false,
 }: {
   purpose: 'signup' | 'demo_booking';
   phone: string;
   verified: boolean;
   onVerified: (ok: boolean) => void;
+  autoSend?: boolean;
 }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState('');
+  const autoSentKey = useRef('');
 
   useEffect(() => {
     setCode('');
     setHint('');
+    autoSentKey.current = '';
     onVerified(false);
     // Reset when the number changes; parent should pass a stable setter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone, purpose]);
 
-  const send = async () => {
+  const send = useCallback(async () => {
     setBusy(true);
     setHint('');
     try {
@@ -47,7 +51,17 @@ export function PublicWhatsAppOtp({
     } finally {
       setBusy(false);
     }
-  };
+  }, [purpose, phone]);
+
+  useEffect(() => {
+    if (!autoSend || verified) return;
+    const digits = phone.replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10) return;
+    const key = `${purpose}:${digits}`;
+    if (autoSentKey.current === key) return;
+    autoSentKey.current = key;
+    void send();
+  }, [autoSend, phone, purpose, send, verified]);
 
   const verify = async () => {
     setBusy(true);

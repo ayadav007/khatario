@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -102,7 +102,9 @@ function SignupPageContent() {
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [step, setStep] = useState<'details' | 'otp'>('details');
   const [showPassword, setShowPassword] = useState(false);
+  const completingRef = useRef(false);
 
   const [formData, setFormData] = useState({
     businessName: '',
@@ -120,45 +122,55 @@ function SignupPageContent() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const completeSignup = async () => {
+    if (completingRef.current) return;
+    completingRef.current = true;
     setLoading(true);
     setError('');
     setErrorCode(null);
-    if (!otpVerified) {
-      setError('Verify your mobile number with the WhatsApp code first');
-      setLoading(false);
-      return;
-    }
 
     try {
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, productLine }),
-        credentials: 'same-origin',
+        credentials: 'include',
       });
 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        completingRef.current = false;
         const payload = data as { error?: string; code?: string; details?: string };
         setErrorCode(payload.code ?? null);
         const base = payload.error || 'Signup failed';
         throw new Error(payload.details ? `${base}: ${payload.details}` : base);
       }
 
-      // Full page navigation (not client-side router.push): guarantees the next document
-      // load sends the new httpOnly session cookies. router.push alone can skip a full
-      // reload and left some users stuck on /signup after a successful 201.
-      // /api/signup already sets JWT cookies — user is logged in; /login will redirect
-      // to /dashboard once /api/auth/session hydrates AuthContext.
-      window.location.assign('/login?registered=true');
+      // Full reload so httpOnly session cookies from /api/signup are sent on /dashboard.
+      window.location.assign('/dashboard');
     } catch (err: unknown) {
+      completingRef.current = false;
       setError(err instanceof Error ? err.message : 'Signup failed');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setErrorCode(null);
+    const phoneDigits = formData.userPhone.replace(/\D/g, '').slice(-10);
+    if (phoneDigits.length !== 10) {
+      setError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setStep('otp');
+  };
+
+  const handleOtpVerified = (ok: boolean) => {
+    setOtpVerified(ok);
+    if (ok) void completeSignup();
   };
 
   /** Wide shell: use horizontal space on large monitors (not a skinny centered column). */
@@ -238,10 +250,12 @@ function SignupPageContent() {
           <div className="order-1 min-w-0 lg:order-2">
             <div className="mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none xl:pl-4 2xl:pl-8">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl">
-                Hi there! Let&apos;s get you started
+                {step === 'otp' ? 'Verify your mobile number' : "Hi there! Let's get you started"}
               </h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
-                Create your {productLabel} account and go live in a couple of minutes.
+                {step === 'otp'
+                  ? `We sent a WhatsApp code to +91 ${formData.userPhone.replace(/\D/g, '').slice(-10)}. Enter it to create your account.`
+                  : `Create your ${productLabel} account and go live in a couple of minutes.`}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 Signing up for{' '}
@@ -271,6 +285,47 @@ function SignupPageContent() {
                   </div>
                 )}
 
+                {step === 'otp' ? (
+                  <div className="space-y-4">
+                    {loading && !error ? (
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Creating your account…</p>
+                    ) : null}
+                    <PublicWhatsAppOtp
+                      purpose="signup"
+                      phone={formData.userPhone}
+                      verified={otpVerified}
+                      onVerified={handleOtpVerified}
+                      autoSend
+                    />
+                    {otpVerified && error ? (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        className="w-full"
+                        isLoading={loading}
+                        onClick={() => {
+                          completingRef.current = false;
+                          void completeSignup();
+                        }}
+                      >
+                        Try creating account again
+                      </Button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        completingRef.current = false;
+                        setOtpVerified(false);
+                        setStep('details');
+                      }}
+                      className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
+                    >
+                      Back to registration details
+                    </button>
+                  </div>
+                ) : (
+                  <>
                 <div className={fieldShell}>
                   <Input
                     label="Business name *"
@@ -397,12 +452,6 @@ function SignupPageContent() {
                         className="min-w-0 flex-1 border-0 bg-transparent px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/30 dark:text-slate-100"
                       />
                     </div>
-                    <PublicWhatsAppOtp
-                      purpose="signup"
-                      phone={formData.userPhone}
-                      verified={otpVerified}
-                      onVerified={setOtpVerified}
-                    />
                   </div>
 
                   <div className="mt-5">
@@ -459,6 +508,8 @@ function SignupPageContent() {
                   </Link>
                   .
                 </p>
+                  </>
+                )}
               </form>
 
               <p className="mt-8 text-center text-sm text-slate-600 lg:hidden dark:text-slate-400">

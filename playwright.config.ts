@@ -39,6 +39,7 @@ export default defineConfig({
             ...process.env,
             // Lets full-journey signup repeat without 429 when Playwright starts this server.
             E2E_DISABLE_RATE_LIMIT: 'true',
+            SIGNUP_DEBUG: 'true',
           },
         },
       }),

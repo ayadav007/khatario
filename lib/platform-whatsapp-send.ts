@@ -38,18 +38,30 @@ export async function sendPlatformEventWhatsApp(input: {
   if (!to) return { sent: false, skipped: 'INVALID_PHONE' };
 
   const preferred = input.language || 'en_US';
-  const row = await queryOne<{
+  const keys: PlatformWaEventKey[] =
+    input.eventKey === 'demo_booking_otp' ? ['demo_booking_otp', 'signup_otp'] : [input.eventKey];
+
+  let row: {
     id: string;
     name: string;
     language: string;
     category: string;
-  }>(
-    `SELECT id, name, language, category FROM platform_whatsapp_templates
-     WHERE event_key = $1 AND status = 'approved'
-     ORDER BY CASE WHEN language = $2 THEN 0 WHEN language = 'en_US' THEN 1 WHEN language = 'en' THEN 2 ELSE 3 END
-     LIMIT 1`,
-    [input.eventKey, preferred],
-  );
+  } | null = null;
+  for (const eventKey of keys) {
+    row = await queryOne<{
+      id: string;
+      name: string;
+      language: string;
+      category: string;
+    }>(
+      `SELECT id, name, language, category FROM platform_whatsapp_templates
+       WHERE event_key = $1 AND status = 'approved'
+       ORDER BY CASE WHEN language = $2 THEN 0 WHEN language = 'en_US' THEN 1 WHEN language = 'en' THEN 2 ELSE 3 END
+       LIMIT 1`,
+      [eventKey, preferred],
+    );
+    if (row) break;
+  }
   if (!row) return { sent: false, skipped: 'NO_APPROVED_TEMPLATE' };
 
   const vars = input.vars || [];

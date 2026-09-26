@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   Calendar,
@@ -57,6 +57,8 @@ export default function BookDemoPage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [otpVerified, setOtpVerified] = useState(false);
+  const [step, setStep] = useState<'details' | 'otp'>('details');
+  const completingRef = useRef(false);
   const [bookingNumber, setBookingNumber] = useState('');
 
   const minDate = format(addDays(startOfToday(), 1), 'yyyy-MM-dd');
@@ -99,16 +101,11 @@ export default function BookDemoPage() {
     return `${format(start, 'h:mm a')} - ${format(end, 'h:mm a')}`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitBooking = async () => {
+    if (completingRef.current) return;
+    completingRef.current = true;
     setError('');
     setSubmitting(true);
-
-    if (!otpVerified) {
-      setError('Verify your mobile number with the WhatsApp code first');
-      setSubmitting(false);
-      return;
-    }
 
     try {
       const res = await fetch('/api/bookings/create', {
@@ -127,13 +124,33 @@ export default function BookDemoPage() {
           router.push('/');
         }, 5000);
       } else {
+        completingRef.current = false;
         setError(data.error || 'Failed to create booking');
       }
     } catch {
+      completingRef.current = false;
       setError('An error occurred. Please try again.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (step === 'details') {
+      if (!formData.scheduled_time) {
+        setError('Pick an available time slot');
+        return;
+      }
+      setStep('otp');
+      return;
+    }
+  };
+
+  const handleOtpVerified = (ok: boolean) => {
+    setOtpVerified(ok);
+    if (ok) void submitBooking();
   };
 
   const inputClass =
@@ -234,7 +251,58 @@ export default function BookDemoPage() {
 
             <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900 sm:p-8 lg:p-10">
               <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-8">
-                <div className="shrink-0 space-y-5">
+                {step === 'otp' ? (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-50">
+                      Verify your mobile number
+                    </h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                      Confirm booking after the WhatsApp code for {formData.phone}.
+                    </p>
+                    {submitting && !error ? (
+                      <p className="text-sm text-slate-600">Confirming your booking…</p>
+                    ) : null}
+                    <PublicWhatsAppOtp
+                      purpose="demo_booking"
+                      phone={formData.phone}
+                      verified={otpVerified}
+                      onVerified={handleOtpVerified}
+                      autoSend
+                    />
+                    {otpVerified && error ? (
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => {
+                          completingRef.current = false;
+                          void submitBooking();
+                        }}
+                        className="w-full rounded-xl bg-primary-600 py-3 text-white"
+                      >
+                        Try confirming again
+                      </button>
+                    ) : null}
+                    {error && (
+                      <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" aria-hidden />
+                        <p className="text-base text-red-800">{error}</p>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => {
+                        completingRef.current = false;
+                        setOtpVerified(false);
+                        setStep('details');
+                      }}
+                      className="text-sm font-medium text-primary-600 hover:underline"
+                    >
+                      Back to booking details
+                    </button>
+                  </div>
+                ) : null}
+                <div className={step === 'otp' ? 'hidden' : 'flex min-h-0 flex-1 flex-col gap-8'}>
                   <h3 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-50">
                     <User className="h-6 w-6 text-primary-600 dark:text-primary-400" aria-hidden />
                     Your information
@@ -287,12 +355,6 @@ export default function BookDemoPage() {
                           placeholder="+91 98765 43210"
                         />
                       </div>
-                      <PublicWhatsAppOtp
-                        purpose="demo_booking"
-                        phone={formData.phone}
-                        verified={otpVerified}
-                        onVerified={setOtpVerified}
-                      />
                     </div>
 
                     <div>
@@ -422,6 +484,7 @@ export default function BookDemoPage() {
                     'Confirm booking'
                   )}
                 </button>
+                </div>
               </form>
             </div>
           </div>

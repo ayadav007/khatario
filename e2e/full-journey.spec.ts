@@ -40,21 +40,24 @@ test.describe('Full journey', () => {
       await page.locator('input[name="userName"]').fill('E2E Admin');
       await page.locator('input[name="userPhone"]').fill(phone);
       await page.locator('input[name="password"]').fill(password);
+      const otpRespPromise = page.waitForResponse(
+        (r) => r.url().includes('/api/public/platform-otp') && r.request().method() === 'POST',
+        { timeout: 45000 }
+      );
+      await page.getByRole('button', { name: /start my free trial/i }).click();
+      const otpResp = await otpRespPromise;
+      const otpJson = (await otpResp.json()) as { debugOtp?: string; error?: string };
+      const debugOtp = otpJson.debugOtp;
+      expect(debugOtp, otpJson.error || 'expected debug OTP in e2e (SIGNUP_DEBUG)').toBeTruthy();
+      await page.getByPlaceholder(/6-digit/).fill(debugOtp as string);
       const [signupResp] = await Promise.all([
         page.waitForResponse(
           (r) => r.url().includes('/api/signup') && r.request().method() === 'POST',
           { timeout: 45000 }
         ),
-        page.getByRole('button', { name: /start my free trial/i }).click(),
+        page.getByRole('button', { name: /^verify$/i }).click(),
       ]);
       expect(signupResp.status(), await signupResp.text()).toBe(201);
-      await page.waitForURL(/\/login/, { timeout: 30000 });
-
-      // --- Login (UI) ---
-      await page.getByPlaceholder(/enter your phone/i).fill(phone);
-      await page.getByRole('button', { name: /continue/i }).click();
-      await page.getByPlaceholder(/enter your password/i).fill(password);
-      await page.getByRole('button', { name: /^login$/i }).click();
       await page.waitForURL(/\/dashboard/, { timeout: 30000 });
 
       const api = page.context().request;
