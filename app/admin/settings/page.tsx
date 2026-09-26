@@ -50,7 +50,7 @@ export default function AdminSettingsPage() {
         })}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="admin-light-surface bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-gray-900">
         {activeTab === 'general' && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-gray-900">General Settings</h2>

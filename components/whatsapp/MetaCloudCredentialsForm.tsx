@@ -48,7 +48,7 @@ export function MetaCloudCredentialsForm({
   }, [credentials?.waba_id, credentials?.phone_number_id]);
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4 space-y-4 bg-white">
+    <div className="admin-light-surface rounded-lg border border-gray-200 p-4 space-y-4 bg-white text-gray-900">
       <div>
         <h3 className="text-base font-semibold text-gray-900">{title}</h3>
         <p className="text-sm text-gray-600 mt-1">{description}</p>
@@ -71,7 +71,7 @@ export function MetaCloudCredentialsForm({
           <input
             value={wabaId}
             onChange={(e) => setWabaId(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded-lg"
+            className="mt-1 w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             autoComplete="off"
           />
         </label>
@@ -80,7 +80,7 @@ export function MetaCloudCredentialsForm({
           <input
             value={phoneId}
             onChange={(e) => setPhoneId(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded-lg"
+            className="mt-1 w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             autoComplete="off"
           />
         </label>
@@ -92,7 +92,7 @@ export function MetaCloudCredentialsForm({
             type="password"
             value={accessToken}
             onChange={(e) => setAccessToken(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded-lg"
+            className="mt-1 w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             autoComplete="new-password"
             placeholder={credentials?.has_access_token ? '••••••••' : ''}
           />
@@ -105,7 +105,7 @@ export function MetaCloudCredentialsForm({
             type="password"
             value={appSecret}
             onChange={(e) => setAppSecret(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded-lg"
+            className="mt-1 w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             autoComplete="new-password"
             placeholder={credentials?.has_app_secret ? '••••••••' : ''}
           />
@@ -118,7 +118,7 @@ export function MetaCloudCredentialsForm({
             type="password"
             value={verifyToken}
             onChange={(e) => setVerifyToken(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded-lg"
+            className="mt-1 w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             autoComplete="new-password"
             placeholder={credentials?.has_verify_token ? '••••••••' : ''}
           />

@@ -262,7 +262,7 @@ export function AdminWhatsAppTemplatesEditor() {
   if (loading) return <p className="text-gray-600">Loading WhatsApp templates…</p>;
 
   return (
-    <div className="space-y-6">
+    <div className="admin-light-surface space-y-6 text-gray-900">
       <div>
         <h2 className="text-xl font-semibold text-gray-900">WhatsApp templates</h2>
         <p className="text-sm text-gray-600 mt-1">
@@ -301,9 +301,9 @@ export function AdminWhatsAppTemplatesEditor() {
       {message && <p className="text-sm text-gray-800">{message}</p>}
 
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full text-sm text-gray-900">
           <thead>
-            <tr className="text-left text-gray-500 border-b">
+            <tr className="text-left text-gray-600 border-b">
               <th className="py-2 pr-4">Name</th>
               <th className="py-2 pr-4">Category</th>
               <th className="py-2 pr-4">Language</th>
@@ -315,13 +315,13 @@ export function AdminWhatsAppTemplatesEditor() {
             {templates.map((t) => (
               <tr
                 key={t.id}
-                className={`border-b cursor-pointer ${selectedId === t.id ? 'bg-primary-50' : ''}`}
+                className={`border-b cursor-pointer text-gray-900 ${selectedId === t.id ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
                 onClick={() => openExisting(t)}
               >
-                <td className="py-2 pr-4 font-mono">{t.name}</td>
-                <td className="py-2 pr-4">{t.category}</td>
-                <td className="py-2 pr-4">{t.language}</td>
-                <td className="py-2 pr-4">{t.event_key || '—'}</td>
+                <td className="py-2 pr-4 font-mono text-gray-900">{t.name}</td>
+                <td className="py-2 pr-4 text-gray-900">{t.category}</td>
+                <td className="py-2 pr-4 text-gray-900">{t.language}</td>
+                <td className="py-2 pr-4 text-gray-900">{t.event_key || '—'}</td>
                 <td className="py-2 pr-4">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusClass(t.status)}`}>
                     {t.status}
@@ -347,7 +347,7 @@ export function AdminWhatsAppTemplatesEditor() {
                 value={form.name}
                 disabled={!!locked}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50"
+                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50 text-gray-900 bg-white"
               />
             </div>
             <div>
@@ -356,7 +356,7 @@ export function AdminWhatsAppTemplatesEditor() {
                 value={form.language}
                 disabled={!!locked}
                 onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50"
+                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50 text-gray-900 bg-white"
               >
                 {languages.map((l) => (
                   <option key={l} value={l}>{l}</option>
@@ -369,7 +369,7 @@ export function AdminWhatsAppTemplatesEditor() {
                 value={form.category}
                 disabled={!!locked}
                 onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50"
+                className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-50 text-gray-900 bg-white"
               >
                 {categories.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -381,7 +381,7 @@ export function AdminWhatsAppTemplatesEditor() {
               <select
                 value={form.event_key}
                 onChange={(e) => setForm((f) => ({ ...f, event_key: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-lg"
+                className="w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
               >
                 <option value="">None</option>
                 {eventKeys.map((k) => (
@@ -398,7 +398,7 @@ export function AdminWhatsAppTemplatesEditor() {
                 <input
                   value={form.header_text}
                   onChange={(e) => setForm((f) => ({ ...f, header_text: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
                 />
               </div>
               <div>
@@ -407,7 +407,7 @@ export function AdminWhatsAppTemplatesEditor() {
                   value={form.body_text}
                   onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
                   rows={5}
-                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm"
+                  className="w-full px-3 py-2 border rounded-lg font-mono text-sm text-gray-900 bg-white"
                 />
               </div>
               <div>
@@ -415,7 +415,7 @@ export function AdminWhatsAppTemplatesEditor() {
                 <input
                   value={form.footer_text}
                   onChange={(e) => setForm((f) => ({ ...f, footer_text: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  className="w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
                 />
               </div>
             </>
@@ -437,7 +437,7 @@ export function AdminWhatsAppTemplatesEditor() {
               onChange={(e) =>
                 setForm((f) => ({ ...f, example_vars: e.target.value.split(',').map((s) => s.trim()) }))
               }
-              className="w-full px-3 py-2 border rounded-lg"
+                  className="w-full px-3 py-2 border rounded-lg text-gray-900 bg-white"
             />
           </div>
 
@@ -494,7 +494,7 @@ export function AdminWhatsAppTemplatesEditor() {
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
                   placeholder="9876543210"
-                  className="px-3 py-2 border rounded-lg"
+                  className="px-3 py-2 border rounded-lg text-gray-900 bg-white"
                 />
               </div>
               <button

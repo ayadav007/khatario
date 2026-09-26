@@ -690,6 +690,35 @@
     color: var(--color-text-primary);
   }
 
+  /** Platform admin white cards: keep native inputs readable when html has .dark */
+  .admin-light-surface {
+    color-scheme: light;
+    --color-text-primary: #111827;
+    --color-text-secondary: #4b5563;
+    --color-text-muted: #6b7280;
+    --color-border: #d1d5db;
+    --color-surface: #ffffff;
+    --color-background: #ffffff;
+    color: #111827;
+  }
+
+  .admin-light-surface input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='button']):not([type='submit']),
+  .admin-light-surface select,
+  .admin-light-surface textarea {
+    color: #111827 !important;
+    background-color: #ffffff !important;
+    border-color: #d1d5db;
+    color-scheme: light;
+  }
+
+  .admin-light-surface input:disabled,
+  .admin-light-surface select:disabled,
+  .admin-light-surface textarea:disabled {
+    background-color: #f3f4f6 !important;
+    color: #111827 !important;
+    opacity: 1;
+  }
+
   .card {
     @apply bg-surface rounded-card shadow-small border border-border 
            dark:bg-surface-dark dark:border-border-dark;
