@@ -11,7 +11,8 @@
 # Optional in .env.production:
 #   PM2_APP_NAME=khatario-staging
 #   PM2_WORKER_NAME=todo-reminder-worker
-#   GIT_BRANCH=main
+#   GIT_BRANCH=main          # staging clone
+#   GIT_BRANCH=production    # /var/www/khatario-prod — do not point production at main
 #   MIGRATION_BASELINE=239
 
 set -eo pipefail

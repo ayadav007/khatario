@@ -37,10 +37,10 @@ Do not run `npm run cap:sync` without `CAP_SERVER_URL`. Use the staging or produ
 | Other apps on the box | Digitable (several PM2 names), `andaman` — leave them alone |
 | Process manager | PM2 |
 | Web server | nginx reverse proxy |
-| Staging deploy | `cd /var/www/khatario && bash scripts/deploy-vps.sh` |
-| Production deploy | `cd /var/www/khatario-prod && bash scripts/deploy-vps.sh` |
+| Staging deploy | `cd /var/www/khatario && bash scripts/deploy-vps.sh` (git branch **`main`**) |
+| Production deploy | `cd /var/www/khatario-prod && bash scripts/deploy-vps.sh` (git branch **`production`**, not `main`) |
 | Staging CI | `.github/workflows/deploy-vps.yml` (push `main` → `VPS_APP_PATH`) |
-| Production CI | `.github/workflows/deploy-vps-production.yml` (**workflow_dispatch** + `VPS_PROD_APP_PATH`) |
+| Production CI | `.github/workflows/deploy-vps-production.yml` (**workflow_dispatch** + pull **`production`**) |
 
 GitHub staging deploy secrets were empty as of 2026-09-26 — deploys have been manual SSH. Fill `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_APP_PATH=/var/www/khatario` for staging, and `VPS_PROD_APP_PATH=/var/www/khatario-prod` for production.
 
@@ -74,6 +74,32 @@ pm2 list
 
 Staging should still be `https://staging.khatario.com`. Production has no tenant data: sign up a real business on `khatario.com`.
 
+### What goes live where
+
+- **`main`** = staging only (`/var/www/khatario`). WhatsApp Cloud templates, signup OTP experiments, and other sandbox work stay here until you explicitly copy them.
+- **`production`** = what `khatario.com` should run (`/var/www/khatario-prod`). `git pull` on production must **not** use `main`.
+
+To ship one fix to production after it is on `main`:
+
+```bash
+git checkout production
+git cherry-pick <commit-on-main>
+git push origin production
+```
+
+Then on the VPS:
+
+```bash
+cd /var/www/khatario-prod
+git fetch origin
+git checkout production
+git merge --ff-only origin/production
+# once: echo GIT_BRANCH=production >> .env.production
+bash scripts/deploy-vps.sh --no-pull
+```
+
+The `/admin` 500 fix is already on `production` (`64ea128`) without the later Meta WABA / OTP commits.
+
 ### Later production deploys
 
 ```bash
@@ -86,6 +112,7 @@ Env file: `/var/www/khatario-prod/.env.production`
 - `PM2_APP_NAME=khatario`
 - `PM2_START_SCRIPT=start:http` (nginx talks HTTP, not `server.js` HTTPS)
 - `NEXT_PUBLIC_APP_URL=https://khatario.com`
+- `GIT_BRANCH=production`
 
 ---
 
@@ -173,6 +200,24 @@ Tenants using their own Meta app should subscribe that app to:
 In Meta App Dashboard subscribe to **`message_template_status_update`**. After `git pull` + `bash scripts/deploy-vps.sh`, migrations `290` and `291` run with other pending migrations.
 
 OTP still falls back to Baileys when `PLATFORM_WHATSAPP_BUSINESS_ID` is set and no **approved** Cloud API template exists for `signup_otp` / `demo_booking_otp`. Email remains the primary path for subscription notices.
+
+### Platform admin PWA and push (staging and production)
+
+The merchant app and the operator console are different installs.
+
+| | Staging | Production |
+|---|---|---|
+| Admin URL | `https://staging.khatario.com/admin` | `https://khatario.com/admin` |
+| Home-screen name | Khatario Admin (Staging) | Khatario Admin |
+
+On each environment: open `/admin` in the phone browser → **Install app** → log in → **Enable alerts**. iPhone: Share → Add to Home Screen, then open the icon before enabling notifications.
+
+Optional env (otherwise keys are generated and stored encrypted in `platform_settings`):
+
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+
+Signup welcome email goes to the **business email** (often left blank). Operator email goes to active `platform_admins` emails or the inbox override under Admin → Settings → Notifications. Check email logs there if a signup was silent.
 
 ```bash
 node scripts/debug-invoice-extract.js

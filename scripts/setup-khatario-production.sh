@@ -24,7 +24,7 @@ PROD_ROOT="${PROD_ROOT:-/var/www/khatario-prod}"
 PROD_DB="${PROD_DB:-khatario_prod}"
 PROD_PORT="${PROD_PORT:-3002}"
 PROD_URL="${PROD_URL:-https://khatario.com}"
-GIT_BRANCH="${GIT_BRANCH:-main}"
+GIT_BRANCH="${GIT_BRANCH:-production}"
 NGINX_SITE_NAME="khatario"
 CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}"
 
