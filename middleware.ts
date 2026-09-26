@@ -12,13 +12,12 @@ import { extractStoreSubdomain } from './lib/store/subdomain';
 import { resolvePublicRequestOrigin } from './lib/http/public-request-origin';
 
 function redirectToBrowserLogin(request: NextRequest, loginPath: string, redirectPath: string) {
-  const dest = new URL(loginPath, `${resolvePublicRequestOrigin(request)}/`);
+  const origin = resolvePublicRequestOrigin(request).replace(/\/$/, '');
+  const dest = new URL(loginPath, `${origin}/`);
   dest.searchParams.set('redirect', redirectPath);
-  const res = NextResponse.redirect(dest);
-  // Next requires an absolute URL, but Location must stay on the public host.
-  // A path-only Location keeps the browser on khatario.com even if dest was localhost.
-  res.headers.set('Location', `${loginPath}?${dest.searchParams.toString()}`);
-  return res;
+  // Must stay an absolute URL. Overwriting Location with a relative path makes
+  // Next.js middleware throw (500 on /admin, /dashboard, etc. for guests).
+  return NextResponse.redirect(dest);
 }
 
 function forwardSetCookies(from: Response, to: NextResponse): void {
@@ -41,6 +40,7 @@ const PUBLIC_PATHS = new Set([
   '/guides',
   '/book-demo',
   '/admin/login',
+  '/admin/pwa-manifest',
   '/attendance/login',
   '/attendance/kiosk',
   '/auth/impersonate',
@@ -104,6 +104,7 @@ function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | n
 /** Routes that use the platform-admin JWT cookie only (not business user session). */
 function isPlatformAdminProtectedPath(pathname: string): boolean {
   if (pathname.startsWith('/admin/login')) return false;
+  if (pathname.startsWith('/admin/pwa-manifest')) return false;
   if (pathname.startsWith('/admin')) return true;
   if (pathname.startsWith('/api/admin/')) {
     if (pathname.startsWith('/api/admin/auth/login')) return false;
