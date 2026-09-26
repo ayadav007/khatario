@@ -28,7 +28,11 @@ function allowOtpDebug(): boolean {
   return process.env.SIGNUP_DEBUG === 'true' || appUrl.includes('staging.');
 }
 
-export async function issuePlatformOtp(purpose: PlatformOtpPurpose, phone: string): Promise<{ debugOtp?: string }> {
+export async function issuePlatformOtp(
+  purpose: PlatformOtpPurpose,
+  phone: string,
+  opts?: { email?: string },
+): Promise<{ debugOtp?: string }> {
   const code = String(randomInt(100000, 1000000));
   const codeHash = hashPlatformOtp(purpose, phone, code);
   await query(
@@ -42,7 +46,25 @@ export async function issuePlatformOtp(purpose: PlatformOtpPurpose, phone: strin
     [purpose, phone, codeHash],
   );
 
-  const eventKey = purpose === 'signup' ? 'signup_otp' : 'demo_booking_otp';
+  if (purpose === 'password_reset_email') {
+    const to = opts?.email?.trim();
+    if (to) {
+      const { sendPlatformEmail, platformEmailLayout } = await import('@/lib/platform-email');
+      await sendPlatformEmail({
+        to,
+        subject: 'Your Khatario password reset code',
+        html: platformEmailLayout(
+          'Password reset',
+          `<p>Your email verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes. You also need the WhatsApp code to reset your password.</p>`,
+        ),
+        text: `Your Khatario email verification code is ${code}. It expires in 10 minutes. You also need the WhatsApp code.`,
+      });
+    }
+    if (allowOtpDebug()) console.log(`[platform-otp] ${purpose} ${phone}: ${code}`);
+    return allowOtpDebug() ? { debugOtp: code } : {};
+  }
+
+  const eventKey = purpose === 'demo_booking' ? 'demo_booking_otp' : 'signup_otp';
   const graph = await sendPlatformEventWhatsApp({ eventKey, toPhone: phone, vars: [code] });
   if (!graph.sent) {
     const text = `Your Khatario verification code is ${code}. It expires in 10 minutes.`;
@@ -56,6 +78,34 @@ export async function issuePlatformOtp(purpose: PlatformOtpPurpose, phone: strin
   }
 
   return allowOtpDebug() ? { debugOtp: code } : {};
+}
+
+export async function consumePlatformOtpPair(
+  phone: string,
+  waCode: string,
+  emailCode: string,
+): Promise<boolean> {
+  const waHash = hashPlatformOtp('password_reset_wa', phone, waCode.trim());
+  const emHash = hashPlatformOtp('password_reset_email', phone, emailCode.trim());
+  const wa = await queryOne<{ id: string }>(
+    `SELECT id FROM platform_public_otps
+     WHERE purpose = 'password_reset_wa' AND phone = $1 AND code_hash = $2
+       AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+     ORDER BY created_at DESC LIMIT 1`,
+    [phone, waHash],
+  );
+  const em = await queryOne<{ id: string }>(
+    `SELECT id FROM platform_public_otps
+     WHERE purpose = 'password_reset_email' AND phone = $1 AND code_hash = $2
+       AND consumed_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+     ORDER BY created_at DESC LIMIT 1`,
+    [phone, emHash],
+  );
+  if (!wa || !em) return false;
+  await query(`UPDATE platform_public_otps SET consumed_at = CURRENT_TIMESTAMP WHERE id = ANY($1::uuid[])`, [
+    [wa.id, em.id],
+  ]);
+  return true;
 }
 
 export async function consumePlatformOtp(

@@ -12,7 +12,10 @@ describe('platform public OTP', () => {
       hashPlatformOtp('signup', '9876543210', '123456', pepper),
     );
     expect(hashPlatformOtp('signup', '9876543210', '123456', pepper)).not.toBe(
-      hashPlatformOtp('signup', '9876543210', '000000', pepper),
+      hashPlatformOtp('password_reset_wa', '9876543210', '123456', pepper),
+    );
+    expect(hashPlatformOtp('password_reset_wa', '9876543210', '123456', pepper)).not.toBe(
+      hashPlatformOtp('password_reset_email', '9876543210', '123456', pepper),
     );
   });
 });

@@ -1,6 +1,10 @@
 import { createHash } from 'crypto';
 
-export type PlatformOtpPurpose = 'signup' | 'demo_booking';
+export type PlatformOtpPurpose =
+  | 'signup'
+  | 'demo_booking'
+  | 'password_reset_wa'
+  | 'password_reset_email';
 
 export function nationalPhone10(input: string): string | null {
   const digits = String(input || '').replace(/\D/g, '');

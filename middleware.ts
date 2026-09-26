@@ -59,6 +59,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/refresh',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
   '/api/auth/impersonate',
   '/api/signup',
   '/api/bookings/create',

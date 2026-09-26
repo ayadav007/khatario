@@ -63,8 +63,15 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [step, setStep] = useState<'phone' | 'auth'>('phone');
+  const [mode, setMode] = useState<'login' | 'forgot-request' | 'forgot-verify'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
+  const [whatsappCode, setWhatsappCode] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +147,76 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+    if (!phone || !resetEmail) {
+      setError('Enter the login phone number and the email on the account');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, email: resetEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not send codes');
+      let msg = data.message as string;
+      if (data.debugWhatsAppOtp || data.debugEmailOtp) {
+        msg += ` (staging WhatsApp ${data.debugWhatsAppOtp || '—'}, email ${data.debugEmailOtp || '—'})`;
+      }
+      setInfo(msg);
+      setMode('forgot-verify');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not send codes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          email: resetEmail,
+          whatsappCode,
+          emailCode,
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reset password');
+      setInfo(data.message || 'Password updated. Sign in with your new password.');
+      setMode('login');
+      setStep('auth');
+      setPassword('');
+      setWhatsappCode('');
+      setEmailCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not reset password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md" padding="lg">
@@ -148,9 +225,12 @@ export default function LoginPage() {
             <span className="text-white font-bold text-2xl">KB</span>
           </div>
           <h1 className="text-2xl font-bold text-text-primary mb-2">Khatario</h1>
-          <p className="text-text-secondary text-sm">Sign in to your business</p>
+          <p className="text-text-secondary text-sm">
+            {mode === 'login' ? 'Sign in to your business' : 'Reset your password'}
+          </p>
         </div>
 
+        {mode === 'login' ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -164,6 +244,11 @@ export default function LoginPage() {
               role="status"
             >
               {sessionNotice}
+            </div>
+          )}
+          {info && (
+            <div className="p-3 bg-green-50 text-green-800 text-sm rounded-md border border-green-200" role="status">
+              {info}
             </div>
           )}
           {error && (
@@ -211,10 +296,128 @@ export default function LoginPage() {
             </>
           )}
 
+          {mode === 'login' && (step === 'auth' || step === 'phone') ? (
+            <p className="text-right text-sm">
+              <button
+                type="button"
+                className="text-primary-500 hover:text-primary-600 font-medium"
+                onClick={() => {
+                  setError('');
+                  setInfo('');
+                  setMode('forgot-request');
+                }}
+              >
+                Forgot password?
+              </button>
+            </p>
+          ) : null}
+
+          {mode === 'login' ? (
           <Button type="submit" className="w-full" isLoading={loading}>
             {step === 'phone' ? 'Continue' : 'Login'}
           </Button>
+          ) : null}
         </form>
+        ) : null}
+
+        {mode === 'forgot-request' ? (
+          <form onSubmit={handleForgotRequest} className="space-y-4">
+            {info && (
+              <div className="p-3 bg-green-50 text-green-800 text-sm rounded-md border border-green-200">{info}</div>
+            )}
+            {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-md">{error}</div>}
+            <Input
+              type="tel"
+              label="Login phone number"
+              placeholder="Phone you use to sign in"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              inputMode="numeric"
+              autoComplete="tel"
+            />
+            <Input
+              type="email"
+              label="Account email"
+              placeholder="Email on this business account"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              autoComplete="email"
+            />
+            <p className="text-xs text-text-secondary">
+              We send two different codes: one on WhatsApp to this phone, one to this email. Both are required.
+            </p>
+            <Button type="submit" className="w-full" isLoading={loading}>
+              Send WhatsApp and email codes
+            </Button>
+            <button
+              type="button"
+              className="w-full text-sm text-text-secondary"
+              onClick={() => {
+                setMode('login');
+                setError('');
+                setInfo('');
+              }}
+            >
+              Back to sign in
+            </button>
+          </form>
+        ) : null}
+
+        {mode === 'forgot-verify' ? (
+          <form onSubmit={handleForgotVerify} className="space-y-4">
+            {info && (
+              <div className="p-3 bg-green-50 text-green-800 text-sm rounded-md border border-green-200">{info}</div>
+            )}
+            {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-md">{error}</div>}
+            <Input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              label="WhatsApp code"
+              placeholder="6-digit code from WhatsApp"
+              value={whatsappCode}
+              onChange={(e) => setWhatsappCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+            <Input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              label="Email code"
+              placeholder="6-digit code from email"
+              value={emailCode}
+              onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            />
+            <Input
+              type="password"
+              label="New password"
+              placeholder="At least 8 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <Input
+              type="password"
+              label="Confirm new password"
+              placeholder="Re-enter password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <Button type="submit" className="w-full" isLoading={loading}>
+              Reset password
+            </Button>
+            <button
+              type="button"
+              className="w-full text-sm text-text-secondary"
+              onClick={() => {
+                setMode('forgot-request');
+                setError('');
+              }}
+            >
+              Resend codes
+            </button>
+          </form>
+        ) : null}
 
         <div className="mt-6 text-center">
           <p className="text-sm text-text-secondary">
