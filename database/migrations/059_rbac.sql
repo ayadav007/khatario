@@ -45,11 +45,19 @@ CREATE TABLE IF NOT EXISTS field_permissions (
     UNIQUE(role_id, module_key, field_name)
 );
 
--- Indexes
+-- Indexes (019 already created role_permissions with module_key, not permission_id)
 CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_id);
 CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
-CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission_id);
 CREATE INDEX IF NOT EXISTS idx_field_permissions_role ON field_permissions(role_id, module_key);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'role_permissions' AND column_name = 'permission_id'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_role_permissions_permission ON role_permissions(permission_id)';
+  END IF;
+END $$;
 
 -- Insert default modules
 INSERT INTO permission_modules (module_key, module_name, description) VALUES

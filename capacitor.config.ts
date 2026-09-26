@@ -10,7 +10,7 @@
  * Configuration values come from environment variables set at build time:
  *   - CAP_SERVER_URL      : Public HTTPS URL of your Next.js deploy.
  *                           Staging: https://staging.khatario.com
- *                           Production (when live): https://app.khatario.com
+ *                           Production: https://khatario.com
  *                           Prefer: npm run cap:android:staging:install
  *                           See docs/SERVER_INFRASTRUCTURE.md
  *                           (Native shell appends /login on cold start.)

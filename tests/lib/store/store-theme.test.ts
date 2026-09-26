@@ -7,6 +7,7 @@ import {
   CHOWK_INK,
   chowkInkOn,
   chowkOnAccent,
+  sectionEnabled,
 } from '@/lib/store/store-theme';
 
 describe('sanitizeStoreTheme', () => {
@@ -49,9 +50,47 @@ describe('sanitizeStoreTheme', () => {
       ],
     });
     expect(t.hero_slides).toEqual([
-      { image_url: 'https://cdn.example/a.jpg', title: 'Sale', subtitle: 'This week' },
-      { image_url: '', title: 'Only text', subtitle: '' },
+      { image_url: 'https://cdn.example/a.jpg', title: 'Sale', subtitle: 'This week', viewport: 'both' },
+      { image_url: '', title: 'Only text', subtitle: '', viewport: 'both' },
     ]);
+  });
+
+  it('strips dangerous custom CSS', () => {
+    const t = sanitizeStoreTheme({
+      custom_css: '@import url("x"); script { } expression(alert(1)); color:red;',
+    });
+    expect(t.custom_css).not.toMatch(/@import/i);
+    expect(t.custom_css).not.toMatch(/expression/i);
+  });
+
+  it('honours the categories homepage toggle', () => {
+    const t = sanitizeStoreTheme({
+      homepage_sections: [{ id: 'categories', enabled: false }],
+    });
+    expect(sectionEnabled(t, 'categories')).toBe(false);
+    expect(sectionEnabled(sanitizeStoreTheme({}), 'categories')).toBe(true);
+  });
+
+  it('keeps product collection shelves', () => {
+    const t = sanitizeStoreTheme({
+      product_shelves: [
+        { id: 'shelf-sale', title: 'On sale', kind: 'discounted', enabled: true },
+        { id: 'shelf-99', title: 'Under ₹99', kind: 'price_max', price_max: 99, enabled: true },
+        { id: 'bad id', kind: 'price_max', price_max: -3 },
+      ],
+    });
+    expect(t.product_shelves).toHaveLength(3);
+    expect(t.product_shelves[0]).toMatchObject({ id: 'shelf-sale', kind: 'discounted' });
+    expect(t.product_shelves[1].price_max).toBe(99);
+    expect(t.product_shelves[2].price_max).toBe(1);
+    expect(sectionEnabled(t, 'product_shelves')).toBe(false);
+  });
+
+  it('backfills homepage sections from show flags', () => {
+    const t = sanitizeStoreTheme({ show_hero: false, show_trust: false });
+    expect(t.homepage_sections.find((s) => s.id === 'hero')?.enabled).toBe(false);
+    expect(t.homepage_sections.find((s) => s.id === 'trust')?.enabled).toBe(false);
+    expect(t.homepage_sections.find((s) => s.id === 'catalog')?.enabled).toBe(true);
   });
 
   it('drops unsafe category image keys', () => {
@@ -75,6 +114,10 @@ describe('applyStorePreset', () => {
       accent: STORE_THEME_PRESETS.blue.accent,
       background: STORE_THEME_PRESETS.blue.background,
       pack: 'classic',
+      mobile_columns: 2,
+      category_style: 'letter',
+      hero_cta: 'Shop now',
+      appearance_mode: 'light',
     });
   });
 
@@ -84,6 +127,11 @@ describe('applyStorePreset', () => {
       accent: STORE_THEME_PRESETS.chowk.accent,
       background: STORE_THEME_PRESETS.chowk.background,
       pack: 'chowk',
+      mobile_columns: 3,
+      category_style: 'letter',
+      hero_cta: 'Shop now',
+      search_placeholder: 'Search atta, oil, soap…',
+      appearance_mode: 'light',
     });
   });
 
@@ -93,8 +141,25 @@ describe('applyStorePreset', () => {
       accent: STORE_THEME_PRESETS.atelier.accent,
       background: STORE_THEME_PRESETS.atelier.background,
       pack: 'atelier',
+      mobile_columns: 2,
+      category_style: 'photo',
       hero_cta: 'Explore Collection',
       search_placeholder: 'Search jackets, cashmere, accessories…',
+      appearance_mode: 'light',
+    });
+  });
+
+  it('applies Khatario pack from Digitable store-app chrome', () => {
+    expect(applyStorePreset('khatario')).toEqual({
+      preset: 'khatario',
+      accent: STORE_THEME_PRESETS.khatario.accent,
+      background: STORE_THEME_PRESETS.khatario.background,
+      pack: 'khatario',
+      mobile_columns: 2,
+      category_style: 'letter',
+      hero_cta: 'Order now',
+      search_placeholder: 'Search for items…',
+      appearance_mode: 'light',
     });
   });
 });
@@ -115,6 +180,17 @@ describe('store theme pack', () => {
     expect(t.pack).toBe('chowk');
     expect(t.accent).toBe('#112233');
     expect(t.background).toBe(PACK_CANVAS.chowk);
+  });
+
+  it('keeps Khatario pack when colours are customised', () => {
+    const t = sanitizeStoreTheme({
+      preset: 'custom',
+      pack: 'khatario',
+      accent: '#e85d04',
+    });
+    expect(t.pack).toBe('khatario');
+    expect(t.accent).toBe('#e85d04');
+    expect(t.background).toBe(PACK_CANVAS.khatario);
   });
 
   it('keeps Atelier pack when colours are customised', () => {

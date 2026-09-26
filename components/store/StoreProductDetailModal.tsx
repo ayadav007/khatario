@@ -5,7 +5,10 @@ import { useStore } from '@/lib/store/store-context';
 import { useCallback, useEffect, useState } from 'react';
 import type { StoreProduct } from './StoreProductCard';
 import clsx from 'clsx';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { StoreKhatarioProductView } from './StoreKhatarioProductView';
+import { StoreProductGallery } from './StoreProductGallery';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { storeDiscountPercent } from '@/lib/store/map-store-product';
 
 interface StoreProductDetailModalProps {
   product: StoreProduct;
@@ -20,7 +23,7 @@ export function StoreProductDetailModal({
   const theme = sanitizeStoreTheme(store?.store_theme);
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const pack = chowk || atelier;
+  const pack = isPackChrome(theme);
   const paper = storeCanvas(theme);
   const accent = theme.accent;
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
@@ -31,6 +34,9 @@ export function StoreProductDetailModal({
   const displayPrice = selectedVariant?.selling_price ?? product.selling_price;
   const displayStock = selectedVariant?.current_stock ?? product.current_stock;
   const outOfStock = displayStock <= 0;
+  const discount = sectionEnabled(theme, 'offers')
+    ? storeDiscountPercent(product.mrp, displayPrice)
+    : 0;
 
   const cartItem = cart.find(
     (c) =>
@@ -60,11 +66,44 @@ export function StoreProductDetailModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  if (isKhatarioPack(theme)) {
+    return (
+      <div className="store-khatario fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={{ color: '#171717' }}>
+        <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
+        <div
+          className="chowk-sheet is-on relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-[#f4f5f7] sm:max-h-[88vh] sm:rounded-3xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="chowk-product-title"
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-2 top-2 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-sm"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <StoreKhatarioProductView
+              product={product}
+              compact
+              onRelatedOpen={(item) => {
+                onClose();
+                window.location.href = `/products/${item.id}`;
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (pack) {
     const ink = chowkInkOn(paper);
     const hair = `1px solid color-mix(in srgb, ${ink} 14%, transparent)`;
     return (
-      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', chowk && 'store-chowk', atelier && 'store-atelier')} style={{ color: ink }}>
+      <div className={clsx('fixed inset-0 z-50 flex items-end justify-center sm:items-center', chowk && 'store-chowk', atelier && 'store-atelier', theme.pack === 'khatario' && 'store-khatario', theme.pack === 'noir' && 'store-noir')} style={{ color: ink }}>
         <button type="button" className="chowk-scrim is-on absolute inset-0 border-0 bg-black/35 p-0" aria-label="Close" onClick={onClose} />
         <div
           className="chowk-sheet is-on relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85vh] sm:rounded-3xl"
@@ -82,12 +121,15 @@ export function StoreProductDetailModal({
           >
             <X className="h-5 w-5" strokeWidth={1.5} />
           </button>
-          <div className={clsx('relative w-full max-h-[48vh]', atelier ? 'aspect-[3/4]' : 'aspect-[4/5]')}>
-            {product.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
+          <div className={clsx('relative w-full', atelier ? 'max-h-[52vh]' : 'max-h-[48vh]')}>
+            {(product.images?.length ? product.images : product.image_url ? [product.image_url] : []).length ? (
+              <StoreProductGallery
+                images={product.images?.length ? product.images : product.image_url ? [product.image_url] : []}
+                alt={product.name}
+                accent={accent}
+              />
             ) : (
-              <div className="flex h-full w-full items-center justify-center">
+              <div className={clsx('flex w-full items-center justify-center', atelier ? 'aspect-[3/4]' : 'aspect-[4/5]')}>
                 <span className={atelier ? 'font-atelier-display text-6xl' : 'font-chowk-display text-6xl'} style={{ opacity: 0.25 }}>
                   {product.name.slice(0, 1).toUpperCase()}
                 </span>
@@ -106,9 +148,9 @@ export function StoreProductDetailModal({
             ) : null}
             <p className="mt-3 text-[1.35rem] font-medium tabular-nums">
               ₹{displayPrice.toLocaleString('en-IN')}
-              {product.mrp && product.mrp > displayPrice ? (
+              {discount > 0 && product.mrp != null ? (
                 <span className="ml-2 text-[13px] font-normal line-through" style={{ opacity: 0.4 }}>
-                  ₹{product.mrp.toLocaleString('en-IN')}
+                  ₹{Number(product.mrp).toLocaleString('en-IN')}
                 </span>
               ) : null}
             </p>
@@ -234,13 +276,13 @@ export function StoreProductDetailModal({
             <span className="text-xl font-bold text-gray-900">
               &#x20B9;{displayPrice.toLocaleString('en-IN')}
             </span>
-            {product.mrp && product.mrp > displayPrice ? (
+            {discount > 0 && product.mrp != null ? (
               <>
                 <span className="text-sm text-gray-400 line-through">
-                  &#x20B9;{product.mrp.toLocaleString('en-IN')}
+                  &#x20B9;{Number(product.mrp).toLocaleString('en-IN')}
                 </span>
                 <span className="text-xs font-semibold text-green-600">
-                  {Math.round(((product.mrp - displayPrice) / product.mrp) * 100)}% off
+                  {discount}% off
                 </span>
               </>
             ) : null}

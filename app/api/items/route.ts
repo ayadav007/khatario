@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
       has_variants = false,
       variants = [],
       image_url,
+      gallery_urls,
       gst_included = false,
       mrp,
       // Retail compliance fields (migration 162)
@@ -200,6 +201,11 @@ export async function POST(request: NextRequest) {
       allow_sale_when_out_of_stock,
       custom_fields,
       created_by, // User ID who created the item
+      show_in_store,
+      featured_in_store,
+      seo_title,
+      seo_description,
+      seo_image_url,
     } = body;
 
     if (!business_id || !name) {
@@ -231,6 +237,19 @@ export async function POST(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    if (featured_in_store) {
+      const { canEnableStoreFeatured, countStoreFeaturedItems, featuredLimitMessage } = await import(
+        '@/lib/store/store-featured'
+      );
+      const count = await countStoreFeaturedItems(business_id);
+      if (!canEnableStoreFeatured({ alreadyFeatured: false, currentFeaturedCount: count })) {
+        return NextResponse.json(
+          { error: featuredLimitMessage(), code: 'FEATURED_LIMIT' },
+          { status: 409 },
+        );
+      }
     }
 
     // Validate barcode if provided
@@ -325,10 +344,11 @@ export async function POST(request: NextRequest) {
         tax_rate, hsn_sac, item_type, opening_stock, current_stock, min_stock, 
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
-        is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock
+        is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock,
+        show_in_store, featured_in_store
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27, $28)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
       RETURNING *
     `, [
       business_id,
@@ -359,12 +379,25 @@ export async function POST(request: NextRequest) {
       normalizedPlu,
       normalizedWeightMode,
       oversellOverride,
+      !!show_in_store || !!featured_in_store,
+      !!featured_in_store,
     ]);
 
       item = insertResult.rows[0] ?? null;
       if (!item) {
         await client.query('ROLLBACK');
         throw new Error('Failed to create item');
+      }
+
+      const { clipItemSeo } = await import('@/lib/store/item-seo');
+      const seo = clipItemSeo({ seo_title, seo_description, seo_image_url });
+      if (seo.seo_title || seo.seo_description || seo.seo_image_url) {
+        await client.query(
+          `UPDATE items SET seo_title = $1, seo_description = $2, seo_image_url = $3
+           WHERE id = $4 AND business_id = $5`,
+          [seo.seo_title, seo.seo_description, seo.seo_image_url, item.id, business_id],
+        );
+        item = { ...item, ...seo };
       }
 
       await client.query('COMMIT');
@@ -376,6 +409,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (!item) throw new Error('Failed to create item');
+
+    if (gallery_urls !== undefined || image_url) {
+      const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
+      const extras = extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || ''));
+      await query(
+        `UPDATE items SET gallery_urls = $1::jsonb WHERE id = $2 AND business_id = $3`,
+        [JSON.stringify(extras), item.id, business_id],
+      );
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
       const { saveItemCustomFields } = await import('@/lib/custom-fields-persist');

@@ -57,6 +57,21 @@ function parseArgs(argv) {
   return args;
 }
 
+function unwrapExplicitTransaction(sql) {
+  let s = String(sql || '').trim();
+  s = s.replace(/^\s*BEGIN\s*;/i, '');
+  s = s.replace(/COMMIT\s*;\s*$/i, '');
+  return s.trim();
+}
+
+function splitSqlStatements(sql) {
+  const withoutComments = String(sql || '').replace(/--[^\n]*/g, '');
+  return withoutComments
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 function isIdempotentError(message) {
   const m = String(message || '').toLowerCase();
   return (
@@ -166,7 +181,7 @@ async function main() {
         await client.query(
           `INSERT INTO schema_migrations (migration_name, success, error_message)
            VALUES ($1, true, 'bootstrap: marked below threshold')
-           ON CONFLICT (migration_name) DO NOTHING`,
+           ON CONFLICT (migration_name) DO UPDATE SET success = true, executed_at = NOW(), error_message = EXCLUDED.error_message`,
           [file]
         );
       }
@@ -217,10 +232,18 @@ async function main() {
       }
 
       process.stdout.write(`📝 ${file} ... `);
+      const needsAutocommit = /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(sql);
+      const sqlToRun = unwrapExplicitTransaction(sql);
       try {
-        await client.query('BEGIN');
-        await client.query(sql);
-        await client.query('COMMIT');
+        if (!needsAutocommit) await client.query('BEGIN');
+        if (needsAutocommit) {
+          for (const stmt of splitSqlStatements(sqlToRun)) {
+            await client.query(stmt);
+          }
+        } else {
+          await client.query(sqlToRun);
+        }
+        if (!needsAutocommit) await client.query('COMMIT');
 
         await client.query(
           `INSERT INTO schema_migrations (migration_name, success, error_message)
@@ -231,9 +254,18 @@ async function main() {
         console.log('✅');
         ok++;
       } catch (error) {
-        await client.query('ROLLBACK');
+        if (!needsAutocommit) {
+          try {
+            await client.query('ROLLBACK');
+          } catch {
+            /* ignore */
+          }
+        }
 
-        if (isIdempotentError(error.message)) {
+        if (
+          isIdempotentError(error.message) ||
+          (needsAutocommit && /cannot run inside a transaction block/i.test(error.message))
+        ) {
           await client.query(
             `INSERT INTO schema_migrations (migration_name, success, error_message)
              VALUES ($1, true, $2)

@@ -1,0 +1,33 @@
+# Manual production deploy. Does not run on push to main.
+#
+# Required GitHub repo secrets (can reuse VPS_HOST / VPS_USER / VPS_SSH_KEY):
+#   VPS_HOST
+#   VPS_USER
+#   VPS_SSH_KEY
+#   VPS_PROD_APP_PATH — /var/www/khatario-prod
+#
+# Optional:
+#   VPS_SSH_PORT — default 22
+
+name: Deploy VPS production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy production over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          command_timeout: 40m
+          script: |
+            set -e
+            cd "${{ secrets.VPS_PROD_APP_PATH }}"
+            git pull origin main
+            bash scripts/deploy-vps.sh --no-pull

@@ -94,7 +94,11 @@ export async function authenticatePlatformAdmin(
       RETURNING auth_session_version::text AS auth_session_version
     `, [admin.id]);
 
-    const sessionVersion = Number(bumped?.auth_session_version ?? 1);
+    const sessionVersion = Number.parseInt(String(bumped?.auth_session_version ?? '1'), 10);
+    if (!Number.isFinite(sessionVersion) || sessionVersion < 1) {
+      console.error('Platform admin login: invalid auth_session_version', bumped);
+      return null;
+    }
 
     // Parse permissions if string
     if (typeof admin.permissions === 'string') {

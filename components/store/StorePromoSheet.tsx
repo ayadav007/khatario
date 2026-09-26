@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useStore } from '@/lib/store/store-context';
+import { storeDraftToken, useStore } from '@/lib/store/store-context';
 import {
   isStorePromoActive,
   shouldShowStorePromo,
@@ -37,6 +37,10 @@ export function StorePromoSheet() {
   const promo = store?.store_promo_sheet;
 
   useEffect(() => {
+    if (storeDraftToken()) {
+      setOpen(false);
+      return;
+    }
     if (!store || !promo || !isStorePromoActive(promo)) {
       setOpen(false);
       return;
@@ -97,7 +101,7 @@ export function StorePromoSheet() {
   const hasImage = Boolean(promo.image_url);
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col items-center justify-end sm:justify-center">
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-end sm:justify-center">
       <button
         type="button"
         className="absolute inset-0 bg-black/70"

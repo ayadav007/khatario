@@ -1,13 +1,13 @@
 'use client';
 
-import { Phone, ShoppingCart, Search, MapPin, ChevronDown, User } from 'lucide-react';
+import { Phone, ShoppingCart, Search, MapPin, ChevronDown, User, Heart } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { StoreMobileNav } from './StoreMobileNav';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isKhatarioPack, isNoirPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 
 interface StoreShellProps {
   children: React.ReactNode;
@@ -18,6 +18,7 @@ interface StoreShellProps {
   subnav?: ReactNode;
   announcement?: ReactNode;
   padded?: boolean;
+  hero?: ReactNode;
 }
 
 function pinKey(subdomain: string) {
@@ -33,6 +34,7 @@ export function StoreShell({
   subnav,
   announcement,
   padded = true,
+  hero,
 }: StoreShellProps) {
   const { store, branches, selectedBranchId, selectBranch, cartCount, cartTotal, customer } = useStore();
   const pathname = usePathname();
@@ -71,7 +73,9 @@ export function StoreShell({
   const theme = sanitizeStoreTheme(store.store_theme);
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const pack = chowk || atelier;
+  const khatario = isKhatarioPack(theme);
+  const noir = isNoirPack(theme);
+  const pack = isPackChrome(theme);
   const accent = theme.accent;
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
@@ -81,7 +85,9 @@ export function StoreShell({
     theme.search_placeholder ||
     (atelier
       ? 'Search jackets, cashmere, accessories…'
-      : chowk
+      : khatario
+        ? 'Search for items…'
+        : chowk
         ? 'Search for rice, oil, milk…'
         : 'Search products...');
   const pins = selectedBranch?.serviceable_pincodes ?? [];
@@ -166,13 +172,140 @@ export function StoreShell({
         'min-h-screen',
         chowk && 'store-chowk font-chowk',
         atelier && 'store-atelier font-atelier',
+        khatario && 'store-khatario',
+        noir && 'store-noir',
       )}
-      style={{ backgroundColor: paper, color: pack ? ink : undefined }}
+      style={{
+        backgroundColor: paper,
+        color: pack ? ink : undefined,
+        ['--store-accent' as string]: accent,
+      }}
     >
       {announcement}
 
-      <div className="sticky top-0 z-30" style={pack ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper } : { backgroundColor: accent }}>
-        {atelier ? (
+      <div
+        className="sticky top-0 z-30"
+        style={
+          khatario
+            ? { backgroundColor: paper }
+            : pack
+              ? { borderBottom: `1px solid ${hair}`, backgroundColor: paper }
+              : { backgroundColor: accent }
+        }
+      >
+        {noir ? (
+          <header className="store-noir" style={{ backgroundColor: paper, color: ink }}>
+            {theme.announcement ? (
+              <p className="truncate px-4 py-1.5 text-center text-[11px] tracking-wide" style={{ backgroundColor: ink, color: paper }}>
+                {theme.announcement}
+              </p>
+            ) : null}
+            <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
+              <Link href="/" className="flex min-w-0 items-center gap-2">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="" className="h-8 w-auto max-w-[7rem] object-contain" />
+                ) : (
+                  <span className="font-noir-display text-lg tracking-[0.2em]">{store.name.slice(0, 18)}</span>
+                )}
+                {theme.show_store_name && logoUrl ? <span className="truncate text-sm tracking-wide">{store.name}</span> : null}
+              </Link>
+              <nav className="hidden min-w-0 flex-1 items-center gap-5 text-[12px] uppercase tracking-[0.14em] md:flex">
+                <Link href="/">Home</Link>
+                <Link href="/">Shop</Link>
+                <Link href="/about">About</Link>
+                <Link href="/wishlist">Wishlist</Link>
+              </nav>
+              <div className="ml-auto flex items-center gap-1">
+                <Link href="/wishlist" className="flex h-9 w-9 items-center justify-center" aria-label="Wishlist">
+                  <Heart className="h-4 w-4" strokeWidth={1.5} />
+                </Link>
+                <Link href="/account" className="flex h-9 w-9 items-center justify-center" aria-label="Account">
+                  <User className="h-4 w-4" strokeWidth={1.5} />
+                </Link>
+                <button type="button" onClick={openCart} className="relative flex h-9 w-9 items-center justify-center" aria-label="Bag">
+                  <ShoppingCart className="h-4 w-4" strokeWidth={1.5} />
+                  {cartCount > 0 ? <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} /> : null}
+                </button>
+              </div>
+            </div>
+            {showSearch ? (
+              <div className="mx-auto max-w-6xl px-4 pb-3">
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => onSearchChange?.(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="h-10 w-full border bg-transparent px-3 text-sm"
+                  style={{ borderColor: `${ink}33` }}
+                />
+              </div>
+            ) : null}
+          </header>
+        ) : khatario ? (
+          <header className="store-khatario-brand px-2.5 pb-3 pt-2 sm:px-3" style={{ backgroundColor: accent, color: onAccent }}>
+            <div className="mx-auto max-w-lg space-y-2.5 sm:max-w-6xl">
+              <div className="flex items-start justify-between gap-3">
+                <Link href="/" className="flex min-w-0 items-center gap-2.5">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg bg-white object-contain p-1" />
+                  ) : (
+                    <span
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold"
+                      style={{ backgroundColor: onAccent, color: accent }}
+                    >
+                      {store.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block truncate text-lg font-bold tracking-tight">{store.name}</span>
+                    {showPlace || selectedBranch?.name ? (
+                      <span className="block truncate text-xs opacity-80">
+                        {selectedBranch?.name || locationLabel}
+                      </span>
+                    ) : store.store_tagline ? (
+                      <span className="block truncate text-xs opacity-80">{store.store_tagline}</span>
+                    ) : null}
+                  </span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setBranchPickerOpen((o) => !o)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  {pincode || 'Area'}
+                  <ChevronDown className="h-3 w-3 opacity-80" />
+                </button>
+              </div>
+
+              {showSearch ? (
+                <div className="relative" role="search">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    id="store-search"
+                    ref={searchRef}
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange?.(e.target.value)}
+                    placeholder={searchPlaceholder}
+                    aria-label={searchPlaceholder}
+                    className="h-10 w-full rounded-xl border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none"
+                  />
+                </div>
+              ) : null}
+
+              {branchPanel}
+            </div>
+            {hero ? (
+              <div className="mx-auto mt-2.5 w-full max-w-lg sm:mt-3 sm:max-w-none sm:-mx-3 sm:w-[calc(100%+1.5rem)]">
+                {hero}
+              </div>
+            ) : null}
+          </header>
+        ) : atelier ? (
           <header style={{ backgroundColor: paper }}>
             <div className="mx-auto max-w-6xl px-4">
               <div className="flex items-center gap-3 py-3">
@@ -531,6 +664,10 @@ export function StoreShell({
               </p>
               <Link href="/about">About</Link>
               <Link href="/contact">Contact</Link>
+              <Link href="/privacy">Privacy</Link>
+              <Link href="/refund">Refunds</Link>
+              <Link href="/terms">Terms</Link>
+              <Link href="/wishlist">Wishlist</Link>
               <Link href="/account">Your orders</Link>
             </div>
             <div className="text-[13px]" style={{ opacity: 0.75 }}>
@@ -556,6 +693,10 @@ export function StoreShell({
               <div className="flex flex-col gap-1">
                 <Link href="/about" className="hover:text-gray-900">About</Link>
                 <Link href="/contact" className="hover:text-gray-900">Contact</Link>
+                <Link href="/privacy" className="hover:text-gray-900">Privacy</Link>
+                <Link href="/refund" className="hover:text-gray-900">Refunds</Link>
+                <Link href="/terms" className="hover:text-gray-900">Terms</Link>
+                <Link href="/wishlist" className="hover:text-gray-900">Wishlist</Link>
                 <Link href="/account" className="hover:text-gray-900">Your orders</Link>
               </div>
               <div className="text-xs text-gray-400">

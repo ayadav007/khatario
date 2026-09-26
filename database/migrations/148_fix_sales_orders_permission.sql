@@ -9,18 +9,18 @@ INSERT INTO role_permissions (
   module_key,
   can_view,
   can_add,
-  can_edit,
+  can_modify,
   can_delete
 )
 SELECT 
   gen_random_uuid(),
   r.id,
   'sales_sales_orders',
-  true,  -- can_view
-  true,  -- can_add (create)
-  true,  -- can_edit (update)
-  true   -- can_delete
-FROM roles r
+  true,
+  true,
+  true,
+  true
+FROM user_roles r
 WHERE NOT EXISTS (
   SELECT 1 
   FROM role_permissions rp 

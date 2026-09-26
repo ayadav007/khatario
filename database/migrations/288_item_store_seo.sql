@@ -1,0 +1,4 @@
+ALTER TABLE items
+  ADD COLUMN IF NOT EXISTS seo_title TEXT,
+  ADD COLUMN IF NOT EXISTS seo_description TEXT,
+  ADD COLUMN IF NOT EXISTS seo_image_url TEXT;

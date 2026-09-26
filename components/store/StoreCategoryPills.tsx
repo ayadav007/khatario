@@ -59,6 +59,7 @@ function ChowkCategoryRail({
   style,
   paper,
   look,
+  images = {},
 }: {
   items: Array<{ id: string | null; name: string }>;
   selectedId: string | null;
@@ -66,7 +67,8 @@ function ChowkCategoryRail({
   accent: string;
   style: StoreCategoryStyle;
   paper: string;
-  look: 'chowk' | 'atelier';
+  look: 'chowk' | 'atelier' | 'khatario';
+  images?: Record<string, string>;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +89,7 @@ function ChowkCategoryRail({
       <div ref={railRef} className="store-chowk-rail flex gap-1.5 overflow-x-auto pb-2 pr-6 pt-1">
         {items.map((cat) => {
           const selected = selectedId === cat.id;
+          const photo = style === 'photo' && cat.id && images[cat.id];
           return (
             <button
               key={cat.id ?? 'all'}
@@ -94,16 +97,44 @@ function ChowkCategoryRail({
               onClick={() => onSelect(cat.id)}
               aria-current={selected ? true : undefined}
               className={clsx(
-                'h-9 max-w-[min(70vw,14rem)] flex-shrink-0 truncate rounded-full px-3.5 text-[13px] font-medium',
-                look === 'atelier' && !selected && 'bg-white/70',
+                'flex-shrink-0',
+                photo
+                  ? 'flex w-[4.5rem] flex-col items-center gap-1'
+                  : clsx(
+                      'h-9 max-w-[min(70vw,14rem)] truncate rounded-full px-3.5 text-[13px] font-medium',
+                      look === 'atelier' && !selected && 'bg-white/70',
+                      look === 'khatario' && !selected && 'bg-white shadow-sm',
+                    ),
               )}
               style={
-                selected
-                  ? { backgroundColor: accent, color: chowkOnAccent(accent) }
-                  : { backgroundColor: look === 'atelier' ? undefined : 'transparent', color: ink, opacity: 0.7 }
+                photo
+                  ? { color: ink }
+                  : selected
+                    ? { backgroundColor: accent, color: chowkOnAccent(accent) }
+                    : {
+                        backgroundColor: look === 'atelier' || look === 'khatario' ? undefined : 'transparent',
+                        color: ink,
+                        opacity: look === 'khatario' ? 0.9 : 0.7,
+                      }
               }
             >
-              <span className="truncate">{cat.name}</span>
+              {photo ? (
+                <>
+                  <span
+                    className={clsx(
+                      'flex h-14 w-14 overflow-hidden rounded-2xl bg-gray-100',
+                      selected && 'ring-2 ring-offset-2',
+                    )}
+                    style={selected ? { ['--tw-ring-color' as string]: accent } : undefined}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={images[cat.id as string]} alt="" className="h-full w-full object-cover" />
+                  </span>
+                  <span className="line-clamp-2 w-full text-center text-[11px] font-medium">{cat.name}</span>
+                </>
+              ) : (
+                <span className="truncate">{cat.name}</span>
+              )}
             </button>
           );
         })}
@@ -128,12 +159,12 @@ export function StoreCategoryPills({
   accent: string;
   style: StoreCategoryStyle;
   images: Record<string, string>;
-  variant?: 'classic' | 'chowk' | 'atelier';
+  variant?: 'classic' | 'chowk' | 'atelier' | 'khatario';
   paper?: string;
 }) {
   if (categories.length === 0) return null;
 
-  if (variant === 'chowk' || variant === 'atelier') {
+  if (variant === 'chowk' || variant === 'atelier' || variant === 'khatario') {
     const items: Array<{ id: string | null; name: string }> = [{ id: null, name: 'All' }, ...categories];
     return (
       <ChowkCategoryRail
@@ -144,6 +175,7 @@ export function StoreCategoryPills({
         style={style}
         paper={paper || '#f3eee6'}
         look={variant}
+        images={images}
       />
     );
   }

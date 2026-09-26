@@ -40,7 +40,7 @@ export interface CapabilityEvalInput {
  */
 export function evaluateCapabilityAccess(
   input: CapabilityEvalInput
-): { allowed: boolean; denialReason?: CapabilityDenialReason } {
+): { allowed: boolean; denialReason?: CapabilityDenialReason; indeterminate?: boolean } {
   const {
     resource: res,
     action,
@@ -51,7 +51,7 @@ export function evaluateCapabilityAccess(
   } = input;
 
   if (!businessId || !userId) {
-    return { allowed: false, denialReason: 'PERMISSION_DENIED' };
+    return { allowed: false, indeterminate: true };
   }
 
   const snapshot = loadCapabilitySnapshot(businessId, userId);
@@ -71,8 +71,9 @@ export function evaluateCapabilityAccess(
     ...(snapshot?.permissions || {}),
   } as Record<string, Record<string, boolean>>;
 
+  // No snapshot and no session perms yet — unknown, not a real deny (avoids flashing Access Denied).
   if (!snapshot && Object.keys(mergedPermissions).length === 0) {
-    return { allowed: false, denialReason: 'PERMISSION_DENIED' };
+    return { allowed: false, indeterminate: true };
   }
 
   const canonicalModule = normalizeModule(res);

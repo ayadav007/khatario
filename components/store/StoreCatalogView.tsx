@@ -1,6 +1,6 @@
 'use client';
 
-import { useStore } from '@/lib/store/store-context';
+import { useStore, withStoreDraft } from '@/lib/store/store-context';
 import { StoreShell } from './StoreShell';
 import { StoreProductCard, type StoreProduct } from './StoreProductCard';
 import { StoreCartDrawer } from './StoreCartDrawer';
@@ -10,7 +10,9 @@ import { StoreTrustSection } from './StoreTrustSection';
 import { StoreCategoryPills } from './StoreCategoryPills';
 import { StoreCategoryMasonry } from './StoreCategoryMasonry';
 import { StoreHeroCarousel } from './StoreHeroCarousel';
-import { chowkInkOn, isAtelierPack, isChowkPack, resolveHeroSlides, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { StoreProductShelves } from './StoreProductShelves';
+import { chowkInkOn, isAtelierPack, isChowkPack, isKhatarioPack, isNoirPack, isPackChrome, resolveHeroSlides, sanitizeStoreTheme, sectionEnabled, storeCanvas, type StoreOverlayBand, type StoreTheme } from '@/lib/store/store-theme';
+import { isStoreOfferItem, storeDiscountPercent } from '@/lib/store/map-store-product';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -20,15 +22,46 @@ interface StoreCategory {
   name: string;
 }
 
+function StoreOverlayBands({ bands, home, theme }: { bands: StoreOverlayBand[]; home: boolean; theme: StoreTheme }) {
+  if (!home || !sectionEnabled(theme, 'overlay') || bands.length === 0) return null;
+  return (
+    <section className="mx-auto grid max-w-6xl gap-3 px-3 pt-4 sm:px-4 md:grid-cols-2">
+      {bands.map((band, i) => (
+        <div key={`${band.image_url}-${i}`} className="relative min-h-[160px] overflow-hidden rounded-2xl bg-gray-800">
+          {band.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={band.image_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          ) : null}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          <div className="relative z-10 flex h-full min-h-[160px] items-end p-4 text-white">
+            <p className="text-lg font-medium drop-shadow">{band.caption}</p>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function StoreCatalogView() {
   const { store, loading: storeLoading, error, selectedBranchId } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const pack = chowk || atelier;
+  const khatario = isKhatarioPack(theme);
+  const noir = isNoirPack(theme);
+  const pack = isPackChrome(theme);
+  const [device, setDevice] = useState<'mobile' | 'desktop'>('desktop');
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const apply = () => setDevice(mq.matches ? 'mobile' : 'desktop');
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   const [items, setItems] = useState<StoreProduct[]>([]);
+  const [featuredItems, setFeaturedItems] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<StoreCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,7 +97,7 @@ export function StoreCatalogView() {
         params.set('limit', '40');
 
         const res = await fetch(
-          `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${params}`,
+          `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${withStoreDraft(params)}`,
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -73,6 +106,19 @@ export function StoreCatalogView() {
           setItems((prev) => [...prev, ...data.items]);
         } else {
           setItems(data.items);
+        }
+        if (!opts.append && !opts.categoryId && !opts.search) {
+          const featParams = withStoreDraft(new URLSearchParams({ featured: '1', limit: '6' }));
+          if (selectedBranchId) featParams.set('branch_id', selectedBranchId);
+          const featRes = await fetch(
+            `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items?${featParams}`,
+          );
+          if (featRes.ok) {
+            const featData = await featRes.json();
+            setFeaturedItems((featData.items as StoreProduct[]) ?? []);
+          } else {
+            setFeaturedItems([]);
+          }
         }
         setCategories(data.categories ?? []);
         setTotal(data.total);
@@ -126,10 +172,7 @@ export function StoreCatalogView() {
   }, [page, fetchItems, selectedCategory, searchQuery]);
 
   const offerItems = useMemo(
-    () =>
-      items.filter(
-        (p) => p.mrp != null && p.mrp > p.selling_price && p.current_stock > 0,
-      ).slice(0, 8),
+    () => items.filter(isStoreOfferItem).slice(0, 8),
     [items],
   );
 
@@ -159,12 +202,16 @@ export function StoreCatalogView() {
       ? 'grid grid-cols-3 gap-2 sm:grid-cols-3 lg:grid-cols-4 sm:gap-3'
       : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4';
 
-  const heroSlides = theme.show_hero
-    ? resolveHeroSlides(theme, {
-        image_url: store.store_hero_image_url,
-        title: store.store_tagline || '',
-        subtitle: theme.hero_subtitle || '',
-      })
+  const heroSlides = sectionEnabled(theme, 'hero')
+    ? resolveHeroSlides(
+        theme,
+        {
+          image_url: store.store_hero_image_url,
+          title: store.store_tagline || `Shop from ${store.name}`,
+          subtitle: theme.hero_subtitle || 'Fresh products from your local store. Add to cart in one tap.',
+        },
+        device,
+      )
     : [];
 
   const home = !searchQuery && !selectedCategory;
@@ -174,13 +221,13 @@ export function StoreCatalogView() {
     pack && home
       ? heroSlides.filter((s, i) => i > 0 && s.image_url).slice(0, 2)
       : [];
-  const showMasonry = chowk && home && categories.length > 0;
+  const showMasonry = chowk && home && categories.length > 0 && sectionEnabled(theme, 'categories');
   const selectedName = selectedCategory
     ? categories.find((c) => c.id === selectedCategory)?.name
     : null;
-  const tinLine = theme.show_offers
+  const tinLine = sectionEnabled(theme, 'offers')
     ? offerItems[0]
-      ? `Free delivery on orders · ${offerItems[0].name} ${Math.round((((offerItems[0].mrp ?? 0) - offerItems[0].selling_price) / (offerItems[0].mrp ?? 1)) * 100)}% off`
+      ? `Free delivery on orders · ${offerItems[0].name} ${storeDiscountPercent(offerItems[0].mrp, offerItems[0].selling_price)}% off`
       : store.store_tagline?.trim() || ''
     : '';
 
@@ -211,6 +258,18 @@ export function StoreCatalogView() {
         showSearch
         onCartOpen={() => setCartOpen(true)}
         padded={!pack}
+        hero={
+          khatario && home && theme.show_hero && heroSlides.length > 0 ? (
+            <StoreHeroCarousel
+              slides={heroSlides}
+              ctaLabel={theme.hero_cta}
+              accent={accent}
+              paper={paper}
+              variant="khatario"
+              onCta={() => document.getElementById('all-products')?.scrollIntoView({ behavior: 'smooth' })}
+            />
+          ) : null
+        }
         announcement={
           chowk && tinLine ? (
             <div
@@ -225,7 +284,7 @@ export function StoreCatalogView() {
           ) : null
         }
         subnav={
-          pack ? (
+          pack && !khatario && sectionEnabled(theme, 'categories') ? (
             <StoreCategoryPills
               categories={categories}
               selectedId={selectedCategory}
@@ -241,7 +300,7 @@ export function StoreCatalogView() {
       >
         {pack ? (
           <>
-            {home && heroSlides.length > 0 ? (
+            {home && heroSlides.length > 0 && !khatario ? (
               <StoreHeroCarousel
                 slides={heroSlides}
                 ctaLabel={theme.hero_cta}
@@ -252,7 +311,29 @@ export function StoreCatalogView() {
               />
             ) : null}
 
-            {home && theme.show_trust && !atelier ? <StoreTrustSection /> : null}
+            {khatario ? (
+              <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
+                {store.store_tagline ? (
+                  <p className="mb-2 text-sm leading-relaxed text-gray-600">{store.store_tagline}</p>
+                ) : null}
+                {sectionEnabled(theme, 'categories') ? (
+                  <StoreCategoryPills
+                    categories={categories}
+                    selectedId={selectedCategory}
+                    onSelect={handleCategoryChange}
+                    accent={accent}
+                    style={theme.category_style}
+                    images={theme.category_images}
+                    variant="khatario"
+                    paper={paper}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            <StoreOverlayBands bands={theme.overlay_bands} home={home} theme={theme} />
+
+            {home && theme.show_trust && !atelier && !khatario ? <StoreTrustSection /> : null}
 
             {showMasonry ? (
               <StoreCategoryMasonry
@@ -264,8 +345,8 @@ export function StoreCatalogView() {
             ) : null}
 
             {popular.length > 0 ? (
-              <section className="mx-auto max-w-6xl px-4 pt-8">
-                <div className="mb-4 flex items-end justify-between gap-3">
+              <section className={clsx('mx-auto max-w-6xl px-4', khatario ? 'pt-5' : 'pt-8')}>
+                <div className={clsx('flex items-end justify-between gap-3', khatario ? 'mb-3' : 'mb-4')}>
                   <div>
                     <h2 className={atelier ? 'font-atelier-display text-[1.35rem] leading-none' : 'text-[1.05rem] font-semibold'}>
                       {atelier ? 'Trending Now' : 'Popular products'}
@@ -313,7 +394,7 @@ export function StoreCatalogView() {
               </section>
             ) : null}
 
-            {atelier && home && theme.show_offers && offerItems.length > 0 ? (
+            {atelier && home && sectionEnabled(theme, 'offers') && offerItems.length > 0 ? (
               <section className="mx-auto max-w-6xl px-4 pt-10">
                 <div className="mb-4">
                   <p className="text-[11px] font-medium uppercase tracking-[0.14em]" style={{ color: accent, opacity: 0.7 }}>
@@ -330,7 +411,7 @@ export function StoreCatalogView() {
             ) : null}
 
             {promoSlides.length > 0 && !atelier ? (
-              <section className="mx-auto grid max-w-6xl gap-3 px-4 pt-8 md:grid-cols-2">
+              <section className={clsx('mx-auto grid max-w-6xl gap-3 px-4 md:grid-cols-2', khatario ? 'pt-3' : 'pt-8')}>
                 {promoSlides.map((slide, i) => (
                   <button
                     key={`${slide.image_url}-${i}`}
@@ -352,6 +433,73 @@ export function StoreCatalogView() {
             ) : null}
 
             {home && theme.show_trust && atelier ? <StoreTrustSection /> : null}
+
+            {home && sectionEnabled(theme, 'featured') && featuredItems.length > 0 ? (
+              <section className="mx-auto max-w-6xl px-4 pt-8">
+                <h2 className={clsx(khatario ? 'mb-3 text-[1.05rem] font-semibold' : 'mb-4 text-[1.05rem] font-semibold')}>
+                  Featured
+                </h2>
+                <div className={clsx('grid gap-3', featuredItems.length === 1 ? 'grid-cols-1' : 'grid-cols-2')}>
+                  {featuredItems.map((item) => (
+                    <StoreProductCard
+                      key={`feat-${item.id}`}
+                      product={item}
+                      variant={featuredItems.length === 1 ? 'featured' : 'grid'}
+                      onViewDetail={setDetailProduct}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {home && sectionEnabled(theme, 'product_shelves') ? (
+              <div className="mx-auto max-w-6xl px-4">
+                <StoreProductShelves shelves={theme.product_shelves} onViewDetail={setDetailProduct} />
+              </div>
+            ) : null}
+
+            {home && sectionEnabled(theme, 'category_shelves')
+              ? categories.map((cat) => {
+                  const row = items.filter((p) => p.category_id === cat.id).slice(0, 8);
+                  if (row.length === 0) return null;
+                  return (
+                    <section key={`shelf-${cat.id}`} className="mx-auto max-w-6xl px-4 pt-8">
+                      <div className="mb-3 flex items-end justify-between">
+                        <h2 className="text-[1.05rem] font-semibold">{cat.name}</h2>
+                        <button type="button" className="text-[12px] opacity-60" onClick={() => handleCategoryChange(cat.id)}>
+                          View all
+                        </button>
+                      </div>
+                      <div className="flex gap-3 overflow-x-auto pb-1">
+                        {row.map((item) => (
+                          <StoreProductCard key={item.id} product={item} variant="shelf" onViewDetail={setDetailProduct} />
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })
+              : null}
+
+            {home && sectionEnabled(theme, 'testimonials') && theme.testimonials.length > 0 ? (
+              <section className="mx-auto max-w-6xl px-4 pt-10">
+                <h2 className="mb-4 text-[1.05rem] font-semibold">Customer testimonials</h2>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {theme.testimonials.map((tm, i) => (
+                    <blockquote key={i} className="rounded-2xl bg-white/80 p-4 text-sm" style={{ color: ink }}>
+                      <p className="leading-relaxed">“{tm.text}”</p>
+                      <footer className="mt-2 text-[12px] opacity-60">~ {tm.name}</footer>
+                    </blockquote>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {home && sectionEnabled(theme, 'brand_story') && (theme.brand_story || store.store_about_md) ? (
+              <section className="mx-auto max-w-3xl px-4 pt-10 text-sm leading-relaxed" style={{ color: ink, opacity: 0.8 }}>
+                <h2 className="mb-3 text-[1.05rem] font-semibold">Our story</h2>
+                <p className="whitespace-pre-wrap">{theme.brand_story || store.store_about_md}</p>
+              </section>
+            ) : null}
 
             <div className="mx-auto max-w-6xl px-4">
               <section id="all-products" className="pt-8">
@@ -446,16 +594,35 @@ export function StoreCatalogView() {
               </div>
             ) : null}
 
-            <StoreCategoryPills
-              categories={categories}
-              selectedId={selectedCategory}
-              onSelect={handleCategoryChange}
-              accent={accent}
-              style={theme.category_style}
-              images={theme.category_images}
-            />
+            {sectionEnabled(theme, 'categories') ? (
+              <StoreCategoryPills
+                categories={categories}
+                selectedId={selectedCategory}
+                onSelect={handleCategoryChange}
+                accent={accent}
+                style={theme.category_style}
+                images={theme.category_images}
+              />
+            ) : null}
 
-            {!browsing && theme.show_offers && offerItems.length > 0 ? (
+            <StoreOverlayBands bands={theme.overlay_bands} home={home} theme={theme} />
+
+            {home && sectionEnabled(theme, 'featured') && featuredItems.length > 0 ? (
+              <section className="mb-6">
+                <h2 className="mb-3 text-sm font-semibold text-gray-900">Featured</h2>
+                <div className={productGrid}>
+                  {featuredItems.map((item) => (
+                    <StoreProductCard key={`feat-${item.id}`} product={item} onViewDetail={setDetailProduct} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {home && sectionEnabled(theme, 'product_shelves') ? (
+              <StoreProductShelves shelves={theme.product_shelves} onViewDetail={setDetailProduct} />
+            ) : null}
+
+            {!browsing && sectionEnabled(theme, 'offers') && offerItems.length > 0 ? (
               <section className="mb-6">
                 <h2 className="mb-3 text-sm font-semibold text-gray-900">Today&apos;s offers</h2>
                 <div className={productGrid}>

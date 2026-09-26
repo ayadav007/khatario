@@ -800,6 +800,8 @@ export interface Item {
   current_stock: number;
   min_stock: number;
   image_url?: string;
+  /** Extra storefront photos; cover stays on image_url */
+  gallery_urls?: string[];
   has_variants?: boolean;
   /** Combo product: stock is reduced via bundle_items children on invoice, not this row */
   is_bundle?: boolean;
@@ -817,6 +819,11 @@ export interface Item {
   allow_sale_when_out_of_stock?: boolean | null;
   /** Visible in the public online store */
   show_in_store?: boolean;
+  /** Homepage featured (max 6 per business) */
+  featured_in_store?: boolean;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  seo_image_url?: string | null;
   created_at: Date;
   updated_at: Date;
 }

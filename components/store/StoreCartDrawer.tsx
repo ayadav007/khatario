@@ -2,7 +2,7 @@
 
 import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isNoirPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -18,7 +18,8 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
   const accent = theme.accent;
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const pack = chowk || atelier;
+  const noir = isNoirPack(theme);
+  const pack = isPackChrome(theme);
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;
@@ -65,6 +66,8 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
         'fixed inset-0 z-50 flex justify-end',
         chowk && 'store-chowk',
         atelier && 'store-atelier',
+        theme.pack === 'khatario' && 'store-khatario',
+        noir && 'store-noir',
         !open && 'pointer-events-none',
       )}
       aria-hidden={!open}
@@ -77,15 +80,24 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
         onClick={onClose}
       />
       <aside
-        className={clsx('chowk-drawer relative flex h-full w-full max-w-md flex-col pb-[env(safe-area-inset-bottom,0px)]', atelier ? 'rounded-l-[1.75rem]' : 'rounded-l-3xl', open && 'is-on')}
-        style={{ backgroundColor: atelier ? paper : '#fffdf9', color: ink }}
+        className={clsx(
+          'chowk-drawer relative flex h-full w-full max-w-md flex-col pb-[env(safe-area-inset-bottom,0px)]',
+          atelier ? 'rounded-l-[1.75rem]' : 'rounded-l-3xl',
+          open ? 'is-on translate-x-0' : 'translate-x-full',
+        )}
+        style={{ backgroundColor: atelier || theme.pack === 'khatario' || noir ? paper : '#fffdf9', color: ink }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="chowk-bag-title"
       >
         <div className="flex items-center justify-between px-4 py-4" style={{ borderBottom: hair }}>
           <div>
-            <h2 id="chowk-bag-title" className={atelier ? 'font-atelier-display text-[1.5rem] leading-none' : 'text-[1.35rem] font-semibold leading-none'}>
+            <h2 id="chowk-bag-title" className={clsx(
+              'leading-none',
+              atelier && 'font-atelier-display text-[1.5rem]',
+              noir && 'font-noir-display text-[1.5rem]',
+              !atelier && !noir && 'text-[1.35rem] font-semibold',
+            )}>
               {atelier ? 'Shopping Bag' : 'Your bag'}
             </h2>
             <p className="mt-1 text-[12px]" style={{ opacity: 0.5 }}>
@@ -95,7 +107,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center"
+            className="relative z-10 flex h-11 w-11 items-center justify-center"
             aria-label="Close bag"
           >
             <X className="h-5 w-5" strokeWidth={1.5} />
@@ -104,7 +116,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
 
         {cart.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center px-4">
-            <p className={atelier ? 'font-atelier-display text-2xl' : 'font-chowk-display text-2xl'}>Nothing in the bag</p>
+            <p className={clsx('text-2xl', atelier && 'font-atelier-display', noir && 'font-noir-display', !atelier && !noir && 'font-chowk-display')}>Nothing in the bag</p>
             <p className="mt-2 text-[13px]" style={{ opacity: 0.5 }}>
               Add from the shop.
             </p>

@@ -23,6 +23,11 @@ describe('extractStoreSubdomain', () => {
   it('reads a local store host', () => {
     expect(extractStoreSubdomain('shalinitraders.localhost:3000')).toBe('shalinitraders');
   });
+
+  it('reads theme demo hosts on localhost', () => {
+    expect(extractStoreSubdomain('theme-khatario.localhost:3001')).toBe('theme-khatario');
+    expect(extractStoreSubdomain('theme-noir.localhost:3001')).toBe('theme-noir');
+  });
 });
 
 describe('storePublicHostname', () => {

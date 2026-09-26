@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="#0c0c0d"/>
+  <rect width="800" height="56" fill="#111"/>
+  <rect x="0" y="56" width="800" height="280" fill="#1a1a1c"/>
+  <text x="40" y="200" fill="#d4af37" font-size="36" font-family="Georgia">Winter Collection</text>
+  <rect x="40" y="360" width="140" height="200" fill="#2a2a2e"/>
+  <rect x="200" y="360" width="140" height="200" fill="#2a2a2e"/>
+  <rect x="360" y="360" width="140" height="200" fill="#2a2a2e"/>
+  <rect x="520" y="360" width="140" height="200" fill="#2a2a2e"/>
+  <rect x="680" y="360" width="80" height="200" fill="#2a2a2e"/>
+</svg>

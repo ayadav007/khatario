@@ -163,6 +163,7 @@ async function main() {
   console.log('\n--- Fix 111: Invoice templates (add missing columns) ---');
   if (await run('Add missing columns to invoice_templates', `
     ALTER TABLE invoice_templates ADD COLUMN IF NOT EXISTS business_id UUID REFERENCES businesses(id) ON DELETE CASCADE;
+    ALTER TABLE invoice_templates ADD COLUMN IF NOT EXISTS template_name VARCHAR(255);
     ALTER TABLE invoice_templates ADD COLUMN IF NOT EXISTS vendor_pattern VARCHAR(255);
     ALTER TABLE invoice_templates ADD COLUMN IF NOT EXISTS template_yaml TEXT;
     ALTER TABLE invoice_templates ADD COLUMN IF NOT EXISTS is_global BOOLEAN DEFAULT false;

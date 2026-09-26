@@ -3,6 +3,9 @@ export interface StoreItemsQueryInput {
   categoryId?: string | null;
   search?: string | null;
   branchId?: string | null;
+  featuredOnly?: boolean;
+  discountedOnly?: boolean;
+  maxPrice?: number | null;
   limit: number;
   offset: number;
 }
@@ -40,6 +43,22 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
   ];
   const whereParams: unknown[] = [input.businessId];
   let paramIdx = 1;
+
+  if (input.featuredOnly) {
+    conditions.push('i.featured_in_store = true');
+  }
+
+  if (input.discountedOnly) {
+    conditions.push(
+      'i.mrp IS NOT NULL AND i.mrp > i.selling_price AND COALESCE(i.current_stock, 0) > 0',
+    );
+  }
+
+  if (input.maxPrice != null && Number.isFinite(input.maxPrice) && input.maxPrice > 0) {
+    paramIdx += 1;
+    conditions.push(`i.selling_price <= $${paramIdx}`);
+    whereParams.push(input.maxPrice);
+  }
 
   if (input.categoryId) {
     paramIdx += 1;
@@ -81,11 +100,20 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
       SELECT
         i.id, i.name, i.code, i.description,
         i.selling_price::text, i.mrp::text, i.unit,
-        i.image_url, i.category_id, c.name AS category_name,
+        i.image_url, i.gallery_urls, i.category_id, c.name AS category_name,
         ${finalStockExpr}::text AS current_stock,
         COALESCE(i.has_variants, false) AS has_variants,
+        COALESCE(i.featured_in_store, false) AS featured_in_store,
         i.tax_rate::text,
         COALESCE(i.gst_included, false) AS gst_included,
+        COALESCE((
+          SELECT AVG(r.rating)::text FROM store_item_ratings r
+          WHERE r.item_id = i.id AND r.business_id = i.business_id
+        ), '0') AS rating_avg,
+        COALESCE((
+          SELECT COUNT(*)::text FROM store_item_ratings r
+          WHERE r.item_id = i.id AND r.business_id = i.business_id
+        ), '0') AS rating_count,
         COALESCE(
           json_agg(
             json_build_object(

@@ -14,8 +14,10 @@ export interface SessionPayload extends JWTPayload {
   sv?: number;
 }
 
+const APP_JWT_SECRET = process.env.JWT_SECRET;
+
 function getSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
+  const secret = APP_JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET environment variable is not set');
   }

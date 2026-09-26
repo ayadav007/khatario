@@ -101,7 +101,7 @@ const root = join(__dirname, '..');
 
 const ENV_URLS = {
   staging: 'https://staging.khatario.com',
-  production: 'https://app.khatario.com',
+  production: 'https://khatario.com',
 };
 
 const envName = (process.argv[2] || 'staging').toLowerCase();
@@ -124,7 +124,7 @@ const env = {
 
 if (envName === 'production') {
   console.warn(
-    '⚠️  Production build: ensure app.khatario.com nginx vhost is live (see docs/SERVER_INFRASTRUCTURE.md).'
+    '⚠️  Production build: ensure khatario.com nginx vhost is live (see docs/SERVER_INFRASTRUCTURE.md).'
   );
 }
 
@@ -146,7 +146,7 @@ if (existsSync(configPath)) {
   const actual = config?.server?.url ?? '(missing)';
   const expected = envName === 'staging'
     ? 'https://staging.khatario.com/login'
-    : 'https://app.khatario.com/login';
+    : 'https://khatario.com/login';
   if (actual !== expected) {
     console.error(`\n❌ capacitor.config.json url mismatch:`);
     console.error(`   expected: ${expected}`);

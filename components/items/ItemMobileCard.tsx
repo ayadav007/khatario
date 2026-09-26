@@ -2,7 +2,7 @@
 
 import { ArrowUpDown, Tag } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { Item } from '@/types/database';
+import { ItemFlagSwitch } from '@/components/items/ItemFlagSwitch';
 
 function itemInitial(name: string) {
   const t = name?.trim();
@@ -25,9 +25,19 @@ type Props = {
   item: Item;
   onOpen: () => void;
   onAdjustStock: () => void;
+  onToggleStore?: () => void;
+  onToggleFeatured?: () => void;
+  flagsBusy?: boolean;
 };
 
-export function ItemMobileCard({ item, onOpen, onAdjustStock }: Props) {
+export function ItemMobileCard({
+  item,
+  onOpen,
+  onAdjustStock,
+  onToggleStore,
+  onToggleFeatured,
+  flagsBusy,
+}: Props) {
   const stock = Number(item.current_stock);
   const minStock = Number(item.min_stock);
   const isService = item.item_type === 'service';
@@ -104,6 +114,33 @@ export function ItemMobileCard({ item, onOpen, onAdjustStock }: Props) {
           </div>
         </button>
       </div>
+
+      {(onToggleStore || onToggleFeatured) ? (
+        <div className="mt-2 flex items-center justify-between gap-3 px-1" onClick={(e) => e.stopPropagation()}>
+          {onToggleStore ? (
+            <label className="flex items-center gap-2 text-xs text-text-secondary">
+              <ItemFlagSwitch
+                on={!!item.show_in_store}
+                label="Show in online store"
+                disabled={flagsBusy}
+                onToggle={onToggleStore}
+              />
+              Store
+            </label>
+          ) : null}
+          {onToggleFeatured ? (
+            <label className="flex items-center gap-2 text-xs text-text-secondary">
+              <ItemFlagSwitch
+                on={!!item.featured_in_store}
+                label="Featured in online store"
+                disabled={flagsBusy}
+                onToggle={onToggleFeatured}
+              />
+              Featured
+            </label>
+          ) : null}
+        </div>
+      ) : null}
 
       {showStockAction ? (
         <div className="absolute bottom-1.5 right-1.5" onClick={(e) => e.stopPropagation()}>

@@ -133,6 +133,24 @@ export async function PATCH(
       throw error;
     }
 
+    const patchShowInStoreEarly = Object.prototype.hasOwnProperty.call(body, 'show_in_store');
+    const patchFeaturedEarly = Object.prototype.hasOwnProperty.call(body, 'featured_in_store');
+    if (
+      body.name === undefined &&
+      (patchShowInStoreEarly || patchFeaturedEarly)
+    ) {
+      const { applyItemStoreListingFlags } = await import('@/lib/store/apply-item-store-flags');
+      const flagged = await applyItemStoreListingFlags({
+        item: existingItem,
+        show_in_store: patchShowInStoreEarly ? !!body.show_in_store : undefined,
+        featured_in_store: patchFeaturedEarly ? !!body.featured_in_store : undefined,
+      });
+      if (!flagged.ok) {
+        return NextResponse.json({ error: flagged.error, code: flagged.code }, { status: flagged.status });
+      }
+      return NextResponse.json({ item: flagged.item });
+    }
+
     const {
       name,
       code,
@@ -153,6 +171,7 @@ export async function PATCH(
       is_bundle: patchIsBundle,
       bundle_components,
       gst_included,
+      mrp,
       // Retail compliance fields (migration 162)
       fssai_licence_no,
       net_quantity,
@@ -164,6 +183,11 @@ export async function PATCH(
       weight_barcode_mode,
       allow_sale_when_out_of_stock,
       show_in_store,
+      featured_in_store,
+      gallery_urls,
+      seo_title,
+      seo_description,
+      seo_image_url,
       variants = []
     } = body;
 
@@ -264,6 +288,39 @@ export async function PATCH(
     }
 
     const patchShowInStore = Object.prototype.hasOwnProperty.call(body, 'show_in_store');
+    const patchFeatured = Object.prototype.hasOwnProperty.call(body, 'featured_in_store');
+    if (patchFeatured && featured_in_store && !existingItem.featured_in_store) {
+      const { canEnableStoreFeatured, countStoreFeaturedItems, featuredLimitMessage } = await import(
+        '@/lib/store/store-featured'
+      );
+      const count = await countStoreFeaturedItems(businessId);
+      if (!canEnableStoreFeatured({ alreadyFeatured: false, currentFeaturedCount: count })) {
+        return NextResponse.json(
+          { error: featuredLimitMessage(), code: 'FEATURED_LIMIT' },
+          { status: 409 },
+        );
+      }
+    }
+    const mrpValue =
+      mrp === undefined || mrp === null || mrp === ''
+        ? null
+        : Number(mrp);
+    const persistedMrp =
+      mrpValue != null && Number.isFinite(mrpValue) && mrpValue > 0 ? mrpValue : null;
+
+    const patchGallery = Object.prototype.hasOwnProperty.call(body, 'gallery_urls');
+    let galleryJson: string | undefined;
+    if (patchGallery) {
+      const { extraGalleryUrls, sanitizeGalleryUrls } = await import('@/lib/store/item-gallery');
+      galleryJson = JSON.stringify(extraGalleryUrls(sanitizeGalleryUrls(gallery_urls, image_url), String(image_url || '')));
+    }
+    const patchSeo =
+      Object.prototype.hasOwnProperty.call(body, 'seo_title') ||
+      Object.prototype.hasOwnProperty.call(body, 'seo_description') ||
+      Object.prototype.hasOwnProperty.call(body, 'seo_image_url');
+    const seoPatched = patchSeo
+      ? (await import('@/lib/store/item-seo')).clipItemSeo({ seo_title, seo_description, seo_image_url })
+      : null;
 
     const buildOptionalUpdate = (startIndex: number) => {
       const parts: string[] = [];
@@ -279,9 +336,30 @@ export async function PATCH(
         extra.push(oversellOverride);
         idx += 1;
       }
-      if (patchShowInStore) {
+      if (patchShowInStore || (patchFeatured && featured_in_store)) {
         parts.push(`, show_in_store = $${idx}`);
-        extra.push(!!show_in_store);
+        extra.push(patchFeatured && featured_in_store ? true : !!show_in_store);
+        idx += 1;
+      }
+      if (patchFeatured) {
+        parts.push(`, featured_in_store = $${idx}`);
+        extra.push(!!featured_in_store && (patchShowInStore ? !!show_in_store || !!featured_in_store : true));
+        idx += 1;
+      }
+      if (patchGallery && galleryJson !== undefined) {
+        parts.push(`, gallery_urls = $${idx}::jsonb`);
+        extra.push(galleryJson);
+        idx += 1;
+      }
+      if (seoPatched) {
+        parts.push(`, seo_title = $${idx}`);
+        extra.push(seoPatched.seo_title);
+        idx += 1;
+        parts.push(`, seo_description = $${idx}`);
+        extra.push(seoPatched.seo_description);
+        idx += 1;
+        parts.push(`, seo_image_url = $${idx}`);
+        extra.push(seoPatched.seo_image_url);
         idx += 1;
       }
       return { sql: parts.join(''), params: extra };
@@ -292,13 +370,13 @@ export async function PATCH(
     let updateParams: any[];
     
     if (barcode !== undefined) {
-      const optional = buildOptionalUpdate(26);
+      const optional = buildOptionalUpdate(27);
       updateQuery = `UPDATE items 
        SET name = $3, code = $4, barcode = $5, barcode_type = $6, unit = $7, selling_price = $8, purchase_price = $9,
            tax_rate = $10, hsn_sac = $11, item_type = $12, min_stock = $13, description = $14,
-           default_supplier_id = $15, image_url = $16, has_variants = $17, gst_included = $18,
-           fssai_licence_no = $19, net_quantity = $20, country_of_origin = $21, brand = $22,
-           is_weighed = $23, plu_code = $24, weight_barcode_mode = $25${optional.sql},
+           default_supplier_id = $15, image_url = $16, has_variants = $17, gst_included = $18, mrp = $19,
+           fssai_licence_no = $20, net_quantity = $21, country_of_origin = $22, brand = $23,
+           is_weighed = $24, plu_code = $25, weight_barcode_mode = $26${optional.sql},
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2
        RETURNING *`;
@@ -307,18 +385,19 @@ export async function PATCH(
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
         hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
+        persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
         !!is_weighed, normalizedPlu ?? null, normalizedWeightMode,
         ...optional.params,
       ];
     } else {
-      const optional = buildOptionalUpdate(24);
+      const optional = buildOptionalUpdate(25);
       updateQuery = `UPDATE items 
        SET name = $3, code = $4, unit = $5, selling_price = $6, purchase_price = $7,
            tax_rate = $8, hsn_sac = $9, item_type = $10, min_stock = $11, description = $12,
-           default_supplier_id = $13, image_url = $14, has_variants = $15, gst_included = $16,
-           fssai_licence_no = $17, net_quantity = $18, country_of_origin = $19, brand = $20,
-           is_weighed = $21, plu_code = $22, weight_barcode_mode = $23${optional.sql},
+           default_supplier_id = $13, image_url = $14, has_variants = $15, gst_included = $16, mrp = $17,
+           fssai_licence_no = $18, net_quantity = $19, country_of_origin = $20, brand = $21,
+           is_weighed = $22, plu_code = $23, weight_barcode_mode = $24${optional.sql},
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2
        RETURNING *`;
@@ -327,6 +406,7 @@ export async function PATCH(
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
         hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
+        persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
         !!is_weighed, normalizedPlu ?? null, normalizedWeightMode,
         ...optional.params,

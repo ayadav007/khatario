@@ -2,7 +2,7 @@
 
 import { Search } from 'lucide-react';
 import type { StoreTheme } from '@/lib/store/store-theme';
-import { CHOWK_INK, chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, resolveHeroSlides, storeCanvas } from '@/lib/store/store-theme';
+import { CHOWK_INK, chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isKhatarioPack, resolveHeroSlides, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
 import { StoreCategoryPills } from '@/components/store/StoreCategoryPills';
 import { StoreHeroCarousel } from '@/components/store/StoreHeroCarousel';
 
@@ -26,12 +26,16 @@ export function StoreLivePreview({
   heroUrl,
   theme,
   categories,
+  iframeSrc = null,
+  updating = false,
 }: {
   storeName: string;
   tagline: string;
   heroUrl: string;
   theme: StoreTheme;
   categories: Array<{ id: string; name: string }>;
+  iframeSrc?: string | null;
+  updating?: boolean;
 }) {
   const name = storeName.trim() || 'Your store';
   const logo = theme.logo_url;
@@ -46,19 +50,108 @@ export function StoreLivePreview({
         ];
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
+  const khatario = isKhatarioPack(theme);
   const paper = storeCanvas(theme);
-  const ink = chowk || atelier ? chowkInkOn(paper) : CHOWK_INK;
+  const ink = chowk || atelier || khatario ? chowkInkOn(paper) : CHOWK_INK;
   const hair = `color-mix(in srgb, ${ink} 12%, transparent)`;
+  const showCats = sectionEnabled(theme, 'categories');
 
   return (
-    <div className="mx-auto w-[280px]">
+    <div className="mx-auto w-[412px] max-w-full">
       <p className="mb-2 text-center text-[11px] font-medium uppercase tracking-wide text-gray-400">
-        Live preview
+        S20 Ultra preview
       </p>
-      <div className="overflow-hidden rounded-[28px] border-[8px] border-gray-900 bg-white shadow-xl">
-        <div className="h-5 bg-gray-900" />
+      <div className="relative overflow-hidden rounded-[2.6rem] border-[12px] border-gray-900 bg-black shadow-xl">
+        <div className="flex h-7 items-center justify-center bg-black">
+          <span className="h-3.5 w-[5.5rem] rounded-full bg-zinc-800" />
+        </div>
+        {iframeSrc ? (
+          <>
+            <iframe
+              key={iframeSrc}
+              title="Store live preview"
+              src={iframeSrc}
+              className="h-[min(780px,calc(100vh-11rem))] w-full border-0 bg-white"
+            />
+            {updating ? (
+              <div className="absolute inset-0 top-7 flex items-center justify-center bg-white/70 text-xs font-medium text-gray-600">
+                Updating preview…
+              </div>
+            ) : null}
+          </>
+        ) : (
         <div className="max-h-[520px] overflow-y-auto" style={{ backgroundColor: paper }}>
-          {atelier ? (
+          {khatario ? (
+            <>
+              <div
+                className="rounded-b-2xl px-3 pb-2 pt-2"
+                style={{ backgroundColor: theme.accent, color: chowkOnAccent(theme.accent) }}
+              >
+                <div className="flex items-center gap-2">
+                  {logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logo} alt="" className="h-7 w-7 rounded-md bg-white object-contain p-0.5" />
+                  ) : (
+                    <div
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-[10px] font-bold"
+                      style={{ backgroundColor: chowkOnAccent(theme.accent), color: theme.accent }}
+                    >
+                      {name.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <p className="min-w-0 flex-1 truncate text-[12px] font-bold">{name}</p>
+                </div>
+                <div className="relative mt-2">
+                  <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                  <div className="rounded-xl bg-white py-1.5 pl-7 pr-2 text-[10px] text-gray-400">
+                    {theme.search_placeholder || 'Search for items…'}
+                  </div>
+                </div>
+                {theme.show_hero ? (
+                  <div className="mt-2">
+                    <StoreHeroCarousel
+                      compact
+                      variant="khatario"
+                      slides={resolveHeroSlides(theme, {
+                        image_url: heroUrl,
+                        title: tagline || name,
+                        subtitle: theme.hero_subtitle,
+                      })}
+                      ctaLabel=""
+                      accent={theme.accent}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="px-2 pb-3 pt-2">
+                {showCats ? (
+                <StoreCategoryPills
+                  categories={previewCats}
+                  selectedId={null}
+                  onSelect={() => undefined}
+                  accent={theme.accent}
+                  style={theme.category_style}
+                  images={theme.category_images}
+                  variant="khatario"
+                  paper={paper}
+                />
+                ) : null}
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  {SAMPLE_PRODUCTS.slice(0, 4).map((p) => (
+                    <div key={p.name} className="overflow-hidden rounded-xl bg-white shadow-sm">
+                      <div className="relative aspect-square bg-gray-100" />
+                      <div className="p-1.5">
+                        <p className="line-clamp-2 min-h-[1.6rem] text-[9px] font-medium text-gray-900">{p.name}</p>
+                        <p className="text-[10px] font-semibold" style={{ color: theme.accent }}>
+                          ₹{p.price}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : atelier ? (
             <>
               <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${hair}` }}>
                 {logo ? (
@@ -82,6 +175,7 @@ export function StoreLivePreview({
                   {theme.search_placeholder || 'Search jackets…'}
                 </div>
               </div>
+              {showCats ? (
               <StoreCategoryPills
                 categories={
                   categories.length > 0
@@ -100,6 +194,7 @@ export function StoreLivePreview({
                 variant="atelier"
                 paper={paper}
               />
+              ) : null}
               {theme.show_hero ? (
                 <StoreHeroCarousel
                   compact
@@ -187,6 +282,7 @@ export function StoreLivePreview({
                   {theme.search_placeholder || 'Search the shop'}
                 </div>
               </div>
+              {showCats ? (
               <StoreCategoryPills
                 categories={previewCats}
                 selectedId={null}
@@ -197,6 +293,7 @@ export function StoreLivePreview({
                 variant="chowk"
                 paper={paper}
               />
+              ) : null}
               {theme.show_hero ? (
                 <StoreHeroCarousel
                   compact
@@ -287,6 +384,7 @@ export function StoreLivePreview({
               </div>
               <div className="px-2 pb-3 pt-2">
 
+                {showCats ? (
                 <div className="origin-top scale-[0.92]">
                   <StoreCategoryPills
                     categories={previewCats}
@@ -297,6 +395,7 @@ export function StoreLivePreview({
                     images={theme.category_images}
                   />
                 </div>
+                ) : null}
 
                 {theme.show_offers ? (
                   <p className="mb-1 text-[10px] font-semibold text-gray-900">Today&apos;s offers</p>
@@ -334,6 +433,7 @@ export function StoreLivePreview({
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );

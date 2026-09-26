@@ -15,18 +15,20 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-import { Tag, Camera, Plus, Trash2, ChevronDown, ChevronUp, Layers, Check, X, Printer, RefreshCw, Package } from 'lucide-react';
+import { Tag, Camera, Plus, Trash2, ChevronDown, ChevronUp, Layers, Check, X, Printer, RefreshCw, Package, Loader2 } from 'lucide-react';
 import { validateBarcode, normalizeBarcode, detectBarcodeType, generateRandomBarcode as generateBarcode } from '@/lib/barcode-validator';
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { useToastContext } from '@/contexts/ToastContext';
 import type { Item } from '@/types/database';
 import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
+import { ItemSeoFields } from '@/components/items/ItemSeoFields';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import {
   useCustomFieldDefinitions,
   parseItemCustomFieldsFromApi,
 } from '@/components/custom-fields/CustomFieldsManager';
 import type { CustomFieldValues } from '@/types/custom-fields';
+import { extraGalleryUrls, sanitizeGalleryUrls } from '@/lib/store/item-gallery';
 
 interface Supplier {
   id: string;
@@ -77,6 +79,7 @@ export default function NewItemPage() {
     category_id: '',
     default_supplier_id: '',
     image_url: '',
+    gallery_urls: [] as string[],
     has_variants: false,
     track_batch: false,
     track_serial: false,
@@ -94,6 +97,10 @@ export default function NewItemPage() {
     sales_stock_policy: 'inherit' as 'inherit' | 'block' | 'allow',
     is_bundle: false,
     show_in_store: false,
+    featured_in_store: false,
+    seo_title: '',
+    seo_description: '',
+    seo_image_url: '',
   });
 
   const [businessDefaultAllowOversell, setBusinessDefaultAllowOversell] = useState(false);
@@ -217,6 +224,29 @@ export default function NewItemPage() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image size should be less than 2MB');
+      return;
+    }
+    if (formData.gallery_urls.length >= 7) {
+      toast.error('You can add up to 7 extra photos');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const url = reader.result as string;
+      setFormData((prev) => ({
+        ...prev,
+        gallery_urls: prev.gallery_urls.includes(url) ? prev.gallery_urls : [...prev.gallery_urls, url],
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const addAttributeValue = (attrIndex: number, value: string) => {
@@ -408,6 +438,10 @@ export default function NewItemPage() {
               category_id: item.category_id || '',
               default_supplier_id: item.default_supplier_id || '',
               image_url: item.image_url || '',
+              gallery_urls: extraGalleryUrls(
+                sanitizeGalleryUrls((item as { gallery_urls?: unknown }).gallery_urls, item.image_url),
+                item.image_url || '',
+              ),
               has_variants: item.has_variants || false,
               track_batch: item.track_batch || false,
               track_serial: item.track_serial || false,
@@ -429,6 +463,10 @@ export default function NewItemPage() {
                     : 'inherit',
               is_bundle: !!(item as { is_bundle?: boolean }).is_bundle,
               show_in_store: !!(item as any).show_in_store,
+              featured_in_store: !!(item as { featured_in_store?: boolean }).featured_in_store,
+              seo_title: (item as { seo_title?: string | null }).seo_title || '',
+              seo_description: (item as { seo_description?: string | null }).seo_description || '',
+              seo_image_url: (item as { seo_image_url?: string | null }).seo_image_url || '',
             });
 
             const itemIsBundle = !!(item as { is_bundle?: boolean }).is_bundle;
@@ -529,23 +567,28 @@ export default function NewItemPage() {
   }, [suppliers, formData.default_supplier_id, selectedSupplier]);
 
   // Check authorization before rendering form - MUST BE AFTER ALL HOOKS (useState, useEffect, etc.)
-  const { allowed: canAccess, loading: authLoading, reason } = useAuthorizationGuard({
+  const { status: authStatus, loading: authLoading, reason } = useAuthorizationGuard({
     resource: 'items',
     action: isEditMode ? 'update' : 'create',
     skipCheck: !user?.id || !business?.id
   });
-  
-  // Show authorization denied if user cannot access
-  if (!canAccess) {
+
+  if (authLoading) {
     return (
-      
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
+      </div>
+    );
+  }
+
+  if (authStatus === 'denied') {
+    return (
         <AccessDenied
           module="items"
           action={isEditMode ? 'update' : 'create'}
           details={reason}
           code={isEditMode ? 'ITEM_UPDATE_DENIED' : 'ITEM_CREATE_DENIED'}
         />
-      
     );
   }
 
@@ -752,6 +795,7 @@ export default function NewItemPage() {
         category_id: formData.category_id || null,
         default_supplier_id: formData.default_supplier_id || null,
         image_url: formData.image_url,
+        gallery_urls: formData.gallery_urls,
         has_variants: formData.has_variants && !goodsBundle,
         track_batch: formData.item_type === 'goods' && !formData.is_bundle ? formData.track_batch : false,
         track_serial: formData.item_type === 'goods' && !formData.is_bundle ? formData.track_serial : false,
@@ -766,6 +810,10 @@ export default function NewItemPage() {
         plu_code: formData.plu_code || null,
         weight_barcode_mode: formData.weight_barcode_mode || 'weight',
         show_in_store: !!formData.show_in_store,
+        featured_in_store: !!formData.featured_in_store,
+        seo_title: formData.seo_title || null,
+        seo_description: formData.seo_description || null,
+        seo_image_url: formData.seo_image_url || null,
       };
 
       const payload: Record<string, unknown> = {
@@ -952,6 +1000,7 @@ export default function NewItemPage() {
               <FormSection
                 title="Item type"
                 description="Goods are stock-tracked; services are typically non-stock."
+                collapsible
               >
                 <div className="flex flex-wrap gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1126,6 +1175,35 @@ export default function NewItemPage() {
                           {formData.image_url ? 'Change Image' : 'Upload Image'}
                         </label>
                         <p className="text-xs text-text-secondary mt-2">Max 2MB. JPG, PNG or WebP.</p>
+                      </div>
+                      <div className="w-full border-t border-border pt-3">
+                        <p className="mb-2 text-xs font-medium text-text-secondary">More photos (store)</p>
+                        <div className="flex flex-wrap gap-2">
+                          {formData.gallery_urls.map((url) => (
+                            <div key={url.slice(0, 48)} className="relative h-14 w-14 overflow-hidden rounded-lg border">
+                              <img src={url} alt="" className="h-full w-full object-cover" />
+                              <button
+                                type="button"
+                                className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 hover:opacity-100"
+                                aria-label="Remove photo"
+                                onClick={() =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    gallery_urls: prev.gallery_urls.filter((u) => u !== url),
+                                  }))
+                                }
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          {formData.gallery_urls.length < 7 ? (
+                            <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-lg border border-dashed text-gray-400">
+                              <Plus className="h-4 w-4" />
+                              <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} />
+                            </label>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2022,14 +2100,20 @@ export default function NewItemPage() {
 
               <FormSection
                 title="Online Store"
-                description="Make this item visible in your public online store."
+                description="Show this item on your public store, optionally feature it, and set how it looks in Google and when the link is shared."
               >
                 <label className="flex items-center gap-3 cursor-pointer">
                   <button
                     type="button"
                     role="switch"
                     aria-checked={formData.show_in_store}
-                    onClick={() => setFormData({ ...formData, show_in_store: !formData.show_in_store })}
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        show_in_store: !formData.show_in_store,
+                        featured_in_store: !formData.show_in_store ? formData.featured_in_store : false,
+                      })
+                    }
                     className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                       formData.show_in_store ? 'bg-green-500' : 'bg-gray-200'
                     }`}
@@ -2040,13 +2124,52 @@ export default function NewItemPage() {
                       }`}
                     />
                   </button>
-                  <span className="text-sm text-text-primary">
-                    Show in online store
-                  </span>
+                  <span className="text-sm text-text-primary">Show in online store</span>
+                </label>
+                <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.featured_in_store}
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        featured_in_store: !formData.featured_in_store,
+                        show_in_store: !formData.featured_in_store ? true : formData.show_in_store,
+                      })
+                    }
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      formData.featured_in_store ? 'bg-green-500' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        formData.featured_in_store ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm text-text-primary">Featured item (online store)</span>
                 </label>
                 <p className="text-xs text-gray-500 mt-1">
-                  When enabled, this item will be visible on your public storefront for customers to browse and order.
+                  Featured items appear in the Featured block on the store homepage. Maximum 6. Featuring also shows the item in the store.
                 </p>
+                {formData.show_in_store ? (
+                  <div className="mt-5 border-t border-gray-100 pt-4">
+                    <ItemSeoFields
+                      businessId={business?.id}
+                      itemId={editId}
+                      itemName={formData.name}
+                      itemDescription={formData.description}
+                      itemImageUrl={formData.image_url}
+                      itemBrand={formData.brand}
+                      itemCategory={categories.find((c) => c.id === formData.category_id)?.name}
+                      seoTitle={formData.seo_title}
+                      seoDescription={formData.seo_description}
+                      seoImageUrl={formData.seo_image_url}
+                      onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                    />
+                  </div>
+                ) : null}
               </FormSection>
             </div>
 

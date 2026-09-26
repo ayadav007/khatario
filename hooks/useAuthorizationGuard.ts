@@ -68,7 +68,7 @@ export function useAuthorizationGuard(
       return;
     }
 
-    const { allowed: cachedAllowed, denialReason } = evaluateCapabilityAccess({
+    const { allowed: cachedAllowed, denialReason, indeterminate } = evaluateCapabilityAccess({
       resource: options.resource,
       action: options.action,
       businessId: business.id,
@@ -76,6 +76,13 @@ export function useAuthorizationGuard(
       sessionIsPrimaryAdmin: !!isAdmin,
       sessionPermissions,
     });
+
+    if (indeterminate) {
+      setStatus('loading');
+      setReason(undefined);
+      setCode(undefined);
+      return;
+    }
 
     if (!cachedAllowed) {
       setStatus('denied');
@@ -194,7 +201,8 @@ export function useAuthorizationGuard(
 
   return {
     status,
-    allowed: status === 'allowed',
+    // False only after a completed deny. Loading is not treated as denied (pages used `if (!allowed)` as Access Denied).
+    allowed: status !== 'denied',
     loading: status === 'loading',
     reason: status === 'denied' ? reason : undefined,
     code: status === 'denied' ? code : undefined,

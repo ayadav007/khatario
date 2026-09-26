@@ -3,15 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { StoreShell } from '@/components/store/StoreShell';
-import { useStore } from '@/lib/store/store-context';
+import { useStore, withStoreDraft } from '@/lib/store/store-context';
+import { resolveItemSeo } from '@/lib/store/item-seo';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
-import { Loader2, Package, Minus, Plus } from 'lucide-react';
-import { CHOWK_INK, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { Heart, Loader2, Package, Minus, Plus } from 'lucide-react';
+import { isKhatarioPack, CHOWK_INK, isAtelierPack, isChowkPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { StoreKhatarioProductView } from '@/components/store/StoreKhatarioProductView';
+import { StoreProductGallery } from '@/components/store/StoreProductGallery';
+import { StoreStars } from '@/components/store/StoreStars';
 import clsx from 'clsx';
 
 export default function StoreProductPage() {
   const params = useParams<{ id: string }>();
-  const { store, addToCart, cart, updateCartQuantity } = useStore();
+  const { store, addToCart, cart, updateCartQuantity, customer, favoriteIds, toggleFavorite, rateProduct } = useStore();
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const theme = sanitizeStoreTheme(store?.store_theme);
@@ -19,18 +23,39 @@ export default function StoreProductPage() {
   const paper = storeCanvas(theme);
   const chowk = isChowkPack(theme);
   const atelier = isAtelierPack(theme);
-  const pack = chowk || atelier;
+  const pack = isPackChrome(theme);
+  const khatario = isKhatarioPack(theme);
 
   useEffect(() => {
     if (!store || !params.id) return;
     (async () => {
       const res = await fetch(
-        `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items/${params.id}`,
+        `/api/public/store/${encodeURIComponent(store.store_subdomain)}/items/${params.id}?${withStoreDraft(new URLSearchParams())}`,
       );
       if (res.ok) setProduct(await res.json());
       setLoading(false);
     })();
   }, [store, params.id]);
+
+  useEffect(() => {
+    if (!product) return;
+    const seo = resolveItemSeo(product);
+    document.title = seo.title;
+    const ensure = (attr: string, key: string, value: string) => {
+      if (!value) return;
+      let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', value);
+    };
+    ensure('name', 'description', seo.description);
+    ensure('property', 'og:title', seo.title);
+    ensure('property', 'og:description', seo.description);
+    if (seo.image) ensure('property', 'og:image', seo.image);
+  }, [product]);
 
   const cartItem = useMemo(() => {
     if (!product) return null;
@@ -61,6 +86,16 @@ export default function StoreProductPage() {
       : 0;
   const outOfStock = product.current_stock <= 0 && !product.has_variants;
 
+  if (khatario) {
+    return (
+      <StoreShell padded={false} showSearch={false}>
+        <StoreKhatarioProductView product={product} />
+      </StoreShell>
+    );
+  }
+
+  const gallery = product.images?.length ? product.images : product.image_url ? [product.image_url] : [];
+
   return (
     <StoreShell>
       <div className="grid gap-8 md:grid-cols-2">
@@ -68,14 +103,27 @@ export default function StoreProductPage() {
           className={`relative overflow-hidden ${pack ? '' : 'rounded-2xl bg-gray-100'} ${atelier ? 'rounded-[1.75rem]' : ''}`}
           style={pack ? { backgroundColor: paper } : undefined}
         >
-          {product.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.image_url} alt="" className="h-72 w-full object-cover md:h-96" />
+          {gallery.length ? (
+            <StoreProductGallery images={gallery} alt={product.name} accent={accent} />
           ) : (
             <div className="flex h-72 items-center justify-center md:h-96">
               <Package className="h-16 w-16 text-gray-300" />
             </div>
           )}
+          <button
+            type="button"
+            className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-sm"
+            aria-label={favoriteIds.includes(product.id) ? 'Remove from favourites' : 'Save to favourites'}
+            onClick={() => void toggleFavorite(product.id)}
+          >
+            <Heart
+              className="h-5 w-5"
+              style={{
+                color: favoriteIds.includes(product.id) ? accent : '#6b7280',
+                fill: favoriteIds.includes(product.id) ? accent : 'transparent',
+              }}
+            />
+          </button>
           {discount > 0 ? (
             <span className="absolute left-3 top-3 rounded-md px-2 py-1 text-xs font-bold text-white" style={{ backgroundColor: accent }}>
               {discount}% OFF
@@ -88,6 +136,20 @@ export default function StoreProductPage() {
             <p className="mt-1 text-sm text-gray-500">{product.category_name}</p>
           ) : null}
           <p className="mt-1 text-sm text-gray-400">{product.unit}</p>
+          <div className="mt-2">
+            <StoreStars
+              value={product.rating_avg ?? 0}
+              count={product.rating_count}
+              size="md"
+              onRate={
+                customer
+                  ? (n) => {
+                      void rateProduct(product.id, n);
+                    }
+                  : undefined
+              }
+            />
+          </div>
           <div className="mt-4 flex items-baseline gap-2">
             <p className={pack ? 'text-3xl font-medium tabular-nums' : 'text-3xl font-bold text-gray-900'} style={pack ? { color: CHOWK_INK } : undefined}>
               ₹{product.selling_price.toLocaleString('en-IN')}

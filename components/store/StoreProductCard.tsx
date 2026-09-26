@@ -1,8 +1,10 @@
 'use client';
 
-import { Plus, Minus, Package } from 'lucide-react';
+import { Heart, Minus, Package, Plus } from 'lucide-react';
+import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isAtelierPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { storeDiscountPercent } from '@/lib/store/map-store-product';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -22,6 +24,13 @@ export interface StoreProduct {
   has_variants: boolean;
   tax_rate: number;
   gst_included?: boolean;
+  images?: string[];
+  rating_avg?: number;
+  rating_count?: number;
+  featured_in_store?: boolean;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  seo_image_url?: string | null;
   variants: Array<{
     id: string;
     variant_name: string;
@@ -189,12 +198,13 @@ function AtelierAddControl({
 }
 
 export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
-  const { cart, addToCart, updateCartQuantity, store } = useStore();
+  const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
   const atelier = isAtelierPack(theme);
+  const khatario = isKhatarioPack(theme);
   const layout: StoreProductCardVariant =
-    variant ?? (isChowkPack(theme) || atelier ? 'grid' : 'classic');
+    variant ?? (isPackChrome(theme) ? 'grid' : 'classic');
 
   const inCart = useMemo(() => {
     if (product.has_variants) {
@@ -212,10 +222,9 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
   }, [cart, product]);
 
   const outOfStock = product.current_stock <= 0 && !product.has_variants;
-  const discount =
-    product.mrp && product.mrp > product.selling_price
-      ? Math.round(((product.mrp - product.selling_price) / product.mrp) * 100)
-      : 0;
+  const discount = sectionEnabled(theme, 'offers')
+    ? storeDiscountPercent(product.mrp, product.selling_price)
+    : 0;
 
   const handleAdd = useCallback(
     (e: React.MouseEvent) => {
@@ -272,7 +281,9 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full'
             : atelier
               ? 'aspect-[3/4] rounded-[1.35rem]'
-              : 'aspect-square',
+              : khatario && layout === 'shelf'
+                ? 'aspect-[4/3]'
+                : 'aspect-square',
         )}
       >
         <Link
@@ -306,7 +317,25 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             {discount}%
           </span>
         ) : null}
-        {atelier ? (
+        <button
+          type="button"
+          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm"
+          aria-label={favoriteIds.includes(product.id) ? 'Remove from favourites' : 'Add to favourites'}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void toggleFavorite(product.id);
+          }}
+        >
+          <Heart
+            className="h-4 w-4"
+            style={{
+              color: favoriteIds.includes(product.id) ? accent : ink,
+              fill: favoriteIds.includes(product.id) ? accent : 'transparent',
+            }}
+          />
+        </button>
+        {theme.show_listing_add && atelier ? (
           <AtelierAddControl
             accent={accent}
             paper={paper}
@@ -319,7 +348,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             onInc={handleIncrement}
             onDec={handleDecrement}
           />
-        ) : (
+        ) : theme.show_listing_add ? (
           <ChowkAddControl
             accent={accent}
             paper={paper}
@@ -332,7 +361,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             onInc={handleIncrement}
             onDec={handleDecrement}
           />
-        )}
+        ) : null}
       </div>
     );
 
@@ -343,6 +372,26 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
             Popular
           </p>
         ) : null}
+        {layout !== 'featured' ? (
+          <div className="flex items-start justify-between gap-1.5">
+            <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
+              <h3 className="chowk-name line-clamp-2 text-[11px] font-medium leading-tight" style={{ color: ink }}>
+                {product.name}
+              </h3>
+            </Link>
+            <div className="shrink-0 text-right">
+              <p className="text-[13px] font-semibold tabular-nums" style={{ color: ink }}>
+                ₹{product.selling_price.toLocaleString('en-IN')}
+              </p>
+              {discount > 0 && product.mrp != null ? (
+                <p className="text-[10px] tabular-nums line-through" style={{ color: ink, opacity: 0.4 }}>
+                  ₹{Number(product.mrp).toLocaleString('en-IN')}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <>
         <Link href={`/products/${product.id}`}>
           <h3
             className={clsx(
@@ -365,13 +414,20 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
           <span className="text-[16px] font-semibold tabular-nums" style={{ color: ink }}>
             ₹{product.selling_price.toLocaleString('en-IN')}
           </span>
-          {product.mrp && product.mrp > product.selling_price ? (
+          {discount > 0 && product.mrp != null ? (
             <span className="text-[11px] tabular-nums line-through" style={{ color: ink, opacity: 0.38 }}>
-              ₹{product.mrp.toLocaleString('en-IN')}
+              ₹{Number(product.mrp).toLocaleString('en-IN')}
             </span>
           ) : null}
         </p>
-        {product.unit ? (
+          </>
+        )}
+        {(product.rating_count ?? 0) > 0 ? (
+          <div className="mt-1">
+            <StoreStars value={product.rating_avg ?? 0} count={product.rating_count} />
+          </div>
+        ) : null}
+        {!khatario && product.unit ? (
           <p className="chowk-unit mt-0.5 text-[11px]" style={{ color: ink, opacity: 0.45 }}>
             {product.unit}
           </p>
@@ -406,7 +462,8 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
 
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-      <Link href={`/products/${product.id}`} className="relative block aspect-square bg-gray-50">
+      <div className="relative aspect-square bg-gray-50">
+      <Link href={`/products/${product.id}`} className="block h-full w-full">
         {product.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -422,33 +479,58 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         )}
         {discount > 0 ? (
           <span
-            className="absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
+            className="pointer-events-none absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
             style={{ backgroundColor: accent }}
           >
             {discount}% OFF
           </span>
         ) : null}
         {outOfStock ? (
-          <span className="absolute inset-x-2 bottom-2 rounded bg-white/90 px-2 py-0.5 text-center text-[10px] font-medium text-gray-500">
+          <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded bg-white/90 px-2 py-0.5 text-center text-[10px] font-medium text-gray-500">
             Out of stock
           </span>
         ) : null}
       </Link>
+      <button
+        type="button"
+        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm"
+        aria-label={favoriteIds.includes(product.id) ? 'Remove from favourites' : 'Add to favourites'}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void toggleFavorite(product.id);
+        }}
+      >
+        <Heart
+          className="h-4 w-4"
+          style={{
+            color: favoriteIds.includes(product.id) ? accent : '#6b7280',
+            fill: favoriteIds.includes(product.id) ? accent : 'transparent',
+          }}
+        />
+      </button>
+      </div>
 
       <div className="flex flex-1 flex-col p-2.5">
-        <Link href={`/products/${product.id}`}>
-          <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-gray-900">
-            {product.name}
-          </h3>
-        </Link>
-        <p className="mt-0.5 text-xs text-gray-400">{product.unit}</p>
+        <div className="flex items-start justify-between gap-1.5">
+          <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
+            <h3 className="line-clamp-2 text-[11px] font-medium leading-tight text-gray-900">
+              {product.name}
+            </h3>
+          </Link>
+          <p className="shrink-0 text-[13px] font-bold tabular-nums text-gray-900">
+            ₹{product.selling_price.toLocaleString('en-IN')}
+          </p>
+        </div>
+        {(product.rating_count ?? 0) > 0 ? (
+          <div className="mt-1">
+            <StoreStars value={product.rating_avg ?? 0} count={product.rating_count} />
+          </div>
+        ) : null}
 
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-gray-900">
-              ₹{product.selling_price.toLocaleString('en-IN')}
-            </p>
-            {product.mrp && product.mrp > product.selling_price ? (
+            {discount > 0 && product.mrp != null ? (
               <p className="text-[11px] text-gray-400 line-through">
                 ₹{product.mrp.toLocaleString('en-IN')}
               </p>

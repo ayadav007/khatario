@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 const PLATFORM_ACCESS_COOKIE = 'khatario_platform_session';
 const ACCESS_MAX_AGE = 24 * 60 * 60; // 24 hours
 
+// Read at module scope so Next.js Edge middleware inlines these (nested
+// process.env lookups inside getSecret() can be undefined on Edge).
+const PLATFORM_JWT_SECRET = process.env.PLATFORM_JWT_SECRET;
+const APP_JWT_SECRET = process.env.JWT_SECRET;
+
 export interface PlatformSessionPayload extends JWTPayload {
   adminId: string;
   type: 'platform_access';
@@ -11,11 +16,16 @@ export interface PlatformSessionPayload extends JWTPayload {
 }
 
 function getSecret(): Uint8Array {
-  const secret = process.env.PLATFORM_JWT_SECRET || process.env.JWT_SECRET;
+  const secret = PLATFORM_JWT_SECRET || APP_JWT_SECRET;
   if (!secret) {
     throw new Error('PLATFORM_JWT_SECRET or JWT_SECRET must be set');
   }
   return new TextEncoder().encode(secret);
+}
+
+function cookieSecure(): boolean {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  return process.env.NODE_ENV === 'production' && appUrl.startsWith('https://');
 }
 
 export async function signPlatformAccessToken(payload: {
@@ -42,17 +52,18 @@ export async function verifyPlatformAccessToken(
   try {
     const { payload } = await jwtVerify(token, getSecret());
     const p = payload as PlatformSessionPayload;
-    if (p.type !== 'platform_access' || typeof p.adminId !== 'string' || typeof p.sv !== 'number') {
+    const sv = Number(p.sv);
+    if (p.type !== 'platform_access' || typeof p.adminId !== 'string' || !Number.isFinite(sv)) {
       return null;
     }
-    return p;
+    return { ...p, sv };
   } catch {
     return null;
   }
 }
 
 export function setPlatformSessionCookie(response: NextResponse, token: string): void {
-  const secure = process.env.NODE_ENV === 'production';
+  const secure = cookieSecure();
   response.cookies.set(PLATFORM_ACCESS_COOKIE, token, {
     httpOnly: true,
     secure,
@@ -63,7 +74,7 @@ export function setPlatformSessionCookie(response: NextResponse, token: string):
 }
 
 export function clearPlatformSessionCookie(response: NextResponse): void {
-  const secure = process.env.NODE_ENV === 'production';
+  const secure = cookieSecure();
   response.cookies.set(PLATFORM_ACCESS_COOKIE, '', {
     httpOnly: true,
     secure,

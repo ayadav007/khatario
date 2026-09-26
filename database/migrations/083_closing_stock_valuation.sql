@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS closing_stock_snapshots (
     snapshot_date DATE NOT NULL, -- Usually last day of financial year
     item_id UUID REFERENCES items(id) ON DELETE CASCADE,
     variant_id UUID REFERENCES item_variants(id) ON DELETE SET NULL,
-    location_id UUID REFERENCES locations(id) ON DELETE SET NULL,
+    location_id UUID,
     quantity DECIMAL(12,2) NOT NULL,
     unit_cost DECIMAL(12,2) NOT NULL,
     total_value DECIMAL(15,2) NOT NULL,

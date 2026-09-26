@@ -44,6 +44,9 @@ interface StoreContextValue {
   clearCart: () => void;
   cartTotal: number;
   cartCount: number;
+  favoriteIds: string[];
+  toggleFavorite: (itemId: string) => Promise<boolean>;
+  rateProduct: (itemId: string, rating: number) => Promise<{ rating_avg: number; rating_count: number } | null>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -58,8 +61,21 @@ function cartKey(itemId: string, variantId?: string) {
   return variantId ? `${itemId}::${variantId}` : itemId;
 }
 
-function storageKey(subdomain: string) {
-  return `khatario-store-cart:${subdomain}`;
+function favKey(subdomain: string) {
+  return `khatario-store-fav:${subdomain}`;
+}
+
+export function storeDraftToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const td = new URLSearchParams(window.location.search).get('td');
+  if (!td || td.length > 64) return null;
+  return td;
+}
+
+export function withStoreDraft(params: URLSearchParams): URLSearchParams {
+  const td = storeDraftToken();
+  if (td) params.set('td', td);
+  return params;
 }
 
 export function StoreProvider({
@@ -77,6 +93,7 @@ export function StoreProvider({
   const [cart, setCart] = useState<StoreCartItem[]>([]);
   const [cartReady, setCartReady] = useState(false);
   const [customer, setCustomer] = useState<StoreShopper | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
 
   useEffect(() => {
     try {
@@ -86,6 +103,15 @@ export function StoreProvider({
       /* ignore */
     }
     setCartReady(true);
+    try {
+      const raw = localStorage.getItem(favKey(subdomain));
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) setFavoriteIds(parsed.filter((x) => typeof x === 'string'));
+      }
+    } catch {
+      /* ignore */
+    }
   }, [subdomain]);
 
   useEffect(() => {
@@ -101,7 +127,11 @@ export function StoreProvider({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}`);
+        const params = withStoreDraft(new URLSearchParams());
+        const qs = params.toString();
+        const res = await fetch(
+          `/api/public/store/${encodeURIComponent(subdomain)}${qs ? `?${qs}` : ''}`,
+        );
         if (!res.ok) {
           setError('Store not found');
           return;
@@ -209,6 +239,69 @@ export function StoreProvider({
     setCustomer(null);
   }, [subdomain]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(favKey(subdomain), JSON.stringify(favoriteIds));
+    } catch {
+      /* ignore */
+    }
+  }, [favoriteIds, subdomain]);
+
+  useEffect(() => {
+    if (!customer) return;
+    void (async () => {
+      const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/favorites`, {
+        credentials: 'include',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const remote = Array.isArray(data.item_ids) ? (data.item_ids as string[]) : [];
+      setFavoriteIds((prev) => Array.from(new Set([...prev, ...remote])));
+    })();
+  }, [customer, subdomain]);
+
+  const toggleFavorite = useCallback(
+    async (itemId: string) => {
+      const nextOn = !favoriteIds.includes(itemId);
+      setFavoriteIds((prev) =>
+        nextOn ? [...prev, itemId] : prev.filter((id) => id !== itemId),
+      );
+      if (!customer) return nextOn;
+      await fetch(
+        nextOn
+          ? `/api/public/store/${encodeURIComponent(subdomain)}/favorites`
+          : `/api/public/store/${encodeURIComponent(subdomain)}/favorites?item_id=${encodeURIComponent(itemId)}`,
+        {
+          method: nextOn ? 'POST' : 'DELETE',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: nextOn ? JSON.stringify({ item_id: itemId }) : undefined,
+        },
+      );
+      return nextOn;
+    },
+    [customer, favoriteIds, subdomain],
+  );
+
+  const rateProduct = useCallback(
+    async (itemId: string, rating: number) => {
+      if (!customer) return null;
+      const res = await fetch(`/api/public/store/${encodeURIComponent(subdomain)}/ratings`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: itemId, rating }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        rating_avg: Number(data.rating_avg) || 0,
+        rating_count: Number(data.rating_count) || 0,
+      };
+    },
+    [customer, subdomain],
+  );
+
   const cartTotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
   const cartCount = cart.reduce((sum, c) => sum + c.quantity, 0);
   const accent = sanitizeStoreTheme(store?.store_theme).accent;
@@ -232,6 +325,9 @@ export function StoreProvider({
         clearCart,
         cartTotal,
         cartCount,
+        favoriteIds,
+        toggleFavorite,
+        rateProduct,
       }}
     >
       <div style={{ ['--store-accent' as string]: accent }}>{children}</div>

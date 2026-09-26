@@ -57,9 +57,12 @@ fi
 
 PM2_APP_NAME="$(read_env_var "$ENV_FILE" PM2_APP_NAME)"
 PM2_WORKER_NAME="$(read_env_var "$ENV_FILE" PM2_WORKER_NAME)"
+PM2_ECOSYSTEM="$(read_env_var "$ENV_FILE" PM2_ECOSYSTEM)"
+PM2_START_SCRIPT="$(read_env_var "$ENV_FILE" PM2_START_SCRIPT)"
 GIT_BRANCH="$(read_env_var "$ENV_FILE" GIT_BRANCH)"
 PM2_APP_NAME="${PM2_APP_NAME:-khatario-staging}"
 PM2_WORKER_NAME="${PM2_WORKER_NAME:-todo-reminder-worker}"
+PM2_START_SCRIPT="${PM2_START_SCRIPT:-start}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 
 echo ""
@@ -99,7 +102,15 @@ echo ""
 
 echo ">> pm2 restart $PM2_APP_NAME --update-env"
 if command -v pm2 >/dev/null 2>&1; then
-  pm2 restart "$PM2_APP_NAME" --update-env || pm2 start npm --name "$PM2_APP_NAME" -- start
+  if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+    pm2 restart "$PM2_APP_NAME" --update-env
+  elif [[ -n "$PM2_ECOSYSTEM" && -f "$PM2_ECOSYSTEM" ]]; then
+    echo ">> pm2 start $PM2_ECOSYSTEM"
+    pm2 start "$PM2_ECOSYSTEM"
+  else
+    echo ">> pm2 start npm --name $PM2_APP_NAME -- run $PM2_START_SCRIPT"
+    pm2 start npm --name "$PM2_APP_NAME" -- run "$PM2_START_SCRIPT"
+  fi
   if pm2 describe "$PM2_WORKER_NAME" >/dev/null 2>&1; then
     echo ">> pm2 restart $PM2_WORKER_NAME --update-env"
     pm2 restart "$PM2_WORKER_NAME" --update-env

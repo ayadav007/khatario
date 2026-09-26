@@ -20,8 +20,8 @@ Khatario uses [gstack](https://github.com/garrytan/gstack) **selectively** via C
 
 Before VPS deploy, nginx changes, or Android APK builds, read **`docs/SERVER_INFRASTRUCTURE.md`**.
 
-- Staging (current): `https://staging.khatario.com` — use `npm run cap:android:staging:install` for phone builds.
-- Production (`app.khatario.com`) is **not live yet** — do not default Capacitor builds to it.
+- Staging: `https://staging.khatario.com` — `npm run cap:android:staging:install`
+- Production: `https://khatario.com` — second VPS clone `/var/www/khatario-prod`. Do not deploy production until `scripts/setup-khatario-production.sh` has been run.
 
 [byterover-mcp]
 

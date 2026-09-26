@@ -11,9 +11,9 @@ export default function StoreCheckoutPage() {
 
   return (
     <StoreShell>
-      <h1 className="mb-4 text-xl font-semibold">Checkout</h1>
       <StoreCheckout
         open
+        embedded
         onClose={() => {
           window.location.href = '/cart';
         }}

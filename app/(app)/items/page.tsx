@@ -28,8 +28,22 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { clsx } from 'clsx';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { ColumnSelector, type ColumnOption } from '@/components/tables/ColumnSelector';
+import { useTableColumns } from '@/hooks/useTableColumns';
+import { ItemFlagSwitch } from '@/components/items/ItemFlagSwitch';
 
 const PAGE_SIZE = 50;
+
+const ITEM_TABLE_COLUMNS: ColumnOption[] = [
+  { id: 'code', label: 'Code', defaultVisible: true },
+  { id: 'barcode', label: 'Barcode', defaultVisible: false },
+  { id: 'hsn', label: 'HSN', defaultVisible: false },
+  { id: 'stock', label: 'Stock', defaultVisible: true },
+  { id: 'price', label: 'Selling Price', defaultVisible: true },
+  { id: 'tax', label: 'Tax %', defaultVisible: false },
+  { id: 'store', label: 'Store', defaultVisible: true },
+  { id: 'featured', label: 'Featured', defaultVisible: true },
+];
 
 type ItemCategory = { id: string; name: string };
 
@@ -45,6 +59,10 @@ function ItemsPage() {
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'goods' | 'service'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [storeFilter, setStoreFilter] = useState<'all' | 'in' | 'out'>('all');
+  const [featuredFilter, setFeaturedFilter] = useState<'all' | 'featured'>('all');
+  const { visibleColumns, setVisibleColumns } = useTableColumns(ITEM_TABLE_COLUMNS, 'items-list');
+  const [flagBusyId, setFlagBusyId] = useState<string | null>(null);
   const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -79,6 +97,9 @@ function ItemsPage() {
     if (categoryFilter !== 'all') {
       list = list.filter((i) => i.category_id === categoryFilter);
     }
+    if (storeFilter === 'in') list = list.filter((i) => !!(i as Item).show_in_store);
+    if (storeFilter === 'out') list = list.filter((i) => !(i as Item).show_in_store);
+    if (featuredFilter === 'featured') list = list.filter((i) => !!(i as Item).featured_in_store);
     return list.filter((item) => {
       if (stockFilter === 'all') return true;
       if (item.item_type === 'service') return false;
@@ -86,11 +107,11 @@ function ItemsPage() {
       if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock) && Number(item.current_stock) > 0;
       return true;
     });
-  }, [allItems, search, typeFilter, stockFilter, categoryFilter]);
+  }, [allItems, search, typeFilter, stockFilter, categoryFilter, storeFilter, featuredFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter, stockFilter, categoryFilter]);
+  }, [search, typeFilter, stockFilter, categoryFilter, storeFilter, featuredFilter]);
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;
@@ -185,6 +206,36 @@ function ItemsPage() {
     setAdjustStockItem(item);
   };
 
+  const patchStoreFlags = async (
+    item: Item,
+    next: { show_in_store?: boolean; featured_in_store?: boolean },
+  ) => {
+    if (!business?.id || !user?.id) return;
+    setFlagBusyId(item.id);
+    try {
+      const res = await fetch(`/api/items/${item.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: business.id,
+          user_id: user.id,
+          ...next,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(typeof data.error === 'string' ? data.error : 'Could not update item');
+        return;
+      }
+      await refresh();
+    } catch {
+      toast.error('Could not update item');
+    } finally {
+      setFlagBusyId(null);
+    }
+  };
+
   const isDetailOpen = selectedItemId !== null;
 
   const toolbar = (
@@ -237,6 +288,32 @@ function ItemsPage() {
               <option value="low">Low Stock</option>
               <option value="out">Out of Stock</option>
             </select>
+
+            <select
+              value={storeFilter}
+              onChange={(e) => setStoreFilter(e.target.value as 'all' | 'in' | 'out')}
+              className="input w-auto text-sm"
+            >
+              <option value="all">All store</option>
+              <option value="in">In store</option>
+              <option value="out">Not in store</option>
+            </select>
+
+            <select
+              value={featuredFilter}
+              onChange={(e) => setFeaturedFilter(e.target.value as 'all' | 'featured')}
+              className="input w-auto text-sm"
+            >
+              <option value="all">All featured</option>
+              <option value="featured">Featured only</option>
+            </select>
+
+            <ColumnSelector
+              columns={ITEM_TABLE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onColumnsChange={setVisibleColumns}
+              storageKey="items-list"
+            />
 
             <Button
               variant="secondary"
@@ -388,13 +465,14 @@ function ItemsPage() {
               <thead>
                 <tr className="table-header border-b border-border">
                   <th className="table-cell text-left py-4 px-6">Item Name</th>
-                  <th className="table-cell text-left py-4 px-6">Code</th>
-                  <th className="table-cell text-left py-4 px-6">Barcode</th>
-                  <th className="table-cell text-left py-4 px-6">HSN</th>
-                  <th className="table-cell text-center py-4 px-6">Stock</th>
-                  <th className="table-cell text-right py-4 px-6">Selling Price</th>
-                  <th className="table-cell text-center py-4 px-6">Tax %</th>
-                  <th className="table-cell text-center py-4 px-6">Store</th>
+                  {visibleColumns.includes('code') ? <th className="table-cell text-left py-4 px-6">Code</th> : null}
+                  {visibleColumns.includes('barcode') ? <th className="table-cell text-left py-4 px-6">Barcode</th> : null}
+                  {visibleColumns.includes('hsn') ? <th className="table-cell text-left py-4 px-6">HSN</th> : null}
+                  {visibleColumns.includes('stock') ? <th className="table-cell text-center py-4 px-6">Stock</th> : null}
+                  {visibleColumns.includes('price') ? <th className="table-cell text-right py-4 px-6">Selling Price</th> : null}
+                  {visibleColumns.includes('tax') ? <th className="table-cell text-center py-4 px-6">Tax %</th> : null}
+                  {visibleColumns.includes('store') ? <th className="table-cell text-center py-4 px-6">Store</th> : null}
+                  {visibleColumns.includes('featured') ? <th className="table-cell text-center py-4 px-6">Featured</th> : null}
                   <th className="table-cell text-center py-4 px-6">Actions</th>
                 </tr>
               </thead>
@@ -441,7 +519,10 @@ function ItemsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="table-cell text-left py-4 px-6 text-text-secondary">{item.code || '-'}</td>
+                        {visibleColumns.includes('code') ? (
+                          <td className="table-cell text-left py-4 px-6 text-text-secondary">{item.code || '-'}</td>
+                        ) : null}
+                        {visibleColumns.includes('barcode') ? (
                         <td className="table-cell text-left py-4 px-6 text-text-secondary">
                           {item.barcode ? (
                             <div className="flex flex-col">
@@ -454,7 +535,11 @@ function ItemsPage() {
                             <span className="text-text-muted">-</span>
                           )}
                         </td>
-                        <td className="table-cell text-left py-4 px-6 text-text-secondary">{(item as any).hsn_sac || '-'}</td>
+                        ) : null}
+                        {visibleColumns.includes('hsn') ? (
+                          <td className="table-cell text-left py-4 px-6 text-text-secondary">{(item as any).hsn_sac || '-'}</td>
+                        ) : null}
+                        {visibleColumns.includes('stock') ? (
                         <td className="table-cell text-center py-4 px-6">
                           {item.item_type === 'service' ? (
                             <span className="text-text-muted text-xs italic">N/A</span>
@@ -464,17 +549,39 @@ function ItemsPage() {
                             </Chip>
                           )}
                         </td>
+                        ) : null}
+                        {visibleColumns.includes('price') ? (
                         <td className="table-cell text-right py-4 px-6 font-bold text-text-primary">
-                          {item.selling_price !== null ? `â‚¹ ${Number(item.selling_price).toLocaleString('en-IN')}` : '-'}
+                          {item.selling_price !== null ? `₹ ${Number(item.selling_price).toLocaleString('en-IN')}` : '-'}
                         </td>
-                        <td className="table-cell text-center py-4 px-6 text-text-secondary">{item.tax_rate}%</td>
+                        ) : null}
+                        {visibleColumns.includes('tax') ? (
+                          <td className="table-cell text-center py-4 px-6 text-text-secondary">{item.tax_rate}%</td>
+                        ) : null}
+                        {visibleColumns.includes('store') ? (
                         <td className="table-cell text-center py-4 px-6">
-                          {(item as any).show_in_store ? (
-                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="Visible in store" />
-                          ) : (
-                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-200" title="Not in store" />
-                          )}
+                          <ItemFlagSwitch
+                            on={!!item.show_in_store}
+                            label="Show in online store"
+                            disabled={flagBusyId === item.id}
+                            onToggle={() =>
+                              void patchStoreFlags(item, { show_in_store: !item.show_in_store })
+                            }
+                          />
                         </td>
+                        ) : null}
+                        {visibleColumns.includes('featured') ? (
+                        <td className="table-cell text-center py-4 px-6">
+                          <ItemFlagSwitch
+                            on={!!item.featured_in_store}
+                            label="Featured in online store"
+                            disabled={flagBusyId === item.id}
+                            onToggle={() =>
+                              void patchStoreFlags(item, { featured_in_store: !item.featured_in_store })
+                            }
+                          />
+                        </td>
+                        ) : null}
                         <td className="table-cell text-center py-4 px-6">
                           <div className="flex items-center justify-center gap-1">
                             <Button
@@ -524,7 +631,7 @@ function ItemsPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-text-secondary">
+                    <td colSpan={2 + visibleColumns.length} className="text-center py-12 text-text-secondary">
                       No items found.
                     </td>
                   </tr>
@@ -542,6 +649,9 @@ function ItemsPage() {
                   item={item}
                   onOpen={() => setSelectedItemId(item.id)}
                   onAdjustStock={() => handleAdjustStock(item)}
+                  flagsBusy={flagBusyId === item.id}
+                  onToggleStore={() => void patchStoreFlags(item, { show_in_store: !item.show_in_store })}
+                  onToggleFeatured={() => void patchStoreFlags(item, { featured_in_store: !item.featured_in_store })}
                 />
               ))
             ) : (
@@ -604,6 +714,12 @@ function ItemsPage() {
               <Button variant="secondary" className="h-10 px-4">
                 <Printer className="w-4 h-4 md:mr-2" />
                 <span className="hidden md:inline">Print Barcodes</span>
+              </Button>
+            </Link>
+            <Link href="/items/categories">
+              <Button variant="secondary" className="h-10 px-4">
+                <Tag className="w-4 h-4 md:mr-2" />
+                <span className="hidden md:inline">Manage Categories</span>
               </Button>
             </Link>
             <Link href="/items/new" className="hidden md:inline-flex">
@@ -773,6 +889,31 @@ function ItemsPage() {
                       {cat.name}
                     </option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Online store</label>
+                <select
+                  value={storeFilter}
+                  onChange={(e) => setStoreFilter(e.target.value as 'all' | 'in' | 'out')}
+                  className="input w-full text-sm"
+                >
+                  <option value="all">All store</option>
+                  <option value="in">In store</option>
+                  <option value="out">Not in store</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-2">Featured</label>
+                <select
+                  value={featuredFilter}
+                  onChange={(e) => setFeaturedFilter(e.target.value as 'all' | 'featured')}
+                  className="input w-full text-sm"
+                >
+                  <option value="all">All items</option>
+                  <option value="featured">Featured only</option>
                 </select>
               </div>
 

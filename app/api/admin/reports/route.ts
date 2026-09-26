@@ -72,6 +72,15 @@ export async function GET(request: NextRequest) {
         message: 'Report definitions table not found. Please run migration 133_report_definitions_table.sql'
       });
     }
+    const msg = String(error.message || '');
+    if (
+      error.code === 'ECONNREFUSED' ||
+      error.code === '57P01' ||
+      msg.includes('ECONNREFUSED') ||
+      msg.includes('connect')
+    ) {
+      return NextResponse.json({ reports: {}, total: 0, categories: [] });
+    }
     return NextResponse.json(
       { error: error.message || 'Failed to fetch reports' },
       { status: 500 }

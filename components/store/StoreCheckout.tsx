@@ -14,12 +14,15 @@ interface StoreCheckoutProps {
   open: boolean;
   onClose: () => void;
   onOrderPlaced: (orderNumber: string, grandTotal: number) => void;
+  /** In-page checkout (`/checkout`) — no second full-screen overlay. */
+  embedded?: boolean;
 }
 
 export function StoreCheckout({
   open,
   onClose,
   onOrderPlaced,
+  embedded = false,
 }: StoreCheckoutProps) {
   const { store, cart, cartTotal, selectedBranchId, clearCart, customer, refreshCustomer } = useStore();
 
@@ -169,16 +172,48 @@ export function StoreCheckout({
     [store, cart.length, customer, phone, placeOrder],
   );
 
+  useEffect(() => {
+    if (!open || embedded) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open, embedded]);
+
   if (!open || !store) return null;
+  if (store.is_demo) {
+    if (embedded) {
+      return (
+        <div className="p-6 text-center text-sm text-gray-600">
+          This is a theme preview. Checkout is turned off.
+        </div>
+      );
+    }
+    return (
+      <div className="p-6 text-center text-sm text-gray-600">
+        This is a theme preview. Checkout is turned off.
+        <button type="button" className="mt-3 block w-full underline" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    );
+  }
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+  const accentBtn = (active: boolean) =>
+    active
+      ? {
+          borderColor: 'var(--store-accent)',
+          backgroundColor: 'color-mix(in srgb, var(--store-accent) 12%, white)',
+          color: 'var(--store-accent)',
+        }
+      : undefined;
 
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        {/* Header */}
-        <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-4">
+  const panel = (
+    <>
+        <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-4">
           <button
+            type="button"
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
           >
@@ -187,8 +222,15 @@ export function StoreCheckout({
           <h2 className="text-lg font-semibold text-gray-900">Checkout</h2>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div
+            className={clsx(
+              'space-y-5 px-4 py-4',
+              embedded
+                ? 'pb-6'
+                : 'min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]',
+            )}
+          >
             {error ? (
               <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-sm text-red-700">
                 {error}
@@ -204,10 +246,11 @@ export function StoreCheckout({
                 <button
                   type="button"
                   onClick={() => setDeliveryMode('delivery')}
+                  style={accentBtn(deliveryMode === 'delivery')}
                   className={clsx(
                     'flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-medium transition-colors',
                     deliveryMode === 'delivery'
-                      ? 'border-green-600 bg-green-50 text-green-700'
+                      ? 'border-current'
                       : 'border-gray-200 text-gray-600 hover:border-gray-300',
                   )}
                 >
@@ -217,10 +260,11 @@ export function StoreCheckout({
                 <button
                   type="button"
                   onClick={() => setDeliveryMode('pickup')}
+                  style={accentBtn(deliveryMode === 'pickup')}
                   className={clsx(
                     'flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-medium transition-colors',
                     deliveryMode === 'pickup'
-                      ? 'border-green-600 bg-green-50 text-green-700'
+                      ? 'border-current'
                       : 'border-gray-200 text-gray-600 hover:border-gray-300',
                   )}
                 >
@@ -440,12 +484,16 @@ export function StoreCheckout({
             </div>
           </div>
 
-          {/* Submit */}
-          <div className="border-t border-gray-200 px-4 py-4">
+          <div className="shrink-0 border-t border-gray-200 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <button
               type="submit"
               disabled={submitting || cart.length === 0 || quote?.serviceable === false}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:bg-gray-300"
+              style={
+                submitting || cart.length === 0 || quote?.serviceable === false
+                  ? undefined
+                  : { backgroundColor: 'var(--store-accent, #16a34a)' }
+              }
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -474,6 +522,25 @@ export function StoreCheckout({
             }}
           />
         ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+        {panel}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end overflow-hidden"
+      style={{ height: '100dvh' }}
+    >
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative flex h-full min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-xl">
+        {panel}
       </div>
     </div>
   );

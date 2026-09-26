@@ -13,65 +13,81 @@ export async function GET(request: NextRequest) {
   if (!tenant.ok) return tenant.response;
   const businessId = tenant.businessId;
 
-  const [row, logoRow, categories] = await Promise.all([
-    queryOne<{
-      store_subdomain: string | null;
-      store_enabled: boolean;
-      store_tagline: string | null;
-      store_hero_image_url: string | null;
-      store_min_order_amount: string | null;
-    }>(
-      `SELECT
-         store_subdomain, store_enabled,
-         store_tagline, store_hero_image_url,
-         store_min_order_amount::text,
-         COALESCE(store_allow_cod, true) AS store_allow_cod,
-         COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
-         store_theme, store_about_md, store_contact_md,
-         store_shiprocket_email,
-         (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
-         COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
-         store_promo_sheet
-       FROM business_settings
-       WHERE business_id = $1`,
-      [businessId],
-    ),
-    queryOne<{ logo_url: string | null }>(
-      `SELECT logo_url FROM businesses WHERE id = $1`,
-      [businessId],
-    ),
-    queryRows<{ id: string; name: string }>(
-      `SELECT DISTINCT c.id, c.name
-       FROM categories c
-       INNER JOIN items i ON i.category_id = c.id
-       WHERE i.business_id = $1 AND i.show_in_store = true
-         AND (i.is_active IS NULL OR i.is_active = true)
-         AND i.deleted_at IS NULL
-       ORDER BY c.name`,
-      [businessId],
-    ),
-  ]);
+  try {
+    const [row, logoRow] = await Promise.all([
+      queryOne<{
+        store_subdomain: string | null;
+        store_enabled: boolean;
+        store_tagline: string | null;
+        store_hero_image_url: string | null;
+        store_min_order_amount: string | null;
+      }>(
+        `SELECT
+           store_subdomain, store_enabled,
+           store_tagline, store_hero_image_url,
+           store_min_order_amount::text,
+           COALESCE(store_allow_cod, true) AS store_allow_cod,
+           COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
+           store_theme, store_about_md, store_contact_md,
+           store_privacy_md, store_refund_md, store_terms_md,
+           store_shiprocket_email,
+           (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
+           COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
+           store_promo_sheet
+         FROM business_settings
+         WHERE business_id = $1`,
+        [businessId],
+      ),
+      queryOne<{ logo_url: string | null }>(
+        `SELECT logo_url FROM businesses WHERE id = $1`,
+        [businessId],
+      ),
+    ]);
 
-  return NextResponse.json({
-    store_subdomain: row?.store_subdomain ?? null,
-    store_enabled: row?.store_enabled ?? false,
-    store_tagline: row?.store_tagline ?? null,
-    store_hero_image_url: (row as { store_hero_image_url?: string | null })?.store_hero_image_url ?? null,
-    store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
-    store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
-    store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
-    store_theme: sanitizeStoreTheme((row as { store_theme?: unknown })?.store_theme),
-    store_about_md: (row as { store_about_md?: string | null })?.store_about_md ?? null,
-    store_contact_md: (row as { store_contact_md?: string | null })?.store_contact_md ?? null,
-    store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
-    shiprocket_configured: !!(row as { shiprocket_configured?: boolean })?.shiprocket_configured,
-    store_hide_khatario_badge: !!(row as { store_hide_khatario_badge?: boolean })?.store_hide_khatario_badge,
-    store_promo_sheet: sanitizeStorePromoSheet(
-      (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
-    ),
-    logo_url: logoRow?.logo_url ?? null,
-    categories,
-  });
+    let categories: Array<{ id: string; name: string }> = [];
+    try {
+      categories = await queryRows<{ id: string; name: string }>(
+        `SELECT DISTINCT c.id, c.name
+         FROM categories c
+         INNER JOIN items i ON i.category_id = c.id
+         WHERE i.business_id = $1 AND i.show_in_store = true
+           AND (i.is_active IS NULL OR i.is_active = true)
+           AND i.deleted_at IS NULL
+         ORDER BY c.name`,
+        [businessId],
+      );
+    } catch (catErr) {
+      console.warn('online-store categories query failed:', catErr);
+    }
+
+    return NextResponse.json({
+      store_subdomain: row?.store_subdomain ?? null,
+      store_enabled: row?.store_enabled ?? false,
+      store_tagline: row?.store_tagline ?? null,
+      store_hero_image_url: (row as { store_hero_image_url?: string | null })?.store_hero_image_url ?? null,
+      store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
+      store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
+      store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
+      store_theme: sanitizeStoreTheme((row as { store_theme?: unknown })?.store_theme),
+      store_about_md: (row as { store_about_md?: string | null })?.store_about_md ?? null,
+      store_contact_md: (row as { store_contact_md?: string | null })?.store_contact_md ?? null,
+      store_privacy_md: (row as { store_privacy_md?: string | null })?.store_privacy_md ?? null,
+      store_refund_md: (row as { store_refund_md?: string | null })?.store_refund_md ?? null,
+      store_terms_md: (row as { store_terms_md?: string | null })?.store_terms_md ?? null,
+      store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
+      shiprocket_configured: !!(row as { shiprocket_configured?: boolean })?.shiprocket_configured,
+      store_hide_khatario_badge: !!(row as { store_hide_khatario_badge?: boolean })?.store_hide_khatario_badge,
+      store_promo_sheet: sanitizeStorePromoSheet(
+        (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
+      ),
+      logo_url: logoRow?.logo_url ?? null,
+      categories,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load store settings';
+    console.error('online-store GET:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -84,6 +100,7 @@ export async function PATCH(request: NextRequest) {
   const {
     store_subdomain, store_enabled, store_tagline, store_hero_image_url, store_min_order_amount,
     store_allow_cod, store_delivery_provider, store_theme, store_about_md, store_contact_md,
+    store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
     store_promo_sheet,
   } = body;
@@ -107,7 +124,7 @@ export async function PATCH(request: NextRequest) {
     const reserved = new Set([
       'www', 'staging', 'app', 'api', 'admin', 'mail', 'cdn',
       'assets', 'static', 'status', 'help', 'support', 'docs',
-      'blog', 'dev', 'test', 'demo', 'sandbox',
+      'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir',
     ]);
     if (reserved.has(sd)) {
       return NextResponse.json(
@@ -182,6 +199,21 @@ export async function PATCH(request: NextRequest) {
     idx++;
     sets.push(`store_contact_md = $${idx}`);
     params.push(store_contact_md ?? null);
+  }
+  if (store_privacy_md !== undefined) {
+    idx++;
+    sets.push(`store_privacy_md = $${idx}`);
+    params.push(store_privacy_md ?? null);
+  }
+  if (store_refund_md !== undefined) {
+    idx++;
+    sets.push(`store_refund_md = $${idx}`);
+    params.push(store_refund_md ?? null);
+  }
+  if (store_terms_md !== undefined) {
+    idx++;
+    sets.push(`store_terms_md = $${idx}`);
+    params.push(store_terms_md ?? null);
   }
   if (store_shiprocket_email !== undefined) {
     idx++;

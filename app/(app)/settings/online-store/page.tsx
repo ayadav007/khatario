@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Store, ExternalLink, Loader2, Copy, Check, Plus, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Store, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DeliveryZoneEditor } from '@/components/store/admin/DeliveryZoneEditor';
-import { StoreImageField } from '@/components/store/admin/StoreImageField';
+import { StoreAppearanceStudio } from '@/components/store/admin/StoreAppearanceStudio';
 import { StoreLivePreview } from '@/components/store/admin/StoreLivePreview';
 import { StoreCouponManager } from '@/components/store/admin/StoreCouponManager';
+import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { storeHostSuffix } from '@/lib/store/subdomain';
 import {
   DEFAULT_STORE_PROMO,
@@ -19,16 +20,12 @@ import {
 } from '@/lib/store/promo-sheet';
 import {
   DEFAULT_STORE_THEME,
-  STORE_THEME_PRESETS,
-  applyStorePreset,
   sanitizeStoreTheme,
-  storeCanvas,
   type StoreTheme,
-  type StoreThemePreset,
 } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 
-type EditorTab = 'design' | 'homepage' | 'promo' | 'checkout' | 'pages';
+type EditorTab = 'appearance' | 'promo' | 'setup' | 'pages';
 
 interface StoreSettings {
   store_subdomain: string | null;
@@ -49,10 +46,9 @@ interface StoreSettings {
 }
 
 const TABS: Array<{ id: EditorTab; label: string }> = [
-  { id: 'design', label: 'Design' },
-  { id: 'homepage', label: 'Homepage' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'promo', label: 'Promo' },
-  { id: 'checkout', label: 'Checkout' },
+  { id: 'setup', label: 'Store setup' },
   { id: 'pages', label: 'Pages' },
 ];
 
@@ -90,7 +86,7 @@ export default function OnlineStoreSettingsPage() {
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
   const [hostSuffix, setHostSuffix] = useState('.khatario.com');
-  const [tab, setTab] = useState<EditorTab>('design');
+  const [tab, setTab] = useState<EditorTab>('appearance');
   const [showPreview, setShowPreview] = useState(true);
 
   const [subdomain, setSubdomain] = useState('');
@@ -100,6 +96,9 @@ export default function OnlineStoreSettingsPage() {
   const [heroUrl, setHeroUrl] = useState('');
   const [aboutMd, setAboutMd] = useState('');
   const [contactMd, setContactMd] = useState('');
+  const [privacyMd, setPrivacyMd] = useState('');
+  const [refundMd, setRefundMd] = useState('');
+  const [termsMd, setTermsMd] = useState('');
   const [allowCod, setAllowCod] = useState(true);
   const [deliveryProvider, setDeliveryProvider] = useState('self');
   const [hideBadge, setHideBadge] = useState(false);
@@ -108,6 +107,8 @@ export default function OnlineStoreSettingsPage() {
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [businessLogo, setBusinessLogo] = useState('');
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
 
@@ -128,6 +129,9 @@ export default function OnlineStoreSettingsPage() {
         setHeroUrl(data.store_hero_image_url ?? '');
         setAboutMd(data.store_about_md ?? '');
         setContactMd(data.store_contact_md ?? '');
+        setPrivacyMd((data as { store_privacy_md?: string }).store_privacy_md ?? '');
+        setRefundMd((data as { store_refund_md?: string }).store_refund_md ?? '');
+        setTermsMd((data as { store_terms_md?: string }).store_terms_md ?? '');
         setAllowCod(data.store_allow_cod !== false);
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
         const nextTheme = sanitizeStoreTheme(data.store_theme);
@@ -148,6 +152,9 @@ export default function OnlineStoreSettingsPage() {
         setPromo(nextPromo);
         setSavedPromo(nextPromo);
         setCategories(data.categories ?? []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(typeof data.error === 'string' ? data.error : 'Failed to load settings');
       }
     } catch {
       setError('Failed to load settings');
@@ -184,6 +191,9 @@ export default function OnlineStoreSettingsPage() {
           store_hero_image_url: theme.hero_slides[0]?.image_url || heroUrl.trim() || null,
           store_about_md: aboutMd || null,
           store_contact_md: contactMd || null,
+          store_privacy_md: privacyMd || null,
+          store_refund_md: refundMd || null,
+          store_terms_md: termsMd || null,
           store_allow_cod: allowCod,
           store_delivery_provider: deliveryProvider,
           store_theme: sanitizeStoreTheme(theme),
@@ -220,6 +230,9 @@ export default function OnlineStoreSettingsPage() {
     heroUrl,
     aboutMd,
     contactMd,
+    privacyMd,
+    refundMd,
+    termsMd,
     allowCod,
     deliveryProvider,
     theme,
@@ -232,6 +245,76 @@ export default function OnlineStoreSettingsPage() {
   ]);
 
   const storeUrl = subdomain ? `${subdomain}${hostSuffix}` : null;
+
+  const storefrontBase = useCallback(() => {
+    if (!storeUrl || typeof window === 'undefined') return null;
+    const proto = window.location.protocol;
+    const port = hostSuffix === '.localhost' && window.location.port ? `:${window.location.port}` : '';
+    return `${proto}//${storeUrl}${port}`;
+  }, [storeUrl, hostSuffix]);
+
+  useEffect(() => {
+    if (loading) return;
+    const base = storefrontBase();
+    if (!base) return;
+    const id = window.setTimeout(() => {
+      setPreviewSrc((prev) => prev ?? `${base}/`);
+    }, 800);
+    return () => window.clearTimeout(id);
+  }, [loading, storefrontBase]);
+
+  const handleUpdatePreview = useCallback(async () => {
+    const base = storefrontBase();
+    if (!base) {
+      setError('Set a store URL under Store setup first.');
+      return;
+    }
+    setPreviewBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/settings/online-store/preview-draft', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: business?.id,
+          theme: sanitizeStoreTheme({
+            ...theme,
+            logo_url: theme.logo_url || businessLogo,
+          }),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.token !== 'string') {
+        setError(typeof data.error === 'string' ? data.error : 'Could not update preview');
+        return;
+      }
+      setPreviewSrc(`${base}/?td=${encodeURIComponent(data.token)}`);
+    } catch {
+      setError('Could not update preview');
+    } finally {
+      setPreviewBusy(false);
+    }
+  }, [storefrontBase, business?.id, theme, businessLogo]);
+
+  const sectionsSig = theme.homepage_sections.map((s) => `${s.id}:${s.enabled ? 1 : 0}`).join('|');
+  const previewContentSig = [
+    sectionsSig,
+    theme.category_style,
+    JSON.stringify(theme.category_images),
+    JSON.stringify(theme.overlay_bands),
+  ].join('|');
+  const skipSectionPreview = useRef(true);
+  useEffect(() => {
+    if (loading) return;
+    if (skipSectionPreview.current) {
+      skipSectionPreview.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => void handleUpdatePreview(), 400);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- previewContentSig only
+  }, [previewContentSig, loading]);
 
   const handleCopy = useCallback(() => {
     if (storeUrl) {
@@ -259,7 +342,7 @@ export default function OnlineStoreSettingsPage() {
   return (
     <SettingsPageShell
       title="Store editor"
-      description="Design your public storefront and see a live phone preview as you change it."
+      description="Customize the store, then Update preview. Save publishes the live storefront."
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
@@ -287,7 +370,7 @@ export default function OnlineStoreSettingsPage() {
         </div>
       ) : null}
 
-      <div className={clsx('gap-6', showPreview && 'xl:grid xl:grid-cols-[minmax(0,1fr)_320px]')}>
+      <div className={clsx('gap-6', showPreview && 'xl:grid xl:grid-cols-[minmax(0,1fr)_440px]')}>
         <div>
           <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1">
             {TABS.map((t) => (
@@ -305,295 +388,20 @@ export default function OnlineStoreSettingsPage() {
             ))}
           </div>
 
-          {tab === 'design' ? (
-            <Card className="p-5 space-y-5">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Theme</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  Brand colour tints the header, chips, and buttons. The page body stays the theme paper (white, cream, or ivory) and does not follow the brand colour.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {(Object.keys(STORE_THEME_PRESETS) as Array<Exclude<StoreThemePreset, 'custom'>>).map(
-                    (key) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setTheme((t) => ({ ...t, ...applyStorePreset(key) }))}
-                        className={clsx(
-                          'rounded-full border px-3 py-1.5 text-sm',
-                          theme.preset === key ? 'border-gray-900 font-medium' : 'border-gray-200',
-                        )}
-                      >
-                        <span
-                          className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: STORE_THEME_PRESETS[key].accent }}
-                        />
-                        {STORE_THEME_PRESETS[key].label}
-                      </button>
-                    ),
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setTheme((t) => ({ ...t, preset: 'custom' }))}
-                    className={clsx(
-                      'rounded-full border px-3 py-1.5 text-sm',
-                      theme.preset === 'custom' ? 'border-gray-900 font-medium' : 'border-gray-200',
-                    )}
-                  >
-                    Custom
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-6">
-                <label className="text-xs text-gray-500">
-                  Brand colour
-                  <input
-                    type="color"
-                    className="mt-1 block h-10 w-16"
-                    value={theme.accent}
-                    onChange={(e) =>
-                      setTheme((t) => ({
-                        ...t,
-                        preset: 'custom',
-                        accent: e.target.value,
-                        background: storeCanvas(t),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <StoreImageField
-                label="Store logo"
-                hint="Shown in the header. Leave empty to use your business logo."
-                value={theme.logo_url}
-                onChange={(url) => setTheme((t) => ({ ...t, logo_url: url }))}
-              />
-              <label className="block text-xs text-gray-500">
-                Search placeholder
-                <input
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm text-gray-900"
-                  value={theme.search_placeholder}
-                  onChange={(e) => setTheme((t) => ({ ...t, search_placeholder: e.target.value }))}
-                  placeholder="Search atta, oil, soap…"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>
-                  Hide “Powered by Khatario”
-                  <span className="block text-xs text-gray-500">Available with custom branding on some plans.</span>
-                </span>
-                <Toggle on={hideBadge} onToggle={() => setHideBadge((v) => !v)} />
-              </label>
-            </Card>
-          ) : null}
-
-          {tab === 'homepage' ? (
-            <div className="space-y-4">
-              <Card className="p-5 space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900">Sections</h3>
-                <label className="flex items-center justify-between text-sm">
-                  Show hero banner
-                  <Toggle
-                    on={theme.show_hero}
-                    onToggle={() => setTheme((t) => ({ ...t, show_hero: !t.show_hero }))}
-                  />
-                </label>
-                <label className="flex items-center justify-between text-sm">
-                  Show today&apos;s offers
-                  <Toggle
-                    on={theme.show_offers}
-                    onToggle={() => setTheme((t) => ({ ...t, show_offers: !t.show_offers }))}
-                  />
-                </label>
-                <label className="flex items-center justify-between text-sm">
-                  Show trust row
-                  <Toggle
-                    on={theme.show_trust}
-                    onToggle={() => setTheme((t) => ({ ...t, show_trust: !t.show_trust }))}
-                  />
-                </label>
-                <div>
-                  <p className="text-sm text-gray-900">Product grid on phone</p>
-                  <div className="mt-2 flex gap-2">
-                    {([2, 3] as const).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setTheme((t) => ({ ...t, mobile_columns: n }))}
-                        className={clsx(
-                          'rounded-lg border px-3 py-1.5 text-sm',
-                          theme.mobile_columns === n ? 'border-gray-900 font-medium' : 'border-gray-200',
-                        )}
-                      >
-                        {n} columns
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-              <Card className="p-5 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Hero carousel</h3>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Add up to 6 banners. They rotate on the store home.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={theme.hero_slides.length >= 6}
-                    onClick={() =>
-                      setTheme((t) => ({
-                        ...t,
-                        hero_slides: [
-                          ...t.hero_slides,
-                          { image_url: '', title: tagline, subtitle: t.hero_subtitle },
-                        ],
-                      }))
-                    }
-                  >
-                    <Plus className="mr-1 h-4 w-4" />
-                    Add slide
-                  </Button>
-                </div>
-                <label className="block text-xs text-gray-500">
-                  Default tagline
-                  <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                    value={tagline}
-                    maxLength={120}
-                    onChange={(e) => setTagline(e.target.value)}
-                    placeholder="Fresh groceries at your door"
-                  />
-                </label>
-                <label className="block text-xs text-gray-500">
-                  Button text
-                  <input
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                    value={theme.hero_cta}
-                    onChange={(e) => setTheme((t) => ({ ...t, hero_cta: e.target.value }))}
-                  />
-                </label>
-                {theme.hero_slides.length === 0 ? (
-                  <p className="text-xs text-gray-400">No slides yet. Add one to show a banner.</p>
-                ) : (
-                  theme.hero_slides.map((slide, i) => (
-                    <div key={i} className="rounded-xl border border-gray-100 p-3 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium text-gray-700">Slide {i + 1}</p>
-                        <button
-                          type="button"
-                          className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                          aria-label={`Remove slide ${i + 1}`}
-                          onClick={() =>
-                            setTheme((t) => ({
-                              ...t,
-                              hero_slides: t.hero_slides.filter((_, idx) => idx !== i),
-                            }))
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <StoreImageField
-                        label="Banner image"
-                        value={slide.image_url}
-                        onChange={(url) =>
-                          setTheme((t) => ({
-                            ...t,
-                            hero_slides: t.hero_slides.map((s, idx) =>
-                              idx === i ? { ...s, image_url: url } : s,
-                            ),
-                          }))
-                        }
-                      />
-                      <label className="block text-xs text-gray-500">
-                        Title
-                        <input
-                          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                          value={slide.title}
-                          onChange={(e) =>
-                            setTheme((t) => ({
-                              ...t,
-                              hero_slides: t.hero_slides.map((s, idx) =>
-                                idx === i ? { ...s, title: e.target.value } : s,
-                              ),
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="block text-xs text-gray-500">
-                        Subtitle
-                        <input
-                          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                          value={slide.subtitle}
-                          onChange={(e) =>
-                            setTheme((t) => ({
-                              ...t,
-                              hero_slides: t.hero_slides.map((s, idx) =>
-                                idx === i ? { ...s, subtitle: e.target.value } : s,
-                              ),
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  ))
-                )}
-              </Card>
-              <Card className="p-5 space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900">Categories</h3>
-                <p className="text-xs text-gray-500">How aisle tiles look on the store home.</p>
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      ['letter', 'Letter'],
-                      ['icon', 'Icon'],
-                      ['photo', 'Photo'],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setTheme((t) => ({ ...t, category_style: id }))}
-                      className={clsx(
-                        'rounded-lg border px-3 py-1.5 text-sm',
-                        theme.category_style === id ? 'border-gray-900 font-medium' : 'border-gray-200',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {theme.category_style === 'photo' ? (
-                  categories.length === 0 ? (
-                    <p className="text-xs text-gray-500">
-                      Enable “Show in Store” on items so categories appear, then add photos here.
-                    </p>
-                  ) : (
-                    <div className="space-y-4">
-                      {categories.map((cat) => (
-                        <StoreImageField
-                          key={cat.id}
-                          label={cat.name}
-                          value={theme.category_images[cat.id] ?? ''}
-                          onChange={(url) =>
-                            setTheme((t) => {
-                              const next = { ...t.category_images };
-                              if (url) next[cat.id] = url;
-                              else delete next[cat.id];
-                              return { ...t, category_images: next };
-                            })
-                          }
-                        />
-                      ))}
-                    </div>
-                  )
-                ) : null}
-              </Card>
-            </div>
+          {tab === 'appearance' ? (
+            <StoreAppearanceStudio
+              theme={theme}
+              setTheme={setTheme}
+              hideBadge={hideBadge}
+              setHideBadge={setHideBadge}
+              tagline={tagline}
+              setTagline={setTagline}
+              categories={categories}
+              hostSuffix={hostSuffix}
+              storeUrl={storeUrl}
+              onUpdate={() => void handleUpdatePreview()}
+              updating={previewBusy}
+            />
           ) : null}
 
           {tab === 'promo' ? (
@@ -816,7 +624,7 @@ export default function OnlineStoreSettingsPage() {
             </Card>
           ) : null}
 
-          {tab === 'checkout' ? (
+          {tab === 'setup' ? (
             <div className="space-y-4">
               <Card className="p-5 space-y-4">
                 <h3 className="text-sm font-semibold text-gray-900">Store URL</h3>
@@ -957,6 +765,18 @@ export default function OnlineStoreSettingsPage() {
                   onChange={(e) => setContactMd(e.target.value)}
                 />
               </label>
+              <label className="block text-xs text-gray-500">
+                Privacy policy
+                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={privacyMd} onChange={(e) => setPrivacyMd(e.target.value)} />
+              </label>
+              <label className="block text-xs text-gray-500">
+                Refund policy
+                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={refundMd} onChange={(e) => setRefundMd(e.target.value)} />
+              </label>
+              <label className="block text-xs text-gray-500">
+                Terms and conditions
+                <textarea className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" rows={4} value={termsMd} onChange={(e) => setTermsMd(e.target.value)} />
+              </label>
             </Card>
           ) : null}
         </div>
@@ -970,6 +790,8 @@ export default function OnlineStoreSettingsPage() {
                 heroUrl={heroUrl}
                 theme={previewTheme}
                 categories={categories}
+                iframeSrc={previewSrc}
+                updating={previewBusy}
               />
             </div>
           </aside>
@@ -984,6 +806,8 @@ export default function OnlineStoreSettingsPage() {
             heroUrl={heroUrl}
             theme={previewTheme}
             categories={categories}
+            iframeSrc={previewSrc}
+            updating={previewBusy}
           />
         ) : null}
       </div>

@@ -132,8 +132,13 @@ const nextConfig = {
         assert: false,
         os: false,
         path: false,
+        'pg-native': false,
       };
     }
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'pg-native': false,
+    };
     return config;
   },
 };

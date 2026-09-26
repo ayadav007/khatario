@@ -25,6 +25,9 @@ export async function POST(
     if (!store) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }
+    if (store.is_demo) {
+      return NextResponse.json({ error: 'This is a theme preview. Checkout is disabled.' }, { status: 403 });
+    }
 
     const body = await request.json();
     const paymentMethod = body.payment_method === 'razorpay' ? 'razorpay' : 'cod';

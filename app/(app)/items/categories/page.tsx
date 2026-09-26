@@ -132,7 +132,9 @@ export default function ItemCategoriesPage() {
             </button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Item Categories</h1>
-              <p className="text-gray-600 text-sm mt-1">Manage categories for organizing your items</p>
+              <p className="text-gray-600 text-sm mt-1">
+                Groups that shoppers see in the online store. Create any name you need — Best Seller, Grocery, Offers.
+              </p>
             </div>
           </div>
           <Button
@@ -153,7 +155,7 @@ export default function ItemCategoriesPage() {
                 label="Category Name *"
                 value={newCategory.name}
                 onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                placeholder="e.g., Electronics, Clothing, Food"
+                placeholder="e.g. Best Seller, Grocery, New Arrivals"
                 required
               />
               <div>

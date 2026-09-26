@@ -3,6 +3,7 @@
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Platform Administration
 CREATE TABLE IF NOT EXISTS platform_admins (
@@ -164,9 +165,39 @@ CREATE TABLE IF NOT EXISTS items (
     current_stock DECIMAL(10,2) DEFAULT 0,
     min_stock DECIMAL(10,2) DEFAULT 0,
     image_url TEXT,
+    gallery_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+    show_in_store BOOLEAN NOT NULL DEFAULT false,
+    featured_in_store BOOLEAN NOT NULL DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Branches (accounting/compliance). Table lives in 119_* for incremental DBs;
+-- schema.sql still references it earlier (stock, invoices), so create it here.
+CREATE TABLE IF NOT EXISTS branches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    branch_code VARCHAR(50),
+    gstin VARCHAR(15),
+    address_line1 VARCHAR(200),
+    address_line2 VARCHAR(200),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    state_code VARCHAR(2),
+    pincode VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'India',
+    phone VARCHAR(50),
+    email VARCHAR(100),
+    branch_type VARCHAR(50) DEFAULT 'retail',
+    is_primary BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    invoice_prefix VARCHAR(10),
+    next_invoice_number INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(business_id, branch_code)
 );
 
 -- Branch-level stock (when business_settings.warehouses_enabled is false)
@@ -338,6 +369,41 @@ CREATE TABLE IF NOT EXISTS payments (
         (customer_id IS NULL AND supplier_id IS NOT NULL) OR
         (customer_id IS NULL AND supplier_id IS NULL)
     )
+);
+
+-- Chart of accounts (needed before expense_categories.account_id)
+CREATE TABLE IF NOT EXISTS account_groups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+    group_code VARCHAR(20) NOT NULL,
+    group_name VARCHAR(255) NOT NULL,
+    group_type VARCHAR(50) NOT NULL,
+    parent_group_id UUID REFERENCES account_groups(id) ON DELETE SET NULL,
+    is_system BOOLEAN DEFAULT false,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(business_id, group_code)
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+    account_code VARCHAR(50) NOT NULL,
+    account_name VARCHAR(255) NOT NULL,
+    account_type VARCHAR(50) NOT NULL,
+    account_group_id UUID REFERENCES account_groups(id) ON DELETE RESTRICT,
+    parent_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL,
+    nature VARCHAR(10) NOT NULL CHECK (nature IN ('debit', 'credit')),
+    opening_balance DECIMAL(15,2) DEFAULT 0,
+    opening_balance_type VARCHAR(10) DEFAULT 'debit' CHECK (opening_balance_type IN ('debit', 'credit')),
+    is_active BOOLEAN DEFAULT true,
+    is_system BOOLEAN DEFAULT false,
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(business_id, account_code)
 );
 
 -- Expense Categories

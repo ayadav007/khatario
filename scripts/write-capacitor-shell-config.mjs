@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const shellDir = join(root, 'capacitor-shell');
 
-const DEFAULT_SERVER = 'https://app.khatario.com';
+const DEFAULT_SERVER = 'https://khatario.com';
 const raw = (process.env.CAP_SERVER_URL || DEFAULT_SERVER).trim();
 
 function resolveServerUrl(input) {

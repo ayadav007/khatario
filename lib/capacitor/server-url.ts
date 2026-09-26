@@ -1,4 +1,4 @@
-const DEFAULT_SERVER = 'https://app.khatario.com';
+const DEFAULT_SERVER = 'https://khatario.com';
 
 /**
  * URL the Capacitor WebView loads on cold start.

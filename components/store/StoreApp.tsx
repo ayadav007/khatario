@@ -3,13 +3,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { StoreProvider } from '@/lib/store/store-context';
 import { extractStoreSubdomain } from '@/lib/store/subdomain';
+import { StoreThemeEffects } from '@/components/store/StoreThemeEffects';
 import { StorePromoSheet } from '@/components/store/StorePromoSheet';
 
-export function StoreApp({ children }: { children: ReactNode }) {
-  const [subdomain, setSubdomain] = useState<string | null>(null);
+export function StoreApp({
+  children,
+  subdomain: initialSubdomain = null,
+}: {
+  children: ReactNode;
+  subdomain?: string | null;
+}) {
+  const [subdomain, setSubdomain] = useState<string | null>(initialSubdomain);
 
   useEffect(() => {
-    setSubdomain(extractStoreSubdomain(window.location.host));
+    const fromHost = extractStoreSubdomain(window.location.host);
+    if (fromHost) setSubdomain(fromHost);
   }, []);
 
   if (!subdomain) {
@@ -27,6 +35,7 @@ export function StoreApp({ children }: { children: ReactNode }) {
 
   return (
     <StoreProvider subdomain={subdomain}>
+      <StoreThemeEffects />
       <StorePromoSheet />
       {children}
     </StoreProvider>

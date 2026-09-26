@@ -20,10 +20,14 @@ export interface StoreBusinessContext {
   store_theme: Record<string, unknown> | null;
   store_about_md: string | null;
   store_contact_md: string | null;
+  store_privacy_md: string | null;
+  store_refund_md: string | null;
+  store_terms_md: string | null;
   store_allow_cod: boolean;
   store_hide_khatario_badge: boolean;
   online_pay_enabled: boolean;
   store_promo_sheet: StorePromoSheetConfig;
+  is_demo?: boolean;
 }
 
 export interface StoreBranch {
@@ -49,7 +53,8 @@ const RESERVED_SUBDOMAINS = new Set([
   'www', 'staging', 'app', 'api', 'admin', 'mail', 'smtp',
   'ftp', 'cdn', 'assets', 'static', 'status', 'help', 'support',
   'docs', 'blog', 'dev', 'test', 'demo', 'sandbox', 'ns1', 'ns2',
-  'mx', 'pop', 'imap', 'webmail', 'cpanel', 'whm', 'ftp',
+  'mx', 'pop', 'imap', 'webmail', 'cpanel', 'whm',
+  'theme-classic', 'theme-chowk', 'theme-atelier', 'theme-khatario', 'theme-noir',
 ]);
 
 export function isReservedStoreSubdomain(subdomain: string): boolean {
@@ -62,7 +67,12 @@ export function isValidStoreSubdomain(subdomain: string): boolean {
 
 export async function resolveStoreBySubdomain(
   subdomain: string,
+  opts?: { allowOffline?: boolean },
 ): Promise<StoreBusinessContext | null> {
+  const { themeDemoStore } = await import('@/lib/store/theme-demo');
+  const demo = themeDemoStore(subdomain);
+  if (demo) return demo;
+
   const row = await queryOne<{
     business_id: string;
     name: string;
@@ -77,6 +87,9 @@ export async function resolveStoreBySubdomain(
     store_theme: unknown;
     store_about_md: string | null;
     store_contact_md: string | null;
+    store_privacy_md: string | null;
+    store_refund_md: string | null;
+    store_terms_md: string | null;
     store_allow_cod: boolean | null;
     store_hide_khatario_badge: boolean | null;
     store_promo_sheet: unknown;
@@ -89,14 +102,17 @@ export async function resolveStoreBySubdomain(
        bs.store_theme,
        bs.store_about_md,
        bs.store_contact_md,
+       bs.store_privacy_md,
+       bs.store_refund_md,
+       bs.store_terms_md,
        COALESCE(bs.store_allow_cod, true) AS store_allow_cod,
        COALESCE(bs.store_hide_khatario_badge, false) AS store_hide_khatario_badge,
        bs.store_promo_sheet
      FROM businesses b
      INNER JOIN business_settings bs ON bs.business_id = b.id
      WHERE lower(trim(bs.store_subdomain)) = $1
-       AND bs.store_enabled = true`,
-    [subdomain.toLowerCase().trim()],
+       AND ($2::boolean OR bs.store_enabled = true)`,
+    [subdomain.toLowerCase().trim(), !!opts?.allowOffline],
   );
 
   if (!row) return null;
@@ -120,6 +136,9 @@ export async function resolveStoreBySubdomain(
     store_theme: (row.store_theme as Record<string, unknown>) ?? null,
     store_about_md: row.store_about_md,
     store_contact_md: row.store_contact_md,
+    store_privacy_md: row.store_privacy_md,
+    store_refund_md: row.store_refund_md,
+    store_terms_md: row.store_terms_md,
     store_allow_cod: row.store_allow_cod !== false,
     store_hide_khatario_badge: !!row.store_hide_khatario_badge || customBranding,
     online_pay_enabled: paymentGateway,
@@ -128,6 +147,7 @@ export async function resolveStoreBySubdomain(
 }
 
 export async function getStoreBranches(businessId: string): Promise<StoreBranch[]> {
+  if (businessId.startsWith('00000000-0000-4000-8000-')) return [];
   const rows = await queryRows<{
     id: string;
     name: string;

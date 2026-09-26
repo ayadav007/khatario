@@ -94,7 +94,7 @@
     "typescript": "^5.3.3"
   },
   "scripts": {
-    "dev": "node --max-old-space-size=4096 node_modules/next/dist/bin/next dev",
+    "dev": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev -p 3000",
     "dev:https": "node --max-old-space-size=4096 server.js",
     "dev:https:lan": "cross-env HOSTNAME=0.0.0.0 node --max-old-space-size=4096 server.js",
     "setup:https": "node scripts/setup-https.js",
