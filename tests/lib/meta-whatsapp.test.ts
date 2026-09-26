@@ -1,6 +1,7 @@
 import { createHmac } from 'crypto';
 import {
   buildGraphComponents,
+  buildSendComponents,
   countBodyPlaceholders,
   extractTemplateStatusUpdates,
   mapMetaStatus,
@@ -30,6 +31,15 @@ describe('meta-whatsapp helpers', () => {
       exampleVars: ['111111'],
     });
     expect(c[0]).toMatchObject({ type: 'BODY', add_security_recommendation: true });
+  });
+
+  it('sends AUTH OTP as named code plus copy-code button even if vars are empty', () => {
+    const c = buildSendComponents({ category: 'AUTHENTICATION', vars: [] });
+    expect(c[0]).toMatchObject({
+      type: 'body',
+      parameters: [{ type: 'text', text: '123456', parameter_name: 'code' }],
+    });
+    expect(c[1]).toMatchObject({ type: 'button', sub_type: 'url', index: '0' });
   });
 
   it('builds UTILITY body with examples', () => {

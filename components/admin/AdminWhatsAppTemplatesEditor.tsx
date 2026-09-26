@@ -114,7 +114,9 @@ export function AdminWhatsAppTemplatesEditor() {
       body_text: t.body_text,
       header_text: t.header_text || '',
       footer_text: t.footer_text || '',
-      example_vars: t.example_vars?.length ? t.example_vars : [''],
+      example_vars: t.example_vars?.some((v) => String(v).trim())
+        ? t.example_vars
+        : ['123456'],
       event_key: t.event_key || '',
     });
   };

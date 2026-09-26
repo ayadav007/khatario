@@ -180,21 +180,29 @@ export function buildSendComponents(input: {
   category: string;
   vars: string[];
 }): GraphComponent[] {
-  if (input.vars.length === 0 && input.category !== 'AUTHENTICATION') return [];
-  const bodyParams = input.vars.map((text) => ({ type: 'text', text }));
-  const components: GraphComponent[] = [];
-  if (bodyParams.length > 0) {
-    components.push({ type: 'body', parameters: bodyParams });
+  const cleaned = (input.vars || []).map((v) => String(v || '').trim()).filter(Boolean);
+  if (input.category === 'AUTHENTICATION') {
+    const otp = cleaned[0] || '123456';
+    return [
+      {
+        type: 'body',
+        parameters: [{ type: 'text', text: otp, parameter_name: 'code' }],
+      },
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: otp }],
+      },
+    ];
   }
-  if (input.category === 'AUTHENTICATION' && input.vars[0]) {
-    components.push({
-      type: 'button',
-      sub_type: 'url',
-      index: '0',
-      parameters: [{ type: 'text', text: input.vars[0] }],
-    });
-  }
-  return components;
+  if (cleaned.length === 0) return [];
+  return [
+    {
+      type: 'body',
+      parameters: cleaned.map((text) => ({ type: 'text', text })),
+    },
+  ];
 }
 
 export function verifyMetaWaWebhookSignature(
