@@ -22,8 +22,8 @@ export async function generateMetadata({
   const pageUrl = `${proto}://${host}/products/${params.id}`;
 
   if (store.is_demo) {
-    const { themeDemoProducts, themeDemoPack } = await import('@/lib/store/theme-demo');
-    const product = themeDemoProducts(themeDemoPack(subdomain)).find((p) => p.id === params.id);
+    const { themeDemoProducts } = await import('@/lib/store/theme-demo');
+    const product = themeDemoProducts().find((p) => p.id === params.id);
     if (!product) return { title: 'Product' };
     const seo = resolveItemSeo(product);
     return {

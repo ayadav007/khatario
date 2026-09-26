@@ -14,8 +14,8 @@ export async function GET(
   if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 404 });
 
   if (store.is_demo) {
-    const { themeDemoProducts, themeDemoPack } = await import('@/lib/store/theme-demo');
-    const product = themeDemoProducts(themeDemoPack(params.subdomain)).find((p) => p.id === params.id);
+    const { themeDemoProducts } = await import('@/lib/store/theme-demo');
+    const product = themeDemoProducts().find((p) => p.id === params.id);
     if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     return NextResponse.json(product);
   }
