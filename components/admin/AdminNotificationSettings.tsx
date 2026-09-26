@@ -85,8 +85,9 @@ export function AdminNotificationSettings() {
         set the inbox override below. Check <strong>Email logs</strong> on this page if a signup was silent.
       </p>
       <p className="text-sm text-gray-600">
-        Install this admin console on your phone (staging and production are separate apps). Then tap{' '}
-        <strong>Enable alerts</strong> in the top bar while logged in. iPhone needs Add to Home Screen first.
+        Install this admin console on your phone from Chrome (not WhatsApp/Gmail in-app browser). Staging
+        installs as <strong>Khatario STG</strong>. Then open that icon and tap <strong>Enable alerts</strong>{' '}
+        while logged in. If Android says permission was not granted, Chrome → lock icon → Notifications → Allow.
       </p>
 
       <div className="space-y-4">

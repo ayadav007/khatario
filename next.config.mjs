@@ -70,7 +70,8 @@ const withPWA = withPWAInit({
       //   4. Dashboard reads IDB entity cache → shows last synced data
       //   5. Other pages render with empty state + offline banner
       {
-        urlPattern: ({ request }) => request.mode === 'navigate',
+        urlPattern: ({ request, url }) =>
+          request.mode === 'navigate' && !(url?.pathname || '').startsWith('/admin'),
         handler: 'NetworkFirst',
         options: {
           cacheName: 'pages-cache',
@@ -103,6 +104,17 @@ const nextConfig = {
     domains: [],
   },
   swcMinify: true,
+  async headers() {
+    return [
+      {
+        source: '/admin/sw.js',
+        headers: [
+          { key: 'Service-Worker-Allowed', value: '/admin' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+    ];
+  },
   compiler: {
     // Keep console.error in production so the render-loop probe (and real errors)
     // remain visible on staging. log/warn/info are still stripped.

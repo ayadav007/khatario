@@ -1,4 +1,4 @@
-/* Platform admin PWA — scoped to /admin/. Handles Web Push only. */
+/* Platform admin PWA — lives under /admin/ so Chrome can scope it without fighting /sw.js. */
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());

@@ -122,6 +122,8 @@ function isStaticAsset(pathname: string): boolean {
     pathname.startsWith('/fonts/') ||
     pathname.startsWith('/favicon') ||
     pathname === '/manifest.json' ||
+    pathname === '/admin/sw.js' ||
+    pathname === '/admin/pwa-manifest' ||
     pathname === '/robots.txt' ||
     pathname === '/sitemap.xml' ||
     pathname.endsWith('.ico') ||

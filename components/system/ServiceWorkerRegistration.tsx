@@ -21,6 +21,9 @@ export function ServiceWorkerRegistration() {
     if (host === 'localhost' || window.location.protocol === 'capacitor:') {
       return;
     }
+    if (window.location.pathname.startsWith('/admin')) {
+      return;
+    }
 
     let refreshing = false;
     const onControllerChange = () => {
