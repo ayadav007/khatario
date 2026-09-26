@@ -5,6 +5,7 @@ import {
   sanitizeStorePromoSheet,
   type StorePromoSheetConfig,
 } from '@/lib/store/promo-sheet';
+import { sanitizeStoreTheme, type StoreTheme } from '@/lib/store/store-theme';
 
 export interface StoreBusinessContext {
   business_id: string;
@@ -17,7 +18,7 @@ export interface StoreBusinessContext {
   store_hero_image_url: string | null;
   store_min_order_amount: number;
   portal_theme: Record<string, unknown> | null;
-  store_theme: Record<string, unknown> | null;
+  store_theme: StoreTheme | null;
   store_about_md: string | null;
   store_contact_md: string | null;
   store_privacy_md: string | null;
@@ -133,7 +134,7 @@ export async function resolveStoreBySubdomain(
     store_hero_image_url: row.store_hero_image_url,
     store_min_order_amount: parseFloat(row.store_min_order_amount ?? '0') || 0,
     portal_theme: (row.portal_theme as Record<string, unknown>) ?? null,
-    store_theme: (row.store_theme as Record<string, unknown>) ?? null,
+    store_theme: sanitizeStoreTheme(row.store_theme),
     store_about_md: row.store_about_md,
     store_contact_md: row.store_contact_md,
     store_privacy_md: row.store_privacy_md,

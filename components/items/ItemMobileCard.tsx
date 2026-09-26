@@ -3,6 +3,7 @@
 import { ArrowUpDown, Tag } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ItemFlagSwitch } from '@/components/items/ItemFlagSwitch';
+import type { Item } from '@/types/database';
 
 function itemInitial(name: string) {
   const t = name?.trim();

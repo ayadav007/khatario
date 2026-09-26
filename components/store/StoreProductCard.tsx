@@ -396,8 +396,7 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
           <h3
             className={clsx(
               'chowk-name line-clamp-2 font-medium',
-              layout === 'featured' ? 'text-[17px] leading-snug sm:text-xl' : atelier ? 'min-h-[2.4em] text-[13px] leading-[1.35] font-normal' : 'min-h-[2.5em] text-[12px] leading-[1.3] sm:text-[13px]',
-              layout === 'shelf' && 'min-h-0 line-clamp-2',
+              'text-[17px] leading-snug sm:text-xl',
             )}
             style={{ color: ink }}
           >

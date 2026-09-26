@@ -141,6 +141,7 @@ export default function OnlineStoreSettingsPage() {
               image_url: data.store_hero_image_url,
               title: data.store_tagline ?? '',
               subtitle: nextTheme.hero_subtitle,
+              viewport: 'both',
             },
           ];
         }

@@ -65,6 +65,10 @@ function favKey(subdomain: string) {
   return `khatario-store-fav:${subdomain}`;
 }
 
+function storageKey(subdomain: string) {
+  return `khatario-store-cart:${subdomain}`;
+}
+
 export function storeDraftToken(): string | null {
   if (typeof window === 'undefined') return null;
   const td = new URLSearchParams(window.location.search).get('td');
