@@ -1,31 +1,17 @@
 /**
  * WhatsApp Cloud API (Graph) for the platform WABA.
- * Never logs META_WA_ACCESS_TOKEN.
+ * Never logs access tokens.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
+import { getMetaWaConfig } from '@/lib/meta-whatsapp-credentials';
+
+export type { MetaWaConfig } from '@/lib/meta-whatsapp-credentials';
+export { getMetaWaConfig, isMetaWaConfigured } from '@/lib/meta-whatsapp-credentials';
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const FETCH_MS = 25_000;
-
-export type MetaWaConfig = {
-  accessToken: string;
-  wabaId: string;
-  phoneNumberId: string;
-};
-
-export function getMetaWaConfig(): MetaWaConfig | null {
-  const accessToken = process.env.META_WA_ACCESS_TOKEN?.trim();
-  const wabaId = process.env.META_WA_WABA_ID?.trim();
-  const phoneNumberId = process.env.META_WA_PHONE_NUMBER_ID?.trim();
-  if (!accessToken || !wabaId || !phoneNumberId) return null;
-  return { accessToken, wabaId, phoneNumberId };
-}
-
-export function isMetaWaConfigured(): boolean {
-  return getMetaWaConfig() != null;
-}
 
 export class MetaWhatsAppError extends Error {
   constructor(
@@ -80,7 +66,7 @@ export async function createMessageTemplate(input: {
   category: string;
   components: GraphComponent[];
 }): Promise<{ id: string; status: string; category?: string }> {
-  const cfg = getMetaWaConfig();
+  const cfg = await getMetaWaConfig();
   if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   const json = (await graphFetch(`/${cfg.wabaId}/message_templates`, {
     token: cfg.accessToken,
@@ -99,7 +85,7 @@ export async function createMessageTemplate(input: {
 export async function listMessageTemplates(): Promise<
   Array<{ id: string; name: string; status: string; language?: string }>
 > {
-  const cfg = getMetaWaConfig();
+  const cfg = await getMetaWaConfig();
   if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   const json = (await graphFetch(
     `/${cfg.wabaId}/message_templates?fields=id,name,status,language&limit=100`,
@@ -109,7 +95,7 @@ export async function listMessageTemplates(): Promise<
 }
 
 export async function deleteMessageTemplate(name: string): Promise<void> {
-  const cfg = getMetaWaConfig();
+  const cfg = await getMetaWaConfig();
   if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   await graphFetch(
     `/${cfg.wabaId}/message_templates?name=${encodeURIComponent(name)}`,
@@ -123,7 +109,7 @@ export async function sendTemplateMessage(input: {
   language: string;
   components?: GraphComponent[];
 }): Promise<{ messageId: string }> {
-  const cfg = getMetaWaConfig();
+  const cfg = await getMetaWaConfig();
   if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   const to = input.to.replace(/\D/g, '');
   const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
@@ -209,9 +195,13 @@ export function buildSendComponents(input: {
   return components;
 }
 
-export function verifyMetaWaWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
-  const secret = process.env.META_WA_APP_SECRET;
-  if (!secret?.trim()) return false;
+export function verifyMetaWaWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  secretOverride?: string | null,
+): boolean {
+  const secret = (secretOverride ?? process.env.META_WA_APP_SECRET)?.trim();
+  if (!secret) return false;
   if (!signatureHeader?.trim()) return false;
   const expected = `sha256=${createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')}`;
   try {
@@ -224,11 +214,14 @@ export function verifyMetaWaWebhookSignature(rawBody: string, signatureHeader: s
   }
 }
 
-export function metaWaWebhookChallenge(searchParams: URLSearchParams): string | null {
+export function metaWaWebhookChallenge(
+  searchParams: URLSearchParams,
+  expectedTokenOverride?: string | null,
+): string | null {
   const mode = searchParams.get('hub.mode');
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
-  const expected = process.env.META_WA_VERIFY_TOKEN?.trim();
+  const expected = (expectedTokenOverride ?? process.env.META_WA_VERIFY_TOKEN)?.trim();
   if (mode === 'subscribe' && expected && token === expected && challenge) return challenge;
   return null;
 }

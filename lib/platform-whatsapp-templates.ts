@@ -71,19 +71,6 @@ function mapRow(row: Record<string, unknown>): PlatformWhatsAppTemplate {
 
 export { sanitizeTemplateName } from '@/lib/meta-whatsapp';
 
-export function metaWaSetupChecklist(): {
-  configured: boolean;
-  missing: string[];
-} {
-  const missing: string[] = [];
-  if (!process.env.META_WA_ACCESS_TOKEN?.trim()) missing.push('META_WA_ACCESS_TOKEN');
-  if (!process.env.META_WA_WABA_ID?.trim()) missing.push('META_WA_WABA_ID');
-  if (!process.env.META_WA_PHONE_NUMBER_ID?.trim()) missing.push('META_WA_PHONE_NUMBER_ID');
-  if (!process.env.META_WA_APP_SECRET?.trim()) missing.push('META_WA_APP_SECRET');
-  if (!process.env.META_WA_VERIFY_TOKEN?.trim()) missing.push('META_WA_VERIFY_TOKEN');
-  return { configured: missing.length === 0, missing };
-}
-
 export async function listPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppTemplate[]> {
   const rows = await queryRows<Record<string, unknown>>(
     `SELECT * FROM platform_whatsapp_templates ORDER BY updated_at DESC`,
@@ -204,7 +191,7 @@ export async function updatePlatformWhatsAppDraft(
 }
 
 export async function submitPlatformWhatsAppTemplate(id: string): Promise<PlatformWhatsAppTemplate> {
-  if (!isMetaWaConfigured()) {
+  if (!(await isMetaWaConfigured())) {
     throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   }
   const existing = await getPlatformWhatsAppTemplate(id);
@@ -239,7 +226,7 @@ export async function submitPlatformWhatsAppTemplate(id: string): Promise<Platfo
 }
 
 export async function syncPlatformWhatsAppTemplates(): Promise<PlatformWhatsAppTemplate[]> {
-  if (!isMetaWaConfigured()) {
+  if (!(await isMetaWaConfigured())) {
     throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
   }
   const remote = await listMessageTemplates();
@@ -293,7 +280,7 @@ export async function applyWebhookTemplateStatus(update: {
 export async function deletePlatformWhatsAppTemplate(id: string): Promise<void> {
   const existing = await getPlatformWhatsAppTemplate(id);
   if (!existing) throw new Error('Template not found');
-  if (existing.status !== 'draft' && existing.meta_template_id && isMetaWaConfigured()) {
+  if (existing.status !== 'draft' && existing.meta_template_id && (await isMetaWaConfigured())) {
     try {
       await deleteMessageTemplate(existing.name);
     } catch (err) {

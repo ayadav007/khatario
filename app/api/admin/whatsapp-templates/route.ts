@@ -3,13 +3,13 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import {
   createPlatformWhatsAppDraft,
   listPlatformWhatsAppTemplates,
-  metaWaSetupChecklist,
   PLATFORM_WA_CATEGORIES,
   PLATFORM_WA_EVENT_KEYS,
   PLATFORM_WA_LANGUAGES,
   syncPlatformWhatsAppTemplates,
 } from '@/lib/platform-whatsapp-templates';
 import { MetaWhatsAppError } from '@/lib/meta-whatsapp';
+import { loadPlatformMetaWaSecrets, toPublicMetaWaCredentials } from '@/lib/meta-whatsapp-credentials';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +17,15 @@ export async function GET(request: NextRequest) {
   const auth = await requirePlatformRequest(request, 'super_admin');
   if (!auth.ok) return auth.response;
 
-  const setup = metaWaSetupChecklist();
+  const credentials = toPublicMetaWaCredentials(await loadPlatformMetaWaSecrets());
+  const setup = { configured: credentials.ready, missing: credentials.missing };
   try {
     const templates = await listPlatformWhatsAppTemplates();
     return NextResponse.json({
       templates,
       setup,
+      credentials,
+      webhookUrl: `${(process.env.NEXT_PUBLIC_APP_URL || 'https://staging.khatario.com').replace(/\/$/, '')}/api/webhooks/meta-whatsapp`,
       eventKeys: PLATFORM_WA_EVENT_KEYS,
       languages: PLATFORM_WA_LANGUAGES,
       categories: PLATFORM_WA_CATEGORIES,

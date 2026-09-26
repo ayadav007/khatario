@@ -14,6 +14,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
+import { MetaCloudCredentialsForm, type MetaCloudPublic } from '@/components/whatsapp/MetaCloudCredentialsForm';
 import { Lock } from 'lucide-react';
 
 type ConnectionStatus = 'disconnected' | 'pending_qr' | 'connected' | 'error';
@@ -47,6 +48,9 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
   const [botTypingDelay, setBotTypingDelay] = useState(3);
   const [loadingBotSettings, setLoadingBotSettings] = useState(false);
   const [savingBotSettings, setSavingBotSettings] = useState(false);
+  const [cloudCreds, setCloudCreds] = useState<MetaCloudPublic | null>(null);
+  const [cloudWebhook, setCloudWebhook] = useState('');
+  const [savingCloud, setSavingCloud] = useState(false);
   
   // Cleanup flag for race conditions
   const isMountedRef = useRef(true);
@@ -427,6 +431,57 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
     }
   }, [business?.id, botTypingEnabled, botTypingDelay]);
 
+  const loadCloudCredentials = useCallback(async () => {
+    if (!business?.id) return;
+    try {
+      const res = await fetch('/api/settings/whatsapp-cloud');
+      const data = await res.json();
+      if (res.ok) {
+        setCloudCreds(data.credentials || null);
+        setCloudWebhook(data.webhook_url || '');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [business?.id]);
+
+  const saveCloudCredentials = useCallback(
+    async (payload: {
+      waba_id: string;
+      phone_number_id: string;
+      access_token: string;
+      app_secret: string;
+      verify_token: string;
+    }) => {
+      setSavingCloud(true);
+      try {
+        const res = await fetch('/api/settings/whatsapp-cloud', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setCloudCreds(data.credentials);
+          setToast({ message: 'Cloud API credentials saved', type: 'success' });
+        } else {
+          setToast({ message: data.error || 'Failed to save Cloud API credentials', type: 'error' });
+        }
+      } catch {
+        setToast({ message: 'Failed to save Cloud API credentials', type: 'error' });
+      } finally {
+        setSavingCloud(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if ((connectOnly || activeTab === 'connection') && business?.id) {
+      void loadCloudCredentials();
+    }
+  }, [connectOnly, activeTab, business?.id, loadCloudCredentials]);
+
   // Load bot settings when bot-settings tab is selected
   useEffect(() => {
     if (activeTab === 'bot-settings' && business?.id) {
@@ -469,6 +524,14 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
               Basic WhatsApp includes connecting your number and sending invoices from billing.
               Bot, reminders, and inbox features require the WhatsApp Bot addon.
             </p>
+            <MetaCloudCredentialsForm
+              credentials={cloudCreds}
+              webhookUrl={cloudWebhook}
+              saving={savingCloud}
+              onSave={saveCloudCredentials}
+              title="Meta Cloud API"
+              description="Optional. Save your own WhatsApp Business Account so Khatario can submit and send approved templates from your number. QR session below is unchanged. Leave secret fields blank to keep saved values."
+            />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Connection Card */}
             <Card padding="lg" className="space-y-6">

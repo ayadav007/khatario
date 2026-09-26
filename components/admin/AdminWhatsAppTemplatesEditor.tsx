@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { MetaCloudCredentialsForm, type MetaCloudPublic } from '@/components/whatsapp/MetaCloudCredentialsForm';
 
 type Template = {
   id: string;
@@ -66,6 +67,9 @@ export function AdminWhatsAppTemplatesEditor() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [testPhone, setTestPhone] = useState('');
   const [busy, setBusy] = useState(false);
+  const [credentials, setCredentials] = useState<MetaCloudPublic | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState('https://staging.khatario.com/api/webhooks/meta-whatsapp');
+  const [savingCreds, setSavingCreds] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,6 +79,8 @@ export function AdminWhatsAppTemplatesEditor() {
       if (res.ok) {
         setTemplates(data.templates || []);
         setSetup(data.setup || { configured: false, missing: [] });
+        if (data.credentials) setCredentials(data.credentials);
+        if (data.webhookUrl) setWebhookUrl(data.webhookUrl);
         setEventKeys(data.eventKeys || []);
         setLanguages(data.languages || languages);
         setCategories(data.categories || categories);
@@ -222,6 +228,37 @@ export function AdminWhatsAppTemplatesEditor() {
     }
   };
 
+  const saveCredentials = async (payload: {
+    waba_id: string;
+    phone_number_id: string;
+    access_token: string;
+    app_secret: string;
+    verify_token: string;
+  }) => {
+    setSavingCreds(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/admin/whatsapp-credentials', {
+        ...platformAdminFetchInit,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setCredentials(data.credentials);
+      setSetup({
+        configured: Boolean(data.credentials?.ready),
+        missing: data.credentials?.missing || [],
+      });
+      setMessage('Cloud API credentials saved');
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingCreds(false);
+    }
+  };
+
   if (loading) return <p className="text-gray-600">Loading WhatsApp templates…</p>;
 
   return (
@@ -234,27 +271,14 @@ export function AdminWhatsAppTemplatesEditor() {
         </p>
       </div>
 
-      {!setup.configured && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-medium">Meta WhatsApp is not fully configured on this environment.</p>
-          <p className="mt-1">Add these server env vars on staging, then restart PM2:</p>
-          <ul className="list-disc ml-5 mt-2">
-            {(setup.missing.length ? setup.missing : [
-              'META_WA_ACCESS_TOKEN',
-              'META_WA_WABA_ID',
-              'META_WA_PHONE_NUMBER_ID',
-              'META_WA_APP_SECRET',
-              'META_WA_VERIFY_TOKEN',
-            ]).map((k) => (
-              <li key={k}><code>{k}</code></li>
-            ))}
-          </ul>
-          <p className="mt-2">
-            Webhook: <code>https://staging.khatario.com/api/webhooks/meta-whatsapp</code> — subscribe to{' '}
-            <code>message_template_status_update</code>.
-          </p>
-        </div>
-      )}
+      <MetaCloudCredentialsForm
+        credentials={credentials}
+        webhookUrl={webhookUrl}
+        saving={savingCreds}
+        onSave={saveCredentials}
+        title="Khatario Cloud API (this WABA)"
+        description="Paste the system user token and IDs from Meta Business Manager. Values are stored encrypted in the database — not in .env. Leave secret fields blank to keep what is already saved."
+      />
 
       <div className="flex gap-2">
         <button

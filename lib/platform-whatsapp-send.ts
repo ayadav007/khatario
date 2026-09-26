@@ -1,9 +1,5 @@
 import { query, queryOne } from '@/lib/db';
-import {
-  buildSendComponents,
-  isMetaWaConfigured,
-  sendTemplateMessage,
-} from '@/lib/meta-whatsapp';
+import { buildSendComponents, isMetaWaConfigured, sendTemplateMessage } from '@/lib/meta-whatsapp';
 import type { PlatformWaEventKey } from '@/lib/platform-whatsapp-templates';
 
 export function toE164Digits(phone: string): string | null {
@@ -35,7 +31,7 @@ export async function sendPlatformEventWhatsApp(input: {
   vars?: string[];
   language?: string;
 }): Promise<{ sent: boolean; skipped: string | null; messageId?: string }> {
-  if (!isMetaWaConfigured()) {
+  if (!(await isMetaWaConfigured())) {
     return { sent: false, skipped: 'META_WA_NOT_CONFIGURED' };
   }
   const to = toE164Digits(input.toPhone);
@@ -87,7 +83,7 @@ export async function sendApprovedTemplateTest(input: {
   toPhone: string;
   vars?: string[];
 }): Promise<{ messageId: string }> {
-  if (!isMetaWaConfigured()) {
+  if (!(await isMetaWaConfigured())) {
     throw new Error('META_WA_NOT_CONFIGURED');
   }
   const to = toE164Digits(input.toPhone);

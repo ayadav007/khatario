@@ -8,6 +8,7 @@ import {
   verifyMetaWaWebhookSignature,
 } from '@/lib/meta-whatsapp';
 import { sanitizeTemplateName } from '@/lib/meta-whatsapp';
+import { toPublicMetaWaCredentials } from '@/lib/meta-whatsapp-credentials';
 import { toE164Digits } from '@/lib/platform-whatsapp-send';
 
 describe('meta-whatsapp helpers', () => {
@@ -92,5 +93,21 @@ describe('platform whatsapp naming and phones', () => {
     expect(toE164Digits('9876543210')).toBe('919876543210');
     expect(toE164Digits('+91 98765 43210')).toBe('919876543210');
     expect(toE164Digits('12')).toBeNull();
+  });
+});
+
+describe('meta whatsapp public credentials', () => {
+  it('lists missing fields and never requires env names', () => {
+    const pub = toPublicMetaWaCredentials({
+      accessToken: '',
+      wabaId: 'w',
+      phoneNumberId: '',
+      appSecret: '',
+      verifyToken: 'v',
+    });
+    expect(pub.ready).toBe(false);
+    expect(pub.waba_id).toBe('w');
+    expect(pub.has_verify_token).toBe(true);
+    expect(pub.missing).toEqual(expect.arrayContaining(['Access token', 'Phone number ID', 'App secret']));
   });
 });
