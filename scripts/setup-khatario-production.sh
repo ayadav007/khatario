@@ -49,9 +49,26 @@ if [[ ! -f "$STAGING_ROOT/.env.production" ]]; then
   echo "Missing $STAGING_ROOT/.env.production" >&2
   exit 1
 fi
-if ss -lnt | grep -q ":${PROD_PORT} "; then
-  echo "Port $PROD_PORT is already in use. Pick another PROD_PORT." >&2
-  exit 1
+port_in_use() {
+  ss -lnt | grep -qE ":${1}[[:space:]]"
+}
+
+if pm2 describe khatario >/dev/null 2>&1; then
+  echo ">> PM2 khatario already exists — will rebuild/restart it"
+elif port_in_use "$PROD_PORT"; then
+  echo ">> port $PROD_PORT is busy:"
+  ss -lntp | grep -E ":${PROD_PORT}[[:space:]]" || true
+  for try in 3003 3004 3005 3010; do
+    if ! port_in_use "$try"; then
+      echo "   using PROD_PORT=$try instead"
+      PROD_PORT="$try"
+      break
+    fi
+  done
+  if port_in_use "$PROD_PORT"; then
+    echo "No free port in 3002–3005/3010. Set PROD_PORT and re-run." >&2
+    exit 1
+  fi
 fi
 
 echo ""
@@ -186,7 +203,8 @@ if [[ ! -f "$NGINX_HTTP" ]]; then
   echo "   nginx template missing — git pull origin main on staging first" >&2
   exit 1
 fi
-cp "$NGINX_HTTP" "/etc/nginx/sites-available/${NGINX_SITE_NAME}"
+sed "s/127.0.0.1:3002/127.0.0.1:${PROD_PORT}/g" "$NGINX_HTTP" \
+  > "/etc/nginx/sites-available/${NGINX_SITE_NAME}"
 ln -sfn "/etc/nginx/sites-available/${NGINX_SITE_NAME}" "/etc/nginx/sites-enabled/${NGINX_SITE_NAME}"
 nginx -t
 systemctl reload nginx
@@ -203,7 +221,8 @@ if [[ "$WITH_CERTBOT" == true ]]; then
       --non-interactive --agree-tos --keep-until-expiring \
       || echo "   certbot failed — HTTP origin still works behind Cloudflare"
     if [[ -f /etc/letsencrypt/live/khatario.com/fullchain.pem ]]; then
-      cp "$NGINX_SSL" "/etc/nginx/sites-available/${NGINX_SITE_NAME}"
+      sed "s/127.0.0.1:3002/127.0.0.1:${PROD_PORT}/g" "$NGINX_SSL" \
+        > "/etc/nginx/sites-available/${NGINX_SITE_NAME}"
       nginx -t && systemctl reload nginx
       echo "   installed TLS nginx site"
     fi
