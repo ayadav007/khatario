@@ -158,6 +158,7 @@ function SignupPageContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (step === 'otp') return;
     setError('');
     setErrorCode(null);
     const phoneDigits = formData.userPhone.replace(/\D/g, '').slice(-10);
@@ -199,10 +200,21 @@ function SignupPageContent() {
         </div>
       </header>
 
-      <main className={clsx(pageShell, 'pb-16 pt-10 lg:pb-20 lg:pt-14')}>
-        <div className="grid gap-10 lg:grid-cols-2 lg:gap-14 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:gap-20 2xl:gap-24">
+      <main
+        className={clsx(
+          pageShell,
+          step === 'otp' ? 'flex min-h-[calc(100vh-5rem)] items-center justify-center py-10' : 'pb-16 pt-10 lg:pb-20 lg:pt-14',
+        )}
+      >
+        <div
+          className={
+            step === 'otp'
+              ? 'flex w-full justify-center'
+              : 'grid gap-10 lg:grid-cols-2 lg:gap-14 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] xl:gap-20 2xl:gap-24'
+          }
+        >
           {/* Left — value prop */}
-          <div className="order-2 flex min-w-0 flex-col justify-center lg:order-1">
+          <div className={clsx('order-2 min-w-0 flex-col justify-center lg:order-1', step === 'otp' ? 'hidden' : 'flex')}>
             <h1 className="text-2xl font-bold leading-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl xl:leading-tight">
               {copy.title}
             </h1>
@@ -247,30 +259,38 @@ function SignupPageContent() {
           </div>
 
           {/* Right — form (full column width on large screens) */}
-          <div className="order-1 min-w-0 lg:order-2">
-            <div className="mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none xl:pl-4 2xl:pl-8">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl">
-                {step === 'otp' ? 'Verify your mobile number' : "Hi there! Let's get you started"}
-              </h2>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
-                {step === 'otp'
-                  ? `We sent a WhatsApp code to +91 ${formData.userPhone.replace(/\D/g, '').slice(-10)}. Enter it to create your account.`
-                  : `Create your ${productLabel} account and go live in a couple of minutes.`}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Signing up for{' '}
-                <Link href={`/?product=${productLine}`} className="font-medium text-primary-600 hover:underline">
-                  Khatario {productLabel}
-                </Link>
-                {' · '}
-                <Link href="/?product=billing" className="hover:underline">Billing</Link>
-                {' · '}
-                <Link href="/?product=hr" className="hover:underline">HR</Link>
-                {' · '}
-                <Link href="/?product=connect" className="hover:underline">Connect</Link>
-              </p>
+          <div className={clsx('min-w-0', step === 'otp' ? 'w-full max-w-[420px]' : 'order-1 lg:order-2')}>
+            <div
+              className={
+                step === 'otp'
+                  ? 'w-full'
+                  : 'mx-auto w-full max-w-lg lg:mx-0 lg:max-w-none xl:pl-4 2xl:pl-8'
+              }
+            >
+              {step !== 'otp' ? (
+                <>
+                  <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl xl:text-4xl">
+                    Hi there! Let&apos;s get you started
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 sm:text-base">
+                    Create your {productLabel} account and go live in a couple of minutes.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Signing up for{' '}
+                    <Link href={`/?product=${productLine}`} className="font-medium text-primary-600 hover:underline">
+                      Khatario {productLabel}
+                    </Link>
+                    {' · '}
+                    <Link href="/?product=billing" className="hover:underline">Billing</Link>
+                    {' · '}
+                    <Link href="/?product=hr" className="hover:underline">HR</Link>
+                    {' · '}
+                    <Link href="/?product=connect" className="hover:underline">Connect</Link>
+                  </p>
+                </>
+              ) : null}
 
-              <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+              <form onSubmit={handleSubmit} className={step === 'otp' ? 'space-y-5' : 'mt-8 space-y-5'}>
                 {error && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                     <p>{error}</p>
@@ -288,7 +308,7 @@ function SignupPageContent() {
                 {step === 'otp' ? (
                   <div className="space-y-4">
                     {loading && !error ? (
-                      <p className="text-sm text-slate-600 dark:text-slate-400">Creating your account…</p>
+                      <p className="text-center text-sm text-slate-600 dark:text-slate-400">Creating your account…</p>
                     ) : null}
                     <PublicWhatsAppOtp
                       purpose="signup"
@@ -296,6 +316,11 @@ function SignupPageContent() {
                       verified={otpVerified}
                       onVerified={handleOtpVerified}
                       autoSend
+                      onCancel={() => {
+                        completingRef.current = false;
+                        setOtpVerified(false);
+                        setStep('details');
+                      }}
                     />
                     {otpVerified && error ? (
                       <Button
@@ -311,18 +336,6 @@ function SignupPageContent() {
                         Try creating account again
                       </Button>
                     ) : null}
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => {
-                        completingRef.current = false;
-                        setOtpVerified(false);
-                        setStep('details');
-                      }}
-                      className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
-                    >
-                      Back to registration details
-                    </button>
                   </div>
                 ) : (
                   <>

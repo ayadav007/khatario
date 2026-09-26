@@ -253,14 +253,8 @@ export default function BookDemoPage() {
               <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-8">
                 {step === 'otp' ? (
                   <div className="space-y-4">
-                    <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-50">
-                      Verify your mobile number
-                    </h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                      Confirm booking after the WhatsApp code for {formData.phone}.
-                    </p>
                     {submitting && !error ? (
-                      <p className="text-sm text-slate-600">Confirming your booking…</p>
+                      <p className="text-center text-sm text-slate-600">Confirming your booking…</p>
                     ) : null}
                     <PublicWhatsAppOtp
                       purpose="demo_booking"
@@ -268,6 +262,11 @@ export default function BookDemoPage() {
                       verified={otpVerified}
                       onVerified={handleOtpVerified}
                       autoSend
+                      onCancel={() => {
+                        completingRef.current = false;
+                        setOtpVerified(false);
+                        setStep('details');
+                      }}
                     />
                     {otpVerified && error ? (
                       <button
@@ -288,18 +287,6 @@ export default function BookDemoPage() {
                         <p className="text-base text-red-800">{error}</p>
                       </div>
                     )}
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() => {
-                        completingRef.current = false;
-                        setOtpVerified(false);
-                        setStep('details');
-                      }}
-                      className="text-sm font-medium text-primary-600 hover:underline"
-                    >
-                      Back to booking details
-                    </button>
                   </div>
                 ) : null}
                 <div className={step === 'otp' ? 'hidden' : 'flex min-h-0 flex-1 flex-col gap-8'}>
