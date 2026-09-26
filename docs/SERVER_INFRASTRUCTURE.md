@@ -56,12 +56,13 @@ bash scripts/setup-khatario-production.sh --with-certbot
 
 That script does **not** restart `khatario-staging`. It:
 
-1. Creates Postgres `khatario_prod` (empty — all migrations on first deploy)
-2. Clones `/var/www/khatario-prod`
-3. Copies staging `.env.production`, then sets production URL/port/DB/PM2 and **new** `JWT_SECRET` + `CRON_SECRET`
-4. Enables nginx `khatario` → `127.0.0.1:3002`
-5. Optionally issues Let’s Encrypt for `khatario.com` and `*.khatario.com` (same Cloudflare DNS plugin as staging)
-6. `npm ci` → migrate → build → `pm2 start` name `khatario`
+1. Creates Postgres `khatario_prod`
+2. Copies the **live staging schema** (`pg_dump --schema-only khatario`) plus catalog rows (`schema_migrations`, plans, feature registry). It does **not** load `database/schema.sql` and does **not** replay 001–288 on an empty DB. Staging businesses/users/invoices are **not** copied.
+3. Clones `/var/www/khatario-prod`
+4. Copies staging `.env.production`, then sets production URL/port/DB/PM2 and **new** `JWT_SECRET` + `CRON_SECRET`
+5. Enables nginx `khatario` → `127.0.0.1:3002`
+6. Optionally issues Let’s Encrypt for `khatario.com` and `*.khatario.com` (same Cloudflare DNS plugin as staging)
+7. `npm ci` → `db:migrate:pending` (should be empty if the dump is current) → build → `pm2 start` name `khatario`
 
 Smoke:
 
@@ -71,7 +72,7 @@ curl -sI https://khatario.com/login | head
 pm2 list
 ```
 
-Staging should still be `https://staging.khatario.com`. Production DB starts empty: sign up a real tenant; do not copy staging businesses unless you explicitly dump/restore.
+Staging should still be `https://staging.khatario.com`. Production has no tenant data: sign up a real business on `khatario.com`.
 
 ### Later production deploys
 

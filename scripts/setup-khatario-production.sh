@@ -11,6 +11,11 @@
 #
 # Staging env is copied (API keys, SMTP). JWT_SECRET and CRON_SECRET are
 # generated fresh so staging cookies cannot open production.
+#
+# Database: copies the LIVE staging *schema* (pg_dump --schema-only from
+# `khatario`) plus catalog rows (plans/features/migration history).
+# Does NOT copy businesses, users, invoices, or stores. Do not replay
+# database/schema.sql or 001–288 on an empty DB.
 
 set -euo pipefail
 
@@ -65,6 +70,37 @@ if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${PROD_D
 else
   sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${PROD_DB} OWNER postgres;"
   echo "   created"
+fi
+
+echo ">> clone schema from staging database khatario (not schema.sql / not empty migrate)"
+PROD_TABLES="$(sudo -u postgres psql -d "$PROD_DB" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")"
+PROD_TABLES="${PROD_TABLES//[[:space:]]/}"
+if [[ "${PROD_TABLES:-0}" -gt 10 ]]; then
+  echo "   $PROD_DB already has ${PROD_TABLES} tables — skip dump"
+else
+  sudo -u postgres pg_dump --schema-only --no-owner --no-acl khatario \
+    | sudo -u postgres psql -v ON_ERROR_STOP=1 "$PROD_DB"
+  echo "   schema restored"
+
+  DUMP_T=()
+  for t in \
+    schema_migrations \
+    platform_features \
+    feature_flags \
+    subscription_plans \
+    subscription_plan_features \
+    subscription_plan_limits
+  do
+    if sudo -u postgres psql -d khatario -tAc "SELECT to_regclass('public.${t}')" | grep -q "${t}"; then
+      DUMP_T+=(-t "$t")
+    fi
+  done
+  if [[ ${#DUMP_T[@]} -gt 0 ]]; then
+    sudo -u postgres pg_dump --data-only --disable-triggers --no-owner --no-acl \
+      "${DUMP_T[@]}" khatario \
+      | sudo -u postgres psql -v ON_ERROR_STOP=1 "$PROD_DB"
+    echo "   catalog + schema_migrations copied (${#DUMP_T[@]} tables)"
+  fi
 fi
 
 echo ">> git clone $PROD_ROOT"
@@ -199,5 +235,5 @@ echo "  - PLATFORM_RAZORPAY_* in $PROD_ROOT/.env.production, then pm2 restart kh
 echo "  - Razorpay webhook https://khatario.com/api/webhooks/platform-billing/razorpay"
 echo "  - crontab Bearer CRON_SECRET against https://khatario.com"
 echo "  - GitHub secret VPS_PROD_APP_PATH=/var/www/khatario-prod"
-echo "  - Signup / platform admin on the empty khatario_prod database"
+echo "  - Signup / platform admin on khatario_prod (no staging tenants were copied)"
 echo ""
