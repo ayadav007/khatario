@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import type { CSSProperties, ElementType, ReactNode } from 'react';
 import { useInViewOnce } from '@/hooks/useInViewOnce';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { useMarketingEditing } from '@/components/marketing/builder/MarketingEditingContext';
 
 type LandingRevealProps = {
   children: ReactNode;
@@ -12,6 +13,7 @@ type LandingRevealProps = {
   delay?: number;
   as?: ElementType;
   style?: CSSProperties;
+  id?: string;
 };
 
 export function LandingReveal({
@@ -20,13 +22,17 @@ export function LandingReveal({
   delay = 0,
   as: Tag = 'div',
   style,
+  id,
 }: LandingRevealProps) {
   const { ref, inView } = useInViewOnce();
-  const reduced = usePrefersReducedMotion();
+  const prefersReduced = usePrefersReducedMotion();
+  const editing = useMarketingEditing();
+  const reduced = prefersReduced || editing;
 
   return (
     <Tag
       ref={ref}
+      id={id}
       className={clsx(
         className,
         !reduced && (inView ? 'landing-reveal-in' : 'landing-reveal-pending'),

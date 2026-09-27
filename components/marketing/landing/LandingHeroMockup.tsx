@@ -39,8 +39,8 @@ function BillingMockupBody({ phase }: { phase: Phase }) {
       </div>
       <div className="rounded-lg border border-slate-200 bg-slate-50/80">
         <div className="grid grid-cols-12 gap-x-1 gap-y-1 border-b border-slate-200 px-2 py-2 text-[11px] font-medium leading-tight text-slate-500 sm:gap-x-2 sm:px-3 sm:text-xs">
-          <span className="col-span-4">Item</span>
-          <span className="col-span-2 text-center">HSN</span>
+          <span className="col-span-6 sm:col-span-4">Item</span>
+          <span className="hidden text-center sm:col-span-2 sm:block">HSN</span>
           <span className="col-span-2 text-right">GST%</span>
           <span className="col-span-1 text-right">Qty</span>
           <span className="col-span-3 text-right">Amount</span>
@@ -52,8 +52,8 @@ function BillingMockupBody({ phase }: { phase: Phase }) {
               phase >= 1 ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0',
             )}
           >
-            <span className="col-span-4 min-w-0 truncate text-slate-800">Basmathi rice 5kg</span>
-            <span className="col-span-2 text-center tabular-nums text-slate-600">10063030</span>
+            <span className="col-span-6 min-w-0 truncate text-slate-800 sm:col-span-4">Basmati rice 5kg</span>
+            <span className="hidden text-center tabular-nums text-slate-600 sm:col-span-2 sm:block">10063020</span>
             <span className="col-span-2 text-right tabular-nums text-slate-600">5%</span>
             <span className="col-span-1 text-right tabular-nums text-slate-600">2</span>
             <span className="col-span-3 text-right font-medium tabular-nums text-slate-900">₹1,180</span>
@@ -64,8 +64,8 @@ function BillingMockupBody({ phase }: { phase: Phase }) {
               phase >= 2 ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0',
             )}
           >
-            <span className="col-span-4 min-w-0 truncate text-slate-800">Groundnut oil 1L</span>
-            <span className="col-span-2 text-center tabular-nums text-slate-600">15179090</span>
+            <span className="col-span-6 min-w-0 truncate text-slate-800 sm:col-span-4">Detergent powder 1kg</span>
+            <span className="hidden text-center tabular-nums text-slate-600 sm:col-span-2 sm:block">34022090</span>
             <span className="col-span-2 text-right tabular-nums text-slate-600">18%</span>
             <span className="col-span-1 text-right tabular-nums text-slate-600">1</span>
             <span className="col-span-3 text-right font-medium tabular-nums text-slate-900">₹185</span>
@@ -246,15 +246,7 @@ function LandingHeroMockupPanel({ productLine }: { productLine: ProductLine }) {
     let current = 0;
 
     const advance = () => {
-      if (cancelled) return;
-      if (current >= 4) {
-        timeoutId = window.setTimeout(() => {
-          current = 0;
-          setPhase(0);
-          advance();
-        }, 2400);
-        return;
-      }
+      if (cancelled || current >= 4) return;
       current += 1;
       setPhase(current as Phase);
       timeoutId = window.setTimeout(advance, PHASE_MS[current] ?? 500);

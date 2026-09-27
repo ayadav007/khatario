@@ -109,3 +109,6 @@ Desktop.ini
 .kiro/steering/byterover-rules.md
 .qoder/rules/byterover-rules.md
 .augment/rules/byterover-rules.md
+
+# Site builder uploads (per environment, lives on the VPS disk)
+/storage/marketing-media/

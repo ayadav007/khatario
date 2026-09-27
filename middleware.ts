@@ -81,6 +81,7 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
+  if (pathname.startsWith('/media/marketing/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
   if (isPublicBusinessEmployeePath(pathname)) return true;
   for (const prefix of PUBLIC_API_PREFIXES) {

@@ -41,10 +41,10 @@ import { PortalThemeBootScript } from "@/components/portal/PortalThemeBootScript
 export const dynamic = "force-dynamic";
 
 const APP_NAME = "Khatario";
-const APP_DEFAULT_TITLE = "Modern Invoice & Billing";
+const APP_DEFAULT_TITLE = "Khatario — GST Billing & Invoicing";
 const APP_TITLE_TEMPLATE = "%s - Khatario";
 const APP_DESCRIPTION =
-  "Modern invoice and billing application for small businesses";
+  "GST billing, stock, payments and WhatsApp invoices for Indian small businesses.";
 
 export const metadata: Metadata = {
   applicationName: APP_NAME,

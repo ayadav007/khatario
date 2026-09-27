@@ -8,66 +8,61 @@ import { X, ArrowRight, Sparkles } from 'lucide-react';
 
 /** Once the modal has been shown this browser session, do not show again (survives refresh). */
 const SESSION_FIRED_KEY = 'khatario_landing_trial_modal_fired';
-const SCROLL_THRESHOLD = 2 / 3;
-/** Min scrollable height (px) before we use scroll position — very short pages skip the modal. */
-const MIN_SCROLLABLE = 200;
+/** Visitors who leave within this window were never going to read a pitch. */
+const MIN_DWELL_MS = 20_000;
+const MIN_SCROLL_PROGRESS = 0.25;
 
 /**
- * When the user scrolls past 2/3 of the total scrollable height, opens a trial prompt once per
- * browser session (see `SESSION_FIRED_KEY` in this file).
+ * Exit-intent trial prompt: desktop pointer only (phones already have the sticky CTA), fired when the
+ * cursor leaves through the top of the window, once per session, and never while pricing is on screen.
  */
 export function LandingScrollTrialModal() {
   const router = useRouter();
   const { productLine, signupHref } = useLandingProduct();
   const productLabel = PRODUCT_LINE_LABELS[productLine];
   const [open, setOpen] = useState(false);
-  const raf = useRef<number | null>(null);
   const openedRef = useRef(false);
+  const maxProgressRef = useRef(0);
 
   const close = useCallback(() => {
     setOpen(false);
   }, []);
 
-  const tryOpen = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    if (openedRef.current) return;
+  useEffect(() => {
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (sessionStorage.getItem(SESSION_FIRED_KEY) === '1') return;
 
-    const el = document.documentElement;
-    const scrollable = el.scrollHeight - window.innerHeight;
-    if (scrollable < MIN_SCROLLABLE) return;
+    const startedAt = Date.now();
 
-    const progress = window.scrollY / scrollable;
-    if (progress >= SCROLL_THRESHOLD) {
+    const onScroll = () => {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      if (scrollable > 0) {
+        maxProgressRef.current = Math.max(maxProgressRef.current, window.scrollY / scrollable);
+      }
+    };
+
+    const pricingVisible = () => {
+      const rect = document.getElementById('pricing')?.getBoundingClientRect();
+      return !!rect && rect.top < window.innerHeight && rect.bottom > 0;
+    };
+
+    const onMouseOut = (e: MouseEvent) => {
+      if (openedRef.current || e.relatedTarget || e.clientY > 0) return;
+      if (Date.now() - startedAt < MIN_DWELL_MS) return;
+      if (maxProgressRef.current < MIN_SCROLL_PROGRESS) return;
+      if (pricingVisible()) return;
       openedRef.current = true;
       sessionStorage.setItem(SESSION_FIRED_KEY, '1');
       setOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const onScroll = () => {
-      if (raf.current != null) return;
-      raf.current = window.requestAnimationFrame(() => {
-        raf.current = null;
-        tryOpen();
-      });
     };
-
-    function onResize() {
-      tryOpen();
-    }
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onResize, { passive: true });
-    tryOpen();
-
+    document.addEventListener('mouseout', onMouseOut);
     return () => {
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onResize);
-      if (raf.current != null) cancelAnimationFrame(raf.current);
+      document.removeEventListener('mouseout', onMouseOut);
     };
-  }, [tryOpen]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -121,7 +116,7 @@ export function LandingScrollTrialModal() {
             ? 'Create a free Connect account — add Bot or Send Message add-ons when you need them. No platform fee.'
             : productLine === 'hr'
               ? 'Start a 30-day HR trial: employees, attendance, payroll, and leave — no card to begin.'
-              : "You've looked through a lot. Start a free trial: GST billing, stock, and WhatsApp in one app — no card to begin."}
+              : 'Before you go — try GST billing, stock and WhatsApp invoices free. No card needed.'}
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <button

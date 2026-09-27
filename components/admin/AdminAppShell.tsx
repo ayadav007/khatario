@@ -20,12 +20,24 @@ import {
   GitBranch,
   Menu,
   X,
+  LayoutTemplate,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AdminPwaChrome } from '@/components/admin/AdminPwaChrome';
 
-const navigation = [
+type AdminNavItem = {
+  name: string;
+  href: string;
+  icon: typeof LayoutDashboard;
+  requiresSuper?: boolean;
+  requiresAdmin?: boolean;
+};
+
+const FULL_SCREEN_PATHS = ['/admin/site-builder'];
+
+const navigation: AdminNavItem[] = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
+  { name: 'Site Builder', href: '/admin/site-builder', icon: LayoutTemplate, requiresAdmin: true },
   { name: 'Businesses', href: '/admin/businesses', icon: Building2 },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
   { name: 'Billing', href: '/admin/billing', icon: CircleDollarSign },
@@ -53,6 +65,7 @@ function AdminNavLinks({
     <nav className="flex-1 space-y-1 p-4">
       {navigation.map((item) => {
         if (item.requiresSuper && role !== 'super_admin') return null;
+        if (item.requiresAdmin && role !== 'admin' && role !== 'super_admin') return null;
         const isActive = pathname === item.href;
         const Icon = item.icon;
         return (
@@ -112,6 +125,10 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
 
   if (!admin) {
     return null;
+  }
+
+  if (FULL_SCREEN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return <>{children}</>;
   }
 
   const sidebar = (
