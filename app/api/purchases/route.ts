@@ -709,7 +709,13 @@ export async function POST(request: NextRequest) {
 
       const unitCostForStock = qty > 0 ? taxable / qty : Number(item.unit_price) || 0;
 
-      const lineIntent = item.item_type === 'service' ? 'service' : 'goods';
+      // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
+      const lineIntent =
+        item.item_type === 'service' ||
+        item.line_item_type === 'service' ||
+        /^99/.test(String(item.hsn_sac ?? '').trim())
+          ? 'service'
+          : 'goods';
 
       // Insert purchase item with GST breakdown
       await client.query(

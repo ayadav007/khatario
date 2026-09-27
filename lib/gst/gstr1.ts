@@ -318,12 +318,14 @@ export class GSTR1Generator {
           i.shipping_bill_number, i.shipping_bill_date, i.port_code,
           i.ecommerce_operator_gstin, i.is_ecommerce_supply, i.subtotal, i.branch_id,
           c.gstin as customer_gstin, c.name as customer_name,
-          ii.tax_rate, ii.hsn_sac, ii.quantity, ii.unit, ii.taxable_value as item_taxable_value,
+          ii.tax_rate, COALESCE(NULLIF(TRIM(ii.hsn_sac), ''), it.hsn_sac) AS hsn_sac,
+          ii.quantity, ii.unit, ii.taxable_value as item_taxable_value,
           ii.cgst_amount, ii.sgst_amount, ii.igst_amount,
           COALESCE(ii.cess_amount, 0) AS item_cess_amount,
           ii.item_name
         FROM invoices i
         JOIN invoice_items ii ON i.id = ii.invoice_id
+        LEFT JOIN items it ON it.id = ii.item_id
         LEFT JOIN customers c ON i.customer_id = c.id AND c.deleted_at IS NULL
         WHERE i.business_id = $1 
           AND i.deleted_at IS NULL
@@ -889,8 +891,15 @@ export class GSTR1Generator {
         };
         const rate = parseFloat(line.tax_rate) || 0;
         const gstin = line.customer_gstin ? String(line.customer_gstin).trim() : '';
-        addHsn(hsn, signed, rate);
-        addHsn(gstin.length === 15 ? hsn_b2b : hsn_b2c, signed, rate);
+        const netInto = (list: HSNEntry[]) => {
+          const key = signed.hsn_sac || 'NA';
+          const uqc = toGstUqc(signed.unit, signed.hsn_sac);
+          const sameUnit = list.some((h) => h.hsn_sac === key && h.rate === rate && h.uqc === uqc);
+          const sameHsn = sameUnit ? null : list.find((h) => h.hsn_sac === key && h.rate === rate);
+          addHsn(list, sameHsn ? { ...signed, unit: sameHsn.uqc } : signed, rate);
+        };
+        netInto(hsn);
+        netInto(gstin.length === 15 ? hsn_b2b : hsn_b2c);
       }
 
       return {

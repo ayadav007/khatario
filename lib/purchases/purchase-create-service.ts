@@ -379,7 +379,13 @@ export async function createPurchaseInTransaction(
     const item = items[i];
     const computed = gstDoc.lineComputeds[i];
     const qty = Number(item.quantity) || 0;
-    const lineIntent = item.item_type === 'service' ? 'service' : 'goods';
+    // SAC codes (chapter 99) are services only; never stock them or auto-create goods for them.
+    const lineIntent =
+      item.item_type === 'service' ||
+      item.line_item_type === 'service' ||
+      /^99/.test(String(item.hsn_sac ?? '').trim())
+        ? 'service'
+        : 'goods';
     const lineTaxMode =
       item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive'
         ? item.tax_mode

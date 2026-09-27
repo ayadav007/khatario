@@ -365,3 +365,23 @@ Still open: estimate / sales-order / WhatsApp conversions create invoices withou
 - TDS threshold aggregate excludes draft bills.
 
 Retest after deploy: TB shows 3100 Cr ₹2,43,500 and Inventory ₹2,99,250; cancel CN-PROBE-OVER (COGS back to ₹1,73,250, INV-021 balance restored); GSTR-1 HSN Almirah B2B net of CN-002.
+
+### Run 4 — after deploying c580292 (27 Sep 2026, UI/API plus read-only DB checks)
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| A10 | Pass | 3100 Cr ₹2,43,500; DB: 5 opening_stock vouchers dated 01-Apr-2026 | |
+| N5 | Pass | CN-PROBE-OVER cancelled (second cancel 409); stock out 5; INV-021 balance ₹10,620; COGS ₹1,73,250; sales +₹45,000; AR +₹53,100; customer balance = open invoices ₹79,070; TB balanced | |
+| G-CDNR | Pass | CN-001 / CN-002 carry original invoice date; Table 13 shows CN-PROBE-OVER as cancelled | |
+| P-SAC | **Fail** | Inventory ₹3,39,250 = expected + ₹40,000: bill AM/2026/52 (SAC 998216 legal retainer) auto-created a *goods* item and posted Dr Inventory | A SAC code can never be stock. Only this QA bill is affected on staging (DB check) |
+| P-DEL | **Fail** (code review) | Deleting a final bill leaves its TDS voucher and `tds_transactions`, and skips GST-filed / period-lock checks | |
+| G-HSN2 | **Fail** | INV-021 line saved without HSN (API payload used `hsn_code`) so it is missing from Table 12; CN-002 then shows as a lone negative row | HSN is mandatory on tax invoices (Notification 78/2020) |
+
+### Fixes after Run 4 (local, awaiting deploy; no migration)
+
+- Purchase lines with a SAC (chapter 99) code, or `line_item_type: 'service'`, are services: no stock, no auto-created goods item (`app/api/purchases/route.ts`, `lib/purchases/purchase-create-service.ts`).
+- Deleting a final bill: blocked for a filed GST month or locked period; blocked if its TDS is deposited; otherwise the TDS voucher and TDS record are removed with the bill.
+- Invoice lines without HSN take the item's HSN on save; GSTR-1 falls back to the item's HSN for existing lines.
+- HSN netting of a note merges into the invoice row with the same HSN and rate when units differ.
+
+Staging data to correct after deploy: delete test bill AM/2026/52 (reverses stock, GL and the ₹8,000 TDS) and re-enter it as a service bill.

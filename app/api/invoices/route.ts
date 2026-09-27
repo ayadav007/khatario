@@ -1633,6 +1633,7 @@ export async function POST(request: NextRequest) {
       );
 
       
+      // HSN/SAC is mandatory on a tax invoice (Rule 46); fall back to the catalogue item's code.
       await client.query(`
         INSERT INTO invoice_items (
           invoice_id, item_id, variant_id, item_name, description, hsn_sac,
@@ -1640,7 +1641,9 @@ export async function POST(request: NextRequest) {
           tax_rate, tax_amount, taxable_value, cgst_amount, sgst_amount, igst_amount,
           line_total, sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5,
+                COALESCE(NULLIF(TRIM($6::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)),
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       `, [
         invoice.id,
         item.item_id || null,

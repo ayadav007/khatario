@@ -277,6 +277,39 @@ export async function DELETE(
         );
       }
 
+      if (purchase.status === 'final') {
+        const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
+        const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
+        try {
+          await assertGstPeriodNotFiledForDocumentDate(purchase.business_id, purchase.branch_id, purchase.bill_date, 'delete purchase');
+        } catch (error: any) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: error.message, code: 'GST_PERIOD_FILED' }, { status: 403 });
+        }
+        try {
+          await assertPeriodNotLocked(purchase.business_id, purchase.branch_id, purchase.bill_date, 'purchase deletion');
+        } catch (error: any) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: error.message, code: 'PERIOD_LOCKED' }, { status: 403 });
+        }
+      }
+
+      const tdsRes = await client.query<{ id: string; is_deposited: boolean }>(
+        `SELECT id, COALESCE(is_deposited, false) AS is_deposited
+           FROM tds_transactions WHERE business_id = $1 AND purchase_id = $2`,
+        [purchase.business_id, purchaseId]
+      );
+      if (tdsRes.rows.some((r) => r.is_deposited)) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'TDS on this bill is already deposited. Correct it through a TDS return revision instead of deleting the bill.',
+            code: 'BILL_TDS_DEPOSITED',
+          },
+          { status: 409 }
+        );
+      }
+
       // If purchase is final, reverse stock movements
       if (purchase.status === 'final') {
         // Fetch purchase items
@@ -487,6 +520,18 @@ export async function DELETE(
              AND voucher_id = $2`,
           [businessId, purchaseId]
         );
+        const tdsIds = tdsRes.rows.map((r) => r.id);
+        if (tdsIds.length > 0) {
+          await client.query(
+            `DELETE FROM ledger_entry_lines
+              WHERE business_id = $1 AND voucher_type = 'tds' AND voucher_id = ANY($2::uuid[])`,
+            [businessId, tdsIds]
+          );
+          await client.query(`DELETE FROM tds_transactions WHERE business_id = $1 AND id = ANY($2::uuid[])`, [
+            businessId,
+            tdsIds,
+          ]);
+        }
         if (purchase.supplier_id) {
           const netOutstanding = Number(purchase.balance_amount ?? 0) || 0;
           if (netOutstanding !== 0) {
