@@ -52,6 +52,7 @@ import {
   getPosMode,
   getPosAutoBluetoothPrint,
   setPosAutoBluetoothPrint,
+  setPosMode as persistPosMode,
   shouldPosPrintViaBluetooth,
 } from '@/lib/pos-settings';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
@@ -238,6 +239,8 @@ interface InvoiceItemRow {
   total: number;
   gstIncluded?: boolean;
   priceUserOverride?: boolean;
+  code?: string;
+  mrp?: number;
 }
 
 /** Convert GST-inclusive stored price into taxable-exclusive unit rate (matches catalog item picker logic). */
@@ -972,7 +975,7 @@ function NewInvoiceContent() {
       if (displayName === item.barcode && item.code && item.code !== item.barcode) displayName = variantName ? `${item.code} - ${variantName}` : item.code;
       let price = Number(item.selling_price), tr = Number(item.tax_rate || 0);
       if (item.gst_included && tr > 0) price = price / (1 + tr / 100);
-      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false });
+      const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
       if (posMode) {
@@ -2182,6 +2185,7 @@ function NewInvoiceContent() {
           setShareModalOpen(true);
         }
       }
+      return true;
     } catch (e: any) { 
       console.error(e); 
       // Enhanced error message with warehouse stock info
@@ -2203,8 +2207,14 @@ function NewInvoiceContent() {
       }
       setToastMessage({ message: errorMsg, type: 'error' }); 
       hotToast.error(errorMsg, { duration: 8000 });
+      return false;
     } finally { setLoading(false); }
   }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
+
+  const handlePosSaveBill = useCallback(async () => {
+    const ok = await handleSave('final');
+    if (ok) setTimeout(() => startNewBill(), 400);
+  }, [handleSave, startNewBill]);
 
   const handlePreview = useCallback(async () => {
     if (rows.length === 0 || !rows.some(r => r.name && r.itemId)) { setToastMessage({ message: 'Add items', type: 'error' }); return; }
@@ -3009,7 +3019,7 @@ function NewInvoiceContent() {
               {exportType === 'wop' && (<div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded"><p className="text-xs text-yellow-800 dark:text-yellow-200"><strong>LUT Export:</strong> This invoice is for export under LUT without payment of IGST. IGST at 0%.</p></div>)}
           </div>
       )}
-      <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} />
+      <ItemsTable rows={rows} onUpdateRow={updateRow} onItemSelect={handleItemSelect} onAddRow={() => setRows([...rows, { itemId: '', name: '', quantity: 1, freeQty: 0, unit: 'PCS', price: 0, discountPercent: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0, hsnSac: '', taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0 }])} onRemoveRow={(idx) => setRows(rows.filter((_, i) => i !== idx))} isFinal={isFinal} documentType={documentType} itemInputRefs={itemInputRefs.current} onAddNewItem={() => setCreateItemModalOpen(true)} posMode={posMode} subtotal={subtotal} totalTax={totalTax} grandTotal={grandTotal} warehouseId={selectedWarehouseId} onClearAllRows={() => setRows([])} />
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
@@ -3572,6 +3582,7 @@ function NewInvoiceContent() {
           })));
         }}
         onPrintBill={handlePrintBill}
+        onSaveBill={handlePosSaveBill}
         isPrinting={loading}
         offlinePending={offlineSyncPending}
         offlineInvoiceLabel={offlineDisplayNumber}
@@ -3589,6 +3600,12 @@ function NewInvoiceContent() {
         getInvoiceState={getInvoiceState}
         restoreInvoiceState={restoreInvoiceState}
         onStartNewBill={startNewBill}
+        onAddNewItem={() => setCreateItemModalOpen(true)}
+        onClearAllItems={() => setRows([])}
+        onExitPos={() => {
+          persistPosMode(false);
+          setPosMode(false);
+        }}
         itemSearchInputRef={itemInputRefs.current[0] || undefined}
         itemCount={rows.length}
         itemRows={rows.map(r => ({ itemId: r.itemId, name: r.name, quantity: r.quantity }))}

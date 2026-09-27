@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
     const browse = searchParams.get('browse') === '1';
     const warehouseId = searchParams.get('warehouse_id'); // warehouse-specific stock (location_stock)
     const branchId = searchParams.get('branch_id'); // branch_item_stock / branch_item_variant_stock when no warehouse filter
+    const categoryId = searchParams.get('category_id');
     const limitRaw = searchParams.get('limit');
     const parsedLimit = parseInt(limitRaw || '50', 10);
     const searchLimit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 150) : 50;
@@ -159,6 +160,8 @@ export async function GET(request: NextRequest) {
         : useBranch
           ? [businessId, `%${query}%`, normalizedQuery, branchId]
           : [businessId, `%${query}%`, normalizedQuery];
+      if (categoryId) params.push(categoryId);
+      const categorySql = categoryId ? ` AND i.category_id = $${params.length}` : '';
       
       let sql = '';
       if (useWarehouse) {
@@ -171,7 +174,8 @@ export async function GET(request: NextRequest) {
           i.selling_price, 
           i.purchase_price, 
           i.tax_rate, 
-          i.hsn_sac, 
+          i.hsn_sac,
+          i.mrp, 
           COALESCE(ls.current_stock_qty, i.current_stock, 0) as current_stock, 
           i.item_type, 
           i.image_url,
@@ -206,7 +210,8 @@ export async function GET(request: NextRequest) {
           i.selling_price, 
           i.purchase_price, 
           i.tax_rate, 
-          i.hsn_sac, 
+          i.hsn_sac,
+          i.mrp, 
           COALESCE(
             (SELECT bis.quantity FROM branch_item_stock bis
              WHERE bis.business_id = i.business_id AND bis.item_id = i.id AND bis.branch_id = $4::uuid),
@@ -249,7 +254,8 @@ export async function GET(request: NextRequest) {
           i.selling_price, 
           i.purchase_price, 
           i.tax_rate, 
-          i.hsn_sac, 
+          i.hsn_sac,
+          i.mrp, 
           i.current_stock, 
           i.item_type, 
           i.image_url,
@@ -281,13 +287,15 @@ export async function GET(request: NextRequest) {
            i.code ILIKE $2 OR 
            i.barcode = $3 OR
            i.barcode ILIKE $2 OR
+           COALESCE(i.hsn_sac, '') ILIKE $2 OR
            EXISTS (
              SELECT 1 FROM item_variants iv2 
-             WHERE iv2.item_id = i.id AND (iv2.barcode = $3 OR iv2.barcode ILIKE $2)
+             WHERE iv2.item_id = i.id AND (iv2.barcode = $3 OR iv2.barcode ILIKE $2 OR COALESCE(iv2.sku, '') ILIKE $2)
            )
          )
          AND i.deleted_at IS NULL
          AND (i.is_active IS NULL OR i.is_active = true)
+         ${categorySql}
          GROUP BY i.id` + (useWarehouse ? ', ls.current_stock_qty' : '') + `
          ORDER BY 
            CASE 
@@ -318,7 +326,8 @@ export async function GET(request: NextRequest) {
               i.selling_price, 
               i.purchase_price, 
               i.tax_rate, 
-              i.hsn_sac, 
+              i.hsn_sac,
+          i.mrp, 
               i.current_stock, 
               i.item_type, 
               i.image_url,
@@ -358,7 +367,8 @@ export async function GET(request: NextRequest) {
                 i.selling_price, 
                 i.purchase_price, 
                 i.tax_rate, 
-                i.hsn_sac, 
+                i.hsn_sac,
+          i.mrp, 
                 i.current_stock, 
                 i.item_type, 
                 i.image_url,

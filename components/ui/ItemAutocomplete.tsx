@@ -30,6 +30,7 @@ interface ItemSearchResult {
   purchase_price?: number;
   tax_rate: number;
   hsn_sac?: string;
+  mrp?: number | null;
   current_stock: number;
   image_url?: string;
   has_variants?: boolean;
@@ -47,6 +48,8 @@ interface ItemAutocompleteProps {
   onAddNew?: () => void;
   className?: string;
   warehouseId?: string;
+  categoryId?: string;
+  searchInputDataAttr?: Record<string, string>;
 }
 
 interface DropdownPosition {
@@ -89,7 +92,9 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   inputRef: externalInputRef,
   onAddNew,
   className,
-  warehouseId
+  warehouseId,
+  categoryId,
+  searchInputDataAttr,
 }) => {
   const { business, user } = useAuth();
   const [query, setQuery] = useState(value || '');
@@ -257,7 +262,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
 
       if (foundItems.length === 0 && !isAppOffline()) {
         const warehouseParam = warehouseId ? `&warehouse_id=${warehouseId}` : '';
-        const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}`;
+        const categoryParam = categoryId ? `&category_id=${encodeURIComponent(categoryId)}` : '';
+        const searchUrl = `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(trimmed)}${warehouseParam}${categoryParam}`;
         const res = await fetch(searchUrl, { signal: controller.signal });
         if (!res.ok) {
           if (user?.id) {
@@ -385,7 +391,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [business?.id, handleSelect]);
+  }, [business?.id, handleSelect, warehouseId, categoryId]);
 
   useEffect(() => {
     if (suppressOpenRef.current) {
@@ -720,6 +726,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
           }}
           onKeyDown={handleKeyDown}
           disabled={disabled}
+          {...searchInputDataAttr}
         />
       </div>
       {!disabled && (

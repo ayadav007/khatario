@@ -88,12 +88,13 @@ export function POSPaymentInputs({ grandTotal, payments, onChange }: POSPaymentI
           return (
             <div key={method.mode} className="flex items-center gap-3">
               <label className="w-32 text-display font-semibold text-gray-700 uppercase">
-                {method.label}
+                {method.mode === 'cash' ? 'Received' : method.label}
               </label>
               <div className="flex-1">
                 <Input
                   type="number"
                   inputMode="decimal"
+                  id={method.mode === 'cash' ? 'pos-received-cash' : undefined}
                   value={payment.amount > 0 ? payment.amount.toString() : ''}
                   onChange={(e) => {
                     const value = parseFloat(e.target.value) || 0;

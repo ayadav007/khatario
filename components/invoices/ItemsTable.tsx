@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 // InvoiceItemRow interface (matching parent definition)
 interface InvoiceItemRow {
@@ -28,6 +29,8 @@ interface InvoiceItemRow {
   total: number;
   gstIncluded?: boolean;
   priceUserOverride?: boolean;
+  code?: string;
+  mrp?: number;
 }
 
 interface ItemsTableProps {
@@ -71,6 +74,7 @@ interface ItemsTableProps {
   onDuplicateRow?: (index: number) => void;
   /** Hide built-in Items header / Add item when the parent composer owns them. */
   hideChrome?: boolean;
+  onClearAllRows?: () => void;
 }
 
 const ItemsTable = React.memo(function ItemsTable({
@@ -93,10 +97,15 @@ const ItemsTable = React.memo(function ItemsTable({
   onReplaceRow,
   onDuplicateRow,
   hideChrome = false,
+  onClearAllRows,
 }: ItemsTableProps) {
+  const { business, user } = useAuth();
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
   const [editDraft, setEditDraft] = React.useState<InvoiceItemRow | null>(null);
   const [editTab, setEditTab] = React.useState<'price' | 'other'>('price');
+  const [selectedPosRow, setSelectedPosRow] = React.useState(0);
+  const [posCategoryId, setPosCategoryId] = React.useState('all');
+  const [posCategories, setPosCategories] = React.useState<Array<{ id: string; name: string }>>([]);
 
   // POS Mode: Simplified table (Item Name, Qty, Price, Tax, Total)
   // Invoice Mode: Full table (includes HSN, Discount)
@@ -127,6 +136,99 @@ const ItemsTable = React.memo(function ItemsTable({
       }
     }
   }, [rows, posMode]);
+
+  const filledPosRows = React.useMemo(
+    () => rows.map((r, i) => ({ r, i })).filter(({ r }) => r.itemId && r.name),
+    [rows]
+  );
+
+  React.useEffect(() => {
+    if (!posMode || filledPosRows.length === 0) return;
+    setSelectedPosRow((prev) => {
+      const max = filledPosRows.length - 1;
+      return Math.min(prev, Math.max(0, max));
+    });
+  }, [posMode, filledPosRows.length]);
+
+  React.useEffect(() => {
+    if (!posMode || !business?.id) return;
+    let cancelled = false;
+    fetch(
+      `/api/categories?business_id=${encodeURIComponent(business.id)}${user?.id ? `&user_id=${encodeURIComponent(user.id)}` : ''}`,
+      { credentials: 'include' }
+    )
+      .then((res) => (res.ok ? res.json() : { categories: [] }))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data.categories)) {
+          setPosCategories(data.categories.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [posMode, business?.id, user?.id]);
+
+  const focusPosField = React.useCallback((field: 'quantity' | 'price' | 'discountPercent') => {
+    const entry = filledPosRows[selectedPosRow];
+    if (!entry) return;
+    const el = document.querySelector<HTMLInputElement>(
+      `[data-pos-row="${entry.i}"][data-pos-field="${field}"]`
+    );
+    el?.focus();
+    el?.select();
+  }, [filledPosRows, selectedPosRow]);
+
+  React.useEffect(() => {
+    if (!posMode || isFinal) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      const inSearch = target.getAttribute('data-pos-search') === '1';
+
+      if (e.key === 'F1') {
+        e.preventDefault();
+        const search = document.querySelector<HTMLInputElement>('[data-pos-search="1"]');
+        search?.focus();
+        search?.select();
+        return;
+      }
+
+      if (e.key === 'ArrowDown' && !inSearch) {
+        e.preventDefault();
+        setSelectedPosRow((prev) => Math.min(prev + 1, Math.max(0, filledPosRows.length - 1)));
+        return;
+      }
+      if (e.key === 'ArrowUp' && !inSearch) {
+        e.preventDefault();
+        setSelectedPosRow((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+
+      if (inField && !['F1'].includes(e.key)) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'p') {
+        e.preventDefault();
+        focusPosField('price');
+      } else if (key === 'q') {
+        e.preventDefault();
+        focusPosField('quantity');
+      } else if (key === 'd') {
+        e.preventDefault();
+        focusPosField('discountPercent');
+      } else if (e.key === 'Delete' && filledPosRows[selectedPosRow]) {
+        e.preventDefault();
+        onRemoveRow(filledPosRows[selectedPosRow].i);
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [posMode, isFinal, filledPosRows, selectedPosRow, focusPosField, onRemoveRow]);
 
   /** Bordered inputs — text-sm matches header scale; min-w-0 works inside table-fixed cells. */
   const tableFieldBase =
@@ -512,59 +614,61 @@ const ItemsTable = React.memo(function ItemsTable({
     >
       {/* POS Mode: Large Item Search Input Above Table */}
       {posMode && !isFinal && (
-        <div className="p-4 border-b border-border bg-surface flex-shrink-0">
-          <div className="border-2 border-border rounded-lg focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-200 dark:focus-within:ring-primary-900/40">
-            <ItemAutocomplete 
-              value={posSearchValue} 
-              onChange={setPosSearchValue} 
-              inputRef={itemInputRefs?.[0] || undefined}
-              warehouseId={warehouseId}
-              onSelect={item => {
-                // In POS mode, find the first empty row or use the first row if it's empty
-                const firstEmptyIndex = rows.findIndex(r => !r.itemId && !r.name);
-                const targetIndex = firstEmptyIndex >= 0 ? firstEmptyIndex : (rows.length > 0 && !rows[0].itemId ? 0 : rows.length);
-                onItemSelect(item, targetIndex);
-                // Clear search input after selection
-                setPosSearchValue('');
-                // Focus search input again after a brief delay
-                setTimeout(() => {
-                  if (itemInputRefs?.[0]?.current) {
-                    itemInputRefs[0].current?.focus();
-                  }
-                }, 100);
-              }}
-              onAddNew={onAddNewItem}
-              placeholder="Scan barcode or type item name..."
-              className="h-14 text-lg px-4"
-            />
+        <div className="flex-shrink-0 border-b border-border bg-surface p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <select
+              value={posCategoryId}
+              onChange={(e) => setPosCategoryId(e.target.value)}
+              className="h-10 rounded-lg border border-border bg-background px-2 text-sm text-text-primary"
+              aria-label="Filter by category"
+            >
+              <option value="all">All categories</option>
+              {posCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <div className="min-w-[16rem] flex-1 border-2 border-border rounded-lg focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-200 dark:focus-within:ring-primary-900/40">
+              <ItemAutocomplete
+                value={posSearchValue}
+                onChange={setPosSearchValue}
+                inputRef={itemInputRefs?.[0] || undefined}
+                warehouseId={warehouseId}
+                categoryId={posCategoryId === 'all' ? undefined : posCategoryId}
+                searchInputDataAttr={{ 'data-pos-search': '1' }}
+                onSelect={(item) => {
+                  const firstEmptyIndex = rows.findIndex((r) => !r.itemId && !r.name);
+                  const targetIndex =
+                    firstEmptyIndex >= 0 ? firstEmptyIndex : rows.length > 0 && !rows[0].itemId ? 0 : rows.length;
+                  onItemSelect(item, targetIndex);
+                  setPosSearchValue('');
+                  setTimeout(() => {
+                    itemInputRefs?.[0]?.current?.focus();
+                  }, 100);
+                }}
+                onAddNew={onAddNewItem}
+                placeholder="Name, barcode, HSN, SKU, or code — F1"
+                className="h-11 text-base px-3"
+              />
+            </div>
           </div>
+          <p className="text-xs text-text-muted">
+            Selected line: <span className="font-medium text-text-secondary">P</span> price ·{' '}
+            <span className="font-medium text-text-secondary">Q</span> qty ·{' '}
+            <span className="font-medium text-text-secondary">D</span> discount ·{' '}
+            <span className="font-medium text-text-secondary">Del</span> remove · arrows move
+          </p>
         </div>
       )}
       
       {/* POS Mode: Last Scanned Item Display (neutral per color rules) */}
       {posMode && !isFinal && lastScannedItem && (
-        <div className="px-4 py-3 bg-gray-50 dark:bg-slate-800 border-b border-border flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">Last Scanned Item</div>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="text-2xl font-bold text-text-primary mb-1">{lastScannedItem.name}</div>
-                  <div className="flex items-center gap-4 text-sm text-text-secondary">
-                    <span><strong>Qty:</strong> {lastScannedItem.quantity} {lastScannedItem.unit}</span>
-                    <span><strong>Price:</strong> ₹{lastScannedItem.price.toFixed(2)}</span>
-                    {lastScannedItem.taxPercent > 0 && (
-                      <span><strong>Tax:</strong> {lastScannedItem.taxPercent}%</span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">Line Total</div>
-                  <div className="text-3xl font-bold text-text-primary">₹{lastScannedItem.total.toFixed(2)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-slate-50 px-3 py-1.5 text-sm dark:bg-slate-800">
+          <span className="truncate font-medium text-text-primary">{lastScannedItem.name}</span>
+          <span className="shrink-0 tabular-nums text-text-secondary">
+            {lastScannedItem.quantity} {lastScannedItem.unit} · ₹{lastScannedItem.total.toFixed(2)}
+          </span>
         </div>
       )}
       
@@ -572,15 +676,18 @@ const ItemsTable = React.memo(function ItemsTable({
       <div className="flex-1 overflow-x-auto overflow-y-auto">
         <table
           className={`w-full table-fixed border-collapse border-spacing-0 text-sm ${
-            posMode ? 'min-w-[720px]' : 'min-w-[70rem]'
+            posMode ? 'min-w-[920px]' : 'min-w-[70rem]'
           }`}
         >
         <colgroup>
           <col className="w-10" />
           <col />
+          {posMode && <col className="w-[6.5rem]" />}
           {!posMode && <col className="w-[7rem]" />}
+          {posMode && <col className="w-[6.5rem]" />}
           <col className="w-[9rem]" />
           <col className="w-[9.5rem]" />
+          {posMode && <col className="w-[6rem]" />}
           {!posMode && <col className="w-[8rem]" />}
           {documentType !== 'bill_of_supply' && <col className="w-[8rem]" />}
           <col className="w-[9rem]" />
@@ -592,13 +699,30 @@ const ItemsTable = React.memo(function ItemsTable({
             <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-text-secondary">
               Item Description
             </th>
+            {posMode && (
+              <th className="px-2 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-text-secondary">
+                Code
+              </th>
+            )}
             {!posMode && (
               <th className="px-2 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-text-secondary">
                 HSN
               </th>
             )}
+            {posMode && (
+              <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">
+                MRP
+              </th>
+            )}
             <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">Qty</th>
-            <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">Price</th>
+            <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">
+              {posMode ? 'SP' : 'Price'}
+            </th>
+            {posMode && (
+              <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">
+                Disc %
+              </th>
+            )}
             {!posMode && (
               <th className="px-2 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-text-secondary">Disc</th>
             )}
@@ -613,15 +737,29 @@ const ItemsTable = React.memo(function ItemsTable({
           {rows.length === 0 ? (
             <tr>
               <td
-                colSpan={6 + (posMode ? 0 : 2) + (documentType === 'bill_of_supply' ? 0 : 1)}
+                colSpan={posMode ? (documentType === 'bill_of_supply' ? 9 : 10) : 6 + 2 + (documentType === 'bill_of_supply' ? 0 : 1)}
                 className="px-4 py-10 text-center text-sm text-text-muted"
               >
                 No items added yet. Start typing or scanning to add items.
               </td>
             </tr>
           ) : (
-            rows.map((row, i) => (
-            <tr key={i} className="transition-colors hover:bg-gray-50/80 dark:hover:bg-slate-800/40">
+            rows.map((row, i) => {
+            const posSelected =
+              posMode && filledPosRows[selectedPosRow]?.i === i;
+            return (
+            <tr
+              key={i}
+              onClick={() => {
+                if (!posMode) return;
+                const idx = filledPosRows.findIndex((x) => x.i === i);
+                if (idx >= 0) setSelectedPosRow(idx);
+              }}
+              className={clsx(
+                'transition-colors hover:bg-gray-50/80 dark:hover:bg-slate-800/40',
+                posSelected && 'bg-orange-50 ring-2 ring-inset ring-orange-400 dark:bg-orange-950/30'
+              )}
+            >
               <td className="px-3 py-2.5 align-middle text-left text-sm tabular-nums text-text-muted">{i + 1}</td>
               <td className="min-w-0 px-3 py-2.5 align-middle">
                 {posMode ? (
@@ -649,6 +787,11 @@ const ItemsTable = React.memo(function ItemsTable({
                   </div>
                 )}
               </td>
+              {posMode && (
+                <td className="truncate px-2 py-2.5 align-middle text-xs tabular-nums text-text-secondary" title={row.code}>
+                  {row.code || '—'}
+                </td>
+              )}
               {!posMode && (
                 <td className="px-2 py-2.5 align-middle">
                   <input 
@@ -657,6 +800,11 @@ const ItemsTable = React.memo(function ItemsTable({
                     className={tableFieldBase} 
                     disabled={isFinal} 
                   />
+                </td>
+              )}
+              {posMode && (
+                <td className="px-2 py-2.5 align-middle text-right text-sm tabular-nums text-text-secondary">
+                  {row.mrp ? `₹${Number(row.mrp).toFixed(0)}` : '—'}
                 </td>
               )}
               <td className="px-2 py-2.5 align-middle">
@@ -669,7 +817,12 @@ const ItemsTable = React.memo(function ItemsTable({
                     disabled={isFinal}
                     data-row-index={i}
                     data-field="quantity"
+                    data-pos-row={i}
+                    data-pos-field="quantity"
                 />
+                {posMode && row.unit ? (
+                  <div className="mt-0.5 text-center text-[10px] uppercase text-text-muted">{row.unit}</div>
+                ) : null}
               </td>
               <td className="px-2 py-2.5 align-middle">
                 <input 
@@ -679,9 +832,26 @@ const ItemsTable = React.memo(function ItemsTable({
                   value={Number(row.price).toFixed(2)} 
                   onChange={e => onUpdateRow(i, 'price', Number(e.target.value))} 
                   className={`${tableFieldBase} text-right`}
-                  disabled={isFinal} 
+                  disabled={isFinal}
+                  data-pos-row={i}
+                  data-pos-field="price"
                 />
               </td>
+              {posMode && (
+                <td className="px-2 py-2.5 align-middle">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={row.discountPercent}
+                    onChange={(e) => onUpdateRow(i, 'discountPercent', Number(e.target.value))}
+                    className={`${tableFieldBase} text-right`}
+                    placeholder="0"
+                    disabled={isFinal}
+                    data-pos-row={i}
+                    data-pos-field="discountPercent"
+                  />
+                </td>
+              )}
               {!posMode && (
                 <td className="px-2 py-2.5 align-middle text-right">
                   <input 
@@ -739,7 +909,8 @@ const ItemsTable = React.memo(function ItemsTable({
                 )}
               </td>
             </tr>
-          ))
+            );
+            })
           )}
          </tbody>
        </table>

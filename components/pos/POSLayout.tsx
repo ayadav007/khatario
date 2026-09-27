@@ -6,7 +6,7 @@ import { ParkedBillsDrawer } from './ParkedBillsDrawer';
 import { POSPaymentInputs } from './POSPaymentInputs';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Printer, Save, Clock, Phone, UserPlus, Loader2, X, Bluetooth } from 'lucide-react';
+import { Printer, Save, Clock, Phone, UserPlus, Loader2, X, Bluetooth, Plus, LogOut, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,6 +31,7 @@ interface POSLayoutProps {
   payments: Array<{ mode: string; amount: number }>;
   onPaymentsChange: (payments: Array<{ mode: string; amount: number }>) => void;
   onPrintBill: () => void | Promise<void>;
+  onSaveBill?: () => void | Promise<void>;
   onParkBill: () => void;
   customerName?: string;
   customerPhone?: string;
@@ -44,6 +45,9 @@ interface POSLayoutProps {
   restoreInvoiceState: (state: any) => void;
   // New bill flow
   onStartNewBill: () => void;
+  onAddNewItem?: () => void;
+  onClearAllItems?: () => void;
+  onExitPos?: () => void;
   // Focus management
   itemSearchInputRef?: React.RefObject<HTMLInputElement>;
   // Item count for disabling PRINT BILL
@@ -86,6 +90,7 @@ export function POSLayout({
   payments,
   onPaymentsChange,
   onPrintBill,
+  onSaveBill,
   onParkBill,
   customerName,
   customerPhone = '',
@@ -96,6 +101,9 @@ export function POSLayout({
   getInvoiceState,
   restoreInvoiceState,
   onStartNewBill,
+  onAddNewItem,
+  onClearAllItems,
+  onExitPos,
   itemSearchInputRef,
   itemCount,
   isPrinting = false,
@@ -192,32 +200,55 @@ export function POSLayout({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only trigger if not typing in input/textarea
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        // Allow Ctrl/Cmd combinations and F6
-        if (!e.ctrlKey && !e.metaKey && e.key !== 'F6') return;
-      }
+      const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+      if (e.key === 'F4') {
         e.preventDefault();
-        handleParkBill();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        document.getElementById('pos-received-cash')?.focus();
+        return;
+      }
+      if (e.key === 'F5') {
         e.preventDefault();
-        setParkedBillsOpen(true);
-      } else if (e.key === 'F6') {
+        document.getElementById('pos-customer-phone')?.focus();
+        return;
+      }
+      if (e.key === 'F6') {
         e.preventDefault();
-        // Calculate canPrint inline for keyboard shortcut
         const totalPaid = sumPaymentsRupee(payments);
         const canPrint = itemCount > 0 && paymentCoversGrandTotal(totalPaid, grandTotal);
-        // Only print if conditions are met
         if (canPrint && !isPrinting) {
           handlePrintBill();
         }
+        return;
+      }
+      if (e.key === 'F7') {
+        e.preventDefault();
+        if (itemCount > 0 && !isPrinting) {
+          void onSaveBill?.();
+        }
+        return;
+      }
+
+      if (inField && !e.ctrlKey && !e.metaKey) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        handleParkBill();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setParkedBillsOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        onAddNewItem?.();
+      } else if (e.ctrlKey && e.key === 'Escape') {
+        e.preventDefault();
+        onExitPos?.();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [posMode, handleParkBill, handlePrintBill, payments, itemCount, grandTotal, isPrinting]);
+  }, [posMode, handleParkBill, handlePrintBill, payments, itemCount, grandTotal, isPrinting, onSaveBill, onAddNewItem, onExitPos]);
 
   // Phone number search
   useEffect(() => {
@@ -322,72 +353,77 @@ export function POSLayout({
 
   return (
     <>
-      {/* POS Top Bar - Compact Single Row */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between sticky top-0 z-10 shadow-sm">
-        {/* LEFT: Invoice Number & Date */}
-        <div className="flex items-center gap-6">
-          <div>
-            <div className="text-2xs text-gray-500 uppercase">Invoice</div>
-            <div className="font-bold text-sm text-gray-900">
-              {offlineInvoiceLabel || invoiceNumber || 'New'}
-            </div>
-            {offlinePending && (
-              <div className="mt-0.5 text-2xs font-medium text-amber-700">
-                Offline · sync pending
+      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 shrink-0 text-xs"
+              onClick={() => onExitPos?.()}
+            >
+              <LogOut className="mr-1 h-3.5 w-3.5" />
+              Exit POS
+              <span className="ml-1 text-[10px] opacity-70">Ctrl+Esc</span>
+            </Button>
+            <div>
+              <div className="text-[10px] uppercase text-gray-500">Invoice</div>
+              <div className="truncate text-sm font-bold text-gray-900">
+                {offlineInvoiceLabel || invoiceNumber || 'New'}
               </div>
-            )}
+              {offlinePending && (
+                <div className="text-[10px] font-medium text-amber-700">Offline · sync pending</div>
+              )}
+            </div>
+            <div className="hidden sm:block">
+              <div className="text-[10px] uppercase text-gray-500">Date</div>
+              <div className="text-sm font-medium text-gray-700">{format(new Date(invoiceDate), 'dd-MM-yyyy')}</div>
+            </div>
           </div>
-          <div>
-            <div className="text-2xs text-gray-500 uppercase">Date</div>
-            <div className="font-medium text-sm text-gray-700">{format(new Date(invoiceDate), 'dd-MM-yyyy')}</div>
-          </div>
-        </div>
 
-        {/* CENTER: Phone Number Input & Customer Name */}
-        <div className="flex items-center gap-4 flex-1 justify-center max-w-2xl">
-          <div className="relative w-64">
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <div className="flex max-w-xl flex-1 items-center justify-center gap-3">
+            <div className="relative w-56">
+              <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
+                id="pos-customer-phone"
                 type="tel"
                 value={phoneSearchQuery}
                 onChange={(e) => handlePhoneChange(e.target.value)}
-                placeholder="Enter phone number"
-                className="pl-10 pr-8 h-9 text-sm"
+                placeholder="Customer phone · F5"
+                className="h-9 pl-10 pr-8 text-sm"
                 autoFocus={!phoneSearchQuery}
               />
               {phoneSearchQuery && (
                 <button
                   onClick={() => handlePhoneChange('')}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-gray-100"
                   type="button"
                 >
-                  <X className="w-3 h-3 text-gray-400" />
+                  <X className="h-3 w-3 text-gray-400" />
                 </button>
               )}
               {phoneSearching && (
-                <Loader2 className="absolute right-8 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                <Loader2 className="absolute right-8 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />
               )}
-              {/* Search Results Dropdown */}
               {phoneSearchOpen && phoneSearchResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
                   {phoneSearchResults.map((customer) => (
                     <button
                       key={customer.id}
                       type="button"
                       onClick={() => handleCustomerSelect(customer)}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                      className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-0 hover:bg-gray-50"
                     >
-                      <div className="font-medium text-sm text-gray-900">{customer.name || 'Unnamed'}</div>
+                      <div className="text-sm font-medium text-gray-900">{customer.name || 'Unnamed'}</div>
                       <div className="text-xs text-gray-500">{customer.phone}</div>
                     </button>
                   ))}
                 </div>
               )}
-              {/* No results - show create option */}
               {phoneSearchOpen && phoneSearchResults.length === 0 && phoneSearchQuery.length >= 3 && !phoneSearching && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg p-3">
-                  <div className="text-sm text-gray-600 mb-2">No customer found</div>
+                <div className="absolute z-50 mt-1 w-full rounded-md border border-gray-200 bg-white p-3 shadow-lg">
+                  <div className="mb-2 text-sm text-gray-600">No customer found</div>
                   <Button
                     type="button"
                     variant="secondary"
@@ -398,47 +434,54 @@ export function POSLayout({
                     }}
                     className="w-full"
                   >
-                    <UserPlus className="w-4 h-4 mr-2" />
+                    <UserPlus className="mr-2 h-4 w-4" />
                     Create Customer
                   </Button>
                 </div>
               )}
             </div>
+            <div className="hidden w-40 md:block">
+              <div className="text-[10px] uppercase text-gray-500">Customer</div>
+              <div className="truncate text-sm font-medium text-gray-700">{customerName || 'Cash sale'}</div>
+            </div>
           </div>
-          {/* Customer Name Display (Read-only) */}
-          <div className="w-48">
-            <div className="text-2xs text-gray-500 uppercase">Customer</div>
-            <div className="font-medium text-sm text-gray-700">{customerName || 'Cash Sale'}</div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="secondary" size="sm" onClick={handleParkBill} className="h-8 text-xs">
+              <Save className="mr-1 h-3.5 w-3.5" />
+              Hold
+              <span className="ml-1 text-[10px] opacity-70">Ctrl+H</span>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setParkedBillsOpen(true)} className="h-8 text-xs">
+              <Clock className="mr-1 h-3.5 w-3.5" />
+              Held ({parkedBillsCount})
+            </Button>
           </div>
         </div>
 
-        {/* RIGHT: Park Bill & Parked Bills */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleParkBill}
-            className="flex items-center gap-1.5 h-8 text-xs"
-          >
-            <Save className="w-3.5 h-3.5" />
-            Park
-            <span className="text-2xs opacity-70">(Ctrl+H)</span>
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-100 bg-slate-50 px-3 py-1.5">
+          <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => onAddNewItem?.()}>
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            New item
+            <span className="ml-1 text-[10px] opacity-70">Ctrl+I</span>
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setParkedBillsOpen(true)}
-            className="flex items-center gap-1.5 h-8 text-xs"
+          <span className="hidden text-xs text-gray-500 sm:inline">F1 search · F4 received · F5 customer</span>
+          <button
+            type="button"
+            className="ml-auto text-xs font-medium text-red-600 hover:underline"
+            onClick={() => {
+              if (itemCount === 0) return;
+              if (window.confirm('Clear all items on this bill?')) onClearAllItems?.();
+            }}
           >
-            <Clock className="w-3.5 h-3.5" />
-            Parked ({parkedBillsCount})
-            <span className="text-2xs opacity-70">(Ctrl+B)</span>
-          </Button>
+            <Trash2 className="mr-1 inline h-3 w-3" />
+            Clear bill
+          </button>
         </div>
       </div>
 
       {/* POS Two-Column Layout */}
-      <div className="flex gap-4 h-[calc(100vh-60px)]">
+      <div className="flex h-[calc(100vh-7rem)] gap-4">
         {/* Left Panel - Items (65%) - with bottom padding for fixed summary */}
         <div 
           ref={leftPanelRef}
@@ -464,18 +507,28 @@ export function POSLayout({
           </div>
 
           {/* SECTION 2: PRIMARY ACTION - PRINT BILL */}
-          <div className="mt-4">
+          <div className="mt-4 space-y-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => void onSaveBill?.()}
+              disabled={itemCount === 0 || isPrinting}
+              className="h-12 w-full text-base font-semibold"
+            >
+              Save bill
+              <span className="ml-2 text-xs opacity-70">(F7)</span>
+            </Button>
             <Button
               variant="primary"
               size="lg"
               onClick={handlePrintBill}
               disabled={!canPrint || isPrinting}
               isLoading={isPrinting}
-              className="w-full h-16 text-lg font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-16 w-full text-lg font-bold shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Printer className="w-5 h-5 mr-2" />
-              {isPrinting ? 'PRINTING...' : 'PRINT BILL'}
-              <span className="text-2xs opacity-70 ml-2">(F6)</span>
+              <Printer className="mr-2 h-5 w-5" />
+              {isPrinting ? 'PRINTING...' : 'Save & print'}
+              <span className="ml-2 text-xs opacity-70">(F6)</span>
             </Button>
             {!canPrint && itemCount === 0 && (
               <p className="text-xs text-red-600 text-center mt-2">Add items to print</p>
