@@ -101,6 +101,19 @@ export default function NewCreditNotePage() {
     }
   }, [business?.id]);
 
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    fetch(`/api/credit-notes?business_id=${business.id}&user_id=${user.id}&next_number=1`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const next = data?.next_credit_note_number;
+        if (typeof next === 'string') {
+          setFormData((prev) => (prev.credit_note_number ? prev : { ...prev, credit_note_number: next }));
+        }
+      })
+      .catch((err) => console.error('Error fetching next credit note number:', err));
+  }, [business?.id, user?.id]);
+
   // Pre-select customer and invoice from URL params
   useEffect(() => {
     if (urlParams.customer_id && customers.length > 0) {

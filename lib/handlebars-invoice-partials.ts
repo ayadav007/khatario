@@ -8,7 +8,13 @@ let registered = false;
 export function registerInvoiceHandlebarsPartials(): void {
   if (registered) return;
   const partialsDir = path.join(process.cwd(), 'templates', 'partials');
-  const names = ['custom-invoice-meta', 'custom-item-lines', 'thermal-items'];
+  const names = [
+    'custom-invoice-meta',
+    'custom-item-lines',
+    'thermal-items',
+    'invoice-meta-extra',
+    'bos-footer-blocks',
+  ];
   for (const name of names) {
     const filePath = path.join(partialsDir, `${name}.html`);
     if (fs.existsSync(filePath)) {

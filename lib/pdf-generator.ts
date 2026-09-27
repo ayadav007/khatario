@@ -83,14 +83,30 @@ export async function generateDocumentHtml(
         c.state as customer_state,
         c.state_code as customer_state_code`;
 
+    // credit_notes / debit_notes have no address snapshot columns.
+    const [docHasBilling, docHasShipping, docHasInvoiceId] = await Promise.all([
+      hasTableColumn(table, 'billing_address'),
+      hasTableColumn(table, 'shipping_address'),
+      hasTableColumn(table, 'invoice_id'),
+    ]);
+    const linkedInvoiceJoin = docHasInvoiceId && table !== 'invoices'
+      ? `LEFT JOIN invoices linked_inv ON doc.invoice_id = linked_inv.id`
+      : '';
+    const linkedInvoiceColumns = linkedInvoiceJoin
+      ? `linked_inv.invoice_number as original_invoice_number,
+        linked_inv.invoice_date as linked_invoice_date,`
+      : '';
+
     const doc = await db.queryOne(
       `SELECT doc.*, 
-        doc.billing_address as invoice_billing_address,
-        doc.shipping_address as invoice_shipping_address,
+        ${docHasBilling ? 'doc.billing_address' : 'NULL::text'} as invoice_billing_address,
+        ${docHasShipping ? 'doc.shipping_address' : 'NULL::text'} as invoice_shipping_address,
+        ${linkedInvoiceColumns}
         ${partyColumns},
-        b.name as business_name, b.address_line1 as business_address, b.city as business_city, b.state as business_state, b.pincode as business_pincode, b.gstin as business_gstin, b.logo_url as business_logo, b.signature_url as business_signature, b.phone as business_phone, b.email as business_email, b.iec_code as business_iec_code, b.swift_code as business_swift_code, b.state_code as business_state_code
+        b.name as business_name, b.address_line1 as business_address, b.address_line2 as business_address_line2, b.city as business_city, b.state as business_state, b.pincode as business_pincode, b.gstin as business_gstin, b.pan as business_pan, b.logo_url as business_logo, b.signature_url as business_signature, b.phone as business_phone, b.email as business_email, b.iec_code as business_iec_code, b.swift_code as business_swift_code, b.state_code as business_state_code
        FROM ${table} doc
        ${partyJoin}
+       ${linkedInvoiceJoin}
        JOIN businesses b ON doc.business_id = b.id
        WHERE doc.id = $1`,
       [documentId]
@@ -105,11 +121,25 @@ export async function generateDocumentHtml(
       ? 'i.custom_fields as item_custom_fields'
       : `'{}'::jsonb as item_custom_fields`;
 
+    const [lineHasItemName, lineHasHsn, lineHasSortOrder] = await Promise.all([
+      hasTableColumn(itemTable, 'item_name'),
+      hasTableColumn(itemTable, 'hsn_sac'),
+      hasTableColumn(itemTable, 'sort_order'),
+    ]);
+    // Credit/debit note lines store the product text in `description` only.
+    const itemNameSelect = lineHasItemName
+      ? 'COALESCE(ii.item_name, i.name) as item_name'
+      : 'COALESCE(i.name, ii.description) as item_name';
+    const hsnSelect = lineHasHsn
+      ? 'COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac'
+      : 'i.hsn_sac as hsn_sac';
+    const itemOrderBy = lineHasSortOrder ? 'ii.sort_order, ii.id' : 'ii.id';
+
     const itemsQuery = hasVariants 
       ? `SELECT 
           ii.*, 
-          COALESCE(ii.item_name, i.name) as item_name, 
-          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          ${itemNameSelect}, 
+          ${hsnSelect},
           ${itemCustomFieldsSelect},
           iv.variant_name,
           iv.attributes as variant_attributes
@@ -117,16 +147,16 @@ export async function generateDocumentHtml(
          LEFT JOIN items i ON ii.item_id = i.id
          LEFT JOIN item_variants iv ON ii.variant_id = iv.id
          WHERE ii.${idColumn} = $1
-         ORDER BY ii.sort_order, ii.id`
+         ORDER BY ${itemOrderBy}`
       : `SELECT 
           ii.*, 
-          COALESCE(ii.item_name, i.name) as item_name, 
-          COALESCE(ii.hsn_sac, i.hsn_sac) as hsn_sac,
+          ${itemNameSelect}, 
+          ${hsnSelect},
           ${itemCustomFieldsSelect}
          FROM ${itemTable} ii
          LEFT JOIN items i ON ii.item_id = i.id
          WHERE ii.${idColumn} = $1
-         ORDER BY ii.sort_order, ii.id`;
+         ORDER BY ${itemOrderBy}`;
 
     const items = await db.queryRows(itemsQuery, [documentId]);
 
@@ -352,6 +382,10 @@ export async function generateDocumentHtml(
         id: doc.business_id, // Required for fetching bank details
         name: doc.business_name,
         address: doc.business_address,
+        address_line2: doc.business_address_line2,
+        pan: doc.business_pan,
+        iec_code: doc.business_iec_code,
+        swift_code: doc.business_swift_code,
         city: doc.business_city,
         state: doc.business_state,
         pincode: doc.business_pincode,
@@ -372,6 +406,7 @@ export async function generateDocumentHtml(
         email: doc.customer_email,
         state: doc.customer_state,
         state_code: doc.customer_state_code,
+        country: doc.customer_country,
         current_balance: doc.customer_current_balance || 0
       },
       items: items

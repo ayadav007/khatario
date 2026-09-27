@@ -12,6 +12,8 @@ import {
   enforceAccessErrorResponse,
 } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { resolveBranchId } from '@/lib/branch-helpers';
+import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
 
 export async function POST(
   request: NextRequest,
@@ -90,36 +92,25 @@ export async function POST(
         throw e;
       }
 
-      // Get next invoice number for tax invoice
-      const nextNumRes = await client.query(
-        `SELECT next_tax_invoice_number, invoice_prefix
-         FROM businesses 
-         WHERE id = $1`,
-        [proformaData.business_id]
-      );
-      
-      if (nextNumRes.rows.length === 0) {
-        throw new Error('Business not found');
-      }
-      
-      const nextNumber = nextNumRes.rows[0].next_tax_invoice_number || 1;
-      const prefix = nextNumRes.rows[0].invoice_prefix || 'INV';
-      const formattedNumber = String(nextNumber).padStart(3, '0');
-      const invoiceNumber = `${prefix}-${formattedNumber}`;
+      const invoiceBranchId: string =
+        proformaData.branch_id ||
+        (await resolveBranchId({ businessId: proformaData.business_id, branchId: null }));
+      const invoiceNumber = await reserveFormattedDocumentNumber(client, invoiceBranchId, 'tax_invoice');
       
       // Create tax invoice
       const newInvoiceRes = await client.query(
         `INSERT INTO invoices (
-          business_id, customer_id, invoice_number, invoice_date, due_date,
+          branch_id, business_id, customer_id, invoice_number, invoice_date, due_date,
           status, payment_status, subtotal, discount_total, additional_charges, tax_total,
           round_off, grand_total, paid_amount, balance_amount, notes, terms,
           template_id, template_settings, billing_address, shipping_address, place_of_supply_state_code,
           cgst_total, sgst_total, igst_total, is_editable, cancellation_details,
           document_type, supply_type, export_type, shipping_bill_number, shipping_bill_date, port_code,
           ecommerce_operator_gstin, is_ecommerce_supply, is_export, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
         RETURNING id`,
         [
+          invoiceBranchId,
           proformaData.business_id,
           proformaData.customer_id,
           invoiceNumber,
@@ -210,15 +201,6 @@ export async function POST(
           ]
         );
       }
-      
-      // Increment invoice counter
-      await client.query(
-        `UPDATE businesses 
-         SET next_tax_invoice_number = next_tax_invoice_number + 1,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1`,
-        [proformaData.business_id]
-      );
       
       // Mark proforma as converted (update lifecycle status and add note)
       // Get user ID from request body, headers, or use invoice's created_by

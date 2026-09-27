@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
+import { scheduleKbReindex } from '@/lib/rag/queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,7 @@ export async function POST(
 
       // Clear subscription cache so changes take effect immediately
       clearAllSubscriptionCaches();
+      scheduleKbReindex({ target: 'plans', reason: 'plan_limits_saved' });
 
       return NextResponse.json({ 
         success: true,

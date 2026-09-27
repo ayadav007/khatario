@@ -70,6 +70,7 @@ export function SubscriptionChangePlanModal({
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
+  const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [downgradeWarnings, setDowngradeWarnings] = useState<DowngradeWarning[]>([]);
@@ -87,6 +88,7 @@ export function SubscriptionChangePlanModal({
     setCouponLoading(true);
     setCouponMessage(null);
     setCouponApplied(false);
+    setCouponDiscount(0);
     try {
       const res = await fetch('/api/subscriptions/coupons/validate', {
         method: 'POST',
@@ -102,6 +104,12 @@ export function SubscriptionChangePlanModal({
       const data = await res.json();
       if (res.ok && data.valid) {
         setCouponApplied(true);
+        // Checkout upgrades free_months coupons instantly with nothing to pay.
+        setCouponDiscount(
+          data.discount?.type === 'free_months'
+            ? Number.POSITIVE_INFINITY
+            : Number(data.discount?.amount) || 0,
+        );
         setCouponMessage(data.message || 'Coupon will apply at checkout.');
         toast.success(data.message || 'Coupon validated');
       } else {
@@ -231,9 +239,12 @@ export function SubscriptionChangePlanModal({
   }
 
   const confirmAction = confirmPlan ? getPlanAction(confirmPlan) : null;
+  const payableAmount = confirmPlan
+    ? Math.max(0, listPrice(confirmPlan) - (couponApplied ? couponDiscount : 0))
+    : 0;
   const confirmCtaLabel =
     confirmAction === 'upgrade'
-      ? listPrice(confirmPlan!) > 0
+      ? payableAmount > 0
         ? 'Proceed to pay'
         : 'Confirm upgrade'
       : 'Schedule downgrade';
@@ -558,7 +569,7 @@ export function SubscriptionChangePlanModal({
 
               {confirmAction === 'upgrade' ? (
                 <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                  {listPrice(confirmPlan) > 0
+                  {payableAmount > 0
                     ? `You'll be redirected to secure payment. After payment, ${confirmPlan.display_name} features unlock immediately.`
                     : `Your plan will be upgraded immediately with access to all ${confirmPlan.display_name} features.`}
                 </div>

@@ -4,7 +4,12 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { notifyStoreCustomerWhatsApp } from '@/lib/store/notify-whatsapp';
-import { hashPlatformOtp as hashOtpCore, nationalPhone10, type PlatformOtpPurpose } from '@/lib/platform-public-otp-core';
+import {
+  hashPlatformOtp as hashOtpCore,
+  nationalPhone10,
+  otpDebugAllowedFor,
+  type PlatformOtpPurpose,
+} from '@/lib/platform-public-otp-core';
 import { sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 
 export { nationalPhone10 };
@@ -23,16 +28,12 @@ export function hashPlatformOtp(purpose: PlatformOtpPurpose, phone: string, code
   return hashOtpCore(purpose, phone, code, otpPepper());
 }
 
-function allowOtpDebug(): boolean {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
-  return process.env.SIGNUP_DEBUG === 'true' || appUrl.includes('staging.');
-}
-
 export async function issuePlatformOtp(
   purpose: PlatformOtpPurpose,
   phone: string,
   opts?: { email?: string },
 ): Promise<{ debugOtp?: string }> {
+  const allowOtpDebug = () => otpDebugAllowedFor(phone);
   const code = String(randomInt(100000, 1000000));
   const codeHash = hashPlatformOtp(purpose, phone, code);
   await query(

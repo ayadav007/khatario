@@ -20,6 +20,7 @@ export function isPublicMarketingSurface(
   if (p.startsWith('/terms')) return true;
   if (p.startsWith('/privacy')) return true;
   if (p.startsWith('/guides')) return true;
+  if (p.startsWith('/solution/')) return true;
   if (p.startsWith('/login')) return true;
   // Entire platform-admin tree: business AuthContext must not 401 → /login.
   if (p.startsWith('/admin')) return true;

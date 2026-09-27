@@ -16,6 +16,17 @@ interface RenderData {
 // Module-level flag to ensure helpers are registered only once
 let helpersRegistered = false;
 
+/** Black or white, whichever reads better on the given hex background. */
+export function contrastTextColor(background: unknown): string {
+  const hex = String(background || '').trim().replace(/^#/, '');
+  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return '#000000';
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return luminance > 0.179 ? '#000000' : '#ffffff';
+}
+
 export class InvoiceRenderer {
   private templateDir: string;
 
@@ -38,15 +49,17 @@ export class InvoiceRenderer {
 
     // Helper for conditional rendering based on setting
     Handlebars.registerHelper('ifSetting', function(this: any, settingKey: string, options: any) {
-      // Safety check: ensure options.fn exists (block helper requirement)
-      if (!options || typeof options.fn !== 'function') {
-        console.error('[ifSetting] Error: options.fn is not a function. Setting:', settingKey, 'Options:', options);
-        return '';
-      }
+      // Also usable inline as a subexpression, e.g. (and (ifSetting 'show_cgst') ...), where it returns a boolean
+      const isBlock = typeof options?.fn === 'function';
+      const render = (show: boolean) => {
+        if (!isBlock) return show;
+        if (show) return options.fn(this);
+        return typeof options.inverse === 'function' ? options.inverse(this) : '';
+      };
       
       // Access settings from the root context
       // In Handlebars, when template(data) is called, data becomes options.data.root
-      const root = options.data?.root || options.data || this;
+      const root = options?.data?.root || options?.data || this;
       const settings = root?.settings || {};
       const value = settings[settingKey];
       
@@ -57,39 +70,39 @@ export class InvoiceRenderer {
       
       // Explicit false means hide
       if (value === false) {
-        return options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '';
+        return render(false);
       }
       
       // Explicit true means show
       if (value === true) {
-        return options.fn(this);
+        return render(true);
       }
       
       // If undefined/null, try legacy mappings, then default to true (show)
       if (value === undefined || value === null) {
         // Legacy mappings for backward compatibility
         if (settingKey.startsWith('show_business_') && settingKey !== 'show_business_details' && settings.show_business_details !== undefined) {
-          return settings.show_business_details !== false ? options.fn(this) : (options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '');
+          return render(settings.show_business_details !== false);
         }
         if (settingKey.includes('discount') && settings.show_discount !== undefined) {
-          return settings.show_discount !== false ? options.fn(this) : (options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '');
+          return render(settings.show_discount !== false);
         }
         if (settingKey.includes('tax') && settingKey !== 'show_tax_total' && settings.show_tax !== undefined) {
-          return settings.show_tax !== false ? options.fn(this) : (options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '');
+          return render(settings.show_tax !== false);
         }
         if (settingKey === 'show_customer_address' && settings.show_bill_to !== undefined) {
-          return settings.show_bill_to !== false ? options.fn(this) : (options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '');
+          return render(settings.show_bill_to !== false);
         }
         if (settingKey.includes('gstin') && settings.show_gstin !== undefined) {
-          return settings.show_gstin !== false ? options.fn(this) : (options.inverse && typeof options.inverse === 'function' ? options.inverse(this) : '');
+          return render(settings.show_gstin !== false);
         }
         
         // Default: show if undefined (assumes default settings have been merged)
-        return options.fn(this);
+        return render(true);
       }
       
       // Any other truthy value means show
-      return options.fn(this);
+      return render(true);
     });
 
     // Helper to check if a setting is enabled
@@ -136,6 +149,10 @@ export class InvoiceRenderer {
       return Number(a || 0) > Number(b || 0);
     });
 
+    Handlebars.registerHelper('eqStr', function(this: any, a: any, b: any) {
+      return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+    });
+
     // Helper to split string by delimiter
     Handlebars.registerHelper('split', function(this: any, str: string, delimiter: string) {
       if (!str) return [];
@@ -152,17 +169,19 @@ export class InvoiceRenderer {
       return Math.max(0, a - b);
     });
 
-    // Block helpers — must call options.fn/inverse, not return bare boolean
+    // As blocks these call options.fn/inverse; as subexpressions (no fn) they return a boolean
     Handlebars.registerHelper('or', function (this: unknown, ...args: unknown[]) {
       const options = args[args.length - 1] as Handlebars.HelperOptions;
-      const values = args.slice(0, -1);
-      return values.some((v) => !!v) ? options.fn(this) : options.inverse(this);
+      const result = args.slice(0, -1).some((v) => !!v);
+      if (typeof options?.fn !== 'function') return result;
+      return result ? options.fn(this) : options.inverse(this);
     });
 
     Handlebars.registerHelper('and', function (this: unknown, ...args: unknown[]) {
       const options = args[args.length - 1] as Handlebars.HelperOptions;
-      const values = args.slice(0, -1);
-      return values.every((v) => !!v) ? options.fn(this) : options.inverse(this);
+      const result = args.slice(0, -1).every((v) => !!v);
+      if (typeof options?.fn !== 'function') return result;
+      return result ? options.fn(this) : options.inverse(this);
     });
 
     // Helper to calculate dynamic colspan for item table totals
@@ -277,6 +296,11 @@ export class InvoiceRenderer {
     // Ensure settings object exists and has defaults
     if (!data.settings) {
       data.settings = {};
+    }
+    if (!data.settings.table_header_text_color) {
+      data.settings.table_header_text_color = contrastTextColor(
+        data.settings.table_header_color || data.settings.primary_color
+      );
     }
 
     // Debug: Log settings to verify they're being passed

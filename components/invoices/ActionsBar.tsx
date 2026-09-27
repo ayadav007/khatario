@@ -31,6 +31,9 @@ interface ActionsBarProps {
     availableCredit: number | null;
     creditLimit: number;
   } | null;
+
+  /** False for estimates, which are not reported in GST returns. */
+  affectsGst?: boolean;
 }
 
 const ActionsBar = React.memo(function ActionsBar({
@@ -47,6 +50,7 @@ const ActionsBar = React.memo(function ActionsBar({
   invoiceNumber,
   isSeriesResolved = true, // PHASE 3: Default to true for backward compatibility
   credit = null,
+  affectsGst = true,
 }: ActionsBarProps) {
   const { user } = useAuth();
   const handlePrint = () => {
@@ -106,9 +110,11 @@ const ActionsBar = React.memo(function ActionsBar({
                 </div>
               </div>
             )}
-            <p className="text-2xs text-center text-amber-700 dark:text-amber-300">
-              {isOnline ? '⚠️ This will affect GST filing' : '⚠️ Offline: Sync to file GST'}
-            </p>
+            {(affectsGst || !isOnline) && (
+              <p className="text-2xs text-center text-amber-700 dark:text-amber-300">
+                {isOnline ? '⚠️ This will affect GST filing' : '⚠️ Offline: Sync to file GST'}
+              </p>
+            )}
           </div>
         </>
       )}

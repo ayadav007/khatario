@@ -166,6 +166,7 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    let enabled: boolean | null = null;
     try {
       if (skipCache) {
         invalidateCacheKey(getCacheKey('/api/settings/warehouses', { business_id: business.id }));
@@ -175,18 +176,15 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
         '/api/settings/warehouses',
         { business_id: business.id }
       );
-
-      setData((prev) => ({
-        ...prev,
-        warehousesEnabled: res.warehouses_enabled || false,
-      }));
+      enabled = res.warehouses_enabled || false;
     } catch (error) {
       console.error('Failed to fetch warehouses setting:', error);
     } finally {
-      setData((prev) => ({
-        ...prev,
-        warehousesSettingLoaded: true,
-      }));
+      setData((prev) => {
+        const nextEnabled = enabled ?? prev.warehousesEnabled;
+        if (prev.warehousesSettingLoaded && prev.warehousesEnabled === nextEnabled) return prev;
+        return { ...prev, warehousesEnabled: nextEnabled, warehousesSettingLoaded: true };
+      });
     }
   }, [business?.id, isOnline]);
 
@@ -274,12 +272,9 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           subscription: cachedSnapshot.subscription,
           addons: cachedSnapshot.addons || [],
           enabledFeatureIds: cachedSnapshot.enabledFeatures || [],
-        }));
-        setSnapshotLoaded(true);
-        setData((prev) => ({
-          ...prev,
           warehousesSettingLoaded: true,
         }));
+        setSnapshotLoaded(true);
       }
 
       try {

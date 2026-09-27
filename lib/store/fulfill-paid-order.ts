@@ -1,4 +1,6 @@
 import { getPool, queryRows } from '@/lib/db';
+import { resolveBranchId } from '@/lib/branch-helpers';
+import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
 
 export async function fulfillStoreOrderPayment(orderId: string, businessId: string): Promise<void> {
   const pool = getPool();
@@ -125,12 +127,9 @@ export async function createInvoiceForStoreOrder(
       return o.invoice_id;
     }
 
-    const biz = await client.query(
-      `SELECT next_invoice_number FROM businesses WHERE id = $1 FOR UPDATE`,
-      [businessId],
-    );
-    const nextNum = Number(biz.rows[0]?.next_invoice_number ?? 1);
-    const invoiceNumber = `INV-${String(nextNum).padStart(4, '0')}`;
+    const branchId =
+      o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
+    const invoiceNumber = await reserveFormattedDocumentNumber(client, branchId, 'tax_invoice');
     const today = new Date().toISOString().slice(0, 10);
     const paid = o.payment_status === 'paid' || o.payment_status === 'cod';
     const grand = parseFloat(String(o.grand_total)) || 0;
@@ -145,7 +144,7 @@ export async function createInvoiceForStoreOrder(
       RETURNING id`,
       [
         businessId,
-        o.branch_id,
+        branchId,
         invoiceNumber,
         today,
         today,
@@ -185,10 +184,6 @@ export async function createInvoiceForStoreOrder(
     await client.query(
       `UPDATE store_orders SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [invoiceId, orderId],
-    );
-    await client.query(
-      `UPDATE businesses SET next_invoice_number = next_invoice_number + 1 WHERE id = $1`,
-      [businessId],
     );
     await client.query('COMMIT');
     return invoiceId;

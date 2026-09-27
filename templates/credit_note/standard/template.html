@@ -46,31 +46,37 @@
 </head>
 <body>
   <div class="document-title">CREDIT NOTE</div>
-  <div class="notice-box">This document reduces your tax liability. Original Invoice: {{invoice.original_invoice_number}}</div>
+  <div class="notice-box">This document reduces your tax liability.{{#if invoice.original_invoice_number}} Original Invoice: {{invoice.original_invoice_number}}{{/if}}</div>
   
   <div class="header">
     <div>
-      <div class="business-name">{{business.name}}</div>
+      {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
       <div style="font-size: 11px; color: #4b5563;">
-        {{business.address}}, {{business.city}}, {{business.state}} - {{business.pincode}}<br>
-        {{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}
+        {{#ifSetting 'show_business_address'}}{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}<br>{{/ifSetting}}
+        {{#ifSetting 'show_business_phone'}}{{#if business.phone}}Phone: {{business.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_email'}}{{#if business.email}}Email: {{business.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}{{/ifSetting}}
       </div>
     </div>
+    {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">{{/if}}{{/ifSetting}}
   </div>
   
   <div class="meta-grid">
-    <div><strong>Credit Note No:</strong><br>{{invoice.invoice_number}}</div>
-    <div><strong>Date:</strong><br>{{invoice.invoice_date}}</div>
-    <div><strong>Original Invoice:</strong><br>{{invoice.original_invoice_number}}</div>
+    {{#ifSetting 'show_invoice_number'}}<div><strong>Credit Note No:</strong><br>{{invoice.invoice_number}}</div>{{/ifSetting}}
+    {{#ifSetting 'show_invoice_date'}}<div><strong>Date:</strong><br>{{invoice.invoice_date}}</div>{{/ifSetting}}
+    {{#if invoice.original_invoice_number}}<div><strong>Original Invoice:</strong><br>{{invoice.original_invoice_number}}{{#if invoice.original_invoice_date}} dated {{invoice.original_invoice_date}}{{/if}}</div>{{/if}}
+    {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div><strong>Place of Supply:</strong><br>{{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
   </div>
   
   <div class="party-section">
     <div class="party-box">
       <div class="label">Customer Details</div>
-      <div class="name">{{customer.name}}</div>
+      {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
       <div style="font-size: 12px; color: #4b5563;">
-        {{#if customer.address}}{{customer.address}}<br>{{/if}}
-        {{#if customer.gstin}}<strong>GSTIN:</strong> {{customer.gstin}}{{/if}}
+        {{#ifSetting 'show_customer_address'}}{{#if customer.address}}{{customer.address}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}Phone: {{customer.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_email'}}{{#if customer.email}}Email: {{customer.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<strong>GSTIN:</strong> {{customer.gstin}}{{/if}}{{/ifSetting}}
       </div>
     </div>
     <div class="party-box">
@@ -82,49 +88,56 @@
   <table>
     <thead>
       <tr>
-        <th>#</th>
-        <th>Description</th>
-        <th>HSN</th>
-        <th class="text-right">Qty</th>
-        <th class="text-right">Rate</th>
-        <th class="text-right">Tax %</th>
-        <th class="text-right">Amount</th>
+        {{#ifSetting 'show_serial_number'}}<th>#</th>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<th>Description</th>{{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<th>HSN</th>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<th class="text-right">Qty</th>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<th class="text-right">Rate</th>{{/ifSetting}}
+        {{#ifSetting 'show_tax_rate'}}<th class="text-right">Tax %</th>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<th class="text-right">Amount</th>{{/ifSetting}}
       </tr>
     </thead>
     <tbody>
       {{#each items}}
       <tr>
-        <td>{{this.index}}</td>
-        <td><strong>{{this.item_name}}</strong>
-            {{> custom-item-lines}}</td>
-        <td>{{this.hsn_sac}}</td>
-        <td class="text-right">{{this.quantity}}</td>
-        <td class="text-right">₹{{this.unit_price}}</td>
-        <td class="text-right">{{this.tax_rate}}%</td>
-        <td class="text-right">₹{{this.taxable_value}}</td>
+        {{#ifSetting 'show_serial_number'}}<td>{{this.index}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<td><strong>{{this.item_name}}</strong>
+            {{#if this.description}}{{#unless (eqStr this.description this.item_name)}}<div style="font-size: 11px; color: #6b7280;">{{this.description}}</div>{{/unless}}{{/if}}
+            {{> custom-item-lines}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<td>{{this.hsn_sac}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<td class="text-right">{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<td class="text-right">₹{{this.unit_price}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_tax_rate'}}<td class="text-right">{{this.tax_rate}}%</td>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<td class="text-right">₹{{this.taxable_value}}</td>{{/ifSetting}}
       </tr>
       {{/each}}
     </tbody>
   </table>
   
   <div class="summary-box">
-    <div class="summary-row"><span>Taxable Amount</span><span>₹{{invoice.subtotal}}</span></div>
-    {{#if invoice.cgst_total}}<div class="summary-row"><span>CGST</span><span>₹{{invoice.cgst_total}}</span></div>{{/if}}
-    {{#if invoice.sgst_total}}<div class="summary-row"><span>SGST</span><span>₹{{invoice.sgst_total}}</span></div>{{/if}}
-    {{#if invoice.igst_total}}<div class="summary-row"><span>IGST</span><span>₹{{invoice.igst_total}}</span></div>{{/if}}
-    <div class="summary-row total"><span>CREDIT AMOUNT</span><span>₹{{invoice.grand_total}}</span></div>
+    {{#ifSetting 'show_subtotal'}}<div class="summary-row"><span>Taxable Amount</span><span>₹{{invoice.subtotal}}</span></div>{{/ifSetting}}
+    {{#ifSetting 'show_cgst'}}{{#if (gt invoice.cgst_total 0)}}<div class="summary-row"><span>CGST</span><span>₹{{invoice.cgst_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_sgst'}}{{#if (gt invoice.sgst_total 0)}}<div class="summary-row"><span>SGST</span><span>₹{{invoice.sgst_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_igst'}}{{#if (gt invoice.igst_total 0)}}<div class="summary-row"><span>IGST</span><span>₹{{invoice.igst_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}<div class="summary-row"><span>Round Off</span><span>₹{{invoice.round_off}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_grand_total'}}<div class="summary-row total"><span>CREDIT AMOUNT</span><span>₹{{invoice.grand_total}}</span></div>{{/ifSetting}}
   </div>
+  {{#ifSetting 'show_amount_in_words'}}<div style="margin-top: 10px; text-align: right; font-size: 12px;"><strong>Amount in words:</strong> {{invoice.amount_in_words}}</div>{{/ifSetting}}
   
-  {{#if invoice.notes}}
+  {{#ifSetting 'show_notes'}}{{#if invoice.notes}}
   <div class="notes-section">
     <strong>Notes:</strong><br>{{invoice.notes}}
   </div>
-  {{/if}}
+  {{/if}}{{/ifSetting}}
   
   <div class="signature-section">
     <div class="signature-box">Customer Acknowledgement</div>
-    <div class="signature-box">For {{business.name}}</div>
+    <div class="signature-box">
+      {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}
+      For {{business.name}}
+    </div>
   </div>
+  {{#if settings.footer_text}}<div style="margin-top: 20px; text-align: center; font-size: 10px; color: #6b7280;">{{settings.footer_text}}</div>{{/if}}
 </body>
 </html>
 

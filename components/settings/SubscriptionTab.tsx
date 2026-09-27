@@ -435,31 +435,42 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   }
 
   async function handleApplyCoupon() {
-    if (!couponCode.trim() || !subscription) return;
+    if (!couponCode.trim()) return;
     setCouponLoading(true);
     setCouponResult(null);
     try {
-      const response = await fetch('/api/subscriptions/coupons/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          code: couponCode.trim(),
-          business_id: businessId,
-          plan_id: subscription.plan_id,
-          billing_cycle: subscription.billing_cycle || 'monthly',
-        }),
-      });
-      const data = await response.json();
-      if (response.ok && data.valid) {
-        setCouponResult({
-          valid: true,
-          message: data.message || 'Valid — use when upgrading or at checkout.',
+      // Coupons are redeemed at checkout for the plan being bought, so check the current plan
+      // (if paid) and then each paid plan, rather than only the current (often trial/free) plan.
+      const paidPlans = availablePlans
+        .filter((p) => Number(p.price_monthly) > 0 || Number(p.price_yearly) > 0)
+        .sort((a, b) => a.sort_order - b.sort_order);
+      const current = subscription ? paidPlans.find((p) => p.id === subscription.plan_id) : undefined;
+      const candidates = current ? [current, ...paidPlans.filter((p) => p !== current)] : paidPlans;
+      const billingCycle = subscription?.billing_cycle || 'monthly';
+
+      let lastError = 'Invalid coupon code';
+      for (const plan of candidates) {
+        const response = await fetch('/api/subscriptions/coupons/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            code: couponCode.trim(),
+            business_id: businessId,
+            plan_id: plan.id,
+            billing_cycle: billingCycle,
+          }),
         });
-        toast.success(data.message || 'Coupon is valid for your plan');
-      } else {
-        setCouponResult({ valid: false, message: data.error || data.message || 'Invalid coupon code' });
+        const data = await response.json();
+        if (response.ok && data.valid) {
+          const message = `Valid for ${plan.display_name}. Enter it at checkout when you choose that plan.`;
+          setCouponResult({ valid: true, message });
+          toast.success(message);
+          return;
+        }
+        lastError = data.error || data.message || lastError;
       }
+      setCouponResult({ valid: false, message: lastError });
     } catch (error) {
       setCouponResult({ valid: false, message: 'Failed to validate coupon' });
     } finally {

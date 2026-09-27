@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
+import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -1003,7 +1004,7 @@ export async function POST(request: NextRequest) {
           userId: actorUserId,
           branchId: finalBranchId,
           feature: FeatureKeys.INVOICE_CREATION,
-          limitType: 'invoices',
+          limitType: document_type === 'proforma_invoice' ? 'estimates' : 'invoices',
           poolClient: client,
         });
       } catch (e) {
@@ -1036,8 +1037,7 @@ export async function POST(request: NextRequest) {
     // Fetch branch info for invoice numbering (branch-wise numbering)
     
     const branchRes = await client.query(
-      `SELECT invoice_prefix, next_invoice_number, state_code 
-       FROM branches WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      `SELECT id FROM branches WHERE id = $1 AND business_id = $2`,
       [finalBranchId, business_id]
     );
     
@@ -1046,8 +1046,6 @@ export async function POST(request: NextRequest) {
       await client.query('ROLLBACK');
       throw new Error('Branch not found');
     }
-    
-    const branch = branchRes.rows[0];
     
     // Determine the invoice number and increment counter atomically
     
@@ -1074,26 +1072,11 @@ export async function POST(request: NextRequest) {
       // Otherwise, continue with document type default prefix
     }
     
-    // Get current counter value from branch (will be used for this invoice)
-    const currentCounter = branch.next_invoice_number || 1;
-    
-    
-    
-    if (providedInvoiceNumber) {
-      // Use provided number (from next-number API preview)
-      // providedInvoiceNumber is just the numeric part (e.g., "001" or "1")
-      let numStr = String(providedInvoiceNumber);
-      // Remove leading zeros to get actual number, or parse as-is
-      const numValue = parseInt(numStr, 10);
-      // Format with branch prefix and minimum 3 digits padding
-      invoiceNumber = `${invoicePrefix}-${String(numValue || currentCounter).padStart(3, '0')}`;
-    } else {
-      // Fallback: Use current counter value
-      // Format with branch prefix and minimum 3 digits padding (but allows growth beyond 999)
-      invoiceNumber = `${invoicePrefix}-${String(currentCounter).padStart(3, '0')}`;
-    }
-    
-    
+    // providedInvoiceNumber is the number the user saw in the form, e.g. "INV-004", "004" or "4"
+    const providedMatch = providedInvoiceNumber ? String(providedInvoiceNumber).match(/(\d+)\s*$/) : null;
+    const requestedNumber = providedMatch ? parseInt(providedMatch[1], 10) : null;
+    const issuedNumber = await reserveDocumentNumber(client, finalBranchId, finalDocumentType, requestedNumber);
+    invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
     
     // Check if invoice number already exists for this branch (matches database constraint)
     const existingInvoiceCheck = await client.query(
@@ -1112,14 +1095,6 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
-    
-    // NOW increment the branch counter atomically (only when actually saving the invoice)
-    await client.query(`
-      UPDATE branches 
-      SET next_invoice_number = next_invoice_number + 1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND business_id = $2
-    `, [finalBranchId, business_id]);
     } else {
       invoiceNumber = (existingInvoiceRow?.invoice_number as string) || '';
     }

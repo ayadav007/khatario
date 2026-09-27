@@ -11,6 +11,7 @@
 # Optional in .env.production:
 #   PM2_APP_NAME=khatario-staging
 #   PM2_WORKER_NAME=todo-reminder-worker
+#   PM2_KB_WORKER_NAME=kb-index-worker   # npm run worker:kb (assistant knowledge index)
 #   GIT_BRANCH=main          # staging clone
 #   GIT_BRANCH=production    # /var/www/khatario-prod — do not point production at main
 #   MIGRATION_BASELINE=239
@@ -63,6 +64,8 @@ PM2_START_SCRIPT="$(read_env_var "$ENV_FILE" PM2_START_SCRIPT)"
 GIT_BRANCH="$(read_env_var "$ENV_FILE" GIT_BRANCH)"
 PM2_APP_NAME="${PM2_APP_NAME:-khatario-staging}"
 PM2_WORKER_NAME="${PM2_WORKER_NAME:-todo-reminder-worker}"
+PM2_KB_WORKER_NAME="$(read_env_var "$ENV_FILE" PM2_KB_WORKER_NAME)"
+PM2_KB_WORKER_NAME="${PM2_KB_WORKER_NAME:-kb-index-worker}"
 PM2_START_SCRIPT="${PM2_START_SCRIPT:-start}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 
@@ -97,6 +100,15 @@ echo ">> npm run db:migrate:pending"
 npm run db:migrate:pending
 echo ""
 
+# Unchanged sources are skipped by content hash, so this is cheap on most deploys.
+echo ">> assistant knowledge re-index"
+if ! NODE_ENV=production npx ts-node --project tsconfig.worker.json --transpile-only \
+  -r tsconfig-paths/register -r dotenv/config scripts/kb/reindex.ts \
+  dotenv_config_path="$ENV_FILE" --source=all; then
+  echo "⚠️  Knowledge re-index reported errors — check kb_sources in /admin/assistant (deploy continues)"
+fi
+echo ""
+
 echo ">> npm run build"
 npm run build
 echo ""
@@ -115,6 +127,10 @@ if command -v pm2 >/dev/null 2>&1; then
   if pm2 describe "$PM2_WORKER_NAME" >/dev/null 2>&1; then
     echo ">> pm2 restart $PM2_WORKER_NAME --update-env"
     pm2 restart "$PM2_WORKER_NAME" --update-env
+  fi
+  if pm2 describe "$PM2_KB_WORKER_NAME" >/dev/null 2>&1; then
+    echo ">> pm2 restart $PM2_KB_WORKER_NAME --update-env"
+    pm2 restart "$PM2_KB_WORKER_NAME" --update-env
   fi
   pm2 save
 else

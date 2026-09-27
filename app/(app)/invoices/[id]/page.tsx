@@ -377,7 +377,7 @@ export default function InvoiceDetailPage() {
           }
           description={
             <>
-              {invoice.customer?.name || 'Cash Sale'}
+              {invoice.customer?.name || invoice.customer_name || 'Cash Sale'}
               {' • '}
               {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString() : 'No date'}
               {' • '}

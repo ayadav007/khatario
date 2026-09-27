@@ -144,7 +144,7 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     show_swift_code: isExportTemplate ? true : false, // SWIFT code for international payments
     show_payment_terms: isExportTemplate ? true : false, // Export invoices should show payment terms
     show_terms: true,
-    show_notes: false,
+    show_notes: true,
     show_signature: false,
     show_authorized_signatory: false,
     show_qr_code: false,
@@ -178,6 +178,7 @@ export function getDefaultTemplateSettings(templateId?: string): TemplateSetting
     
     // Content - Default text
     terms: 'Payment is due within 30 days. Thank you for your business!',
+    payment_terms: '',
     notes: '',
     footer_text: '',
 

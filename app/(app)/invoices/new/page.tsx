@@ -205,6 +205,13 @@ function CustomerAutocomplete({ customers, value, onChange, onSelect, disabled =
                 )}
             </div>
         )}
+        {!isOpen && !disabled && query.trim() !== '' && (!selectedCustomer || selectedCustomer.name !== query) && (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300" role="status">
+            {selectedCustomer
+              ? `This bill is still for ${selectedCustomer.name}. Pick from the list to change the customer.`
+              : `"${query.trim()}" is not selected. Pick a customer from the list or add them; otherwise this is saved as a cash sale.`}
+          </p>
+        )}
     </div>
   );
 }
@@ -2115,6 +2122,14 @@ function NewInvoiceContent() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { if (res.status === 403 && data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') { setLimitInfo({ current: data.current, limit: data.limit }); setShowUpgradePrompt(true); return; } throw new Error(data.error || 'Failed to save'); }
       setSavedInvoiceId(data.invoice.id); 
+      const sourceEstimateId = searchParams.get('convert_from');
+      if (sourceEstimateId && targetStatus === 'final' && documentType !== 'proforma_invoice') {
+        fetch(`/api/invoices/${sourceEstimateId}?user_id=${user?.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ estimate_status: 'converted' }),
+        }).catch((err) => console.error('[Convert] Failed to mark estimate converted:', err));
+      }
       // For proforma invoices, always track as 'draft' (they remain editable unless converted)
       // But if estimate_status is 'converted', track as 'final' to prevent editing
       // For regular invoices, track the actual status
@@ -2516,6 +2531,56 @@ function NewInvoiceContent() {
 
     if (!iid) setPrefilled(true);
   }, [searchParams, customers, business?.id, savedInvoiceId, customerId, rows, calculateRow, prefilled, user?.id]);
+
+  // ?convert_from=<estimateId>: copy the estimate's customer and lines into a new document (own number/date)
+  const convertFromId = searchParams.get('convert_from');
+  const convertPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!convertFromId || !business?.id || !user?.id || savedInvoiceId || branchLoading) return;
+    if (convertPrefillDoneRef.current === convertFromId) return;
+    convertPrefillDoneRef.current = convertFromId;
+    fetch(`/api/invoices/${convertFromId}?user_id=${user.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const est = data?.invoice || data;
+        if (!est?.id) return;
+        if (est.customer_id) setCustomerId(est.customer_id);
+        if (est.place_of_supply_state_code) setPlaceOfSupply(est.place_of_supply_state_code);
+        setBillingAddress(est.billing_address || '');
+        setShippingAddress(est.shipping_address || '');
+        setNotes(est.notes || '');
+        if (Array.isArray(est.items)) {
+          setRows(
+            est.items.map((i: any) =>
+              calculateRow({
+                itemId: i.item_id || '',
+                variantId: i.variant_id || undefined,
+                variantName: i.variant_name || undefined,
+                name: i.item_name || '',
+                quantity: Number(i.quantity || 1),
+                freeQty: 0,
+                unit: i.unit || 'PCS',
+                price: Number(i.unit_price || 0),
+                discountPercent: Number(i.discount_percent || 0),
+                discountAmount: Number(i.discount_amount || 0),
+                taxPercent: Number(i.tax_rate || 0),
+                taxAmount: Number(i.tax_amount || 0),
+                hsnSac: i.hsn_sac || '',
+                taxableValue: 0,
+                cgstAmount: 0,
+                sgstAmount: 0,
+                igstAmount: 0,
+                total: 0,
+                gstIncluded: !!i.gst_included,
+                priceUserOverride: true,
+              }, true)
+            )
+          );
+        }
+        setIsDirty(true);
+      })
+      .catch((err) => console.error('[Convert] Failed to load source estimate:', err));
+  }, [convertFromId, business?.id, user?.id, savedInvoiceId, branchLoading, calculateRow]);
 
   const showMobileInvoiceUi = invoiceMobileLayout && !posMode;
   const mobileBillLabel =
@@ -2969,6 +3034,7 @@ function NewInvoiceContent() {
             savedInvoiceId={savedInvoiceId}
             invoicePrefix={invoicePrefix}
             invoiceNumber={invoiceNumber}
+            affectsGst={documentType !== 'proforma_invoice'}
             credit={
               creditMetrics?.current
                 ? {

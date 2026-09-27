@@ -50,8 +50,8 @@
       word-break: break-word;
     }
     th { 
-      background: var(--table-header-color); 
-      color: var(--primary-color); 
+      background: var(--table-header-color);
+      color: {{settings.table_header_text_color}};
       padding: 8px 4px; 
       text-align: left; 
       font-weight: bold; 
@@ -411,7 +411,7 @@
             <td class="text-right col-disc">{{#if this.discount_percent}}{{this.discount_percent}}%{{else}}-{{/if}}</td>
           {{/ifSetting}}
           {{#ifSetting 'show_discount_amount'}}
-            {{#if this.discount_amount}}
+            {{#if (gt this.discount_amount 0)}}
               <td class="text-right col-disc">{{formatCurrency this.discount_amount}}</td>
             {{else}}
               <td class="text-right col-disc">-</td>
@@ -522,7 +522,7 @@
         </tr>
         {{/ifSetting}}
         {{#ifSetting 'show_discount_total'}}
-          {{#if invoice.discount_total}}
+          {{#if (gt invoice.discount_total 0)}}
           <tr>
             <td>Discount</td>
             <td class="text-right">- {{formatCurrency invoice.discount_total}}</td>
@@ -530,7 +530,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_additional_charges'}}
-          {{#if invoice.additional_charges}}
+          {{#if (gt invoice.additional_charges 0)}}
           <tr>
             <td>Additional Charges</td>
             <td class="text-right">+ {{formatCurrency invoice.additional_charges}}</td>
@@ -562,7 +562,7 @@
           {{/unless}}
         {{/ifSetting}}
         {{#ifSetting 'show_cess'}}
-          {{#if invoice.cess_total}}
+          {{#if (gt invoice.cess_total 0)}}
           <tr>
             <td>CESS</td>
             <td class="text-right">+ {{formatCurrency invoice.cess_total}}</td>
@@ -570,7 +570,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_tax_total'}}
-          {{#if invoice.tax_total}}
+          {{#if (gt invoice.tax_total 0)}}
           <tr>
             <td>Tax Total</td>
             <td class="text-right">+ {{formatCurrency invoice.tax_total}}</td>
@@ -578,7 +578,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_round_off'}}
-          {{#if invoice.round_off}}
+          {{#if (gt (abs invoice.round_off) 0)}}
           <tr>
             <td>Round Off</td>
             <td class="text-right">{{formatCurrency invoice.round_off}}</td>
@@ -592,7 +592,7 @@
         </tr>
         {{/ifSetting}}
         {{#ifSetting 'show_paid_amount'}}
-          {{#if invoice.paid_amount}}
+          {{#if (gt invoice.paid_amount 0)}}
           <tr style="color: #059669;">
             <td>Paid Amount</td>
             <td class="text-right">- {{formatCurrency invoice.paid_amount}}</td>
@@ -600,7 +600,7 @@
           {{/if}}
         {{/ifSetting}}
         {{#ifSetting 'show_balance_amount'}}
-          {{#if invoice.balance_amount}}
+          {{#if (gt invoice.balance_amount 0)}}
           <tr style="font-weight: bold; color: #dc2626;">
             <td>Balance Due</td>
             <td class="text-right">{{formatCurrency invoice.balance_amount}}</td>

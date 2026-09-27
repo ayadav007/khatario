@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
 import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
+import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -535,6 +536,7 @@ function SignupPageContent() {
           </div>
         </div>
       </main>
+      <AssistantWidget channel="signup" />
     </div>
   );
 }

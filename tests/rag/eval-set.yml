@@ -1,0 +1,94 @@
+# Retrieval eval set for `npm run kb:eval`.
+# Each case passes when any `expect` document (doc_key) is in the top results.
+# `confident: false` cases are out-of-scope questions that must NOT be answered confidently.
+# Format is deliberately flat: `- q:` starts a case; `expect`, `audience`, `confident` follow.
+
+- q: How much does Khatario cost per month?
+  expect: [plans, prospect/pricing-and-plans.md]
+- q: kitne ka hai khatario
+  expect: [plans, prospect/pricing-and-plans.md, prospect/faq-hinglish.md]
+- q: Is there a free plan?
+  expect: [prospect/pricing-and-plans.md, prospect/faq-english.md, plans]
+- q: How long is the free trial?
+  expect: [prospect/trial-and-signup.md]
+- q: What happens when my trial ends?
+  expect: [prospect/trial-and-signup.md, prospect/faq-hinglish.md]
+- q: Can I file GSTR-1 from Khatario?
+  expect: [prospect/modules/gst-returns.md, prospect/faq-english.md]
+- q: GST return kaise bhare
+  expect: [prospect/faq-hinglish.md, prospect/modules/gst-returns.md]
+- q: Does Khatario generate e-way bills?
+  expect: [prospect/limitations.md, prospect/modules/gst-returns.md]
+- q: Can it create e-invoice IRN?
+  expect: [prospect/limitations.md, prospect/modules/gst-returns.md]
+- q: Does billing work without internet?
+  expect: [prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: internet nahi hai to bill ban sakta hai
+  expect: [prospect/faq-hinglish.md, prospect/modules/offline-mobile-printing.md]
+- q: bina internet ke bill ban sakta hai?
+  expect: [prospect/faq-hinglish.md, prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: Which thermal printers are supported?
+  expect: [prospect/modules/offline-mobile-printing.md, prospect/faq-english.md]
+- q: Can I use a USB printer?
+  expect: [prospect/limitations.md, prospect/modules/offline-mobile-printing.md]
+- q: Is there an iPhone app?
+  expect: [prospect/limitations.md, prospect/modules/offline-mobile-printing.md]
+- q: udhaar ka hisaab kaise rakhe
+  expect: [prospect/faq-hinglish.md, prospect/modules/payments-receivables.md]
+- q: Can I send payment reminders on WhatsApp?
+  expect: [prospect/modules/payments-receivables.md, prospect/modules/whatsapp-crm.md]
+- q: Can customers pay by UPI link?
+  expect: [prospect/modules/payments-receivables.md]
+- q: Can I send invoices on WhatsApp?
+  expect: [prospect/modules/whatsapp-crm.md, prospect/faq-hinglish.md]
+- q: What is Khatario Connect?
+  expect: [prospect/modules/whatsapp-crm.md, plans]
+- q: Can I have my own online store?
+  expect: [prospect/modules/online-store.md]
+- q: Does Khatario do payroll and attendance?
+  expect: [prospect/modules/hr-payroll.md]
+- q: Can I track stock in multiple godowns?
+  expect: [prospect/modules/inventory-warehouses.md, prospect/faq-hinglish.md]
+- q: Does it support batch and expiry?
+  expect: [prospect/modules/inventory-warehouses.md, prospect/who-its-for.md]
+- q: Can my staff have separate logins?
+  expect: [prospect/modules/multi-branch-users.md, prospect/faq-english.md, prospect/faq-hinglish.md]
+- q: Does it support multiple branches?
+  expect: [prospect/modules/multi-branch-users.md, prospect/faq-english.md]
+- q: Is my data safe?
+  expect: [prospect/security-and-data.md, prospect/faq-english.md, prospect/faq-hinglish.md]
+- q: Can I export to Tally?
+  expect: [prospect/limitations.md, prospect/switching-to-khatario.md]
+- q: How do I import my items from Excel?
+  expect: [prospect/switching-to-khatario.md, how-to/items-stock.md]
+- q: Is Khatario good for a wholesaler?
+  expect: [prospect/who-its-for.md]
+- q: Does it have KOT for restaurants?
+  expect: [prospect/limitations.md, prospect/who-its-for.md]
+- q: How do I book a demo?
+  expect: [prospect/demo-and-support.md, prospect/faq-hinglish.md, support-contact]
+- q: How do I contact support?
+  expect: [support-contact, prospect/demo-and-support.md]
+- q: Can Khatario read a supplier bill photo?
+  expect: [prospect/modules/purchases-suppliers.md]
+- q: Profit and loss balance sheet reports
+  expect: [prospect/modules/accounting-reports.md]
+- q: How do I create an invoice?
+  audience: tenant_user
+  expect: [how-to/invoices.md, prospect/modules/billing-invoicing.md]
+- q: How do I connect my WhatsApp number?
+  audience: tenant_user
+  expect: [how-to/whatsapp.md]
+- q: How do I take a backup?
+  audience: tenant_user
+  expect: [how-to/settings-users.md, prospect/security-and-data.md]
+- q: How do I match purchases with GSTR-2B?
+  audience: tenant_user
+  expect: [how-to/gst-reports.md, prospect/modules/gst-returns.md]
+- q: What is the weather in Delhi today?
+  confident: false
+- q: Write me a poem about cricket
+  confident: false
+- q: How do I create an invoice?
+  audience: prospect
+  forbid: [how-to/invoices.md]

@@ -1153,20 +1153,6 @@ async function createCashSaleInvoice(
       throw new Error(limitCheck.message || 'Invoice limit reached. Cannot create invoice via WhatsApp bot.');
     }
 
-    // Limit check passed - proceed with invoice creation
-
-    // Get business settings for invoice number
-    const business = await queryOne<{ next_invoice_number: number; invoice_prefix: string }>(
-      `SELECT next_invoice_number, invoice_prefix FROM businesses WHERE id = $1`,
-      [businessId]
-    );
-
-    if (!business) {
-      throw new Error('Business not found');
-    }
-
-    const invoiceNumber = `${business.invoice_prefix || 'INV'}-${String(business.next_invoice_number).padStart(4, '0')}`;
-
     // Fetch item details
     const invoiceItems = [];
     let subtotal = 0;
@@ -1234,6 +1220,9 @@ async function createCashSaleInvoice(
       client.release();
       throw new Error('No default branch configured for this business. Cannot create WhatsApp invoice.');
     }
+
+    const { reserveFormattedDocumentNumber } = await import('@/lib/invoices/document-counter');
+    const invoiceNumber = await reserveFormattedDocumentNumber(client, defaultBranchIdForInvoice, 'tax_invoice');
 
     // Create invoice
     const invoiceRes = await client.query(
@@ -1349,12 +1338,6 @@ async function createCashSaleInvoice(
         );
       }
     }
-
-    // Update next invoice number
-    await client.query(
-      `UPDATE businesses SET next_invoice_number = next_invoice_number + 1 WHERE id = $1`,
-      [businessId]
-    );
 
     // Update customer balance if customer exists
     if (customerId) {

@@ -1,4 +1,6 @@
+import { randomInt } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { otpDebugAllowedFor } from '@/lib/platform-public-otp-core';
 import { query, queryOne } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { signStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
@@ -21,7 +23,7 @@ function cookieOptions() {
   };
 }
 
-const DEV_BYPASS_OTP = '123456';
+const DEBUG_FIXED_OTP = '123456';
 
 export async function POST(
   request: NextRequest,
@@ -45,7 +47,8 @@ export async function POST(
         { status: 429 },
       );
     }
-    const code = DEV_BYPASS_OTP;
+    const debug = otpDebugAllowedFor(phone);
+    const code = debug ? DEBUG_FIXED_OTP : String(randomInt(100000, 1000000));
     await query(
       `INSERT INTO store_customer_otp (business_id, phone, code, expires_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
@@ -59,7 +62,7 @@ export async function POST(
     });
     return NextResponse.json({
       ok: true,
-      debug_otp: code,
+      ...(debug ? { debug_otp: code } : {}),
     });
   }
 
@@ -76,7 +79,7 @@ export async function POST(
   }
 
   const code = String(body.code ?? '').trim();
-  const bypass = code === DEV_BYPASS_OTP;
+  const bypass = code === DEBUG_FIXED_OTP && otpDebugAllowedFor(phone);
   const row = bypass
     ? { id: 'bypass' }
     : await queryOne<{ id: string }>(

@@ -17,6 +17,8 @@
     .thermal-muted { font-weight: normal; font-size: 0.9em; }
     .totals { margin-top: 5px; text-align: right; }
     .footer { text-align: center; margin-top: 15px; font-size: 0.8em; }
+    .meta-inline-label, .meta-inline-value { display: inline; }
+    .meta-inline-label::after { content: ': '; }
   </style>
 </head>
 <body>
@@ -35,15 +37,14 @@
   </div>
 
   <div class="meta">
-    {{#ifSetting 'show_invoice_number'}}<div class="row"><span>Inv No: {{invoice.invoice_number}}</span>{{#ifSetting 'show_invoice_date'}}<span>{{invoice.invoice_date}}</span>{{/ifSetting}}</div>{{/ifSetting}}
+    <div style="text-align: center; font-weight: bold; margin-bottom: 4px;">{{invoice.invoice_title}}</div>
+    <div class="row">{{#ifSetting 'show_invoice_number'}}<span>Inv No: {{invoice.invoice_number}}</span>{{/ifSetting}}{{#ifSetting 'show_invoice_date'}}<span>{{invoice.invoice_date}}</span>{{/ifSetting}}</div>
     {{#ifSetting 'show_invoice_type'}}{{#if invoice.invoice_type}}<div>Type: {{invoice.invoice_type}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}<div>Due: {{invoice.due_date}}</div>{{/if}}{{/ifSetting}}
         {{> custom-invoice-meta}}
-    {{#ifSetting 'show_po_number'}}{{#if invoice.po_number}}<div>PO: {{invoice.po_number}}</div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_reference_number'}}{{#if invoice.reference_number}}<div>Ref: {{invoice.reference_number}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}<div>POS: {{invoice.place_of_supply}}</div>{{/if}}{{/ifSetting}}
     {{#ifSetting 'show_reverse_charge'}}{{#if invoice.is_reverse_charge}}<div>Rev Chg: Yes</div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_eway_bill_number'}}{{#if invoice.eway_bill_number}}<div>E-way: {{invoice.eway_bill_number}}</div>{{/if}}{{/ifSetting}}
+    {{> invoice-meta-extra itemClass="" labelClass="meta-inline-label" valueClass="meta-inline-value"}}
     <div class="divider"></div>
     {{#ifSetting 'show_bill_to'}}
       {{#ifSetting 'show_customer_name'}}<div>Customer: {{customer.name}}</div>{{/ifSetting}}
@@ -74,19 +75,19 @@
 
   <div class="totals">
     {{#ifSetting 'show_subtotal'}}<div class="row"><span>Subtotal</span><span>{{formatCurrency invoice.subtotal}}</span></div>{{/ifSetting}}
-    {{#ifSetting 'show_discount_total'}}{{#if invoice.discount_total}}<div class="row"><span>Discount</span><span>-{{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_additional_charges'}}{{#if invoice.additional_charges}}<div class="row"><span>Add Chg</span><span>+{{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_cgst'}}{{#unless invoice.is_igst}}{{#if invoice.cgst_total}}<div class="row"><span>CGST</span><span>{{formatCurrency invoice.cgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
-    {{#ifSetting 'show_sgst'}}{{#unless invoice.is_igst}}{{#if invoice.sgst_total}}<div class="row"><span>SGST</span><span>{{formatCurrency invoice.sgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
-    {{#ifSetting 'show_igst'}}{{#if invoice.is_igst}}{{#if invoice.igst_total}}<div class="row"><span>IGST</span><span>{{formatCurrency invoice.igst_total}}</span></div>{{/if}}{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_cess'}}{{#if invoice.cess_total}}<div class="row"><span>CESS</span><span>{{formatCurrency invoice.cess_total}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_tax_total'}}{{#if invoice.tax_total}}<div class="row"><span>Tax</span><span>{{formatCurrency invoice.tax_total}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_round_off'}}{{#if invoice.round_off}}<div class="row"><span>Round Off</span><span>{{formatCurrency invoice.round_off}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}<div class="row"><span>Discount</span><span>-{{formatCurrency invoice.discount_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}<div class="row"><span>Add Chg</span><span>+{{formatCurrency invoice.additional_charges}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_cgst'}}{{#unless invoice.is_igst}}{{#if (gt invoice.cgst_total 0)}}<div class="row"><span>CGST</span><span>{{formatCurrency invoice.cgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
+    {{#ifSetting 'show_sgst'}}{{#unless invoice.is_igst}}{{#if (gt invoice.sgst_total 0)}}<div class="row"><span>SGST</span><span>{{formatCurrency invoice.sgst_total}}</span></div>{{/if}}{{/unless}}{{/ifSetting}}
+    {{#ifSetting 'show_igst'}}{{#if invoice.is_igst}}{{#if (gt invoice.igst_total 0)}}<div class="row"><span>IGST</span><span>{{formatCurrency invoice.igst_total}}</span></div>{{/if}}{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_cess'}}{{#if (gt invoice.cess_total 0)}}<div class="row"><span>CESS</span><span>{{formatCurrency invoice.cess_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_tax_total'}}{{#if (gt invoice.tax_total 0)}}<div class="row"><span>Tax</span><span>{{formatCurrency invoice.tax_total}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}<div class="row"><span>Round Off</span><span>{{formatCurrency invoice.round_off}}</span></div>{{/if}}{{/ifSetting}}
     <div class="divider"></div>
     {{#ifSetting 'show_grand_total'}}<div class="row" style="font-weight: bold; font-size: 1.1em;"><span>TOTAL</span><span>{{formatCurrency invoice.grand_total}}</span></div>{{/ifSetting}}
     {{#ifSetting 'show_amount_in_words'}}{{#if invoice.amount_in_words}}<div style="font-size:0.85em; margin-top:3px;">{{invoice.amount_in_words}}</div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_paid_amount'}}{{#if invoice.paid_amount}}<div class="row" style="color:#16a34a;"><span>Paid</span><span>-{{formatCurrency invoice.paid_amount}}</span></div>{{/if}}{{/ifSetting}}
-    {{#ifSetting 'show_balance_amount'}}{{#if invoice.balance_amount}}<div class="row" style="color:#dc2626; font-weight:bold;"><span>Balance</span><span>{{formatCurrency invoice.balance_amount}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_paid_amount'}}{{#if (gt invoice.paid_amount 0)}}<div class="row" style="color:#16a34a;"><span>Paid</span><span>-{{formatCurrency invoice.paid_amount}}</span></div>{{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_balance_amount'}}{{#if (gt invoice.balance_amount 0)}}<div class="row" style="color:#dc2626; font-weight:bold;"><span>Balance</span><span>{{formatCurrency invoice.balance_amount}}</span></div>{{/if}}{{/ifSetting}}
   </div>
 
   <div class="footer">

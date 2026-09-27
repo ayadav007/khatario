@@ -7,6 +7,20 @@ export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
+/** Seeded once for a business that has no categories yet. */
+const DEFAULT_EXPENSE_CATEGORIES = [
+  'Rent',
+  'Electricity',
+  'Salaries & Wages',
+  'Transport & Freight',
+  'Office Supplies',
+  'Telephone & Internet',
+  'Repairs & Maintenance',
+  'Professional Fees',
+  'Bank Charges',
+  'Miscellaneous',
+];
+
 /**
  * GET /api/expense-categories
  * Fetch all expense categories for a business
@@ -17,6 +31,14 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+
+    await db.query(
+      `INSERT INTO expense_categories (business_id, name)
+       SELECT $1, name FROM unnest($2::text[]) AS name
+       WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE business_id = $1)
+       ON CONFLICT (business_id, name) DO NOTHING`,
+      [businessId, DEFAULT_EXPENSE_CATEGORIES]
+    );
 
     const categories = await db.queryRows(`
       SELECT

@@ -5,13 +5,25 @@ import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/templat
 import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 import { finalizePrintHtml } from '@/lib/pdf-generator';
 import { injectThermalScreenPreviewCss } from '@/lib/thermal-preview';
+import { getSessionScopedBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const sessionBusinessId = getSessionScopedBusinessId(request);
+    if (!sessionBusinessId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
     const body = await request.json();
     let { templateId, data } = body;
+    if (data?.business?.id && data.business.id !== sessionBusinessId) {
+      return NextResponse.json({ error: 'Business ID does not match your session' }, { status: 403 });
+    }
+    if (data) {
+      data.business = { ...(data.business || {}), id: sessionBusinessId };
+    }
 
     console.log('='.repeat(80));
     console.log('[Preview API] ========== TEMPLATE SELECTION DEBUG ==========');

@@ -28,6 +28,7 @@ import {
   readProductLineFromSearchParam,
 } from '@/components/marketing/landing/LandingProductContext';
 import { MarketingPageRenderer } from '@/components/marketing/builder/MarketingPageRenderer';
+import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 import type { MarketingDocument } from '@/lib/marketing-builder/sanitize';
 
 /** The coded home page; also the fallback whenever nothing has been published from the Site Builder. */
@@ -85,6 +86,7 @@ function LandingShell({ children, previewBanner }: { children: ReactNode; previe
           <LandingFooter />
           <LandingScrollTrialModal />
           <LandingMobileCta />
+          {!previewBanner ? <AssistantWidget channel="web" mobileBottomOffset={72} /> : null}
         </div>
       </LandingPlansProvider>
     </LandingProductProvider>

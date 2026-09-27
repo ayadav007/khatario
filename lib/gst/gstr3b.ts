@@ -150,6 +150,28 @@ function isInterStateDomestic(
   return igstAmount > 0;
 }
 
+function isExportPlaceOfSupply(placeOfSupply: string | undefined | null): boolean {
+  const pos = extractStateCode(placeOfSupply);
+  return pos === '96' || pos === '97';
+}
+
+/** Credit notes reduce outward supplies; debit notes add to them. */
+function noteSign(note: { note_type: 'C' | 'D' }): number {
+  return note.note_type === 'C' ? -1 : 1;
+}
+
+/** Taxable value adjustment from credit/debit notes, split into domestic (3.1a) and zero-rated (3.1b). */
+function noteTaxableAdjustments(gstr1Data: Gstr1Bundle): { domestic: number; zeroRated: number } {
+  let domestic = 0;
+  let zeroRated = 0;
+  for (const note of gstr1Data.cdn) {
+    const signed = noteSign(note) * note.taxable_value;
+    if (isExportPlaceOfSupply(note.place_of_supply)) zeroRated += signed;
+    else domestic += signed;
+  }
+  return { domestic, zeroRated };
+}
+
 /**
  * Split domestic taxable value (row 3.1a total = targetTotal) using GSTR-1 B2B/B2CL/B2CS lines.
  * Does not use tax %; optional POS vs registered GSTIN state, else IGST>0 heuristic.
@@ -176,6 +198,12 @@ function domesticTaxableNatureTotals(
     const inter = isInterStateDomestic(row.place_of_supply, row.igst_amount, selfState);
     if (inter) rawInter += row.taxable_value;
     else rawIntra += row.taxable_value;
+  }
+  for (const note of gstr1Data.cdn) {
+    if (isExportPlaceOfSupply(note.place_of_supply)) continue;
+    const signed = noteSign(note) * note.taxable_value;
+    if (isInterStateDomestic(note.place_of_supply, note.igst_amount, selfState)) rawInter += signed;
+    else rawIntra += signed;
   }
 
   const raw = rawInter + rawIntra;
@@ -415,19 +443,26 @@ export class GSTR3BGenerator {
         ? bizRes.rows[0].gstin.slice(0, 2)
         : null;
 
-    const wA =
+    const noteAdj = noteTaxableAdjustments(gstr1Data);
+    const wA = round2(
       gstr1Data.b2b.reduce((s, r) => s + r.taxable_value, 0) +
-      gstr1Data.b2cl.reduce((s, r) => s + r.taxable_value, 0) +
-      gstr1Data.b2cs.reduce((s, r) => s + r.taxable_value, 0);
-    const wB =
+        gstr1Data.b2cl.reduce((s, r) => s + r.taxable_value, 0) +
+        gstr1Data.b2cs.reduce((s, r) => s + r.taxable_value, 0) +
+        noteAdj.domestic
+    );
+    const wB = round2(
       gstr1Data.exports.reduce((s, e) => s + e.taxable_value, 0) +
-      gstr1Data.sez.reduce((s, e) => s + e.taxable_value, 0);
-    const wOut = wA + wB;
+        gstr1Data.sez.reduce((s, e) => s + e.taxable_value, 0) +
+        noteAdj.zeroRated
+    );
+    const shareWeightA = Math.max(0, wA);
+    const shareWeightB = Math.max(0, wB);
+    const wOut = shareWeightA + shareWeightB;
     let shareA = 1;
     let shareB = 0;
     if (wOut > 0) {
-      shareA = wA / wOut;
-      shareB = wB / wOut;
+      shareA = shareWeightA / wOut;
+      shareB = shareWeightB / wOut;
     }
 
     const { inter: tvInterA, intra: tvIntraA } = domesticTaxableNatureTotals(gstr1Data, selfState, wA);

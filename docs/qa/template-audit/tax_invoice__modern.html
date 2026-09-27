@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --font-family: Arial, sans-serif;
+      --font-size: 12px;
+      --text-color: #000000;
+      --table-header-color: #4f46e5;
+      --margin-top: 10px;
+      --margin-right: 10px;
+      --margin-bottom: 10px;
+      --margin-left: 10px;
+    }
+    html, body { 
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    body { 
+      font-family: var(--font-family), sans-serif; 
+      font-size: var(--font-size); 
+      color: var(--text-color); 
+      background: #f9fafb; 
+    }
+    .container { 
+      max-width: 960px; 
+      width: 100%;
+      margin: 0 auto; 
+      background: #fff; 
+      padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);
+      box-sizing: border-box;
+    }
+    
+    /* Preview mode (iframe) - hide scrollbars and constrain height */
+    @media screen {
+      html, body {
+        height: 100%;
+        overflow: hidden;
+      }
+      .container {
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        /* Hide scrollbar but keep functionality */
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+      }
+      .container::-webkit-scrollbar {
+        display: none; /* Chrome, Safari, Opera */
+      }
+    }
+    .header-bg { background: var(--primary); color: #fff; padding: 24px; }
+    .invoice-title { font-size: 28px; font-weight: 700; float: right; opacity: 0.65; text-transform: uppercase; }
+    .meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; padding: 16px 20px; }
+    .meta-block { min-width: 220px; }
+    .label { text-transform: uppercase; font-size: 10px; letter-spacing: 1px; color: rgba(0,0,0,0.55); margin-bottom: 4px; }
+    .value { font-weight: 600; }
+    table { width: 100%; margin: 0; border-collapse: collapse; }
+    thead th { text-align: left; color: var(--primary); border-bottom: 2px solid #e5e7eb; padding: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tbody td { padding: 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .totals-wrapper {
+      display: flex;
+      justify-content: flex-end;
+      margin: 16px 0;
+      clear: both;
+    }
+    .total-box { 
+      width: 320px; 
+      background: #f8fafc; 
+      padding: 16px; 
+      border-radius: 10px; 
+      border: 1px solid #e5e7eb; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
+    }
+    .total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .total-row.muted { color: #6b7280; }
+    .grand { font-size: 22px; color: var(--primary); font-weight: 800; margin-top: 6px; }
+    .section { padding: 16px; }
+    .flex-between { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .footer { clear: both; padding: 16px; border-top: 1px solid #e5e7eb; color: #475569; font-size: 12px; line-height: 1.6; }
+    .signature { text-align: right; margin-top: 20px; }
+    .qr { margin-top: 10px; }
+    
+    /* Print/PDF optimizations */
+    @media print {
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+      }
+      
+      .container {
+        max-width: 100%;
+        margin: 0;
+        padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left);
+        box-shadow: none;
+      }
+      
+      .header-bg {
+        padding: 16px;
+        page-break-inside: avoid;
+      }
+      
+      .meta {
+        padding: 12px 16px;
+        page-break-inside: avoid;
+      }
+      
+      .section {
+        padding: 12px;
+        page-break-inside: avoid;
+      }
+      
+      table {
+        page-break-inside: avoid;
+      }
+      
+      tr {
+        page-break-inside: avoid;
+      }
+      
+      .totals-wrapper {
+        margin: 12px 0;
+        page-break-inside: avoid;
+      }
+      .total-box {
+        padding: 12px;
+        page-break-inside: avoid;
+      }
+      
+      .footer {
+        padding: 12px;
+        page-break-inside: avoid;
+      }
+      
+      .card {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+<style id="khatario-print-system">
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+
+  .no-break {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+</style>
+</head>
+<body class="print-root orientation-portrait format-A4">
+  <div class="container">
+    <div class="header-bg">
+      <div class="invoice-title">TAX INVOICE</div>
+      <div style="display:flex; gap:16px; align-items:flex-start;">
+            <img src="https://cdn.example.com/zqlogo.png" style="height: 64px; max-width: 160px; object-fit: contain; background:#fff; padding:6px; border-radius:6px;" />
+        <div>
+          <h1 style="margin:0; font-size:24px;">ZQBIZ Enterprises</h1>
+            <div style="opacity:0.9; font-size: 13px; line-height:1.5;">
+              ZQBADDR Unit 4 Hinjewadi<br>
+              Pune, Maharashtra - 411057
+            </div>
+          <div style="font-size:13px;">Phone: 9000011111</div>
+          <div style="font-size:13px;">Email: zqbiz@example.com</div>
+          
+          <div style="font-size:13px; font-weight:600;">GSTIN: 27ZZZZZ9999Z1Z9</div>
+          
+          
+        </div>
+      </div>
+    </div>
+
+    <div class="section meta">
+      <div class="meta-block">
+        <div class="label">Details</div>
+        <div class="value"># ZQINV-0042</div>
+        <div>Date: 20 September 2026</div>
+        
+        <div>Due: 21 October 2026</div>
+        <div>PO: ZQPO-7781</div>
+        <div>Ref: ZQREF-5566</div>
+        <div>POS: Maharashtra</div>
+        
+        <div>E-way: ZQEWB-331122</div>
+        <div>Delivery Note: ZQDN-11</div>
+        <div>Payment Terms: ZQPT-Net45</div>
+        <div>Other References: ZQOR-22</div>
+        <div>Dispatched Through: ZQDT-BlueDart</div>
+        <div>Destination: ZQDEST-Chakan</div>
+        <div>Terms of Delivery: ZQTOD-DoorDelivery</div>
+          <div class="detail-row custom-field-row">
+            <span class="detail-label">Site Code:</span>
+            <span class="detail-value">ZQCF-SITE9</span>
+          </div>
+      </div>
+
+      <div class="meta-block">
+        <div class="label">Billed To</div>
+        <div class="value">ZQCUST Traders</div>
+        <div style="white-space:pre-line;">ZQIBILL 12 MG Road Pune</div>
+        <div>9812345670</div>
+        <div>zqcust@example.com</div>
+        <div>GSTIN: 27ABCDE1234F1Z5</div>
+        <div>State: Maharashtra</div>
+        <div>State Code: 27</div>
+        
+        
+        <div><strong>Outstanding Balance: ₹20,000.00</strong></div>
+      </div>
+
+      <div class="meta-block">
+        <div class="label">Ship To</div>
+        <div class="value">ZQCUST Traders</div>
+            <div style="white-space:pre-line;">ZQISHIP Plot 9 Chakan</div>
+        <div>9812345670</div>
+        <div>GSTIN: 27ABCDE1234F1Z5</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:5%;">#</th>
+            <th>Item Description</th>
+            <th class="text-center">HSN</th>
+            <th class="text-center">Unit</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Price</th>
+            <th class="text-right">Disc %</th>
+            <th class="text-right">Disc</th>
+            <th class="text-center">Tax %</th>
+            <th class="text-right">Tax</th>
+            <th class="text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+              <td>
+                
+                <strong>ZQAlpha Widget</strong>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: ZQCOLOUR-Teal</div>
+                
+                
+                <br><small style="color:#6b7280;">ZQDESC-ALPHA</small>
+                
+                
+              </td>
+            <td class="text-center">84713010</td>
+            <td class="text-center">BOX</td>
+            <td class="text-right">3 BOX</td>
+            <td class="text-right">1,111.11</td>
+            <td class="text-right">5%</td>
+            <td class="text-right">166.67</td>
+            <td class="text-center">18.00%</td>
+            <td class="text-right">570.00</td>
+            <td class="text-right">3,736.66</td>
+          </tr>
+          <tr>
+            <td>2</td>
+              <td>
+                
+                <strong>ZQBeta Gadget</strong>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: —</div>
+                
+                
+                <br><small style="color:#6b7280;">ZQDESC-BETA</small>
+                
+                
+              </td>
+            <td class="text-center">85176290</td>
+            <td class="text-center">KGS</td>
+            <td class="text-right">7 KGS</td>
+            <td class="text-right">222.22</td>
+            <td class="text-right">-</td>
+            <td class="text-right">-</td>
+            <td class="text-center">12.00%</td>
+            <td class="text-right">186.66</td>
+            <td class="text-right">1,742.20</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+
+    <div class="totals-wrapper">
+      <div class="total-box">
+        <div class="total-row"><span>Subtotal</span><span>4,722.20</span></div>
+        <div class="total-row muted"><span>Discount</span><span>- 166.67</span></div>
+        <div class="total-row muted"><span>Additional Charges</span><span>+ 150.25</span></div>
+        <div class="total-row muted"><span>CGST</span><span>378.33</span></div>
+        <div class="total-row muted"><span>SGST</span><span>378.33</span></div>
+        
+        
+        <div class="total-row muted"><span>Tax Total</span><span>756.66</span></div>
+        <div class="total-row muted"><span>Round Off</span><span>0.89</span></div>
+        <div class="total-row grand"><span>Grand Total</span><span>5,630.00</span></div>
+        <div class="total-row" style="font-size:11px; line-height:1.4; margin-top:6px;"><span>Amount in Words</span><span style="max-width:180px; text-align:right;">Five Thousand Six Hundred Thirty Rupees Only</span></div>
+        <div class="total-row" style="color:#16a34a;"><span>Paid</span><span>- 1,234.56</span></div>
+        <div class="total-row" style="color:#dc2626; font-weight:700;"><span>Balance Due</span><span>4,395.44</span></div>
+      </div>
+    </div>
+
+    <div class="section flex-between" style="clear: both; margin-top: 20px;">
+        <div class="card" style="min-width:260px;">
+          <div class="label">Bank Details</div>
+          <div>Bank: ZQBANK of India</div>
+          <div>A/c No: 001122334455</div>
+          <div>IFSC: ZQBK0001234</div>
+          <div>Branch: ZQBR-Baner</div>
+          <div style="margin-top:6px;">Terms: ZQSETPT settings payment terms</div>
+        </div>
+
+          <div class="card" style="flex:1; min-width:260px;">
+            <div class="label">Terms &amp; Conditions</div>
+            <div style="white-space:pre-line;">ZQINVTERMS goods once sold</div>
+          </div>
+
+          <div class="card" style="flex:1; min-width:200px;">
+            <div class="label">Notes</div>
+            <div style="white-space:pre-line;">ZQINVNOTE thanks for the order</div>
+          </div>
+    </div>
+
+    <div class="footer">
+      ZQSETFOOTER<br>
+      
+        <div class="signature">
+          <img src="https://cdn.example.com/zqsign.png" style="max-height:60px; max-width:160px; object-fit:contain;" />
+          <div style="font-weight:600; margin-top:6px;">Authorized Signatory</div>
+        </div>
+    </div>
+  </div>
+</body>
+</html>
+

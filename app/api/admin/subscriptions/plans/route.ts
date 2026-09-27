@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { clearAllSubscriptionCaches } from '@/lib/subscription';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
+import { scheduleKbReindex } from '@/lib/rag/queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Clear all subscription caches since plan features changed
     clearAllSubscriptionCaches();
+    scheduleKbReindex({ target: 'plans', reason: 'plan_saved' });
 
     return NextResponse.json({ plan }, { status: 201 });
   } catch (error: any) {

@@ -570,7 +570,11 @@ const ItemsTable = React.memo(function ItemsTable({
       
       {/* Scrollable Table Area — table-fixed + colgroup keeps numeric columns wide enough for long values */}
       <div className="flex-1 overflow-x-auto overflow-y-auto">
-        <table className="w-full min-w-[720px] table-fixed border-collapse border-spacing-0 text-sm">
+        <table
+          className={`w-full table-fixed border-collapse border-spacing-0 text-sm ${
+            posMode ? 'min-w-[720px]' : 'min-w-[70rem]'
+          }`}
+        >
         <colgroup>
           <col className="w-10" />
           <col />

@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const tenant = requireTenantBusinessId(request);
+  if (!tenant.ok) return tenant.response;
+
   const pool = getPool();
   const client = await pool.connect();
   
@@ -30,8 +35,8 @@ export async function POST(
         c.state_code as customer_state_code
       FROM sales_orders so
       LEFT JOIN customers c ON so.customer_id = c.id
-      WHERE so.id = $1
-    `, [salesOrderId]);
+      WHERE so.id = $1 AND so.business_id = $2
+    `, [salesOrderId, tenant.businessId]);
 
     if (orderRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -114,9 +119,8 @@ export async function POST(
       return NextResponse.json({ error: 'Sales order has no items' }, { status: 400 });
     }
 
-    // Get business info for invoice number and state
     const businessRes = await client.query(`
-      SELECT invoice_prefix, next_invoice_number, state_code, state
+      SELECT state_code, state
       FROM businesses
       WHERE id = $1
     `, [salesOrder.business_id]);
@@ -128,8 +132,7 @@ export async function POST(
 
     const business = businessRes.rows[0];
 
-    // Generate invoice number
-    const invoiceNumber = `${business.invoice_prefix}-${String(business.next_invoice_number).padStart(3, '0')}`;
+    const invoiceNumber = await reserveFormattedDocumentNumber(client, invoiceBranchId, 'tax_invoice');
 
     // Determine place of supply state code
     const businessStateCode = business.state_code || '';
@@ -275,13 +278,6 @@ export async function POST(
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
     `, [invoice.id, salesOrderId]);
-
-    // Increment next invoice number
-    await client.query(`
-      UPDATE businesses
-      SET next_invoice_number = next_invoice_number + 1
-      WHERE id = $1
-    `, [salesOrder.business_id]);
 
     // Update customer receivables
     await client.query(`

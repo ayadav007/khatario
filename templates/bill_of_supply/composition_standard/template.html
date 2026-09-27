@@ -345,36 +345,49 @@
   
   <!-- Header -->
   <div class="header">
-    {{#if business.logo_url}}
+    {{#ifSetting 'show_logo'}}{{#if business.logo_url}}
     <div class="logo-section">
       <img src="{{business.logo_url}}" alt="{{business.name}}">
     </div>
-    {{/if}}
+    {{/if}}{{/ifSetting}}
     <div class="business-info">
-      <div class="business-name">{{business.name}}</div>
+      {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
       <div class="business-details">
-        {{#if business.address}}{{business.address}}, {{business.city}}, {{business.state}} - {{business.pincode}}<br>{{/if}}
-        {{#if business.phone}}<strong>Phone:</strong> {{business.phone}}<br>{{/if}}
-        {{#if business.email}}<strong>Email:</strong> {{business.email}}<br>{{/if}}
-        {{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}
+        {{#ifSetting 'show_business_address'}}{{#if business.address}}{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_phone'}}{{#if business.phone}}<strong>Phone:</strong> {{business.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_email'}}{{#if business.email}}<strong>Email:</strong> {{business.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}{{/ifSetting}}
       </div>
     </div>
   </div>
   
   <!-- Bill Details -->
   <div class="bill-meta">
+    {{#ifSetting 'show_invoice_number'}}
     <div class="meta-item">
       <div class="meta-label">Bill No.</div>
       <div class="meta-value">{{invoice.invoice_number}}</div>
     </div>
+    {{/ifSetting}}
+    {{#ifSetting 'show_invoice_date'}}
     <div class="meta-item">
       <div class="meta-label">Date</div>
       <div class="meta-value">{{invoice.invoice_date}}</div>
     </div>
+    {{/ifSetting}}
+    {{#ifSetting 'show_due_date'}}{{#if invoice.due_date}}
+    <div class="meta-item">
+      <div class="meta-label">Due Date</div>
+      <div class="meta-value">{{invoice.due_date}}</div>
+    </div>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}
     <div class="meta-item">
       <div class="meta-label">Place of Supply</div>
       <div class="meta-value">{{invoice.place_of_supply}}</div>
     </div>
+    {{/if}}{{/ifSetting}}
+    {{> invoice-meta-extra itemClass="meta-item" labelClass="meta-label" valueClass="meta-value"}}
     {{#each invoice.custom_meta_display}}
     <div class="meta-item custom-field-row">
       <div class="meta-label">{{this.label}}</div>
@@ -387,18 +400,25 @@
   <div class="party-section">
     <div class="party-box">
       <div class="label">Bill To</div>
-      <div class="name">{{customer.name}}</div>
-      {{#if customer.address}}
+      {{#ifSetting 'show_customer_name'}}<div class="name">{{customer.name}}</div>{{/ifSetting}}
+      {{#ifSetting 'show_customer_address'}}{{#if customer.address}}
       <div class="detail">{{customer.address}}</div>
-      {{/if}}
-      {{#if customer.state}}
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}
+      <div class="detail"><strong>Phone:</strong> {{customer.phone}}</div>
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_customer_email'}}{{#if customer.email}}
+      <div class="detail"><strong>Email:</strong> {{customer.email}}</div>
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_customer_state'}}{{#if customer.state}}
       <div class="detail"><strong>State:</strong> {{customer.state}}</div>
-      {{/if}}
-      {{#if customer.gstin}}
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}
       <div class="detail"><strong>GSTIN:</strong> {{customer.gstin}}</div>
-      {{/if}}
+      {{/if}}{{/ifSetting}}
     </div>
     
+    {{#ifSetting 'show_ship_to'}}
     <div class="party-box">
       <div class="label">Ship To</div>
       {{#if customer.shipping_address}}
@@ -407,25 +427,28 @@
       <div class="detail">Same as Bill To</div>
       {{/if}}
     </div>
+    {{/ifSetting}}
   </div>
   
   <!-- Items Table (No Tax Columns) -->
   <table>
     <thead>
       <tr>
-        <th style="width: 5%">#</th>
-        <th style="width: 40%">Item Description</th>
-        <th style="width: 12%">HSN/SAC</th>
-        <th class="text-center" style="width: 10%">Qty</th>
-        <th class="text-right" style="width: 12%">Rate</th>
-        <th class="text-right" style="width: 10%">Discount</th>
-        <th class="text-right" style="width: 15%">Amount</th>
+        {{#ifSetting 'show_serial_number'}}<th style="width: 5%">#</th>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<th style="width: 40%">Item Description</th>{{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<th style="width: 12%">HSN/SAC</th>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<th class="text-center" style="width: 10%">Qty</th>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<th class="text-right" style="width: 12%">Rate</th>{{/ifSetting}}
+        {{#ifSetting 'show_discount_percent'}}<th class="text-right" style="width: 8%">Disc %</th>{{/ifSetting}}
+        {{#ifSetting 'show_discount_amount'}}<th class="text-right" style="width: 10%">Discount</th>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<th class="text-right" style="width: 15%">Amount</th>{{/ifSetting}}
       </tr>
     </thead>
     <tbody>
       {{#each items}}
       <tr>
-        <td class="text-center">{{this.index}}</td>
+        {{#ifSetting 'show_serial_number'}}<td class="text-center">{{this.index}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}
         <td>
           <strong>{{this.item_name}}</strong>
           {{> custom-item-lines}}
@@ -433,17 +456,21 @@
           <br><span style="font-size: 11px; color: #6b7280;">{{this.description}}</span>
           {{/if}}
         </td>
-        <td>{{this.hsn_sac}}</td>
-        <td class="text-center">{{this.quantity}} {{this.unit}}</td>
-        <td class="text-right">₹{{this.unit_price}}</td>
+        {{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<td>{{this.hsn_sac}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<td class="text-center">{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<td class="text-right">₹{{this.unit_price}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_percent'}}<td class="text-right">{{#if (gt this.discount_percent 0)}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_amount'}}
         <td class="text-right">
-          {{#if this.discount_amount}}
+          {{#if (gt this.discount_amount 0)}}
           ₹{{this.discount_amount}}
           {{else}}
           -
           {{/if}}
         </td>
-        <td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>
+        {{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>{{/ifSetting}}
       </tr>
       {{/each}}
     </tbody>
@@ -452,58 +479,77 @@
   <!-- Summary (No Tax Breakdown) -->
   <div class="summary-section">
     <div class="summary-box">
-      {{#if invoice.discount_total}}
+      {{#ifSetting 'show_subtotal'}}
       <div class="summary-row">
         <span>Subtotal</span>
         <span>₹{{invoice.subtotal}}</span>
       </div>
+      {{/ifSetting}}
+      {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}
       <div class="summary-row">
         <span>Discount</span>
         <span>- ₹{{invoice.discount_total}}</span>
       </div>
-      {{/if}}
-      {{#if invoice.additional_charges}}
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}
       <div class="summary-row">
-        <span>Additional Charges</span>
+        <span>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</span>
         <span>₹{{invoice.additional_charges}}</span>
       </div>
-      {{/if}}
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}
+      <div class="summary-row">
+        <span>Round Off</span>
+        <span>₹{{invoice.round_off}}</span>
+      </div>
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_grand_total'}}
       <div class="summary-row total">
         <span>TOTAL AMOUNT</span>
         <span>₹{{invoice.grand_total}}</span>
       </div>
+      {{/ifSetting}}
+      {{#ifSetting 'show_paid_amount'}}{{#if (gt invoice.paid_amount 0)}}
+      <div class="summary-row">
+        <span>Paid Amount</span>
+        <span>₹{{invoice.paid_amount}}</span>
+      </div>
+      {{/if}}{{/ifSetting}}
+      {{#ifSetting 'show_balance_amount'}}
+      <div class="summary-row">
+        <span>Balance Due</span>
+        <span>₹{{invoice.balance_amount}}</span>
+      </div>
+      {{/ifSetting}}
     </div>
   </div>
   
   <!-- Amount in Words -->
+  {{#ifSetting 'show_amount_in_words'}}
   <div class="amount-words">
     <div class="label">Amount in Words</div>
     <div class="value">{{invoice.amount_in_words}}</div>
   </div>
-  
-  <!-- Terms & Notes -->
-  {{#if invoice.notes}}
-  <div class="notes-section">
-    <div class="label">NOTES / TERMS</div>
-    <div class="content">{{invoice.notes}}</div>
-  </div>
-  {{/if}}
+  {{/ifSetting}}
+
+  {{> bos-footer-blocks}}
   
   <!-- Signature -->
   <div class="signature-section">
     <div class="signature-box">Customer Signature</div>
     <div class="signature-box">
-      {{#if business.signature_url}}
+      {{#ifSetting 'show_signature'}}{{#if business.signature_url}}
       <img src="{{business.signature_url}}" alt="Signature">
-      {{/if}}
+      {{/if}}{{/ifSetting}}
       For {{business.name}}
     </div>
   </div>
   
   <!-- Legal Footer -->
   <div class="legal-footer">
+    {{#if settings.footer_text}}{{settings.footer_text}}<br>{{/if}}
     This is a computer-generated Bill of Supply and does not require a physical signature.<br>
-    Subject to {{business.city}} jurisdiction only.
+    {{#if business.city}}Subject to {{business.city}} jurisdiction only.{{/if}}
   </div>
 </body>
 </html>

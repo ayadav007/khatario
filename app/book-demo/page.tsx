@@ -21,6 +21,7 @@ import { format, addDays, startOfToday } from 'date-fns';
 import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
 import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
+import { AssistantWidget } from '@/components/assistant/AssistantWidget';
 
 interface TimeSlot {
   id: string;
@@ -476,6 +477,7 @@ export default function BookDemoPage() {
           </div>
         </div>
       </div>
+      <AssistantWidget channel="web" />
     </div>
   );
 }

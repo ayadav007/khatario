@@ -4,6 +4,7 @@ import { queryRows, queryOne } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { isTrialEntitlementActive } from '@/lib/subscription/effective-plan';
 
 /**
  * GET /api/promotions/active?business_id=xxx&type=banner
@@ -22,8 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     // 1. Get current business subscription plan
-    const sub = await queryOne<{ plan_id: string }>(
-      `SELECT plan_id FROM business_subscriptions 
+    const sub = await queryOne<{ plan_id: string; status: string; trial_end_date: string | null }>(
+      `SELECT plan_id, status, trial_end_date::text FROM business_subscriptions 
        WHERE business_id = $1 AND status IN ('active', 'trial')
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
     );
 
     const planId = sub?.plan_id || 'free';
+    const onActiveTrial = !!sub && isTrialEntitlementActive(sub);
 
     // 2. Fetch active promotions
     // Conditions:
@@ -55,6 +57,15 @@ export async function GET(request: NextRequest) {
     if (type) {
       query += ` AND p.message_type = $3`;
       params.push(type);
+    }
+
+    // A full trial already has every paid feature; upgrade pitches only confuse
+    if (onActiveTrial) {
+      query += `
+        AND COALESCE(p.button_action, 'link') <> 'upgrade_modal'
+        AND COALESCE(p.button_url, '') NOT ILIKE '%subscription%'
+        AND COALESCE(p.button_url, '') NOT ILIKE '%upgrade%'
+      `;
     }
 
     // Filter out dismissed promotions if they are set to show only once

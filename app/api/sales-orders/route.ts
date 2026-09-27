@@ -49,7 +49,15 @@ export async function GET(request: NextRequest) {
       const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
       accessibleBranchIds = await getUserAccessibleBranchIds(userId);
       if (accessibleBranchIds.length > 0) {
-        branchFilter = `AND so.branch_id = ANY($${accessibleBranchIds.length + 1}::uuid[])`;
+        const hasBranchId = await getPool().query(
+          `SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'sales_orders' AND column_name = 'branch_id' LIMIT 1`,
+        );
+        if (hasBranchId.rows.length > 0) {
+          branchFilter = `AND so.branch_id = ANY($2::uuid[])`;
+        } else {
+          accessibleBranchIds = [];
+        }
       } else {
         // User has no branch access - return empty result
         return NextResponse.json({ salesOrders: [] });

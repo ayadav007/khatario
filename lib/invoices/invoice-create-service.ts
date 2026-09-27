@@ -16,6 +16,7 @@ import {
 } from '@/lib/closing-stock-period-lock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
+import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -118,16 +119,13 @@ async function allocateBranchInvoiceNumber(
 ): Promise<string> {
   const config = DOCUMENT_TYPE_CONFIG[documentType] || DOCUMENT_TYPE_CONFIG.tax_invoice;
   const branchRes = await client.query(
-    `SELECT invoice_prefix, next_invoice_number FROM branches WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+    `SELECT invoice_prefix FROM branches WHERE id = $1 AND business_id = $2`,
     [branchId, businessId]
   );
   if (branchRes.rows.length === 0) {
     throw new InvoiceCreateServiceError('Branch not found', 400, 'BRANCH_NOT_FOUND');
   }
-  const branch = branchRes.rows[0] as {
-    invoice_prefix?: string;
-    next_invoice_number?: number;
-  };
+  const branch = branchRes.rows[0] as { invoice_prefix?: string };
 
   let invoicePrefix = branch.invoice_prefix || config.prefix;
   try {
@@ -142,8 +140,8 @@ async function allocateBranchInvoiceNumber(
     if ((error as { code?: string }).code !== '42P01') throw error;
   }
 
-  const currentCounter = branch.next_invoice_number || 1;
-  const invoiceNumber = `${invoicePrefix}-${String(currentCounter).padStart(3, '0')}`;
+  const issuedNumber = await reserveDocumentNumber(client, branchId, documentType);
+  const invoiceNumber = `${invoicePrefix}-${String(issuedNumber).padStart(3, '0')}`;
 
   const dup = await client.query(
     `SELECT id FROM invoices WHERE invoice_number = $1 AND branch_id = $2 AND business_id = $3 AND deleted_at IS NULL`,
@@ -156,11 +154,6 @@ async function allocateBranchInvoiceNumber(
       'DUPLICATE_INVOICE_NUMBER'
     );
   }
-
-  await client.query(
-    `UPDATE branches SET next_invoice_number = next_invoice_number + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2`,
-    [branchId, businessId]
-  );
 
   return invoiceNumber;
 }
@@ -374,7 +367,7 @@ export async function createInvoiceInTransaction(
     userId: created_by,
     branchId: finalBranchId,
     feature: FeatureKeys.INVOICE_CREATION,
-    limitType: 'invoices',
+    limitType: body.document_type === 'proforma_invoice' ? 'estimates' : 'invoices',
     poolClient: client,
   });
 

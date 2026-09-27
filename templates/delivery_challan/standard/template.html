@@ -65,31 +65,48 @@
   
   <div class="header">
     <div>
-      <div class="business-name">{{business.name}}</div>
+      {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
       <div style="font-size: 11px; color: #4b5563;">
-        {{business.address}}, {{business.city}}, {{business.state}} - {{business.pincode}}<br>
-        {{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}
+        {{#ifSetting 'show_business_address'}}{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}<br>{{/ifSetting}}
+        {{#ifSetting 'show_business_phone'}}{{#if business.phone}}Phone: {{business.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_email'}}{{#if business.email}}Email: {{business.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}{{/ifSetting}}
       </div>
     </div>
+    {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">{{/if}}{{/ifSetting}}
   </div>
   
-  <div class="meta-grid">
+  <div class="meta-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+    {{#ifSetting 'show_invoice_number'}}
     <div class="meta-item">
       <div class="meta-label">Challan No.</div>
       <div class="meta-value">{{invoice.invoice_number}}</div>
     </div>
+    {{/ifSetting}}
+    {{#ifSetting 'show_invoice_date'}}
     <div class="meta-item">
       <div class="meta-label">Date</div>
       <div class="meta-value">{{invoice.invoice_date}}</div>
     </div>
+    {{/ifSetting}}
+    {{#ifSetting 'show_place_of_supply'}}{{#if invoice.place_of_supply}}
     <div class="meta-item">
       <div class="meta-label">Place of Supply</div>
       <div class="meta-value">{{invoice.place_of_supply}}</div>
     </div>
+    {{/if}}{{/ifSetting}}
+    {{#if invoice.reason_for_transportation}}
     <div class="meta-item">
       <div class="meta-label">Reason</div>
-      <div class="meta-value" style="font-size: 11px;">{{invoice.reason_for_transportation}}</div>
+      <div class="meta-value" style="font-size: 11px; text-transform: capitalize;">{{invoice.reason_for_transportation}}</div>
     </div>
+    {{/if}}
+    {{#if invoice.original_invoice_number}}
+    <div class="meta-item">
+      <div class="meta-label">Against Invoice</div>
+      <div class="meta-value">{{invoice.original_invoice_number}}</div>
+    </div>
+    {{/if}}
   </div>
   
   <div class="party-section">
@@ -97,99 +114,117 @@
       <div class="label">Consignor (From)</div>
       <div style="font-size: 14px; font-weight: bold;">{{business.name}}</div>
       <div style="font-size: 12px; color: #4b5563; margin-top: 5px;">
-        {{invoice.dispatch_from_address}}
+        {{#if invoice.dispatch_from_address}}{{invoice.dispatch_from_address}}{{else}}{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{/if}}
       </div>
     </div>
     <div class="party-box">
       <div class="label">Consignee (To)</div>
-      <div style="font-size: 14px; font-weight: bold;">{{customer.name}}</div>
+      {{#ifSetting 'show_customer_name'}}<div style="font-size: 14px; font-weight: bold;">{{customer.name}}</div>{{/ifSetting}}
       <div style="font-size: 12px; color: #4b5563; margin-top: 5px;">
-        {{#if invoice.place_of_delivery}}
-          {{invoice.place_of_delivery}}
-        {{else}}
-          {{customer.shipping_address}}
-        {{/if}}
+        {{#ifSetting 'show_customer_address'}}
+          {{#if customer.shipping_address}}{{customer.shipping_address}}<br>{{else}}{{#if customer.address}}{{customer.address}}<br>{{/if}}{{/if}}
+        {{/ifSetting}}
+        {{#if invoice.place_of_delivery}}<strong>Place of Delivery:</strong> {{invoice.place_of_delivery}}<br>{{/if}}
+        {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}Phone: {{customer.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_email'}}{{#if customer.email}}Email: {{customer.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<strong>GSTIN:</strong> {{customer.gstin}}{{/if}}{{/ifSetting}}
       </div>
     </div>
   </div>
   
-  {{#if invoice.vehicle_number}}
+  {{#or invoice.vehicle_number invoice.transporter_name invoice.e_way_bill_number invoice.transporter_gstin}}
   <div class="transport-details">
-    <div class="title">🚚 Transport & Vehicle Details</div>
+    <div class="title">Transport & Vehicle Details</div>
     <div class="transport-grid">
       {{#if invoice.vehicle_number}}
       <div>
-        <div style="font-size: 10px; color: {{settings.primary_color}}; font-weight: 600;">Vehicle Number</div>
+        <div style="font-size: 10px; color: var(--primary-color); font-weight: 600;">Vehicle Number</div>
         <div style="font-size: 13px; font-weight: bold;">{{invoice.vehicle_number}}</div>
       </div>
       {{/if}}
       {{#if invoice.transporter_name}}
       <div>
-        <div style="font-size: 10px; color: #0f766e; font-weight: 600;">Transporter</div>
+        <div style="font-size: 10px; color: var(--primary-color); font-weight: 600;">Transporter</div>
         <div style="font-size: 13px;">{{invoice.transporter_name}}</div>
       </div>
       {{/if}}
-      {{#if invoice.e_way_bill_number}}
+      {{#if invoice.transporter_gstin}}
       <div>
-        <div style="font-size: 10px; color: {{settings.primary_color}}; font-weight: 600;">E-Way Bill No.</div>
-        <div style="font-size: 13px; font-weight: bold;">{{invoice.e_way_bill_number}}</div>
+        <div style="font-size: 10px; color: var(--primary-color); font-weight: 600;">Transporter GSTIN</div>
+        <div style="font-size: 13px;">{{invoice.transporter_gstin}}</div>
       </div>
       {{/if}}
+      {{#ifSetting 'show_eway_bill_number'}}{{#if invoice.e_way_bill_number}}
+      <div>
+        <div style="font-size: 10px; color: var(--primary-color); font-weight: 600;">E-Way Bill No.</div>
+        <div style="font-size: 13px; font-weight: bold;">{{invoice.e_way_bill_number}}</div>
+      </div>
+      {{/if}}{{/ifSetting}}
     </div>
   </div>
-  {{/if}}
+  {{/or}}
   
   <table>
     <thead>
       <tr>
-        <th class="col-sn">#</th>
-        <th class="col-item">Item Description</th>
-        <th class="col-hsn">HSN/SAC</th>
-        <th class="col-qty text-center">Quantity</th>
-        <th class="col-rate text-right">Rate</th>
-        <th class="col-taxable text-right">Taxable Value</th>
+        {{#ifSetting 'show_serial_number'}}<th class="col-sn">#</th>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<th class="col-item">Item Description</th>{{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<th class="col-hsn">HSN/SAC</th>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<th class="col-qty text-center">Quantity</th>{{/ifSetting}}
+        {{#if invoice.items_have_prices}}
+        {{#ifSetting 'show_rate'}}<th class="col-rate text-right">Rate</th>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<th class="col-taxable text-right">Taxable Value</th>{{/ifSetting}}
+        {{/if}}
       </tr>
     </thead>
     <tbody>
       {{#each items}}
       <tr>
-        <td class="text-center">{{this.index}}</td>
+        {{#ifSetting 'show_serial_number'}}<td class="text-center">{{this.index}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}
         <td>
           <strong>{{this.item_name}}</strong>
-          {{> custom-item-lines}}
-          {{#if this.description}}
+          {{#if this.description}}{{#unless (eqStr this.description this.item_name)}}
           <br><span style="font-size: 11px; color: #6b7280;">{{this.description}}</span>
-          {{/if}}
+          {{/unless}}{{/if}}
+          {{> custom-item-lines}}
         </td>
-        <td>{{this.hsn_sac}}</td>
-        <td class="text-center">{{this.quantity}} {{this.unit}}</td>
-        <td class="text-right">₹{{this.unit_price}}</td>
-        <td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>
+        {{/ifSetting}}
+        {{#ifSetting 'show_hsn'}}<td>{{this.hsn_sac}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_quantity'}}<td class="text-center">{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</td>{{/ifSetting}}
+        {{#if @root.invoice.items_have_prices}}
+        {{#ifSetting 'show_rate'}}<td class="text-right">₹{{this.unit_price}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_line_total'}}<td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>{{/ifSetting}}
+        {{/if}}
       </tr>
       {{/each}}
     </tbody>
   </table>
   
   <div class="summary-note">
-    <strong>⚠️ Important:</strong> This is a Delivery Challan, not an invoice. 
+    <strong>Important:</strong> This is a Delivery Challan, not an invoice. 
     Tax invoice will be issued separately as per GST regulations.
-    {{#if invoice.linked_invoice}}
-    <br><strong>Linked to Invoice:</strong> {{invoice.linked_invoice}}
+    {{#if invoice.original_invoice_number}}
+    <br><strong>Linked to Invoice:</strong> {{invoice.original_invoice_number}}
     {{/if}}
   </div>
   
-  {{#if invoice.notes}}
+  {{#ifSetting 'show_notes'}}{{#if invoice.notes}}
   <div style="margin: 20px 0; padding: 12px; background: #f9fafb; border-left: 3px solid #9ca3af; border-radius: 4px;">
     <strong>Notes:</strong><br>{{invoice.notes}}
   </div>
-  {{/if}}
+  {{/if}}{{/ifSetting}}
   
   <div class="signature-section">
     <div class="signature-box">Receiver's Signature<br><small>(With Date & Stamp)</small></div>
-    <div class="signature-box">For {{business.name}}<br><small>Authorized Signatory</small></div>
+    <div class="signature-box">
+      {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}
+      For {{business.name}}<br><small>Authorized Signatory</small>
+    </div>
   </div>
   
   <div style="margin-top: 30px; text-align: center; font-size: 10px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 10px;">
+    {{#if settings.footer_text}}{{settings.footer_text}}<br>{{/if}}
     This Delivery Challan is computer-generated and complies with GST Rule 55
   </div>
 </body>

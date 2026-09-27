@@ -4,6 +4,7 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { logAdminAction } from '@/lib/platform-auth';
 import { sanitizeMarketingDocument } from '@/lib/marketing-builder/sanitize';
 import { publishMarketingPage } from '@/lib/marketing-builder/pages-repo';
+import { scheduleKbReindex } from '@/lib/rag/queue';
 import {
   MARKETING_PAGE_PATHS,
   MARKETING_PUBLISH_ROLE,
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: { slug: s
 
   const result = await publishMarketingPage(s.slug, clean.data, auth.admin.id);
   revalidatePath(MARKETING_PAGE_PATHS[s.slug]);
+  scheduleKbReindex({ target: 'marketing', locator: s.slug, reason: 'marketing_publish' });
 
   const { ip, userAgent } = requestMeta(request);
   await logAdminAction(

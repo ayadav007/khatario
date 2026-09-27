@@ -44,6 +44,17 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
+    if (searchParams.get('next_number') === '1') {
+      const maxRes = await getPool().query<{ max_used: string | null }>(
+        `SELECT MAX(SUBSTRING(credit_note_number FROM '(\\d+)$')::bigint) AS max_used
+         FROM credit_notes
+         WHERE business_id = $1 AND credit_note_number ~ '\\d+$'`,
+        [businessId]
+      );
+      const next = Number(maxRes.rows[0]?.max_used || 0) + 1;
+      return NextResponse.json({ next_credit_note_number: `CN-${String(next).padStart(3, '0')}` });
+    }
+
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = (page - 1) * limit;

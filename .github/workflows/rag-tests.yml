@@ -1,0 +1,31 @@
+# Assistant knowledge base checks: unit tests + content lint (no prices typed by hand,
+# valid frontmatter, no tenant_customer content in the repo). Retrieval quality against the
+# live index runs on the server via `npm run kb:eval` after `kb:reindex` in deploy-vps.sh.
+name: RAG tests
+
+on:
+  pull_request:
+    paths:
+      - 'knowledge/**'
+      - 'lib/rag/**'
+      - 'tests/rag/**'
+      - 'tests/security/rag-isolation.test.ts'
+      - 'app/api/public/assistant/**'
+  push:
+    branches: [main]
+    paths:
+      - 'knowledge/**'
+      - 'lib/rag/**'
+      - 'tests/rag/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:rag

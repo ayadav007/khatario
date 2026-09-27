@@ -338,7 +338,7 @@ export function ShareInvoiceModal({
                 <Link href="/connect/whatsapp" className="font-medium underline hover:text-amber-950">
                   Connect now
                 </Link>{' '}
-                to send from your business number, or turn off &quot;Use Connected Account&quot; below to open WhatsApp Web.
+                to send from your business number, or turn off &quot;Send from my connected WhatsApp number&quot; below to open WhatsApp Web.
               </div>
             ) : null}
             <button
@@ -376,7 +376,7 @@ export function ShareInvoiceModal({
                         onChange={(e) => setSendViaApi(e.target.checked)}
                         className="rounded border-gray-300 text-green-600 focus:ring-green-500"
                     />
-                    <span>Use Connected Account (Baileys)</span>
+                    <span>Send from my connected WhatsApp number</span>
                 </label>
             </div>
           </div>

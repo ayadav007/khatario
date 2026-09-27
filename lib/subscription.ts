@@ -342,22 +342,20 @@ export async function checkLimit(
     return { allowed: false, current: 0, limit: 0, message: 'No limits defined' };
   }
 
-  if (maxLimit === -1) {
-    return { allowed: true, current: 0, limit: -1 };
-  }
-
   let currentCount = 0;
   try {
     const { sql, params } = buildLimitCountQuery(limitType, businessId);
     const result = await db.queryOne<{ count: number | string }>(sql, params);
     currentCount = parseInt(String(result?.count ?? '0'), 10);
-    
-    console.log(`[Subscription Limit Check] ${limitType}: ${currentCount}/${maxLimit} (business: ${businessId})`);
   } catch (error) {
     console.error(`Error counting ${limitType} for business ${businessId}:`, error);
     // If table doesn't exist yet (for new features), allow (currentCount = 0)
-    // Otherwise, block to be safe
     currentCount = 0;
+  }
+
+  // Unlimited plans still report real usage (shown on Plan & billing)
+  if (maxLimit === -1) {
+    return { allowed: true, current: currentCount, limit: -1 };
   }
 
   const allowed = currentCount < maxLimit;

@@ -49,6 +49,31 @@ interface ItemAutocompleteProps {
   warehouseId?: string;
 }
 
+interface DropdownPosition {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+}
+
+/** Matches the dropdown's max-h-60 (15rem). */
+const DROPDOWN_MAX_HEIGHT = 240;
+const DROPDOWN_GAP = 4;
+
+/** Open below the input, or above it when there isn't room below; keep within the viewport width. */
+function computeDropdownPosition(rect: DOMRect): DropdownPosition {
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const width = Math.min(Math.max(rect.width, 300), viewportW - 16);
+  const left = Math.max(8, Math.min(rect.left, viewportW - width - 8));
+  const spaceBelow = viewportH - rect.bottom;
+  const spaceAbove = rect.top;
+  if (spaceBelow < DROPDOWN_MAX_HEIGHT + DROPDOWN_GAP && spaceAbove > spaceBelow) {
+    return { bottom: viewportH - rect.top + DROPDOWN_GAP, left, width };
+  }
+  return { top: rect.bottom + DROPDOWN_GAP, left, width };
+}
+
 const BARCODE_PATTERN = /\d/;
 function looksLikeBarcode(s: string): boolean {
   return s.length >= 8 && s.length <= 50 && /^[A-Za-z0-9]+$/.test(s) && BARCODE_PATTERN.test(s);
@@ -76,7 +101,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const suppressOpenRef = useRef(false);
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition | null>(null);
   const [selectedItemForVariant, setSelectedItemForVariant] = useState<ItemSearchResult | null>(null);
   const [showVariantSelector, setShowVariantSelector] = useState(false);
   const [highlightedVariantIndex, setHighlightedVariantIndex] = useState(0);
@@ -120,12 +145,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
       // If input ref not ready, try again after a short delay
       const timer = setTimeout(() => {
         if (inputRef.current && isOpen) {
-          const rect = inputRef.current.getBoundingClientRect();
-          setDropdownPosition({
-            top: rect.bottom + 4,
-            left: rect.left,
-            width: Math.max(rect.width, 300)
-          });
+          setDropdownPosition(computeDropdownPosition(inputRef.current.getBoundingClientRect()));
         }
       }, 10);
       return () => clearTimeout(timer);
@@ -133,14 +153,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
 
     const updatePosition = () => {
       if (inputRef.current) {
-        const rect = inputRef.current.getBoundingClientRect();
-        // Use getBoundingClientRect() for accurate viewport-relative positioning
-        // This ensures the dropdown appears correctly even when page layout changes (e.g., payment section expanded)
-        setDropdownPosition({
-          top: rect.bottom + 4, // Add 4px gap, no need for scrollY since using fixed positioning
-          left: rect.left, // No need for scrollX since using fixed positioning
-          width: Math.max(rect.width, 300)
-        });
+        // Viewport-relative (fixed positioning) so layout shifts don't misplace the dropdown
+        setDropdownPosition(computeDropdownPosition(inputRef.current.getBoundingClientRect()));
       }
     };
 
@@ -733,7 +747,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
           className="fixed bg-white border border-border rounded-lg shadow-lg z-[9999] max-h-60 overflow-y-auto"
           style={{
             boxShadow: 'rgba(0,0,0,0.1) 0px 4px 12px',
-            top: dropdownPosition ? `${dropdownPosition.top}px` : 'auto',
+            top: dropdownPosition?.top != null ? `${dropdownPosition.top}px` : 'auto',
+            bottom: dropdownPosition?.bottom != null ? `${dropdownPosition.bottom}px` : 'auto',
             left: dropdownPosition ? `${dropdownPosition.left}px` : 'auto',
             width: dropdownPosition ? `${dropdownPosition.width}px` : '300px',
             position: 'fixed' // Explicitly set fixed positioning

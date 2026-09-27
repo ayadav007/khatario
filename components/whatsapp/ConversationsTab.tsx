@@ -1282,7 +1282,7 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
             {whatsappConnected ? (
               <span
                 className="inline-flex items-center gap-1.5"
-                title="WhatsApp client session (Baileys) on the server"
+                title="Your WhatsApp number is connected"
               >
                 <span className="h-2 w-2 rounded-full shrink-0 bg-emerald-500" />
                 WhatsApp online

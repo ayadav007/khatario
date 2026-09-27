@@ -2,8 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -46,6 +46,9 @@ const getStateCode = (stateName: string): string => {
   };
   return stateCodeMap[name] || '';
 };
+
+const stateNameFromCode = (code: string | null | undefined): string =>
+  (code && INDIAN_STATES.find((s) => getStateCode(s) === code)) || '';
 
 interface CustomerAutocompleteProps {
   customers: Customer[];
@@ -140,8 +143,13 @@ interface OrderItemRow {
 
 export default function NewSalesOrderPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { business, user } = useAuth();
   const toast = useToastContext();
+  const convertFromId = searchParams.get('convert_from');
+  /** Addresses/place of supply copied from the source estimate win over the customer's defaults. */
+  const prefillOverridesRef = useRef<{ billing: string; shipping: string; placeOfSupply: string } | null>(null);
+  const prefillDoneRef = useRef<string | null>(null);
   
   const [loading, setLoading] = useState(false);
   const [userBranchId, setUserBranchId] = useState<string | null>(null);
@@ -224,8 +232,19 @@ export default function NewSalesOrderPage() {
       .then(data => {
         const c = data.customer;
         setSelectedCustomer(c);
-        setBillingAddress(c.billing_address || c.address || '');
-        setShippingAddress(c.shipping_address || c.address || '');
+        const overrides = prefillOverridesRef.current;
+        if (overrides) {
+          prefillOverridesRef.current = null;
+          setBillingAddress(overrides.billing || c.billing_address || c.address || '');
+          setShippingAddress(overrides.shipping || c.shipping_address || c.address || '');
+          if (overrides.placeOfSupply) {
+            setPlaceOfSupply(overrides.placeOfSupply);
+            return;
+          }
+        } else {
+          setBillingAddress(c.billing_address || c.address || '');
+          setShippingAddress(c.shipping_address || c.address || '');
+        }
         
         const cState = getStateCode(c.state || '');
         const bState = business.state_code || getStateCode(business.state || '');
@@ -277,6 +296,91 @@ export default function NewSalesOrderPage() {
   useEffect(() => {
     setRows(prev => prev.map(r => calculateRow(r)));
   }, [calculateRow]);
+
+  // ?convert_from=<estimateId> copies an estimate; ?customer_id&item_id&qty comes from purchase requests
+  useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    const prefillKey = convertFromId || searchParams.get('customer_id') || searchParams.get('item_id');
+    if (!prefillKey || prefillDoneRef.current === prefillKey) return;
+    prefillDoneRef.current = prefillKey;
+
+    if (convertFromId) {
+      fetch(`/api/invoices/${convertFromId}?user_id=${user.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const est = data?.invoice || data;
+          if (!est?.id) return;
+          const estPlaceOfSupply = stateNameFromCode(est.place_of_supply_state_code);
+          prefillOverridesRef.current = {
+            billing: est.billing_address || '',
+            shipping: est.shipping_address || '',
+            placeOfSupply: estPlaceOfSupply,
+          };
+          if (est.customer_id) setCustomerId(est.customer_id);
+          if (estPlaceOfSupply) setPlaceOfSupply(estPlaceOfSupply);
+          setNotes(est.notes || '');
+          setTerms(est.terms || '');
+          if (Array.isArray(est.items) && est.items.length > 0) {
+            setRows(
+              est.items.map((i: any) =>
+                calculateRow({
+                  itemId: i.item_id || '',
+                  name: i.item_name || '',
+                  quantity: Number(i.quantity || 1),
+                  unit: i.unit || 'PCS',
+                  price: Number(i.unit_price || 0),
+                  discountPercent: Number(i.discount_percent || 0),
+                  discountAmount: 0,
+                  taxPercent: Number(i.tax_rate || 0),
+                  taxAmount: 0,
+                  hsnSac: i.hsn_sac || '',
+                  taxableValue: 0,
+                  cgstAmount: 0,
+                  sgstAmount: 0,
+                  igstAmount: 0,
+                  total: 0,
+                })
+              )
+            );
+          }
+        })
+        .catch((err) => console.error('[Convert] Failed to load source estimate:', err));
+      return;
+    }
+
+    const qCustomerId = searchParams.get('customer_id');
+    const qItemId = searchParams.get('item_id');
+    const qQty = Number(searchParams.get('qty') || 1) || 1;
+    if (qCustomerId) setCustomerId(qCustomerId);
+    if (qItemId) {
+      fetch(`/api/items/${qItemId}?business_id=${business.id}&user_id=${user.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const item = data?.item || data;
+          if (!item?.id) return;
+          setRows([
+            calculateRow({
+              itemId: item.id,
+              name: item.name || '',
+              quantity: qQty,
+              unit: item.unit || 'PCS',
+              price: Number(item.selling_price || 0),
+              discountPercent: 0,
+              discountAmount: 0,
+              taxPercent: Number(item.tax_rate || 0),
+              taxAmount: 0,
+              hsnSac: item.hsn_sac || '',
+              taxableValue: 0,
+              cgstAmount: 0,
+              sgstAmount: 0,
+              igstAmount: 0,
+              total: 0,
+            }),
+          ]);
+        })
+        .catch((err) => console.error('[Prefill] Failed to load item:', err));
+    }
+  }, [business?.id, user?.id, convertFromId, searchParams, calculateRow]);
 
   const updateRow = (index: number, field: keyof OrderItemRow, value: any) => {
     const newRows = [...rows];
@@ -382,6 +486,13 @@ export default function NewSalesOrderPage() {
         setSavedOrderId(data.salesOrder?.id || savedOrderId);
         setSavedStatus(targetStatus);
         toast.success(`Sales order ${targetStatus === 'draft' ? 'saved as draft' : 'confirmed'} successfully!`);
+        if (convertFromId && targetStatus === 'confirmed') {
+          fetch(`/api/invoices/${convertFromId}?user_id=${user?.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estimate_status: 'converted' }),
+          }).catch((err) => console.error('[Convert] Failed to mark estimate converted:', err));
+        }
         if (targetStatus === 'confirmed') {
           router.push(`/sales-orders/${data.salesOrder.id}`);
         }

@@ -16,6 +16,25 @@ describe('resolvePublicRequestOrigin', () => {
     expect(origin).toBe('https://khatario.com');
   });
 
+  it('uses https for a public host in production when nginx omits x-forwarded-proto', () => {
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const origin = resolvePublicRequestOrigin({
+        headers: {
+          get(name: string) {
+            if (name === 'host') return 'staging.khatario.com';
+            return null;
+          },
+        },
+        nextUrl: { origin: 'http://staging.khatario.com', protocol: 'http:' },
+      });
+      expect(origin).toBe('https://staging.khatario.com');
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
+  });
+
   it('falls back to NEXT_PUBLIC_APP_URL in production when host is localhost', () => {
     const prevUrl = process.env.NEXT_PUBLIC_APP_URL;
     const prevEnv = process.env.NODE_ENV;

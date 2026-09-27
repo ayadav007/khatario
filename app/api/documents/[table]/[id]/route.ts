@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { DocumentTable } from '@/lib/pdf-generator';
+import { requireDocumentReadAccess } from '@/lib/document-access';
+import { hasTableColumn } from '@/lib/schema-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,21 +10,11 @@ export async function GET(
   { params }: { params: { table: string; id: string } }
 ) {
   try {
-    const { table, id } = params;
-    
-    const validTables: DocumentTable[] = [
-      'invoices', 
-      'sales_orders', 
-      'delivery_challans', 
-      'credit_notes', 
-      'debit_notes', 
-      'purchase_orders', 
-      'work_orders'
-    ];
+    const { id } = params;
 
-    if (!validTables.includes(table as DocumentTable)) {
-      return NextResponse.json({ error: 'Invalid document type' }, { status: 400 });
-    }
+    const access = await requireDocumentReadAccess(req, params.table, id);
+    if (!access.ok) return access.response;
+    const { table, businessId } = access;
 
     const itemTableMap: Record<string, string> = {
       'invoices': 'invoice_items',
@@ -65,20 +56,26 @@ export async function GET(
       `SELECT doc.*, ${partySelect}
        FROM ${table} doc
        ${partyJoin}
-       WHERE doc.id = $1`,
-      [id]
+       WHERE doc.id = $1 AND doc.business_id = $2`,
+      [id, businessId]
     );
 
     if (!doc) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
+    const itemTable = itemTableMap[table];
+    const [hasItemName, hasSortOrder] = await Promise.all([
+      hasTableColumn(itemTable, 'item_name'),
+      hasTableColumn(itemTable, 'sort_order'),
+    ]);
+
     const items = await db.queryRows(
-      `SELECT ii.*, COALESCE(ii.item_name, i.name) as item_name
-       FROM ${itemTableMap[table]} ii
+      `SELECT ii.*, ${hasItemName ? 'COALESCE(ii.item_name, i.name)' : 'i.name'} as item_name
+       FROM ${itemTable} ii
        LEFT JOIN items i ON ii.item_id = i.id
        WHERE ii.${idColumnMap[table]} = $1
-       ORDER BY ii.sort_order, ii.id`,
+       ORDER BY ${hasSortOrder ? 'ii.sort_order, ' : ''}ii.id`,
       [id]
     );
 
@@ -89,4 +86,3 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

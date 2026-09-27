@@ -14,6 +14,9 @@ export interface TemplateInfo {
   features: string[];
 }
 
+/** Layouts whose labels are document-neutral, so the presenter's title works for quotes and orders too. */
+const GENERAL_A4_DOCUMENT_TYPES = ['tax_invoice', 'proforma_invoice', 'sales_order', 'purchase_order'];
+
 export const TEMPLATE_REGISTRY: TemplateInfo[] = [
   // Tax Invoice Templates
   {
@@ -21,7 +24,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'GST Standard',
     description: 'Professional GST-compliant invoice',
     path: 'templates/gst_standard',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#3949AB',
     features: ['GST Breakdown', 'HSN Codes', 'Bank Details', 'Digital Signature']
   },
@@ -30,7 +33,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'Modern',
     description: 'Clean layout with colored header',
     path: 'templates/modern',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#2563eb',
     features: ['Minimalist', 'Color Accents', 'Modern Typography']
   },
@@ -39,7 +42,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'Classic',
     description: 'Traditional business invoice',
     path: 'templates/classic',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#059669',
     features: ['Professional', 'Detailed Layout', 'Print-Friendly']
   },
@@ -57,7 +60,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'Elegant',
     description: 'Sophisticated and refined',
     path: 'templates/elegant',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#dc2626',
     features: ['Premium Look', 'Elegant Typography', 'Subtle Colors']
   },
@@ -66,7 +69,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'Minimal',
     description: 'Simple and straightforward',
     path: 'templates/minimal',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#64748b',
     features: ['Clean Design', 'Easy to Read', 'Fast Loading']
   },
@@ -75,7 +78,7 @@ export const TEMPLATE_REGISTRY: TemplateInfo[] = [
     name: 'Business Pro',
     description: 'Professional business template',
     path: 'templates/business_pro',
-    documentTypes: ['tax_invoice'],
+    documentTypes: GENERAL_A4_DOCUMENT_TYPES,
     color: '#7c3aed',
     features: ['Corporate Design', 'Professional Layout']
   },

@@ -11,6 +11,16 @@ import type { BusinessApiHandlerContext } from './types';
 
 export const WHATSAPP_BASE_FEATURE = 'settings_whatsapp';
 
+async function isConnectModuleOff(businessId: string): Promise<boolean> {
+  try {
+    const { getBusinessPlatformContext } = await import('@/lib/business-modules');
+    const ctx = await getBusinessPlatformContext(businessId);
+    return !ctx.enabledModules.includes('connect');
+  } catch {
+    return false;
+  }
+}
+
 /** Basic WhatsApp: connect + transactional sends (plan feature, not addon). */
 export async function assertWhatsAppBaseAccess(
   ctx: BusinessApiHandlerContext,
@@ -20,12 +30,15 @@ export async function assertWhatsAppBaseAccess(
     return null;
   } catch (error) {
     if (error instanceof FeatureAccessDeniedError) {
+      const moduleOff = await isConnectModuleOff(ctx.businessId);
       return NextResponse.json(
         {
-          error:
-            'WhatsApp integration is not available on your plan. Upgrade to connect WhatsApp.',
-          code: error.toResponse().code,
+          error: moduleOff
+            ? 'WhatsApp is part of Khatario Connect, which is not switched on for this business. Add Connect from Settings → Products.'
+            : 'WhatsApp integration is not available on your plan. Upgrade to connect WhatsApp.',
+          code: moduleOff ? 'MODULE_NOT_ENABLED' : error.toResponse().code,
           feature: WHATSAPP_BASE_FEATURE,
+          ...(moduleOff ? { module: 'connect', action_url: '/settings/products' } : {}),
         },
         { status: 403 },
       );

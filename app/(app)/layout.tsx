@@ -41,6 +41,11 @@ const GlobalSubscriptionUsageStrip = dynamic(
   { ssr: false },
 );
 
+const AssistantWidget = dynamic(
+  () => import('@/components/assistant/AssistantWidget').then((m) => ({ default: m.AssistantWidget })),
+  { ssr: false },
+);
+
 /**
  * Persistent layout for main app routes
  * This layout persists across navigation, preventing Sidebar remounting
@@ -151,6 +156,9 @@ function AppRouteLayoutInner({
           <PromotionModal />
           <ProductTour />
           <TrialExtensionModal />
+          {!isFullWidthPage && !isInvoiceComposer ? (
+            <AssistantWidget mode="app" channel="trial_app" bottomOffset={76} mobileBottomOffset={90} />
+          ) : null}
         </div>
       </MobileHeaderTitleProvider>
     </TodoScheduleRailProvider>

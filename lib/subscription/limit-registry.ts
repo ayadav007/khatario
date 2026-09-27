@@ -82,7 +82,9 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
   switch (limitType) {
     case 'invoices':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM invoices WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM invoices
+              WHERE business_id = $1 AND created_at >= ${monthStart}
+                AND COALESCE(document_type, 'tax_invoice') <> 'proforma_invoice'`,
         params: p,
       };
     case 'customers':
@@ -131,7 +133,12 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       };
     case 'estimates':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM estimates WHERE business_id = $1 AND created_at >= ${monthStart}`,
+        // Estimates live in `estimates` (legacy API) and as proforma invoices (invoice form)
+        sql: `SELECT (
+                (SELECT COUNT(*) FROM estimates WHERE business_id = $1 AND created_at >= ${monthStart}) +
+                (SELECT COUNT(*) FROM invoices WHERE business_id = $1 AND created_at >= ${monthStart}
+                   AND document_type = 'proforma_invoice')
+              )::int AS count`,
         params: p,
       };
     case 'credit_notes':

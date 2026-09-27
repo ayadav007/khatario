@@ -40,6 +40,7 @@ export default defineConfig({
             // Lets full-journey signup repeat without 429 when Playwright starts this server.
             E2E_DISABLE_RATE_LIMIT: 'true',
             SIGNUP_DEBUG: 'true',
+            OTP_DEBUG_PHONES: process.env.OTP_DEBUG_PHONES || '*',
           },
         },
       }),

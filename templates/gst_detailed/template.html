@@ -49,8 +49,10 @@
     .meta-box { width: 25%; }
 
     /* Item Table */
-    .item-table th { background: var(--table-header-color, var(--primary-color)); color: #fff; font-size: 10px; text-transform: capitalize; }
+    .item-table th { background: var(--table-header-color, var(--primary-color)); color: {{settings.table_header_text_color}}; font-size: 10px; text-transform: capitalize; }
     .item-row { height: 25px; }
+    .summary-table { width: 50%; margin-left: auto; }
+    .summary-table td { padding: 4px 8px; }
     .spacer-row { height: 120px; }
 
     /* Summary Section */
@@ -84,12 +86,16 @@
         </div>
       </td>
       <td class="meta-box">
+        {{#ifSetting 'show_invoice_number'}}
         <span class="label">Invoice No.</span>
         <span class="value">{{invoice.invoice_number}}</span>
+        {{/ifSetting}}
       </td>
       <td class="meta-box">
+        {{#ifSetting 'show_invoice_date'}}
         <span class="label">Dated</span>
         <span class="value">{{invoice.invoice_date}}</span>
+        {{/ifSetting}}
       </td>
     </tr>
     <tr>
@@ -183,10 +189,10 @@
       </td>
       {{/ifSetting}}
       {{#ifSetting 'show_ship_to'}}
-        {{#if customer.shipping_name}}
+        {{#if customer.shipping_address}}
           <td rowspan="3" class="business-info">
             <span class="label">Ship to</span>
-            {{#ifSetting 'show_customer_name'}}<div class="value">{{customer.shipping_name}}</div>{{/ifSetting}}
+            {{#ifSetting 'show_customer_name'}}<div class="value">{{#if customer.shipping_name}}{{customer.shipping_name}}{{else}}{{customer.name}}{{/if}}</div>{{/ifSetting}}
             {{#ifSetting 'show_customer_address'}}<div style="font-size: 10px;">{{customer.shipping_address}}</div>{{/ifSetting}}
             {{#ifSetting 'show_customer_phone'}}{{#if customer.phone}}<div style="font-size: 10px;"><b>Phone:</b> {{customer.phone}}</div>{{/if}}{{/ifSetting}}
             {{#ifSetting 'show_customer_gstin'}}{{#if customer.gstin}}<div style="font-size: 10px;"><b>GSTIN/UIN:</b> {{customer.gstin}}</div>{{/if}}{{/ifSetting}}
@@ -260,7 +266,7 @@
     <thead>
       <tr>
         {{#ifSetting 'show_serial_number'}}<th style="width: 35px;">SI No.</th>{{/ifSetting}}
-        <th>Description of Goods</th>
+        {{#ifSetting 'show_item_name'}}<th>Description of Goods</th>{{/ifSetting}}
         {{#ifSetting 'show_hsn'}}<th style="width: 75px;">HSN/SAC</th>{{/ifSetting}}
         {{#ifSetting 'show_quantity'}}<th style="width: 65px;">Quantity</th>{{/ifSetting}}
         {{#ifSetting 'show_rate'}}<th style="width: 70px;">Rate</th>{{/ifSetting}}
@@ -276,19 +282,22 @@
       {{#each items}}
       <tr class="item-row">
         {{#ifSetting 'show_serial_number'}}<td class="text-center">{{this.index}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}
         <td>
           {{#ifSetting 'show_item_image'}}{{#if this.image_url}}<img src="{{this.image_url}}" style="width: 30px; height: 30px; object-fit: cover; vertical-align: middle; margin-right: 6px;" />{{/if}}{{/ifSetting}}
           <div class="value">{{this.item_name}}
+              {{#if this.description}}<div style="font-size: 9px; font-weight: normal;">{{this.description}}</div>{{/if}}
               {{> custom-item-lines}}</div>
           {{#ifSetting 'show_batch_number'}}{{#if this.batch_number}}<small>Batch: {{this.batch_number}}</small>{{/if}}{{/ifSetting}}
           {{#ifSetting 'show_expiry_date'}}{{#if this.expiry_date}}<small>Expiry: {{this.expiry_date}}</small>{{/if}}{{/ifSetting}}
         </td>
+        {{/ifSetting}}
         {{#ifSetting 'show_hsn'}}<td class="text-center">{{this.hsn_sac}}</td>{{/ifSetting}}
         {{#ifSetting 'show_quantity'}}<td class="text-center"><b>{{this.quantity}}</b></td>{{/ifSetting}}
         {{#ifSetting 'show_rate'}}<td class="text-right">{{this.unit_price}}</td>{{/ifSetting}}
         {{#ifSetting 'show_unit'}}<td class="text-center">{{this.unit}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_discount_percent'}}<td class="text-right">{{#if this.discount_percent}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_discount_amount'}}<td class="text-right">{{#if this.discount_amount}}₹{{this.discount_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_percent'}}<td class="text-right">{{#if (gt this.discount_percent 0)}}{{this.discount_percent}}%{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_discount_amount'}}<td class="text-right">{{#if (gt this.discount_amount 0)}}₹{{this.discount_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
         {{#ifSetting 'show_tax_rate'}}
           <td class="text-center">
             {{#if ../invoice.is_igst}}
@@ -298,27 +307,29 @@
             {{/if}}
           </td>
         {{/ifSetting}}
-        {{#ifSetting 'show_tax_amount'}}<td class="text-right">{{#if this.tax_amount}}₹{{this.tax_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
+        {{#ifSetting 'show_tax_amount'}}<td class="text-right">{{#if (gt this.tax_amount 0)}}₹{{this.tax_amount}}{{else}}-{{/if}}</td>{{/ifSetting}}
         {{#ifSetting 'show_line_total'}}<td class="text-right"><b>{{this.line_total}}</b></td>{{/ifSetting}}
       </tr>
       {{/each}}
       <tr class="spacer-row"> {{#ifSetting 'show_serial_number'}}<td></td>{{/ifSetting}}
-        <td></td>{{#ifSetting 'show_hsn'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_quantity'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_unit'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_percent'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_line_total'}}<td></td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_hsn'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_quantity'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_unit'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_percent'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_line_total'}}<td></td>{{/ifSetting}}
       </tr>
       <tr>
-        <td colspan="{{#ifSetting 'show_serial_number'}}2{{else}}1{{/ifSetting}}" class="text-right"><b>Total</b></td>
+        {{#ifSetting 'show_serial_number'}}<td></td>{{/ifSetting}}
+        {{#ifSetting 'show_item_name'}}<td class="text-right"><b>Total</b></td>{{/ifSetting}}
         {{#ifSetting 'show_hsn'}}<td></td>{{/ifSetting}}
-        <td class="text-center"><b>{{invoice.total_quantity}} Nos</b></td>
-        <td colspan="{{#ifSetting 'show_unit'}}2{{else}}1{{/ifSetting}}"></td>
+        {{#ifSetting 'show_quantity'}}<td class="text-center"><b>{{invoice.total_quantity}}</b></td>{{/ifSetting}}
+        {{#ifSetting 'show_rate'}}<td></td>{{/ifSetting}}
+        {{#ifSetting 'show_unit'}}<td></td>{{/ifSetting}}
         {{#ifSetting 'show_discount_percent'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_discount_amount'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_rate'}}<td></td>{{/ifSetting}}{{#ifSetting 'show_tax_amount'}}<td></td>{{/ifSetting}}
-        <td class="text-right"><b>₹{{invoice.subtotal}}</b></td>
+        {{#ifSetting 'show_line_total'}}<td class="text-right"><b>₹{{invoice.subtotal}}</b></td>{{/ifSetting}}
       </tr>
     </tbody>
   </table>
 
   {{#unless invoice.is_igst}}
-    {{#if tax_breakdown}}
-      {{#if (gt tax_breakdown.length 0)}}
+    {{#if invoice.tax_breakdown}}
+      {{#if (gt invoice.tax_breakdown.length 0)}}
         <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
           <thead>
             <tr>
@@ -333,7 +344,7 @@
             </tr>
           </thead>
           <tbody>
-            {{#each tax_breakdown}}
+            {{#each invoice.tax_breakdown}}
             <tr>
               <td>{{this.hsn_sac}}</td>
               <td class="text-right">{{this.taxable_value}}</td>
@@ -359,193 +370,47 @@
     {{/if}}
   {{/unless}}
 
-  {{#ifSetting 'show_subtotal'}}
-    <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-      <tr>
-        <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-          <span class="label">Subtotal</span>
-          <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-        </td>
-        <td style="width: 50%; padding: 6px;">
-          {{#ifSetting 'show_discount_total'}}
-            {{#if invoice.discount_total}}
-              <span class="label">Discount</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.discount_total}}</b></div>
-            {{else}}
-              <span class="label">Taxable Amount</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-            {{/if}}
-          {{else}}
-            <span class="label">Taxable Amount</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-          {{/ifSetting}}
-        </td>
-      </tr>
-    </table>
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_discount_total'}}
-    {{#if invoice.discount_total}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Discount</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.discount_total}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Taxable Amount</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_additional_charges'}}
-    {{#if invoice.additional_charges}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Additional Charges</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>+ ₹{{invoice.additional_charges}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Subtotal</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#if invoice.is_igst}}
-    {{#ifSetting 'show_igst'}}
-      {{#if invoice.igst_total}}
-        <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-          <tr>
-            <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-              <span class="label">Taxable Amount</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-            </td>
-            <td style="width: 50%; padding: 6px;">
-              <span class="label">IGST</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.igst_total}}</b></div>
-            </td>
-          </tr>
-        </table>
-      {{/if}}
+  <table class="grid-table summary-table" style="font-size: 10px; margin-top: -1px;">
+    {{#ifSetting 'show_subtotal'}}
+    <tr><td>Taxable Amount</td><td class="text-right">₹{{invoice.subtotal}}</td></tr>
     {{/ifSetting}}
-  {{else}}
-    {{#ifSetting 'show_cgst'}}
-      {{#if invoice.cgst_total}}
-        <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-          <tr>
-            <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
-              <span class="label">Taxable Amount</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-            </td>
-            <td style="width: 33.33%; padding: 6px; border-right: 1px solid #000;">
-              <span class="label">CGST</span>
-              <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.cgst_total}}</b></div>
-            </td>
-            <td style="width: 33.33%; padding: 6px;">
-              {{#ifSetting 'show_sgst'}}
-                <span class="label">SGST</span>
-                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.sgst_total}}</b></div>
-              {{/ifSetting}}
-            </td>
-          </tr>
-        </table>
-      {{/if}}
+    {{#ifSetting 'show_discount_total'}}{{#if (gt invoice.discount_total 0)}}
+    <tr><td>Discount</td><td class="text-right">- ₹{{invoice.discount_total}}</td></tr>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_additional_charges'}}{{#if (gt invoice.additional_charges 0)}}
+    <tr><td>{{#if invoice.additional_charges_label}}{{invoice.additional_charges_label}}{{else}}Additional Charges{{/if}}</td><td class="text-right">+ ₹{{invoice.additional_charges}}</td></tr>
+    {{/if}}{{/ifSetting}}
+    {{#if invoice.is_igst}}
+      {{#ifSetting 'show_igst'}}
+      <tr><td>IGST</td><td class="text-right">₹{{invoice.igst_total}}</td></tr>
+      {{/ifSetting}}
+    {{else}}
+      {{#ifSetting 'show_cgst'}}
+      <tr><td>CGST</td><td class="text-right">₹{{invoice.cgst_total}}</td></tr>
+      {{/ifSetting}}
+      {{#ifSetting 'show_sgst'}}
+      <tr><td>SGST</td><td class="text-right">₹{{invoice.sgst_total}}</td></tr>
+      {{/ifSetting}}
+    {{/if}}
+    {{#ifSetting 'show_cess'}}{{#if (gt invoice.cess_total 0)}}
+    <tr><td>CESS</td><td class="text-right">₹{{invoice.cess_total}}</td></tr>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_tax_total'}}
+    <tr><td>Total Tax</td><td class="text-right">₹{{invoice.tax_total}}</td></tr>
     {{/ifSetting}}
-  {{/if}}
-
-  {{#ifSetting 'show_cess'}}
-    {{#if invoice.cess_total}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">CESS</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.cess_total}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Tax Total</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_tax_total'}}
-    {{#if invoice.tax_total}}
-      {{#unless invoice.is_igst}}
-        {{#unless (and (ifSetting 'show_cgst') (ifSetting 'show_sgst'))}}
-          <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-            <tr>
-              <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-                <span class="label">Total Tax</span>
-                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
-              </td>
-              <td style="width: 50%; padding: 6px;">
-                <span class="label">Grand Total</span>
-                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-              </td>
-            </tr>
-          </table>
-        {{/unless}}
-      {{else}}
-        {{#unless (ifSetting 'show_igst')}}
-          <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-            <tr>
-              <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-                <span class="label">Total Tax</span>
-                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.tax_total}}</b></div>
-              </td>
-              <td style="width: 50%; padding: 6px;">
-                <span class="label">Grand Total</span>
-                <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-              </td>
-            </tr>
-          </table>
-        {{/unless}}
-      {{/unless}}
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_grand_total'}}
-    {{#unless (ifSetting 'show_tax_total')}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Total</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.subtotal}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Grand Total</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/unless}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_round_off'}}
-    {{#if invoice.round_off}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Round Off</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.round_off}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Amount Payable</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/if}}
-  {{/ifSetting}}
+    {{#ifSetting 'show_round_off'}}{{#if (gt (abs invoice.round_off) 0)}}
+    <tr><td>Round Off</td><td class="text-right">₹{{invoice.round_off}}</td></tr>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_grand_total'}}
+    <tr style="font-weight: bold; font-size: 12px;"><td>Grand Total</td><td class="text-right">₹{{invoice.grand_total}}</td></tr>
+    {{/ifSetting}}
+    {{#ifSetting 'show_paid_amount'}}{{#if (gt invoice.paid_amount 0)}}
+    <tr><td>Paid Amount</td><td class="text-right">- ₹{{invoice.paid_amount}}</td></tr>
+    {{/if}}{{/ifSetting}}
+    {{#ifSetting 'show_balance_amount'}}
+    <tr style="font-weight: bold;"><td>Balance Due</td><td class="text-right">₹{{invoice.balance_amount}}</td></tr>
+    {{/ifSetting}}
+  </table>
 
   {{#ifSetting 'show_amount_in_words'}}
     {{#if invoice.amount_in_words}}
@@ -555,40 +420,6 @@
           <b>INR {{invoice.amount_in_words}}</b>
         </div>
       </div>
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_paid_amount'}}
-    {{#if invoice.paid_amount}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Grand Total</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Paid Amount</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>- ₹{{invoice.paid_amount}}</b></div>
-          </td>
-        </tr>
-      </table>
-    {{/if}}
-  {{/ifSetting}}
-
-  {{#ifSetting 'show_balance_amount'}}
-    {{#if invoice.balance_amount}}
-      <table class="grid-table" style="font-size: 9px; margin-top: -1px;">
-        <tr>
-          <td style="width: 50%; padding: 6px; border-right: 1px solid #000;">
-            <span class="label">Balance Due</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.balance_amount}}</b></div>
-          </td>
-          <td style="width: 50%; padding: 6px;">
-            <span class="label">Grand Total</span>
-            <div style="font-size: 11px; margin-top: 2px;"><b>₹{{invoice.grand_total}}</b></div>
-          </td>
-        </tr>
-      </table>
     {{/if}}
   {{/ifSetting}}
 
@@ -652,21 +483,20 @@
           {{/if}}
         {{/ifSetting}}
         <span class="label">for <b>{{business.name}}</b></span>
-        <div style="height: 50px;"></div>
-        {{#ifSetting 'show_signature'}}
-          {{#ifSetting 'show_authorized_signatory'}}
-            <span class="label">Authorised Signatory</span>
-          {{else}}
-            <span class="label">Authorised Signatory</span>
-          {{/ifSetting}}
+        {{#ifSetting 'show_signature'}}{{#if business.signature_url}}
+          <div style="height: 50px; display: flex; justify-content: flex-end; align-items: center;"><img src="{{business.signature_url}}" alt="Signature" style="max-height: 48px; max-width: 160px;"></div>
         {{else}}
-          {{#ifSetting 'show_authorized_signatory'}}
-            <span class="label">Authorised Signatory</span>
-          {{/ifSetting}}
+          <div style="height: 50px;"></div>
+        {{/if}}{{else}}
+          <div style="height: 50px;"></div>
         {{/ifSetting}}
+        {{#or (ifSetting 'show_signature') (ifSetting 'show_authorized_signatory')}}
+          <span class="label">Authorised Signatory</span>
+        {{/or}}
       </td>
     </tr>
   </table>
+  {{#if settings.footer_text}}<div style="text-align: center; font-size: 9px; padding: 6px; border-top: 1px solid #000;">{{settings.footer_text}}</div>{{/if}}
 </div>
 
 </body>

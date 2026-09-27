@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateDocumentPdf, DocumentTable } from '@/lib/pdf-generator';
+import { generateDocumentPdf } from '@/lib/pdf-generator';
+import { requireDocumentReadAccess } from '@/lib/document-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,22 +10,11 @@ export async function GET(
 ) {
   try {
     const { table, id } = params;
-    
-    const validTables: DocumentTable[] = [
-      'invoices', 
-      'sales_orders', 
-      'delivery_challans', 
-      'credit_notes', 
-      'debit_notes', 
-      'purchase_orders', 
-      'work_orders'
-    ];
 
-    if (!validTables.includes(table as DocumentTable)) {
-      return NextResponse.json({ error: 'Invalid document type' }, { status: 400 });
-    }
+    const access = await requireDocumentReadAccess(req, table, id);
+    if (!access.ok) return access.response;
 
-    const pdfBuffer = await generateDocumentPdf(id, table as DocumentTable);
+    const pdfBuffer = await generateDocumentPdf(id, access.table);
 
     return new NextResponse(pdfBuffer as any, {
       headers: {
@@ -41,4 +31,3 @@ export async function GET(
     );
   }
 }
-

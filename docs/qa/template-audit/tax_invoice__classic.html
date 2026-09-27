@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    :root {
+      --primary-color: #dc2626;
+      --text-color: #000000;
+      --table-header-color: #dc2626;
+      --font-family: Arial, sans-serif;
+      --font-size: 12px;
+      --margin-top: 10px;
+      --margin-right: 10px;
+      --margin-bottom: 10px;
+      --margin-left: 10px;
+    }
+    body { 
+      font-family: var(--font-family), serif; 
+      font-size: var(--font-size); 
+      color: var(--text-color); 
+    }
+    .container { 
+      max-width: 800px; 
+      margin: 0 auto; 
+      padding: var(--margin-top) var(--margin-right) var(--margin-bottom) var(--margin-left); 
+      border: 1px solid var(--primary-color);
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    .header { 
+      text-align: center; 
+      border-bottom: 1px solid var(--primary-color); 
+      padding-bottom: 10px; 
+      margin-bottom: 20px; 
+    }
+    .title { 
+      font-size: 24px; 
+      font-weight: bold; 
+      text-transform: uppercase; 
+      margin-bottom: 5px; 
+      color: var(--primary-color); 
+    }
+    .grid { 
+      display: flex; 
+      border: 1px solid var(--primary-color); 
+      margin-bottom: 20px; 
+    }
+    .col { 
+      flex: 1; 
+      padding: 10px; 
+    }
+    .col:first-child { 
+      border-right: 1px solid var(--primary-color); 
+    }
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      border: 1px solid var(--primary-color);
+      table-layout: auto;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    th, td { 
+      border: 1px solid var(--primary-color); 
+      padding: 8px; 
+      font-size: 12px;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      box-sizing: border-box;
+    }
+    .col-item {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+    th { 
+      background: var(--table-header-color);
+      font-weight: bold;
+      color: #ffffff;
+      font-size: 11px;
+    }
+    
+    /* Column Widths - Using percentages that add up to 100% */
+    .col-sn { width: 4%; max-width: 40px; }
+    .col-item { width: auto; min-width: 0; max-width: 35%; }
+    .col-hsn { width: 8%; max-width: 80px; }
+    .col-qty { width: 8%; max-width: 70px; }
+    .col-rate { width: 9%; max-width: 80px; }
+    .col-disc { width: 7%; max-width: 70px; }
+    .col-tax { width: 7%; max-width: 70px; }
+    .col-total { width: 10%; max-width: 100px; }
+
+    /* Transport Details Section */
+    .transport-details { display: grid; grid-template-cols: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; padding: 10px; border: 1px solid var(--primary-color); border-radius: 4px; background-color: #fcfcfc; }
+    .transport-item { font-size: 11px; line-height: 1.4; }
+    .transport-label { font-weight: bold; color: #666; text-transform: uppercase; font-size: 9px; }
+    .transport-value { color: #333; font-weight: 500; }
+    .text-right { 
+      text-align: right; 
+    }
+    .text-center {
+      text-align: center;
+    }
+    .footer { 
+      margin-top: 20px; 
+      border-top: 1px solid var(--primary-color); 
+      padding-top: 10px; 
+    }
+  </style>
+<style id="khatario-print-system">
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+
+  .no-break {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+</style>
+</head>
+<body class="print-root orientation-portrait format-A4">
+  <div class="container">
+    <div class="header">
+          <img src="https://cdn.example.com/zqlogo.png" style="height: 60px; margin-bottom: 10px;" />
+      
+      <div class="title">TAX INVOICE</div>
+      
+        <div>ZQBIZ Enterprises</div>
+      
+        <div>ZQBADDR Unit 4 Hinjewadi, Pune, Maharashtra - 411057</div>
+      
+          <div>Phone: 9000011111</div>
+      
+          <div>Email: zqbiz@example.com</div>
+      
+          <div>GSTIN: 27ZZZZZ9999Z1Z9</div>
+    </div>
+
+    <div class="grid">
+      <div class="col">
+        <strong>Billed To:</strong><br>
+          ZQCUST Traders<br>
+          ZQIBILL 12 MG Road Pune<br>
+            9812345670<br>
+            GSTIN: 27ABCDE1234F1Z5<br>
+            Email: zqcust@example.com<br>
+            State: Maharashtra<br>
+            State Code: 27<br>
+            <strong>Outstanding Balance: ₹20,000.00</strong><br>
+      </div>
+      
+      <div class="col">
+        <strong>Ship To:</strong><br>
+          ZQCUST Traders<br>
+            ZQISHIP Plot 9 Chakan<br>
+      </div>
+      
+      <div class="col">
+        <strong>TAX INVOICE Details:</strong><br>
+          No: ZQINV-0042<br>
+          Date: 20 September 2026<br>
+          E-Way Bill: ZQEWB-331122<br>
+            Due: 21 October 2026<br>
+            PO: ZQPO-7781<br>
+            Ref: ZQREF-5566<br>
+            POS: Maharashtra<br>
+            E-way: ZQEWB-331122<br>
+            Delivery Note: ZQDN-11<br>
+            Payment Terms: ZQPT-Net45<br>
+            Other References: ZQOR-22<br>
+            Dispatched Through: ZQDT-BlueDart<br>
+            Destination: ZQDEST-Chakan<br>
+            Terms of Delivery: ZQTOD-DoorDelivery<br>
+          <div class="detail-row custom-field-row">
+            <span class="detail-label">Site Code:</span>
+            <span class="detail-value">ZQCF-SITE9</span>
+          </div>
+      </div>
+    </div>
+
+    <!-- Transport Details (Specific to Challans/Orders) -->
+    <div class="transport-details">
+      
+
+      <div class="transport-item">
+        <div class="transport-label">E-Way Bill</div>
+        <div class="transport-value">ZQEWB-331122</div>
+      </div>
+
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+            <th class="col-sn">#</th>
+            <th class="col-item">Item</th>
+            <th class="text-center col-hsn">HSN</th>
+            <th class="text-right col-qty">Qty</th>
+            <th class="text-right col-rate">Rate</th>
+            <th class="text-right col-disc">Disc %</th>
+            <th class="text-right col-disc">Discount</th>
+            <th class="text-right col-tax">Tax %</th>
+            <th class="text-right col-tax">Tax</th>
+            <th class="text-right col-total">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+            <td class="col-sn">1</td>
+            <td class="col-item">
+              <strong>ZQAlpha Widget</strong>
+              <br><small style="color: #666;">ZQDESC-ALPHA</small>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: ZQCOLOUR-Teal</div>
+              
+              
+            </td>
+            <td class="text-center col-hsn">84713010</td>
+            <td class="text-right col-qty">3 BOX</td>
+            <td class="text-right col-rate">1,111.11</td>
+            <td class="text-right col-disc">5%</td>
+            <td class="text-right col-disc">166.67</td>
+            <td class="text-right col-tax">18.00%</td>
+            <td class="text-right col-tax">570.00</td>
+            <td class="text-right col-total"><strong>3,736.66</strong></td>
+        </tr>
+        <tr>
+            <td class="col-sn">2</td>
+            <td class="col-item">
+              <strong>ZQBeta Gadget</strong>
+              <br><small style="color: #666;">ZQDESC-BETA</small>
+                  <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: —</div>
+              
+              
+            </td>
+            <td class="text-center col-hsn">85176290</td>
+            <td class="text-right col-qty">7 KGS</td>
+            <td class="text-right col-rate">222.22</td>
+            <td class="text-right col-disc">-</td>
+            <td class="text-right col-disc">-</td>
+            <td class="text-right col-tax">12.00%</td>
+            <td class="text-right col-tax">186.66</td>
+            <td class="text-right col-total"><strong>1,742.20</strong></td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="9" class="text-right"><strong>Subtotal</strong></td>
+          <td class="text-right"><strong>4,722.20</strong></td>
+        </tr>
+          <tr>
+            <td colspan="9" class="text-right">Discount</td>
+            <td class="text-right">- 166.67</td>
+          </tr>
+          <tr>
+            <td colspan="9" class="text-right">Additional Charges</td>
+            <td class="text-right">+ 150.25</td>
+          </tr>
+            <tr>
+              <td colspan="9" class="text-right">CGST</td>
+              <td class="text-right">+ 378.33</td>
+            </tr>
+            <tr>
+              <td colspan="9" class="text-right">SGST</td>
+              <td class="text-right">+ 378.33</td>
+            </tr>
+          <tr>
+            <td colspan="9" class="text-right">Tax Total</td>
+            <td class="text-right">+ 756.66</td>
+          </tr>
+          <tr>
+            <td colspan="9" class="text-right">Round Off</td>
+            <td class="text-right">0.89</td>
+          </tr>
+        <tr>
+          <td colspan="9" class="text-right"><strong>Grand Total</strong></td>
+          <td class="text-right"><strong>5,630.00</strong></td>
+        </tr>
+          <tr style="color: #059669;">
+            <td colspan="9" class="text-right">Paid Amount</td>
+            <td class="text-right">- 1,234.56</td>
+          </tr>
+          <tr style="font-weight: bold; color: #dc2626;">
+            <td colspan="9" class="text-right"><strong>Balance Due</strong></td>
+            <td class="text-right"><strong>4,395.44</strong></td>
+          </tr>
+          <tr>
+            <td colspan="10.00" style="font-size: 11px; padding-top: 10px;">
+              <strong>Amount in words:</strong> Five Thousand Six Hundred Thirty Rupees Only
+            </td>
+          </tr>
+      </tfoot>
+    </table>
+
+
+    <div class="footer">
+          <strong>Terms:</strong> ZQINVTERMS goods once sold<br>
+      
+          <strong>Notes:</strong> ZQINVNOTE thanks for the order<br>
+      
+          <strong>Payment Terms:</strong> ZQSETPT settings payment terms<br>
+      
+            <strong>Bank Details:</strong><br>
+              Bank: ZQBANK of India<br>
+              A/c No: 001122334455<br>
+              IFSC: ZQBK0001234<br>
+                Branch: ZQBR-Baner<br>
+      
+      <div style="text-align: right; margin-top: 20px;">
+        For ZQBIZ Enterprises<br>
+          <img src="https://cdn.example.com/zqsign.png" style="max-height: 50px; max-width: 150px; object-fit: contain; margin: 10px 0;" />
+          Authorized Signatory
+      </div>
+
+
+      
+        <div style="margin-top: 10px; text-align: center; font-size: 10px; color: #666;">
+          ZQSETFOOTER
+        </div>
+    </div>
+  </div>
+</body>
+</html>

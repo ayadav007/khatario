@@ -2,6 +2,16 @@ import { getDocumentRule } from './invoice-config';
 import * as db from './db';
 import { enrichInvoiceRenderData } from './custom-fields-render';
 import { parseCustomFieldValues } from './custom-fields';
+import { getStateName } from './gst-utils';
+
+function placeOfSupplyName(code: unknown): string {
+  const raw = String(code ?? '').trim();
+  if (!raw) return '';
+  const padded = raw.padStart(2, '0');
+  if (padded === '96') return 'Other Country';
+  if (padded === '97') return 'Other Territory';
+  return getStateName(padded) || raw;
+}
 
 interface RenderData {
   invoice: any;
@@ -75,6 +85,12 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     invoice_number: rawInvoice.invoice_number || rawInvoice.order_number || rawInvoice.challan_number || rawInvoice.work_order_number || rawInvoice.credit_note_number || rawInvoice.debit_note_number || 'N/A',
     invoice_date: rawInvoice.invoice_date || rawInvoice.order_date || rawInvoice.challan_date || rawInvoice.work_order_date || rawInvoice.credit_note_date || rawInvoice.debit_note_date,
     grand_total: rawInvoice.grand_total || rawInvoice.total_cost || 0,
+    // DB columns differ from the names templates read (place_of_supply_state_code,
+    // purchase_order_number, e_way_bill_number on challans).
+    place_of_supply: rawInvoice.place_of_supply || placeOfSupplyName(rawInvoice.place_of_supply_state_code),
+    po_number: rawInvoice.po_number || rawInvoice.purchase_order_number || '',
+    eway_bill_number: rawInvoice.eway_bill_number || rawInvoice.e_way_bill_number || '',
+    e_way_bill_number: rawInvoice.e_way_bill_number || rawInvoice.eway_bill_number || '',
   };
 
   // 2. Determine Title and Rules
@@ -91,16 +107,23 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   
   // Apply document rules to settings
   const effectiveSettings = { ...settings };
+  // Notes/terms typed on the document win over the template's default text.
+  if (typeof rawInvoice.notes === 'string' && rawInvoice.notes.trim()) {
+    effectiveSettings.notes = rawInvoice.notes;
+  }
+  if (typeof rawInvoice.terms === 'string' && rawInvoice.terms.trim()) {
+    effectiveSettings.terms = rawInvoice.terms;
+  }
+  // Bill of supply / challan carry no tax, but subtotal, discount and total are still real.
   if (!rule.isTaxable) {
-    effectiveSettings.show_rate = effectiveSettings.show_rate ?? false;
     effectiveSettings.show_tax_rate = false;
     effectiveSettings.show_tax_amount = false;
-    effectiveSettings.show_line_total = effectiveSettings.show_line_total ?? false;
-    effectiveSettings.show_discount = false;
     effectiveSettings.show_tax = false;
-    effectiveSettings.show_subtotal = false;
     effectiveSettings.show_tax_total = false;
-    effectiveSettings.show_grand_total = effectiveSettings.show_grand_total ?? false;
+    effectiveSettings.show_cgst = false;
+    effectiveSettings.show_sgst = false;
+    effectiveSettings.show_igst = false;
+    effectiveSettings.show_cess = false;
   }
 
   // Proforma/Quotation title takes priority even if export is true
@@ -205,7 +228,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       line_total: Number(lineTotal).toFixed(2),
       image_url: item.image_url || null,
       batch_number: item.batch_number || null,
-      expiry_date: item.expiry_date ? formatDate(item.expiry_date) : null
+      expiry_date: item.expiry_date ? formatDate(item.expiry_date) : null,
+      item_custom_fields: item.item_custom_fields ?? item.custom_fields,
     };
   });
 
@@ -246,6 +270,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     cgst_amount: number;
     sgst_rate: number;
     sgst_amount: number;
+    igst_rate: number;
+    igst_amount: number;
     total_tax: number;
   }>();
 
@@ -258,12 +284,15 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       cgst_amount: 0,
       sgst_rate: Number(item.sgst_rate || 0),
       sgst_amount: 0,
+      igst_rate: Number(item.igst_rate || 0),
+      igst_amount: 0,
       total_tax: 0
     };
 
     existing.taxable_value += Number(item.taxable_value || 0);
     existing.cgst_amount += Number(item.cgst_amount || 0);
     existing.sgst_amount += Number(item.sgst_amount || 0);
+    existing.igst_amount += Number(item.igst_amount || 0);
     existing.total_tax += Number(item.tax_amount || 0);
 
     taxBreakdownMap.set(hsn, existing);
@@ -276,6 +305,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     cgst_amount: item.cgst_amount.toFixed(2),
     sgst_rate: item.sgst_rate.toFixed(2).replace(/\.00$/, ''),
     sgst_amount: item.sgst_amount.toFixed(2),
+    igst_rate: item.igst_rate.toFixed(2).replace(/\.00$/, ''),
+    igst_amount: item.igst_amount.toFixed(2),
     total_tax: item.total_tax.toFixed(2)
   }));
 
@@ -302,6 +333,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       additional_charges: Number(invoice.additional_charges || 0).toFixed(2),
       round_off: Number(invoice.round_off || 0).toFixed(2),
       total_quantity: totalQuantity,
+      items_have_prices: processedItems.some((i: any) => Number(i.unit_price) > 0),
       total_unit: primaryUnit,
       opening_balance: openingBalance.toFixed(2),
       balance_due: balanceDue.toFixed(2),

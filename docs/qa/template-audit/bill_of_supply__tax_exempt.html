@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bill of Supply</title>
+  <style>
+    :root {
+      --primary-color: #059669;
+      --text-color: #000000;
+      --table-header-color: #059669;
+      --font-family: Arial, sans-serif;
+      --font-size: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-family), Arial, Helvetica, sans-serif;
+      font-size: var(--font-size);
+      color: var(--text-color);
+      line-height: 1.5;
+      padding: 20px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .document-title {
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid var(--primary-color);
+    }
+
+    .tax-exempt-notice {
+      /* Fallbacks first for older PDF/print engines without color-mix */
+      background: #ecfdf5;
+      background: color-mix(in srgb, var(--primary-color) 12%, white);
+      border: 2px solid #10b981;
+      border: 2px solid color-mix(in srgb, var(--primary-color) 55%, white);
+      padding: 12px;
+      margin: 15px 0;
+      text-align: center;
+      font-weight: bold;
+      color: #065f46;
+      color: color-mix(in srgb, var(--primary-color) 35%, #0f172a);
+    }
+
+    .info-section {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0;
+    }
+
+    .info-box {
+      flex: 1;
+      padding: 15px;
+      border: 1px solid #d1d5db;
+    }
+
+    .info-box h3 {
+      font-size: 12px;
+      color: var(--primary-color);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      border: 1px solid #d1d5db;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border: 1px solid #d1d5db;
+    }
+
+    th {
+      background: var(--table-header-color);
+      color: #000000;
+      font-size: 12px;
+      text-transform: uppercase;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .total-section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f3f4f6;
+      text-align: right;
+    }
+
+    .total-amount {
+      font-size: 20px;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-top: 10px;
+    }
+
+    .meta-inline-label, .meta-inline-value { display: inline; }
+    .meta-inline-label { font-weight: bold; }
+    .meta-inline-label::after { content: ': '; }
+
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #d1d5db;
+      text-align: center;
+      font-size: 11px;
+      color: #6b7280;
+    }
+  </style>
+<style id="khatario-print-system">
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+
+  .no-break {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+</style>
+</head>
+<body class="print-root orientation-portrait format-A4">
+  <div class="document-title">BILL OF SUPPLY</div>
+  
+  <div class="tax-exempt-notice">
+    Tax Exempt Supply - No GST Applicable
+  </div>
+  
+  <div class="info-section">
+    <div class="info-box" style="margin-right: 10px;">
+      <h3>From</h3>
+      <img src="https://cdn.example.com/zqlogo.png" alt="Logo" style="max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin-bottom: 6px;">
+      <strong>ZQBIZ Enterprises</strong><br>
+      ZQBADDR Unit 4 Hinjewadi<br>
+      Pune, Maharashtra - 411057<br>
+      Phone: 9000011111<br>
+      Email: zqbiz@example.com<br>
+      GSTIN: 27ZZZZZ9999Z1Z9
+    </div>
+    <div class="info-box" style="margin-left: 10px;">
+      <h3>Bill Details</h3>
+      <strong>Bill No:</strong> ZQBOS-0003<br>
+      <strong>Date:</strong> 20 September 2026<br>
+      <strong>Due Date:</strong> 21 October 2026<br>
+      <strong>Place of Supply:</strong> Maharashtra
+      <div class="meta-line"><div class="meta-inline-label">PO Number</div><div class="meta-inline-value">ZQPO-7781</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Reference</div><div class="meta-inline-value">ZQREF-5566</div></div>
+      <div class="meta-line"><div class="meta-inline-label">E-Way Bill</div><div class="meta-inline-value">ZQEWB-331122</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Delivery Note</div><div class="meta-inline-value">ZQDN-11</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Payment Terms</div><div class="meta-inline-value">ZQPT-Net45</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Other References</div><div class="meta-inline-value">ZQOR-22</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Dispatched Through</div><div class="meta-inline-value">ZQDT-BlueDart</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Destination</div><div class="meta-inline-value">ZQDEST-Chakan</div></div>
+      <div class="meta-line"><div class="meta-inline-label">Terms of Delivery</div><div class="meta-inline-value">ZQTOD-DoorDelivery</div></div>
+      <br><strong>Site Code:</strong> ZQCF-SITE9
+    </div>
+  </div>
+  
+  <div style="display: flex; gap: 20px; margin: 20px 0;">
+    <div class="info-box">
+      <h3>Bill To</h3>
+      <strong>ZQCUST Traders</strong><br>
+      ZQIBILL 12 MG Road Pune<br>
+      Phone: 9812345670<br>
+      Email: zqcust@example.com<br>
+      State: Maharashtra<br>
+      GSTIN: 27ABCDE1234F1Z5
+    </div>
+    <div class="info-box">
+      <h3>Ship To</h3>
+      ZQISHIP Plot 9 Chakan
+    </div>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">#</th>
+        <th style="width: 40%;">Description</th>
+        <th style="width: 12%;">HSN/SAC</th>
+        <th style="width: 12%; text-align: center;">Quantity</th>
+        <th style="width: 12%; text-align: right;">Rate</th>
+        <th style="width: 8%; text-align: right;">Disc %</th>
+        <th style="width: 10%; text-align: right;">Discount</th>
+        <th style="width: 13%; text-align: right;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>ZQAlpha Widget
+            <div style="font-size: 11px; color: #6b7280;">ZQDESC-ALPHA</div>
+                <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: ZQCOLOUR-Teal</div>
+</td>
+        <td>84713010</td>
+        <td style="text-align: center;">3 BOX</td>
+        <td style="text-align: right;">₹1111.11</td>
+        <td style="text-align: right;">5%</td>
+        <td style="text-align: right;">₹166.67</td>
+        <td style="text-align: right;">₹3166.66</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>ZQBeta Gadget
+            <div style="font-size: 11px; color: #6b7280;">ZQDESC-BETA</div>
+                <div class="custom-field-line" style="font-size:11px;color:#555;margin-top:2px;">Colour: —</div>
+</td>
+        <td>85176290</td>
+        <td style="text-align: center;">7 KGS</td>
+        <td style="text-align: right;">₹222.22</td>
+        <td style="text-align: right;">-</td>
+        <td style="text-align: right;">-</td>
+        <td style="text-align: right;">₹1555.54</td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <div class="total-section">
+    <div>Subtotal: ₹4722.20</div>
+    <div>Discount: -₹166.67</div>
+    <div>Additional Charges: ₹150.25</div>
+    <div>Round Off: ₹0.89</div>
+    <div class="total-amount">Total: ₹4873.34</div>
+    <div>Paid: ₹1234.56</div>
+    <div>Balance Due: ₹3638.78</div>
+    <div style="margin-top: 10px; font-size: 12px; color: #6b7280;">
+      <strong>In Words:</strong> Four Thousand Eight Hundred Seventy Three Rupees and Thirty Four Paise Only
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 20px; margin: 20px 0; font-size: 12px; line-height: 1.5;">
+    
+    <div style="flex: 1; padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px;">
+      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--primary-color); margin-bottom: 6px;">Bank Details</div>
+      <div>Bank: ZQBANK of India</div>
+      <div>A/c No: 001122334455</div>
+      <div>IFSC: ZQBK0001234</div>
+      <div>Branch: ZQBR-Baner</div>
+    </div>
+    
+    <div style="flex: 1;">
+      
+      <div style="margin-bottom: 8px;"><strong>Payment Terms:</strong><div style="white-space: pre-line;">ZQSETPT settings payment terms</div></div>
+      
+      
+      <div style="margin-bottom: 8px;"><strong>Terms &amp; Conditions:</strong><div style="white-space: pre-line;">ZQINVTERMS goods once sold</div></div>
+      
+      
+      <div><strong>Notes:</strong><div style="white-space: pre-line;">ZQINVNOTE thanks for the order</div></div>
+      
+    </div>
+  </div>
+  
+  <div style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
+    <div style="border-top: 1px solid #333; padding-top: 5px;">Customer Signature</div>
+    <div style="text-align: center;">
+      <img src="https://cdn.example.com/zqsign.png" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: 0 auto 6px;">
+      <div style="border-top: 1px solid #333; padding-top: 5px;">Authorized Signatory</div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    ZQSETFOOTER<br>
+    This is a computer-generated document.
+  </div>
+</body>
+</html>
+

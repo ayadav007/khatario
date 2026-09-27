@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,16 +53,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
     );
     const items = itemsRes.rows;
 
-    // 3. Convert to Invoice (using internal helper logic)
-    // For simplicity, we'll reuse the createCashSaleInvoice logic or similar
-    
-    // Get business settings for invoice number
-    const businessRes = await client.query(
-      `SELECT next_invoice_number, invoice_prefix FROM businesses WHERE id = $1`,
-      [businessId]
-    );
-    const business = businessRes.rows[0];
-    const invoiceNumber = `${business.invoice_prefix || 'INV'}-${String(business.next_invoice_number).padStart(4, '0')}`;
+    const invoiceNumber = await reserveFormattedDocumentNumber(client, invoiceBranchId, 'tax_invoice');
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -83,7 +75,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
     // Create invoice
     const invoiceRes = await client.query(
       `INSERT INTO invoices (
-        businessId, branch_id, customer_id, invoice_number, invoice_date, due_date,
+        business_id, branch_id, customer_id, invoice_number, invoice_date, due_date,
         status, payment_status, subtotal, grand_total, paid_amount, balance_amount,
         document_type, created_at, updated_at
       )
@@ -129,7 +121,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
     // 4. Record Payment
     await client.query(
       `INSERT INTO payments (
-        businessId, branch_id, customer_id, type, amount, payment_mode,
+        business_id, branch_id, customer_id, type, amount, payment_mode,
         payment_date, reference_type, reference_id, notes
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
@@ -150,12 +142,6 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
     await client.query(
       `UPDATE sales_orders SET status = 'fulfilled', converted_invoice_id = $1 WHERE id = $2`,
       [invoice.id, orderId]
-    );
-
-    // 6. Increment counters
-    await client.query(
-      `UPDATE businesses SET next_invoice_number = next_invoice_number + 1 WHERE id = $1`,
-      [businessId]
     );
 
     await client.query('COMMIT');

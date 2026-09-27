@@ -11,6 +11,7 @@ import {
   getTemplatePreviewSpec,
   type TemplatePreviewSpec,
 } from '@/lib/template-screen-preview';
+import { getDefaultTemplateSettings } from '@/lib/template-defaults';
 
 interface TemplateSettings {
   primary_color?: string;
@@ -449,6 +450,17 @@ export default function CustomizeTemplateDrawer({
   const isThermalTemplate =
     templateId === 'thermal_58mm' || templateId === 'thermal_80mm';
 
+  // Start from the same defaults the print pipeline uses, otherwise an unsaved
+  // business previews toggles (bank, signature, …) that never print.
+  const templateDefaults = useMemo<TemplateSettings>(() => {
+    const server = getDefaultTemplateSettings(templateId) as unknown as TemplateSettings;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...server,
+      font_family: server.font_family?.split(',')[0].trim() || DEFAULT_SETTINGS.font_family,
+    };
+  }, [templateId]);
+
   // Undo/redo
   const [history, setHistory] = useState<TemplateSettings[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -482,27 +494,27 @@ export default function CustomizeTemplateDrawer({
           const data = await response.json();
           const assignment = data.assignments?.find((a: any) => a.document_type === documentType);
           const loaded = assignment?.settings
-            ? { ...DEFAULT_SETTINGS, ...assignment.settings }
-            : { ...DEFAULT_SETTINGS };
+            ? { ...templateDefaults, ...assignment.settings }
+            : { ...templateDefaults };
           setSettings(loaded);
           setSavedSettings(loaded);
           setHistory([loaded]);
           setHistoryIndex(0);
         } else {
-          setSettings({ ...DEFAULT_SETTINGS });
-          setSavedSettings({ ...DEFAULT_SETTINGS });
-          setHistory([{ ...DEFAULT_SETTINGS }]);
+          setSettings({ ...templateDefaults });
+          setSavedSettings({ ...templateDefaults });
+          setHistory([{ ...templateDefaults }]);
           setHistoryIndex(0);
         }
       } catch {
-        setSettings({ ...DEFAULT_SETTINGS });
-        setSavedSettings({ ...DEFAULT_SETTINGS });
-        setHistory([{ ...DEFAULT_SETTINGS }]);
+        setSettings({ ...templateDefaults });
+        setSavedSettings({ ...templateDefaults });
+        setHistory([{ ...templateDefaults }]);
         setHistoryIndex(0);
       }
     }
     fetchSettings();
-  }, [isOpen, templateId, documentType, business?.id]);
+  }, [isOpen, templateId, documentType, business?.id, templateDefaults]);
 
   // Fetch current logo & signature from business profile
   useEffect(() => {
@@ -657,7 +669,7 @@ export default function CustomizeTemplateDrawer({
 
   const handleReset = () => {
     if (confirm('Reset all customizations to default? This cannot be undone.')) {
-      const defaults = { ...DEFAULT_SETTINGS };
+      const defaults = { ...templateDefaults };
       setSettings(defaults);
       pushHistory(defaults);
     }

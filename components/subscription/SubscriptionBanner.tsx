@@ -120,7 +120,10 @@ export function SubscriptionBanner() {
       border: 'border-yellow-300',
       text: 'text-yellow-800',
       icon: <Clock className="w-4 h-4" />,
-      message: `Your trial ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Upgrade to keep full access.`,
+      message:
+        daysRemaining === 0
+          ? 'Today is the last day of your trial. Upgrade to keep full access.'
+          : `Your trial ends in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Upgrade to keep full access.`,
       cta: 'Upgrade Now',
     },
     trial_expired: {

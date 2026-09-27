@@ -39,6 +39,8 @@ const PUBLIC_PATHS = new Set([
   '/signup',
   '/guides',
   '/book-demo',
+  '/terms',
+  '/privacy',
   '/admin/login',
   '/admin/pwa-manifest',
   '/attendance/login',
@@ -81,6 +83,7 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
+  if (pathname.startsWith('/solution/')) return true;
   if (pathname.startsWith('/media/marketing/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
   if (isPublicBusinessEmployeePath(pathname)) return true;
