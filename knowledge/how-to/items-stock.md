@@ -30,4 +30,4 @@ Inventory > Print Labels prints barcode labels for your items, using the designs
 
 ## How do I see current stock?
 
-Inventory > Stock Summary shows quantity and value per item; Closing Stock shows stock at a date. Low-stock alerts warn you before an item runs out.
+Inventory > Stock Summary shows quantity and value per item; Closing Stock shows stock at a date. Items below their Low Stock Alert quantity show in the dashboard's Low Stock Items card and under the Items list's Low Stock filter.

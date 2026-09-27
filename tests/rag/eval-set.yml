@@ -85,6 +85,54 @@
 - q: How do I match purchases with GSTR-2B?
   audience: tenant_user
   expect: [how-to/gst-reports.md, prospect/modules/gst-returns.md]
+- q: How should an owner set up GST in Khatario?
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: GST number kaha dalna hai
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: I am under composition scheme, how do I bill?
+  audience: tenant_user
+  expect: [how-to/gst-setup.md]
+- q: How does GST setup work in Khatario?
+  audience: prospect
+  expect: [how-to/gst-setup.md]
+- q: How do I change the invoice number prefix?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: invoice number kaise change kare
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I add my signature on the invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I show bank details on invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: Can I print a UPI QR code on my bill?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I add terms and conditions on invoice?
+  audience: tenant_user
+  expect: [how-to/invoice-setup.md]
+- q: How do I enter a customer's opening balance?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/getting-started.md]
+- q: purane customer ka baki kaise daale
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md]
+- q: How do I add a supplier?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/purchases.md]
+- q: How do I set the financial year?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md]
+- q: How do I set a low stock alert?
+  audience: tenant_user
+  expect: [how-to/opening-balances-customers-suppliers.md, how-to/items-stock.md]
+- q: bill kaise banaye
+  audience: tenant_user
+  expect: [how-to/invoices.md, how-to/invoice-setup.md]
 - q: What is the weather in Delhi today?
   confident: false
 - q: Write me a poem about cricket

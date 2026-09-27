@@ -17,6 +17,14 @@ required_feature: sales_invoices
 4. Check the totals, then save. Record the payment now if the customer paid.
 5. Print, download the PDF or share on WhatsApp.
 
+## Bill kaise banaye? Invoice kaise banate hain?
+
+Sales > All Invoices mein + New dabao. Customer chuno (ya khali chhodo, cash sale ban jayega). Item ka naam search karo ya barcode scan karo; rate, HSN aur GST apne aap aa jayega. Quantity aur discount (Disc %) badlo, phir Save & Send dabao. Uske baad Print, PDF ya WhatsApp par bhejo.
+
+## How do I give a discount on an invoice?
+
+Enter the discount on each item line in the Disc column (as a percentage; on mobile you can enter Disc % or Disc ₹). The total discount shows in the invoice totals. Use Add Extra Charges for delivery or packing charges and Enable Round Off to round the total.
+
 ## How do I record a payment against an invoice?
 
 Open the invoice and use Record payment, or go to Accounting > Payments In and link the payment to one or more invoices. Partly paid invoices show the balance due.
