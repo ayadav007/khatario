@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Store, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
+import Link from 'next/link';
+import { Store, ExternalLink, Loader2, Copy, Check, Sparkles, Inbox } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Card } from '@/components/ui/Card';
@@ -343,10 +344,24 @@ export default function OnlineStoreSettingsPage() {
   return (
     <SettingsPageShell
       title="Store editor"
-      description="Customize the store, then Update preview. Save publishes the live storefront."
+      description="Pick and customise your theme in Studio. The settings here (logo, banners, collections, fonts) are saved with Save."
       icon={Store}
       actions={
         <div className="flex items-center gap-2">
+          <Link
+            href="/settings/online-store/studio"
+            className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Themes &amp; Studio
+          </Link>
+          <Link
+            href="/settings/online-store/enquiries"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Inbox className="h-3.5 w-3.5" />
+            Enquiries
+          </Link>
           <button
             type="button"
             className="text-xs text-gray-500"

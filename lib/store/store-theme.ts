@@ -1,8 +1,38 @@
+import { sanitizeStudioSections, type StudioSection } from './studio-sections';
+
 export type StoreCategoryStyle = 'letter' | 'icon' | 'photo';
-export type StoreThemePreset = 'green' | 'saffron' | 'blue' | 'chowk' | 'atelier' | 'khatario' | 'noir' | 'aether' | 'custom';
-export type StoreThemePack = 'classic' | 'chowk' | 'atelier' | 'khatario' | 'noir' | 'aether';
+export type StoreThemePreset = 'studio' | 'khatario' | 'grocery' | 'custom';
+export type StoreThemePack = 'studio' | 'khatario' | 'grocery';
 export type StoreAppearanceMode = 'light' | 'dim' | 'dark';
 export type StoreHeroViewport = 'both' | 'mobile' | 'desktop';
+export type StoreAnnouncementAlign = 'left' | 'center' | 'right';
+export type StoreFormFieldMode = 'required' | 'optional' | 'off';
+
+export type StoreContactLayout = 'stacked' | 'text-form' | 'form-text';
+export type StoreContactWidth = 'narrow' | 'medium' | 'wide';
+export type StoreContactStyle = 'card' | 'plain' | 'filled';
+
+export interface StoreContactForm {
+  enabled: boolean;
+  title: string;
+  intro: string;
+  phone: StoreFormFieldMode;
+  email: StoreFormFieldMode;
+  /** Empty list hides the topic dropdown; otherwise a topic must be chosen. */
+  topics: string[];
+  message_placeholder: string;
+  button: string;
+  success: string;
+  layout: StoreContactLayout;
+  /** Only used by the stacked layout. */
+  align: StoreAnnouncementAlign;
+  width: StoreContactWidth;
+  style: StoreContactStyle;
+  labels_inside: boolean;
+  button_full: boolean;
+  /** Call / WhatsApp / Email buttons beside the contact details; independent of `enabled`. */
+  quick_links: boolean;
+}
 export type StoreHomepageSectionId =
   | 'hero'
   | 'categories'
@@ -87,6 +117,15 @@ export interface StoreTheme {
   font_family: StoreFontFamily;
   custom_css: string;
   announcement: string;
+  /** Optional URL the announcement bar links to. */
+  announcement_link: string;
+  /** Empty = theme default colours. */
+  announcement_bg: string;
+  announcement_fg: string;
+  announcement_align: StoreAnnouncementAlign;
+  /** When no custom text is set, Chowk shows an automatic offer/tagline line. */
+  announcement_auto: boolean;
+  contact_form: StoreContactForm;
   featured_item_id: string;
   homepage_sections: StoreHomepageSection[];
   product_shelves: StoreProductShelf[];
@@ -95,6 +134,8 @@ export interface StoreTheme {
   brand_story: string;
   instagram_url: string;
   whatsapp_url: string;
+  /** Studio pack home layout, in order. Empty until first customised in Studio. */
+  studio_sections: StudioSection[];
 }
 
 /** Theme-owned ink. Merchant accent never replaces this. */
@@ -102,39 +143,24 @@ export const CHOWK_INK = '#1c1917';
 
 /** Pack-owned page paper in light mode. Brand colour never paints the body. */
 export const PACK_CANVAS: Record<StoreThemePack, string> = {
-  classic: '#f7f7f8',
-  chowk: '#f7f1e8',
-  atelier: '#f6f3ef',
+  studio: '#fbf8f3',
   khatario: '#f4f5f7',
-  noir: '#0c0c0d',
-  aether: '#0c0b09',
+  grocery: '#f6f7f4',
 };
 
-/** Quiet-luxury lookbook still — merchants replace this from Online Store settings. */
-export const AETHER_DEFAULT_HERO =
-  'https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=2000&q=80';
-
 export const PACK_CANVAS_MODE: Record<StoreThemePack, Record<StoreAppearanceMode, string>> = {
-  classic: { light: '#f7f7f8', dim: '#e8eaee', dark: '#121316' },
-  chowk: { light: '#f7f1e8', dim: '#e6dccf', dark: '#1c1917' },
-  atelier: { light: '#f6f3ef', dim: '#e7e0d7', dark: '#171412' },
+  studio: { light: '#fbf8f3', dim: '#ece6dc', dark: '#131210' },
   khatario: { light: '#f4f5f7', dim: '#e4e7eb', dark: '#111827' },
-  noir: { light: '#f4f4f5', dim: '#1f1f22', dark: '#0c0c0d' },
-  aether: { light: '#f6f1e8', dim: '#1a1714', dark: '#0c0b09' },
+  grocery: { light: '#f6f7f4', dim: '#e6eae3', dark: '#101a14' },
 };
 
 export const STORE_THEME_PRESETS: Record<
   Exclude<StoreThemePreset, 'custom'>,
   { accent: string; background: string; label: string; pack: StoreThemePack }
 > = {
-  green: { accent: '#16a34a', background: PACK_CANVAS.classic, label: 'Green', pack: 'classic' },
-  saffron: { accent: '#ea580c', background: PACK_CANVAS.classic, label: 'Saffron', pack: 'classic' },
-  blue: { accent: '#2563eb', background: PACK_CANVAS.classic, label: 'Blue', pack: 'classic' },
-  chowk: { accent: '#e07030', background: PACK_CANVAS.chowk, label: 'Chowk', pack: 'chowk' },
-  atelier: { accent: '#171412', background: PACK_CANVAS.atelier, label: 'Atelier', pack: 'atelier' },
+  studio: { accent: '#b94717', background: PACK_CANVAS.studio, label: 'Studio', pack: 'studio' },
   khatario: { accent: '#00897b', background: PACK_CANVAS.khatario, label: 'Khatario', pack: 'khatario' },
-  noir: { accent: '#d4af37', background: PACK_CANVAS.noir, label: 'Noir', pack: 'noir' },
-  aether: { accent: '#c4a46a', background: PACK_CANVAS.aether, label: 'Aether', pack: 'aether' },
+  grocery: { accent: '#176b45', background: PACK_CANVAS.grocery, label: 'Premium Grocery', pack: 'grocery' },
 };
 
 export const DEFAULT_HOMEPAGE_SECTIONS: StoreHomepageSection[] = [
@@ -151,16 +177,35 @@ export const DEFAULT_HOMEPAGE_SECTIONS: StoreHomepageSection[] = [
   { id: 'catalog', enabled: true },
 ];
 
+export const DEFAULT_CONTACT_FORM: StoreContactForm = {
+  enabled: false,
+  title: 'Send us a message',
+  intro: '',
+  phone: 'required',
+  email: 'optional',
+  topics: [],
+  message_placeholder: '',
+  button: 'Send message',
+  success: 'Thanks! We have received your message and will get back to you soon.',
+  layout: 'stacked',
+  align: 'left',
+  width: 'medium',
+  style: 'card',
+  labels_inside: false,
+  button_full: true,
+  quick_links: false,
+};
+
 export function storeCanvas(theme: Pick<StoreTheme, 'pack'> & { appearance_mode?: StoreAppearanceMode }): string {
-  const mode = theme.appearance_mode ?? (theme.pack === 'noir' || theme.pack === 'aether' ? 'dark' : 'light');
-  return PACK_CANVAS_MODE[theme.pack]?.[mode] ?? PACK_CANVAS[theme.pack] ?? PACK_CANVAS.classic;
+  const mode = theme.appearance_mode ?? 'light';
+  return PACK_CANVAS_MODE[theme.pack]?.[mode] ?? PACK_CANVAS[theme.pack] ?? PACK_CANVAS.studio;
 }
 
 export const DEFAULT_STORE_THEME: StoreTheme = {
-  accent: STORE_THEME_PRESETS.green.accent,
-  background: STORE_THEME_PRESETS.green.background,
-  preset: 'green',
-  pack: 'classic',
+  accent: STORE_THEME_PRESETS.studio.accent,
+  background: STORE_THEME_PRESETS.studio.background,
+  preset: 'studio',
+  pack: 'studio',
   logo_url: '',
   show_hero: true,
   show_offers: true,
@@ -180,6 +225,12 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   font_family: 'system',
   custom_css: '',
   announcement: '',
+  announcement_link: '',
+  announcement_bg: '',
+  announcement_fg: '',
+  announcement_align: 'center',
+  announcement_auto: true,
+  contact_form: DEFAULT_CONTACT_FORM,
   featured_item_id: '',
   homepage_sections: DEFAULT_HOMEPAGE_SECTIONS,
   product_shelves: [],
@@ -188,14 +239,16 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   brand_story: '',
   instagram_url: '',
   whatsapp_url: '',
+  studio_sections: [],
 };
 
 const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const PRESETS: StoreThemePreset[] = ['green', 'saffron', 'blue', 'chowk', 'atelier', 'khatario', 'noir', 'aether', 'custom'];
-const PACKS: StoreThemePack[] = ['classic', 'chowk', 'atelier', 'khatario', 'noir', 'aether'];
+const PRESETS: StoreThemePreset[] = ['studio', 'khatario', 'grocery', 'custom'];
+const PACKS: StoreThemePack[] = ['studio', 'khatario', 'grocery'];
 const STYLES: StoreCategoryStyle[] = ['letter', 'icon', 'photo'];
 const MODES: StoreAppearanceMode[] = ['light', 'dim', 'dark'];
 const VIEWPORTS: StoreHeroViewport[] = ['both', 'mobile', 'desktop'];
+const ANNOUNCE_ALIGNS: StoreAnnouncementAlign[] = ['left', 'center', 'right'];
 const SECTION_IDS: StoreHomepageSectionId[] = DEFAULT_HOMEPAGE_SECTIONS.map((s) => s.id);
 const ID_KEY = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -282,6 +335,13 @@ export function sanitizeHomepageSections(raw: unknown, flags: { show_hero: boole
     if (def.id === 'trust') return { ...def, enabled: flags.show_trust };
     return { ...def };
   });
+}
+
+/** Custom text wins; otherwise the pack's automatic line if the merchant allows it. */
+export function resolveAnnouncementText(theme: StoreTheme, autoLine: string): string {
+  const custom = theme.announcement.trim();
+  if (custom) return custom;
+  return theme.announcement_auto ? autoLine.trim() : '';
 }
 
 export function sectionEnabled(theme: StoreTheme, id: StoreHomepageSectionId): boolean {
@@ -384,46 +444,74 @@ function sanitizeHttpUrl(raw: unknown): string {
   return '';
 }
 
+const FIELD_MODES: StoreFormFieldMode[] = ['required', 'optional', 'off'];
+
+export function sanitizeContactForm(raw: unknown): StoreContactForm {
+  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const mode = (v: unknown, fallback: StoreFormFieldMode) =>
+    FIELD_MODES.includes(v as StoreFormFieldMode) ? (v as StoreFormFieldMode) : fallback;
+  let phone = mode(src.phone, DEFAULT_CONTACT_FORM.phone);
+  const email = mode(src.email, DEFAULT_CONTACT_FORM.email);
+  // A reply channel is mandatory, otherwise the merchant cannot answer.
+  if (phone !== 'required' && email !== 'required') phone = 'required';
+  const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+    allowed.includes(v as T) ? (v as T) : fallback;
+  const topics = Array.isArray(src.topics)
+    ? Array.from(new Set(src.topics.map((t) => clip(t, 40)).filter(Boolean))).slice(0, 8)
+    : [];
+  return {
+    enabled: src.enabled === true,
+    title: clip(src.title, 80) || DEFAULT_CONTACT_FORM.title,
+    intro: clip(src.intro, 300),
+    phone,
+    email,
+    topics,
+    message_placeholder: clip(src.message_placeholder, 120),
+    button: clip(src.button, 32) || DEFAULT_CONTACT_FORM.button,
+    success: clip(src.success, 240) || DEFAULT_CONTACT_FORM.success,
+    layout: pick(src.layout, ['stacked', 'text-form', 'form-text'] as const, 'stacked'),
+    align: pick(src.align, ANNOUNCE_ALIGNS, 'left'),
+    width: pick(src.width, ['narrow', 'medium', 'wide'] as const, 'medium'),
+    style: pick(src.style, ['card', 'plain', 'filled'] as const, 'card'),
+    labels_inside: src.labels_inside === true,
+    button_full: src.button_full !== false,
+    quick_links: src.quick_links === true,
+  };
+}
+
+/** Retired packs (classic, chowk, atelier, noir, aether) and their presets all land on Studio. */
 function resolvePack(preset: StoreThemePreset, rawPack: unknown): StoreThemePack {
-  if (preset === 'chowk') return 'chowk';
-  if (preset === 'atelier') return 'atelier';
   if (preset === 'khatario') return 'khatario';
-  if (preset === 'noir') return 'noir';
-  if (preset === 'aether') return 'aether';
+  if (preset === 'grocery') return 'grocery';
   if (preset === 'custom') {
-    return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'classic';
+    return PACKS.includes(rawPack as StoreThemePack) ? (rawPack as StoreThemePack) : 'studio';
   }
-  return 'classic';
-}
-
-export function isChowkPack(theme: StoreTheme): boolean {
-  return theme.pack === 'chowk';
-}
-
-export function isAtelierPack(theme: StoreTheme): boolean {
-  return theme.pack === 'atelier';
+  return 'studio';
 }
 
 export function isKhatarioPack(theme: StoreTheme): boolean {
   return theme.pack === 'khatario';
 }
 
-export function isNoirPack(theme: StoreTheme): boolean {
-  return theme.pack === 'noir';
+export function isGroceryPack(theme: StoreTheme): boolean {
+  return theme.pack === 'grocery';
 }
 
-export function isAetherPack(theme: StoreTheme): boolean {
-  return theme.pack === 'aether';
+export function isStudioPack(theme: StoreTheme): boolean {
+  return theme.pack === 'studio';
 }
 
-/** Dark editorial packs. Aether has its own hero/cards; Noir keeps slim chrome. */
-export function isEditorialPack(theme: StoreTheme): boolean {
-  return theme.pack === 'noir' || theme.pack === 'aether';
-}
-
-/** Themed storefront chrome (not the classic colour-tint layout). */
-export function isPackChrome(theme: StoreTheme): boolean {
-  return theme.pack === 'chowk' || theme.pack === 'atelier' || theme.pack === 'khatario' || theme.pack === 'noir' || theme.pack === 'aether';
+/** Root CSS class that scopes pack styles (drawers, motion, fonts) on storefront surfaces. */
+export function storePackClass(theme: StoreTheme): string {
+  const dark = hexLuminance(storeCanvas(theme)) < 0.4;
+  switch (theme.pack) {
+    case 'khatario':
+      return 'store-khatario';
+    case 'grocery':
+      return dark ? 'store-grocery is-dark' : 'store-grocery';
+    default:
+      return dark ? 'store-studio is-dark' : 'store-studio';
+  }
 }
 
 export function hexLuminance(hex: string): number {
@@ -456,17 +544,17 @@ export function storeFontStack(family: StoreFontFamily): string {
     case 'inter':
       return 'var(--font-khatario-ui), system-ui, sans-serif';
     case 'fraunces':
-      return 'var(--font-chowk-display), Georgia, serif';
+      return 'var(--font-store-fraunces), Georgia, serif';
     case 'nunito':
-      return 'var(--font-chowk-ui), system-ui, sans-serif';
+      return 'var(--font-store-nunito), system-ui, sans-serif';
     case 'playfair':
-      return 'var(--font-atelier-display), Georgia, serif';
+      return 'var(--font-store-playfair), Georgia, serif';
     case 'outfit':
-      return 'var(--font-atelier-ui), system-ui, sans-serif';
+      return 'var(--font-store-outfit), system-ui, sans-serif';
     case 'cormorant':
-      return 'var(--font-noir-display), Georgia, serif';
+      return 'var(--font-store-cormorant), Georgia, serif';
     case 'source-serif':
-      return 'var(--font-noir-ui), Georgia, serif';
+      return 'var(--font-store-source-serif), Georgia, serif';
     default:
       return 'system-ui, sans-serif';
   }
@@ -490,7 +578,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     : DEFAULT_STORE_THEME.category_style;
   const appearance_mode = MODES.includes(src.appearance_mode as StoreAppearanceMode)
     ? (src.appearance_mode as StoreAppearanceMode)
-    : pack === 'noir' || pack === 'aether'
+    : src.pack === 'noir' || src.pack === 'aether'
       ? 'dark'
       : 'light';
   const font_family = STORE_FONT_FAMILIES.includes(src.font_family as StoreFontFamily)
@@ -525,6 +613,14 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     font_family,
     custom_css: sanitizeCustomCss(src.custom_css),
     announcement: clip(src.announcement, 160),
+    announcement_link: sanitizeHttpUrl(src.announcement_link),
+    announcement_bg: HEX.test(String(src.announcement_bg ?? '')) ? normalizeHexColor(src.announcement_bg, '') : '',
+    announcement_fg: HEX.test(String(src.announcement_fg ?? '')) ? normalizeHexColor(src.announcement_fg, '') : '',
+    announcement_align: ANNOUNCE_ALIGNS.includes(src.announcement_align as StoreAnnouncementAlign)
+      ? (src.announcement_align as StoreAnnouncementAlign)
+      : 'center',
+    announcement_auto: src.announcement_auto !== false,
+    contact_form: sanitizeContactForm(src.contact_form),
     featured_item_id: clip(src.featured_item_id, 64),
     homepage_sections: sanitizeHomepageSections(src.homepage_sections, { show_hero, show_offers, show_trust }),
     product_shelves: sanitizeProductShelves(src.product_shelves),
@@ -533,6 +629,7 @@ export function sanitizeStoreTheme(raw: unknown): StoreTheme {
     brand_story: clip(src.brand_story, 4000),
     instagram_url: sanitizeHttpUrl(src.instagram_url),
     whatsapp_url: sanitizeHttpUrl(src.whatsapp_url),
+    studio_sections: sanitizeStudioSections(src.studio_sections),
   };
 }
 
@@ -551,81 +648,20 @@ export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): P
       appearance_mode: 'light',
     };
   }
-  if (preset === 'atelier') {
+  if (preset === 'grocery') {
     return {
       preset,
       accent: p.accent,
       background: p.background,
       pack: p.pack,
       mobile_columns: 2,
-      category_style: 'photo',
-      hero_cta: 'Explore Collection',
-      search_placeholder: 'Search jackets, cashmere, accessories…',
+      category_style: 'icon',
+      hero_cta: 'Shop groceries',
+      hero_subtitle: 'Fresh produce and everyday essentials, delivered to your doorstep.',
+      search_placeholder: 'Search for products, brands and categories…',
       appearance_mode: 'light',
-    };
-  }
-  if (preset === 'chowk') {
-    return {
-      preset,
-      accent: p.accent,
-      background: p.background,
-      pack: p.pack,
-      mobile_columns: 3,
-      category_style: 'letter',
-      hero_cta: 'Shop now',
-      search_placeholder: 'Search atta, oil, soap…',
-      appearance_mode: 'light',
-    };
-  }
-  if (preset === 'noir') {
-    return {
-      preset,
-      accent: p.accent,
-      background: p.background,
-      pack: p.pack,
-      mobile_columns: 2,
-      category_style: 'photo',
-      hero_cta: 'Shop the collection',
-      search_placeholder: 'Search the collection…',
-      appearance_mode: 'dark',
       homepage_sections: DEFAULT_HOMEPAGE_SECTIONS.map((s) =>
-        s.id === 'category_shelves' || s.id === 'featured' || s.id === 'testimonials' || s.id === 'brand_story'
-          ? { ...s, enabled: true }
-          : s,
-      ),
-    };
-  }
-  if (preset === 'aether') {
-    return {
-      preset,
-      accent: p.accent,
-      background: p.background,
-      pack: p.pack,
-      mobile_columns: 2,
-      category_style: 'photo',
-      hero_cta: 'Shop collection',
-      hero_subtitle: 'Quiet luxury, considered pieces.',
-      search_placeholder: 'Coats, pearls, chronograph…',
-      appearance_mode: 'dark',
-      font_family: 'cormorant',
-      announcement: 'Free express shipping  ·  Handcrafted  ·  Lifetime repairs',
-      hero_slides: [
-        {
-          image_url: AETHER_DEFAULT_HERO,
-          title: 'The art of less.',
-          subtitle: 'Quiet luxury for people who already know what they like.',
-          viewport: 'both' as const,
-        },
-      ],
-      homepage_sections: DEFAULT_HOMEPAGE_SECTIONS.map((s) =>
-        s.id === 'categories' ||
-        s.id === 'category_shelves' ||
-        s.id === 'featured' ||
-        s.id === 'offers' ||
-        s.id === 'overlay' ||
-        s.id === 'brand_story'
-          ? { ...s, enabled: true }
-          : s,
+        s.id === 'overlay' ? { ...s, enabled: true } : s.id === 'trust' ? { ...s, enabled: false } : s,
       ),
     };
   }
@@ -635,8 +671,9 @@ export function applyStorePreset(preset: Exclude<StoreThemePreset, 'custom'>): P
     background: p.background,
     pack: p.pack,
     mobile_columns: 2,
-    category_style: 'letter',
+    category_style: 'photo',
     hero_cta: 'Shop now',
+    search_placeholder: 'Search for products, categories…',
     appearance_mode: 'light',
   };
 }
@@ -651,10 +688,7 @@ export const GALLERY_PACKS: Array<{
   label: string;
   blurb: string;
 }> = [
-  { preset: 'green', pack: 'classic', label: 'Classic', blurb: 'Colour-tinted grid. Green, Saffron, and Blue share this layout.' },
-  { preset: 'chowk', pack: 'chowk', label: 'Chowk', blurb: 'Kirana 3-column grid and warm paper.' },
-  { preset: 'atelier', pack: 'atelier', label: 'Atelier', blurb: 'Portrait lookbook for apparel.' },
+  { preset: 'studio', pack: 'studio', label: 'Studio', blurb: 'Editorial header, split hero, photo category tiles. Every section is editable and re-orderable.' },
+  { preset: 'grocery', pack: 'grocery', label: 'Premium Grocery', blurb: 'Fresh green supermarket — hero card, emoji category tiles, lifting product cards, promo cards.' },
   { preset: 'khatario', pack: 'khatario', label: 'Khatario', blurb: 'Brand header, carousel, bottom tabs.' },
-  { preset: 'noir', pack: 'noir', label: 'Noir', blurb: 'Dark editorial home, portrait categories, slim nav.' },
-  { preset: 'aether', pack: 'aether', label: 'Aether', blurb: 'Quiet luxury — gold on ink, Cormorant type, lookbook motion.' },
 ];

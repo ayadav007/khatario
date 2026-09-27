@@ -1,25 +1,25 @@
 'use client';
 
 import { useState, type Dispatch, type SetStateAction } from 'react';
+import Link from 'next/link';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { StoreImageField } from '@/components/store/admin/StoreImageField';
 import { Button } from '@/components/ui/Button';
 import {
-  applyStorePreset,
   GALLERY_PACKS,
   STORE_FONT_FAMILIES,
-  STORE_THEME_PRESETS,
+  isStudioPack,
   newProductShelf,
-  sanitizeStoreTheme,
-  type StoreAppearanceMode,
   type StoreHomepageSectionId,
   type StoreTheme,
-  type StoreThemePreset,
 } from '@/lib/store/store-theme';
 import { THEME_DEMO_SLUGS } from '@/lib/store/theme-demo';
 
-type Pane = 'background' | 'header' | 'banners' | 'sections' | 'collections' | 'fonts' | 'advanced';
+type Pane = 'header' | 'banners' | 'sections' | 'collections' | 'fonts' | 'advanced';
+
+/** Homepage blocks the Studio storefront renders below its own sections. */
+const STUDIO_EXTRA_SECTIONS: StoreHomepageSectionId[] = ['offers', 'product_shelves', 'brand_story'];
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -86,24 +86,12 @@ export function StoreAppearanceStudio({
   onUpdate: () => void;
   updating: boolean;
 }) {
-  const [screen, setScreen] = useState<'gallery' | 'customize'>('gallery');
-  const [pane, setPane] = useState<Pane>('background');
+  const [pane, setPane] = useState<Pane>('header');
+  const studioPack = isStudioPack(theme);
+  const current = GALLERY_PACKS.find((g) => g.pack === theme.pack) ?? GALLERY_PACKS[0];
 
-  const applyPack = (preset: Exclude<StoreThemePreset, 'custom'>) => {
-    if (
-      !window.confirm(
-        'Apply this theme layout? Logo, banners, and homepage copy stay. Pack defaults (grid, paper) will change.',
-      )
-    ) {
-      return;
-    }
-    setTheme((t) => sanitizeStoreTheme({ ...t, ...applyStorePreset(preset) }));
-    setScreen('customize');
-  };
-
-  const openDemo = (preset: Exclude<StoreThemePreset, 'custom'>) => {
-    const pack = STORE_THEME_PRESETS[preset].pack;
-    const slug = Object.entries(THEME_DEMO_SLUGS).find(([, v]) => v.pack === pack)?.[0];
+  const openDemo = () => {
+    const slug = Object.entries(THEME_DEMO_SLUGS).find(([, v]) => v.pack === theme.pack)?.[0];
     if (!slug) return;
     window.open(demoOrigin(slug, hostSuffix), '_blank', 'noopener,noreferrer');
   };
@@ -126,74 +114,43 @@ export function StoreAppearanceStudio({
     window.open(`${proto}//${storeUrl}${port}/${q}`, '_blank', 'noopener,noreferrer');
   };
 
-  if (screen === 'gallery') {
-    return (
-      <div>
-        <div className="mb-4 flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Themes</h2>
-            <p className="mt-1 text-sm text-gray-500">Apply a pack, then customize. Update preview shows your store in the phone. Save publishes it.</p>
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {GALLERY_PACKS.map((g) => {
-            const active = theme.pack === g.pack;
-            return (
-              <article key={g.pack} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <div className="relative aspect-[4/3] bg-gray-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/store/themes/${g.pack}.svg`}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-0 flex items-center justify-center bg-black/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-black/45 group-hover:opacity-100"
-                    onClick={() => openDemo(g.preset)}
-                  >
-                    Preview theme <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between gap-2 px-3 py-3">
-                  <div>
-                    <p className="font-medium text-gray-900">{g.label}</p>
-                    <p className="text-[11px] text-gray-500">{g.blurb}</p>
-                  </div>
-                  {active ? (
-                    <Button type="button" size="sm" onClick={() => setScreen('customize')}>
-                      Customize
-                    </Button>
-                  ) : (
-                    <Button type="button" size="sm" variant="outline" onClick={() => applyPack(g.preset)}>
-                      Apply
-                    </Button>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
   const PANES: Array<{ id: Pane; label: string }> = [
-    { id: 'background', label: 'Background' },
-    { id: 'header', label: 'Header & Favicon' },
-    { id: 'banners', label: 'Banners' },
+    { id: 'header', label: 'Logo & Favicon' },
+    ...(studioPack ? [] : [{ id: 'banners' as const, label: 'Banners' }]),
     { id: 'sections', label: 'Sections' },
     { id: 'collections', label: 'Collections' },
     { id: 'fonts', label: 'Fonts' },
     { id: 'advanced', label: 'Advanced' },
   ];
+  const sectionRows = studioPack
+    ? theme.homepage_sections.filter((row) => STUDIO_EXTRA_SECTIONS.includes(row.id))
+    : theme.homepage_sections;
 
   return (
+    <div className="space-y-4">
+    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={`/store/themes/${current.pack}.svg`} alt="" className="h-20 w-28 rounded-lg border object-cover" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs uppercase tracking-wide text-gray-400">Current theme</p>
+        <p className="font-semibold text-gray-900">{current.label}</p>
+        <p className="text-xs text-gray-500">Switch themes, edit sections, colours and text in Studio. Changes auto-save there until you publish.</p>
+      </div>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={openDemo}>
+          Demo <ExternalLink className="ml-1 h-3.5 w-3.5" />
+        </Button>
+        <Link
+          href="/settings/online-store/studio"
+          className="inline-flex items-center rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+        >
+          Open Studio
+        </Link>
+      </div>
+    </div>
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
       <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
-        <button type="button" className="text-sm text-gray-600" onClick={() => setScreen('gallery')}>
-          ← Themes
-        </button>
+        <p className="text-sm font-medium text-gray-700">More appearance settings</p>
         <div className="flex gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => void previewMerchant()}>
             Preview
@@ -220,34 +177,6 @@ export function StoreAppearanceStudio({
           ))}
         </nav>
         <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
-          {pane === 'background' ? (
-            <>
-              <p className="text-sm text-gray-600">Page paper. Brand colour stays on buttons.</p>
-              <div className="grid grid-cols-3 gap-3">
-                {(['light', 'dim', 'dark'] as StoreAppearanceMode[]).map((mode) => (
-                  <label key={mode} className="cursor-pointer rounded-xl border p-3 text-center text-sm capitalize">
-                    <input
-                      type="radio"
-                      className="mb-2"
-                      checked={theme.appearance_mode === mode}
-                      onChange={() => setTheme((t) => ({ ...t, appearance_mode: mode, preset: 'custom' }))}
-                    />
-                    <span className="block">{mode}</span>
-                  </label>
-                ))}
-              </div>
-              <label className="block text-xs text-gray-500">
-                Brand colour
-                <input
-                  type="color"
-                  className="mt-1 block h-10 w-16"
-                  value={theme.accent}
-                  onChange={(e) => setTheme((t) => ({ ...t, preset: 'custom', accent: e.target.value }))}
-                />
-              </label>
-            </>
-          ) : null}
-
           {pane === 'header' ? (
             <>
               <StoreImageField
@@ -272,15 +201,6 @@ export function StoreAppearanceStudio({
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={theme.search_placeholder}
                   onChange={(e) => setTheme((t) => ({ ...t, search_placeholder: e.target.value }))}
-                />
-              </label>
-              <label className="block text-xs text-gray-500">
-                Announcement bar
-                <input
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                  value={theme.announcement}
-                  maxLength={160}
-                  onChange={(e) => setTheme((t) => ({ ...t, announcement: e.target.value }))}
                 />
               </label>
             </>
@@ -353,12 +273,13 @@ export function StoreAppearanceStudio({
           {pane === 'sections' ? (
             <>
               <p className="text-xs text-gray-500">
-                Toggle blocks and use arrows to reorder the home page. Then click Update preview.
-                Featured products are chosen on Items (up to 6). Product collections are set under Collections.
+                {studioPack
+                  ? 'The Studio theme’s hero, categories, products and banner are arranged in Studio. These extra blocks show below them.'
+                  : 'Toggle blocks and use arrows to reorder the home page. Then click Update preview. Featured products are chosen on Items (up to 6). Product collections are set under Collections.'}
               </p>
-              {theme.homepage_sections.map((row, i) => (
+              {sectionRows.map((row, i) => (
                 <div key={row.id} className="flex items-center gap-2 rounded-lg border px-3 py-2">
-                  <div className="flex flex-col">
+                  <div className={clsx('flex flex-col', studioPack && 'hidden')}>
                     <button type="button" disabled={i === 0} className="text-xs disabled:opacity-30" onClick={() => setTheme((t) => {
                       const next = [...t.homepage_sections];
                       [next[i - 1], next[i]] = [next[i], next[i - 1]];
@@ -400,13 +321,13 @@ export function StoreAppearanceStudio({
                   Add testimonial
                 </Button>
               ) : null}
-              {theme.overlay_bands.map((b, i) => (
+              {studioPack ? null : theme.overlay_bands.map((b, i) => (
                 <div key={i} className="space-y-1 rounded-lg border p-2">
                   <StoreImageField label={`Overlay ${i + 1}`} value={b.image_url} onChange={(url) => setTheme((t) => ({ ...t, overlay_bands: t.overlay_bands.map((x, idx) => (idx === i ? { ...x, image_url: url } : x)) }))} />
                   <input className="w-full rounded border px-2 py-1 text-sm" placeholder="Caption" value={b.caption} onChange={(e) => setTheme((t) => ({ ...t, overlay_bands: t.overlay_bands.map((x, idx) => (idx === i ? { ...x, caption: e.target.value } : x)) }))} />
                 </div>
               ))}
-              {theme.overlay_bands.length < 3 ? (
+              {!studioPack && theme.overlay_bands.length < 3 ? (
                 <Button type="button" variant="outline" size="sm" onClick={() => setTheme((t) => ({ ...t, overlay_bands: [...t.overlay_bands, { image_url: '', caption: '', cta: '' }] }))}>
                   Add overlay
                 </Button>
@@ -615,6 +536,7 @@ export function StoreAppearanceStudio({
           ) : null}
         </div>
       </div>
+    </div>
     </div>
   );
 }

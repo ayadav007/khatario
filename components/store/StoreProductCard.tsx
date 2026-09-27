@@ -1,10 +1,11 @@
 'use client';
 
-import { Heart, Minus, Package, Plus } from 'lucide-react';
+import { Heart, Minus, Plus } from 'lucide-react';
 import { StoreStars } from './StoreStars';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAetherPack, isAtelierPack, isKhatarioPack, isPackChrome, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, hexLuminance, isKhatarioPack, isStudioPack, sanitizeStoreTheme, sectionEnabled, storeCanvas } from '@/lib/store/store-theme';
 import { storeDiscountPercent } from '@/lib/store/map-store-product';
+import { StudioAddButton, StudioProductTile } from './studio-theme/StudioSections';
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -40,7 +41,7 @@ export interface StoreProduct {
   }>;
 }
 
-export type StoreProductCardVariant = 'classic' | 'grid' | 'shelf' | 'featured';
+export type StoreProductCardVariant = 'grid' | 'shelf' | 'featured';
 
 interface StoreProductCardProps {
   product: StoreProduct;
@@ -50,7 +51,6 @@ interface StoreProductCardProps {
 
 function ChowkAddControl({
   accent,
-  paper,
   ink,
   outOfStock,
   inCart,
@@ -61,7 +61,6 @@ function ChowkAddControl({
   onDec,
 }: {
   accent: string;
-  paper: string;
   ink: string;
   outOfStock: boolean;
   inCart: number;
@@ -125,87 +124,12 @@ function ChowkAddControl({
   );
 }
 
-function AtelierAddControl({
-  accent,
-  paper,
-  ink,
-  outOfStock,
-  inCart,
-  hasVariants,
-  canInc,
-  onAdd,
-  onInc,
-  onDec,
-}: {
-  accent: string;
-  paper: string;
-  ink: string;
-  outOfStock: boolean;
-  inCart: number;
-  hasVariants: boolean;
-  canInc: boolean;
-  onAdd: (e: React.MouseEvent) => void;
-  onInc: (e: React.MouseEvent) => void;
-  onDec: (e: React.MouseEvent) => void;
-}) {
-  const onAccent = chowkOnAccent(accent);
-  if (outOfStock) {
-    return (
-      <span
-        className="pointer-events-none absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-[10px]"
-        style={{ backgroundColor: paper, color: ink, opacity: 0.7 }}
-      >
-        Out
-      </span>
-    );
-  }
-  const open = inCart > 0 && !hasVariants;
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={onAdd}
-        className="absolute bottom-3 right-3 rounded-full px-3 py-1.5 text-[11px] font-medium shadow-sm"
-        style={{ backgroundColor: accent, color: onAccent }}
-        aria-label={hasVariants ? 'Choose options' : 'Add to bag'}
-      >
-        + Add
-      </button>
-    );
-  }
-  return (
-    <div
-      className="absolute bottom-3 right-3 flex h-8 items-center rounded-full shadow-sm"
-      style={{ backgroundColor: accent, color: onAccent }}
-    >
-      <button type="button" onClick={onDec} className="flex h-8 w-8 items-center justify-center" aria-label="Decrease quantity">
-        <Minus className="h-3.5 w-3.5" />
-      </button>
-      <span className="min-w-[1.1rem] text-center text-[12px] font-semibold tabular-nums" aria-live="polite">
-        {inCart}
-      </span>
-      <button
-        type="button"
-        onClick={onInc}
-        disabled={!canInc}
-        className="flex h-8 w-8 items-center justify-center disabled:opacity-40"
-        aria-label="Increase quantity"
-      >
-        <Plus className="h-3.5 w-3.5" strokeWidth={2.4} />
-      </button>
-    </div>
-  );
-}
-
 export function StoreProductCard({ product, onViewDetail, variant }: StoreProductCardProps) {
   const { cart, addToCart, updateCartQuantity, store, favoriteIds, toggleFavorite } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
-  const atelier = isAtelierPack(theme);
   const khatario = isKhatarioPack(theme);
-  const aether = isAetherPack(theme);
-  const layout: StoreProductCardVariant =
-    variant ?? (isPackChrome(theme) ? 'grid' : 'classic');
+  const layout: StoreProductCardVariant = variant ?? 'grid';
 
   const inCart = useMemo(() => {
     if (product.has_variants) {
@@ -269,248 +193,195 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
     [product.id, cartItem, updateCartQuantity],
   );
 
-  if (layout !== 'classic') {
-    const paper = storeCanvas(theme);
-    const ink = chowkInkOn(paper);
-    const excerpt = (product.description || '').trim().slice(0, 140);
-    const imageBlock = (
-      <div
-        className={clsx(
-          'relative overflow-hidden',
-          aether ? 'bg-[#161310]' : atelier ? 'bg-[#eee8e0]' : 'bg-white',
-          layout === 'featured' && !aether
-            ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full'
-            : atelier || aether
-              ? 'aspect-[3/4] rounded-[1.35rem]'
-              : khatario && layout === 'shelf'
-                ? 'aspect-[4/3]'
-                : 'aspect-square',
-        )}
-      >
-        <Link
-          href={`/products/${product.id}`}
-          className={clsx('block h-full w-full', outOfStock && 'opacity-40')}
-        >
-          {product.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={product.image_url}
-              alt={product.name}
-              className={clsx(
-                'h-full w-full',
-                aether
-                  ? 'aether-product-img object-cover'
-                  : atelier
-                    ? 'atelier-product-img object-cover'
-                    : 'chowk-product-img object-contain p-2',
-              )}
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center" style={{ backgroundColor: aether ? '#161310' : atelier ? '#eee8e0' : '#f3ebe0' }}>
-              <span className={clsx(aether ? 'font-noir-display text-5xl' : atelier ? 'font-atelier-display text-5xl' : 'font-chowk-display text-4xl leading-none')} style={{ color: aether ? accent : ink, opacity: 0.28 }}>
-                {product.name.slice(0, 1).toUpperCase()}
-              </span>
-            </div>
-          )}
-        </Link>
-        {aether ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#0c0b09]/80 to-transparent pb-4 pt-10 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
-            <span className="text-[10px] uppercase tracking-[0.28em] text-[#c4a46a]">View</span>
-          </div>
-        ) : null}
-        {discount > 0 ? (
-          <span
-            className="pointer-events-none absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
-            style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
-          >
-            {discount}%
-          </span>
-        ) : null}
+  if (isStudioPack(theme)) {
+    const open = inCart > 0 && !product.has_variants;
+    const add = !theme.show_listing_add ? null : open ? (
+      <div className="stepper">
+        <button type="button" onClick={handleDecrement} aria-label="Decrease quantity">
+          <Minus strokeWidth={2.4} />
+        </button>
+        <b aria-live="polite">{inCart}</b>
         <button
           type="button"
-          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm"
-          aria-label={favoriteIds.includes(product.id) ? 'Remove from favourites' : 'Add to favourites'}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            void toggleFavorite(product.id);
-          }}
+          onClick={handleIncrement}
+          disabled={!cartItem || cartItem.quantity >= cartItem.maxStock}
+          aria-label="Increase quantity"
         >
-          <Heart
-            className="h-4 w-4"
-            style={{
-              color: favoriteIds.includes(product.id) ? accent : ink,
-              fill: favoriteIds.includes(product.id) ? accent : 'transparent',
-            }}
-          />
+          <Plus strokeWidth={2.4} />
         </button>
-        {theme.show_listing_add && (atelier || aether) ? (
-          <AtelierAddControl
-            accent={accent}
-            paper={paper}
-            ink={ink}
-            outOfStock={outOfStock}
-            inCart={inCart}
-            hasVariants={product.has_variants}
-            canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
-            onAdd={handleAdd}
-            onInc={handleIncrement}
-            onDec={handleDecrement}
-          />
-        ) : theme.show_listing_add ? (
-          <ChowkAddControl
-            accent={accent}
-            paper={paper}
-            ink={ink}
-            outOfStock={outOfStock}
-            inCart={inCart}
-            hasVariants={product.has_variants}
-            canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
-            onAdd={handleAdd}
-            onInc={handleIncrement}
-            onDec={handleDecrement}
-          />
-        ) : null}
       </div>
+    ) : (
+      <StudioAddButton
+        label={outOfStock ? 'Out of stock' : product.has_variants ? 'Choose options' : 'Add'}
+        onClick={handleAdd}
+        disabled={outOfStock}
+      />
     );
-
-    const meta = (
-      <div className={clsx(layout === 'featured' && !aether ? 'flex flex-col justify-center px-5 py-6 md:px-10' : atelier || aether ? 'px-0.5 pb-1 pt-3' : 'px-2.5 pb-3 pt-2')}>
-        {layout === 'featured' ? (
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>
-            Popular
-          </p>
-        ) : null}
-        {layout !== 'featured' ? (
-          <div className="flex items-start justify-between gap-1.5">
-            <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
-              {aether && product.category_name ? (
-                <p className="mb-1 text-[10px] uppercase tracking-[0.22em]" style={{ color: accent, opacity: 0.8 }}>
-                  {product.category_name}
-                </p>
-              ) : null}
-              <h3
-                className={clsx(
-                  'line-clamp-2 leading-tight',
-                  aether ? 'font-noir-display text-[15px]' : 'chowk-name text-[11px] font-medium',
-                )}
-                style={{ color: ink }}
-              >
-                {product.name}
-              </h3>
-            </Link>
-            <div className="shrink-0 text-right">
-              <p className="text-[13px] font-semibold tabular-nums" style={{ color: aether ? accent : ink }}>
-                ₹{product.selling_price.toLocaleString('en-IN')}
-              </p>
-              {discount > 0 && product.mrp != null ? (
-                <p className="text-[10px] tabular-nums line-through" style={{ color: ink, opacity: 0.4 }}>
-                  ₹{Number(product.mrp).toLocaleString('en-IN')}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <>
-        <Link href={`/products/${product.id}`}>
-          <h3
-            className={clsx(
-              'chowk-name line-clamp-2 font-medium',
-              'text-[17px] leading-snug sm:text-xl',
-            )}
-            style={{ color: ink }}
-          >
-            {product.name}
-          </h3>
-        </Link>
-        {layout === 'featured' && excerpt ? (
-          <p className="mt-2 max-w-sm text-[13px] leading-relaxed" style={{ color: ink, opacity: 0.55 }}>
-            {excerpt}
-            {product.description && product.description.trim().length > 140 ? '…' : ''}
-          </p>
-        ) : null}
-        <p className={clsx('mt-1 flex flex-wrap items-baseline gap-x-1.5')}>
-          <span className="text-[16px] font-semibold tabular-nums" style={{ color: ink }}>
-            ₹{product.selling_price.toLocaleString('en-IN')}
-          </span>
-          {discount > 0 && product.mrp != null ? (
-            <span className="text-[11px] tabular-nums line-through" style={{ color: ink, opacity: 0.38 }}>
-              ₹{Number(product.mrp).toLocaleString('en-IN')}
-            </span>
-          ) : null}
-        </p>
-          </>
-        )}
-        {(product.rating_count ?? 0) > 0 ? (
-          <div className="mt-1">
-            <StoreStars value={product.rating_avg ?? 0} count={product.rating_count} />
-          </div>
-        ) : null}
-        {!khatario && product.unit ? (
-          <p className="chowk-unit mt-0.5 text-[11px]" style={{ color: ink, opacity: 0.45 }}>
-            {product.unit}
-          </p>
-        ) : null}
-      </div>
+    return (
+      <StudioProductTile
+        name={product.name}
+        unit={product.has_variants ? `${product.variants.length} options` : product.unit}
+        price={product.selling_price}
+        mrp={product.mrp}
+        image={product.image_url}
+        href={`/products/${product.id}`}
+        discount={discount}
+        outOfStock={outOfStock}
+        fav={favoriteIds.includes(product.id)}
+        onFav={() => void toggleFavorite(product.id)}
+        add={add}
+      />
     );
+  }
 
-    if (layout === 'featured' && !aether) {
-      return (
-        <article className="overflow-hidden rounded-3xl bg-white shadow-sm">
-          <div className="grid md:grid-cols-2">
-            {imageBlock}
-            {meta}
-          </div>
-        </article>
-      );
-    }
-
+  if (theme.pack === 'grocery') {
+    const paper = storeCanvas(theme);
+    const ink = chowkInkOn(paper);
+    const dark = hexLuminance(paper) < 0.4;
+    const onAccent = chowkOnAccent(accent);
+    const fav = favoriteIds.includes(product.id);
+    const open = inCart > 0 && !product.has_variants;
     return (
       <article
         className={clsx(
-          'group overflow-hidden rounded-2xl bg-white shadow-sm',
-          layout === 'shelf' && 'w-[42vw] max-w-[12.5rem] flex-shrink-0 snap-start sm:w-44',
-          (atelier || aether) && 'rounded-[1.35rem] bg-transparent shadow-none',
+          'g-lift g-line g-surface group flex flex-col overflow-hidden rounded-[18px] border',
+          layout === 'shelf' && 'w-[172px] shrink-0 sm:w-[210px]',
         )}
+        style={{ color: ink }}
       >
-        {imageBlock}
-        {meta}
+        <div
+          className="g-card-img aspect-[10/9]"
+          style={{ backgroundColor: dark ? 'rgba(255,255,255,0.04)' : `color-mix(in srgb, ${accent} 6%, #ffffff)` }}
+        >
+          <Link href={`/products/${product.id}`} className={clsx('block h-full w-full', outOfStock && 'opacity-40')}>
+            {product.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={product.image_url}
+                alt={product.name}
+                className={clsx('h-full w-full object-contain p-3', !dark && 'mix-blend-multiply')}
+                loading="lazy"
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-4xl font-black" style={{ color: accent, opacity: 0.3 }}>
+                {product.name.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+          </Link>
+          {discount > 0 ? (
+            <span className="pointer-events-none absolute left-2.5 top-2.5 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-[#172019]">
+              {discount}% OFF
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="absolute right-2.5 top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm transition-transform hover:scale-110"
+            aria-label={fav ? 'Remove from favourites' : 'Add to favourites'}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void toggleFavorite(product.id);
+            }}
+          >
+            <Heart className="h-4 w-4" style={{ color: fav ? '#e11d48' : '#68736b', fill: fav ? '#e11d48' : 'transparent' }} />
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col p-3 sm:p-3.5">
+          <Link href={`/products/${product.id}`} className="line-clamp-2 min-h-[2.5em] text-[13.5px] font-bold leading-snug sm:text-[14.5px]">
+            {product.name}
+          </Link>
+          <p className="mt-0.5 text-[12px]" style={{ opacity: 0.55 }}>
+            {product.has_variants ? `${product.variants.length} options` : product.unit}
+          </p>
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span className="text-[16px] font-extrabold tabular-nums sm:text-[17px]">₹{product.selling_price.toLocaleString('en-IN')}</span>
+            {discount > 0 && product.mrp != null ? (
+              <span className="text-[12px] line-through tabular-nums" style={{ opacity: 0.45 }}>
+                ₹{Number(product.mrp).toLocaleString('en-IN')}
+              </span>
+            ) : null}
+          </div>
+          {theme.show_listing_add ? (
+            <div className="mt-auto pt-3">
+              {outOfStock ? (
+                <span className="g-line flex h-10 w-full items-center justify-center rounded-xl border text-[12px] font-semibold" style={{ opacity: 0.5 }}>
+                  Out of stock
+                </span>
+              ) : open ? (
+                <div className="flex h-10 w-full items-center justify-between rounded-xl" style={{ backgroundColor: accent, color: onAccent }}>
+                  <button type="button" onClick={handleDecrement} className="flex h-10 w-10 items-center justify-center" aria-label="Decrease quantity">
+                    <Minus className="h-4 w-4" strokeWidth={2.4} />
+                  </button>
+                  <span className="text-[14px] font-extrabold tabular-nums" aria-live="polite">
+                    {inCart}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleIncrement}
+                    disabled={!cartItem || cartItem.quantity >= cartItem.maxStock}
+                    className="flex h-10 w-10 items-center justify-center disabled:opacity-40"
+                    aria-label="Increase quantity"
+                  >
+                    <Plus className="h-4 w-4" strokeWidth={2.4} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAdd}
+                  className="g-add flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border-[1.5px] text-[13px] font-bold hover:bg-[var(--store-accent)] hover:text-[var(--g-on)]"
+                  style={{ borderColor: accent, color: accent, ['--g-on' as string]: onAccent }}
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2.4} />
+                  {product.has_variants ? 'Choose options' : 'Add to cart'}
+                </button>
+              )}
+            </div>
+          ) : null}
+        </div>
       </article>
     );
   }
 
-  return (
-    <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-      <div className="relative aspect-square bg-gray-50">
-      <Link href={`/products/${product.id}`} className="block h-full w-full">
+  const paper = storeCanvas(theme);
+  const ink = chowkInkOn(paper);
+  const excerpt = (product.description || '').trim().slice(0, 140);
+  const imageBlock = (
+    <div
+      className={clsx(
+        'relative overflow-hidden bg-white',
+        layout === 'featured'
+          ? 'aspect-[4/3] min-h-[200px] md:min-h-[280px] md:aspect-auto md:h-full'
+          : khatario && layout === 'shelf'
+            ? 'aspect-[4/3]'
+            : 'aspect-square',
+      )}
+    >
+      <Link href={`/products/${product.id}`} className={clsx('block h-full w-full', outOfStock && 'opacity-40')}>
         {product.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={product.image_url}
             alt={product.name}
-            className="h-full w-full object-cover"
+            className="chowk-product-img h-full w-full object-contain p-2"
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <Package className="h-10 w-10 text-gray-300" />
+          <div className="flex h-full w-full items-center justify-center" style={{ backgroundColor: '#f3ebe0' }}>
+            <span className="text-4xl font-semibold leading-none" style={{ color: ink, opacity: 0.28 }}>
+              {product.name.slice(0, 1).toUpperCase()}
+            </span>
           </div>
         )}
-        {discount > 0 ? (
-          <span
-            className="pointer-events-none absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
-            style={{ backgroundColor: accent }}
-          >
-            {discount}% OFF
-          </span>
-        ) : null}
-        {outOfStock ? (
-          <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded bg-white/90 px-2 py-0.5 text-center text-[10px] font-medium text-gray-500">
-            Out of stock
-          </span>
-        ) : null}
       </Link>
+      {discount > 0 ? (
+        <span
+          className="pointer-events-none absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
+          style={{ backgroundColor: accent, color: chowkOnAccent(accent) }}
+        >
+          {discount}%
+        </span>
+      ) : null}
       <button
         type="button"
         className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm"
@@ -524,71 +395,108 @@ export function StoreProductCard({ product, onViewDetail, variant }: StoreProduc
         <Heart
           className="h-4 w-4"
           style={{
-            color: favoriteIds.includes(product.id) ? accent : '#6b7280',
+            color: favoriteIds.includes(product.id) ? accent : ink,
             fill: favoriteIds.includes(product.id) ? accent : 'transparent',
           }}
         />
       </button>
-      </div>
+      {theme.show_listing_add ? (
+        <ChowkAddControl
+          accent={accent}
+          ink={ink}
+          outOfStock={outOfStock}
+          inCart={inCart}
+          hasVariants={product.has_variants}
+          canInc={!!cartItem && cartItem.quantity < cartItem.maxStock}
+          onAdd={handleAdd}
+          onInc={handleIncrement}
+          onDec={handleDecrement}
+        />
+      ) : null}
+    </div>
+  );
 
-      <div className="flex flex-1 flex-col p-2.5">
-        <div className="flex items-start justify-between gap-1.5">
-          <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
-            <h3 className="line-clamp-2 text-[11px] font-medium leading-tight text-gray-900">
+  const meta = (
+    <div className={layout === 'featured' ? 'flex flex-col justify-center px-5 py-6 md:px-10' : 'px-2.5 pb-3 pt-2'}>
+      {layout === 'featured' ? (
+        <>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>
+            Popular
+          </p>
+          <Link href={`/products/${product.id}`}>
+            <h3 className="chowk-name line-clamp-2 text-[17px] font-medium leading-snug sm:text-xl" style={{ color: ink }}>
               {product.name}
             </h3>
           </Link>
-          <p className="shrink-0 text-[13px] font-bold tabular-nums text-gray-900">
-            ₹{product.selling_price.toLocaleString('en-IN')}
-          </p>
-        </div>
-        {(product.rating_count ?? 0) > 0 ? (
-          <div className="mt-1">
-            <StoreStars value={product.rating_avg ?? 0} count={product.rating_count} />
-          </div>
-        ) : null}
-
-        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-          <div className="min-w-0">
+          {excerpt ? (
+            <p className="mt-2 max-w-sm text-[13px] leading-relaxed" style={{ color: ink, opacity: 0.55 }}>
+              {excerpt}
+              {product.description && product.description.trim().length > 140 ? '…' : ''}
+            </p>
+          ) : null}
+          <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
+            <span className="text-[16px] font-semibold tabular-nums" style={{ color: ink }}>
+              ₹{product.selling_price.toLocaleString('en-IN')}
+            </span>
             {discount > 0 && product.mrp != null ? (
-              <p className="text-[11px] text-gray-400 line-through">
-                ₹{product.mrp.toLocaleString('en-IN')}
+              <span className="text-[11px] tabular-nums line-through" style={{ color: ink, opacity: 0.38 }}>
+                ₹{Number(product.mrp).toLocaleString('en-IN')}
+              </span>
+            ) : null}
+          </p>
+        </>
+      ) : (
+        <div className="flex items-start justify-between gap-1.5">
+          <Link href={`/products/${product.id}`} className="min-w-0 flex-1">
+            <h3 className="chowk-name line-clamp-2 text-[11px] font-medium leading-tight" style={{ color: ink }}>
+              {product.name}
+            </h3>
+          </Link>
+          <div className="shrink-0 text-right">
+            <p className="text-[13px] font-semibold tabular-nums" style={{ color: ink }}>
+              ₹{product.selling_price.toLocaleString('en-IN')}
+            </p>
+            {discount > 0 && product.mrp != null ? (
+              <p className="text-[10px] tabular-nums line-through" style={{ color: ink, opacity: 0.4 }}>
+                ₹{Number(product.mrp).toLocaleString('en-IN')}
               </p>
             ) : null}
           </div>
-
-          {outOfStock ? null : inCart > 0 && !product.has_variants ? (
-            <div className="flex items-center rounded-lg" style={{ backgroundColor: accent }}>
-              <button
-                type="button"
-                onClick={handleDecrement}
-                className="flex h-8 w-8 items-center justify-center text-white"
-                aria-label="Decrease"
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <span className="w-5 text-center text-xs font-bold text-white">{inCart}</span>
-              <button
-                type="button"
-                onClick={handleIncrement}
-                className="flex h-8 w-8 items-center justify-center text-white"
-                aria-label="Increase"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
-              style={{ borderColor: accent, color: accent }}
-            >
-              {product.has_variants ? 'Options' : 'Add'}
-            </button>
-          )}
         </div>
-      </div>
+      )}
+      {(product.rating_count ?? 0) > 0 ? (
+        <div className="mt-1">
+          <StoreStars value={product.rating_avg ?? 0} count={product.rating_count} />
+        </div>
+      ) : null}
+      {!khatario && product.unit ? (
+        <p className="chowk-unit mt-0.5 text-[11px]" style={{ color: ink, opacity: 0.45 }}>
+          {product.unit}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  if (layout === 'featured') {
+    return (
+      <article className="overflow-hidden rounded-3xl bg-white shadow-sm">
+        <div className="grid md:grid-cols-2">
+          {imageBlock}
+          {meta}
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article
+      className={clsx(
+        'group overflow-hidden rounded-2xl bg-white shadow-sm',
+        layout === 'shelf' && 'w-[42vw] max-w-[12.5rem] flex-shrink-0 snap-start sm:w-44',
+      )}
+    >
+      {imageBlock}
+      {meta}
     </article>
   );
 }

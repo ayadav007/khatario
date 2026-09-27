@@ -1,33 +1,24 @@
 import { DEFAULT_STORE_PROMO } from '@/lib/store/promo-sheet';
 import type { StoreBusinessContext } from '@/lib/store/resolve-store';
-import { AETHER_DEFAULT_HERO, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
+import { DEFAULT_HOMEPAGE_SECTIONS, applyStorePreset, sanitizeStoreTheme, type StoreThemePack, type StoreThemePreset } from '@/lib/store/store-theme';
 import type { StoreProduct } from '@/components/store/StoreProductCard';
 
 export const THEME_DEMO_SLUGS: Record<string, { preset: Exclude<StoreThemePreset, 'custom'>; pack: StoreThemePack }> = {
-  'theme-classic': { preset: 'green', pack: 'classic' },
-  'theme-chowk': { preset: 'chowk', pack: 'chowk' },
-  'theme-atelier': { preset: 'atelier', pack: 'atelier' },
+  'theme-studio': { preset: 'studio', pack: 'studio' },
   'theme-khatario': { preset: 'khatario', pack: 'khatario' },
-  'theme-noir': { preset: 'noir', pack: 'noir' },
-  'theme-aether': { preset: 'aether', pack: 'aether' },
+  'theme-grocery': { preset: 'grocery', pack: 'grocery' },
 };
 
 const DEMO_BUSINESS: Record<StoreThemePack, string> = {
-  classic: '00000000-0000-4000-8000-000000000001',
-  chowk: '00000000-0000-4000-8000-000000000002',
-  atelier: '00000000-0000-4000-8000-000000000003',
+  studio: '00000000-0000-4000-8000-000000000001',
   khatario: '00000000-0000-4000-8000-000000000004',
-  noir: '00000000-0000-4000-8000-000000000005',
-  aether: '00000000-0000-4000-8000-000000000006',
+  grocery: '00000000-0000-4000-8000-000000000007',
 };
 
 const STORE_LABEL: Record<StoreThemePack, string> = {
-  classic: 'Classic',
-  chowk: 'Chowk',
-  atelier: 'Atelier',
+  studio: 'Studio',
   khatario: 'Khatario',
-  noir: 'Noir',
-  aether: 'Aether',
+  grocery: 'Premium Grocery',
 };
 
 export function isThemeDemoSubdomain(subdomain: string): boolean {
@@ -44,24 +35,34 @@ const DEMO_CATS = [
   { id: 'cat-three', name: 'Gifts' },
 ];
 
-export function themeDemoProducts(): StoreProduct[] {
-  const mk = (
-    id: string,
-    name: string,
-    price: number,
-    mrp: number | null,
-    cat: string,
-    catName: string,
-    featured = false,
-    image: string | null = null,
-  ): StoreProduct => ({
+const GROCERY_CATS = [
+  { id: 'g-veg', name: 'Vegetables' },
+  { id: 'g-fruit', name: 'Fruits' },
+  { id: 'g-dairy', name: 'Dairy & Eggs' },
+  { id: 'g-snacks', name: 'Snacks' },
+  { id: 'g-drinks', name: 'Beverages' },
+  { id: 'g-staples', name: 'Staples' },
+];
+
+function mk(
+  id: string,
+  name: string,
+  price: number,
+  mrp: number | null,
+  cat: string,
+  catName: string,
+  featured = false,
+  image: string | null = null,
+  unit = 'PCS',
+): StoreProduct {
+  return {
     id,
     name,
     code: null,
     description: 'Sample product for theme preview. Checkout is disabled.',
     selling_price: price,
     mrp,
-    unit: 'PCS',
+    unit,
     image_url: image,
     category_id: cat,
     category_name: catName,
@@ -74,7 +75,10 @@ export function themeDemoProducts(): StoreProduct[] {
     rating_count: 12,
     featured_in_store: featured,
     variants: [],
-  });
+  };
+}
+
+function apparelDemoProducts(): StoreProduct[] {
   return [
     mk('demo-1', 'Merino crew', 1890, 2290, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?auto=format&fit=crop&w=900&q=80'),
     mk('demo-2', 'Linen overshirt', 2450, null, 'cat-one', 'New in', true, 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80'),
@@ -87,47 +91,65 @@ export function themeDemoProducts(): StoreProduct[] {
   ];
 }
 
+function groceryDemoProducts(): StoreProduct[] {
+  return [
+    mk('grocery-1', 'Fresh Tomatoes', 34, 45, 'g-veg', 'Vegetables', true, 'https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=600&q=80', 'KG'),
+    mk('grocery-2', 'Organic Bananas', 49, 60, 'g-fruit', 'Fruits', true, 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=600&q=80', 'DOZ'),
+    mk('grocery-3', 'Farm Fresh Milk 1L', 64, null, 'g-dairy', 'Dairy & Eggs', false, 'https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80', 'LTR'),
+    mk('grocery-4', 'Brown Eggs (6 pcs)', 72, 84, 'g-dairy', 'Dairy & Eggs', false, 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=600&q=80'),
+    mk('grocery-5', 'Crunchy Potato Chips', 30, null, 'g-snacks', 'Snacks', false, 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=600&q=80'),
+    mk('grocery-6', 'Cold Pressed Orange Juice', 120, 150, 'g-drinks', 'Beverages', true, 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=crop&w=600&q=80', 'BTL'),
+    mk('grocery-7', 'Basmati Rice 5kg', 549, 649, 'g-staples', 'Staples', false, 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80'),
+    mk('grocery-8', 'Red Apples', 180, 220, 'g-fruit', 'Fruits', false, 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=600&q=80', 'KG'),
+    mk('grocery-9', 'Baby Spinach', 40, null, 'g-veg', 'Vegetables', false, 'https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=600&q=80'),
+    mk('grocery-10', 'Greek Yogurt', 95, 110, 'g-dairy', 'Dairy & Eggs', false, 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=600&q=80'),
+  ];
+}
+
+/** Every demo product across all packs, for id lookups on detail routes. */
+export function themeDemoProducts(pack?: StoreThemePack | null): StoreProduct[] {
+  if (pack === 'grocery') return groceryDemoProducts();
+  if (pack) return apparelDemoProducts();
+  return [...apparelDemoProducts(), ...groceryDemoProducts()];
+}
+
 export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
   const spec = THEME_DEMO_SLUGS[subdomain.toLowerCase().trim()];
   if (!spec) return null;
   const presetTheme = applyStorePreset(spec.preset);
+  const grocery = spec.pack === 'grocery';
   const theme = sanitizeStoreTheme({
     ...presetTheme,
     preset: spec.preset,
     pack: spec.pack,
-    hero_slides:
-      spec.pack === 'aether' && presetTheme.hero_slides?.length
-        ? presetTheme.hero_slides
-        : [
-            {
-              image_url: '',
-              title: spec.pack === 'noir' ? 'Winter Collection' : 'Welcome',
-              subtitle: 'Theme preview — sample catalog, checkout off.',
-              viewport: 'both',
-            },
-          ],
+    hero_slides: [
+      {
+        image_url: spec.pack === 'studio' ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1400&q=80' : '',
+        title: grocery ? 'Fresh groceries, delivered fast.' : 'Welcome',
+        subtitle: 'Theme preview — sample catalog, checkout off.',
+        viewport: 'both',
+      },
+    ],
     testimonials: [
       { name: 'Asha K.', text: 'Lovely pieces and quick delivery.', photo_url: '' },
       { name: 'Rahul M.', text: 'The store looks premium and easy to shop.', photo_url: '' },
     ],
-    brand_story:
-      spec.pack === 'aether'
-        ? 'Quiet luxury for people who already know what they like. Coats, objects, and numbered pieces — made slowly, meant to last.'
-        : 'This is a preview store so you can judge the layout before you apply it to your products.',
-    overlay_bands:
-      spec.pack === 'aether'
-        ? [{ image_url: AETHER_DEFAULT_HERO, caption: 'New season', cta: 'Shop now' }]
-        : [{ image_url: '', caption: 'New season', cta: 'Shop now' }],
-    announcement: spec.pack === 'aether' ? presetTheme.announcement : undefined,
-    category_images:
-      spec.pack === 'aether'
-        ? {
-            'cat-one': 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=1200&q=80',
-            'cat-two': 'https://images.unsplash.com/photo-1441984904996-e0b6ba687e04?auto=format&fit=crop&w=1200&q=80',
-            'cat-three': 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=1200&q=80',
-          }
-        : {},
-    show_listing_add: spec.pack !== 'aether',
+    brand_story: 'This is a preview store so you can judge the layout before you apply it to your products.',
+    overlay_bands: grocery
+      ? [
+          { image_url: '', caption: 'Stock up on pantry essentials', cta: 'Shop staples' },
+          { image_url: '', caption: 'Fresh fruit, picked every morning', cta: 'Shop fruits' },
+        ]
+      : [{ image_url: '', caption: 'New season', cta: 'Shop now' }],
+    announcement: grocery
+      ? 'Theme preview  ·  Fresh fruits & vegetables  ·  Everyday essentials  ·  Checkout disabled'
+      : spec.pack === 'studio'
+        ? 'Theme preview · Checkout disabled'
+        : undefined,
+    homepage_sections:
+      spec.pack === 'studio'
+        ? DEFAULT_HOMEPAGE_SECTIONS.map((s) => (s.id === 'overlay' || s.id === 'testimonials' ? { ...s, enabled: true } : s))
+        : presetTheme.homepage_sections,
   });
   return {
     business_id: DEMO_BUSINESS[spec.pack],
@@ -155,6 +177,7 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
 }
 
 export function filterDemoCatalog(opts: {
+  pack?: StoreThemePack | null;
   categoryId?: string | null;
   search?: string | null;
   page: number;
@@ -163,7 +186,13 @@ export function filterDemoCatalog(opts: {
   discountedOnly?: boolean;
   maxPrice?: number | null;
 }) {
-  let items = themeDemoProducts();
+  const grocery = opts.pack === 'grocery';
+  const all = grocery ? groceryDemoProducts() : apparelDemoProducts();
+  const categories = (grocery ? GROCERY_CATS : DEMO_CATS).map((c) => ({
+    ...c,
+    item_count: all.filter((i) => i.category_id === c.id).length,
+  }));
+  let items = all;
   if (opts.featuredOnly) items = items.filter((i) => i.featured_in_store);
   if (opts.discountedOnly) {
     items = items.filter(
@@ -182,7 +211,7 @@ export function filterDemoCatalog(opts: {
   const start = (opts.page - 1) * opts.limit;
   return {
     items: items.slice(start, start + opts.limit),
-    categories: DEMO_CATS,
+    categories,
     total,
     page: opts.page,
     limit: opts.limit,

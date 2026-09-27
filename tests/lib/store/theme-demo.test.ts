@@ -1,9 +1,11 @@
 import { isThemeDemoSubdomain, themeDemoStore } from '@/lib/store/theme-demo';
 
 describe('theme demo hosts', () => {
-  it('recognises reserved preview slugs', () => {
-    expect(isThemeDemoSubdomain('theme-noir')).toBe(true);
-    expect(isThemeDemoSubdomain('theme-aether')).toBe(true);
+  it('recognises the three theme preview slugs only', () => {
+    expect(isThemeDemoSubdomain('theme-studio')).toBe(true);
+    expect(isThemeDemoSubdomain('theme-grocery')).toBe(true);
+    expect(isThemeDemoSubdomain('theme-khatario')).toBe(true);
+    expect(isThemeDemoSubdomain('theme-aether')).toBe(false);
     expect(isThemeDemoSubdomain('myshop')).toBe(false);
   });
 
@@ -13,11 +15,8 @@ describe('theme demo hosts', () => {
     expect(store?.store_allow_cod).toBe(false);
   });
 
-  it('gives Aether a cinematic hero from the pack preset', () => {
-    const store = themeDemoStore('theme-aether');
-    const theme = store?.store_theme as { hero_slides?: Array<{ image_url?: string; title?: string }>; pack?: string };
-    expect(theme?.pack).toBe('aether');
-    expect(theme?.hero_slides?.[0]?.image_url).toMatch(/^https:\/\//);
-    expect(theme?.hero_slides?.[0]?.title).toBe('The art of less.');
+  it('serves the Studio pack on the Studio demo', () => {
+    const theme = themeDemoStore('theme-studio')?.store_theme as { pack?: string };
+    expect(theme?.pack).toBe('studio');
   });
 });

@@ -141,12 +141,13 @@ export function buildStoreItemsQuery(input: StoreItemsQueryInput): StoreItemsQue
        WHERE ${whereSql}`;
 
   const categorySql = `
-       SELECT DISTINCT c.id, c.name
+       SELECT c.id, c.name, COUNT(i.id)::int AS item_count
        FROM categories c
        INNER JOIN items i ON i.category_id = c.id
        WHERE i.business_id = $1 AND i.show_in_store = true
          AND (i.is_active IS NULL OR i.is_active = true)
          AND i.deleted_at IS NULL
+       GROUP BY c.id, c.name
        ORDER BY c.name`;
 
   assertQueryBinds(listSql, listParams);

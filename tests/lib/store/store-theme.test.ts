@@ -1,4 +1,4 @@
-import {
+﻿import {
   sanitizeStoreTheme,
   applyStorePreset,
   STORE_THEME_PRESETS,
@@ -8,6 +8,7 @@ import {
   chowkInkOn,
   chowkOnAccent,
   sectionEnabled,
+  resolveAnnouncementText,
 } from '@/lib/store/store-theme';
 
 describe('sanitizeStoreTheme', () => {
@@ -29,16 +30,17 @@ describe('sanitizeStoreTheme', () => {
       search_placeholder: 'Search atta',
     });
     expect(t.accent).toBe('#00ff00');
-    expect(t.background).toBe(PACK_CANVAS.classic);
+    expect(t.background).toBe(PACK_CANVAS.studio);
     expect(t.mobile_columns).toBe(3);
     expect(t.category_style).toBe('photo');
     expect(t.search_placeholder).toBe('Search atta');
   });
 
-  it('applies saffron preset colours', () => {
-    const t = sanitizeStoreTheme({ preset: 'saffron', accent: '#000000' });
-    expect(t.accent).toBe(STORE_THEME_PRESETS.saffron.accent);
-    expect(t.background).toBe(STORE_THEME_PRESETS.saffron.background);
+  it('treats retired presets as a custom Studio theme', () => {
+    const t = sanitizeStoreTheme({ preset: 'saffron', accent: '#123456' });
+    expect(t.preset).toBe('custom');
+    expect(t.pack).toBe('studio');
+    expect(t.accent).toBe('#123456');
   });
 
   it('keeps up to six hero slides', () => {
@@ -108,67 +110,25 @@ describe('sanitizeStoreTheme', () => {
 });
 
 describe('applyStorePreset', () => {
-  it('returns matching accent and background', () => {
-    expect(applyStorePreset('blue')).toEqual({
-      preset: 'blue',
-      accent: STORE_THEME_PRESETS.blue.accent,
-      background: STORE_THEME_PRESETS.blue.background,
-      pack: 'classic',
-      mobile_columns: 2,
-      category_style: 'letter',
-      hero_cta: 'Shop now',
-      appearance_mode: 'light',
-    });
-  });
-
-  it('applies Chowk pack with paper and chilli', () => {
-    expect(applyStorePreset('chowk')).toEqual({
-      preset: 'chowk',
-      accent: STORE_THEME_PRESETS.chowk.accent,
-      background: STORE_THEME_PRESETS.chowk.background,
-      pack: 'chowk',
-      mobile_columns: 3,
-      category_style: 'letter',
-      hero_cta: 'Shop now',
-      search_placeholder: 'Search atta, oil, soap…',
-      appearance_mode: 'light',
-    });
-  });
-
-  it('applies Atelier pack with ivory paper and ink', () => {
-    expect(applyStorePreset('atelier')).toEqual({
-      preset: 'atelier',
-      accent: STORE_THEME_PRESETS.atelier.accent,
-      background: STORE_THEME_PRESETS.atelier.background,
-      pack: 'atelier',
+  it('applies the Studio pack with photo categories', () => {
+    expect(applyStorePreset('studio')).toEqual({
+      preset: 'studio',
+      accent: STORE_THEME_PRESETS.studio.accent,
+      background: STORE_THEME_PRESETS.studio.background,
+      pack: 'studio',
       mobile_columns: 2,
       category_style: 'photo',
-      hero_cta: 'Explore Collection',
-      search_placeholder: 'Search jackets, cashmere, accessories…',
+      hero_cta: 'Shop now',
+      search_placeholder: 'Search for products, categories…',
       appearance_mode: 'light',
     });
   });
 
-  it('applies Aether pack with gold on ink', () => {
-    const t = applyStorePreset('aether');
-    expect(t).toEqual({
-      preset: 'aether',
-      accent: STORE_THEME_PRESETS.aether.accent,
-      background: STORE_THEME_PRESETS.aether.background,
-      pack: 'aether',
-      mobile_columns: 2,
-      category_style: 'photo',
-      hero_cta: 'Shop collection',
-      hero_subtitle: 'Quiet luxury, considered pieces.',
-      search_placeholder: 'Coats, pearls, chronograph…',
-      appearance_mode: 'dark',
-      font_family: 'cormorant',
-      announcement: 'Free express shipping  ·  Handcrafted  ·  Lifetime repairs',
-      hero_slides: expect.any(Array),
-      homepage_sections: expect.any(Array),
-    });
-    expect(t.hero_slides?.[0]?.image_url).toMatch(/^https:\/\//);
-    expect(t.hero_slides?.[0]?.title).toBe('The art of less.');
+  it('applies Premium Grocery with overlay bands on and trust off', () => {
+    const t = applyStorePreset('grocery');
+    expect(t).toMatchObject({ preset: 'grocery', pack: 'grocery', category_style: 'icon', hero_cta: 'Shop groceries' });
+    expect(t.homepage_sections?.find((s) => s.id === 'overlay')?.enabled).toBe(true);
+    expect(t.homepage_sections?.find((s) => s.id === 'trust')?.enabled).toBe(false);
   });
 
   it('applies Khatario pack from Digitable store-app chrome', () => {
@@ -187,56 +147,41 @@ describe('applyStorePreset', () => {
 });
 
 describe('store theme pack', () => {
-  it('keeps classic pack for existing themes without pack', () => {
-    const t = sanitizeStoreTheme({ preset: 'green' });
-    expect(t.pack).toBe('classic');
+  it('defaults themes without a pack to Studio', () => {
+    expect(sanitizeStoreTheme({ preset: 'green' }).pack).toBe('studio');
+    expect(sanitizeStoreTheme(null).pack).toBe('studio');
   });
 
-  it('keeps Chowk pack when colours are customised', () => {
-    const t = sanitizeStoreTheme({
-      preset: 'custom',
-      pack: 'chowk',
-      accent: '#112233',
-      background: '#f3eee6',
-    });
-    expect(t.pack).toBe('chowk');
+  it.each(['classic', 'chowk', 'atelier', 'noir', 'aether'])('moves retired %s pack to Studio', (pack) => {
+    const t = sanitizeStoreTheme({ preset: 'custom', pack, accent: '#112233' });
+    expect(t.pack).toBe('studio');
     expect(t.accent).toBe('#112233');
-    expect(t.background).toBe(PACK_CANVAS.chowk);
+    expect(t.background).toBe(storeCanvas(t));
   });
 
-  it('keeps Khatario pack when colours are customised', () => {
-    const t = sanitizeStoreTheme({
-      preset: 'custom',
-      pack: 'khatario',
-      accent: '#e85d04',
-    });
-    expect(t.pack).toBe('khatario');
-    expect(t.accent).toBe('#e85d04');
-    expect(t.background).toBe(PACK_CANVAS.khatario);
+  it('keeps retired dark packs dark when no mode was saved', () => {
+    expect(sanitizeStoreTheme({ pack: 'aether' }).appearance_mode).toBe('dark');
+    expect(sanitizeStoreTheme({ pack: 'aether', appearance_mode: 'light' }).appearance_mode).toBe('light');
   });
 
-  it('keeps Atelier pack when colours are customised', () => {
-    const t = sanitizeStoreTheme({
-      preset: 'custom',
-      pack: 'atelier',
-      accent: '#3b2f2a',
-      background: '#f6f3ef',
-    });
-    expect(t.pack).toBe('atelier');
-    expect(t.accent).toBe('#3b2f2a');
-    expect(t.background).toBe(PACK_CANVAS.atelier);
+  it('keeps Khatario and Grocery packs when colours are customised', () => {
+    const k = sanitizeStoreTheme({ preset: 'custom', pack: 'khatario', accent: '#e85d04' });
+    expect(k.pack).toBe('khatario');
+    expect(k.accent).toBe('#e85d04');
+    expect(k.background).toBe(PACK_CANVAS.khatario);
+    expect(sanitizeStoreTheme({ preset: 'custom', pack: 'grocery' }).pack).toBe('grocery');
   });
 
   it('never paints the body with brand colour', () => {
     const t = sanitizeStoreTheme({
       preset: 'custom',
-      pack: 'classic',
+      pack: 'studio',
       accent: '#e11d48',
       background: '#22c55e',
     });
     expect(t.accent).toBe('#e11d48');
-    expect(t.background).toBe(PACK_CANVAS.classic);
-    expect(storeCanvas(t)).toBe(PACK_CANVAS.classic);
+    expect(t.background).toBe(PACK_CANVAS.studio);
+    expect(storeCanvas(t)).toBe(PACK_CANVAS.studio);
   });
 });
 
@@ -254,5 +199,85 @@ describe('chowkInkOn', () => {
   it('picks readable type on chilli and pale accents', () => {
     expect(chowkOnAccent('#e07030')).toBe('#f4efe6');
     expect(chowkOnAccent('#fbbf24')).toBe(CHOWK_INK);
+  });
+});
+
+describe('announcement settings', () => {
+  it('defaults to theme colours, centred, automatic allowed', () => {
+    const t = sanitizeStoreTheme({});
+    expect(t.announcement_bg).toBe('');
+    expect(t.announcement_fg).toBe('');
+    expect(t.announcement_align).toBe('center');
+    expect(t.announcement_auto).toBe(true);
+    expect(t.announcement_link).toBe('');
+  });
+
+  it('keeps valid colours, alignment and links; drops junk', () => {
+    const t = sanitizeStoreTheme({
+      announcement_bg: '#ABC',
+      announcement_fg: 'red',
+      announcement_align: 'right',
+      announcement_link: 'javascript:alert(1)',
+      announcement_auto: false,
+    });
+    expect(t.announcement_bg).toBe('#aabbcc');
+    expect(t.announcement_fg).toBe('');
+    expect(t.announcement_align).toBe('right');
+    expect(t.announcement_link).toBe('');
+    expect(t.announcement_auto).toBe(false);
+    expect(sanitizeStoreTheme({ announcement_align: 'middle' }).announcement_align).toBe('center');
+    expect(sanitizeStoreTheme({ announcement_link: '/about' }).announcement_link).toBe('/about');
+  });
+
+  it('prefers custom text over the automatic line', () => {
+    const base = sanitizeStoreTheme({});
+    expect(resolveAnnouncementText({ ...base, announcement: 'Diwali sale' }, 'auto line')).toBe('Diwali sale');
+    expect(resolveAnnouncementText(base, 'auto line')).toBe('auto line');
+    expect(resolveAnnouncementText({ ...base, announcement_auto: false }, 'auto line')).toBe('');
+  });
+});
+
+describe('contact form settings', () => {
+  it('is off by default with sensible copy', () => {
+    const f = sanitizeStoreTheme({}).contact_form;
+    expect(f.enabled).toBe(false);
+    expect(f.phone).toBe('required');
+    expect(f.email).toBe('optional');
+    expect(f.button).toBe('Send message');
+  });
+
+  it('keeps valid values and rejects bad modes', () => {
+    const f = sanitizeStoreTheme({
+      contact_form: { enabled: true, title: 'Ask us', phone: 'off', email: 'required', button: 'Go', success: 'Done' },
+    }).contact_form;
+    expect(f).toMatchObject({ enabled: true, title: 'Ask us', phone: 'off', email: 'required', button: 'Go', success: 'Done' });
+    expect(sanitizeStoreTheme({ contact_form: { phone: 'maybe' } }).contact_form.phone).toBe('required');
+  });
+
+  it('sanitizes layout and look options', () => {
+    const d = sanitizeStoreTheme({}).contact_form;
+    expect(d).toMatchObject({
+      layout: 'stacked', align: 'left', width: 'medium', style: 'card',
+      labels_inside: false, button_full: true, quick_links: false, topics: [],
+    });
+    const f = sanitizeStoreTheme({
+      contact_form: {
+        layout: 'text-form', align: 'center', width: 'wide', style: 'filled',
+        labels_inside: true, button_full: false, quick_links: true,
+        topics: [' Bulk order ', '', 'Bulk order', 'Order status', 42],
+      },
+    }).contact_form;
+    expect(f).toMatchObject({
+      layout: 'text-form', align: 'center', width: 'wide', style: 'filled',
+      labels_inside: true, button_full: false, quick_links: true,
+      topics: ['Bulk order', 'Order status', '42'],
+    });
+    const bad = sanitizeStoreTheme({ contact_form: { layout: 'grid', width: 'huge', style: 'neon', align: 'top' } }).contact_form;
+    expect(bad).toMatchObject({ layout: 'stacked', width: 'medium', style: 'card', align: 'left' });
+  });
+
+  it('always requires at least one way to reply', () => {
+    const f = sanitizeStoreTheme({ contact_form: { phone: 'off', email: 'optional' } }).contact_form;
+    expect(f.phone).toBe('required');
   });
 });

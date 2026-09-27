@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
-import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
+import { X, Plus, Minus, Trash2 } from 'lucide-react';
 import { useStore } from '@/lib/store/store-context';
-import { chowkInkOn, chowkOnAccent, isAtelierPack, isChowkPack, isEditorialPack, isPackChrome, sanitizeStoreTheme, storeCanvas } from '@/lib/store/store-theme';
+import { chowkInkOn, chowkOnAccent, isStudioPack, sanitizeStoreTheme, storeCanvas, storePackClass } from '@/lib/store/store-theme';
 import clsx from 'clsx';
 import { useEffect } from 'react';
 
@@ -16,10 +16,8 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
   const { cart, updateCartQuantity, cartTotal, store, cartCount } = useStore();
   const theme = sanitizeStoreTheme(store?.store_theme);
   const accent = theme.accent;
-  const chowk = isChowkPack(theme);
-  const atelier = isAtelierPack(theme);
-  const editorial = isEditorialPack(theme);
-  const pack = isPackChrome(theme);
+  const grocery = theme.pack === 'grocery';
+  const soft = grocery || isStudioPack(theme);
   const paper = storeCanvas(theme);
   const ink = chowkInkOn(paper);
   const hair = `1px solid color-mix(in srgb, ${ink} 12%, transparent)`;
@@ -38,36 +36,11 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
     };
   }, [open, onClose]);
 
-  if (!pack && !open) return null;
-
-  const classic = (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <ClassicCartBody
-          cart={cart}
-          cartCount={cartCount}
-          cartTotal={cartTotal}
-          store={store}
-          accent={accent}
-          updateCartQuantity={updateCartQuantity}
-          onClose={onClose}
-          onCheckout={onCheckout}
-        />
-      </div>
-    </div>
-  );
-
-  if (!pack) return classic;
-
   return (
     <div
       className={clsx(
         'fixed inset-0 z-50 flex justify-end',
-        chowk && 'store-chowk',
-        atelier && 'store-atelier',
-        theme.pack === 'khatario' && 'store-khatario',
-        editorial && (theme.pack === 'aether' ? 'store-aether' : 'store-noir'),
+        storePackClass(theme),
         !open && 'pointer-events-none',
       )}
       aria-hidden={!open}
@@ -82,23 +55,18 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
       <aside
         className={clsx(
           'chowk-drawer relative flex h-full w-full max-w-md flex-col pb-[env(safe-area-inset-bottom,0px)]',
-          atelier ? 'rounded-l-[1.75rem]' : 'rounded-l-3xl',
+          'rounded-l-3xl',
           open ? 'is-on translate-x-0' : 'translate-x-full',
         )}
-        style={{ backgroundColor: atelier || theme.pack === 'khatario' || editorial ? paper : '#fffdf9', color: ink }}
+        style={{ backgroundColor: paper, color: ink }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="chowk-bag-title"
       >
         <div className="flex items-center justify-between px-4 py-4" style={{ borderBottom: hair }}>
           <div>
-            <h2 id="chowk-bag-title" className={clsx(
-              'leading-none',
-              atelier && 'font-atelier-display text-[1.5rem]',
-              editorial && 'font-noir-display text-[1.5rem]',
-              !atelier && !editorial && 'text-[1.35rem] font-semibold',
-            )}>
-              {atelier ? 'Shopping Bag' : 'Your bag'}
+            <h2 id="chowk-bag-title" className="text-[1.35rem] font-semibold leading-none">
+              {soft ? 'Your cart' : 'Your bag'}
             </h2>
             <p className="mt-1 text-[12px]" style={{ opacity: 0.5 }}>
               {cartCount} {cartCount === 1 ? 'item' : 'items'}
@@ -116,7 +84,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
 
         {cart.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center px-4">
-            <p className={clsx('text-2xl', atelier && 'font-atelier-display', editorial && 'font-noir-display', !atelier && !editorial && 'font-chowk-display')}>Nothing in the bag</p>
+            <p className="text-2xl font-semibold">{soft ? 'Your cart is empty' : 'Nothing in the bag'}</p>
             <p className="mt-2 text-[13px]" style={{ opacity: 0.5 }}>
               Add from the shop.
             </p>
@@ -129,7 +97,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
                 <div key={key} className="flex items-start gap-3 py-3" style={{ borderBottom: hair }}>
                   {item.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.imageUrl} alt="" className={clsx('h-16 w-16 object-cover', atelier && 'rounded-xl')} />
+                    <img src={item.imageUrl} alt="" className={clsx('h-16 w-16 object-cover', soft && 'rounded-xl')} />
                   ) : (
                     <div className="flex h-16 w-16 items-center justify-center text-lg" style={{ opacity: 0.28 }}>
                       {item.name.slice(0, 1)}
@@ -141,10 +109,10 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
                       {item.variantName || item.unit}
                     </p>
                     <p className="mt-1 text-[14px] font-medium tabular-nums">
-                      ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                      â‚¹{(item.price * item.quantity).toLocaleString('en-IN')}
                     </p>
                   </div>
-                  <div className="flex items-center" style={{ border: hair }}>
+                  <div className={clsx('flex items-center', soft && 'rounded-xl')} style={{ border: hair }}>
                     <button
                       type="button"
                       onClick={() => updateCartQuantity(item.itemId, item.variantId, item.quantity - 1)}
@@ -176,13 +144,13 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
           <div className="px-4 py-4" style={{ borderTop: hair }}>
             {store?.store_min_order_amount && cartTotal < store.store_min_order_amount ? (
               <p className="mb-2 text-[12px]">
-                Minimum order ₹{store.store_min_order_amount.toLocaleString('en-IN')}. Add ₹
+                Minimum order â‚¹{store.store_min_order_amount.toLocaleString('en-IN')}. Add â‚¹
                 {(store.store_min_order_amount - cartTotal).toLocaleString('en-IN')} more.
               </p>
             ) : null}
             <div className="flex justify-between text-[13px]">
               <span style={{ opacity: 0.55 }}>Subtotal</span>
-              <span className="tabular-nums">₹{cartTotal.toLocaleString('en-IN')}</span>
+              <span className="tabular-nums">â‚¹{cartTotal.toLocaleString('en-IN')}</span>
             </div>
             <button
               type="button"
@@ -190,7 +158,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
               disabled={!!(store?.store_min_order_amount && cartTotal < store.store_min_order_amount)}
               className={clsx(
                 'mt-4 min-h-12 w-full py-3.5 text-center text-[14px] font-semibold disabled:opacity-40',
-                atelier ? 'rounded-2xl' : 'rounded-full',
+                soft ? 'rounded-2xl' : 'rounded-full',
               )}
               style={{
                 backgroundColor:
@@ -203,7 +171,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
                     : chowkOnAccent(accent),
               }}
             >
-              {atelier ? `Proceed to Checkout · ₹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
+              {soft ? `Proceed to Checkout Â· â‚¹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
             </button>
           </div>
         ) : null}
@@ -212,138 +180,3 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
   );
 }
 
-function ClassicCartBody({
-  cart,
-  cartCount,
-  cartTotal,
-  store,
-  accent,
-  updateCartQuantity,
-  onClose,
-  onCheckout,
-}: {
-  cart: ReturnType<typeof useStore>['cart'];
-  cartCount: number;
-  cartTotal: number;
-  store: ReturnType<typeof useStore>['store'];
-  accent: string;
-  updateCartQuantity: ReturnType<typeof useStore>['updateCartQuantity'];
-  onClose: () => void;
-  onCheckout?: () => void;
-}) {
-  return (
-    <>
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Your cart</h2>
-          <p className="text-xs text-gray-500">{cartCount} items</p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
-          aria-label="Close cart"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {cart.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4">
-          <ShoppingBag className="h-12 w-12 text-gray-300" />
-          <p className="text-sm text-gray-500">Your cart is empty</p>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <div className="divide-y divide-gray-100">
-            {cart.map((item) => {
-              const key = item.variantId ? `${item.itemId}::${item.variantId}` : item.itemId;
-              return (
-                <div key={key} className="flex items-start gap-3 py-3">
-                  {item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.imageUrl} alt="" className="h-14 w-14 rounded-lg object-cover" />
-                  ) : (
-                    <div className="h-14 w-14 rounded-lg bg-gray-100" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
-                    <p className="text-xs text-gray-500">{item.variantName || item.unit}</p>
-                    <p className="mt-1 text-sm font-semibold">
-                      ₹{(item.price * item.quantity).toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => updateCartQuantity(item.itemId, item.variantId, item.quantity - 1)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200"
-                    >
-                      {item.quantity === 1 ? (
-                        <Trash2 className="h-3 w-3 text-red-500" />
-                      ) : (
-                        <Minus className="h-3 w-3" />
-                      )}
-                    </button>
-                    <span className="w-6 text-center text-sm font-semibold">{item.quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => updateCartQuantity(item.itemId, item.variantId, item.quantity + 1)}
-                      disabled={item.quantity >= item.maxStock}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 disabled:opacity-40"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {cart.length > 0 ? (
-        <div className="border-t border-gray-200 px-4 py-4">
-          {store?.store_min_order_amount && cartTotal < store.store_min_order_amount ? (
-            <p className="mb-2 text-center text-xs text-amber-600">
-              Minimum order ₹{store.store_min_order_amount.toLocaleString('en-IN')}. Add ₹
-              {(store.store_min_order_amount - cartTotal).toLocaleString('en-IN')} more.
-            </p>
-          ) : null}
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
-              <span>₹{cartTotal.toLocaleString('en-IN')}</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Delivery</span>
-              <span>Calculated at checkout</span>
-            </div>
-            <div className="flex justify-between border-t border-gray-100 pt-2 font-bold text-gray-900">
-              <span>Total</span>
-              <span>₹{cartTotal.toLocaleString('en-IN')}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onCheckout}
-            disabled={!!(store?.store_min_order_amount && cartTotal < store.store_min_order_amount)}
-            className={clsx(
-              'mt-3 w-full rounded-xl py-3.5 text-center text-sm font-semibold text-white',
-              store?.store_min_order_amount && cartTotal < store.store_min_order_amount
-                ? 'cursor-not-allowed bg-gray-300'
-                : '',
-            )}
-            style={
-              store?.store_min_order_amount && cartTotal < store.store_min_order_amount
-                ? undefined
-                : { backgroundColor: accent }
-            }
-          >
-            Proceed to checkout
-          </button>
-        </div>
-      ) : null}
-    </>
-  );
-}

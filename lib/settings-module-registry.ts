@@ -163,6 +163,12 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             featureKey: 'online_store',
             searchKeywords: ['orders', 'store orders', 'online orders'],
           },
+          {
+            href: '/settings/online-store/enquiries',
+            label: 'Store Enquiries',
+            featureKey: 'online_store',
+            searchKeywords: ['enquiries', 'contact form', 'messages', 'inbox', 'leads'],
+          },
         ],
       },
       {

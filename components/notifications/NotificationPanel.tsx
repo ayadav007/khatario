@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Check, X, AlertCircle, CheckCircle, XCircle, Package, Clock, AlertTriangle, ClipboardList } from 'lucide-react';
+import { Bell, Check, X, AlertCircle, CheckCircle, XCircle, Package, Clock, AlertTriangle, ClipboardList, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
@@ -58,6 +58,8 @@ export function NotificationPanel() {
       }
     } else if (notification.type === 'todo_reminder') {
       router.push('/tools/todo');
+    } else if (notification.type === 'store_enquiry') {
+      router.push('/settings/online-store/enquiries');
     }
     
     setIsOpen(false);
@@ -79,6 +81,8 @@ export function NotificationPanel() {
         return <AlertTriangle className="w-5 h-5 text-red-500" />;
       case 'todo_reminder':
         return <ClipboardList className="w-5 h-5 text-primary-500" />;
+      case 'store_enquiry':
+        return <MessageSquare className="w-5 h-5 text-primary-500" />;
       default:
         return <Bell className="w-5 h-5 text-gray-500" />;
     }
