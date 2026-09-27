@@ -3,6 +3,7 @@ import { processExpiredSubscriptions, processExpiredModuleSubscriptions } from '
 import { sendPendingNotifications } from '@/lib/subscription/notifications';
 import { queryRows, query } from '@/lib/db';
 import { assertCronAuthorized } from '@/lib/cron-auth';
+import { getEntitlementPlanId } from '@/lib/subscription/effective-plan';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,11 +21,11 @@ async function runSubscriptionCron() {
   let snapshotsInserted = 0;
 
   for (const { business_id } of activeBusinesses) {
-    const sub = await queryRows<{ plan_id: string }>(
-      `SELECT plan_id FROM business_subscriptions WHERE business_id = $1 LIMIT 1`,
+    const sub = await queryRows<{ plan_id: string; status: string; trial_end_date: string | null }>(
+      `SELECT plan_id, status, trial_end_date::text FROM business_subscriptions WHERE business_id = $1 LIMIT 1`,
       [business_id],
     );
-    const planId = sub[0]?.plan_id ?? 'free';
+    const planId = sub[0] ? getEntitlementPlanId(sub[0]) : 'free';
 
     const counts = await queryRows<{ metric: string; count: string }>(
       `SELECT 'invoices' AS metric, COUNT(*)::text AS count FROM invoices WHERE business_id = $1

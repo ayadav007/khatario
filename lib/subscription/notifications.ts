@@ -10,6 +10,7 @@ import { query, queryOne, queryRows } from '@/lib/db';
 import { sendPlatformEmail } from '@/lib/platform-email';
 import { getBusinessSubscription, checkLimit } from '@/lib/subscription';
 import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
+import { HR_TRIAL_PLAN_ID, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ type NotificationType =
   | 'trial_expiring_3'
   | 'trial_expiring_1'
   | 'trial_expired'
+  | 'grace_expiring_3'
   | 'grace_expired'
   | 'cancellation_confirmed'
   | 'usage_limit_80'
@@ -222,8 +224,8 @@ export async function sendTrialExpiringEmail(
       ${urgencyNote}
       <div class="highlight">
         <strong>What happens next?</strong><br/>
-        After your trial ends you will have a 7-day grace period during which your data remains intact, but some features may be restricted.
-        To avoid any interruption, upgrade to a paid plan today.
+        When your trial ends, your account moves to the Free plan and premium features switch off. Your data stays safe.
+        You can extend the trial once by ${TRIAL_EXTENSION_DAYS} days from the app, or upgrade today to keep everything running.
       </div>
       <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription">Upgrade Now</a></p>
       <p>If you have any questions, reply to this email and we'll be happy to help.</p>
@@ -233,7 +235,7 @@ export async function sendTrialExpiringEmail(
     const text = [
       `Hi,`,
       `Your free trial of Khatario for ${recipients.businessName} will expire in ${daysRemaining} ${dayWord}.`,
-      `After your trial ends you will have a 7-day grace period. To avoid interruption, upgrade today.`,
+      `When your trial ends, your account moves to the Free plan and premium features switch off. Your data stays safe. You can extend once by ${TRIAL_EXTENSION_DAYS} days from the app, or upgrade today.`,
       `Upgrade: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/settings/subscription`,
       `Best regards, The Khatario Team`,
     ].join('\n\n');
@@ -265,7 +267,7 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
       <p>The free trial for <strong>${recipients.businessName}</strong> on Khatario has ended.</p>
       <div class="highlight">
         <strong>One-time extension available</strong><br/>
-        Log in to Khatario to get 7 more days of full access (one time only), or continue on the Free plan.
+        Log in to Khatario to get ${TRIAL_EXTENSION_DAYS} more days of full access (one time only), or continue on the Free plan.
         Your data remains safe either way.
       </div>
       <p><a class="cta" href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard">Open Khatario</a></p>
@@ -276,7 +278,7 @@ export async function sendTrialExpiredEmail(businessId: string): Promise<void> {
     const text = [
       `Hi,`,
       `The free trial for ${recipients.businessName} on Khatario has ended.`,
-      `Log in to get a one-time 7-day extension or continue on the Free plan.`,
+      `Log in to get a one-time ${TRIAL_EXTENSION_DAYS}-day extension or continue on the Free plan.`,
       `Open app: ${process.env.NEXT_PUBLIC_APP_URL || 'https://app.khatario.com'}/dashboard`,
       `Best regards, The Khatario Team`,
     ].join('\n\n');
@@ -489,8 +491,9 @@ export async function sendUsageLimitWarningEmail(
  *
  * Checks performed:
  *  1. Trials ending in 7 / 3 / 1 day(s)
- *  2. Grace period ending in 3 days
- *  3. Usage at 80 %+ for any tracked limit
+ *  2. Trial ended yesterday (extend-or-Free reminder)
+ *  3. Paid renewal grace period ending in 3 days
+ *  4. Usage at 80 %+ for any tracked limit
  *
  * Already-sent notifications (same type + business + today) are skipped.
  *
@@ -510,7 +513,9 @@ export async function sendPendingNotifications(): Promise<number> {
        FROM business_subscriptions bs
        WHERE bs.status = 'trial'
          AND bs.trial_end_date IS NOT NULL
-         AND (bs.trial_end_date::date - CURRENT_DATE) IN (7, 3, 1)`,
+         AND (bs.trial_end_date::date - CURRENT_DATE) IN (7, 3, 1)
+         AND NOT (COALESCE(bs.trial_extension_granted, false)
+                  AND bs.trial_end_date::date - CURRENT_DATE = 7)`,
     );
 
     for (const row of trialExpiring) {
@@ -525,18 +530,35 @@ export async function sendPendingNotifications(): Promise<number> {
       sentCount++;
     }
 
-    // ── 2. Grace period ending in 3 days ────────────────────────────────────
-    // Grace = trial_end_date + 7 days.  3 days before that = trial_end_date + 4 days.
+    // ── 2. Trial ended yesterday (first expiry, before any extension) ──────
+    const trialJustExpired = await queryRows<{ business_id: string }>(
+      `SELECT bs.business_id
+       FROM business_subscriptions bs
+       WHERE bs.plan_id IN ('trial', $1)
+         AND bs.status = 'trial'
+         AND bs.trial_end_date::date = CURRENT_DATE - 1
+         AND COALESCE(bs.trial_extension_granted, false) = false
+         AND bs.trial_extension_declined_at IS NULL`,
+      [HR_TRIAL_PLAN_ID],
+    );
+
+    for (const row of trialJustExpired) {
+      if (await wasAlreadySentToday(row.business_id, 'trial_expired')) continue;
+      await sendTrialExpiredEmail(row.business_id);
+      sentCount++;
+    }
+
+    // ── 3. Paid renewal grace period ending in 3 days ───────────────────────
     const graceEnding = await queryRows<{ business_id: string }>(
       `SELECT bs.business_id
        FROM business_subscriptions bs
-       WHERE bs.status = 'expired'
-         AND bs.trial_end_date IS NOT NULL
-         AND (bs.trial_end_date::date + INTERVAL '4 days')::date = CURRENT_DATE`,
+       WHERE bs.status = 'active'
+         AND bs.grace_period_end IS NOT NULL
+         AND bs.grace_period_end::date - CURRENT_DATE = 3`,
     );
 
     for (const row of graceEnding) {
-      const notifType = 'trial_expiring_3' as NotificationType;
+      const notifType: NotificationType = 'grace_expiring_3';
       if (await wasAlreadySentToday(row.business_id, notifType)) continue;
 
       const recipients = await getRecipients(row.business_id);
@@ -568,7 +590,7 @@ export async function sendPendingNotifications(): Promise<number> {
       }
     }
 
-    // ── 3. Usage at 80 %+ ──────────────────────────────────────────────────
+    // ── 4. Usage at 80 %+ ──────────────────────────────────────────────────
     const activeBusinesses = await queryRows<{ business_id: string }>(
       `SELECT DISTINCT business_id
        FROM business_subscriptions

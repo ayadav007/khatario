@@ -9,6 +9,7 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { logAdminAction } from '@/lib/platform-auth';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
 import { isTrialPlanId } from '@/lib/subscription/trial-plan';
+import { SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { getBusinessPlatformRecipient, notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 
@@ -155,7 +156,7 @@ function normalizeAdminSubscriptionFields(
     }
     if (!trialEnd) {
       const end = new Date();
-      end.setDate(end.getDate() + 30);
+      end.setDate(end.getDate() + SIGNUP_TRIAL_DAYS);
       trialEnd = end.toISOString().split('T')[0];
     }
     return {
@@ -254,6 +255,10 @@ export async function adminUpdateSubscription(params: {
 
   if (!row) throw new Error('Failed to update subscription');
 
+  const { syncPrimaryModuleFromLegacySubscription } = await import(
+    '@/lib/subscription/sync-legacy-subscription'
+  );
+  await syncPrimaryModuleFromLegacySubscription(params.businessId);
   clearSubscriptionCache(params.businessId);
 
   await logSubscriptionEvent(params.businessId, 'admin_updated', {

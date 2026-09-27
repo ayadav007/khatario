@@ -18,7 +18,13 @@ import {
   getPostTrialFreePlanId,
   HR_TRIAL_PLAN_ID,
   normalizeProductLine,
+  SIGNUP_TRIAL_DAYS,
 } from '@/lib/product-lines';
+import {
+  isLocalCalendarOnOrBeforeToday,
+  parseLocalDateOnly,
+  startOfLocalToday,
+} from '@/lib/subscription/date-only';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -389,13 +395,12 @@ export async function cancelScheduledDowngrade(
 // Trial expiry
 // ---------------------------------------------------------------------------
 
-const TRIAL_DAYS = 30;
 const GRACE_DAYS = 7;
 
 /**
  * Check whether a business's trial has expired.
  *
- * Trial duration is {@link TRIAL_DAYS} days from signup. After expiry the tenant may
+ * Trial duration is {@link SIGNUP_TRIAL_DAYS} days from signup. After expiry the tenant may
  * use a one-time in-app extension ({@link TRIAL_EXTENSION_DAYS} days). Until they extend
  * or choose Free, entitlements follow the free plan while the extend modal is offered.
  *
@@ -416,22 +421,20 @@ export async function checkTrialExpiry(
     };
   }
 
-  const trialEnd = subscription.trial_end_date
-    ? new Date(subscription.trial_end_date)
-    : new Date(
-        new Date(subscription.start_date).getTime() +
-          TRIAL_DAYS * 24 * 60 * 60 * 1000,
-      );
+  // Calendar dates, same rule as effective-plan: the end date is the last full trial day.
+  let trialEnd = parseLocalDateOnly(subscription.trial_end_date);
+  if (!trialEnd) {
+    const start = parseLocalDateOnly(subscription.start_date) ?? startOfLocalToday();
+    trialEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate() + SIGNUP_TRIAL_DAYS);
+  }
 
-  const now = new Date();
-  const msRemaining = trialEnd.getTime() - now.getTime();
-  const daysRemaining = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+  const isExpired = !isLocalCalendarOnOrBeforeToday(trialEnd);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysRemaining = isExpired
+    ? 0
+    : Math.round((trialEnd.getTime() - startOfLocalToday().getTime()) / dayMs) + 1;
 
-  const isExpired = now > trialEnd;
-  const graceEndsAt = null;
-  const isInGracePeriod = false;
-
-  return { isExpired, daysRemaining, graceEndsAt, isInGracePeriod };
+  return { isExpired, daysRemaining, graceEndsAt: null, isInGracePeriod: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +477,10 @@ export async function moveSubscriptionToFree(
     to_plan_id: toPlanId,
   });
 
+  const { syncPrimaryModuleFromLegacySubscription } = await import(
+    '@/lib/subscription/sync-legacy-subscription'
+  );
+  await syncPrimaryModuleFromLegacySubscription(businessId);
   clearSubscriptionCache(businessId);
 }
 

@@ -1,8 +1,13 @@
 import './helpers/mock-deps';
 
-jest.mock('@/lib/subscription/feature-access', () => ({
-  getAllFeatureAccessForBusiness: jest.fn().mockResolvedValue(new Set(['items'])),
-}));
+jest.mock('@/lib/subscription/feature-access', () => {
+  const actual = jest.requireActual('@/lib/subscription/feature-access');
+  return {
+    ...actual,
+    getAllFeatureAccessForBusiness: jest.fn().mockResolvedValue(new Set(['items'])),
+    assertFeatureAccess: jest.fn().mockResolvedValue(undefined),
+  };
+});
 jest.mock('@/lib/whatsapp', () => ({
   getWhatsAppStatus: jest.fn().mockResolvedValue({ connected: true }),
 }));
@@ -20,8 +25,10 @@ import {
 } from './helpers/mock-deps';
 import { readJsonResponse } from './helpers/response';
 import { query } from '@/lib/db';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
+const mockAssertFeatureAccess = assertFeatureAccess as jest.MockedFunction<typeof assertFeatureAccess>;
 
 describe('Core tenant isolation routes', () => {
   beforeEach(() => {
@@ -93,8 +100,10 @@ describe('WhatsApp premium route gates', () => {
     expect(String(json.error)).toMatch(/session/i);
   });
 
-  it('/api/whatsapp/status returns 403 when WhatsApp addon is missing', async () => {
-    mockHasWhatsAppBotAddon.mockResolvedValue(false);
+  it('/api/whatsapp/status returns 403 when the plan lacks settings_whatsapp', async () => {
+    mockAssertFeatureAccess.mockRejectedValueOnce(
+      new FeatureAccessDeniedError('settings_whatsapp', BUSINESS_A, 'FEATURE_NOT_ENABLED'),
+    );
     const req = buildBusinessARequest('/api/whatsapp/status', {
       query: { business_id: BUSINESS_A },
     });
@@ -102,6 +111,17 @@ describe('WhatsApp premium route gates', () => {
     const { status, json } = await readJsonResponse(res);
 
     expect(status).toBe(403);
-    expect(String(json.error)).toMatch(/addon/i);
+    expect(json.feature).toBe('settings_whatsapp');
+    expect(String(json.error)).toMatch(/not available on your plan/i);
+  });
+
+  it('/api/whatsapp/status does not require the WhatsApp Bot addon', async () => {
+    mockHasWhatsAppBotAddon.mockResolvedValue(false);
+    const req = buildBusinessARequest('/api/whatsapp/status', {
+      query: { business_id: BUSINESS_A },
+    });
+    const res = await whatsappStatusGET(req);
+
+    expect(res.status).toBe(200);
   });
 });

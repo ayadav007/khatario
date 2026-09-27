@@ -27,14 +27,25 @@ export async function GET(request: NextRequest) {
     `);
     const activeBusinesses = parseInt(activeBusinessesResult?.count || '0');
 
-    // Total subscriptions by plan
+    // Total subscriptions by plan. A calendar-expired trial the owner has not acted on yet
+    // is counted under its free plan, matching what the product enforces.
     const subscriptionsByPlan = await db.queryRows(`
+      WITH effective AS (
+        SELECT bs.id,
+               CASE
+                 WHEN bs.plan_id = 'trial' AND bs.trial_end_date < CURRENT_DATE THEN 'free'
+                 WHEN bs.plan_id = 'hr_trial' AND bs.trial_end_date < CURRENT_DATE THEN 'hr_free'
+                 ELSE bs.plan_id
+               END AS plan_id
+        FROM business_subscriptions bs
+        WHERE bs.status IN ('active', 'trial')
+      )
       SELECT 
         sp.display_name as plan_name,
         sp.id as plan_id,
-        COUNT(bs.id) as count
+        COUNT(e.id) as count
       FROM subscription_plans sp
-      LEFT JOIN business_subscriptions bs ON sp.id = bs.plan_id AND bs.status IN ('active', 'trial')
+      LEFT JOIN effective e ON sp.id = e.plan_id
       GROUP BY sp.id, sp.display_name, sp.sort_order
       ORDER BY sp.sort_order
     `);
@@ -45,8 +56,8 @@ export async function GET(request: NextRequest) {
         SUM(sp.price_monthly) as mrr
       FROM business_subscriptions bs
       JOIN subscription_plans sp ON bs.plan_id = sp.id
-      WHERE bs.status IN ('active', 'trial')
-        AND bs.plan_id NOT IN ('free', 'trial')
+      WHERE bs.status = 'active'
+        AND bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial')
     `);
     const mrr = parseFloat(mrrResult?.mrr || '0');
 
@@ -75,12 +86,12 @@ export async function GET(request: NextRequest) {
     `);
     const newBusinessesThisMonth = parseInt(newBusinessesResult?.count || '0');
 
-    // Trial conversions (businesses that upgraded from free)
+    // Trial conversions: businesses now on a paid plan (Connect is free, so it is excluded)
     const trialConversionsResult = await db.queryOne(`
       SELECT COUNT(DISTINCT bs.business_id) as count
       FROM business_subscriptions bs
-      WHERE bs.plan_id NOT IN ('free', 'trial')
-        AND bs.status IN ('active', 'trial')
+      WHERE bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial', 'connect')
+        AND bs.status = 'active'
     `);
     const trialConversions = parseInt(trialConversionsResult?.count || '0');
 

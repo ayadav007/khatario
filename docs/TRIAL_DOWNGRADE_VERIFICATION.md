@@ -6,6 +6,22 @@
 
 ---
 
+## Update — 2026-09-27
+
+The findings below describe the code as of 2026-06-06. Since then the expired-trial "limbo" state behaves like Free:
+
+- `requireOperationalSubscription()` no longer throws `TRIAL_EXPIRED`. An expired, undecided trial passes the operational gate, and Free-plan features and limits apply through `getEntitlementPlanId()`. Paid rows inside their grace period also pass.
+- `assertFeatureAccess()` no longer calls `checkTrialExpiry()`; expired trials resolve to the Free plan matrix instead of `SUBSCRIPTION_EXPIRED`.
+- `checkTrialExpiry()` uses local calendar dates: `trial_end_date` is the last full trial day.
+- Trial length lives in `lib/product-lines.ts` (`SIGNUP_TRIAL_DAYS = 30`, `TRIAL_EXTENSION_DAYS = 7`); `TRIAL_DAYS` in `lifecycle.ts` was removed.
+- Extend, decline, and admin plan edits mirror the legacy row into `business_module_subscriptions` (`syncPrimaryModuleFromLegacySubscription`).
+- The daily cron emails the owner the day after the trial ends (extend or continue on Free).
+- `moveSubscriptionToFree()` assigns the product-line free plan (`free` or `hr_free`).
+
+State A in Phase 5 is therefore now: creates work within Free limits and Free features; premium modules not on Free return 403 `FEATURE_NOT_IN_PLAN`.
+
+---
+
 ## Executive Summary
 
 | Question | Answer |

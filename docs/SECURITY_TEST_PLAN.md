@@ -42,7 +42,7 @@ tests/security/
 | 1 | No token | No `x-authenticated-*` headers | **401** |
 | 2 | Free plan | `status: active`, `plan_id: free` | **Pass** (200 / not 403) |
 | 3 | Expired subscription | `getBusinessSubscription → null` | **403** `NO_SUBSCRIPTION` |
-| 4 | Expired trial | `trial` + `checkTrialExpiry.isExpired` | **403** `TRIAL_EXPIRED` |
+| 4 | Expired trial | `status: trial`, past `trial_end_date` | **Pass** (Free entitlements apply downstream) |
 | 5 | Cancelled subscription | `status: cancelled` | **403** `SUBSCRIPTION_CANCELLED` |
 | 6 | Active subscription | `status: active`, `plan_id: pro` | **Pass** |
 
@@ -86,7 +86,7 @@ WhatsApp premium routes use `withWhatsAppPremiumApi`; extend matrix by duplicati
 |------------|---------------|
 | `getBusinessSubscription` | Driven by `applySubscriptionScenario()` |
 | `isBusinessPlatformSuspended` | `true` for suspended scenario |
-| `checkTrialExpiry` | Expired for trial scenario |
+| `checkTrialExpiry` | Mocked for legacy callers; the operational gate no longer uses it |
 | `assertSessionValidForCookieAuth` | Always passes |
 | `authorize` / `enforceAccess` | Resolve (RBAC not under test) |
 | `queryRows` / `queryOne` / `getPool` | Empty / stub rows |

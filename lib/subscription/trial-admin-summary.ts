@@ -4,11 +4,13 @@
 
 import { queryOne, queryRows } from '@/lib/db';
 import { parseLocalDateOnly, startOfLocalToday } from '@/lib/subscription/date-only';
-import { TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
-import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import {
+  isProductLineTrialPlanId,
+  SIGNUP_TRIAL_DAYS,
+  TRIAL_EXTENSION_DAYS,
+} from '@/lib/product-lines';
 
-/** Must match {@link TRIAL_DAYS} in lifecycle.ts */
-export const TRIAL_SIGNUP_DAYS = 30;
+export const TRIAL_SIGNUP_DAYS = SIGNUP_TRIAL_DAYS;
 
 export interface SubscriptionEventRow {
   id: string;
@@ -103,14 +105,15 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
   const startDate = sub.start_date;
   const estimatedOriginalEnd = startDate ? addDaysToDateOnly(startDate, TRIAL_SIGNUP_DAYS) : null;
 
+  const onTrialPlan = isProductLineTrialPlanId(sub.plan_id);
   const trialEnd = parseLocalDateOnly(sub.trial_end_date);
   const isTrialCalendarExpired =
-    sub.plan_id === TRIAL_PLAN_ID &&
+    onTrialPlan &&
     trialEnd != null &&
     trialEnd.getTime() < startOfLocalToday().getTime();
 
   const extensionOfferActive =
-    sub.plan_id === TRIAL_PLAN_ID &&
+    onTrialPlan &&
     !sub.trial_extension_granted &&
     !sub.trial_extension_declined_at &&
     isTrialCalendarExpired;
@@ -121,7 +124,7 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
     extensionOfferNote = `Extension accepted on ${new Date(extensionEvent.created_at).toLocaleString('en-IN')}. Original trial likely ended on or before that date.`;
   } else if (sub.trial_extension_declined_at) {
     extensionOfferNote = `Tenant chose Free on ${new Date(sub.trial_extension_declined_at).toLocaleString('en-IN')}.`;
-  } else if (!isTrialCalendarExpired && sub.plan_id === TRIAL_PLAN_ID) {
+  } else if (!isTrialCalendarExpired && onTrialPlan) {
     extensionOfferNote = 'Trial is still active — extend popup will appear after the trial end date.';
   }
 

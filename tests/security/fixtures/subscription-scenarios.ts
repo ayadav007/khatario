@@ -65,9 +65,8 @@ export const SUBSCRIPTION_SCENARIOS: SubscriptionScenarioConfig[] = [
   },
   {
     id: 'expiredTrial',
-    label: 'Expired trial calendar',
-    expectedGateStatus: 403,
-    expectedCode: 'TRIAL_EXPIRED',
+    label: 'Expired trial (falls back to Free entitlements)',
+    expectedGateStatus: 200,
     subscription: baseSubscription({
       status: 'trial',
       plan_id: 'trial',

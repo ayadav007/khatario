@@ -5,6 +5,7 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
 import {
   computeSubscriptionPeriodEnd,
+  unusedTrialDays,
   type BillingCycle,
 } from '@/lib/subscription/apply-plan-change';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
@@ -81,16 +82,18 @@ export async function applyModuleSubscriptionPlanChange(params: {
 }): Promise<ApplyModulePlanChangeResult> {
   await assertPlanMatchesModule(params.planId, params.moduleKey);
 
-  const startDate = new Date().toISOString().split('T')[0];
-  const endDate = computeSubscriptionPeriodEnd(params.billingCycle);
   const paymentMethod = params.paymentMethod ?? 'manual';
   const paymentReference = params.paymentReference?.trim() || null;
 
-  const existing = await queryOne<{ plan_id: string }>(
-    `SELECT plan_id FROM business_module_subscriptions
+  const existing = await queryOne<{ plan_id: string; trial_end_date: string | null }>(
+    `SELECT plan_id, trial_end_date::text FROM business_module_subscriptions
      WHERE business_id = $1 AND module_key = $2`,
     [params.businessId, params.moduleKey],
   );
+
+  const trialDaysCarried = unusedTrialDays(existing);
+  const startDate = new Date().toISOString().split('T')[0];
+  const endDate = computeSubscriptionPeriodEnd(params.billingCycle, trialDaysCarried);
 
   const row = await queryOne<ApplyModulePlanChangeResult>(
     `INSERT INTO business_module_subscriptions (
@@ -145,6 +148,7 @@ export async function applyModuleSubscriptionPlanChange(params: {
     from_plan_id: existing?.plan_id,
     billing_cycle: params.billingCycle,
     payment_method: paymentMethod,
+    trial_days_carried: trialDaysCarried,
   });
 
   return row;

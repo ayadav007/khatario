@@ -28,9 +28,10 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
     'Free';
 
   const showTrialBadge =
-    subscription?.show_trial_badge === true ||
-    (subscription?.status === 'trial' &&
-      subscription?.show_trial_badge !== false);
+    (subscription?.show_trial_badge === true ||
+      (subscription?.status === 'trial' &&
+        subscription?.show_trial_badge !== false)) &&
+    !/\btrial\b/i.test(planDisplayName);
 
   const planConfig: Record<
     string,

@@ -48,6 +48,12 @@ export const LANDING_HERO_COPY: Record<
   },
 };
 
+/** Length of the signup trial for Billing and HR (days). */
+export const SIGNUP_TRIAL_DAYS = 30;
+
+/** One-time self-serve extension offered after the trial ends (days). */
+export const TRIAL_EXTENSION_DAYS = 7;
+
 export const HR_TRIAL_PLAN_ID = 'hr_trial' as const;
 export const HR_FREE_PLAN_ID = 'hr_free' as const;
 export const CONNECT_PLAN_ID = 'connect' as const;
@@ -93,7 +99,7 @@ export function getSignupPlanConfig(productLine: ProductLine): SignupPlanConfig 
         productLine: 'hr',
         planId: HR_TRIAL_PLAN_ID,
         status: 'trial',
-        trialDays: 30,
+        trialDays: SIGNUP_TRIAL_DAYS,
         postTrialPlanId: HR_FREE_PLAN_ID,
       };
     case 'connect':
@@ -109,7 +115,7 @@ export function getSignupPlanConfig(productLine: ProductLine): SignupPlanConfig 
         productLine: 'billing',
         planId: 'trial',
         status: 'trial',
-        trialDays: 30,
+        trialDays: SIGNUP_TRIAL_DAYS,
         postTrialPlanId: 'free',
       };
   }

@@ -6,6 +6,7 @@
 import type { PlatformModule } from '@/lib/platform-modules';
 import { FeatureKeys, normalizeFeatureKey } from '@/lib/featureKeys';
 import type { LimitCheckType } from '@/lib/subscription/limit-registry';
+import { SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 
 function resolveRegistryFeatureId(canonicalKey: string): string {
   const registryMapping: Record<string, string> = {
@@ -105,14 +106,14 @@ export const MODULE_ADD_CONFIG: Record<
 > = {
   billing: {
     trialPlanId: 'trial',
-    trialDays: 30,
+    trialDays: SIGNUP_TRIAL_DAYS,
     status: 'trial',
     label: 'Billing',
     description: 'GST invoicing, inventory, purchases, and reports.',
   },
   hr: {
     trialPlanId: 'hr_trial',
-    trialDays: 30,
+    trialDays: SIGNUP_TRIAL_DAYS,
     status: 'trial',
     label: 'HR',
     description: 'Employees, attendance, payroll, and leave.',

@@ -5,7 +5,8 @@ import {
   isSubscriptionOperationalStatus,
   type BusinessSubscription,
 } from '@/lib/subscription';
-import { checkTrialExpiry } from '@/lib/subscription/lifecycle';
+import { isPaidGracePeriodActive } from '@/lib/subscription/effective-plan';
+import { isLocalCalendarOnOrBeforeToday, parseLocalDateOnly } from '@/lib/subscription/date-only';
 import type { OperationalSubscriptionDeniedCode } from './types';
 
 export class OperationalSubscriptionError extends Error {
@@ -22,9 +23,10 @@ export class OperationalSubscriptionError extends Error {
 /**
  * Ensures a business may use operational APIs.
  *
- * Allows: `active`, non-expired `trial`.
- * Denies: missing subscription, `expired`, `cancelled`, platform-suspended,
- * calendar-expired trial, past `end_date`.
+ * Allows: `active` (including paid grace after `end_date`) and `trial`. A calendar-expired
+ * trial stays usable on Free-plan entitlements until the owner extends or picks Free.
+ * Denies: missing subscription, `expired`, `cancelled`, platform-suspended, past `end_date`
+ * with no grace left.
  *
  * Throws {@link OperationalSubscriptionError} on denial; returns the subscription row on success.
  */
@@ -70,22 +72,13 @@ export async function requireOperationalSubscription(
     );
   }
 
-  if (subscription.status === 'trial') {
-    const trialInfo = await checkTrialExpiry(businessId);
-    if (trialInfo.isExpired && !trialInfo.isInGracePeriod) {
-      throw new OperationalSubscriptionError(
-        403,
-        'TRIAL_EXPIRED',
-        'Trial period has expired.',
-      );
-    }
-  }
-
-  if (subscription.end_date) {
-    const endDate = new Date(subscription.end_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (endDate < today) {
+  if (subscription.end_date && subscription.status !== 'trial') {
+    const endDate = parseLocalDateOnly(subscription.end_date);
+    if (
+      endDate &&
+      !isLocalCalendarOnOrBeforeToday(endDate) &&
+      !isPaidGracePeriodActive(subscription)
+    ) {
       throw new OperationalSubscriptionError(
         403,
         'SUBSCRIPTION_EXPIRED',

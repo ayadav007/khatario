@@ -11,9 +11,10 @@ import {
   parseLocalDateOnly,
 } from '@/lib/subscription/date-only';
 import { logSubscriptionEvent, moveSubscriptionToFree } from '@/lib/subscription/lifecycle';
-import { isProductLineTrialPlanId } from '@/lib/product-lines';
+import { isProductLineTrialPlanId, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
+import { syncPrimaryModuleFromLegacySubscription } from '@/lib/subscription/sync-legacy-subscription';
 
-export const TRIAL_EXTENSION_DAYS = 7;
+export { TRIAL_EXTENSION_DAYS };
 
 export interface TrialExtensionFields {
   plan_id: string;
@@ -97,6 +98,7 @@ export async function grantSelfServeTrialExtension(businessId: string): Promise<
     trial_end_date: newTrialEnd,
   });
 
+  await syncPrimaryModuleFromLegacySubscription(businessId);
   clearSubscriptionCache(businessId);
   return newTrialEnd;
 }

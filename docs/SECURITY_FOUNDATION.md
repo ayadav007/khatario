@@ -35,14 +35,15 @@ Ensures a business may use operational product APIs.
 | Status `expired` | 403 | `SUBSCRIPTION_EXPIRED` |
 | Status `cancelled` | 403 | `SUBSCRIPTION_CANCELLED` |
 | Other non-operational status | 403 | `SUBSCRIPTION_INACTIVE` |
-| Calendar-expired trial | 403 | `TRIAL_EXPIRED` |
+| Calendar-expired trial | Pass | Free-plan features and limits apply (entitlement layer) |
+| Past `end_date`, inside paid grace | Pass | — |
 | Past `end_date` | 403 | `SUBSCRIPTION_EXPIRED` |
 
 ### Composes (does not replace)
 
 - `isBusinessPlatformSuspended()` — `lib/admin-business-ops.ts`
 - `getBusinessSubscription()` / `isSubscriptionOperationalStatus()` — `lib/subscription.ts`
-- `checkTrialExpiry()` — `lib/subscription/lifecycle.ts`
+- `isPaidGracePeriodActive()` and the local-date helpers in `lib/subscription/date-only.ts`
 
 Logic aligns with `enforceAccess()` and `assertFeatureAccess()` subscription checks, plus the platform-suspend check used at login.
 

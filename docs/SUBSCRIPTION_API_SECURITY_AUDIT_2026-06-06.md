@@ -63,7 +63,7 @@ Additional exceptions:
 | `enforceAccess` | `lib/enforce-access.ts:53` | Subscription status + optional feature + `checkLimit` + branch |
 | `checkLimit` / `checkLimitInTransaction` | `lib/subscription.ts` | Usage caps (invoices, customers, items, users, WhatsApp) |
 | `isSubscriptionOperationalStatus` | `lib/subscription.ts:64` | `active` \| `trial` only |
-| `checkTrialExpiry` | `lib/subscription/lifecycle.ts` | Trial grace handling inside `assertFeatureAccess` |
+| `checkTrialExpiry` | `lib/subscription/lifecycle.ts` | Trial days-remaining info (no longer used by `assertFeatureAccess` or the operational gate as of 2026-09-27) |
 | `getHrRegistryFeatureForAuthModule` | `lib/hr-plan-features.ts` | HR modules get subscription check **inside** `authorize()` only |
 | `hasWhatsAppBotAddon` | `lib/subscription.ts` | WhatsApp addon gate (used in WhatsApp routes + feature-access) |
 
