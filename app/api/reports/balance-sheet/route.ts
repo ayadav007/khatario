@@ -191,7 +191,8 @@ export async function GET(request: NextRequest) {
       
       if (accessibleBranchIds.length > 0) {
         // User has branch restrictions - filter by their accessible branches
-        branchFilter = 'AND lel.branch_id = ANY($4::uuid[])';
+        // Business-level lines (opening balances, opening stock) carry no branch.
+        branchFilter = 'AND (lel.branch_id = ANY($4::uuid[]) OR lel.branch_id IS NULL)';
         branchFilterParams = [accessibleBranchIds];
       } else {
         // Admin - no branch filter (consolidated view)

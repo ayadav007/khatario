@@ -677,7 +677,7 @@ export class GSTR1Generator {
           cn.igst_total                   AS igst_amount,
           0::numeric                      AS cess_amount,
           cn.place_of_supply_state_code   AS place_of_supply,
-          cn.original_invoice_date,
+          COALESCE(cn.original_invoice_date, i.invoice_date) AS original_invoice_date,
           cn.reason,
           i.invoice_number                AS original_invoice_number,
           i.id                            AS linked_invoice_id,
@@ -719,7 +719,7 @@ export class GSTR1Generator {
           dn.igst_total                   AS igst_amount,
           0::numeric                      AS cess_amount,
           dn.place_of_supply_state_code   AS place_of_supply,
-          dn.original_invoice_date,
+          COALESCE(dn.original_invoice_date, i.invoice_date) AS original_invoice_date,
           dn.reason,
           i.invoice_number                AS original_invoice_number,
           i.id                            AS linked_invoice_id,
@@ -848,6 +848,50 @@ export class GSTR1Generator {
         b2csRow.sgst_amount += sign * entry.sgst_amount;
         b2csRow.cess_amount += sign * entry.cess_amount;
       });
+
+      // Table 12 is reported net of credit/debit notes issued in the period.
+      const noteLines = await client.query(
+        `SELECT -1 AS sign, COALESCE(it.hsn_sac, 'NA') AS hsn_sac, cni.description AS item_name, cni.unit,
+                cni.qty AS quantity, cni.tax_rate,
+                (cni.line_total - cni.tax_amount) AS item_taxable_value,
+                CASE WHEN cn.igst_total > 0 THEN cni.tax_amount ELSE 0 END AS igst_amount,
+                CASE WHEN cn.igst_total > 0 THEN 0 ELSE ROUND(cni.tax_amount / 2, 2) END AS cgst_amount,
+                CASE WHEN cn.igst_total > 0 THEN 0 ELSE cni.tax_amount - ROUND(cni.tax_amount / 2, 2) END AS sgst_amount,
+                c.gstin AS customer_gstin
+           FROM credit_note_items cni
+           JOIN credit_notes cn ON cn.id = cni.credit_note_id
+           LEFT JOIN items it ON it.id = cni.item_id
+           LEFT JOIN customers c ON c.id = cn.customer_id
+          WHERE cn.business_id = $1::uuid AND cn.status = 'active' ${cdnBranchCn} ${cdnCreditDate}
+         UNION ALL
+         SELECT 1 AS sign, COALESCE(dni.hsn_sac, it.hsn_sac, 'NA'), dni.description, dni.unit,
+                dni.qty, dni.tax_rate, dni.taxable_value,
+                dni.igst_amount, dni.cgst_amount, dni.sgst_amount,
+                c.gstin
+           FROM debit_note_items dni
+           JOIN debit_notes dn ON dn.id = dni.debit_note_id
+           LEFT JOIN items it ON it.id = dni.item_id
+           LEFT JOIN customers c ON c.id = dn.customer_id
+          WHERE dn.business_id = $1::uuid AND dn.status = 'active' ${cdnBranchDn} ${cdnDebitDate}`,
+        cdnParams
+      );
+      for (const line of noteLines.rows) {
+        const sign = Number(line.sign);
+        const signed = {
+          hsn_sac: line.hsn_sac,
+          item_name: line.item_name,
+          unit: line.unit,
+          quantity: sign * (parseFloat(line.quantity) || 0),
+          item_taxable_value: sign * (parseFloat(line.item_taxable_value) || 0),
+          igst_amount: sign * (parseFloat(line.igst_amount) || 0),
+          cgst_amount: sign * (parseFloat(line.cgst_amount) || 0),
+          sgst_amount: sign * (parseFloat(line.sgst_amount) || 0),
+        };
+        const rate = parseFloat(line.tax_rate) || 0;
+        const gstin = line.customer_gstin ? String(line.customer_gstin).trim() : '';
+        addHsn(hsn, signed, rate);
+        addHsn(gstin.length === 15 ? hsn_b2b : hsn_b2c, signed, rate);
+      }
 
       return {
         summary,

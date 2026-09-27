@@ -77,6 +77,27 @@ export async function PATCH(
           { status: 409 }
         );
       }
+
+      const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
+      try {
+        await assertGstPeriodNotFiledForDocumentDate(
+          businessScope,
+          inv.branch_id,
+          inv.invoice_date,
+          'cancel invoice (issue a credit note instead)'
+        );
+      } catch (error: any) {
+        return NextResponse.json(
+          { error: error.message || 'GST period is filed', code: 'GST_PERIOD_FILED' },
+          { status: 403 }
+        );
+      }
+      const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
+      try {
+        await assertPeriodNotLocked(businessScope, inv.branch_id, inv.invoice_date, 'invoice cancellation');
+      } catch (error: any) {
+        return NextResponse.json({ error: error.message || 'Period is locked', code: 'PERIOD_LOCKED' }, { status: 403 });
+      }
     }
 
     const cancellationDetails = {

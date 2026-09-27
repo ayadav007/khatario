@@ -333,3 +333,35 @@ Migrations to run on staging after 304–307: **308** (perpetual inventory, `ite
 | R-TDSUI | "Deduct TDS on this bill" in the purchase payment modal (section, base = taxable value, preview) | Pay a 194J bill with TDS from the UI |
 
 Still open: estimate / sales-order / WhatsApp conversions create invoices without ledger posting; period lock not enforced on payments and journals; voucher trigger tolerance still ₹0.01; variants costed at item-level rate.
+
+### Run 3 — retest after deploying 304–311 (27 Sep 2026)
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| A3 | Pass | TB Dr = Cr ₹4,99,329.94, `is_balanced: true`; ₹0.01 in 5299 Round Off | |
+| A-CANCEL | Pass | Sales ₹2,29,299.94 (cancelled INV-016/017 reversed) | |
+| A6 | Pass | COGS ₹1,38,250 = 13 invoices ₹1,80,450 − 3 credit notes ₹42,200; INV-016/017 carry no cost; GP ₹65,149.94 = sales − COGS − purchases | |
+| A6-live | Pass | New INV-023 posted Dr COGS / Cr Inventory ₹7,000 (Almirah avg cost); cancel reversed COGS and sales on the same date | |
+| A10 | **Fail** | Migration 309 ran (opening_stock_rate set) but 3100 shows ₹0 and Inventory ₹55,750 | Opening stock lines post with no branch; TB / P&L / BS / account ledger drop NULL-branch lines whenever the user has branch assignments (customer/supplier opening balances are hidden the same way). Fixed locally, see below |
+| A13 | Pass | Lock Aug-2026 → 201; duplicate → 400 overlap; Aug invoice → 403 `PERIOD_LOCKED`; unlock → 200 | |
+| S16b | Pass | Aug-dated final invoice: no reason / 3-char reason → 422 `BACKDATE_REASON_REQUIRED`; proper reason → INV-023 saved | |
+| N3/N4 | Pass | Return of 5 and of 1 on INV-021 → 400 `RETURN_EXCEEDS_INVOICED` (open qty 0 while CN-PROBE-OVER is active) | |
+| N5 | **Fail** | Cancel CN-PROBE-OVER → 403 "i.trim is not a function" | GST-filed check called `.trim()` on the DATE column (a JS Date). Fixed locally |
+| R-PAN | Pass | PAN backfilled from GSTIN (Deccan Steel ABCPD1234E); advocate without GSTIN has no PAN | |
+| R-206AA | Pass | New bill AM/2026/52 ₹40,000 (FY aggregate ₹60,000 > ₹50,000): 194J TDS @ 20% = ₹8,000, `higher_rate_206aa`, Cr TDS Payable, bill balance ₹32,000 | Earlier bills (₹20,000) are not auto-caught-up once the threshold is crossed; deduct on them separately |
+| R-TDSREC | Pass | INV-005 ₹23,600: ₹21,601 + ₹2,000 TDS → 400 `PAYMENT_EXCEEDS_BALANCE`; ₹21,600 + ₹2,000 → paid; Bank +₹21,600, TDS Receivable ₹2,000, AR −₹23,600, TB balanced | TDS on value excluding GST (Circular 23/2017) |
+| G3–G10 | Pass | B2CS 18% ₹699.94 = INV-008 + INV-020 + DN-RT-001 (INV-022 of August excluded); nil split INTRAB2B ₹2,000 / INTRAB2C ₹500; exports WPA/WOPA; Table 13 INV 17 issued / 2 cancelled, CN and DN series separate; HSN B2B/B2C with UQC | |
+| G-HSN | **Fail** | HSN Table 12 built from invoices only (Almirah B2B ₹28,000 gross) | Table 12 must be net of credit/debit notes. Fixed locally |
+| G-CDNR | Minor | `idt` null on CDNR for notes without `original_invoice_date` | Falls back to linked invoice date. Fixed locally |
+| G11–G16 | Pass | 3.1(a) ₹1,96,699.94 (IGST ₹23,400, C/S ₹946); 3.1(b) ₹30,000 / ₹1,800; 3.1(c) ₹2,500; 3.1(d) ₹60,000 / ₹5,400 each; 3.2 POS 24 ₹1,10,000; 4B ₹450 each; 3B = GSTR-1 by head; RCM payable in cash ₹10,800 | |
+
+### Fixes after Run 3 (local, awaiting deploy; no migration)
+
+- Consolidated TB, P&L, balance sheet and account ledger include business-level lines (`branch_id IS NULL`: opening stock, customer/supplier opening balances) when the user is restricted to branches.
+- `assertGstPeriodNotFiledForDocumentDate` and period-lock checks accept DB `Date` values (local calendar date, not UTC).
+- Invoice cancel is blocked for a filed GSTR-1 month (issue a credit note) and for a locked period.
+- GSTR-1 HSN (all, B2B, B2C) netted with active credit notes (−) and debit notes (+) of the period.
+- CDNR / CDNUR original invoice date falls back to the linked invoice.
+- TDS threshold aggregate excludes draft bills.
+
+Retest after deploy: TB shows 3100 Cr ₹2,43,500 and Inventory ₹2,99,250; cancel CN-PROBE-OVER (COGS back to ₹1,73,250, INV-021 balance restored); GSTR-1 HSN Almirah B2B net of CN-002.

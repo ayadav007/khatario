@@ -36,6 +36,15 @@ async function isGstMonthInRevisionWindow(
   return !!row;
 }
 
+/** node-postgres returns DATE columns as local-midnight Date objects; read local fields. */
+function toDateStr(entryDate: Date | string): string {
+  if (typeof entryDate === 'string') {
+    const s = entryDate.trim();
+    return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
+  }
+  return `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}-${String(entryDate.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Check if a period is locked for a given business and branch
  */
@@ -45,8 +54,7 @@ export async function isPeriodLocked(
   entryDate: Date | string
 ): Promise<boolean> {
   try {
-    const date = typeof entryDate === 'string' ? new Date(entryDate) : entryDate;
-    const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const dateStr = toDateStr(entryDate);
 
     // Check for branch-specific lock first
     if (branchId) {
@@ -106,7 +114,7 @@ export async function assertPeriodNotLocked(
   const locked = await isPeriodLocked(businessId, branchId, entryDate);
   
   if (locked) {
-    const date = typeof entryDate === 'string' ? entryDate : entryDate.toISOString().split('T')[0];
+    const date = toDateStr(entryDate);
     throw new Error(
       `Cannot create ${transactionType} in locked period. Entry date: ${date}, Business: ${businessId}, Branch: ${branchId || 'All branches'}`
     );

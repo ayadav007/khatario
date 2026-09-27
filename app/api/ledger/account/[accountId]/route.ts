@@ -61,7 +61,7 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
 
         if (accessibleBranchIds.length > 0) {
           // User has branch restrictions - filter by their accessible branches
-          branchFilter = 'AND lel.branch_id = ANY($' + (fromDate ? (toDate ? 5 : 4) : (toDate ? 4 : 3)) + '::uuid[])';
+          branchFilter = 'AND (lel.branch_id = ANY($' + (fromDate ? (toDate ? 5 : 4) : (toDate ? 4 : 3)) + '::uuid[]) OR lel.branch_id IS NULL)';
           finalBranchId = null; // Not a single branch, but multiple
         } else {
           // User has no branch restrictions (admin) - show all branches (no filter)

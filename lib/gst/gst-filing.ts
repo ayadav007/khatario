@@ -353,13 +353,19 @@ export async function isGstPeriodFiled(
 export async function assertGstPeriodNotFiledForDocumentDate(
   businessId: string,
   branchId: string | null,
-  documentDate: string,
+  documentDate: string | Date,
   transactionType: string
 ): Promise<void> {
-  if (!branchId || !documentDate || documentDate.length < 7) {
+  if (!branchId || !documentDate) {
     return;
   }
-  const gstPeriod = documentDate.trim().slice(0, 7);
+  // node-postgres returns DATE columns as local-midnight Date objects.
+  const gstPeriod =
+    documentDate instanceof Date
+      ? Number.isNaN(documentDate.getTime())
+        ? ''
+        : `${documentDate.getFullYear()}-${String(documentDate.getMonth() + 1).padStart(2, '0')}`
+      : String(documentDate).trim().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(gstPeriod)) {
     return;
   }
