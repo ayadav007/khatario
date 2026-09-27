@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { buildApiUrl } from '@/lib/api-helpers';
+import { postInvoiceWithBackdateReason } from '@/lib/invoices/save-with-backdate-reason';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -1704,12 +1705,7 @@ function NewInvoiceContent() {
         
         let res;
         try {
-          res = await fetch('/api/invoices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestPayload),
-            signal: controller.signal,
-          });
+          res = await postInvoiceWithBackdateReason(requestPayload, { signal: controller.signal });
           const requestDuration = Date.now() - requestStartTime;
           console.log('[POS] ✅ Fetch promise resolved', { 
             duration: `${requestDuration}ms`,
@@ -2110,15 +2106,11 @@ function NewInvoiceContent() {
       }
 
       // Existing drafts must use POST with id — PATCH /api/invoices/[id] only supports proforma estimate_status.
-      const res = await fetch('/api/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          savedInvoiceId
-            ? { ...payload, id: savedInvoiceId, invoice_number: fullInvoiceNumber }
-            : { ...payload, invoice_number: fullInvoiceNumber }
-        ),
-      });
+      const res = await postInvoiceWithBackdateReason(
+        savedInvoiceId
+          ? { ...payload, id: savedInvoiceId, invoice_number: fullInvoiceNumber }
+          : { ...payload, invoice_number: fullInvoiceNumber }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { if (res.status === 403 && data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') { setLimitInfo({ current: data.current, limit: data.limit }); setShowUpgradePrompt(true); return; } throw new Error(data.error || 'Failed to save'); }
       setSavedInvoiceId(data.invoice.id); 

@@ -560,6 +560,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (item_type === 'goods') {
+      try {
+        const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+        await syncItemOpeningStockLedger(business_id, item.id);
+      } catch (ledgerError) {
+        console.error('Error posting opening stock ledger entry for item:', ledgerError);
+      }
+    }
+
     return NextResponse.json({ item }, { status: 201 });
   } catch (error: any) {
     console.error(error);

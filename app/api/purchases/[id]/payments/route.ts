@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
-import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
+import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -83,22 +83,6 @@ export async function PATCH(
       throw error;
     }
 
-    const paidAmount = Number(purchase.paid_amount || 0) + Number(amount);
-    const balance = Math.max(
-      0,
-      supplierPayableAmount(purchase.grand_total, purchase.tax_total, purchase.is_reverse_charge) - paidAmount
-    );
-    
-    // Calculate payment_status
-    let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-    if (paidAmount <= 0) {
-      paymentStatus = 'unpaid';
-    } else if (balance <= 0) {
-      paymentStatus = 'paid';
-    } else {
-      paymentStatus = 'partially_paid';
-    }
-
     // PHASE-5: wrap payment INSERT, balance updates, and ledger posting in one
     // transaction so the deferred validate_voucher_balance trigger sees both
     // ledger lines at COMMIT. If any step throws, we ROLLBACK everything.
@@ -106,6 +90,24 @@ export async function PATCH(
     let updated: any = null;
     try {
       await client.query('BEGIN');
+
+      const lockedRes = await client.query(
+        `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted
+           FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+        [purchase.id, purchase.business_id],
+      );
+      const outstanding = purchaseOutstanding(lockedRes.rows[0]);
+      if (Number(amount) > outstanding + 0.01) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: `Amount ₹${Number(amount).toFixed(2)} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}).`,
+            code: 'PAYMENT_EXCEEDS_BALANCE',
+            outstanding,
+          },
+          { status: 400 },
+        );
+      }
 
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
@@ -144,16 +146,12 @@ export async function PATCH(
         });
       }
 
-      const updatedRes = await client.query(
-        `UPDATE purchases
-         SET paid_amount = $1,
-             balance_amount = $2,
-             payment_status = $3,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4
-         RETURNING *`,
-        [paidAmount, balance, paymentStatus, purchase.id],
+      await client.query(
+        `UPDATE purchases SET paid_amount = COALESCE(paid_amount, 0) + $1 WHERE id = $2 AND business_id = $3`,
+        [amount, purchase.id, purchase.business_id],
       );
+      await recomputePurchaseBalance(client, purchase.id, purchase.business_id);
+      const updatedRes = await client.query('SELECT * FROM purchases WHERE id = $1', [purchase.id]);
       updated = updatedRes.rows[0];
 
       if (purchase.supplier_id) {
@@ -161,8 +159,8 @@ export async function PATCH(
           `UPDATE suppliers
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-          [amount, purchase.supplier_id],
+           WHERE id = $2 AND business_id = $3`,
+          [amount, purchase.supplier_id, purchase.business_id],
         );
       }
 

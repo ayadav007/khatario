@@ -259,9 +259,9 @@ export default function GSTR3BPage() {
           {data && (
             <Section title="3.1 - Details of Outward Supplies and inward supplies liable to reverse charge">
               <p className="text-xs text-gray-600 mb-3">
-                Row (a) is split by nature of supply: inter-state shows IGST only (from ledger 2152); intra-state shows
-                CGST + SGST only (from ledger 2150/2151). Tax amounts are ledger-based; taxable values follow GSTR-1
-                domestic lines (POS vs your GSTIN state, or IGST indicator when POS is missing).
+                Values and tax heads come from the invoices, credit/debit notes and reverse-charge bills of the
+                period (same documents as GSTR-1). Row (a) is split by place of supply against your GSTIN state.
+                The ledger comparison is shown above under reconciliation.
               </p>
               <TaxTable
                 rows={[
@@ -287,19 +287,40 @@ export default function GSTR3BPage() {
                       ]),
                   { label: '(b) Outward taxable supplies (zero rated)', data: data.outward_zero_rated },
                   { label: '(c) Other outward supplies (Nil rated, exempted)', data: data.other_outward_supplies },
-                  ...(data.rcm_mode === 'pooled' && (data.rcm?.total || 0) > 0
-                    ? [
-                        {
-                          label: '(d) Inward supplies (liable to reverse charge)',
-                          pooledRcm: {
-                            total: data.rcm.total,
-                            note: 'RCM not split by tax head. See ledger basis (2155) and configure 2156/2157/2158 for IGST/CGST/SGST.',
-                          },
-                        },
-                      ]
-                    : [{ label: '(d) Inward supplies (liable to reverse charge)', data: data.inward_reverse_charge }]),
+                  { label: '(d) Inward supplies (liable to reverse charge)', data: data.inward_reverse_charge },
+                  ...(data.non_gst_outward_supplies
+                    ? [{ label: '(e) Non-GST outward supplies', data: data.non_gst_outward_supplies }]
+                    : []),
                 ]}
               />
+            </Section>
+          )}
+
+          {/* Table 3.2 - Inter-state supplies to unregistered persons */}
+          {data?.inter_state_supplies_unregistered && (
+            <Section title="3.2 - Inter-state supplies to unregistered persons (out of 3.1(a))">
+              {data.inter_state_supplies_unregistered.length === 0 ? (
+                <p className="px-6 py-4 text-sm text-gray-500">No inter-state supplies to unregistered persons in this period.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-6 py-2 text-left font-medium">Place of supply</th>
+                      <th className="px-6 py-2 text-right font-medium">Taxable value</th>
+                      <th className="px-6 py-2 text-right font-medium">IGST</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.inter_state_supplies_unregistered.map((r: { place_of_supply: string; taxable_value: number; igst: number }) => (
+                      <tr key={r.place_of_supply} className="border-t border-gray-100">
+                        <td className="px-6 py-2">{r.place_of_supply}</td>
+                        <td className="px-6 py-2 text-right">₹{Number(r.taxable_value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-2 text-right">₹{Number(r.igst).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </Section>
           )}
 
@@ -308,10 +329,13 @@ export default function GSTR3BPage() {
             <Section title="4 - Eligible ITC">
               <TaxTable 
                 rows={[
-                  { label: '(A) ITC Available - Imports', data: data.itc_details.imports },
-                  { label: '(A) ITC Available - Inward supplies liable to reverse charge', data: data.itc_details.inward_reverse_charge },
-                  { label: '(A) ITC Available - Other ITC', data: data.itc_details.other_itc },
-                  { label: '(B) ITC Reversed', data: data.itc_details.itc_reversed },
+                  { label: '(A)(1) Import of goods', data: data.itc_details.imports },
+                  ...(data.itc_details.import_services
+                    ? [{ label: '(A)(2) Import of services', data: data.itc_details.import_services }]
+                    : []),
+                  { label: '(A)(3) Inward supplies liable to reverse charge (other than 1 & 2)', data: data.itc_details.inward_reverse_charge },
+                  { label: '(A)(5) All other ITC', data: data.itc_details.other_itc },
+                  { label: '(B)(1) ITC reversed — Rule 38/42/43 & s.17(5) blocked credit', data: data.itc_details.itc_reversed },
                   { label: '(C) Net ITC Available (A) - (B)', data: data.itc_details.net_itc }
                 ]}
               />

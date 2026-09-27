@@ -28,6 +28,7 @@ interface Supplier {
   state?: string;
   pincode?: string;
   gstin?: string;
+  pan?: string | null;
   opening_balance: number;
   opening_balance_type: string;
   linked_business_id?: string;
@@ -133,6 +134,9 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
               {supplier.gstin && (
                 <p className="text-text-secondary text-sm mt-1">GSTIN: {supplier.gstin}</p>
               )}
+              <p className="text-text-secondary text-sm mt-1">
+                PAN: {supplier.pan || 'Not recorded (TDS at the higher s.206AA rate)'}
+              </p>
               {supplier.linked_business_id && (
                 <div className="mt-4 p-3 bg-slate-50 border border-primary-200 rounded-lg">
                   <label className="flex items-start gap-3 cursor-pointer">

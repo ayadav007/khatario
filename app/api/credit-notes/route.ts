@@ -3,10 +3,11 @@ import { getPool } from '@/lib/db';
 import { createCreditNoteLedgerEntries } from '@/lib/ledger-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
-import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 
 export const dynamic = 'force-dynamic';
 
@@ -163,7 +164,7 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that issued this credit note
       customer_id,
@@ -174,14 +175,7 @@ export async function POST(request: NextRequest) {
       reason,
       place_of_supply_state_code,
       items,
-      subtotal,
-      discount_total,
-      tax_total,
-      cgst_total,
-      sgst_total,
-      igst_total,
       round_off,
-      grand_total,
       refund_status = 'pending',
       refund_mode,
       refund_date,
@@ -319,6 +313,129 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const rejectCreditNote = async (status: number, code: string, error: string) => {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error, code }, { status });
+    };
+
+    let invoice: any = null;
+    const invoicedByItem = new Map<string, { qty: number; taxRate: number }>();
+    if (invoice_id) {
+      const invRes = await client.query(
+        `SELECT * FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [invoice_id, business_id]
+      );
+      invoice = invRes.rows[0];
+      if (!invoice) return rejectCreditNote(404, 'INVOICE_NOT_FOUND', 'Linked invoice not found');
+      if (invoice.status !== 'final') {
+        return rejectCreditNote(400, 'INVOICE_NOT_FINAL', 'A credit note can only be issued against a final invoice');
+      }
+      if (invoice.customer_id && invoice.customer_id !== customer_id) {
+        return rejectCreditNote(400, 'CUSTOMER_MISMATCH', 'The linked invoice belongs to a different customer');
+      }
+      if (invoice.place_of_supply_state_code) finalPosStateCode = invoice.place_of_supply_state_code;
+
+      const invItems = await client.query(
+        `SELECT item_id, SUM(quantity)::numeric AS qty, MAX(tax_rate)::numeric AS tax_rate
+           FROM invoice_items WHERE invoice_id = $1 AND item_id IS NOT NULL GROUP BY item_id`,
+        [invoice_id]
+      );
+      const credited = await client.query(
+        `SELECT cni.item_id, SUM(cni.qty)::numeric AS qty
+           FROM credit_note_items cni
+           JOIN credit_notes cn ON cn.id = cni.credit_note_id
+          WHERE cn.invoice_id = $1 AND cn.business_id = $2 AND cn.status = 'active' AND cni.item_id IS NOT NULL
+          GROUP BY cni.item_id`,
+        [invoice_id, business_id]
+      );
+      const creditedQty = new Map(credited.rows.map((r) => [r.item_id, Number(r.qty) || 0]));
+      for (const r of invItems.rows) {
+        invoicedByItem.set(r.item_id, {
+          qty: (Number(r.qty) || 0) - (creditedQty.get(r.item_id) || 0),
+          taxRate: Number(r.tax_rate) || 0,
+        });
+      }
+    }
+
+    const intraState = (finalPosStateCode?.substring(0, 2) || '') === businessStateCode;
+    const zeroRated = invoice ? isZeroRatedWithoutTax(invoice) : false;
+    const lines = (items as any[]).map((item) => {
+      const qty = Number(item.qty ?? item.quantity) || 0;
+      const unitPrice = Number(item.unit_price ?? item.price) || 0;
+      const gross = qty * unitPrice;
+      const discountPercent = Number(item.discount_percent) || 0;
+      const discount = round2(
+        discountPercent > 0 ? (gross * discountPercent) / 100 : Number(item.discount_amount ?? item.discount) || 0
+      );
+      const linked = item.item_id ? invoicedByItem.get(item.item_id) : undefined;
+      const taxRate = linked ? linked.taxRate : Number(item.tax_rate) || 0;
+      const line = computeLineGst({ quantity: 1, unit_price: gross - discount, tax_rate: taxRate }, intraState, zeroRated);
+      return { item, qty, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
+    });
+
+    if (lines.some((l) => l.qty <= 0 || l.taxable < 0)) {
+      return rejectCreditNote(400, 'INVALID_LINE', 'Each credit note line needs a positive quantity and value');
+    }
+
+    if (invoice) {
+      const requested = new Map<string, number>();
+      for (const l of lines) {
+        if (!l.item.item_id) continue;
+        if (!invoicedByItem.has(l.item.item_id)) {
+          return rejectCreditNote(
+            400,
+            'ITEM_NOT_ON_INVOICE',
+            `"${l.item.item_name || l.item.description || l.item.item_id}" is not on invoice ${invoice.invoice_number}`
+          );
+        }
+        requested.set(l.item.item_id, (requested.get(l.item.item_id) || 0) + l.qty);
+      }
+      for (const [itemId, qty] of requested) {
+        const available = invoicedByItem.get(itemId)!.qty;
+        if (qty > available + 1e-9) {
+          const name = lines.find((l) => l.item.item_id === itemId)?.item.item_name || itemId;
+          return rejectCreditNote(
+            400,
+            'RETURN_EXCEEDS_INVOICED',
+            `Return quantity for "${name}" (${qty}) exceeds the quantity still open on invoice ${invoice.invoice_number} (${Math.max(0, available)})`
+          );
+        }
+      }
+    }
+
+    const computedSubtotal = round2(lines.reduce((s, l) => s + l.taxable, 0));
+    const computedDiscount = round2(lines.reduce((s, l) => s + l.discount, 0));
+    const computedCgst = round2(lines.reduce((s, l) => s + l.cgst, 0));
+    const computedSgst = round2(lines.reduce((s, l) => s + l.sgst, 0));
+    const computedIgst = round2(lines.reduce((s, l) => s + l.igst, 0));
+    const computedTax = round2(computedCgst + computedSgst + computedIgst);
+    const computedRoundOff = round2(Number(round_off) || 0);
+    if (Math.abs(computedRoundOff) >= 1) {
+      return rejectCreditNote(400, 'INVALID_ROUND_OFF', 'Round off must be less than ₹1');
+    }
+    const computedGrandTotal = round2(computedSubtotal + computedTax + computedRoundOff);
+
+    if (invoice) {
+      const prior = await client.query(
+        `SELECT
+           COALESCE((SELECT SUM(grand_total) FROM credit_notes
+                      WHERE invoice_id = $1 AND business_id = $2 AND status = 'active'), 0) AS credited,
+           COALESCE((SELECT SUM(grand_total) FROM debit_notes
+                      WHERE invoice_id = $1 AND business_id = $2 AND status = 'active'), 0) AS debited`,
+        [invoice_id, business_id]
+      );
+      const creditable = round2(
+        Number(invoice.grand_total) + Number(prior.rows[0].debited) - Number(prior.rows[0].credited)
+      );
+      if (computedGrandTotal > creditable + 0.005) {
+        return rejectCreditNote(
+          400,
+          'CREDIT_EXCEEDS_INVOICE',
+          `Credit note total ₹${computedGrandTotal.toFixed(2)} exceeds the ₹${Math.max(0, creditable).toFixed(2)} still creditable on invoice ${invoice.invoice_number}`
+        );
+      }
+    }
+
     // Create credit note record
     const creditNoteResult = await client.query(`
       INSERT INTO credit_notes (
@@ -331,10 +448,10 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING *
     `, [
-      business_id, finalBranchId, customer_id, invoice_id, credit_note_number, credit_note_date,
-      original_invoice_date, reason, finalPosStateCode,
-      subtotal, discount_total, tax_total, cgst_total, sgst_total, igst_total,
-      round_off, grand_total, refund_status, refund_mode, refund_date, refund_amount,
+      business_id, finalBranchId, customer_id, invoice_id || null, credit_note_number, credit_note_date,
+      original_invoice_date || (invoice ? invoice.invoice_date : null), reason, finalPosStateCode,
+      computedSubtotal, computedDiscount, computedTax, computedCgst, computedSgst, computedIgst,
+      computedRoundOff, computedGrandTotal, refund_status, refund_mode, refund_date, refund_amount,
       notes, created_by
     ]);
 
@@ -344,8 +461,8 @@ export async function POST(request: NextRequest) {
     const warehouseModeEnabled = await isWarehouseModeEnabled(business_id);
 
     // Insert credit note items and increase stock (goods coming back)
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    for (let i = 0; i < lines.length; i++) {
+      const { item, qty, unitPrice, discount, taxRate, taxAmount, lineTotal } = lines[i];
       
       await client.query(`
         INSERT INTO credit_note_items (
@@ -356,14 +473,14 @@ export async function POST(request: NextRequest) {
       `, [
         creditNote.id,
         item.item_id || null,
-        item.description || item.item_name,
-        item.qty || item.quantity,
+        item.description || item.item_name || 'Adjustment',
+        qty,
         item.unit || 'PCS',
-        item.unit_price,
-        item.discount || 0,
-        item.tax_rate || 0,
-        item.tax_amount || 0,
-        item.line_total,
+        unitPrice,
+        discount,
+        taxRate,
+        taxAmount,
+        lineTotal,
         i
       ]);
 
@@ -456,34 +573,17 @@ export async function POST(request: NextRequest) {
       UPDATE customers
       SET current_balance = current_balance - $1,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2
-    `, [grand_total, customer_id]);
+      WHERE id = $2 AND business_id = $3
+    `, [computedGrandTotal, customer_id, business_id]);
 
     // Update linked invoice balance if applicable (keep payment_status in sync)
     if (invoice_id) {
-      const invUp = await client.query(
-        `
-        UPDATE invoices
-        SET balance_amount = balance_amount - $1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-        RETURNING grand_total, paid_amount, balance_amount
-        `,
-        [grand_total, invoice_id]
-      );
-      const row = invUp.rows[0];
-      if (row) {
-        const ps = deriveInvoicePaymentStatus(row.grand_total, row.paid_amount, row.balance_amount);
-        await client.query(
-          `UPDATE invoices SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-          [ps, invoice_id]
-        );
-      }
+      await recomputeInvoiceBalance(client, invoice_id, business_id);
     }
 
     // Calculate COGS (Cost of Goods Sold) for returned items
     let totalCogsAmount = 0;
-    for (const item of items) {
+    for (const { item } of lines) {
       if (item.item_id) {
         // Get item purchase price or cost
         const itemData = await client.query(
@@ -508,16 +608,16 @@ export async function POST(request: NextRequest) {
       creditNoteId: creditNote.id,
       creditNoteNumber: credit_note_number,
       creditNoteDate: credit_note_date,
-      grandTotal: grand_total,
+      grandTotal: computedGrandTotal,
       customerId: customer_id,
       cogsAmount: totalCogsAmount,
       branchId: finalBranchId,
       // PHASE-3: GST split for credit notes — Output GST gets debited (reverses
       // the original Cr posted by the source invoice).
-      taxableValue: subtotal,
-      cgstTotal: cgst_total,
-      sgstTotal: sgst_total,
-      igstTotal: igst_total,
+      taxableValue: computedSubtotal,
+      cgstTotal: computedCgst,
+      sgstTotal: computedSgst,
+      igstTotal: computedIgst,
       poolClient: client,
     });
 

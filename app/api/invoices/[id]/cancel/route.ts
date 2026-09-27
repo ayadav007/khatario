@@ -5,6 +5,7 @@ import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { restoreBundleChildrenAfterInvoiceCancel } from '@/lib/invoice-bundle-stock';
+import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,14 +55,44 @@ export async function PATCH(
       throw error;
     }
 
-    // Reverse stock if final (including batch/serial reversals)
+    if (inv.status === 'cancelled') {
+      return NextResponse.json({ error: 'Invoice is already cancelled' }, { status: 409 });
+    }
+
     if (inv.status === 'final') {
-      const pool = getPool();
-      const client = await pool.connect();
+      const notes = await queryOne<{ n: string }>(
+        `SELECT (
+           (SELECT COUNT(*) FROM credit_notes WHERE invoice_id = $1 AND business_id = $2 AND status = 'active') +
+           (SELECT COUNT(*) FROM debit_notes WHERE invoice_id = $1 AND business_id = $2 AND status = 'active')
+         )::text AS n`,
+        [id, businessScope]
+      );
+      if (Number(notes?.n || 0) > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'This invoice has credit or debit notes against it. Cancel those notes first, then cancel the invoice.',
+            code: 'INVOICE_HAS_NOTES',
+          },
+          { status: 409 }
+        );
+      }
+    }
 
-      try {
-        await client.query('BEGIN');
+    const cancellationDetails = {
+      reason: reason || 'Cancelled',
+      cancelled_by: cancelled_by || null,
+      cancelled_at: new Date().toISOString(),
+    };
 
+    const pool = getPool();
+    const client = await pool.connect();
+    let updated: any = null;
+    try {
+      await client.query('BEGIN');
+
+      // Reverse stock, books and receivable if final (including batch/serial reversals)
+      if (inv.status === 'final') {
         const items = await client.query(`SELECT * FROM invoice_items WHERE invoice_id = $1`, [id]);
         const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
         const warehouseModeEnabled = await isWarehouseModeEnabled(inv.business_id);
@@ -184,33 +215,46 @@ export async function PATCH(
           }
         }
 
-        await client.query('COMMIT');
-      } catch (error: any) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
-      }
-    }
+        // Dated on the invoice date so the cancelled supply drops out of that period's books
+        // and GST, matching its removal from GSTR-1.
+        await reverseVoucherLedgerEntries(client, {
+          businessId: inv.business_id,
+          voucherType: 'invoice',
+          voucherId: inv.id,
+          reason: `Invoice ${inv.invoice_number} cancelled`,
+        });
 
-    const updated = await queryOne(
-      `UPDATE invoices
-       SET status = 'cancelled',
-           is_editable = false,
-           payment_status = 'unpaid',
-           cancellation_details = $1,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2
-       RETURNING *`,
-      [
-        {
-          reason: reason || 'Cancelled',
-          cancelled_by: cancelled_by || null,
-          cancelled_at: new Date().toISOString(),
-        },
-        id,
-      ]
-    );
+        // Anything already received stays on the customer's account as an advance.
+        if (inv.customer_id && inv.document_type !== 'proforma_invoice') {
+          await client.query(
+            `UPDATE customers
+                SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2 AND business_id = $3`,
+            [Number(inv.grand_total) || 0, inv.customer_id, inv.business_id]
+          );
+        }
+      }
+
+      const res = await client.query(
+        `UPDATE invoices
+         SET status = 'cancelled',
+             is_editable = false,
+             balance_amount = 0,
+             cancellation_details = $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND business_id = $3
+         RETURNING *`,
+        [cancellationDetails, id, businessScope]
+      );
+      updated = res.rows[0];
+
+      await client.query('COMMIT');
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ invoice: updated });
   } catch (error: any) {

@@ -33,6 +33,8 @@ interface Purchase {
   payment_status: string;
   grand_total: number;
   paid_amount: number;
+  balance_amount?: number | null;
+  subtotal?: number | null;
   itc_eligible: boolean;
   itc_availed: boolean;
   reconciliation_status?: string | null;
@@ -809,7 +811,11 @@ function PurchasesPageContent() {
             billNumber={paymentModalPurchase.bill_number || paymentModalPurchase.id.substring(0, 8)}
             grandTotal={Number(paymentModalPurchase.grand_total || 0)}
             paidAmount={Number(paymentModalPurchase.paid_amount || 0)}
-            balanceAmount={Number(paymentModalPurchase.grand_total || 0) - Number(paymentModalPurchase.paid_amount || 0)}
+            balanceAmount={Number(
+              paymentModalPurchase.balance_amount ??
+                Number(paymentModalPurchase.grand_total || 0) - Number(paymentModalPurchase.paid_amount || 0)
+            )}
+            taxableAmount={paymentModalPurchase.subtotal != null ? Number(paymentModalPurchase.subtotal) : undefined}
             onSuccess={() => {
               fetchPurchases(); // Refresh purchases list
               setPaymentModalPurchase(null);

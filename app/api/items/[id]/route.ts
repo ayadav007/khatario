@@ -554,6 +554,13 @@ export async function PATCH(
       }
     }
 
+    try {
+      const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+      await syncItemOpeningStockLedger(businessId, itemId);
+    } catch (ledgerError) {
+      console.error('Error syncing opening stock ledger entry for item:', ledgerError);
+    }
+
     const refreshed = await queryOne<Item>(
       'SELECT * FROM items WHERE id = $1 AND business_id = $2',
       [itemId, businessId]

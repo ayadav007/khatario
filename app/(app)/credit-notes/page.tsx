@@ -11,6 +11,7 @@ import { Plus, FileText, Search } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { useToastContext } from '@/contexts/ToastContext';
 
 interface CreditNote {
   id: string;
@@ -21,11 +22,15 @@ interface CreditNote {
   grand_total: number;
   refund_status: string;
   reason?: string;
+  status?: 'active' | 'cancelled';
+  cancellation_reason?: string;
 }
 
 export default function CreditNotesPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const toast = useToastContext();
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,8 +82,33 @@ export default function CreditNotesPage() {
       pending: 'bg-yellow-100 text-yellow-800',
       refunded: 'bg-green-100 text-green-800',
       adjusted: 'bg-slate-100 text-primary-800',
+      cancelled: 'bg-red-100 text-red-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const cancelCreditNote = async (creditNote: CreditNote) => {
+    const reason = prompt(
+      `Cancel credit note ${creditNote.credit_note_number}? Returned stock, the customer balance and the books will be reversed.\n\nReason for cancellation:`
+    );
+    if (!reason?.trim()) return;
+    setCancellingId(creditNote.id);
+    try {
+      const res = await fetch(`/api/credit-notes/${creditNote.id}/cancel?user_id=${user?.id || ''}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim(), cancelled_by: user?.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Could not cancel the credit note');
+        return;
+      }
+      toast.success(`Credit note ${creditNote.credit_note_number} cancelled`);
+      fetchCreditNotes();
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   return (
@@ -162,6 +192,7 @@ export default function CreditNotesPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Reason
                     </th>
+                    <th className="px-6 py-3" />
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -187,14 +218,37 @@ export default function CreditNotesPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(creditNote.refund_status)}`}>
-                          {creditNote.refund_status}
-                        </span>
+                        {creditNote.status === 'cancelled' ? (
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge('cancelled')}`}>
+                            cancelled
+                          </span>
+                        ) : (
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(creditNote.refund_status)}`}>
+                            {creditNote.refund_status}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-500 truncate max-w-xs">
-                          {creditNote.reason || '-'}
+                          {creditNote.status === 'cancelled'
+                            ? `Cancelled: ${creditNote.cancellation_reason || '-'}`
+                            : creditNote.reason || '-'}
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        {creditNote.status !== 'cancelled' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={cancellingId === creditNote.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelCreditNote(creditNote);
+                            }}
+                          >
+                            {cancellingId === creditNote.id ? 'Cancelling…' : 'Cancel'}
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -241,7 +295,10 @@ export default function CreditNotesPage() {
             <Card padding="md">
               <div className="text-sm text-text-secondary">Total Amount</div>
               <div className="text-2xl font-bold text-text-primary mt-1">
-                ₹{creditNotes.reduce((sum, cn) => sum + Number(cn.grand_total), 0).toLocaleString('en-IN')}
+                ₹{creditNotes
+                  .filter((cn) => cn.status !== 'cancelled')
+                  .reduce((sum, cn) => sum + Number(cn.grand_total), 0)
+                  .toLocaleString('en-IN')}
               </div>
             </Card>
             <Card padding="md">

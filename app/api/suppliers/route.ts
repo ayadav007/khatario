@@ -6,6 +6,7 @@ import { Supplier } from '@/types/database';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { normalizePan, panFromGstin } from '@/lib/tax/pan';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,11 +141,19 @@ export async function POST(request: NextRequest) {
       state_code,
       pincode,
       gstin,
+      pan,
       opening_balance = 0,
       opening_balance_type = 'credit',
       linked_business_id,
       allow_low_stock_access = false,
     } = body;
+
+    if (pan && !normalizePan(pan)) {
+      return NextResponse.json(
+        { error: `Invalid PAN "${pan}". Expected format: ABCDE1234F` },
+        { status: 400 }
+      );
+    }
     const createdByUserId = resolveCreatedByUserId(request, body);
     console.log('[SupplierAPI] business_id:', business_id, 'name:', name, 'createdByUserId:', createdByUserId);
 
@@ -270,9 +279,9 @@ export async function POST(request: NextRequest) {
         city, state, state_code, pincode, gstin,
         opening_balance, opening_balance_type,
         linked_business_id, requested_by_business_id, approval_status,
-        approved_at, allow_low_stock_access
+        approved_at, allow_low_stock_access, pan
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `, [
       business_id, name, phoneNorm, email, address,
@@ -282,7 +291,8 @@ export async function POST(request: NextRequest) {
       linked_business_id ? business_id : null, // Set requester if linking
       approvalStatus,
       approvedAt,
-      finalAllowLowStockAccess
+      finalAllowLowStockAccess,
+      normalizePan(pan) ?? panFromGstin(gstinNorm),
     ]);
 
     if (!supplier) {

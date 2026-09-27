@@ -3,12 +3,12 @@ import { getPool } from '@/lib/db';
 import { getStateCode } from '@/lib/gst-utils';
 import { createDebitNoteLedgerEntries } from '@/lib/ledger-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { resolveBranchId } from '@/lib/branch-helpers';
-import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { computeLineGst, round2 } from '@/lib/invoices/line-gst';
 
 export const dynamic = 'force-dynamic';
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const business_id = getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
     const {
       branch_id: body_branch_id,
       customer_id,
@@ -392,25 +392,7 @@ export async function POST(request: NextRequest) {
     // Linked invoice keeps its original value (reported as issued in GSTR-1); the note only
     // raises the amount still due on it, mirroring how credit notes reduce it.
     if (invoice_id) {
-      const invUp = await client.query(
-        `
-        UPDATE invoices 
-        SET 
-          balance_amount = balance_amount + $1,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2 AND business_id = $3
-        RETURNING grand_total, paid_amount, balance_amount
-        `,
-        [computedGrandTotal, invoice_id, business_id]
-      );
-      const row = invUp.rows[0];
-      if (row) {
-        const ps = deriveInvoicePaymentStatus(row.grand_total, row.paid_amount, row.balance_amount);
-        await client.query(
-          `UPDATE invoices SET payment_status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-          [ps, invoice_id]
-        );
-      }
+      await recomputeInvoiceBalance(client, invoice_id, business_id);
     }
 
     // Update customer receivable (debit note increases receivable)

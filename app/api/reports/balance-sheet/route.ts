@@ -5,6 +5,7 @@ import { getFixedAssetsSummary } from '@/lib/services/depreciation-calculator';
 import { getTotalProvisions } from '@/lib/services/provisions-manager';
 import { getAllTaxProvisions } from '@/lib/services/tax-provision-calculator';
 import { getClosingStockValue } from '@/lib/services/closing-stock-valuator';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
@@ -311,7 +312,8 @@ export async function GET(request: NextRequest) {
 
     // Get Closing Stock Value
     let closingStockValue = 0;
-    if (financialYear) {
+    const isPerpetual = (await getInventoryModel(undefined, businessId)) === 'perpetual';
+    if (financialYear && !isPerpetual) {
       try {
         closingStockValue = await getClosingStockValue(businessId, financialYear);
       } catch (error) {

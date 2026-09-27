@@ -254,7 +254,8 @@ function PurchaseDetailContent() {
             billNumber={purchase.bill_number || purchase.id.substring(0, 8)}
             grandTotal={Number(purchase.grand_total || 0)}
             paidAmount={Number(purchase.paid_amount || 0)}
-            balanceAmount={Number(purchase.balance_amount || purchase.grand_total || 0)}
+            balanceAmount={Number(purchase.balance_amount ?? purchase.grand_total ?? 0)}
+            taxableAmount={purchase.subtotal != null ? Number(purchase.subtotal) : undefined}
             onSuccess={() => {
               fetchPurchase(); // Refresh purchase data
               setShowPaymentModal(false);

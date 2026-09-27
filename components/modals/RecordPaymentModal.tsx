@@ -29,6 +29,8 @@ export function RecordPaymentModal({
   const [paymentMode, setPaymentMode] = useState<string>('cash');
   const [reference, setReference] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [tdsAmount, setTdsAmount] = useState<string>('');
+  const [tdsSection, setTdsSection] = useState<string>('194C');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -36,14 +38,15 @@ export function RecordPaymentModal({
     e.preventDefault();
     setError('');
 
-    const paymentAmount = parseFloat(amount);
-    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+    const paymentAmount = parseFloat(amount || '0');
+    const tds = parseFloat(tdsAmount || '0');
+    if (isNaN(paymentAmount) || isNaN(tds) || paymentAmount < 0 || tds < 0 || paymentAmount + tds <= 0) {
       setError('Please enter a valid amount');
       return;
     }
 
-    if (paymentAmount > balanceAmount) {
-      setError(`Payment amount cannot exceed balance of ₹${balanceAmount.toLocaleString('en-IN')}`);
+    if (paymentAmount + tds > balanceAmount + 0.01) {
+      setError(`Amount received plus TDS cannot exceed balance of ₹${balanceAmount.toLocaleString('en-IN')}`);
       return;
     }
 
@@ -57,6 +60,8 @@ export function RecordPaymentModal({
           payment_mode: paymentMode,
           reference: reference || null,
           payment_date: paymentDate,
+          tds_amount: tds,
+          tds_section: tds > 0 ? tdsSection : null,
         }),
       });
 
@@ -131,7 +136,7 @@ export function RecordPaymentModal({
             <input
               type="number"
               step="0.01"
-              min="0.01"
+              min="0"
               max={balanceAmount}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -142,6 +147,52 @@ export function RecordPaymentModal({
             />
             <p className="text-xs text-gray-500 mt-1">
               Maximum: ₹{balanceAmount.toLocaleString('en-IN')}
+            </p>
+          </div>
+
+          {/* TDS withheld by customer */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">TDS deducted by customer</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={tdsAmount}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const prevTds = parseFloat(tdsAmount || '0') || 0;
+                  const nextTds = parseFloat(next || '0') || 0;
+                  const received = parseFloat(amount || '0') || 0;
+                  if (Math.abs(received + prevTds - balanceAmount) < 0.01) {
+                    setAmount(Math.max(0, Math.round((balanceAmount - nextTds) * 100) / 100).toString());
+                  }
+                  setTdsAmount(next);
+                }}
+                className="input w-full"
+                placeholder="0.00"
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+              <select
+                value={tdsSection}
+                onChange={(e) => setTdsSection(e.target.value)}
+                className="input w-full"
+                disabled={loading || !(parseFloat(tdsAmount || '0') > 0)}
+              >
+                <option value="194C">194C</option>
+                <option value="194J">194J</option>
+                <option value="194H">194H</option>
+                <option value="194I">194I</option>
+                <option value="194Q">194Q</option>
+                <option value="194O">194O</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <p className="col-span-3 text-xs text-gray-500 -mt-1">
+              TDS settles the invoice and is booked to TDS Receivable; match it with Form 26AS.
             </p>
           </div>
 

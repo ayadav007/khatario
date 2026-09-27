@@ -301,7 +301,7 @@ function categoriesFromGstr3b(d: GSTR3BData): {
       cess: round2(z.cess),
     },
     exempt: {
-      taxable_value: round2(other.taxable_value),
+      taxable_value: round2(other.taxable_value + (d.non_gst_outward_supplies?.taxable_value ?? 0)),
       igst: round2(other.igst),
       cgst: round2(other.cgst),
       sgst: round2(other.sgst),
@@ -373,7 +373,7 @@ function buildGstr1VoucherMap(bundle: Bundle): Map<string, VoucherTaxRow> {
     });
   }
 
-  for (const n of bundle.cdn) {
+  for (const n of [...bundle.cdn, ...bundle.cdn_b2cs]) {
     const key = `${n.document_type}:${n.document_id}`;
     const s = n.note_type === 'C' ? -1 : 1;
     add(key, n.document_type, {

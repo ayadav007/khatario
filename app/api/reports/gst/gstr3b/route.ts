@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { GSTR3BGenerator, GSTR3BFilters } from '@/lib/gst/gstr3b';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const business_id = getBusinessIdFromRequest(request);
+    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
     const userId = getUserIdFromRequest(request);
     const branchIdParam = searchParams.get('branch_id');
     const exportFormat = searchParams.get('export');
@@ -116,22 +116,62 @@ export async function GET(request: NextRequest) {
             txval: data.outward_zero_rated.taxable_value,
             iamt: data.outward_zero_rated.igst,
             csamt: data.outward_zero_rated.cess
-          }
+          },
+          osup_nil_exmp: { txval: data.other_outward_supplies.taxable_value },
+          isup_rev: {
+            txval: data.inward_reverse_charge.taxable_value,
+            iamt: data.inward_reverse_charge.igst,
+            camt: data.inward_reverse_charge.cgst,
+            samt: data.inward_reverse_charge.sgst,
+            csamt: data.inward_reverse_charge.cess
+          },
+          osup_nongst: { txval: data.non_gst_outward_supplies.taxable_value },
+        },
+        inter_sup: {
+          unreg_details: data.inter_state_supplies_unregistered.map((r) => ({
+            pos: r.place_of_supply,
+            txval: r.taxable_value,
+            iamt: r.igst,
+          })),
+          comp_details: [],
+          uin_details: [],
         },
         itc_elg: {
-          itc_avl: [{
-            ty: "IMPG",
-            iamt: data.itc_details.imports.igst,
-            camt: data.itc_details.imports.cgst,
-            samt: data.itc_details.imports.sgst,
-            csamt: data.itc_details.imports.cess
-          }, {
-            ty: "OTH",
-            iamt: data.itc_details.other_itc.igst,
-            camt: data.itc_details.other_itc.cgst,
-            samt: data.itc_details.other_itc.sgst,
-            csamt: data.itc_details.other_itc.cess
-          }]
+          itc_avl: [
+            { ty: "IMPG", iamt: data.itc_details.imports.igst, camt: 0, samt: 0, csamt: data.itc_details.imports.cess },
+            { ty: "IMPS", iamt: data.itc_details.import_services.igst, camt: 0, samt: 0, csamt: data.itc_details.import_services.cess },
+            {
+              ty: "ISRC",
+              iamt: data.itc_details.inward_reverse_charge.igst,
+              camt: data.itc_details.inward_reverse_charge.cgst,
+              samt: data.itc_details.inward_reverse_charge.sgst,
+              csamt: data.itc_details.inward_reverse_charge.cess
+            },
+            { ty: "ISD", iamt: 0, camt: 0, samt: 0, csamt: 0 },
+            {
+              ty: "OTH",
+              iamt: data.itc_details.other_itc.igst,
+              camt: data.itc_details.other_itc.cgst,
+              samt: data.itc_details.other_itc.sgst,
+              csamt: data.itc_details.other_itc.cess
+            },
+          ],
+          itc_rev: [
+            {
+              ty: "RUL",
+              iamt: data.itc_details.itc_reversed.igst,
+              camt: data.itc_details.itc_reversed.cgst,
+              samt: data.itc_details.itc_reversed.sgst,
+              csamt: data.itc_details.itc_reversed.cess
+            },
+            { ty: "OTH", iamt: 0, camt: 0, samt: 0, csamt: 0 },
+          ],
+          itc_net: {
+            iamt: data.itc_details.net_itc.igst,
+            camt: data.itc_details.net_itc.cgst,
+            samt: data.itc_details.net_itc.sgst,
+            csamt: data.itc_details.net_itc.cess
+          },
         },
         intr_ltfee: {
           intr_det: {

@@ -114,6 +114,25 @@ export class FeatureAccessDeniedError extends Error {
   }
 }
 
+const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set(['free', 'hr_free', 'connect']);
+
+/**
+ * Allows any paid plan (or an active signup trial); denies free/lapsed businesses.
+ * For controls every paying customer should have regardless of tier, e.g. period lock.
+ */
+export async function assertPaidPlan(businessId: string, featureKey: string): Promise<void> {
+  const sub = businessId ? await getBusinessSubscription(businessId, true) : null;
+  if (!sub) {
+    throw new FeatureAccessDeniedError(featureKey, businessId || 'unknown', 'NO_SUBSCRIPTION');
+  }
+  if (!isSubscriptionOperationalStatus(sub.status)) {
+    throw new FeatureAccessDeniedError(featureKey, businessId, 'SUBSCRIPTION_INACTIVE');
+  }
+  if (NON_PAID_ENTITLEMENT_PLAN_IDS.has(getEntitlementPlanId(sub))) {
+    throw new FeatureAccessDeniedError(featureKey, businessId, 'FEATURE_NOT_ENABLED');
+  }
+}
+
 /**
  * Map legacy feature keys to Feature Registry IDs
  * This ensures backward compatibility when code uses old feature keys

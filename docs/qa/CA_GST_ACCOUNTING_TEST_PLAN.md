@@ -221,3 +221,115 @@ Run 1: 27 Sep 2026, staging build `bffff01`.
 ### Blocked by plan
 
 On the Professional plan these APIs return 403 `FEATURE_NOT_IN_PLAN`: GSTR-1 and GSTR-3B (`reports_gst`), trial balance, P&L, balance sheet, stock valuation and ageing (`reports_advanced`), and credit notes. Phases 5–7 need the test business on a plan that includes them.
+
+---
+
+Run 2: 27 Sep 2026, staging build `2c98854`, business moved to Enterprise.
+
+### Retest of Run 1 fixes
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| S9 | Pass | INV-019 export WOP/LUT, ₹20,000 consultancy @ 18%: IGST ₹0, total ₹20,000 | Same |
+| S5 | Pass | INV-020: 3 × ₹99.99 @ 18% → ₹299.97 + ₹27.00 + ₹27.00 = **₹353.97** | Same |
+| N2 | Pass | DN-RT-001 on INV-020 (₹100 @ 18%): ₹100 + ₹9 + ₹9 = ₹118. INV-020 grand total stays ₹353.97, balance ₹353.97 → ₹471.97; customer ₹4,182.93 → ₹4,300.93 | Same |
+| N1 | Pass | INV-021: 2 almirahs @ ₹10,000, 10% disc → ₹21,240. CN-002 for 1 unit (form): ₹9,000 + ₹810 + ₹810 = ₹10,620. Invoice balance → ₹10,620, customer −₹10,620, stock +1 | Same |
+| P3 | Pass | ADV-RT-01 RCM ₹10,000 @ 18%: stored total ₹11,800, balance due ₹10,000, supplier +₹10,000 | Same. Run 1 bill AM/2026/45 still carries ₹11,800 (old data not migrated) |
+| P7 | Pass | SEW/RT/501 saved; re-entry as `sew/rt/501 ` → 409 `DUPLICATE_SUPPLIER_BILL` | Same (case and spaces ignored) |
+
+### New findings
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| N3 | **Fail (critical)** | API accepted CN-PROBE-OVER: 5 almirahs returned against INV-021 (2 sold, 1 already returned). Credit ₹53,100 incl. ₹8,100 output GST reversed; INV-021 balance **−₹42,480** yet status "unpaid"; stock +5 phantom units | Returned quantity per line must not exceed invoiced − already credited; credit total must not exceed invoice value (s.34). Output tax reduction beyond the original supply is a GST exposure |
+| N4 | Fail | Credit note with header total ₹50,000 on a ₹10,620 line: 500 "Voucher is not balanced … Debit 1.00, Credit 50000.00" | Server must recompute totals from lines (as debit notes now do). It was stopped only by the ledger balance check, with a raw 500 |
+| N5 | Fail | No cancel/delete endpoint for credit notes (`/api/credit-notes` has GET and POST only) | A wrong note must be cancellable (with reason, kept in Table 13) or reversible |
+
+### Phase 5: Receipts, payments and TDS
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| R1 | Pass | INV-004 ₹36,990 received by bank → paid, balance ₹0; bank ledger +₹36,990 | Same |
+| R-DN | **Fail** | INV-020 (₹353.97 + DN-RT-001 ₹118, balance ₹471.97): receipt of ₹353.97 → status **paid, balance ₹0** | Balance must stay ₹118. `/api/payments` recomputes balance as grand_total − paid, ignoring debit and credit notes. Invoice list and party ledger now disagree |
+| R-RCM | **Fail** | ADV-RT-01 (RCM, due ₹10,000): payment ₹9,000 → balance **₹2,800**, partially paid | Balance ₹1,000 (the TDS). `/api/payments` uses grand_total incl. RCM tax; only `/api/purchases/[id]/payments` was fixed |
+| R-OVER | Partial | INV-019 ₹20,000: receipt ₹25,000 accepted silently; invoice paid ₹25,000; customer balance −₹25,000 | Customer ledger treats excess as advance (fine), but invoice should cap at ₹20,000 and show ₹5,000 on account, or warn |
+| R2 / R6 | **Fail (critical)** | 194J set up (10%, threshold ₹50,000). Deduction on ₹60,000 → 500 "Voucher is not balanced … Debit 0.00, Credit 6000.00". ₹10,000 → rejected "below threshold" | `/api/tds/deduct` posts only Cr TDS Payable, no debit to the supplier; no TDS can ever be saved. Threshold is annual aggregate per payee, not per payment. No link to bill, no TDS base excluding GST, no 206AA 20% no-PAN rate |
+| R2 (customer side) | Fail | Receipt form/API has no TDS field | Customers deducting 194J/194C/194Q pay net; need TDS Receivable (Form 26AS) on receipts |
+
+### Phase 6: GST returns (September 2026)
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| G-tot | Pass | GSTR-1 taxable ₹2,83,399.94, tax ₹36,848 = sum of 15 final invoices | Same |
+| G1 | Pass | B2B: INV-001, 004, 005, 010, 012, 014, 021 with GSTIN, POS, rate splits | Same (INV-012 POS 27 is the M3 master bug) |
+| G2 | Pass | B2CL: INV-006, POS 24, ₹1,10,000 | Same |
+| G3 | Partial | B2CS: 5% ₹1,500, 18% ₹599.94, 40% ₹1,000 correct; **0% ₹500 row (INV-009) also here** | Nil-rated goes only to Table 8 |
+| G5 | **Fail** | Table 8 nil ₹2,500 = INV-009 ₹500 + INV-014 nil line ₹2,000, both already in B2CS/B2B as 0% rows; one row `INTRAB2C` only | Double reported. Table 8 must split INTRB2B / INTRB2C / INTRAB2B / INTRAB2C (INV-014 is intra B2B) |
+| G4 | Partial | Exports: INV-019 WOPAY IGST 0 ✓. INV-013 (Run 1 data) WOPAY with IGST ₹1,800 | Legacy invoice from the old bug; portal rejects WOPAY with tax — needs a credit note |
+| G6/G7 | **Fail** | DN-RT-001 (Walk-in, intra, ₹118) exported in CDNUR as `typ: B2CL` | CDNUR B2CL is only for inter-state > ₹1 lakh; notes on B2CS supplies are netted in Table 7. Portal will reject |
+| G8 | Fail | HSN summary one table; UQC `KG` | Since May 2025 Table 12 is split B2B / B2C; UQC must be `KGS` |
+| G9 | **Fail** | Table 13: INV-001 → INV-021, total 15, **cancelled 0**; no CN/DN series rows | INV-016/017 were cancelled (and INV-002/003/015/018 unused) — total and cancelled counts wrong; credit and debit notes need their own rows |
+| G10 | Partial | JSON has gstin, fp `092026`, sections; `idt` = `27/9/2026`; `hash: "hash_value"` placeholder | Portal date format is `27-09-2026` |
+| G11 | **Fail** | 3.1(a) taxable ₹1,99,199.94 | Expected ₹1,96,699.94 (net of notes, excl. zero-rated and nil). Nil ₹2,500 counted in both 3.1(a) and 3.1(c) |
+| G12 | **Fail (critical)** | 3.1(b) zero-rated ₹30,000 with **IGST ₹3,298.43, CGST ₹379.06, SGST ₹379.06** | Exports carry no CGST/SGST. Ledger tax is being pro-rated across 3.1 rows by taxable value instead of taken from invoices |
+| G14 | **Fail (critical)** | 3.1(d) inward RCM ₹0 (summary shows "rcm_pooled_component ₹3,600") | ₹20,000, CGST ₹1,800, SGST ₹1,800 (AM/2026/45 + ADV-RT-01) |
+| G15 | Fail | No Table 3.2 in output | Inter-state to unregistered by POS: Gujarat ₹1,10,000 / IGST ₹19,800 |
+| G16 | **Fail** | 4A(5) other ITC: IGST ₹2,500, CGST ₹14,850, SGST ₹14,850; 4A(3) RCM ₹0 | 4A(5) CGST/SGST ₹12,960 each; RCM ITC ₹1,800 each in 4A(3). ₹90 per head unexplained |
+| G17 | Pass | Catering DSW/CAT/9 (ITC ineligible) ₹450/₹450 not in ITC; ₹900 added to cost | Same (should also appear in 4D(1) as ineligible) |
+| G18 | Pass | Set-off: IGST ITC → IGST first, then CGST → IGST ₹11,954, SGST → IGST ₹10,746 | Rule 88A order respected |
+| G-rec | Fail | 3B shows ledger vs GSTR-1 mismatch ₹1,950 CGST and SGST | Traced to cancelled INV-016/017 still in the output tax ledger (see A-CANCEL) |
+
+### Phase 7: Books of account (as on 30 Sep 2026)
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| A3 | **Fail** | Trial balance Dr ₹5,33,111.93 / Cr ₹5,33,111.94, `is_balanced: false`; balance sheet reports balanced | Books must tie to the paisa (likely INV-008 posted with unrounded tax before the fix). BS must not report balanced when TB does not |
+| A-CANCEL | **Fail (critical)** | Sales ₹2,59,199.94 = net sales ₹2,29,199.94 + ₹30,000 of cancelled INV-016/017; output CGST/SGST include their ₹1,950 each; customer CA-Shreeji still owes for them | `/api/invoices/[id]/cancel` reverses stock only: no ledger reversal, no customer balance reversal. Cancelled invoices also vanish from list APIs (so Table 13 shows 0) |
+| A6 | **Fail (critical)** | P&L: sales ₹2,59,199.94, purchases ₹25,900, gross profit ₹2,33,299.94 (90%); COGS block shows closing stock ₹2,99,300 and COGS total **−₹2,73,400** | Goods purchases post to Inventory (1104) but sales never post COGS, so goods sold have no cost. Profit is overstated by the cost of every item sold |
+| A10 | **Fail** | Stock at cost (items) ₹2,99,300 vs Inventory ledger ₹1,94,000 | Opening stock entered on items (e.g. Gold Ring 4 × ₹45,000) is not posted to the ledger (no Opening Stock / capital entry) |
+| A2 | Pass | AP ₹2,39,320 = all final bills (RCM at ₹10,000) − ₹9,000 paid; RCM Output ₹3,600 | Same |
+| A5 | Pass | AR ₹2,25,237.96 = sum of customer balances | Same (but both include cancelled invoices) |
+| A-BANK | Pass | Bank ₹52,990 = ₹36,990 + ₹25,000 − ₹9,000 | Same |
+| A-CLASS | Partial | Advocate fees and catering post to 5101 Purchases | Should go to Legal & Professional / Staff Welfare expense heads |
+| A8 | Pass | Unbalanced journal (Dr 500 / Cr 400) rejected; balanced ₹100 entry posted | Same |
+| A13 | **Fail** | Creating a period lock on Enterprise → 403 "Feature not available in your plan" | Period lock is essential after GSTR filing; gating is wrong |
+| S16b | Fail | INV-022 dated 15-Aug-2026 finalised on 27-Sep after INV-021 (27-Sep), no warning | Backdating into a month whose GSTR-1 is due breaks number/date order; journals need a backdate reason > 30 days but invoices do not |
+
+### Fixes after Run 2 (local, awaiting deploy)
+
+Migrations to run on staging: **304** (credit/debit note status), **305** (reverse the ledger of already-cancelled invoices INV-016/017), **306** (purchase `tds_deducted`, TDS ↔ bill link), **307** (recompute invoice balances net of notes and RCM bill balances).
+
+| Finding | Fix | Retest |
+|---------|-----|--------|
+| A-CANCEL | Invoice cancel reverses the invoice voucher (mirror lines, same date), reduces the customer balance, zeroes the balance, blocks cancel while active notes exist (409 `INVOICE_HAS_NOTES`); `?status=cancelled` lists cancelled invoices | TB sales/output tax drop by ₹30,000 / ₹1,950 each after 305; cancel a fresh invoice |
+| N3, N4 | Credit note totals recomputed on the server from lines; invoice must be final and same customer; qty per item ≤ invoiced − already credited; total ≤ invoice + DN − CN; round-off < ₹1; POS taken from invoice | Retry CN-PROBE-OVER payload → 400 `RETURN_EXCEEDS_INVOICED` |
+| N5 | `PATCH /api/credit-notes/[id]/cancel` (reason, GST-filed and period-lock checks): stock out, ledger reversed, customer and invoice balance restored; Cancel button on the list | Cancel CN-PROBE-OVER; INV-021 balance back to ₹10,620 |
+| R2 / R6 | TDS posts Dr AP / Cr TDS Payable; reduces supplier and bill balance (`tds_deducted`); threshold on FY aggregate per payee+section; TDS rounded to the rupee (s.288B); TDS cannot exceed the bill outstanding | 194J ₹60,000 on a bill → TDS ₹6,000, voucher balanced |
+| R-DN, R-RCM, R-OVER | All three receipt/payment routes recompute balances from source (invoice + DN − CN − paid; RCM bills net of tax, less TDS); payments above the outstanding are rejected with `PAYMENT_EXCEEDS_BALANCE` (take the excess as an on-account receipt) | INV-020 stays ₹118 due; ADV-RT-01 ₹1,000 due |
+| G3, G5 | 0% lines only in Table 8, split INTRB2B / INTRB2C / INTRAB2B / INTRAB2C; exports/SEZ never in Table 8; JSON uses `nil_amt/expt_amt/ngsup_amt` | |
+| G6/G7 | CDNUR only for B2CL and export notes; notes on B2CS supplies netted into Table 7 (listed in `cdn_b2cs`); cancelled notes excluded | DN-RT-001 appears in B2CS 18% intra |
+| G8 | HSN split `hsn_b2b` / `hsn_b2c`, UQC mapped (KG → KGS, services → NA) | |
+| G9 | Table 13 counts cancelled invoices and adds credit-note and debit-note series, grouped by number prefix | INV series cancel = 2 |
+| G10 | All GSTR-1 dates dd-mm-yyyy | |
+| G4 | Export with IGST charged reported as WPAY regardless of the stale flag | |
+| G11, G12, G15 | 3.1(a)/(b) tax heads summed from documents (no pro-rating); nil excluded from 3.1(a); 3.1(e) non-GST; Table 3.2 by POS | 3.1(b) CGST/SGST = 0 |
+| G14, G16 | 3.1(d) and 4A(3) from reverse-charge bills; 4A(1) bill of entry, 4A(2) import of services; 4A(5) = ledger ITC − 4A(1..3) + blocked; blocked 17(5) reversed in 4B(1) (Circular 170/02/2022) | 3.1(d) ₹20,000 / ₹1,800 / ₹1,800 |
+
+Not fixed yet (need a decision): COGS / periodic-inventory P&L (A6), opening stock not in ledger (A10), period-lock plan gating (A13), backdated invoice warning (S16b), TB ₹0.01 (A3), no PAN on suppliers so 206AA 20% cannot apply, no TDS field on customer receipts.
+
+### Fixes round 3 (local, awaiting deploy)
+
+Migrations to run on staging after 304–307: **308** (perpetual inventory, `items.opening_stock_rate`, back-post COGS for existing invoices and credit notes), **309** (post opening stock to the ledger), **310** (post paisa residuals to 5299 Round Off), **311** (supplier PAN, TDS on receipts, 206AA flags).
+
+| Finding | Fix | Retest |
+|---------|-----|--------|
+| A6 | Perpetual inventory (default for all businesses): each sale posts Dr COGS 5104 / Cr Inventory 1104 at weighted-average cost inside the invoice voucher; credit notes post the reverse; cancel and edit reverse/repost it. Bundles costed through components, services carry no cost. P&L takes COGS from the 5104 ledger; BS takes stock from the 1104 ledger | Gross profit on Gold Ring sale = sale value − 4 × avg cost; P&L no longer shows negative COGS |
+| A10 | Opening stock posted as Dr Inventory 1104 / Cr Opening Balance Adjustment 3100 dated the FY start, re-synced on item create, import and edit (rate frozen in `opening_stock_rate`) | Inventory ledger = stock at cost after 308/309 |
+| A13 | Period lock allowed on every paid plan and active trial (free/connect denied); unlock fixed (NULL branch rows no longer defeat the upsert; overlap check only when locking) | Lock and unlock September on Enterprise |
+| S16b | Finalising an invoice dated in an earlier month than today, or before an existing later invoice, needs a reason (422 `BACKDATE_REASON_REQUIRED`; the UI prompts and retries). Filed GSTR-1 months stay blocked | Save an invoice dated 15-Aug → prompt for reason |
+| A3 | Vouchers off by ≤ ₹0.01 get a balancing line to 5299 Round Off | TB `is_balanced: true` |
+| R-PAN | Supplier PAN field (auto from GSTIN chars 3–12). Without a PAN, TDS uses s.206AA: higher of section rate and 20% (5% for 194Q/194O); stored as `higher_rate_206aa` | 194C on a PAN-less supplier → 20% |
+| R-TDSREC | Receipts accept TDS deducted by the customer: Dr Bank + Dr TDS Receivable 1116 / Cr Debtors (amount + TDS); invoice settled = paid + `tds_received` | ₹10,000 receipt with ₹200 194J TDS clears a ₹10,200 invoice |
+| R-TDSUI | "Deduct TDS on this bill" in the purchase payment modal (section, base = taxable value, preview) | Pay a 194J bill with TDS from the UI |
+
+Still open: estimate / sales-order / WhatsApp conversions create invoices without ledger posting; period lock not enforced on payments and journals; voucher trigger tolerance still ₹0.01; variants costed at item-level rate.

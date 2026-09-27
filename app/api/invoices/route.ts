@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN customers c ON c.id = i.customer_id AND c.deleted_at IS NULL
       WHERE i.business_id = $1
         AND i.deleted_at IS NULL
-        AND i.status != 'cancelled'
+        ${status === 'cancelled' ? '' : "AND i.status != 'cancelled'"}
         AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
     `;
     const params: any[] = [businessId];
@@ -953,6 +953,44 @@ export async function POST(request: NextRequest) {
               days_backdated: backdateValidation.daysBackdated
             },
             { status: 403 }
+          );
+        }
+      }
+    }
+
+    // A tax invoice dated into an earlier return month, or before the latest invoice
+    // already issued, breaks GSTR-1 period/serial order — allowed, but only with a reason.
+    if (status === 'final' && document_type !== 'proforma_invoice') {
+      const prior = invoiceId
+        ? await queryOne<{ d: string; status: string }>(
+            `SELECT invoice_date::text AS d, status FROM invoices WHERE id = $1 AND business_id = $2`,
+            [invoiceId, business_id]
+          )
+        : null;
+      const newDate = String(invoice_date).slice(0, 10);
+      if (!prior || prior.status !== 'final' || prior.d.slice(0, 10) !== newDate) {
+        const todayIst = new Date(Date.now() + 330 * 60 * 1000).toISOString().slice(0, 10);
+        const earlierMonth = newDate.slice(0, 7) < todayIst.slice(0, 7);
+        const later = await queryOne<{ invoice_number: string; d: string }>(
+          `SELECT invoice_number, invoice_date::text AS d FROM invoices
+            WHERE business_id = $1 AND status = 'final' AND invoice_date > $2::date
+              AND COALESCE(document_type, '') <> 'proforma_invoice'
+              AND ($3::uuid IS NULL OR id <> $3::uuid)
+            ORDER BY invoice_date DESC LIMIT 1`,
+          [business_id, newDate, invoiceId || null]
+        );
+        const reason = typeof (body as any).backdate_reason === 'string' ? (body as any).backdate_reason.trim() : '';
+        if ((earlierMonth || later) && reason.length < 5) {
+          const why = earlierMonth
+            ? `The invoice date ${newDate} falls in an earlier GST return month (${newDate.slice(0, 7)}).`
+            : `Invoice ${later!.invoice_number} is already dated ${later!.d}, after ${newDate}.`;
+          return NextResponse.json(
+            {
+              error: `${why} Enter a reason for the back-dated invoice (it is recorded in the audit log), and include it in GSTR-1 for its own month or amend it there.`,
+              code: 'BACKDATE_REASON_REQUIRED',
+              days_backdated: backdateValidation.daysBackdated,
+            },
+            { status: 422 }
           );
         }
       }
@@ -2096,6 +2134,10 @@ export async function POST(request: NextRequest) {
           [business_id, oldPaymentIds]
         );
       }
+      await client.query(
+        `UPDATE invoices SET tds_received = 0 WHERE id = $1 AND business_id = $2`,
+        [invoiceId, business_id]
+      );
       if (useSoftDeleteInvoicePayments) {
         await client.query(
           `UPDATE payments

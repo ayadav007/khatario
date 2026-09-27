@@ -15,6 +15,10 @@ const DATA_START_ROW = 5;
 
 function formatDateForGSTN(dateStr: string | Date): string {
   if (!dateStr) return '';
+  if (typeof dateStr === 'string') {
+    const dmy = dateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (dmy) return `${dmy[1].padStart(2, '0')}/${dmy[2].padStart(2, '0')}/${dmy[3]}`;
+  }
   const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
   if (isNaN(date.getTime())) return '';
   const day = date.getDate().toString().padStart(2, '0');

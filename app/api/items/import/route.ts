@@ -156,6 +156,8 @@ export async function POST(request: NextRequest) {
             itemId: item.id,
             quantity: openingStock,
           });
+          const { syncItemOpeningStockLedger } = await import('@/lib/inventory/opening-stock-ledger');
+          await syncItemOpeningStockLedger(business_id, item.id);
         }
 
         success++;

@@ -49,6 +49,7 @@ export default function NewSupplierPage() {
     state: '',
     pincode: '',
     gstin: '',
+    pan: '',
     opening_balance: '0',
     opening_balance_type: 'credit',
     allow_low_stock_access: false,
@@ -285,6 +286,7 @@ export default function NewSupplierPage() {
       state_code: stateCode,
       pincode: formData.pincode || null,
       gstin: formData.gstin || null,
+      pan: formData.pan.trim().toUpperCase() || null,
       opening_balance: parseFloat(formData.opening_balance) || 0,
       opening_balance_type: formData.opening_balance_type || 'credit',
       business_id: business.id,
@@ -718,6 +720,18 @@ export default function NewSupplierPage() {
                     GSTIN format valid • API verification unavailable • You can still proceed
                   </p>
                 )}
+              </div>
+              <div className="max-w-xs">
+                <Input
+                  label="PAN"
+                  value={formData.pan}
+                  onChange={(e) => handleChange('pan', e.target.value.toUpperCase())}
+                  placeholder={formData.gstin.length === 15 ? formData.gstin.slice(2, 12).toUpperCase() : 'ABCDE1234F'}
+                  maxLength={10}
+                />
+                <p className="mt-1 text-xs text-text-secondary">
+                  Taken from the GSTIN if left blank. Without a PAN, TDS is deducted at the higher s.206AA rate.
+                </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 gap-y-6 max-w-2xl">
                 <Input

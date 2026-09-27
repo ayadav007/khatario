@@ -1,28 +1,20 @@
 import { GSTR1Filters } from '@/lib/gst/gstr1';
 
 /**
- * Format date string to DD/MM/YYYY as required by GSTN JSON spec
+ * GSTN GSTR-1 JSON dates are dd-mm-yyyy. Accepts dd-mm-yyyy, d/m/yyyy, yyyy-mm-dd or a Date-parsable string.
  */
-function formatDateForGSTN(dateStr: string): string {
+export function formatDateForGSTN(dateStr: string): string {
   if (!dateStr) return '';
+  const pad = (n: string | number) => String(n).padStart(2, '0');
 
-  // Already DD/MM/YYYY
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+  const dmy = dateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmy) return `${pad(dmy[1])}-${pad(dmy[2])}-${dmy[3]}`;
 
-  // YYYY-MM-DD
-  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
 
-  // Fallback: parse via Date
-  try {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      return `${day}/${month}/${d.getFullYear()}`;
-    }
-  } catch (_) { /* ignore */ }
-
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
   return dateStr;
 }
 
@@ -318,60 +310,58 @@ export async function generateGSTR1JSON(
     cdnr.push({ ctin, nt: notes });
   }
 
-  // ─── HSN ────────────────────────────────────────────────────────────────────
-  const hsnData = report.hsn.map((entry: any) => ({
-    hsn_sc: entry.hsn_sac || 'NA',
-    desc:   entry.description || '',
-    uqc:    entry.uqc || 'NOS',
-    qty:    Math.round((entry.total_quantity || 0) * 100) / 100,
-    val:    Math.round((entry.total_value    || 0) * 100) / 100,
-    txval:  Math.round((entry.taxable_value  || 0) * 100) / 100,
-    iamt:   Math.round((entry.integrated_tax || 0) * 100) / 100,
-    camt:   Math.round((entry.central_tax    || 0) * 100) / 100,
-    samt:   Math.round((entry.state_ut_tax   || 0) * 100) / 100,
-    csamt:  Math.round((entry.cess_amount    || 0) * 100) / 100,
-    rt:     entry.rate != null ? entry.rate : 0,
-  }));
+  // ─── HSN (Table 12, split B2B / B2C) ────────────────────────────────────────
+  const r2 = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
+  const hsnRows = (list: any[]) =>
+    (list || []).map((entry: any, idx: number) => ({
+      num:    idx + 1,
+      hsn_sc: entry.hsn_sac || 'NA',
+      desc:   entry.description || '',
+      uqc:    entry.uqc || 'OTH',
+      qty:    r2(entry.total_quantity),
+      txval:  r2(entry.taxable_value),
+      iamt:   r2(entry.integrated_tax),
+      camt:   r2(entry.central_tax),
+      samt:   r2(entry.state_ut_tax),
+      csamt:  r2(entry.cess_amount),
+      rt:     entry.rate != null ? entry.rate : 0,
+    }));
+  const hsnSection = {
+    hsn_b2b: hsnRows(report.hsn_b2b ?? []),
+    hsn_b2c: hsnRows(report.hsn_b2c ?? report.hsn ?? []),
+  };
 
-  // ─── NIL / EXEMPT / NON-GST ─────────────────────────────────────────────────
-  // Schema GSTR1-3.x expects sply_ty ∈ { INTRB2B, INTRAB2B, INTRB2C, INTRAB2C } (not EXMT/NIL/NGSUP).
-  // Until we split by inter/intra and B2B/B2C in the generator, report combined 8–value lines as INTRAB2C.
-  const nilInv: any[] = [];
-  let nilCombined = 0;
-  for (const entry of report.nil) {
-    nilCombined +=
-      (Number(entry.nil_supply) || 0) +
-      (Number(entry.exempt_supply) || 0) +
-      (Number(entry.non_gst_supply) || 0);
-  }
-  if (nilCombined > 0) {
-    nilInv.push({
-      sply_ty: 'INTRAB2C',
-      rt: 0,
-      txval: Math.round(nilCombined * 100) / 100,
-    });
-  }
+  // ─── NIL / EXEMPT / NON-GST (Table 8) ───────────────────────────────────────
+  const nilInv = (report.nil || [])
+    .filter((entry: any) => entry.sply_ty)
+    .map((entry: any) => ({
+      sply_ty:   entry.sply_ty,
+      nil_amt:   r2(entry.nil_supply),
+      expt_amt:  r2(entry.exempt_supply),
+      ngsup_amt: r2(entry.non_gst_supply),
+    }))
+    .filter((row: any) => row.nil_amt !== 0 || row.expt_amt !== 0 || row.ngsup_amt !== 0);
 
-  const docIssue =
-    report.doc_issue_summary &&
-    report.doc_issue_summary.totnum > 0 &&
-    report.doc_issue_summary.from &&
-    report.doc_issue_summary.to
-      ? [
-          {
-            doc_num: 1,
-            doc_det: [
-              {
-                num: 1,
-                from: String(report.doc_issue_summary.from),
-                to: String(report.doc_issue_summary.to),
-                totnum: report.doc_issue_summary.totnum,
-                cancel: report.doc_issue_summary.cancel ?? 0,
-              },
-            ],
-          },
-        ]
-      : [];
+  // ─── Documents issued (Table 13) ────────────────────────────────────────────
+  const docRows: any[] = report.doc_issues ?? [];
+  const docIssue = ([1, 4, 5] as const)
+    .map((docNum) => {
+      const rows = docRows.filter((d) => d.doc_num === docNum);
+      return rows.length === 0
+        ? null
+        : {
+            doc_num: docNum,
+            doc_det: rows.map((d, idx) => ({
+              num: idx + 1,
+              from: String(d.from),
+              to: String(d.to),
+              totnum: d.totnum,
+              cancel: d.cancel ?? 0,
+              net_issue: d.net_issue ?? d.totnum - (d.cancel ?? 0),
+            })),
+          };
+    })
+    .filter(Boolean);
 
   // ─── Final JSON ──────────────────────────────────────────────────────────────
   const gstr1Json = {
@@ -391,7 +381,7 @@ export async function generateGSTR1JSON(
     cdnr,
     cdnur:   cdnurArr,
     nil:     { inv: nilInv },
-    hsn:     { data: hsnData },
+    hsn:     hsnSection,
     doc_issue: docIssue,
   };
 

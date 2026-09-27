@@ -714,6 +714,7 @@ export interface Supplier {
   state_code?: string; // 2-digit GST state code
   pincode?: string;
   gstin?: string;
+  pan?: string | null;
   opening_balance: number;
   opening_balance_type: 'debit' | 'credit';
   linked_business_id?: string | null; // References business account if supplier is also a user

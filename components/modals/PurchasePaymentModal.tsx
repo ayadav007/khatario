@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, CreditCard, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,8 +11,18 @@ interface PurchasePaymentModalProps {
   grandTotal: number;
   paidAmount: number;
   balanceAmount: number;
+  /** Bill value before GST — the usual TDS base (CBDT Circular 23/2017). */
+  taxableAmount?: number;
   onSuccess: () => void;
   onClose: () => void;
+}
+
+interface TdsCategory {
+  id: string;
+  section_code: string;
+  section_name: string;
+  rate: number | string;
+  threshold_amount: number | string;
 }
 
 export function PurchasePaymentModal({
@@ -21,10 +31,11 @@ export function PurchasePaymentModal({
   grandTotal,
   paidAmount,
   balanceAmount,
+  taxableAmount,
   onSuccess,
   onClose,
 }: PurchasePaymentModalProps) {
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const [amount, setAmount] = useState<string>(balanceAmount.toString());
   const [paymentMode, setPaymentMode] = useState<string>('cash');
   const [reference, setReference] = useState<string>('');
@@ -32,18 +43,46 @@ export function PurchasePaymentModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
+  const [deductTds, setDeductTds] = useState(false);
+  const [categories, setCategories] = useState<TdsCategory[] | null>(null);
+  const [categoryId, setCategoryId] = useState('');
+  const [tdsBase, setTdsBase] = useState<string>(String(taxableAmount ?? grandTotal));
+
+  useEffect(() => {
+    if (!deductTds || categories !== null || !business?.id || !user?.id) return;
+    fetch(`/api/tds/categories?business_id=${business.id}&user_id=${user.id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const list: TdsCategory[] = d.categories || [];
+        setCategories(list);
+        if (list[0]) setCategoryId(list[0].id);
+      })
+      .catch(() => setCategories([]));
+  }, [deductTds, categories, business?.id, user?.id]);
+
+  const category = categories?.find((c) => c.id === categoryId);
+  const previewTds = useMemo(() => {
+    if (!deductTds || !category) return 0;
+    const base = parseFloat(tdsBase) || 0;
+    return Math.round((base * Number(category.rate)) / 100);
+  }, [deductTds, category, tdsBase]);
+
+  useEffect(() => {
+    setAmount(Math.max(0, Math.round((balanceAmount - previewTds) * 100) / 100).toString());
+  }, [previewTds, balanceAmount]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const paymentAmount = parseFloat(amount);
-    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+    const paymentAmount = parseFloat(amount || '0');
+    if (isNaN(paymentAmount) || paymentAmount < 0 || (paymentAmount === 0 && !deductTds)) {
       setError('Please enter a valid amount');
       return;
     }
 
-    if (paymentAmount > balanceAmount) {
-      setError(`Payment amount cannot exceed balance of ₹${balanceAmount.toLocaleString('en-IN')}`);
+    if (paymentAmount + previewTds > balanceAmount + 0.01) {
+      setError(`Payment plus TDS cannot exceed balance of ₹${balanceAmount.toLocaleString('en-IN')}`);
       return;
     }
 
@@ -51,31 +90,59 @@ export function PurchasePaymentModal({
       setError('You must be signed in to record a payment.');
       return;
     }
+    if (deductTds && !category) {
+      setError('Choose a TDS section (set sections up under TDS settings).');
+      return;
+    }
 
     setLoading(true);
+    let tdsRecorded = false;
     try {
-      const response = await fetch(`/api/purchases/${purchaseId}/payments`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: paymentAmount,
-          payment_mode: paymentMode,
-          reference: reference || null,
-          payment_date: paymentDate,
-          user_id: user?.id,
-        }),
-      });
+      if (deductTds && category) {
+        const tdsRes = await fetch('/api/tds/deduct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            business_id: business?.id,
+            user_id: user.id,
+            purchase_id: purchaseId,
+            tds_category_id: category.id,
+            payment_amount: parseFloat(tdsBase) || 0,
+            transaction_date: paymentDate,
+            notes: `TDS on bill ${billNumber}`,
+          }),
+        });
+        const tdsData = await tdsRes.json();
+        if (!tdsRes.ok) throw new Error(tdsData.error || 'Failed to deduct TDS');
+        tdsRecorded = true;
+      }
 
-      const data = await response.json();
+      if (paymentAmount > 0) {
+        const response = await fetch(`/api/purchases/${purchaseId}/payments`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: paymentAmount,
+            payment_mode: paymentMode,
+            reference: reference || null,
+            payment_date: paymentDate,
+            user_id: user?.id,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to record payment');
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to record payment');
+        }
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to record payment');
+      const message = err.message || 'Failed to record payment';
+      setError(tdsRecorded ? `TDS was recorded, but the payment failed: ${message}` : message);
+      if (tdsRecorded) onSuccess();
     } finally {
       setLoading(false);
     }
@@ -83,7 +150,7 @@ export function PurchasePaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6">
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -128,6 +195,61 @@ export function PurchasePaymentModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={deductTds}
+                onChange={(e) => setDeductTds(e.target.checked)}
+                disabled={loading}
+              />
+              Deduct TDS on this bill
+            </label>
+            {deductTds && (
+              <>
+                {categories === null ? (
+                  <p className="text-xs text-gray-500">Loading TDS sections…</p>
+                ) : categories.length === 0 ? (
+                  <p className="text-xs text-amber-700">No TDS sections set up yet. Add them under Accounting → TDS.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Section</label>
+                      <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        disabled={loading}
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.section_code} @ {Number(c.rate)}%
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">TDS base (excl. GST)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={tdsBase}
+                        onChange={(e) => setTdsBase(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        disabled={loading}
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-gray-500">
+                      TDS ≈ ₹{previewTds.toLocaleString('en-IN')} (rounded to the rupee). If the supplier has no PAN,
+                      the higher s.206AA rate is applied. The threshold is checked on the supplier&apos;s total for the year.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Payment Amount <span className="text-red-500">*</span>
@@ -225,4 +347,3 @@ export function PurchasePaymentModal({
     </div>
   );
 }
-

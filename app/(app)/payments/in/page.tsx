@@ -47,6 +47,9 @@ interface Customer {
   phone: string | null;
 }
 
+/** balance_amount is already net of receipts, notes and TDS. */
+const outstandingOf = (inv: Invoice) => Number(inv.balance_amount ?? inv.grand_total) || 0;
+
 export default function PaymentInPage() {
   const router = useRouter();
   const { business, user } = useAuth();
@@ -65,6 +68,8 @@ export default function PaymentInPage() {
     customer_id: '',
     invoice_id: '',
     amount: '',
+    tds_amount: '',
+    tds_section: '194C',
     payment_mode: 'cash',
     payment_date: new Date().toISOString().split('T')[0],
     notes: ''
@@ -116,9 +121,8 @@ export default function PaymentInPage() {
       const response = await fetch(`/api/invoices?business_id=${business.id}&status=all&user_id=${user?.id}`);
       const data = await response.json();
       // Filter invoices for this customer with balance
-      const filteredInvoices = (data.invoices || []).filter((inv: Invoice) => 
-        inv.customer_id === customerId && 
-        (Number(inv.balance_amount || inv.grand_total) - Number(inv.paid_amount || 0)) > 0
+      const filteredInvoices = (data.invoices || []).filter((inv: Invoice) =>
+        inv.customer_id === customerId && outstandingOf(inv) > 0
       );
       setInvoices(filteredInvoices);
     } catch (error) {
@@ -130,8 +134,9 @@ export default function PaymentInPage() {
     e.preventDefault();
     if (!business?.id) return;
 
-    const paymentAmount = parseFloat(formData.amount);
-    if (!paymentAmount || paymentAmount <= 0) {
+    const paymentAmount = parseFloat(formData.amount || '0') || 0;
+    const tdsAmount = parseFloat(formData.tds_amount || '0') || 0;
+    if (paymentAmount < 0 || tdsAmount < 0 || paymentAmount + tdsAmount <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
@@ -139,9 +144,9 @@ export default function PaymentInPage() {
     if (formData.invoice_id) {
       const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
       if (selectedInvoice) {
-        const balance = Number(selectedInvoice.balance_amount || selectedInvoice.grand_total) - Number(selectedInvoice.paid_amount || 0);
-        if (paymentAmount > balance) {
-          toast.error(`Payment amount cannot exceed balance of ₹${balance.toLocaleString()}`);
+        const balance = outstandingOf(selectedInvoice);
+        if (paymentAmount + tdsAmount > balance + 0.01) {
+          toast.error(`Amount received plus TDS cannot exceed balance of ₹${balance.toLocaleString()}`);
           return;
         }
       }
@@ -161,7 +166,9 @@ export default function PaymentInPage() {
           amount: paymentAmount,
           payment_mode: formData.payment_mode,
           payment_date: formData.payment_date,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          tds_amount: tdsAmount,
+          tds_section: tdsAmount > 0 ? formData.tds_section : null,
         })
       });
 
@@ -172,6 +179,8 @@ export default function PaymentInPage() {
           customer_id: '',
           invoice_id: '',
           amount: '',
+          tds_amount: '',
+          tds_section: '194C',
           payment_mode: 'cash',
           payment_date: new Date().toISOString().split('T')[0],
           notes: ''
@@ -246,9 +255,7 @@ export default function PaymentInPage() {
   });
 
   const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
-  const invoiceBalance = selectedInvoice 
-    ? Number(selectedInvoice.balance_amount || selectedInvoice.grand_total) - Number(selectedInvoice.paid_amount || 0)
-    : null;
+  const invoiceBalance = selectedInvoice ? outstandingOf(selectedInvoice) : null;
 
   const referenceLabel = (p: Payment) => {
     if (p.reference_type === 'invoice') return 'Invoice';
@@ -381,15 +388,14 @@ export default function PaymentInPage() {
                       setFormData({ ...formData, invoice_id: e.target.value });
                       const inv = invoices.find(i => i.id === e.target.value);
                       if (inv) {
-                        const balance = Number(inv.balance_amount || inv.grand_total) - Number(inv.paid_amount || 0);
-                        setFormData(prev => ({ ...prev, amount: balance.toString() }));
+                        setFormData(prev => ({ ...prev, amount: outstandingOf(inv).toString(), tds_amount: '' }));
                       }
                     }}
                     disabled={!formData.customer_id}
                   >
                     <option value="">No specific invoice</option>
                     {invoices.map(invoice => {
-                      const balance = Number(invoice.balance_amount || invoice.grand_total) - Number(invoice.paid_amount || 0);
+                      const balance = outstandingOf(invoice);
                       return (
                         <option key={invoice.id} value={invoice.id}>
                           {invoice.invoice_number} - Balance: ₹{balance.toLocaleString()}
@@ -417,6 +423,37 @@ export default function PaymentInPage() {
                       Invoice Balance: ₹{invoiceBalance.toLocaleString()}
                     </p>
                   )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      TDS deducted by customer
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.tds_amount}
+                      onChange={(e) => setFormData({ ...formData, tds_amount: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <select
+                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      value={formData.tds_section}
+                      onChange={(e) => setFormData({ ...formData, tds_section: e.target.value })}
+                    >
+                      {['194C', '194J', '194H', '194I', '194Q', '194O', 'other'].map((s) => (
+                        <option key={s} value={s}>{s === 'other' ? 'Other' : s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="col-span-3 text-xs text-gray-500">
+                    Enter the cash/bank amount received above; TDS also settles the invoice and goes to TDS Receivable (match with Form 26AS).
+                  </p>
                 </div>
 
                 <div>

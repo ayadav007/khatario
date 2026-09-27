@@ -4,6 +4,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 
 export const dynamic = 'force-dynamic';
 
@@ -344,9 +346,16 @@ export async function POST(request: NextRequest) {
       payment_date,
       notes,
       created_by, // User ID who created the payment
+      tds_section,
     } = body;
+    const tdsAmount = type === 'receivable' ? Math.round((Number(body.tds_amount) || 0) * 100) / 100 : 0;
+    const settles = Math.round(((Number(amount) || 0) + tdsAmount) * 100) / 100;
 
-    if (!business_id || !type || !amount || Number(amount) <= 0) {
+    if (tdsAmount < 0) {
+      return NextResponse.json({ error: 'tds_amount cannot be negative' }, { status: 400 });
+    }
+
+    if (!business_id || !type || Number(amount) < 0 || settles <= 0) {
       return NextResponse.json(
         { error: 'business_id, type, and amount are required' },
         { status: 400 }
@@ -539,8 +548,8 @@ export async function POST(request: NextRequest) {
       const paymentRes = await client.query(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *`,
         [
           business_id,
@@ -554,6 +563,8 @@ export async function POST(request: NextRequest) {
           payment_mode,
           payment_date || new Date(),
           notes || null,
+          tdsAmount,
+          tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
         ],
       );
       payment = paymentRes.rows[0];
@@ -561,24 +572,40 @@ export async function POST(request: NextRequest) {
       // Update invoice/purchase paid_amount and customer/supplier balance
       if (reference_type === 'invoice' && reference_id) {
         const invRes = await client.query(
-          'SELECT paid_amount, grand_total, customer_id FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          'SELECT paid_amount, grand_total, customer_id, status FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
           [reference_id, business_id],
         );
         const invoice = invRes.rows[0];
         if (invoice) {
-          const newPaidAmount = Number(invoice.paid_amount || 0) + Number(amount);
-          const balance = Math.max(0, Number(invoice.grand_total || 0) - newPaidAmount);
-          let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-          if (newPaidAmount <= 0) paymentStatus = 'unpaid';
-          else if (balance <= 0) paymentStatus = 'paid';
-          else paymentStatus = 'partially_paid';
+          if (invoice.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
+              { status: 400 },
+            );
+          }
+          const current = await recomputeInvoiceBalance(client, reference_id, business_id);
+          const outstanding = current?.balance_amount ?? 0;
+          if (settles > outstanding + 0.01) {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              {
+                error: `Amount ₹${settles.toFixed(2)}${tdsAmount > 0 ? ' (including TDS)' : ''} exceeds the invoice balance of ₹${outstanding.toFixed(2)} (after credit/debit notes). Record the excess as an advance instead.`,
+                code: 'PAYMENT_EXCEEDS_BALANCE',
+                outstanding,
+              },
+              { status: 400 },
+            );
+          }
 
           await client.query(
             `UPDATE invoices
-             SET paid_amount = $1, balance_amount = $2, payment_status = $3, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $4 AND business_id = $5`,
-            [newPaidAmount, balance, paymentStatus, reference_id, business_id],
+                SET paid_amount = COALESCE(paid_amount, 0) + $1,
+                    tds_received = COALESCE(tds_received, 0) + $2
+              WHERE id = $3 AND business_id = $4`,
+            [amount, tdsAmount, reference_id, business_id],
           );
+          await recomputeInvoiceBalance(client, reference_id, business_id);
 
           if (invoice.customer_id) {
             await client.query(
@@ -586,7 +613,7 @@ export async function POST(request: NextRequest) {
                SET current_balance = current_balance - $1,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = $2 AND business_id = $3`,
-              [amount, invoice.customer_id, business_id],
+              [settles, invoice.customer_id, business_id],
             );
           }
         }
@@ -594,24 +621,38 @@ export async function POST(request: NextRequest) {
 
       if (reference_type === 'purchase' && reference_id) {
         const purRes = await client.query(
-          'SELECT paid_amount, grand_total, supplier_id FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE',
+          `SELECT paid_amount, grand_total, tax_total, is_reverse_charge, COALESCE(tds_deducted, 0) AS tds_deducted,
+                  supplier_id, status
+             FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
           [reference_id, business_id],
         );
         const purchase = purRes.rows[0];
         if (purchase) {
-          const newPaidAmount = Number(purchase.paid_amount || 0) + Number(amount);
-          const balance = Math.max(0, Number(purchase.grand_total || 0) - newPaidAmount);
-          let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
-          if (newPaidAmount <= 0) paymentStatus = 'unpaid';
-          else if (balance <= 0) paymentStatus = 'paid';
-          else paymentStatus = 'partially_paid';
+          if (purchase.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+              { status: 400 },
+            );
+          }
+          const outstanding = purchaseOutstanding(purchase);
+          if (Number(amount) > outstanding + 0.01) {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              {
+                error: `Amount ₹${Number(amount).toFixed(2)} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}; reverse-charge GST is paid to the government, not the supplier).`,
+                code: 'PAYMENT_EXCEEDS_BALANCE',
+                outstanding,
+              },
+              { status: 400 },
+            );
+          }
 
           await client.query(
-            `UPDATE purchases
-             SET paid_amount = $1, balance_amount = $2, payment_status = $3, updated_at = CURRENT_TIMESTAMP
-             WHERE id = $4 AND business_id = $5`,
-            [newPaidAmount, balance, paymentStatus, reference_id, business_id],
+            `UPDATE purchases SET paid_amount = COALESCE(paid_amount, 0) + $1 WHERE id = $2 AND business_id = $3`,
+            [amount, reference_id, business_id],
           );
+          await recomputePurchaseBalance(client, reference_id, business_id);
 
           if (purchase.supplier_id) {
             await client.query(
@@ -632,7 +673,7 @@ export async function POST(request: NextRequest) {
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $2 AND business_id = $3`,
-          [amount, finalCustomerId, business_id],
+          [settles, finalCustomerId, business_id],
         );
       }
 
@@ -660,6 +701,7 @@ export async function POST(request: NextRequest) {
         referenceNumber: reference_id ? `${reference_type}-${reference_id.substring(0, 8)}` : undefined,
         description: notes || `Payment ${type === 'receivable' ? 'received' : 'made'}${reference_id ? ` for ${reference_type}` : ''}`,
         branchId: finalBranchId,
+        tdsAmount,
         poolClient: client,
       });
 

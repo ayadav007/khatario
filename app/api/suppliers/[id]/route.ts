@@ -5,6 +5,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { Supplier } from '@/types/database';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { normalizePan, panFromGstin } from '@/lib/tax/pan';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,6 +150,7 @@ export async function PUT(
       state_code,
       pincode,
       gstin,
+      pan,
       opening_balance,
       opening_balance_type,
       notes,
@@ -156,6 +158,13 @@ export async function PUT(
       allow_low_stock_access,
       updated_by_user_id, // REQUIRED for authorization
     } = body;
+
+    if (pan && !normalizePan(pan)) {
+      return NextResponse.json(
+        { error: `Invalid PAN "${pan}". Expected format: ABCDE1234F` },
+        { status: 400 }
+      );
+    }
 
     if (!updated_by_user_id) {
       return NextResponse.json(
@@ -264,6 +273,7 @@ export async function PUT(
         notes = COALESCE($12, notes),
         is_active = COALESCE($13, is_active),
         allow_low_stock_access = COALESCE($14, allow_low_stock_access),
+        pan = COALESCE($17, pan),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $15 AND business_id = $16
       RETURNING *
@@ -271,6 +281,7 @@ export async function PUT(
       name, phoneNorm, email, address, city, state, finalStateCode, pincode, gstin,
       opening_balance, opening_balance_type, notes, is_active, finalAllowLowStockAccess, supplierId,
       business_id,
+      normalizePan(pan) ?? panFromGstin(gstin),
     ]);
 
     if (!supplier) {

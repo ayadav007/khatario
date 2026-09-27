@@ -6,6 +6,7 @@
 import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import { Account } from '@/types/database';
+import { computeGoodsCost, getInventoryModel, postCostOfGoods } from '@/lib/inventory/cogs-posting';
 
 /** Use the same PoolClient as an outer BEGIN so deferred voucher-balance triggers see all lines at COMMIT. */
 async function ledgerQueryOne<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -913,20 +914,32 @@ export async function createInvoiceLedgerEntries(params: {
     }
   }
 
-  // PHASE-4: per-invoice COGS posting is DISABLED for periodic-inventory books.
-  // Periodic books compute COGS at period end via the Trading Account formula:
-  //     COGS = Opening Stock + Net Purchases (5101) − Purchase Returns (5102) − Closing Stock
-  // Posting per-invoice COGS in a periodic system creates two parallel COGS sources
-  // (the cogs_two_sources audit issue). Tally and Ind AS 2 both expect periodic
-  // books to keep 5104 and 1104 untouched between year-end snapshots — only the
-  // Year-End Close JV writes to them.
-  // To switch a business to perpetual later: flip business_settings.inventory_model
-  // and re-enable this block guarded by `inventoryModel === 'perpetual'`.
-  if (cogsAmount > 0) {
-    console.warn(
-      `[PHASE-4] cogsAmount=₹${cogsAmount.toFixed(2)} ignored for invoice ${invoiceNumber} ` +
-      `— inventory_model is periodic; COGS is computed at period end, not per invoice.`,
+  // Perpetual inventory: goods purchases are capitalised in 1104, so each sale moves
+  // its weighted-average cost to COGS (5104). Cost is taken from the saved invoice
+  // lines; the caller's cogsAmount is ignored.
+  void cogsAmount;
+  if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
+    const lines = await ledgerQueryRows<{ item_id: string | null; quantity: string }>(
+      poolClient,
+      'SELECT item_id, quantity FROM invoice_items WHERE invoice_id = $1',
+      [invoiceId]
     );
+    const cost = await computeGoodsCost(
+      poolClient,
+      businessId,
+      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
+      invoiceDate
+    );
+    await postCostOfGoods(poolClient, {
+      businessId,
+      voucherType: 'invoice',
+      voucherId: invoiceId,
+      amount: cost,
+      entryDate: invoiceDate,
+      reference: invoiceNumber,
+      branchId: params.branchId,
+      direction: 'sale',
+    });
   }
 }
 
@@ -1589,14 +1602,30 @@ export async function createCreditNoteLedgerEntries(params: {
     poolClient,
   });
 
-  // PHASE-4: per-credit-note COGS reversal is DISABLED for periodic-inventory books.
-  // (Same rationale as createInvoiceLedgerEntries above.) Periodic books reverse
-  // COGS implicitly at period end through the Closing Stock revaluation.
-  if (cogsAmount > 0) {
-    console.warn(
-      `[PHASE-4] cogsAmount=₹${cogsAmount.toFixed(2)} ignored for credit note ${creditNoteNumber} ` +
-      `— inventory_model is periodic; COGS reversal happens at period end via Closing Stock.`,
+  // Perpetual inventory: returned goods go back into stock at weighted-average cost.
+  void cogsAmount;
+  if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
+    const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
+      poolClient,
+      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1',
+      [creditNoteId]
     );
+    const cost = await computeGoodsCost(
+      poolClient,
+      businessId,
+      lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
+      creditNoteDate
+    );
+    await postCostOfGoods(poolClient, {
+      businessId,
+      voucherType: 'credit_note',
+      voucherId: creditNoteId,
+      amount: cost,
+      entryDate: creditNoteDate,
+      reference: creditNoteNumber,
+      branchId: params.branchId,
+      direction: 'return',
+    });
   }
 }
 
@@ -1814,6 +1843,29 @@ export async function createPurchaseReturnLedgerEntries(params: {
 /**
  * Create double-entry ledger entries for a payment
  */
+/** 1116 TDS Receivable (asset): tax customers withheld from receipts, adjusted against income-tax liability. */
+async function getOrCreateTdsReceivableAccount(businessId: string, poolClient?: PoolClient): Promise<string> {
+  const existing = await ledgerQueryOne<{ id: string }>(
+    poolClient,
+    `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '1116' LIMIT 1`,
+    [businessId]
+  );
+  if (existing) return existing.id;
+  const created = await ledgerQueryOne<{ id: string }>(
+    poolClient,
+    `INSERT INTO accounts (business_id, account_code, account_name, account_type, account_group_id,
+                           nature, is_system, sort_order, description)
+     SELECT $1, '1116', 'TDS Receivable', 'asset', a.account_group_id, 'debit', true, 16,
+            'TDS deducted by customers on receipts; reconcile with Form 26AS'
+       FROM accounts a WHERE a.business_id = $1 AND a.account_code = '1103'
+     LIMIT 1
+     RETURNING id`,
+    [businessId]
+  );
+  if (!created) throw new Error('Accounts Receivable (1103) not found; cannot create TDS Receivable account.');
+  return created.id;
+}
+
 export async function createPaymentLedgerEntries(params: {
   businessId: string;
   paymentId: string;
@@ -1826,6 +1878,8 @@ export async function createPaymentLedgerEntries(params: {
   referenceNumber?: string;
   description?: string;
   branchId?: string; // Branch ID for branch-wise accounting
+  /** Receipts only: TDS the customer withheld (s.194C/194J etc.); settles receivables alongside `amount`. */
+  tdsAmount?: number;
   // PHASE-5: shared transaction client.
   poolClient?: PoolClient;
 }): Promise<void> {
@@ -1842,6 +1896,7 @@ export async function createPaymentLedgerEntries(params: {
     description,
     poolClient,
   } = params;
+  const tdsAmount = type === 'receivable' ? Math.max(0, Number(params.tdsAmount) || 0) : 0;
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1864,20 +1919,38 @@ export async function createPaymentLedgerEntries(params: {
       );
     }
 
-    // Debit Cash/Bank
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: paymentId,
-      voucherType: 'payment',
-      accountId: paymentAccount.id,
-      entryDate: paymentDate,
-      debit: amount,
-      credit: 0,
-      narration: description || `Payment received${referenceNumber ? ` - ${referenceNumber}` : ''}`,
-      referenceNumber: referenceNumber || paymentId.substring(0, 8),
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (amount > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: paymentAccount.id,
+        entryDate: paymentDate,
+        debit: amount,
+        credit: 0,
+        narration: description || `Payment received${referenceNumber ? ` - ${referenceNumber}` : ''}`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+
+    if (tdsAmount > 0) {
+      const tdsReceivable = await getOrCreateTdsReceivableAccount(businessId, poolClient);
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: tdsReceivable,
+        entryDate: paymentDate,
+        debit: tdsAmount,
+        credit: 0,
+        narration: `TDS deducted by customer${referenceNumber ? ` - ${referenceNumber}` : ''} (claim via Form 26AS)`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
 
     // Credit Accounts Receivable
     await createLedgerEntryLine({
@@ -1887,7 +1960,7 @@ export async function createPaymentLedgerEntries(params: {
       accountId: accounts.accountsReceivable.id,
       entryDate: paymentDate,
       debit: 0,
-      credit: amount,
+      credit: Math.round((amount + tdsAmount) * 100) / 100,
       narration: description || `Payment received from customer${referenceNumber ? ` - ${referenceNumber}` : ''}`,
       referenceNumber: referenceNumber || paymentId.substring(0, 8),
       branchId: params.branchId,

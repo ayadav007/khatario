@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { queryRows, queryOne } from '@/lib/db';
 import { calculateCOGS } from '@/lib/services/cogs-calculator';
+import { getInventoryModel } from '@/lib/inventory/cogs-posting';
 import { getTotalDepreciation } from '@/lib/services/depreciation-calculator';
 import { getTotalProvisions } from '@/lib/services/provisions-manager';
 import { getAllTaxProvisions } from '@/lib/services/tax-provision-calculator';
@@ -323,7 +324,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Closing stock reminder (periodic inventory): derived stock ≠ formal year-end close
-    if (cogsData && cogsData.meta.inventory_model === 'periodic') {
+    if (cogsData && cogsData.meta.inventory_model === 'periodic' && (await getInventoryModel(undefined, businessId)) === 'periodic') {
       const purchasesGross = cogsData.purchases?.gross_purchases ?? 0;
       const openingVal = cogsData.openingStock?.value ?? 0;
       const closingVal = cogsData.closingStock?.value ?? 0;
@@ -387,7 +388,7 @@ export async function GET(request: NextRequest) {
     // already has at 5207-5209).
     // ------------------------------------------------------------------
 
-    const directExpenseCodes = new Set(['5101', '5102']);
+    const directExpenseCodes = new Set(['5101', '5102', '5104']);
     const otherExpenseCodes = new Set(['5205', '5206', '5207', '5208', '5209']);
     const depreciationCode = '5204';
     const taxCodes = new Set(['5210', '5211']);
@@ -422,8 +423,13 @@ export async function GET(request: NextRequest) {
       .filter((exp: any) => exp.account_code === '5211')
       .reduce((sum: number, exp: any) => sum + exp.amount, 0);
 
-    // COGS (if calculated)
-    const cogs = cogsData?.cogs || 0;
+    // Perpetual books: 5104 already holds the cost of each sale and 5101 only the
+    // non-stock remainder of purchases, so the ledger direct expenses ARE cost of revenue.
+    const isPerpetual = (await getInventoryModel(undefined, businessId)) === 'perpetual';
+    const ledgerCogs = directExpenses
+      .filter((exp: any) => exp.account_code === '5104')
+      .reduce((sum: number, exp: any) => sum + exp.amount, 0);
+    const cogs = isPerpetual ? ledgerCogs : cogsData?.cogs || 0;
     const openingStock = cogsData?.openingStock.value || 0;
     const purchases = cogsData?.purchases.total || 0;
     const closingStock = cogsData?.closingStock.value || 0;
@@ -432,7 +438,7 @@ export async function GET(request: NextRequest) {
     // Note: when COGS is used, totalDirectExpenses (5101 ledger) represents the same
     // purchases that COGS already accounts for - we deliberately avoid subtracting
     // them again. cogsUsed is the canonical "cost of revenue" figure for this period.
-    const cogsUsed = cogs > 0 ? cogs : totalDirectExpenses;
+    const cogsUsed = isPerpetual ? totalDirectExpenses : cogs > 0 ? cogs : totalDirectExpenses;
     const grossProfit = totalIncome - cogsUsed;
 
     // Operating Profit = Gross Profit - Indirect Expenses - Depreciation
