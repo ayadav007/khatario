@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
+import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
@@ -83,7 +84,10 @@ export async function PATCH(
     }
 
     const paidAmount = Number(purchase.paid_amount || 0) + Number(amount);
-    const balance = Math.max(0, Number(purchase.grand_total || 0) - paidAmount);
+    const balance = Math.max(
+      0,
+      supplierPayableAmount(purchase.grand_total, purchase.tax_total, purchase.is_reverse_charge) - paidAmount
+    );
     
     // Calculate payment_status
     let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';

@@ -1,4 +1,5 @@
 import type { CreateInvoiceInput } from '@/lib/invoices/invoice-create-service';
+import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 
 const GST_TOLERANCE = 0.05;
 
@@ -35,51 +36,48 @@ export function computeInvoiceTotals(
 } {
   const items = body.items ?? [];
   const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
+  const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
+  const exportFields = body as CreateInvoiceInput & {
+    is_export?: boolean | null;
+    supply_type?: string | null;
+    export_type?: string | null;
+    lut_declaration?: boolean | null;
+  };
+  const zeroRated = isZeroRatedWithoutTax({
+    is_export: exportFields.is_export,
+    supply_type: exportFields.supply_type,
+    export_type: exportFields.export_type,
+    lut_declaration: exportFields.lut_declaration,
+    place_of_supply_state_code: body.place_of_supply_state_code,
+  });
   let subtotal = 0;
-  let taxTotal = 0;
   let discountTotal = 0;
   let cgstTotal = 0;
   let sgstTotal = 0;
   let igstTotal = 0;
 
   for (const item of items) {
-    const qty = Number(item.quantity) || 0;
-    const unitPrice = Number(item.unit_price) || 0;
-    const itemSubtotal = qty * unitPrice;
-    const itemDiscount = (itemSubtotal * (Number(item.discount_percent) || 0)) / 100;
-    const taxable = itemSubtotal - itemDiscount;
-    const taxRate = Number(item.tax_rate) || 0;
-
-    let taxAmount = 0;
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-
-    if (placeOfSupply && businessStateCode && placeOfSupply === businessStateCode) {
-      const half = taxRate / 2;
-      cgst = (taxable * half) / 100;
-      sgst = (taxable * half) / 100;
-      taxAmount = cgst + sgst;
-    } else {
-      igst = (taxable * taxRate) / 100;
-      taxAmount = igst;
-    }
-
-    subtotal += taxable;
-    discountTotal += itemDiscount;
-    taxTotal += taxAmount;
-    cgstTotal += cgst;
-    sgstTotal += sgst;
-    igstTotal += igst;
+    const line = computeLineGst(item, intraState, zeroRated);
+    subtotal += line.taxable;
+    discountTotal += line.itemDiscount;
+    cgstTotal += line.cgst;
+    sgstTotal += line.sgst;
+    igstTotal += line.igst;
   }
+  subtotal = round2(subtotal);
+  discountTotal = round2(discountTotal);
+  cgstTotal = round2(cgstTotal);
+  sgstTotal = round2(sgstTotal);
+  igstTotal = round2(igstTotal);
+  const taxTotal = round2(cgstTotal + sgstTotal + igstTotal);
 
   const additional = Number(body.additional_charges) || 0;
-  const grandTotalRaw = subtotal + taxTotal + additional;
+  const grandTotalRaw = round2(subtotal + taxTotal + additional);
   let roundOff = Number(body.round_off) || 0;
   if (body.enable_round_off && !body.round_off) {
-    roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
+    roundOff = round2(Math.round(grandTotalRaw) - grandTotalRaw);
   }
-  const grandTotal = grandTotalRaw + roundOff;
+  const grandTotal = round2(grandTotalRaw + roundOff);
 
   return {
     subtotal,

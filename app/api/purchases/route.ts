@@ -3,7 +3,7 @@ import * as db from '@/lib/db';
 import { getPool, queryOne } from '@/lib/db';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { calculateCreditMetrics, calculateProjectedCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
+import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { FeatureKeys } from '@/lib/featureKeys';
 import {
@@ -14,6 +14,8 @@ import {
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
+import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
+import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -472,6 +474,25 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      if ((body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill !== true) {
+        const duplicate = await findDuplicateSupplierBill(client, {
+          businessId: business_id,
+          supplierId: normalizedSupplierId,
+          billNumber: invoice_number_input || bill_number,
+          billDate: bill_date,
+        });
+        if (duplicate) {
+          return NextResponse.json(
+            {
+              error: `Bill ${duplicate.bill_number} from this supplier is already recorded (${String(duplicate.bill_date).slice(0, 10)}, ${duplicate.status}). Recording it again would claim ITC twice.`,
+              code: 'DUPLICATE_SUPPLIER_BILL',
+              existing_purchase_id: duplicate.id,
+            },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     await client.query('BEGIN');
@@ -606,7 +627,8 @@ export async function POST(request: NextRequest) {
       grand_total !== undefined ? grand_total : computedGrand;
 
     // Calculate balance_amount and payment_status
-    const balanceAmount = finalGrandTotal - (paid_amount || 0);
+    const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal, is_reverse_charge);
+    const balanceAmount = supplierPayable - (paid_amount || 0);
     let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
     if (paid_amount <= 0) {
       paymentStatus = 'unpaid';
@@ -871,7 +893,7 @@ export async function POST(request: NextRequest) {
     if (status === 'final') {
       const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
       const isCashPurchase =
-        !normalizedSupplierId || (paid_amount > 0 && paid_amount >= finalGrandTotal);
+        !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
 
       await createPurchaseLedgerEntries({
         businessId: business_id,
@@ -990,17 +1012,8 @@ export async function POST(request: NextRequest) {
 
           const currentMetrics = calculateCreditMetrics(creditLimit, currentBalance);
 
-          let projectedMetrics = null;
-          if (status === 'final') {
-            const purchaseBalance =
-              purchase.balance_amount ??
-              (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'));
-            projectedMetrics = calculateProjectedCreditMetrics(
-              creditLimit,
-              currentBalance,
-              purchaseBalance
-            );
-          }
+          // A final bill has already been added to suppliers.current_balance above.
+          const projectedMetrics = status === 'final' ? currentMetrics : null;
 
           creditMetrics = {
             current: currentMetrics,

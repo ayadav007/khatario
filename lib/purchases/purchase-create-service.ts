@@ -5,6 +5,8 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
+import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
+import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -201,6 +203,23 @@ export async function createPurchaseInTransaction(
         'SUPPLIER_INVALID'
       );
     }
+
+    if ((body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill !== true) {
+      const duplicate = await findDuplicateSupplierBill(client, {
+        businessId: business_id,
+        supplierId: normalizedSupplierId,
+        billNumber: body.invoice_number || body.bill_number,
+        billDate: body.bill_date,
+      });
+      if (duplicate) {
+        throw new PurchaseCreateServiceError(
+          `Bill ${duplicate.bill_number} from this supplier is already recorded. Recording it again would claim ITC twice.`,
+          409,
+          'DUPLICATE_SUPPLIER_BILL',
+          { existing_purchase_id: duplicate.id }
+        );
+      }
+    }
   }
 
   try {
@@ -296,7 +315,8 @@ export async function createPurchaseInTransaction(
   const computedGrand = gstDoc.subtotal + gstDoc.taxTotal + finalRoundOff;
   const finalGrandTotal = body.grand_total !== undefined ? body.grand_total : computedGrand;
   const paid_amount = body.paid_amount ?? 0;
-  const balanceAmount = finalGrandTotal - paid_amount;
+  const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal, body.is_reverse_charge);
+  const balanceAmount = supplierPayable - paid_amount;
 
   let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
   if (paid_amount <= 0) paymentStatus = 'unpaid';
@@ -519,7 +539,7 @@ export async function createPurchaseInTransaction(
 
     const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
     const isCashPurchase =
-      !normalizedSupplierId || (paid_amount > 0 && paid_amount >= finalGrandTotal);
+      !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
     await createPurchaseLedgerEntries({
       businessId: business_id,
       purchaseId: purchase.id,

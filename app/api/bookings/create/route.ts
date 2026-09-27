@@ -8,6 +8,9 @@ export const dynamic = 'force-dynamic';
  * POST /api/bookings/create
  * Create a new demo booking
  */
+/** Must stay within demo_bookings_lead_source_check (migration 303). */
+const PUBLIC_LEAD_SOURCES = new Set(['organic', 'google_ads', 'referral', 'social_media', 'direct', 'other', 'assistant']);
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -76,7 +79,7 @@ export async function POST(request: NextRequest) {
         scheduled_date,
         scheduled_time,
         time_slot_id || null,
-        lead_source || 'organic',
+        PUBLIC_LEAD_SOURCES.has(lead_source) ? lead_source : 'organic',
         ipAddress,
         userAgent
       ]

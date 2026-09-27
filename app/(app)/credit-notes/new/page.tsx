@@ -13,6 +13,7 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import { round2 } from '@/lib/invoices/line-gst';
 
 interface Customer {
   id: string;
@@ -47,6 +48,8 @@ interface CreditNoteItem {
   unit: string;
   unit_price: number;
   discount: number;
+  /** Original invoice line discount %, so a partial return gets only its proportional share. */
+  discount_percent: number;
   tax_rate: number;
   tax_amount: number;
   line_total: number;
@@ -188,18 +191,27 @@ export default function NewCreditNotePage() {
         const invoice = data.invoice;
         
         // Auto-populate items from the invoice
-        const loadedItems = invoice.items.map((item: any) => ({
-          item_id: item.item_id || '',
-          item_name: item.item_name,
-          description: item.item_name,
-          qty: Number(item.quantity),
-          unit: item.unit || 'PCS',
-          unit_price: Number(item.unit_price),
-          discount: Number(item.discount_amount || 0),
-          tax_rate: Number(item.tax_rate || 0),
-          tax_amount: Number(item.tax_amount || 0),
-          line_total: Number(item.line_total || 0),
-        }));
+        const loadedItems = invoice.items.map((item: any) => {
+          const qty = Number(item.quantity) || 0;
+          const unitPrice = Number(item.unit_price) || 0;
+          const gross = qty * unitPrice;
+          const discountAmount = Number(item.discount_amount || 0);
+          const discountPercent =
+            Number(item.discount_percent) || (gross > 0 ? (discountAmount / gross) * 100 : 0);
+          return {
+            item_id: item.item_id || '',
+            item_name: item.item_name,
+            description: item.item_name,
+            qty,
+            unit: item.unit || 'PCS',
+            unit_price: unitPrice,
+            discount: discountAmount,
+            discount_percent: discountPercent,
+            tax_rate: Number(item.tax_rate || 0),
+            tax_amount: Number(item.tax_amount || 0),
+            line_total: Number(item.line_total || 0),
+          };
+        });
 
         setCreditNoteItems(loadedItems);
         toast.info(`Loaded ${loadedItems.length} items from invoice. You can adjust quantities as needed.`);
@@ -228,6 +240,7 @@ export default function NewCreditNotePage() {
         unit: 'PCS',
         unit_price: 0,
         discount: 0,
+        discount_percent: 0,
         tax_rate: 18,
         tax_amount: 0,
         line_total: 0,
@@ -258,12 +271,16 @@ export default function NewCreditNotePage() {
     // Recalculate amounts
     const qty = Number(updatedItems[index].qty) || 0;
     const unitPrice = Number(updatedItems[index].unit_price) || 0;
+    const discountPercent = Number(updatedItems[index].discount_percent) || 0;
+    if (discountPercent > 0) {
+      updatedItems[index].discount = round2((qty * unitPrice * discountPercent) / 100);
+    }
     const discount = Number(updatedItems[index].discount) || 0;
     const taxRate = Number(updatedItems[index].tax_rate) || 0;
 
-    const subtotal = qty * unitPrice - discount;
-    const taxAmount = (subtotal * taxRate) / 100;
-    const lineTotal = subtotal + taxAmount;
+    const subtotal = round2(qty * unitPrice - discount);
+    const taxAmount = round2((subtotal * taxRate) / 100);
+    const lineTotal = round2(subtotal + taxAmount);
 
     updatedItems[index].tax_amount = taxAmount;
     updatedItems[index].line_total = lineTotal;
@@ -276,8 +293,6 @@ export default function NewCreditNotePage() {
       const itemSubtotal = (item.qty * item.unit_price) - item.discount;
       return sum + itemSubtotal;
     }, 0);
-    const taxTotal = creditNoteItems.reduce((sum, item) => sum + item.tax_amount, 0);
-    
     // Calculate GST breakdown
     const businessStateCode = business?.state_code || '';
     const customerStateCode = selectedCustomer?.state_code || '';
@@ -286,20 +301,22 @@ export default function NewCreditNotePage() {
     let cgstTotal = 0, sgstTotal = 0, igstTotal = 0;
     
     creditNoteItems.forEach(item => {
-      const itemSubtotal = (item.qty * item.unit_price) - item.discount;
-      const itemTax = (itemSubtotal * item.tax_rate) / 100;
-      
+      const itemSubtotal = round2((item.qty * item.unit_price) - item.discount);
       if (isIntraState) {
-        cgstTotal += itemTax / 2;
-        sgstTotal += itemTax / 2;
+        cgstTotal += round2((itemSubtotal * item.tax_rate) / 200);
+        sgstTotal += round2((itemSubtotal * item.tax_rate) / 200);
       } else {
-        igstTotal += itemTax;
+        igstTotal += round2((itemSubtotal * item.tax_rate) / 100);
       }
     });
+    cgstTotal = round2(cgstTotal);
+    sgstTotal = round2(sgstTotal);
+    igstTotal = round2(igstTotal);
+    const taxTotal = round2(cgstTotal + sgstTotal + igstTotal);
+    const roundedSubtotal = round2(subtotal);
+    const grandTotal = round2(roundedSubtotal + taxTotal);
 
-    const grandTotal = subtotal + taxTotal;
-
-    return { subtotal, taxTotal, cgstTotal, sgstTotal, igstTotal, grandTotal };
+    return { subtotal: roundedSubtotal, taxTotal, cgstTotal, sgstTotal, igstTotal, grandTotal };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

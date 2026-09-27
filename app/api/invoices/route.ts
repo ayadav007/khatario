@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -19,7 +20,7 @@ import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
-import { calculateCreditMetrics, calculateProjectedCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
+import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
@@ -1198,26 +1199,23 @@ export async function POST(request: NextRequest) {
     let sgstTotal = 0;
     let igstTotal = 0;
 
+    const intraStateSupply = !!(
+      place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode
+    );
+    const zeroRatedWithoutTax = isZeroRatedWithoutTax({
+      is_export,
+      supply_type,
+      export_type,
+      lut_declaration,
+      place_of_supply_state_code,
+    });
+
     invoiceItems.forEach((item: any) => {
-      const itemSubtotal = item.quantity * item.unit_price;
-      const itemDiscount = (itemSubtotal * (item.discount_percent || 0)) / 100;
-      const taxable = itemSubtotal - itemDiscount;
-
-      let taxAmount = 0;
-      let cgst = 0;
-      let sgst = 0;
-      let igst = 0;
-
-      // Robust comparison
-      if (place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode) {
-        const half = (item.tax_rate || 0) / 2;
-        cgst = taxable * half / 100;
-        sgst = taxable * half / 100;
-        taxAmount = cgst + sgst;
-      } else {
-        igst = (taxable * (item.tax_rate || 0)) / 100;
-        taxAmount = igst;
-      }
+      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount } = computeLineGst(
+        item,
+        intraStateSupply,
+        zeroRatedWithoutTax
+      );
 
       subtotal += taxable;
       discountTotal += itemDiscount;
@@ -1226,14 +1224,20 @@ export async function POST(request: NextRequest) {
       sgstTotal += sgst;
       igstTotal += igst;
     });
+    subtotal = round2(subtotal);
+    discountTotal = round2(discountTotal);
+    cgstTotal = round2(cgstTotal);
+    sgstTotal = round2(sgstTotal);
+    igstTotal = round2(igstTotal);
+    taxTotal = round2(cgstTotal + sgstTotal + igstTotal);
 
-    const grandTotalRaw = subtotal + taxTotal + additional_charges;
+    const grandTotalRaw = round2(subtotal + taxTotal + (Number(additional_charges) || 0));
     // Use provided round_off if available, otherwise calculate if enable_round_off is true
-    let roundOff = round_off || 0;
+    let roundOff = Number(round_off) || 0;
     if (enable_round_off && !round_off) {
-      roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
+      roundOff = round2(Math.round(grandTotalRaw) - grandTotalRaw);
     }
-    const grandTotal = grandTotalRaw + roundOff;
+    const grandTotal = round2(grandTotalRaw + roundOff);
 
     // Calculate payment status from payments array or single payment (for backward compatibility)
     let paidAmount = 0;
@@ -1584,27 +1588,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < invoiceItems.length; i++) {
       
       const item = invoiceItems[i];
-      const itemSubtotal = item.quantity * item.unit_price;
-      const itemDiscount = (itemSubtotal * (item.discount_percent || 0)) / 100;
-      const taxable = itemSubtotal - itemDiscount;
-
-      let taxAmount = 0;
-      let cgst = 0;
-      let sgst = 0;
-      let igst = 0;
-
-      // Calculate GST breakdown at line level
-      if (place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode) {
-        const half = (item.tax_rate || 0) / 2;
-        cgst = taxable * half / 100;
-        sgst = taxable * half / 100;
-        taxAmount = cgst + sgst;
-      } else {
-        igst = (taxable * (item.tax_rate || 0)) / 100;
-        taxAmount = igst;
-      }
-
-      const lineTotal = taxable + taxAmount;
+      const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
+        item,
+        intraStateSupply,
+        zeroRatedWithoutTax
+      );
 
       
       await client.query(`
@@ -2490,12 +2478,8 @@ export async function POST(request: NextRequest) {
           // Calculate current credit metrics
           const currentMetrics = calculateCreditMetrics(creditLimit, currentBalance);
           
-          // Calculate projected metrics if invoice is final (affects balance)
-          let projectedMetrics = null;
-          if (status === 'final') {
-            const invoiceBalance = invoice.balance_amount ?? (parseFloat(invoice.grand_total ?? '0') - parseFloat(invoice.paid_amount ?? '0'));
-            projectedMetrics = calculateProjectedCreditMetrics(creditLimit, currentBalance, invoiceBalance);
-          }
+          // A final invoice has already been added to customers.current_balance above.
+          const projectedMetrics = status === 'final' ? currentMetrics : null;
           
           creditMetrics = {
             current: currentMetrics,

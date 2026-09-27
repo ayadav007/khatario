@@ -17,6 +17,7 @@ import {
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -410,6 +411,19 @@ export async function createInvoiceInTransaction(
     business.state_code || getStateCode(business.state || '');
 
   const totals = computeInvoiceTotals(body, businessStateCode);
+  const exportFields = body as CreateInvoiceInput & {
+    is_export?: boolean | null;
+    supply_type?: string | null;
+    export_type?: string | null;
+    lut_declaration?: boolean | null;
+  };
+  const zeroRated = isZeroRatedWithoutTax({
+    is_export: exportFields.is_export,
+    supply_type: exportFields.supply_type,
+    export_type: exportFields.export_type,
+    lut_declaration: exportFields.lut_declaration,
+    place_of_supply_state_code: body.place_of_supply_state_code,
+  });
   const paymentEntries = body.payments ?? [];
   let paidAmount = body.paid_amount ?? 0;
   if (paymentEntries.length > 0) {
@@ -484,25 +498,14 @@ export async function createInvoiceInTransaction(
     const item = items[i];
     const qty = Number(item.quantity) || 0;
     const unitPrice = Number(item.unit_price) || 0;
-    const itemSubtotal = qty * unitPrice;
-    const itemDiscount = (itemSubtotal * (Number(item.discount_percent) || 0)) / 100;
-    const taxable = itemSubtotal - itemDiscount;
     const taxRate = Number(item.tax_rate) || 0;
     const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
-    let cgst = 0;
-    let sgst = 0;
-    let igst = 0;
-    let taxAmount = 0;
-    if (placeOfSupply && businessStateCode && placeOfSupply === businessStateCode) {
-      const half = taxRate / 2;
-      cgst = (taxable * half) / 100;
-      sgst = (taxable * half) / 100;
-      taxAmount = cgst + sgst;
-    } else {
-      igst = (taxable * taxRate) / 100;
-      taxAmount = igst;
-    }
-    const lineTotal = taxable + taxAmount;
+    const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
+    const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
+      item,
+      intraState,
+      zeroRated
+    );
 
     await client.query(
       `

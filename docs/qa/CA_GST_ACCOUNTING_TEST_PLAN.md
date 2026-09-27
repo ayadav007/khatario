@@ -159,3 +159,65 @@ Expected totals below cover only the `CA-` transactions. Existing QA data (INV-0
 ## Results
 
 Filled in as each phase runs. Figures quoted are exactly what staging showed.
+
+Run 1: 27 Sep 2026, staging build `bffff01`.
+
+### Phase 1: Setup and masters
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| M1 | Partial | Business PAN blank although GSTIN `27AAQCT1234A1ZL` embeds PAN `AAQCT1234A` | PAN should be derived from GSTIN (needed for TDS/TCS and Form 26AS matching) |
+| M2 | Fail | `27AAPFU0939F1ZX` (wrong check digit) shows "GSTIN format valid" and saves | Mod-36 checksum must be validated; state should auto-fill from the first two digits |
+| M3 | Fail | Customer saved with GSTIN `29AABCT1332L1ZX` (Karnataka) and state Maharashtra 27. INV-012 to this customer charged CGST ₹37.50 + SGST ₹37.50 | GSTIN state code must drive place of supply for B2B; supply should be inter-state (IGST ₹75) |
+| M4 | Fail | HSN lookup returns no suggestions; 4-digit "1234" accepted | Validate against the HSN master; 6 digits mandatory above ₹5 cr turnover, 4 below |
+| M5 | Fail | Tax rate is a free number; item saved at 7% | Restrict to notified slabs 0 / 0.25 / 3 / 5 / 18 / 40 (plus cess) |
+| M-UQC | Partial | Units PCS/KG/BOX/LTR/MTR/NOS/HRS/DAYS | GSTR-1 HSN summary needs UQC codes (KGS, LTR, NOS, BOX, MTR, OTH…); map units to UQC |
+| M-VAL | Fail | Valuation method list offers LIFO | AS 2 / Ind AS 2 do not permit LIFO; remove it |
+| M6–M8 | Not run | | Cess, FY settings, opening balances pending |
+
+### Phase 4: Purchases and ITC
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| P1 | Pass | DSW/118: 20 × almirah @ ₹7,000 → taxable ₹1,40,000, CGST ₹12,600, SGST ₹12,600, total ₹1,65,200; stock 0 → 20 | Same |
+| P1-bug | Fail | API response `credit_metrics.projected.current_balance` = `165200165200` | String concatenation instead of addition; projected supplier balance should be ₹3,30,400 or ₹1,65,200 depending on intent |
+| P2 | Pass | KRM/7781: 50 × rice @ ₹1,000 from Karnataka → IGST ₹2,500, total ₹52,500, POS 27 | Same |
+| P3 | Fail | RCM bill AM/2026/45 (advocate, ₹10,000 @ 18%): grand total and balance due ₹11,800 | Supplier is owed ₹10,000 only; ₹1,800 is our RCM liability. Ledger code posts AP ₹10,000 + RCM Output ₹1,800 correctly, so the bill record and books disagree by ₹1,800 and paying the "balance" overpays the advocate |
+| P4 | Pass (entry) | Catering ₹5,000 + ₹900 GST, ITC Eligible unticked, total ₹5,900 | To confirm in GSTR-3B that ₹900 is not claimed (blocked by plan, see below) |
+| P7 | Fail | Second bill DSW/118 from same supplier saved with no warning | Duplicate supplier invoice number in the same FY should be blocked or warned (double ITC risk). No duplicate check exists in `/api/purchases` |
+| UX | Partial | Item picker dropdown opens outside the viewport in the purchase line table | Cosmetic, but blocks mouse selection on smaller screens |
+| UX | Partial | Purchase line "Discount Account" dropdown lists sales accounts (4101 Sales…) | Purchase discounts should map to Discount Received / purchase accounts only |
+
+### Phase 2: Sales
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| S1 | Pass | INV-004: taxable ₹33,000, CGST ₹1,995, SGST ₹1,995, total ₹36,990 | Same |
+| S2 | Pass | INV-005: POS auto Karnataka, IGST ₹3,600, total ₹23,600 | Same |
+| S3 | Pass | INV-006: POS Gujarat, IGST ₹19,800, total ₹1,29,800 | Same (B2CL > ₹1 lakh) |
+| S4 | Pass | INV-007: CGST ₹37.50, SGST ₹37.50, total ₹1,575 | Same |
+| S5 | Fail | INV-008: taxable ₹299.97, CGST ₹27.00, SGST ₹27.00, **total ₹353.96** | Total must equal ₹299.97 + ₹27.00 + ₹27.00 = ₹353.97. Server sums unrounded tax (₹353.9646) while storing rounded heads |
+| S6 | Pass | INV-009: nil-rated ₹500, no tax | Same |
+| S7 | Pass | INV-010: gold 3% → CGST ₹750, SGST ₹750, total ₹51,500 | Same |
+| S8 | Partial | No "price includes GST" option on the sales invoice (only a per-item price flag); purchase form has one | Retailers need invoice-level inclusive pricing |
+| S9 | **Fail (critical)** | INV-013 export WOP/LUT: screen shows IGST 0 and total ₹10,000; saved invoice has `export_type=wop`, `lut_declaration=true`, **IGST ₹1,800, total ₹11,800**. Re-tested on the new build (draft INV-018): same | Zero-rated under LUT must carry IGST 0. Server tax calc in `app/api/invoices/route.ts` ignores export type |
+| S10 | Pass | INV-011: 40% slab → CGST ₹200, SGST ₹200, total ₹1,400 | Same |
+| S11 | Pass | INV-014: 18% + 5% + 0% on one bill → CGST ₹975, SGST ₹975, total ₹16,950 | Same |
+| S12 | Pass (going forward) | Series INV-004 → INV-018 consecutive. Earlier gap INV-001 → INV-004 caused by proformas sharing the old counter before migration 301 | Drafts also consume tax-invoice numbers (INV-015, INV-018); if a draft is deleted the series will have a gap, which must then be reported in Table 13 |
+| S14 | Pass | INV-016 and INV-017 cancelled with mandatory reason; stock reversed (almirah 5 on hand = 20 − 15 net sold) | Dialog says "removed from GSTR-1": cancelled numbers must still appear as cancelled in Table 13 (to verify) |
+| S15 | Pass | Finalised invoice has no Edit button, only Cancel | Correct practice; corrections via credit/debit note |
+| S16 | Partial | Draft dated 15-Dec-2026 saved without a warning | Future-dated tax invoices should at least warn |
+
+### Phase 3: Credit and debit notes
+
+| # | Result | Seen | Expected / CA comment |
+|---|--------|------|-----------------------|
+| N1 | Fail + Blocked | Credit note for 1 of 2 almirahs from INV-004 (10% trade discount): form shows taxable **₹8,000**, CGST ₹720, total ₹9,440. Save returns 403 "Feature not available in your plan" | Taxable should be ₹9,000, CGST ₹810, SGST ₹810, total ₹10,620. The whole ₹2,000 line discount is applied to one unit instead of pro-rata. Credit notes are statutory (s.34) and are not in the Professional plan |
+| N2 | Fail | Debit note DN on INV-005 (₹2,000 + IGST ₹360): 500 `column "discount_percent" of relation "debit_note_items" does not exist` | Table (migration 005) has `discount`; API inserts `discount_percent`/`discount_amount`. No debit note can be saved |
+| N2-design | Fail | Code adds the debit note total to the original invoice's `grand_total` | The original invoice value must not change; the note is reported separately in GSTR-1 Table 9B. Otherwise the ₹2,360 is counted twice |
+| N2-form | Partial | Debit note number must be typed by hand; no HSN field; linked-invoice list shows all customers' invoices | Auto-number the series; HSN is mandatory on notes (Rule 53); filter invoices by the chosen customer |
+| N-link | Partial | Credit note "Link to Invoice" is optional | Original invoice number and date are mandatory for CDNR reporting |
+
+### Blocked by plan
+
+On the Professional plan these APIs return 403 `FEATURE_NOT_IN_PLAN`: GSTR-1 and GSTR-3B (`reports_gst`), trial balance, P&L, balance sheet, stock valuation and ageing (`reports_advanced`), and credit notes. Phases 5–7 need the test business on a plan that includes them.

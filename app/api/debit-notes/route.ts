@@ -9,6 +9,7 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { computeLineGst, round2 } from '@/lib/invoices/line-gst';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,14 +115,7 @@ export async function POST(request: NextRequest) {
       place_of_supply_state_code,
       original_invoice_date,
       items,
-      subtotal,
-      discount_total,
-      tax_total,
-      cgst_total,
-      sgst_total,
-      igst_total,
       round_off,
-      grand_total,
       notes,
       created_by,
     } = body;
@@ -269,6 +263,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const intraState = (finalPosStateCode?.substring(0, 2) || '') === businessStateCode;
+    const lines = (items as any[]).map((item) => {
+      const qty = Number(item.qty ?? item.quantity) || 0;
+      const unitPrice = Number(item.unit_price ?? item.price) || 0;
+      const gross = qty * unitPrice;
+      const discountPercent = Number(item.discount_percent) || 0;
+      const discount = round2(
+        discountPercent > 0 ? (gross * discountPercent) / 100 : Number(item.discount_amount ?? item.discount) || 0
+      );
+      const line = computeLineGst(
+        { quantity: 1, unit_price: gross - discount, tax_rate: item.tax_rate ?? item.taxPercent },
+        intraState,
+        false
+      );
+      return { item, qty, unitPrice, discount, ...line, taxRate: Number(item.tax_rate ?? item.taxPercent) || 0 };
+    });
+    const computedSubtotal = round2(lines.reduce((s, l) => s + l.taxable, 0));
+    const computedDiscount = round2(lines.reduce((s, l) => s + l.discount, 0));
+    const computedCgst = round2(lines.reduce((s, l) => s + l.cgst, 0));
+    const computedSgst = round2(lines.reduce((s, l) => s + l.sgst, 0));
+    const computedIgst = round2(lines.reduce((s, l) => s + l.igst, 0));
+    const computedTax = round2(computedCgst + computedSgst + computedIgst);
+    const roundOffValue = round2(Number(round_off) || 0);
+    const computedGrandTotal = round2(computedSubtotal + computedTax + roundOffValue);
+
     // Create debit note
     const debitNoteRes = await client.query(`
       INSERT INTO debit_notes (
@@ -289,14 +308,14 @@ export async function POST(request: NextRequest) {
       reason || null,
       finalPosStateCode || null,
       original_invoice_date || null,
-      subtotal || 0,
-      discount_total || 0,
-      tax_total || 0,
-      cgst_total || 0,
-      sgst_total || 0,
-      igst_total || 0,
-      round_off || 0,
-      grand_total || 0,
+      computedSubtotal,
+      computedDiscount,
+      computedTax,
+      computedCgst,
+      computedSgst,
+      computedIgst,
+      roundOffValue,
+      computedGrandTotal,
       notes || null,
       created_by || null,
     ]);
@@ -304,37 +323,22 @@ export async function POST(request: NextRequest) {
     const debitNote = debitNoteRes.rows[0];
 
     // Create debit note items and update stock (debit note reduces stock for additional charges)
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      // Calculate GST breakdown for this item
-      const posStateCode = finalPosStateCode?.substring(0, 2) || '';
-      const isIntraState = posStateCode === businessStateCode;
-      const taxableValue = (item.unit_price * item.qty) - (item.discount || 0);
-      const totalTax = (taxableValue * (item.tax_rate || 0)) / 100;
-      
-      let itemCgst = 0, itemSgst = 0, itemIgst = 0;
-      if (isIntraState) {
-        itemCgst = totalTax / 2;
-        itemSgst = totalTax / 2;
-      } else {
-        itemIgst = totalTax;
-      }
+    for (let i = 0; i < lines.length; i++) {
+      const { item, qty, unitPrice, discount, taxable, cgst, sgst, igst, taxAmount, lineTotal, taxRate } = lines[i];
 
       await client.query(`
         INSERT INTO debit_note_items (
           debit_note_id, item_id, description, hsn_sac, qty, unit, unit_price,
-          discount_percent, discount_amount, tax_rate, tax_amount, cgst_amount, sgst_amount, igst_amount,
+          discount, tax_rate, tax_amount, cgst_amount, sgst_amount, igst_amount,
           taxable_value, line_total, sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       `, [
-        debitNote.id, item.item_id || null, item.description || item.name, item.hsn_sac || null,
-        item.qty || item.quantity, item.unit || 'PCS', item.unit_price || item.price,
-        item.discount_percent || 0, item.discount_amount || item.discount || 0,
-        item.tax_rate || item.taxPercent || 0, item.tax_amount || totalTax,
-        itemCgst, itemSgst, itemIgst, item.taxable_value || taxableValue,
-        item.line_total || item.total || (taxableValue + totalTax), i
+        debitNote.id, item.item_id || null, item.description || item.name || 'Adjustment', item.hsn_sac || null,
+        qty, item.unit || 'PCS', unitPrice,
+        discount, taxRate, taxAmount,
+        cgst, sgst, igst, taxable,
+        lineTotal, i
       ]);
 
       // Update stock if item exists (debit note = additional charge, so stock goes out)
@@ -385,19 +389,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update invoice balance if linked (debit note increases amount due; sync payment_status)
+    // Linked invoice keeps its original value (reported as issued in GSTR-1); the note only
+    // raises the amount still due on it, mirroring how credit notes reduce it.
     if (invoice_id) {
       const invUp = await client.query(
         `
         UPDATE invoices 
         SET 
           balance_amount = balance_amount + $1,
-          grand_total = grand_total + $1,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
+        WHERE id = $2 AND business_id = $3
         RETURNING grand_total, paid_amount, balance_amount
         `,
-        [grand_total, invoice_id]
+        [computedGrandTotal, invoice_id, business_id]
       );
       const row = invUp.rows[0];
       if (row) {
@@ -413,9 +417,10 @@ export async function POST(request: NextRequest) {
     if (customer_id) {
       await client.query(`
         UPDATE customers 
-        SET total_receivable = COALESCE(total_receivable, 0) + $1 
-        WHERE id = $2
-      `, [grand_total, customer_id]);
+        SET current_balance = COALESCE(current_balance, 0) + $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND business_id = $3
+      `, [computedGrandTotal, customer_id, business_id]);
     }
 
     // Calculate COGS for inventory items
@@ -444,14 +449,14 @@ export async function POST(request: NextRequest) {
       debitNoteId: debitNote.id,
       debitNoteNumber: debit_note_number,
       debitNoteDate: debit_note_date,
-      grandTotal: grand_total,
+      grandTotal: computedGrandTotal,
       customerId: customer_id,
       branchId: stockBranchId,
       cogsAmount: totalCogsAmount,
-      taxableValue: subtotal ?? 0,
-      cgstTotal: Number(cgst_total) || 0,
-      sgstTotal: Number(sgst_total) || 0,
-      igstTotal: Number(igst_total) || 0,
+      taxableValue: computedSubtotal,
+      cgstTotal: computedCgst,
+      sgstTotal: computedSgst,
+      igstTotal: computedIgst,
       poolClient: client,
     });
 

@@ -1,5 +1,6 @@
 import { getStateCode } from './getStateCode';
 import { determineTaxType, type TaxTypeContext } from './determineTaxType';
+import { round2 } from '@/lib/invoices/line-gst';
 
 export interface InvoiceItemRow {
   itemId: string;
@@ -75,7 +76,8 @@ export function calculateRow(
     discPercent = 100;
   }
   
-  const taxableAmount = subtotal - discAmt;
+  discAmt = round2(discAmt);
+  const taxableAmount = round2(subtotal - discAmt);
   
   // Determine tax type
   const taxType = determineTaxType({
@@ -117,6 +119,11 @@ export function calculateRow(
     taxAmt = igst;
   }
   
+  cgst = round2(cgst);
+  sgst = round2(sgst);
+  igst = round2(igst);
+  taxAmt = round2(cgst + sgst + igst);
+
   return {
     ...row,
     taxPercent: taxType.isNonTaxable ? 0 : row.taxPercent,
@@ -127,7 +134,7 @@ export function calculateRow(
     sgstAmount: sgst,
     igstAmount: igst,
     taxAmount: taxAmt,
-    total: taxableAmount + taxAmt
+    total: round2(taxableAmount + taxAmt)
   };
 }
 

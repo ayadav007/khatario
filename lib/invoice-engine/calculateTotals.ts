@@ -1,5 +1,6 @@
 import { calculateRow, type InvoiceItemRow, type CalculateRowContext } from './calculateRow';
 import { determineTaxType, type TaxTypeContext } from './determineTaxType';
+import { round2 } from '@/lib/invoices/line-gst';
 
 export interface ExtraCharge {
   id: string;
@@ -79,7 +80,8 @@ export function calculateTotals(input: CalculateTotalsInput): CalculateTotalsRes
   let extraChargesIGST = 0;
   let extraChargesTax = 0;
   
-  if (totalExtraCharges > 0 && effectiveTaxRate > 0) {
+  const zeroRatedExport = input.context.isExport && input.context.exportType === 'wop';
+  if (totalExtraCharges > 0 && effectiveTaxRate > 0 && !zeroRatedExport && !taxType.isNonTaxable) {
     if (input.context.isExport) {
       // For export invoices, always use IGST
       extraChargesIGST = totalExtraCharges * effectiveTaxRate / 100;
@@ -96,17 +98,22 @@ export function calculateTotals(input: CalculateTotalsInput): CalculateTotalsRes
     }
   }
   
+  extraChargesCGST = round2(extraChargesCGST);
+  extraChargesSGST = round2(extraChargesSGST);
+  extraChargesIGST = round2(extraChargesIGST);
+  extraChargesTax = round2(extraChargesCGST + extraChargesSGST + extraChargesIGST);
+
   // Total tax (items + extra charges)
-  const totalTax = itemTax + extraChargesTax;
-  const totalCGST = itemCGST + extraChargesCGST;
-  const totalSGST = itemSGST + extraChargesSGST;
-  const totalIGST = itemIGST + extraChargesIGST;
+  const totalCGST = round2(itemCGST + extraChargesCGST);
+  const totalSGST = round2(itemSGST + extraChargesSGST);
+  const totalIGST = round2(itemIGST + extraChargesIGST);
+  const totalTax = round2(totalCGST + totalSGST + totalIGST);
   
   // Taxable amount including extra charges
-  const taxableAmount = subtotal + totalExtraCharges;
+  const taxableAmount = round2(subtotal + totalExtraCharges);
   
   // Grand total
-  const grandTotal = taxableAmount + totalTax;
+  const grandTotal = round2(taxableAmount + totalTax);
   
   return {
     itemSubtotal,
