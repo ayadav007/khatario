@@ -9,6 +9,10 @@ import { postDepreciationVoucher } from '@/lib/accounting/fixed-asset-posting';
 
 export type DepreciationMethod = 'SLM' | 'WDV';
 
+export class DepreciationOverlapError extends Error {
+  readonly code = 'DEPRECIATION_PERIOD_OVERLAP';
+}
+
 export interface DepreciationCalculation {
   asset_id: string;
   asset_code: string;
@@ -258,6 +262,27 @@ export async function saveDepreciationSchedule(
     if (prior.rows[0]?.is_posted) {
       await client.query('ROLLBACK');
       return prior.rows[0].id;
+    }
+
+    // A posted row covering any part of this range (monthly runs from the asset screen,
+    // annual runs from here) would depreciate the same days twice.
+    const overlap = await client.query(
+      `SELECT period_start_date, period_end_date FROM depreciation_schedule
+        WHERE asset_id = $1 AND is_posted = true
+          AND period_start_date <= $3::date AND period_end_date >= $2::date
+          AND NOT (period_start_date = $2::date AND period_end_date = $3::date)
+        LIMIT 1`,
+      [calculation.asset_id, calculation.period_start_date, calculation.period_end_date]
+    );
+    if (overlap.rows[0]) {
+      await client.query('ROLLBACK');
+      const fmt = (d: Date | string) =>
+        d instanceof Date
+          ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          : String(d).slice(0, 10);
+      throw new DepreciationOverlapError(
+        `Depreciation is already posted for ${fmt(overlap.rows[0].period_start_date)} to ${fmt(overlap.rows[0].period_end_date)}, which overlaps this period.`
+      );
     }
 
     // Insert or update depreciation schedule

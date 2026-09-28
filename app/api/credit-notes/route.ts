@@ -299,7 +299,11 @@ export async function POST(request: NextRequest) {
       throw new Error('Business not found');
     }
     
-    const businessStateCode = businessRes.rows[0].state_code || '';
+    const { resolveSupplierRegistration } = await import('@/lib/gst/registration');
+    const businessStateCode =
+      (await resolveSupplierRegistration(client, business_id, finalBranchId)).stateCode ||
+      businessRes.rows[0].state_code ||
+      '';
 
     // Calculate place of supply if not provided
     let finalPosStateCode = place_of_supply_state_code;
@@ -382,6 +386,18 @@ export async function POST(request: NextRequest) {
       const line = computeLineGst({ quantity: 1, unit_price: gross - discount, tax_rate: taxRate }, intraState, zeroRated);
       return { item, qty, unitPrice, discount, taxRate: zeroRated ? 0 : taxRate, ...line };
     });
+    const { gstRateError } = await import('@/lib/gst/rates');
+    const invDate: unknown = invoice?.invoice_date;
+    const rateDate =
+      invDate instanceof Date
+        ? `${invDate.getFullYear()}-${String(invDate.getMonth() + 1).padStart(2, '0')}-${String(invDate.getDate()).padStart(2, '0')}`
+        : String(invDate ?? credit_note_date).slice(0, 10);
+    for (const l of lines) {
+      const rateError = gstRateError(l.taxRate, rateDate);
+      if (rateError) {
+        return rejectCreditNote(400, 'INVALID_GST_RATE', `${l.item?.item_name || 'Line'}: ${rateError}`);
+      }
+    }
 
     if (lines.some((l) => l.qty <= 0 || l.taxable < 0)) {
       return rejectCreditNote(400, 'INVALID_LINE', 'Each credit note line needs a positive quantity and value');

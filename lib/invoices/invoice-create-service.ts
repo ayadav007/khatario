@@ -18,7 +18,8 @@ import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
-import { checkGstin } from '@/lib/tax/gstin';
+import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
+import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -377,18 +378,20 @@ export async function createInvoiceInTransaction(
     poolClient: client,
   });
 
+  let customerRow:
+    | { id: string; gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null }
+    | undefined;
   if (body.customer_id) {
-    const cust = await client.query<{ id: string; gstin: string | null }>(
-      `SELECT id, gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    const cust = await client.query<{
+      id: string; gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null;
+    }>(
+      `SELECT id, gstin, state_code, state, shipping_state FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
       [body.customer_id, business_id]
     );
     if (cust.rows.length === 0) {
       throw new InvoiceCreateServiceError('Customer not found', 400, 'CUSTOMER_NOT_FOUND');
     }
-    if (!body.place_of_supply_state_code && !body.is_export) {
-      const gstinCheck = checkGstin(cust.rows[0].gstin ?? '');
-      if (gstinCheck.valid) body.place_of_supply_state_code = gstinCheck.stateCode;
-    }
+    customerRow = cust.rows[0];
   }
 
   for (const item of items) {
@@ -409,15 +412,51 @@ export async function createInvoiceInTransaction(
   }
 
   const businessRes = await client.query(
-    `SELECT state_code, state FROM businesses WHERE id = $1`,
+    `SELECT state_code, state, aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1`,
     [business_id]
   );
   if (businessRes.rows.length === 0) {
     throw new InvoiceCreateServiceError('Business not found', 400, 'BUSINESS_NOT_FOUND');
   }
-  const business = businessRes.rows[0] as { state_code?: string; state?: string };
+  const business = businessRes.rows[0] as { state_code?: string; state?: string; above?: boolean | null };
+  const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
   const businessStateCode =
-    business.state_code || getStateCode(business.state || '');
+    registration.stateCode || business.state_code || getStateCode(business.state || '');
+
+  const itemIds = items.map((it) => it.item_id).filter((id): id is string => !!id);
+  const masterHsn = new Map<string, string | null>();
+  if (itemIds.length > 0) {
+    const hsnRows = await client.query<{ id: string; hsn_sac: string | null }>(
+      'SELECT id, hsn_sac FROM items WHERE id = ANY($1::uuid[]) AND business_id = $2',
+      [itemIds, business_id]
+    );
+    for (const r of hsnRows.rows) masterHsn.set(r.id, r.hsn_sac);
+  }
+  const compliance = checkInvoiceCompliance({
+    lines: items.map((it) => ({
+      item_name: it.item_name,
+      hsn_sac: it.hsn_sac,
+      tax_rate: it.tax_rate,
+      master_hsn_sac: it.item_id ? masterHsn.get(it.item_id) ?? null : null,
+    })),
+    invoiceDate: body.invoice_date,
+    status,
+    documentType: document_type,
+    customerGstin: customerRow?.gstin ?? null,
+    customerStateCode: customerRow
+      ? stateCodeFromName(customerRow.shipping_state) ??
+        (customerRow.state_code?.trim() || stateCodeFromName(customerRow.state))
+      : null,
+    supplierStateCode: businessStateCode || null,
+    placeOfSupply: body.place_of_supply_state_code,
+    isExport: !!body.is_export,
+    turnoverAbove5Cr: business.above === true,
+    allowPosDifferentFromGstin: (body as { pos_differs_from_gstin?: unknown }).pos_differs_from_gstin === true,
+  });
+  if (!compliance.ok) {
+    throw new InvoiceCreateServiceError(compliance.error, 400, compliance.code);
+  }
+  if (compliance.placeOfSupply) body.place_of_supply_state_code = compliance.placeOfSupply;
 
   const totals = computeInvoiceTotals(body, businessStateCode);
   const exportFields = body as CreateInvoiceInput & {

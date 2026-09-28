@@ -18,7 +18,7 @@ export default function StockValuationReportPage() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<any>(null);
   const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
-  const [valuationMethod, setValuationMethod] = useState<'fifo' | 'lifo' | 'weighted_avg' | 'simple'>('simple');
+  const [valuationMethod, setValuationMethod] = useState<'fifo' | 'weighted_avg' | 'simple'>('simple');
   const [locationId, setLocationId] = useState<string>('');
   const [locations, setLocations] = useState<any[]>([]);
   const [autoGenerate, setAutoGenerate] = useState(false);

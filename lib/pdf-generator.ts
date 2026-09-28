@@ -9,6 +9,7 @@ import { validateAndSanitizeTemplate } from '@/lib/template-validator';
 import { compressThermalContent } from '@/lib/content-compressor';
 import { optimizeForThermal } from '@/lib/thermal-transformer';
 import { hasTableColumn } from '@/lib/schema-columns';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
 
 export type DocumentTable = 
   | 'invoices' 
@@ -114,6 +115,27 @@ export async function generateDocumentHtml(
 
     if (!doc) {
       throw new Error('Document not found');
+    }
+
+    if (doc.branch_id) {
+      const reg = await resolveSupplierRegistration(
+        { query: (text: string, params?: unknown[]) => db.query(text, params) as any },
+        doc.business_id,
+        doc.branch_id
+      );
+      if (reg.source === 'branch') {
+        doc.business_gstin = reg.gstin;
+        doc.business_state = reg.stateName;
+        doc.business_state_code = reg.stateCode;
+        if (reg.addressLine1) {
+          doc.business_address = reg.addressLine1;
+          doc.business_address_line2 = reg.addressLine2;
+          doc.business_city = reg.city;
+          doc.business_pincode = reg.pincode;
+        }
+        if (reg.phone) doc.business_phone = reg.phone;
+        if (reg.email) doc.business_email = reg.email;
+      }
     }
 
     const itemsHaveCustomFields = await hasTableColumn('items', 'custom_fields');

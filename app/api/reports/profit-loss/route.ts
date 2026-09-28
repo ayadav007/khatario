@@ -76,7 +76,10 @@ export async function GET(request: NextRequest) {
           branchId: branchIdParam,
           businessId: businessId,
         });
-        branchFilter = 'AND branch_id = $5'; // Will be added to queries
+        const { isDefaultBranch } = await import('@/lib/branch-helpers');
+        branchFilter = (await isDefaultBranch(finalBranchId, businessId))
+          ? 'AND (branch_id = $5 OR branch_id IS NULL)'
+          : 'AND branch_id = $5';
         
         // Get branch info
         branchInfo = await queryOne(`

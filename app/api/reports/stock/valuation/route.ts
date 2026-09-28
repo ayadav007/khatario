@@ -91,11 +91,48 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
+    if (String(valuationMethod) === 'lifo') {
+      return NextResponse.json(
+        { error: 'LIFO is not permitted under AS 2 / Ind AS 2. Use FIFO or weighted average.', code: 'LIFO_NOT_ALLOWED' },
+        { status: 400 }
+      );
+    }
+
+    const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
+    const warehouseMode = !locationId && (await isWarehouseModeEnabled(businessId));
+
     // Get all items (or items with stock)
     let sql: string;
     let params: any[];
 
-    if (locationId) {
+    if (warehouseMode) {
+      // In warehouse mode stock lives in location_stock; items.current_stock and
+      // branch_item_stock are not maintained.
+      sql = `
+        SELECT 
+          i.id,
+          i.name,
+          i.code,
+          i.unit,
+          COALESCE(ws.qty, 0) as current_stock,
+          i.purchase_price,
+          i.valuation_method,
+          i.track_batch,
+          i.track_serial
+        FROM items i
+        LEFT JOIN (
+          SELECT ls.item_id, SUM(ls.current_stock_qty) AS qty
+            FROM location_stock ls
+            JOIN warehouses w ON w.id = ls.location_id AND w.business_id = $1
+           WHERE $2::uuid IS NULL
+              OR w.branch_id = $2::uuid
+              OR EXISTS (SELECT 1 FROM branch_warehouses bw WHERE bw.warehouse_id = w.id AND bw.branch_id = $2::uuid)
+           GROUP BY ls.item_id
+        ) ws ON ws.item_id = i.id
+        WHERE i.business_id = $1 AND i.is_active = true
+      `;
+      params = [businessId, branchIdParam || null];
+    } else if (locationId) {
       sql = `
         SELECT 
           i.id,
@@ -119,7 +156,13 @@ export async function GET(request: NextRequest) {
           i.name,
           i.code,
           i.unit,
-          COALESCE(bis.quantity, i.current_stock, 0) as current_stock,
+          COALESCE(
+            bis.quantity,
+            CASE WHEN $3::boolean AND NOT EXISTS (
+              SELECT 1 FROM branch_item_stock x WHERE x.item_id = i.id AND x.business_id = i.business_id
+            ) THEN i.current_stock END,
+            0
+          ) as current_stock,
           i.purchase_price,
           i.valuation_method,
           i.track_batch,
@@ -129,7 +172,8 @@ export async function GET(request: NextRequest) {
           ON bis.item_id = i.id AND bis.business_id = i.business_id AND bis.branch_id = $2::uuid
         WHERE i.business_id = $1 AND i.is_active = true
       `;
-      params = [businessId, branchIdParam];
+      const { isDefaultBranch } = await import('@/lib/branch-helpers');
+      params = [businessId, branchIdParam, await isDefaultBranch(branchIdParam, businessId)];
     } else {
       sql = `
         SELECT 
@@ -164,12 +208,12 @@ export async function GET(request: NextRequest) {
       );
     }
     let after = new Map<string, number>();
-    let wac = new Map<string, number>();
+    const { weightedAverageCosts } = await import('@/lib/inventory/cogs-posting');
+    // AS 2: inventory is carried at cost (weighted average of purchases), not at the master price.
+    const wac = await weightedAverageCosts(undefined, businessId, items.map((i: any) => i.id), historical ? asOnDate! : today);
     if (historical) {
       const { movementsAfter } = await import('@/lib/inventory/stock-as-of');
-      const { weightedAverageCosts } = await import('@/lib/inventory/cogs-posting');
       after = await movementsAfter(businessId, asOnDate!, { locationId });
-      wac = await weightedAverageCosts(undefined, businessId, items.map((i: any) => i.id), asOnDate!);
     }
 
     const reportItems: any[] = [];
@@ -183,18 +227,15 @@ export async function GET(request: NextRequest) {
 
       if (stockQty <= 0) continue; // Skip items with no stock
 
-      const itemValuationMethod = (historical ? 'weighted_avg' : item.valuation_method || valuationMethod) as ValuationMethod;
+      const batchFifo = !historical && item.valuation_method === 'fifo' && item.track_batch === true;
+      const itemValuationMethod = (batchFifo ? 'fifo' : 'weighted_avg') as ValuationMethod;
 
-      // Past dates are valued at the weighted average cost as of that date (AS 2).
-      const stockValue = historical
-        ? Math.round(stockQty * (wac.get(item.id) ?? (Number(item.purchase_price) || 0)) * 100) / 100
-        : await getStockValue(
-            item.id,
-            itemValuationMethod,
-            businessId,
-            locationId || undefined,
-            branchIdParam && !locationId ? branchIdParam : undefined
-          );
+      const batchValue = batchFifo
+        ? await getStockValue(item.id, 'fifo', businessId, locationId || undefined)
+        : 0;
+      const stockValue = batchFifo && batchValue > 0
+        ? Math.round(batchValue * 100) / 100
+        : Math.round(stockQty * (wac.get(item.id) ?? (Number(item.purchase_price) || 0)) * 100) / 100;
 
       const unitCost = stockQty > 0 ? stockValue / stockQty : 0;
 
@@ -217,7 +258,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       report: {
         as_on_date: historical ? asOnDate : today,
-        valuation_method: historical ? 'weighted_avg' : valuationMethod,
+        valuation_method: 'weighted_avg',
+        stock_source: warehouseMode ? 'warehouses' : locationId ? 'warehouse' : branchIdParam ? 'branch' : 'business',
         location_id: locationId || null,
         items: reportItems,
         total_value: totalValue,

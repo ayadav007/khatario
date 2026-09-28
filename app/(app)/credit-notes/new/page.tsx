@@ -159,13 +159,12 @@ export default function NewCreditNotePage() {
 
   const fetchInvoices = async (customerId: string) => {
     try {
-      const response = await fetch(`/api/invoices?business_id=${business?.id}&user_id=${user?.id}`);
+      const response = await fetch(
+        `/api/invoices?business_id=${business?.id}&user_id=${user?.id}&customer_id=${encodeURIComponent(customerId)}&status=final&limit=500`
+      );
       if (response.ok) {
         const data = await response.json();
-        const customerInvoices = data.invoices.filter(
-          (inv: any) => inv.customer_id === customerId && inv.status === 'final'
-        );
-        setInvoices(customerInvoices);
+        setInvoices(data.invoices || []);
       }
     } catch (error) {
       console.error('Error fetching invoices:', error);

@@ -192,13 +192,21 @@ export async function POST(
       WHERE id = $3
     `, [finalStatus, notes || null, params.id]);
 
-    // If inter-branch transfer, create purchase entries for destination branch
-    if (transfer.inter_branch_invoice_id) {
+    // The receiving branch books the inter-branch invoice once, when the goods are fully received.
+    if (transfer.inter_branch_invoice_id && finalStatus === 'completed') {
       const invoice = await client.query(
         `SELECT id, invoice_date FROM invoices WHERE id = $1`,
         [transfer.inter_branch_invoice_id]
       );
-      const toWarehouse = await client.query(`SELECT branch_id FROM warehouses WHERE id = $1`, [transfer.to_location_id]);
+      const toWarehouse = await client.query(
+        `SELECT COALESCE(
+           w.branch_id,
+           (SELECT bw.branch_id FROM branch_warehouses bw WHERE bw.warehouse_id = w.id
+             ORDER BY bw.is_primary DESC NULLS LAST LIMIT 1)
+         ) AS branch_id
+           FROM warehouses w WHERE w.id = $1`,
+        [transfer.to_location_id]
+      );
       if (invoice.rows[0] && toWarehouse.rows[0]?.branch_id) {
         const cogs = await client.query(
           `SELECT COALESCE(SUM(credit), 0) AS amt

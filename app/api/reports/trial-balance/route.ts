@@ -59,7 +59,12 @@ export async function GET(request: NextRequest) {
           branchId: branchIdParam,
           businessId: businessId,
         });
-        branchFilter = 'AND branch_id = $4'; // Will be added to queries
+        // Lines posted without a branch (opening balances, head-office journals) belong to the
+        // default branch, so branch trial balances add up to the consolidated one.
+        const { isDefaultBranch } = await import('@/lib/branch-helpers');
+        branchFilter = (await isDefaultBranch(finalBranchId, businessId))
+          ? 'AND (branch_id = $4 OR branch_id IS NULL)'
+          : 'AND branch_id = $4';
       } catch (error: any) {
         if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
           return NextResponse.json(

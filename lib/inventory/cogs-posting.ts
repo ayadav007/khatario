@@ -35,7 +35,9 @@ export async function weightedAverageCosts(
   client: Queryable | undefined,
   businessId: string,
   itemIds: string[],
-  asOfDate: Date | string
+  asOfDate: Date | string,
+  /** Branches buy at different prices; when the branch has its own purchases of the item, cost from those. */
+  branchId?: string | null
 ): Promise<Map<string, number>> {
   const result = new Map<string, number>();
   if (itemIds.length === 0) return result;
@@ -43,6 +45,7 @@ export async function weightedAverageCosts(
     client,
     `SELECT i.id,
             COALESCE(
+              bp.value / NULLIF(bp.qty, 0),
               (COALESCE(i.opening_stock, 0) * COALESCE(i.opening_stock_rate, i.purchase_price, 0) + COALESCE(p.value, 0))
                 / NULLIF(COALESCE(i.opening_stock, 0) + COALESCE(p.qty, 0), 0),
               i.purchase_price,
@@ -60,8 +63,21 @@ export async function weightedAverageCosts(
             AND pi.taxable_value > 0
           GROUP BY pi.item_id
        ) p ON p.item_id = i.id
+       LEFT JOIN (
+         SELECT pi.item_id, SUM(pi.quantity) AS qty, SUM(pi.taxable_value) AS value
+           FROM purchase_items pi
+           JOIN purchases pu ON pu.id = pi.purchase_id
+          WHERE pu.business_id = $1
+            AND $4::uuid IS NOT NULL
+            AND pu.branch_id = $4::uuid
+            AND COALESCE(pu.status, '') NOT IN ('cancelled', 'draft')
+            AND pu.bill_date <= $3::date
+            AND pi.quantity > 0
+            AND pi.taxable_value > 0
+          GROUP BY pi.item_id
+       ) bp ON bp.item_id = i.id
       WHERE i.business_id = $1 AND i.id = ANY($2::uuid[])`,
-    [businessId, itemIds, asOfDate]
+    [businessId, itemIds, asOfDate, branchId ?? null]
   );
   for (const row of r) result.set(row.id, Number(row.rate) || 0);
   return result;
@@ -72,7 +88,8 @@ export async function computeGoodsCost(
   client: Queryable | undefined,
   businessId: string,
   lines: Array<{ itemId: string | null | undefined; quantity: number }>,
-  asOfDate: Date | string
+  asOfDate: Date | string,
+  branchId?: string | null
 ): Promise<number> {
   const ids = [...new Set(lines.map((l) => l.itemId).filter((id): id is string => !!id))];
   if (ids.length === 0) return 0;
@@ -109,7 +126,7 @@ export async function computeGoodsCost(
   }
   if (qtyByItem.size === 0) return 0;
 
-  const rates = await weightedAverageCosts(client, businessId, [...qtyByItem.keys()], asOfDate);
+  const rates = await weightedAverageCosts(client, businessId, [...qtyByItem.keys()], asOfDate, branchId);
   let total = 0;
   for (const [id, qty] of qtyByItem) total += qty * (rates.get(id) ?? 0);
   return round2(total);

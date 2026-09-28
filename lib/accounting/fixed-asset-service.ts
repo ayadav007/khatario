@@ -47,7 +47,7 @@ export async function lockAsset(client: PoolClient, businessId: string, assetId:
             fa.account_id, fa.depreciation_account_id, fa.is_disposed, fa.branch_id,
             to_char(COALESCE(fa.put_to_use_date, fa.purchase_date), 'YYYY-MM-DD') AS put_to_use_date,
             (SELECT to_char(MAX(ds.period_end_date), 'YYYY-MM-DD')
-               FROM depreciation_schedule ds WHERE ds.asset_id = fa.id) AS last_depreciated_to
+               FROM depreciation_schedule ds WHERE ds.asset_id = fa.id AND ds.is_posted) AS last_depreciated_to
        FROM fixed_assets fa
       WHERE fa.id = $1 AND fa.business_id = $2
       FOR UPDATE OF fa`,

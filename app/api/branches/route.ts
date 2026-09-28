@@ -216,6 +216,24 @@ export async function POST(request: NextRequest) {
       branch_type || 'retail', is_primary || false, is_default || false, invoice_prefix
     ]);
 
+    // Rule 46(b): one consecutive series per GSTIN per year. A second branch on the same
+    // GSTIN must not restart at INV-001, so non-default branches get their own prefix.
+    if (branch && !is_default) {
+      const code =
+        String(invoice_prefix || '').trim() ||
+        `INV-${(String(branch_code || '').trim() || String(name).replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'BR').toUpperCase()}`;
+      try {
+        await db.query(
+          `INSERT INTO branch_document_prefixes (branch_id, document_type, prefix)
+           VALUES ($1, 'tax_invoice', $2)
+           ON CONFLICT (branch_id, document_type) DO NOTHING`,
+          [branch.id, code.slice(0, 50)]
+        );
+      } catch (error: any) {
+        if (error?.code !== '42P01') throw error;
+      }
+    }
+
     return NextResponse.json({ branch }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating branch:', error);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +21,8 @@ export async function PATCH(
     const body = await request.json();
     const { dispatched_by, dispatch_date, notes } = body;
 
-    const userId = dispatched_by || body.user_id; // REQUIRED for authorization
+    const userId = getUserIdFromRequest(request, body) || dispatched_by;
     if (!userId) {
-      client.release();
       return NextResponse.json(
         { error: 'dispatched_by (user_id) is required for authorization' },
         { status: 400 }
@@ -35,7 +35,6 @@ export async function PATCH(
     `, [params.id]);
 
     if (transferResult.rows.length === 0) {
-      client.release();
       return NextResponse.json(
         { error: 'Transfer not found' },
         { status: 404 }
@@ -43,12 +42,15 @@ export async function PATCH(
     }
 
     const transfer = transferResult.rows[0];
+    const tenant = requireTenantBusinessId(request, transfer.business_id);
+    if (!tenant.ok || tenant.businessId !== transfer.business_id) {
+      return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
+    }
 
     // CRITICAL: Enforce subscription feature access
     try {
       await assertFeatureAccess(transfer.business_id, 'multi_warehouse');
     } catch (error) {
-      client.release();
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
       }
@@ -67,7 +69,6 @@ export async function PATCH(
         resource: transfer,
       });
     } catch (error) {
-      client.release();
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
@@ -101,7 +102,6 @@ export async function PATCH(
 
       if (availableStock < requestedQty) {
         await client.query('ROLLBACK');
-        client.release();
         return NextResponse.json(
           { 
             error: `Insufficient stock for item. Available: ${availableStock}, Requested: ${requestedQty}`,
@@ -114,10 +114,10 @@ export async function PATCH(
       // Deduct stock from source warehouse
       await client.query(`
         INSERT INTO location_stock (location_id, item_id, current_stock_qty)
-        VALUES ($1, $2, -$3)
+        VALUES ($1, $2, -($3::numeric))
         ON CONFLICT (location_id, item_id)
         DO UPDATE SET 
-          current_stock_qty = location_stock.current_stock_qty - $3,
+          current_stock_qty = location_stock.current_stock_qty - $3::numeric,
           last_updated = CURRENT_TIMESTAMP
       `, [transfer.from_location_id, item.item_id, requestedQty]);
 

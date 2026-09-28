@@ -220,6 +220,10 @@ export async function PATCH(
       const allowed = ['regular', 'composition', 'unregistered'];
       values.push(allowed.includes(g) ? g : 'unregistered');
     }
+    if (body.aggregate_turnover_above_5cr !== undefined) {
+      updates.push(`aggregate_turnover_above_5cr = $${paramIndex++}`);
+      values.push(body.aggregate_turnover_above_5cr === true || body.aggregate_turnover_above_5cr === 'true');
+    }
     if (business_type !== undefined) {
       updates.push(`business_type = $${paramIndex++}`);
       values.push(business_type || null);

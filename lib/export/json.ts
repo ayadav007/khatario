@@ -89,7 +89,7 @@ export async function generateGSTR1JSON(
         inum: inv.invoice_number,
         idt:  formatDateForGSTN(inv.invoice_date),
         val:  Math.round(inv.invoice_value * 100) / 100,
-        pos:  posCode(inv.place_of_supply, bizStateCode),
+        pos:  posCode(inv.place_of_supply, /^\d{2}/.test(ctin || '') ? ctin.slice(0, 2) : bizStateCode),
         rchrg: inv.reverse_charge || 'N',
         inv_typ: mapInvoiceType(inv.invoice_type),
         itms: [] as any[],
@@ -259,7 +259,7 @@ export async function generateGSTR1JSON(
   for (const note of report.cdn) {
     const ctin: string = (note.gstin_uin_recipient || '').trim();
     const isReg = ctin.length === 15;
-    let pos = posCode(note.place_of_supply, bizStateCode);
+    let pos = posCode(note.place_of_supply, isReg && /^\d{2}/.test(ctin) ? ctin.slice(0, 2) : bizStateCode);
     const cdnurTyp = note.cdnur_typ as string | null | undefined;
 
     if (!isReg && cdnurTyp && (cdnurTyp === 'EXPWP' || cdnurTyp === 'EXPWOP') && !note.place_of_supply) {

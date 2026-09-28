@@ -10,13 +10,22 @@ import { queryOne, queryRows, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { periodGuardResponse } from '@/lib/http/period-guards';
+import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
 
 import {
   type JournalLineInput,
   toJournalAmount as toAmount,
   validateJournalLines,
 } from '@/lib/accounting/journal-lines';
+
+async function journalAccountIds(voucherId: string, businessId: string): Promise<string[]> {
+  const rows = await queryRows<{ account_id: string }>(
+    `SELECT DISTINCT account_id FROM ledger_entry_lines
+      WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'`,
+    [voucherId, businessId]
+  );
+  return rows.map((r) => r.account_id);
+}
 
 async function loadJournal(voucherId: string, businessId: string) {
   return queryOne(
@@ -179,11 +188,16 @@ export async function PATCH(
     return NextResponse.json({ error: 'Journal entry is locked', code: 'JOURNAL_LOCKED' }, { status: 403 });
   }
 
+  const existingAccountIds = await journalAccountIds(voucherId, business_id);
+  const newAccountIds = Array.isArray(lines)
+    ? (lines as Array<{ account_id?: string }>).map((l) => l.account_id).filter((x): x is string => !!x)
+    : [];
   const lockRes = await periodGuardResponse({
     businessId: business_id,
     branchId,
     dates: [journalEntry.entry_date, entry_date],
     action: 'edit this journal entry',
+    checkGstFiled: await touchesGstAccounts(business_id, [...existingAccountIds, ...newAccountIds]),
   });
   if (lockRes) return lockRes;
 
@@ -225,10 +239,14 @@ export async function PATCH(
       ]
     );
 
-    // Ledger lines are immutable (prevent_ledger_entry_update trigger), so a date or
-    // narration change re-posts the same amounts instead of updating rows in place.
+    // Ledger lines are immutable (prevent_ledger_entry_update trigger), so only a date change
+    // re-posts the same amounts; narration and reference edits stay on the header.
+    const oldDay = journalEntry.entry_date instanceof Date
+      ? `${journalEntry.entry_date.getFullYear()}-${String(journalEntry.entry_date.getMonth() + 1).padStart(2, '0')}-${String(journalEntry.entry_date.getDate()).padStart(2, '0')}`
+      : String(journalEntry.entry_date).slice(0, 10);
+    const dateChanged = !!entry_date && String(entry_date).slice(0, 10) !== oldDay;
     let linesToPost: JournalLineInput[] | null = replaceLines ? (lines as JournalLineInput[]) : null;
-    if (!replaceLines && (entry_date || narration !== undefined || reference_number !== undefined)) {
+    if (!replaceLines && dateChanged) {
       const existing = await client.query(
         `SELECT account_id, debit, credit, narration FROM ledger_entry_lines
           WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
@@ -340,6 +358,7 @@ export async function DELETE(
     branchId,
     dates: [journalEntry.entry_date],
     action: 'delete this journal entry',
+    checkGstFiled: await touchesGstAccounts(businessId, await journalAccountIds(voucherId, businessId)),
   });
   if (lockRes) return lockRes;
 

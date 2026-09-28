@@ -928,7 +928,8 @@ export async function createInvoiceLedgerEntries(params: {
       poolClient,
       businessId,
       lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
-      invoiceDate
+      invoiceDate,
+      params.branchId
     );
     await postCostOfGoods(poolClient, {
       businessId,
@@ -1614,7 +1615,8 @@ export async function createCreditNoteLedgerEntries(params: {
       poolClient,
       businessId,
       lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
-      creditNoteDate
+      creditNoteDate,
+      params.branchId
     );
     await postCostOfGoods(poolClient, {
       businessId,
@@ -1878,7 +1880,11 @@ export async function createPaymentLedgerEntries(params: {
   referenceNumber?: string;
   description?: string;
   branchId?: string; // Branch ID for branch-wise accounting
-  /** Receipts only: TDS the customer withheld (s.194C/194J etc.); settles receivables alongside `amount`. */
+  /**
+   * Receipts: TDS the customer withheld (Dr TDS Receivable 1116).
+   * Payments out: TDS we withheld from the supplier (Cr TDS Payable 2102).
+   * Either way it settles the party balance alongside `amount`.
+   */
   tdsAmount?: number;
   // PHASE-5: shared transaction client.
   poolClient?: PoolClient;
@@ -1896,7 +1902,7 @@ export async function createPaymentLedgerEntries(params: {
     description,
     poolClient,
   } = params;
-  const tdsAmount = type === 'receivable' ? Math.max(0, Number(params.tdsAmount) || 0) : 0;
+  const tdsAmount = Math.max(0, Number(params.tdsAmount) || 0);
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1976,14 +1982,13 @@ export async function createPaymentLedgerEntries(params: {
       );
     }
 
-    // Debit Accounts Payable
     await createLedgerEntryLine({
       businessId,
       voucherId: paymentId,
       voucherType: 'payment',
       accountId: accounts.accountsPayable.id,
       entryDate: paymentDate,
-      debit: amount,
+      debit: Math.round((amount + tdsAmount) * 100) / 100,
       credit: 0,
       narration: description || `Payment made${referenceNumber ? ` - ${referenceNumber}` : ''}`,
       referenceNumber: referenceNumber || paymentId.substring(0, 8),
@@ -1991,20 +1996,45 @@ export async function createPaymentLedgerEntries(params: {
       poolClient,
     });
 
-    // Credit Cash/Bank
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: paymentId,
-      voucherType: 'payment',
-      accountId: paymentAccount.id,
-      entryDate: paymentDate,
-      debit: 0,
-      credit: amount,
-      narration: description || `Payment made to supplier${referenceNumber ? ` - ${referenceNumber}` : ''}`,
-      referenceNumber: referenceNumber || paymentId.substring(0, 8),
-      branchId: params.branchId,
-      poolClient,
-    });
+    if (amount > 0) {
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: paymentAccount.id,
+        entryDate: paymentDate,
+        debit: 0,
+        credit: amount,
+        narration: description || `Payment made to supplier${referenceNumber ? ` - ${referenceNumber}` : ''}`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
+
+    if (tdsAmount > 0) {
+      const tdsPayable = await ledgerQueryOne<{ id: string }>(
+        poolClient,
+        `SELECT id FROM accounts WHERE business_id = $1 AND account_code = '2102' AND is_active = true LIMIT 1`,
+        [businessId]
+      );
+      if (!tdsPayable) {
+        throw new Error('TDS Payable account (2102) is missing; cannot post TDS deducted on this payment.');
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: paymentId,
+        voucherType: 'payment',
+        accountId: tdsPayable.id,
+        entryDate: paymentDate,
+        debit: 0,
+        credit: tdsAmount,
+        narration: `TDS deducted from supplier${referenceNumber ? ` - ${referenceNumber}` : ''} (deposit via challan, report in 26Q)`,
+        referenceNumber: referenceNumber || paymentId.substring(0, 8),
+        branchId: params.branchId,
+        poolClient,
+      });
+    }
   }
 }
 

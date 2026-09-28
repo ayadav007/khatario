@@ -85,6 +85,7 @@ export const BusinessProfileTab: React.FC = () => {
     pincode: '',
     gstin: '',
     gst_registration_type: 'unregistered',
+    aggregate_turnover_above_5cr: false,
     pan: '',
     logo_url: '',
     signature_url: '',
@@ -113,6 +114,7 @@ export const BusinessProfileTab: React.FC = () => {
         pincode: profileData.pincode || business?.pincode || '',
         gstin: profileData.gstin || business?.gstin || '',
         gst_registration_type: (business as any)?.gst_registration_type || 'unregistered',
+        aggregate_turnover_above_5cr: !!(business as any)?.aggregate_turnover_above_5cr,
         pan: business?.pan || '', // PAN is business-level
         logo_url: business?.logo_url || '', // Logo is business-level
         signature_url: (business as any)?.signature_url || '', // Signature is business-level
@@ -760,6 +762,7 @@ export const BusinessProfileTab: React.FC = () => {
         iec_code: formData.iec_code,
         swift_code: formData.swift_code,
         gst_registration_type: formData.gst_registration_type,
+        aggregate_turnover_above_5cr: formData.aggregate_turnover_above_5cr,
       };
 
       const resBusiness = await fetch(`/api/business/${business.id}`, {
@@ -1326,6 +1329,25 @@ export const BusinessProfileTab: React.FC = () => {
               <strong>Unregistered:</strong> No GST registration, for businesses below threshold limit.
             </p>
           </div>
+
+          {formData.gst_registration_type !== 'unregistered' && (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={formData.aggregate_turnover_above_5cr}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, aggregate_turnover_above_5cr: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="type-label block">Aggregate turnover above ₹5 crore (previous FY)</span>
+                <span className="type-body-sm text-text-muted">
+                  Invoices must then show 6-digit HSN codes; up to ₹5 crore, 4 digits are enough.
+                </span>
+              </span>
+            </label>
+          )}
 
           {/* GSTIN and PAN */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

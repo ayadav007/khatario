@@ -265,7 +265,11 @@ export async function POST(request: NextRequest) {
       throw new Error('Business not found');
     }
     
-    const businessStateCode = businessRes.rows[0].state_code || '';
+    const { resolveSupplierRegistration } = await import('@/lib/gst/registration');
+    const businessStateCode =
+      (await resolveSupplierRegistration(client, business_id, stockBranchId)).stateCode ||
+      businessRes.rows[0].state_code ||
+      '';
 
     const rejectDebitNote = async (status: number, code: string, error: string) => {
       await client.query('ROLLBACK');
@@ -341,6 +345,18 @@ export async function POST(request: NextRequest) {
       );
       return { item, qty, unitPrice, discount, ...line, taxRate: Number(item.tax_rate ?? item.taxPercent) || 0 };
     });
+    const { gstRateError } = await import('@/lib/gst/rates');
+    const invDate: unknown = linkedInvoice?.invoice_date;
+    const rateDate =
+      invDate instanceof Date
+        ? `${invDate.getFullYear()}-${String(invDate.getMonth() + 1).padStart(2, '0')}-${String(invDate.getDate()).padStart(2, '0')}`
+        : String(invDate ?? debit_note_date).slice(0, 10);
+    for (const l of lines) {
+      const rateError = gstRateError(l.taxRate, rateDate);
+      if (rateError) {
+        return rejectDebitNote(400, 'INVALID_GST_RATE', `${l.item?.item_name || 'Line'}: ${rateError}`);
+      }
+    }
     const computedSubtotal = round2(lines.reduce((s, l) => s + l.taxable, 0));
     const computedDiscount = round2(lines.reduce((s, l) => s + l.discount, 0));
     const computedCgst = round2(lines.reduce((s, l) => s + l.cgst, 0));

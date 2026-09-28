@@ -349,11 +349,17 @@ export async function POST(request: NextRequest) {
       created_by, // User ID who created the payment
       tds_section,
     } = body;
-    const tdsAmount = type === 'receivable' ? Math.round((Number(body.tds_amount) || 0) * 100) / 100 : 0;
+    const tdsAmount = Math.round((Number(body.tds_amount) || 0) * 100) / 100;
     const settles = Math.round(((Number(amount) || 0) + tdsAmount) * 100) / 100;
 
     if (tdsAmount < 0) {
       return NextResponse.json({ error: 'tds_amount cannot be negative' }, { status: 400 });
+    }
+    if (type === 'payable' && tdsAmount > 0 && !tds_section) {
+      return NextResponse.json(
+        { error: 'tds_section is required when deducting TDS on a payment out', code: 'TDS_SECTION_REQUIRED' },
+        { status: 400 }
+      );
     }
 
     if (!business_id || !type || Number(amount) < 0 || settles <= 0) {
@@ -645,11 +651,11 @@ export async function POST(request: NextRequest) {
             );
           }
           const outstanding = purchaseOutstanding(purchase);
-          if (Number(amount) > outstanding + 0.01) {
+          if (settles > outstanding + 0.01) {
             await client.query('ROLLBACK');
             return NextResponse.json(
               {
-                error: `Amount ₹${Number(amount).toFixed(2)} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}; reverse-charge GST is paid to the government, not the supplier).`,
+                error: `Amount ₹${settles.toFixed(2)}${tdsAmount > 0 ? ' (including TDS)' : ''} exceeds the amount owed on this bill (₹${outstanding.toFixed(2)}; reverse-charge GST is paid to the government, not the supplier).`,
                 code: 'PAYMENT_EXCEEDS_BALANCE',
                 outstanding,
               },
@@ -658,8 +664,11 @@ export async function POST(request: NextRequest) {
           }
 
           await client.query(
-            `UPDATE purchases SET paid_amount = COALESCE(paid_amount, 0) + $1 WHERE id = $2 AND business_id = $3`,
-            [amount, reference_id, business_id],
+            `UPDATE purchases
+                SET paid_amount = COALESCE(paid_amount, 0) + $1,
+                    tds_deducted = COALESCE(tds_deducted, 0) + $2
+              WHERE id = $3 AND business_id = $4`,
+            [amount, tdsAmount, reference_id, business_id],
           );
           await recomputePurchaseBalance(client, reference_id, business_id);
 
@@ -669,7 +678,7 @@ export async function POST(request: NextRequest) {
                SET current_balance = current_balance - $1,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = $2 AND business_id = $3`,
-              [amount, purchase.supplier_id, business_id],
+              [settles, purchase.supplier_id, business_id],
             );
           }
         }
@@ -692,7 +701,45 @@ export async function POST(request: NextRequest) {
            SET current_balance = current_balance - $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE id = $2 AND business_id = $3`,
-          [amount, finalSupplierId, business_id],
+          [settles, finalSupplierId, business_id],
+        );
+      }
+
+      if (type === 'payable' && tdsAmount > 0 && finalSupplierId) {
+        const txDate = new Date(payment_date || new Date());
+        const y = txDate.getFullYear();
+        const m = txDate.getMonth() + 1;
+        const financialYear = m >= 4 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
+        const quarter = m >= 4 && m <= 6 ? 'Q1' : m >= 7 && m <= 9 ? 'Q2' : m >= 10 ? 'Q3' : 'Q4';
+        const section = String(tds_section).slice(0, 20);
+        const catRes = await client.query(
+          `SELECT id FROM tds_categories WHERE section_code = $1 AND (business_id = $2 OR business_id IS NULL)
+            ORDER BY business_id NULLS LAST LIMIT 1`,
+          [section, business_id],
+        );
+        await client.query(
+          `INSERT INTO tds_transactions (
+             business_id, supplier_id, payment_id, purchase_id, tds_category_id, section_code,
+             payment_amount, tds_rate, tds_amount, net_payment_amount,
+             transaction_date, financial_year, quarter, notes, created_by
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            business_id,
+            finalSupplierId,
+            payment.id,
+            reference_type === 'purchase' ? reference_id : null,
+            catRes.rows[0]?.id ?? null,
+            section,
+            settles,
+            Math.round((tdsAmount / settles) * 10000) / 100,
+            tdsAmount,
+            Number(amount) || 0,
+            payment_date || new Date(),
+            financialYear,
+            quarter,
+            'Deducted on payment out',
+            created_by,
+          ],
         );
       }
 

@@ -73,9 +73,8 @@ export default function NewDebitNotePage() {
     if (!business?.id) return;
     const fetchData = async () => {
       try {
-        const [custRes, invRes, numRes] = await Promise.all([
+        const [custRes, numRes] = await Promise.all([
           fetch(`/api/customers?business_id=${business.id}&user_id=${user?.id}`),
-          fetch(`/api/invoices?business_id=${business.id}&status=final&user_id=${user?.id}`),
           fetch(`/api/debit-notes?business_id=${business.id}&user_id=${user?.id}&next_number=1`)
         ]);
         if (numRes.ok) {
@@ -88,16 +87,31 @@ export default function NewDebitNotePage() {
           const data = await custRes.json();
           setCustomers(data.customers || []);
         }
-        if (invRes.ok) {
-          const data = await invRes.json();
-          setInvoices(data.invoices || []);
-        }
       } catch (err) {
         console.error('Fetch error', err);
       }
     };
     fetchData();
   }, [business?.id]);
+
+  useEffect(() => {
+    if (!business?.id || !customerId) {
+      setInvoices([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `/api/invoices?business_id=${business.id}&user_id=${user?.id}&customer_id=${encodeURIComponent(customerId)}&status=final&limit=500`
+    )
+      .then((res) => (res.ok ? res.json() : { invoices: [] }))
+      .then((data) => {
+        if (!cancelled) setInvoices(data.invoices || []);
+      })
+      .catch((err) => console.error('Fetch error', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id, customerId, user?.id]);
 
   const handleSave = async () => {
     if (!business?.id) return;

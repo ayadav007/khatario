@@ -61,7 +61,7 @@ function ValuationTab({ itemId, item, businessId }: { itemId: string; item: any;
   const methodLabels: Record<string, string> = {
     simple: 'Simple (Purchase Price)',
     fifo: 'FIFO (First In First Out)',
-    lifo: 'LIFO (Last In First Out)',
+    lifo: 'Weighted Average (LIFO not permitted)',
     weighted_avg: 'Weighted Average',
   };
 
@@ -453,8 +453,7 @@ export default function ItemDetailPage() {
                       <label className="text-sm font-medium text-text-secondary">Valuation Method</label>
                       <p className="mt-1 text-text-primary uppercase">
                         {item.valuation_method === 'fifo' && 'FIFO (First In First Out)'}
-                        {item.valuation_method === 'lifo' && 'LIFO (Last In First Out)'}
-                        {item.valuation_method === 'weighted_avg' && 'Weighted Average'}
+                        {(item.valuation_method === 'weighted_avg' || item.valuation_method === 'lifo') && 'Weighted Average'}
                         {item.valuation_method === 'simple' && 'Simple'}
                       </p>
                     </div>

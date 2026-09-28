@@ -44,7 +44,13 @@ export async function getWarehouseWithBranch(warehouseId: string): Promise<Wareh
     SELECT 
       w.id,
       w.name,
-      w.branch_id,
+      COALESCE(
+        w.branch_id,
+        (SELECT bw.branch_id FROM branch_warehouses bw
+          WHERE bw.warehouse_id = w.id
+          ORDER BY bw.is_primary DESC NULLS LAST
+          LIMIT 1)
+      ) AS branch_id,
       w.business_id
     FROM warehouses w
     WHERE w.id = $1
@@ -54,18 +60,22 @@ export async function getWarehouseWithBranch(warehouseId: string): Promise<Wareh
     throw new Error(`Warehouse ${warehouseId} not found`);
   }
 
+  // A branch without its own GSTIN trades under the head-office registration.
   let branch: BranchInfo | undefined;
   if (warehouse.branch_id) {
     branch = await db.queryOne<BranchInfo>(`
       SELECT 
-        id,
-        name,
-        gstin,
-        state_code,
-        state,
-        business_id
-      FROM branches
-      WHERE id = $1
+        br.id,
+        br.name,
+        COALESCE(NULLIF(TRIM(br.gstin), ''), b.gstin) AS gstin,
+        CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL
+             THEN COALESCE(br.state_code, LEFT(TRIM(br.gstin), 2))
+             ELSE COALESCE(b.state_code, LEFT(TRIM(b.gstin), 2)) END AS state_code,
+        CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL THEN br.state ELSE b.state END AS state,
+        br.business_id
+      FROM branches br
+      JOIN businesses b ON b.id = br.business_id
+      WHERE br.id = $1
     `, [warehouse.branch_id]) ?? undefined;
   }
 
@@ -120,10 +130,14 @@ export async function isInterBranchTransfer(
  */
 export async function getOrCreateBranchCustomer(
   businessId: string,
-  branchId: string
+  branchId: string,
+  client?: PoolClient
 ): Promise<string> {
+  const one = async <T,>(text: string, params: unknown[]): Promise<T | null> =>
+    client ? ((await client.query(text, params)).rows[0] as T) ?? null : await db.queryOne<any>(text, params);
+
   // Check if customer already exists for this branch
-  const existingCustomer = await db.queryOne<{ id: string }>(`
+  const existingCustomer = await one<{ id: string }>(`
     SELECT id FROM customers
     WHERE business_id = $1 AND branch_id = $2
     LIMIT 1
@@ -133,11 +147,17 @@ export async function getOrCreateBranchCustomer(
     return existingCustomer.id;
   }
 
-  // Get branch details
-  const branch = await db.queryOne<BranchInfo>(`
-    SELECT id, name, gstin, state_code, state, business_id
-    FROM branches
-    WHERE id = $1 AND business_id = $2
+  const branch = await one<BranchInfo>(`
+    SELECT br.id, br.name,
+           COALESCE(NULLIF(TRIM(br.gstin), ''), b.gstin) AS gstin,
+           CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL
+                THEN COALESCE(br.state_code, LEFT(TRIM(br.gstin), 2))
+                ELSE COALESCE(b.state_code, LEFT(TRIM(b.gstin), 2)) END AS state_code,
+           CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL THEN br.state ELSE b.state END AS state,
+           br.business_id
+    FROM branches br
+    JOIN businesses b ON b.id = br.business_id
+    WHERE br.id = $1 AND br.business_id = $2
   `, [branchId, businessId]);
 
   if (!branch) {
@@ -145,7 +165,7 @@ export async function getOrCreateBranchCustomer(
   }
 
   // Create customer for branch
-  const customer = await db.queryOne<{ id: string }>(`
+  const customer = await one<{ id: string }>(`
     INSERT INTO customers (
       business_id,
       branch_id,
@@ -339,14 +359,23 @@ export async function createInterBranchInvoice(
   }
 ): Promise<{ invoiceId: string; invoiceNumber: string }> {
   const branches = await client.query<BranchInfo>(
-    `SELECT id, name, gstin, state_code, state, business_id FROM branches WHERE id = ANY($1::uuid[]) AND business_id = $2`,
+    `SELECT br.id, br.name,
+            COALESCE(NULLIF(TRIM(br.gstin), ''), b.gstin) AS gstin,
+            CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL
+                 THEN COALESCE(br.state_code, LEFT(TRIM(br.gstin), 2))
+                 ELSE COALESCE(b.state_code, LEFT(TRIM(b.gstin), 2)) END AS state_code,
+            CASE WHEN NULLIF(TRIM(br.gstin), '') IS NOT NULL THEN br.state ELSE b.state END AS state,
+            br.business_id
+       FROM branches br
+       JOIN businesses b ON b.id = br.business_id
+      WHERE br.id = ANY($1::uuid[]) AND br.business_id = $2`,
     [[params.fromBranchId, params.toBranchId], params.businessId]
   );
   const fromBranch = branches.rows.find((b) => b.id === params.fromBranchId);
   const toBranch = branches.rows.find((b) => b.id === params.toBranchId);
   if (!fromBranch || !toBranch) throw new Error('Source or destination branch not found');
 
-  const customerId = await getOrCreateBranchCustomer(params.businessId, params.toBranchId);
+  const customerId = await getOrCreateBranchCustomer(params.businessId, params.toBranchId, client);
   const fromStateCode = fromBranch.state_code || getStateCode(fromBranch.state || '') || '';
   const toStateCode = toBranch.state_code || getStateCode(toBranch.state || '') || '';
   const gst = calculateInterBranchGST(params.items, fromStateCode, toStateCode);
@@ -425,7 +454,8 @@ export async function createInterBranchInvoice(
       client,
       params.businessId,
       params.items.map((i) => ({ itemId: i.item_id, quantity: Number(i.qty) || 0 })),
-      params.transferDate
+      params.transferDate,
+      params.fromBranchId
     );
     await postCostOfGoods(client, {
       businessId: params.businessId,
@@ -480,7 +510,8 @@ export async function ensureInterBranchInvoiceForTransfer(
     client,
     transfer.business_id,
     rows.rows.map((r: any) => r.item_id),
-    transfer.transfer_date
+    transfer.transfer_date,
+    info.fromWarehouse.branch.id
   );
   const items: InterBranchItem[] = rows.rows.map((r: any) => ({
     item_id: r.item_id,

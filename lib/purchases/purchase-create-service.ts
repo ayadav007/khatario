@@ -1,4 +1,6 @@
 import type { PoolClient } from 'pg';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { gstRateError } from '@/lib/gst/rates';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
@@ -7,6 +9,7 @@ import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
+import { purchaseLineItcType } from '@/lib/purchases/itc-type';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -279,8 +282,16 @@ export async function createPurchaseInTransaction(
     stateCodeFromGstin(effectiveSupplierGstin || supplierGstin || undefined);
 
   const headerPriceMode = body.price_mode === 'inclusive' ? 'inclusive' : 'exclusive';
-  const businessStateCode = business.state_code || getStateCode(business.state || '');
+  const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const businessStateCode =
+    registration.stateCode || business.state_code || getStateCode(business.state || '');
   const finalPlaceOfSupply = body.place_of_supply_state_code || businessStateCode;
+  for (const item of items) {
+    const rateError = gstRateError(Number(item.tax_rate) || 0, body.bill_date ? String(body.bill_date).slice(0, 10) : null);
+    if (rateError) {
+      throw new PurchaseCreateServiceError(`${String(item.item_name || 'Line')}: ${rateError}`, 400, 'INVALID_GST_RATE');
+    }
+  }
   const supplierStateForGst =
     supplierStateResolved && String(supplierStateResolved).trim().length >= 2
       ? String(supplierStateResolved).trim().slice(0, 2)
@@ -402,9 +413,9 @@ export async function createPurchaseInTransaction(
         purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
         unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
         tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-        location_id, line_item_type
+        location_id, line_item_type, itc_type
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
       `,
       [
         purchase.id,
@@ -428,6 +439,7 @@ export async function createPurchaseInTransaction(
         computed.lineTotal,
         item.location_id || null,
         lineIntent,
+        purchaseLineItcType(item, lineIntent),
       ]
     );
 

@@ -5,7 +5,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
-import { periodGuardResponse } from '@/lib/http/period-guards';
+import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -251,6 +251,10 @@ export async function POST(request: NextRequest) {
       branchId: finalBranchId,
       dates: [entry_date],
       action: 'post a journal entry',
+      checkGstFiled: await touchesGstAccounts(
+        business_id,
+        (lines as Array<{ account_id?: string }>).map((l) => l.account_id).filter((x): x is string => !!x)
+      ),
     });
     if (lockRes) return lockRes;
 

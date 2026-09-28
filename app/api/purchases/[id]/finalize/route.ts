@@ -98,12 +98,37 @@ export async function PATCH(
     throw error;
   }
 
+  const billDay = purchase.bill_date instanceof Date
+    ? `${purchase.bill_date.getFullYear()}-${String(purchase.bill_date.getMonth() + 1).padStart(2, '0')}-${String(purchase.bill_date.getDate()).padStart(2, '0')}`
+    : String(purchase.bill_date).slice(0, 10);
+  try {
+    const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
+    await assertGstPeriodNotFiledForDocumentDate(purchase.business_id, stockBranchId, billDay, 'finalize purchase');
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'GST period is filed', code: 'GST_PERIOD_FILED' }, { status: 403 });
+  }
+  try {
+    const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
+    await assertPeriodNotLocked(purchase.business_id, stockBranchId, billDay, 'purchase');
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Period is locked', code: 'PERIOD_LOCKED' }, { status: 403 });
+  }
+
   // Add stock with batch/serial tracking support
   const pool = getPool();
   const client = await pool.connect();
+  let updated: any = null;
 
   try {
     await client.query('BEGIN');
+    const lockedRow = await client.query(
+      `SELECT status FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [id, purchase.business_id]
+    );
+    if (lockedRow.rows[0]?.status === 'final') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ purchase });
+    }
 
     if (!purchase.branch_id) {
       await client.query(
@@ -211,6 +236,10 @@ export async function PATCH(
     }
 
     for (const row of current.items) {
+      const isServiceLine =
+        row.line_item_type === 'service' || /^99/.test(String(row.hsn_sac || '').trim());
+      if (isServiceLine) continue;
+
       let resolvedItemId =
         row.item_id && String(row.item_id).trim() !== '' ? String(row.item_id).trim() : null;
       if (!resolvedItemId && row.item_name) {
@@ -295,7 +324,7 @@ export async function PATCH(
             variant_id: row.variant_id || null,
             item_name: row.item_name,
             quantity: Number(row.quantity) || 0,
-            unit_price: Number(row.unit_price) || 0,
+            unit_price: unitCostForLine,
             location_id: row.location_id || null,
             batch_number: row.batch_number ?? null,
             serial_numbers: row.serial_numbers,
@@ -319,6 +348,61 @@ export async function PATCH(
       }
     }
 
+    // A draft posts nothing, so the purchase voucher and supplier balance are booked here.
+    const already = await client.query(
+      `SELECT 1 FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'purchase' LIMIT 1`,
+      [purchase.business_id, id]
+    );
+    if (already.rows.length === 0) {
+      const invRes = await client.query(
+        `SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
+           FROM purchase_items pi
+           JOIN items i ON i.id = pi.item_id AND i.business_id = $2
+          WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+            AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'`,
+        [id, purchase.business_id]
+      );
+      const grandTotal = Number(purchase.grand_total) || 0;
+      const paid = Number(purchase.paid_amount) || 0;
+      const balance = Number(purchase.balance_amount ?? grandTotal - paid) || 0;
+      const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
+      await createPurchaseLedgerEntries({
+        businessId: purchase.business_id,
+        purchaseId: id,
+        purchaseNumber: purchase.bill_number || String(id).substring(0, 8),
+        purchaseDate: billDay,
+        grandTotal,
+        supplierId: purchase.supplier_id || null,
+        isCashPurchase: !purchase.supplier_id || (paid > 0 && balance <= 0.005),
+        inventoryAmount: Number(invRes.rows[0]?.total) || 0,
+        branchId: stockBranchId,
+        poolClient: client,
+        taxableValue: Number(purchase.subtotal) || 0,
+        cgstTotal: Number(purchase.cgst_total) || 0,
+        sgstTotal: Number(purchase.sgst_total) || 0,
+        igstTotal: Number(purchase.igst_total) || 0,
+        itcEligible: purchase.itc_eligible !== false,
+        isReverseCharge: purchase.is_reverse_charge === true,
+      });
+      if (purchase.supplier_id && balance !== 0) {
+        await client.query(
+          `UPDATE suppliers SET current_balance = COALESCE(current_balance, 0) + $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND business_id = $3`,
+          [balance, purchase.supplier_id, purchase.business_id]
+        );
+      }
+    }
+
+    const upd = await client.query(
+      `UPDATE purchases
+       SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+       RETURNING *`,
+      [id, businessScope]
+    );
+    updated = upd.rows[0] ?? null;
+
     await client.query('COMMIT');
   } catch (error: any) {
     await client.query('ROLLBACK');
@@ -326,14 +410,6 @@ export async function PATCH(
   } finally {
     client.release();
   }
-
-  const updated = await queryOne(
-    `UPDATE purchases
-     SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-     RETURNING *`,
-    [id, businessScope]
-  );
 
   if (updated) {
     const pool = getPool();

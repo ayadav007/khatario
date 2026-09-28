@@ -62,6 +62,7 @@ interface PurchaseItem {
   item_id: string;
   item_name: string;
   item_type?: 'goods' | 'service';
+  is_capital_goods?: boolean;
   hsn_sac: string;
   quantity: number;
   unit: string;
@@ -1166,6 +1167,7 @@ export default function NewPurchasePage() {
             item_id: item.item_id || null,
             item_name: item.item_name,
             item_type: item.item_type === 'service' ? 'service' : 'goods',
+            itc_type: item.item_type !== 'service' && item.is_capital_goods ? 'capital_goods' : undefined,
             hsn_sac: item.hsn_sac,
             quantity: item.quantity,
             unit: item.unit,
@@ -1727,6 +1729,19 @@ export default function NewPurchasePage() {
                               <p className="text-caption text-text-secondary leading-snug">
                                 Not in catalogue — search above to link to inventory.
                               </p>
+                            )}
+                            {item.item_type !== 'service' && (
+                              <label
+                                className="flex items-center gap-1.5 text-caption text-text-secondary cursor-pointer"
+                                title="Machinery or equipment used in business (GSTR-9 Table 6B capital goods)"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.is_capital_goods}
+                                  onChange={(e) => updateItem(item.id, 'is_capital_goods', e.target.checked)}
+                                />
+                                Capital goods
+                              </label>
                             )}
                           </div>
                           </td>

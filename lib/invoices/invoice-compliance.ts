@@ -16,6 +16,10 @@ export interface InvoiceComplianceInput {
   status: string;
   documentType: string;
   customerGstin: string | null | undefined;
+  /** Billing state of an unregistered customer; used when no place of supply is given. */
+  customerStateCode?: string | null;
+  /** State of the issuing registration; an over-the-counter B2C sale is supplied there. */
+  supplierStateCode?: string | null;
   placeOfSupply: string | null | undefined;
   isExport: boolean;
   turnoverAbove5Cr: boolean;
@@ -58,6 +62,12 @@ export function checkInvoiceCompliance(input: InvoiceComplianceInput): InvoiceCo
           'For a registered buyer the place of supply is the GSTIN state unless goods are shipped elsewhere.',
       };
     }
+  }
+
+  if (!placeOfSupply && !input.isExport) {
+    placeOfSupply = input.customerStateCode?.trim()
+      ? input.customerStateCode.trim().padStart(2, '0')
+      : input.supplierStateCode?.trim() || null;
   }
 
   for (const line of input.lines) {

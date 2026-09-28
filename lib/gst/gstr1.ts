@@ -351,9 +351,21 @@ export class GSTR1Generator {
         [business_id]
       );
       const bizGstin = bizRes.rows[0]?.gstin ? String(bizRes.rows[0].gstin).trim() : '';
-      const selfState = /^\d{2}/.test(bizGstin) ? bizGstin.slice(0, 2) : null;
-      const isInterState = (pos: string | null | undefined, igst: number): boolean => {
+      const bizState = /^\d{2}/.test(bizGstin) ? bizGstin.slice(0, 2) : null;
+      const branchStates = new Map<string, string>();
+      const branchRes = await client.query<{ id: string; gstin: string | null }>(
+        `SELECT id, gstin FROM branches WHERE business_id = $1 AND gstin IS NOT NULL AND TRIM(gstin) <> ''`,
+        [business_id]
+      );
+      for (const b of branchRes.rows) {
+        const g = String(b.gstin).trim().toUpperCase();
+        if (/^\d{2}/.test(g) && g !== bizGstin.toUpperCase()) branchStates.set(b.id, g.slice(0, 2));
+      }
+      const selfStateFor = (branchId: string | null | undefined): string | null =>
+        (branchId && branchStates.get(branchId)) || bizState;
+      const isInterState = (pos: string | null | undefined, igst: number, branchId?: string | null): boolean => {
         const p = String(pos || '').slice(0, 2);
+        const selfState = selfStateFor(branchId);
         if (selfState && /^\d{2}$/.test(p)) return p !== selfState;
         return igst > 0;
       };
@@ -451,7 +463,7 @@ export class GSTR1Generator {
         summary.total_tax_amount += taxTotal;
 
         const invIgst = items.reduce((s, i) => s + (parseFloat(i.igst_amount) || 0), 0);
-        const interState = isInterState(placeOfSupply, invIgst);
+        const interState = isInterState(placeOfSupply, invIgst, inv.branch_id);
 
         // --- HSN Summary (Table 12): one row per HSN + UQC + rate, split B2B / B2C ---
         items.forEach(item => {
@@ -707,6 +719,7 @@ export class GSTR1Generator {
           i.ecommerce_operator_gstin      AS orig_etin,
           COALESCE(i.is_ecommerce_supply, false) AS orig_is_ecommerce,
           cn.id                           AS document_id,
+          cn.branch_id                    AS branch_id,
           'credit_note'::text             AS document_type
         FROM credit_notes cn
         LEFT JOIN invoices i ON cn.invoice_id  = i.id AND i.deleted_at IS NULL
@@ -749,6 +762,7 @@ export class GSTR1Generator {
           i.ecommerce_operator_gstin      AS orig_etin,
           COALESCE(i.is_ecommerce_supply, false) AS orig_is_ecommerce,
           dn.id                           AS document_id,
+          dn.branch_id                    AS branch_id,
           'debit_note'::text              AS document_type
         FROM debit_notes dn
         LEFT JOIN invoices i ON dn.invoice_id  = i.id AND i.deleted_at IS NULL
@@ -856,7 +870,7 @@ export class GSTR1Generator {
         // CDNUR covers only notes on B2CL invoices and exports; other unregistered-recipient
         // notes are netted into Table 7 (B2CS) or Table 8 for the period.
         const pos = String(row.place_of_supply || row.orig_invoice_pos || '').slice(0, 2);
-        const noteInter = isInterState(pos, noteIgst);
+        const noteInter = isInterState(pos, noteIgst, row.branch_id);
         const origValue = parseFloat(row.orig_invoice_grand_total) || 0;
         const origIsB2cl = !!linkedInv && noteInter && origValue > b2clThreshold;
         if (isRegRecipient || cdnurTyp !== 'B2CL' || origIsB2cl) {

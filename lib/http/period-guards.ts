@@ -9,6 +9,21 @@ function dateLabel(d: Date | string): string {
   return String(d).slice(0, 10);
 }
 
+/** GST ledgers: input 1110-1112 (+ cess 1113), output 2150-2155, RCM and TDS/TCS under GST. */
+const GST_ACCOUNT_CODES = ['1110', '1111', '1112', '1113', '2150', '2151', '2152', '2153', '2154', '2155'];
+
+/** True when any of the accounts is a GST ledger, i.e. the voucher changes figures already reported in a return. */
+export async function touchesGstAccounts(businessId: string, accountIds: string[]): Promise<boolean> {
+  if (accountIds.length === 0) return false;
+  const { queryOne } = await import('@/lib/db');
+  const row = await queryOne<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM accounts
+      WHERE business_id = $1 AND id = ANY($2::uuid[]) AND account_code = ANY($3::text[])`,
+    [businessId, accountIds, GST_ACCOUNT_CODES]
+  );
+  return Number(row?.n || 0) > 0;
+}
+
 /**
  * Route-level check so users get 403 PERIOD_LOCKED / GST_PERIOD_FILED
  * instead of the raw 500 raised by the ledger period-lock trigger.

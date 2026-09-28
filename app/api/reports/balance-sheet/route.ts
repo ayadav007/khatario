@@ -182,7 +182,10 @@ export async function GET(request: NextRequest) {
     
     if (!isConsolidatedView && finalBranchId) {
       // Single branch filter
-      branchFilter = 'AND lel.branch_id = $4';
+      const { isDefaultBranch } = await import('@/lib/branch-helpers');
+      branchFilter = (await isDefaultBranch(finalBranchId, businessId))
+        ? 'AND (lel.branch_id = $4 OR lel.branch_id IS NULL)'
+        : 'AND lel.branch_id = $4';
       branchFilterParams = [finalBranchId];
     } else if (userId) {
       // Consolidated view: Check user's accessible branches

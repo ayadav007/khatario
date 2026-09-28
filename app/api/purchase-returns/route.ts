@@ -218,7 +218,12 @@ export async function POST(request: NextRequest) {
     }
 
     const businessRes = await client.query('SELECT state_code FROM businesses WHERE id = $1', [business_id]);
-    const businessStateCode = String(businessRes.rows[0]?.state_code || '').slice(0, 2);
+    const { resolveSupplierRegistration } = await import('@/lib/gst/registration');
+    const businessStateCode = String(
+      (await resolveSupplierRegistration(client, business_id, stockBranchId)).stateCode ||
+        businessRes.rows[0]?.state_code ||
+        ''
+    ).slice(0, 2);
     let supplierStateCode = String(bill?.supplier_state_code || '').slice(0, 2);
     if (!supplierStateCode && supplier_id) {
       const s = await client.query('SELECT state_code, gstin FROM suppliers WHERE id = $1 AND business_id = $2', [

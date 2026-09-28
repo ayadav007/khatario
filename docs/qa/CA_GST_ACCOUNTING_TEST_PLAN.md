@@ -571,13 +571,65 @@ Phase 6 (missing accounting basics):
 
 Jest: 51 tests across the accounting, bank and recurring suites pass; `tsc --noEmit` is clean.
 
-### Run 8 checklist (after deploy)
+## Fix plan, Phase 7 (local, awaiting commit and deploy)
+
+Fixes for the Run 8 branch / warehouse failures and for the items that were only partly fixed after Phases 0–6. Run migrations **319** and **320** after 312–318.
+
+Two branches:
+
+- **MB2:** migration 319 drops any business-wide unique index or constraint on `(business_id, invoice_number)` and creates the per-branch index. New non-default branches, and existing ones with no invoices, get their own `INV-<code>` prefix (Rule 46(b): one series per GSTIN).
+- **MB3, MB6:** a branch with its own GSTIN is a distinct person (s.25(4)). Invoices, purchases, credit / debit notes and purchase returns now decide intra- vs inter-state against the branch's state. A branch without a GSTIN trades under the head office. Shared resolver: `lib/gst/registration.ts`.
+- **MB5:** when no place of supply is sent, it falls back to the customer's GSTIN state, then the shipping or billing state, then the supplier's own state (walk-in B2C).
+- **MB7:** invoice / note PDFs print the branch GSTIN, state and address when the branch has its own registration.
+- **MB8:** GSTR-1 classifies B2CL / B2CS against each branch's own state. The JSON no longer fills a blank POS with the business state; it uses the counterparty GSTIN.
+- **MB9:** the default branch's trial balance, P&L and balance sheet include lines with no branch.
+- **MB10:** COGS uses the selling branch's own purchase weighted average, falling back to the business-wide average.
+
+Two warehouses:
+
+- **WH1:** switching warehouse mode needs `settings:update`. Switching on moves each branch's stock into that branch's default warehouse (409 if a branch holds stock but has no warehouse). Switching off rolls warehouse stock back into branch stock and `items.current_stock`.
+- **WH2:** "Migrate stock" takes the business from the session, checks permission, and moves only the warehouse's own branch stock. It sets the quantity instead of adding, so a second click does not double it.
+- **WH5:** dispatch casts the quantity to numeric (no more `operator is not unique`) and releases the DB client once.
+- **WH6:** a transfer between branches with different GSTINs raises an inter-branch tax invoice at weighted-average cost from the sending branch. The receipt is posted only when the transfer completes. Cancelling reverses both.
+- **WH7:** stock valuation reads `location_stock` in warehouse mode and branch stock otherwise. LIFO is rejected; batch items use FIFO, others weighted average as on the report date.
+
+Items that were only partly fixed:
+
+- **P-SAC2, P-INVVAL (purchase finalize):** service / SAC lines are never stocked; stock is valued at taxable cost; the purchase voucher is posted at finalize if missing. Finalize checks the period lock and GST-filed period.
+- **J8:** journal create, edit and delete return 403 `GST_PERIOD_FILED` when the voucher touches GST ledgers (1110–1113, 2150–2155) in a filed period.
+- **J4:** editing only the narration or reference updates the header. Lines are re-posted only when the date changes or lines are replaced.
+- **P1:** payments out accept `tds_amount` + `tds_section`. The voucher is Dr Creditors (gross) / Cr Bank (net) / Cr TDS Payable 2102. The bill's `tds_deducted` and the supplier balance move by the gross amount, and a `tds_transactions` row is written for 26Q.
+- **F2:** `/api/depreciation/calculate` now checks tenant, permission and period lock, and rejects a period overlapping one already posted (409 `DEPRECIATION_PERIOD_OVERLAP`; the all-assets run lists skipped assets). Migration 320 back-posts legacy fixed assets (Cr 3100) and posted depreciation that have no ledger lines. Rows in locked periods are skipped with a NOTICE.
+- **M3, M5:** the invoice service (used by conversions and recurring invoices), purchases and credit / debit notes reject a GST rate that is not a notified slab. Notes check the rate against the original invoice date.
+- **M4:** Settings → Business profile has an "Aggregate turnover above ₹5 crore" switch that drives the 4- vs 6-digit HSN rule.
+- **M-VAL:** the item valuation API and item screens treat legacy `lifo` items as weighted average.
+- **N2:** the credit / debit note forms load all final invoices of the chosen customer (server-side filter, up to 500), not just the first page.
+- **R6:** purchase lines can be flagged "Capital goods" (`itc_type`), which feeds GSTR-9 Table 6B capital goods. Returns against an all-capital-goods bill reduce that bucket.
+
+Still open:
+
+- **2B2:** purchases do not capture cess, so books cess stays 0 and any 2B cess shows as a difference.
+- **Legacy disposals:** asset disposals made before migration 318 have no ledger lines and are not back-posted.
+- **Capital goods ledger:** capital goods bought on a purchase bill still post to Purchases, not a fixed-asset account.
+
+`tsc --noEmit` is clean. Jest: 118 of 129 suites pass. The 11 failures also fail on 7bd3808 (PBAC, HR, capacitor, golden benchmark).
+
+### Run 9 checklist (after deploying Phases 0–7)
 
 | # | Check |
 |---|-------|
-| R8-CT | Contra: cash deposit ₹5,000 into QA HDFC; TB unchanged in total, Cash −₹5,000, Bank +₹5,000 |
-| R8-BRS | BRS panel for QA HDFC as on 30 Sep: adjusted book balance = balance per bank, or the difference is explained |
-| R8-ADV | Service advance ₹11,800 at 18% intra-state, then adjust against an invoice and refund the rest; check 2106, output GST, GSTR-1 11A / 11B and 3B 3.1(a) |
-| R8-RI | Monthly recurring draft from a template invoice; run now twice → one invoice only |
-| R8-FA | Asset ₹1,00,000 put to use 1 Oct, SLM 5 years: depreciation to 31 Mar = ₹9,473.97 (residual ₹5,000); dispose for ₹80,000 → gain / loss posted; IT block report shows a half-rate addition |
-| R8-TB | Read-only psql: TB Dr = Cr; no voucher with Dr ≠ Cr; no journal header without lines |
+| R9-CT | Contra: cash deposit ₹5,000 into QA HDFC; TB unchanged in total, Cash −₹5,000, Bank +₹5,000 |
+| R9-BRS | BRS panel for QA HDFC as on 30 Sep: adjusted book balance = balance per bank, or the difference is explained |
+| R9-ADV | Service advance ₹11,800 at 18% intra-state, then adjust against an invoice and refund the rest; check 2106, output GST, GSTR-1 11A / 11B and 3B 3.1(a) |
+| R9-RI | Monthly recurring draft from a template invoice; run now twice → one invoice only |
+| R9-FA | Asset ₹1,00,000 put to use 1 Oct, SLM 5 years: depreciation to 31 Mar = ₹9,473.97 (residual ₹5,000); dispose for ₹80,000 → gain / loss posted; IT block report shows a half-rate addition |
+| R9-TB | Read-only psql: TB Dr = Cr; no voucher with Dr ≠ Cr; no journal header without lines |
+| R9-MB | AMD invoice to a Gujarat customer → CGST + SGST; PDF shows `24AAQCT1234A1ZR` and the Ahmedabad address; AMD purchase from a Gujarat supplier → CGST + SGST; a new branch's first invoice gets its own prefix, no 500 |
+| R9-POS | Invoice with no POS to a Maharashtra customer from Pune → POS 27, CGST + SGST |
+| R9-G1 | GSTR-1 for AMD: B2B POS from the customer GSTIN; no blank POS filled with 24 |
+| R9-BTB | Branch TB MAIN + AMD = consolidated TB |
+| R9-WH | Switch warehouse mode off and on in a test business: stock moves to and from the default warehouse, totals unchanged; staff without settings permission → 403 |
+| R9-TR | Transfer Godown 2 → Godown 1 dispatches and receives; Pune → Ahmedabad raises an inter-branch invoice with IGST; cancelling it reverses the invoice |
+| R9-VAL | Stock valuation consolidated = sum of warehouses = Inventory GL (within rounding) |
+| R9-TDS | Payment out ₹9,000 + TDS ₹1,000 (194C) against a ₹10,000 bill → bill paid; 2102 credit ₹1,000; the TDS register shows the entry |
+| R9-J | Journal touching Output CGST in a filed month → 403 `GST_PERIOD_FILED`; narration-only edit keeps the same ledger line ids |

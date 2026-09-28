@@ -504,7 +504,13 @@ export class GSTR9Generator {
                   SELECT 1 FROM purchase_items pi
                   LEFT JOIN items it ON it.id = pi.item_id
                   WHERE pi.purchase_id = p.id AND COALESCE(pi.line_item_type, it.item_type, 'goods') <> 'service'
-                ) AS all_services
+                ) AS all_services,
+                EXISTS (
+                  SELECT 1 FROM purchase_items pi WHERE pi.purchase_id = p.id AND pi.itc_type = 'capital_goods'
+                ) AND NOT EXISTS (
+                  SELECT 1 FROM purchase_items pi
+                  WHERE pi.purchase_id = p.id AND COALESCE(pi.itc_type, '') <> 'capital_goods'
+                ) AS all_capital_goods
            FROM purchase_returns pr
            JOIN purchases p ON p.id = pr.purchase_id
           WHERE pr.business_id = $1 AND pr.return_date BETWEEN $2 AND $3
@@ -520,7 +526,11 @@ export class GSTR9Generator {
           sgst: -(parseFloat(r.sgst_total) || 0),
           cess: 0,
         };
-        const bucket = r.all_services ? 'input_services' : 'inputs';
+        const bucket: ItcType = r.all_capital_goods
+          ? 'capital_goods'
+          : r.all_services
+            ? 'input_services'
+            : 'inputs';
         if (r.is_reverse_charge) {
           const isReg = r.supplier_gstin && r.supplier_gstin.length >= 15;
           addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[bucket], neg);

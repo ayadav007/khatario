@@ -3,6 +3,7 @@ import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
+import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -158,6 +159,12 @@ export async function GET(request: NextRequest) {
     }
     // Admin users with no branchId filter: Show all branches (no additional WHERE clause)
 
+    const customerFilter = searchParams.get('customer_id');
+    if (customerFilter) {
+      sql += ` AND i.customer_id = $${params.length + 1}`;
+      params.push(customerFilter);
+    }
+
     // Add search filter
     if (search) {
       sql += ` AND (i.invoice_number ILIKE $${params.length + 1} OR c.name ILIKE $${params.length + 1})`;
@@ -227,7 +234,7 @@ export async function GET(request: NextRequest) {
 
     // Add pagination
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '25'); // Set to 25 per page for better performance
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '25') || 25, 1), 500);
     const offset = (page - 1) * limit;
 
     // Get total count for pagination
@@ -1172,17 +1179,23 @@ export async function POST(request: NextRequest) {
       return map[name] || '';
     };
 
-    const businessStateCode = business.state_code || getStateCode(business.state || '');
+    const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    const businessStateCode =
+      registration.stateCode || business.state_code || getStateCode(business.state || '');
 
     const pricesIncludeGst = (body as { prices_include_gst?: unknown }).prices_include_gst === true;
     const complianceCustomer = customer_id
       ? (
-          await client.query<{ gstin: string | null }>(
-            'SELECT gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+          await client.query<{ gstin: string | null; state_code: string | null; state: string | null; shipping_state: string | null }>(
+            'SELECT gstin, state_code, state, shipping_state FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
             [customer_id, business_id],
           )
         ).rows[0]
       : undefined;
+    const customerStateCode = complianceCustomer
+      ? stateCodeFromName(complianceCustomer.shipping_state) ??
+        (complianceCustomer.state_code?.trim() || stateCodeFromName(complianceCustomer.state))
+      : null;
     const turnoverRes = await client.query<{ above: boolean | null }>(
       'SELECT aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1',
       [business_id],
@@ -1211,6 +1224,8 @@ export async function POST(request: NextRequest) {
       status,
       documentType: finalDocumentType,
       customerGstin: complianceCustomer?.gstin ?? null,
+      customerStateCode,
+      supplierStateCode: businessStateCode || null,
       placeOfSupply: place_of_supply_state_code,
       isExport: !!is_export,
       turnoverAbove5Cr: turnoverRes.rows[0]?.above === true,
