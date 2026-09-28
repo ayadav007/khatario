@@ -237,7 +237,9 @@ export async function PATCH(
 
     for (const row of current.items) {
       const isServiceLine =
-        row.line_item_type === 'service' || /^99/.test(String(row.hsn_sac || '').trim());
+        row.line_item_type === 'service' ||
+        row.itc_type === 'capital_goods' ||
+        /^99/.test(String(row.hsn_sac || '').trim());
       if (isServiceLine) continue;
 
       let resolvedItemId =
@@ -360,7 +362,8 @@ export async function PATCH(
            JOIN items i ON i.id = pi.item_id AND i.business_id = $2
           WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
             AND COALESCE(pi.line_item_type, 'goods') <> 'service'
-            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'`,
+            AND COALESCE(pi.hsn_sac, '') NOT LIKE '99%'
+            AND pi.itc_type IS DISTINCT FROM 'capital_goods'`,
         [id, purchase.business_id]
       );
       const grandTotal = Number(purchase.grand_total) || 0;
@@ -382,6 +385,7 @@ export async function PATCH(
         cgstTotal: Number(purchase.cgst_total) || 0,
         sgstTotal: Number(purchase.sgst_total) || 0,
         igstTotal: Number(purchase.igst_total) || 0,
+        cessTotal: Number(purchase.cess_total) || 0,
         itcEligible: purchase.itc_eligible !== false,
         isReverseCharge: purchase.is_reverse_charge === true,
       });

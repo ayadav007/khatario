@@ -94,9 +94,9 @@ export async function POST(request: NextRequest) {
   } = body;
   const putToUseDate = body.put_to_use_date || purchase_date;
 
-  if (!['bank', 'cash', 'credit', 'opening'].includes(funding)) {
+  if (!['bank', 'cash', 'credit', 'opening', 'purchase_bill'].includes(funding)) {
     return NextResponse.json(
-      { error: "funding must be one of 'bank', 'cash', 'credit' or 'opening'" },
+      { error: "funding must be one of 'bank', 'cash', 'credit', 'opening' or 'purchase_bill'" },
       { status: 400 }
     );
   }
@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
 
     const creditAccountId = await fundingAccountId(client, business_id, funding, credit_account_id);
 
-    await postAssetCapitalisation(client, {
+    if (creditAccountId !== account_id) await postAssetCapitalisation(client, {
       businessId: business_id,
       branchId: postingBranchId,
       voucherId: asset.rows[0].id,

@@ -1237,6 +1237,39 @@ export async function createPurchaseLedgerEntries(params: {
       poolClient,
     });
   }
+
+  // Entry 7: capital goods lines are capitalised to Fixed Assets (1201), not expensed.
+  // Blocked ITC is part of the asset's cost, so tax is included when the split did not apply.
+  const capRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '1201' LIMIT 1) AS account_id
+      FROM purchase_items pi
+     WHERE pi.purchase_id = $1 AND pi.itc_type = 'capital_goods'
+  `, [purchaseId, useGstSplit, businessId]);
+  const capitalAmount = Math.round((Number(capRows[0]?.total) || 0) * 100) / 100;
+  const fixedAssetAccountId = capRows[0]?.account_id;
+  if (capitalAmount > 0) {
+    if (!fixedAssetAccountId) {
+      throw new Error(
+        `Fixed Assets account (1201) not found for business ${businessId}. ` +
+        `Cannot capitalise purchase ${purchaseNumber}.`,
+      );
+    }
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: fixedAssetAccountId, entryDate: purchaseDate,
+      debit: capitalAmount, credit: 0,
+      narration: `Capital goods capitalised - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: capitalAmount,
+      narration: `Transfer to fixed assets - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
 }
 
 /**

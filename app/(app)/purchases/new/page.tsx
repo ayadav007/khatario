@@ -31,6 +31,7 @@ import {
   hasStrongLocalSupplierSuggestions,
 } from '@/lib/matching/find-local-supplier-match';
 import { extractionJobReadyForImport } from '@/lib/purchases/extraction-job-purchase-link';
+import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
 import { buildReviewSnapshotFromPurchaseForm } from '@/lib/purchases/build-review-snapshot-from-purchase-form';
 import {
   MobileNewPurchaseScrollForm,
@@ -63,6 +64,8 @@ interface PurchaseItem {
   item_name: string;
   item_type?: 'goods' | 'service';
   is_capital_goods?: boolean;
+  /** Compensation cess amount from the supplier's bill (on top of GST). */
+  cess_amount?: number;
   hsn_sac: string;
   quantity: number;
   unit: string;
@@ -1017,6 +1020,7 @@ export default function NewPurchasePage() {
 
   const totals = useMemo(() => {
     const ro = Number(formData.round_off) || 0;
+    const cessTotal = purchaseCessTotal(purchaseItems);
     const d = purchaseGstDoc;
     if (!d) {
       return {
@@ -1025,7 +1029,8 @@ export default function NewPurchasePage() {
         cgstTotal: 0,
         sgstTotal: 0,
         igstTotal: 0,
-        grandTotal: ro,
+        cessTotal,
+        grandTotal: ro + cessTotal,
         intraState: true,
         slabSummary: [] as { gst_rate: number; taxable_value: number; cgst: number; sgst: number; igst: number; total_tax: number }[],
       };
@@ -1036,11 +1041,12 @@ export default function NewPurchasePage() {
       cgstTotal: d.cgstTotal,
       sgstTotal: d.sgstTotal,
       igstTotal: d.igstTotal,
-      grandTotal: d.grandTotalLines + ro,
+      cessTotal,
+      grandTotal: d.grandTotalLines + cessTotal + ro,
       intraState: d.intraState,
       slabSummary: d.slabSummary,
     };
-  }, [purchaseGstDoc, formData.round_off]);
+  }, [purchaseGstDoc, purchaseItems, formData.round_off]);
 
   const invoiceFillTracePanel =
     lastInvoiceFillTrace ? (
@@ -1183,6 +1189,7 @@ export default function NewPurchasePage() {
             sgst_amount: c.sgstAmount,
             igst_amount: c.igstAmount,
             line_total: c.lineTotal,
+            cess_amount: purchaseLineCess(item),
             manual_cgst: item.manual_cgst,
             manual_sgst: item.manual_sgst,
             manual_igst: item.manual_igst,
@@ -1743,6 +1750,25 @@ export default function NewPurchasePage() {
                                 Capital goods
                               </label>
                             )}
+                            {item.item_type !== 'service' && (
+                              <label
+                                className="flex items-center gap-1.5 text-caption text-text-secondary"
+                                title="Compensation cess on the supplier's bill (tobacco, aerated drinks, motor vehicles, coal)"
+                              >
+                                Cess ₹
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step="any"
+                                  min={0}
+                                  className="w-24 rounded border border-border px-1 py-0.5 text-right"
+                                  value={item.cess_amount ?? ''}
+                                  onChange={(e) =>
+                                    updateItem(item.id, 'cess_amount', e.target.value === '' ? undefined : Number(e.target.value))
+                                  }
+                                />
+                              </label>
+                            )}
                           </div>
                           </td>
                           <td className="py-2 px-3"><input type="text" className="w-full border-none bg-transparent outline-none" value={item.hsn_sac} onChange={(e) => updateItem(item.id, 'hsn_sac', e.target.value)} /></td>
@@ -2006,6 +2032,9 @@ export default function NewPurchasePage() {
             )}
             {totals.taxTotal > 0.005 && totals.cgstTotal < 0.005 && totals.sgstTotal < 0.005 && totals.igstTotal < 0.005 && (
               <div className="flex justify-between text-text-secondary"><span>GST:</span><span>₹{totals.taxTotal.toFixed(2)}</span></div>
+            )}
+            {totals.cessTotal > 0.005 && (
+              <div className="flex justify-between text-text-secondary"><span>Cess:</span><span>₹{totals.cessTotal.toFixed(2)}</span></div>
             )}
             {totals.slabSummary.length > 0 && (
               <div className="rounded-lg border border-border overflow-hidden">

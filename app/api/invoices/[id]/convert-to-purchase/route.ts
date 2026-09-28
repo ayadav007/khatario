@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { allocateStockOnPurchase } from '@/lib/stock-valuation';
 import { resolveBranchId } from '@/lib/branch-helpers';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 
 export const dynamic = 'force-dynamic';
@@ -22,11 +24,10 @@ export async function POST(
   try {
     const invoiceId = params.id;
     const body = await request.json();
-    const { business_id, branch_id: bodyBranchId } = body;
-    
-    if (!business_id) {
-      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-    }
+    const { branch_id: bodyBranchId } = body;
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const business_id = tenant.businessId;
     
     // Check which columns exist BEFORE starting transaction
     const itemColumnsCheck = await client.query(`
@@ -257,16 +258,17 @@ export async function POST(
       }
     }
 
-    // Calculate place of supply
-    const businessRes = await client.query(`
-      SELECT state, state_code FROM businesses WHERE id = $1
-    `, [business_id]);
-    const business = businessRes.rows[0];
-    const businessStateCode = business?.state_code || '';
-    const supplierStateCode = invoice.supplier_state_code || '';
-    const placeOfSupplyStateCode = supplierStateCode && supplierStateCode === businessStateCode 
-      ? businessStateCode 
-      : (supplierStateCode || businessStateCode);
+    // Tax split is copied from the supplier's invoice; POS is the one it declared, else the
+    // receiving branch's own registration state (s.25(4): a branch GSTIN is a distinct person).
+    const buyerReg = await resolveSupplierRegistration(client, business_id, purchaseBranchId);
+    const sellerReg = await resolveSupplierRegistration(client, invoice.business_id, invoice.branch_id);
+    if (sellerReg.gstin) invoice.supplier_gstin = sellerReg.gstin;
+    const placeOfSupplyStateCode =
+      (invoice.place_of_supply_state_code && String(invoice.place_of_supply_state_code).trim()) ||
+      buyerReg.stateCode ||
+      sellerReg.stateCode ||
+      invoice.supplier_state_code ||
+      '';
 
     // Create purchase
     // Note: purchases table has balance_amount and payment_status (from migration 017) but NOT discount_total

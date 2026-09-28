@@ -151,8 +151,8 @@ export async function POST(
         UPDATE stock_transfer_items
         SET received_qty = $1, 
             notes = CASE 
-              WHEN $2 IS NOT NULL AND $1 != $3 THEN COALESCE(notes || E'\n', '') || $2
-              WHEN $2 IS NOT NULL THEN COALESCE(notes || E'\n', '') || $2
+              WHEN $2::text IS NOT NULL AND $1::numeric != $3::numeric THEN COALESCE(notes || E'\n', '') || $2::text
+              WHEN $2::text IS NOT NULL THEN COALESCE(notes || E'\n', '') || $2::text
               ELSE notes
             END
         WHERE transfer_id = $4 AND item_id = $5
@@ -185,8 +185,8 @@ export async function POST(
       SET status = $1, 
           updated_at = CURRENT_TIMESTAMP,
           notes = CASE 
-            WHEN $2 IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || $2
-            WHEN $2 IS NOT NULL THEN $2
+            WHEN $2::text IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || $2::text
+            WHEN $2::text IS NOT NULL THEN $2::text
             ELSE notes
           END
       WHERE id = $3

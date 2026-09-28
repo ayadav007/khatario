@@ -10,6 +10,7 @@ import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-c
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
 import { purchaseLineItcType } from '@/lib/purchases/itc-type';
+import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -323,10 +324,11 @@ export async function createPurchaseInTransaction(
   const finalTaxTotal = body.tax_total !== undefined ? body.tax_total : gstDoc.taxTotal;
   const finalRoundOff =
     typeof body.round_off === 'number' && isFinite(body.round_off) ? body.round_off : 0;
-  const computedGrand = gstDoc.subtotal + gstDoc.taxTotal + finalRoundOff;
+  const cessTotal = purchaseCessTotal(items);
+  const computedGrand = gstDoc.subtotal + gstDoc.taxTotal + cessTotal + finalRoundOff;
   const finalGrandTotal = body.grand_total !== undefined ? body.grand_total : computedGrand;
   const paid_amount = body.paid_amount ?? 0;
-  const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal, body.is_reverse_charge);
+  const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, body.is_reverse_charge);
   const balanceAmount = supplierPayable - paid_amount;
 
   let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
@@ -347,9 +349,9 @@ export async function createPurchaseInTransaction(
       round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
       place_of_supply_state_code, is_reverse_charge, supplier_gstin,
       document_type, port_code, itc_eligible,
-      price_mode, supplier_state_code, invoice_number
+      price_mode, supplier_state_code, invoice_number, cess_total
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
     RETURNING *
     `,
     [
@@ -379,6 +381,7 @@ export async function createPurchaseInTransaction(
       headerPriceMode,
       supplierStateForGst || null,
       invoiceNumberStored,
+      cessTotal,
     ]
   );
 
@@ -406,6 +409,7 @@ export async function createPurchaseInTransaction(
         ? item.variant_id.trim()
         : null;
     const unitCostForStock = qty > 0 ? computed.taxableValue / qty : Number(item.unit_price) || 0;
+    const lineItcType = purchaseLineItcType(item, lineIntent);
 
     await client.query(
       `
@@ -413,9 +417,9 @@ export async function createPurchaseInTransaction(
         purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
         unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
         tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-        location_id, line_item_type, itc_type
+        location_id, line_item_type, itc_type, cess_amount
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
       `,
       [
         purchase.id,
@@ -436,14 +440,16 @@ export async function createPurchaseInTransaction(
         computed.cgstAmount,
         computed.sgstAmount,
         computed.igstAmount,
-        computed.lineTotal,
+        computed.lineTotal + purchaseLineCess(item),
         item.location_id || null,
         lineIntent,
-        purchaseLineItcType(item, lineIntent),
+        lineItcType,
+        purchaseLineCess(item),
       ]
     );
 
-    const lineIsService = lineIntent === 'service';
+    // Capital goods go to the fixed-asset register, not stock.
+    const lineIsService = lineIntent === 'service' || lineItcType === 'capital_goods';
     // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
     let effectiveItemId =
       item.item_id && String(item.item_id).trim() !== '' ? String(item.item_id).trim() : null;
@@ -462,7 +468,7 @@ export async function createPurchaseInTransaction(
 
     if (
       status === 'final' &&
-      lineIntent === 'goods' &&
+      !lineIsService &&
       !effectiveItemId &&
       String(item.item_name || '').trim().length > 0
     ) {
@@ -552,6 +558,7 @@ export async function createPurchaseInTransaction(
       JOIN items i ON i.id = pi.item_id AND i.business_id = $2
       WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
         AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+        AND pi.itc_type IS DISTINCT FROM 'capital_goods'
       `,
       [purchase.id, business_id]
     );
@@ -575,6 +582,7 @@ export async function createPurchaseInTransaction(
       cgstTotal: gstDoc.cgstTotal,
       sgstTotal: gstDoc.sgstTotal,
       igstTotal: gstDoc.igstTotal,
+      cessTotal,
       itcEligible: body.itc_eligible !== false,
       isReverseCharge: !!body.is_reverse_charge,
     });
@@ -665,7 +673,7 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
   );
 
   const roundOff = typeof body.round_off === 'number' ? body.round_off : 0;
-  const serverGrand = gstDoc.subtotal + gstDoc.taxTotal + roundOff;
+  const serverGrand = gstDoc.subtotal + gstDoc.taxTotal + purchaseCessTotal(items) + roundOff;
   const tolerance = 0.05;
 
   const clientSub = body.subtotal;

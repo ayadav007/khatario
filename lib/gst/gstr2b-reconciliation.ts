@@ -119,8 +119,8 @@ export class GSTR2BReconciliationEngine {
         pi.igst_amount,
         pi.cgst_amount,
         pi.sgst_amount,
-        0 AS cess_amount,
-        (pi.igst_amount + pi.cgst_amount + pi.sgst_amount) as itc_amount,
+        COALESCE(pi.cess_amount, 0) AS cess_amount,
+        (pi.igst_amount + pi.cgst_amount + pi.sgst_amount + COALESCE(pi.cess_amount, 0)) as itc_amount,
         p.is_reverse_charge,
         p.document_type as purchase_document_type,
         i.item_type

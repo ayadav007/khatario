@@ -9,6 +9,7 @@ import {
   computeItcUtilizationDisplay,
   getItcFromInputLedgerNet,
   getLedgerNetCreditMinusDebit,
+  GSTR3B_INPUT_CESS,
   GSTR3B_INPUT_CGST,
   GSTR3B_INPUT_IGST,
   GSTR3B_INPUT_SGST,
@@ -244,6 +245,9 @@ export class GSTR3BGenerator {
     const itcCGST = getItcFromInputLedgerNet(netIn1110);
     const itcSGST = getItcFromInputLedgerNet(netIn1111);
     const itcIGST = getItcFromInputLedgerNet(netIn1112);
+    const itcCess = getItcFromInputLedgerNet(
+      await getLedgerNetCreditMinusDebit(business_id, GSTR3B_INPUT_CESS, startOfMonth, endOfMonth, branch)
+    );
 
     const rcmIgstForLiability = rcmResolved.igst ?? 0;
     const rcmCgstForLiability = rcmResolved.cgst ?? 0;
@@ -599,7 +603,7 @@ export class GSTR3BGenerator {
       igst: otherHead(itcIGST, 'igst'),
       cgst: otherHead(itcCGST, 'cgst'),
       sgst: otherHead(itcSGST, 'sgst'),
-      cess: 0,
+      cess: round2(itcCess),
     };
     const itc_reversed: TaxBreakdown = roundTax({
       taxable_value: 0,
@@ -613,7 +617,7 @@ export class GSTR3BGenerator {
       igst: itcImports.igst + itcImportServices.igst + itcRcm.igst + other_itc.igst - itc_reversed.igst,
       cgst: itcImports.cgst + itcImportServices.cgst + itcRcm.cgst + other_itc.cgst - itc_reversed.cgst,
       sgst: itcImports.sgst + itcImportServices.sgst + itcRcm.sgst + other_itc.sgst - itc_reversed.sgst,
-      cess: 0,
+      cess: other_itc.cess,
     });
     const itcFromDocs = round2(itcImports.igst + itcImportServices.igst + itcRcm.igst);
     if (itcFromDocs > round2(itcIGST) + 0.5 || itcRcm.cgst > round2(itcCGST) + 0.5 || itcRcm.sgst > round2(itcSGST) + 0.5) {

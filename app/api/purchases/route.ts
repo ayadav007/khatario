@@ -17,6 +17,7 @@ import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-c
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
 import { purchaseLineItcType } from '@/lib/purchases/itc-type';
+import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
 import { gstRateError } from '@/lib/gst/rates';
 import {
@@ -637,12 +638,13 @@ export async function POST(request: NextRequest) {
     const finalSgstTotal = calculatedSgstTotal;
     const finalIgstTotal = calculatedIgstTotal;
     const finalRoundOff = typeof round_off === 'number' && isFinite(round_off) ? round_off : 0;
-    const computedGrand = calculatedSubtotal + calculatedTaxTotal + finalRoundOff;
+    const cessTotal = purchaseCessTotal(items);
+    const computedGrand = calculatedSubtotal + calculatedTaxTotal + cessTotal + finalRoundOff;
     const finalGrandTotal =
       grand_total !== undefined ? grand_total : computedGrand;
 
     // Calculate balance_amount and payment_status
-    const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal, is_reverse_charge);
+    const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, is_reverse_charge);
     const balanceAmount = supplierPayable - (paid_amount || 0);
     let paymentStatus: 'unpaid' | 'partially_paid' | 'paid' = 'unpaid';
     if (paid_amount <= 0) {
@@ -662,9 +664,9 @@ export async function POST(request: NextRequest) {
         round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
         place_of_supply_state_code, is_reverse_charge, supplier_gstin,
         document_type, port_code, itc_eligible,
-        price_mode, supplier_state_code, invoice_number
+        price_mode, supplier_state_code, invoice_number, cess_total
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       RETURNING *
     `,
       [
@@ -696,6 +698,7 @@ export async function POST(request: NextRequest) {
           ? String(supplierStateResolved).trim().slice(0, 2)
           : supplierStateForGst) || null,
         invoiceNumberStored,
+        cessTotal,
       ]
     );
 
@@ -713,7 +716,8 @@ export async function POST(request: NextRequest) {
       const cgst = computed.cgstAmount;
       const sgst = computed.sgstAmount;
       const igst = computed.igstAmount;
-      const lineTotal = computed.lineTotal;
+      const lineCess = purchaseLineCess(item);
+      const lineTotal = computed.lineTotal + lineCess;
       const lineTaxMode =
         item.tax_mode === 'inclusive' || item.tax_mode === 'exclusive' ? item.tax_mode : headerPriceMode;
 
@@ -739,9 +743,9 @@ export async function POST(request: NextRequest) {
           purchase_id, item_id, variant_id, item_name, hsn_sac, quantity,
           unit, unit_price, discount_percent, discount_amount, discount_account_id, taxable_value,
           tax_rate, tax_mode, tax_amount, cgst_amount, sgst_amount, igst_amount, line_total,
-          location_id, line_item_type, itc_type
+          location_id, line_item_type, itc_type, cess_amount
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       `,
         [
           purchase.id,
@@ -766,10 +770,13 @@ export async function POST(request: NextRequest) {
           item.location_id || null,
           lineIntent,
           purchaseLineItcType(item, lineIntent),
+          lineCess,
         ],
       );
 
-      const lineIsService = lineIntent === 'service';
+      // Capital goods go to the fixed-asset register, not stock.
+      const lineIsService =
+        lineIntent === 'service' || purchaseLineItcType(item, lineIntent) === 'capital_goods';
 
       // If item_id is missing, resolve against catalogue (exact → HSN → fuzzy name).
       // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
@@ -790,7 +797,7 @@ export async function POST(request: NextRequest) {
 
       if (
         status === 'final' &&
-        lineIntent === 'goods' &&
+        !lineIsService &&
         !effectiveItemId &&
         String(item.item_name || '').trim().length > 0
       ) {
@@ -907,6 +914,7 @@ export async function POST(request: NextRequest) {
         JOIN items i ON i.id = pi.item_id AND i.business_id = $2
         WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
           AND COALESCE(pi.line_item_type, 'goods') <> 'service'
+          AND pi.itc_type IS DISTINCT FROM 'capital_goods'
       `,
         [purchase.id, business_id]
       );
@@ -937,6 +945,7 @@ export async function POST(request: NextRequest) {
         cgstTotal: finalCgstTotal,
         sgstTotal: finalSgstTotal,
         igstTotal: finalIgstTotal,
+        cessTotal,
         itcEligible: itc_eligible !== false,
         isReverseCharge: !!is_reverse_charge,
       });

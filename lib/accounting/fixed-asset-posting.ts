@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg';
 import { accountIdByCode, insertVoucherLines, round2 as r2, type VoucherLine as Line } from './voucher-posting';
 
-export type AssetFunding = 'bank' | 'cash' | 'credit' | 'opening';
+/** 'purchase_bill': cost already sits in 1201 from a capital-goods purchase line. */
+export type AssetFunding = 'bank' | 'cash' | 'credit' | 'opening' | 'purchase_bill';
 
 /** Credit side of an asset purchase by funding mode. */
 export async function fundingAccountId(
@@ -11,7 +12,7 @@ export async function fundingAccountId(
   explicitAccountId?: string | null
 ): Promise<string> {
   if (explicitAccountId) return explicitAccountId;
-  const code = { bank: '1102', cash: '1101', credit: '2101', opening: '3100' }[funding];
+  const code = { bank: '1102', cash: '1101', credit: '2101', opening: '3100', purchase_bill: '1201' }[funding];
   const id = await accountIdByCode(client, businessId, code);
   if (!id) throw new Error(`Ledger account ${code} not found; initialise the chart of accounts`);
   return id;

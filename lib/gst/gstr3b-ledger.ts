@@ -18,6 +18,7 @@ export const GSTR3B_RCM_IGST = '2158';
 export const GSTR3B_INPUT_CGST = '1110';
 export const GSTR3B_INPUT_SGST = '1111';
 export const GSTR3B_INPUT_IGST = '1112';
+export const GSTR3B_INPUT_CESS = '1113';
 
 export interface GSTR3BLedgerBasis {
   outward_supplies: { igst: number; cgst: number; sgst: number };

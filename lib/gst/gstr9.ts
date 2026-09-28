@@ -419,7 +419,7 @@ export class GSTR9Generator {
 
       purchasesRes.rows.forEach(row => {
         const type = classifyItcType(row);
-        const tb = { taxable_value: parseFloat(row.taxable_value) || 0, igst: parseFloat(row.igst_amount) || 0, cgst: parseFloat(row.cgst_amount) || 0, sgst: parseFloat(row.sgst_amount) || 0, cess: 0 };
+        const tb = { taxable_value: parseFloat(row.taxable_value) || 0, igst: parseFloat(row.igst_amount) || 0, cgst: parseFloat(row.cgst_amount) || 0, sgst: parseFloat(row.sgst_amount) || 0, cess: parseFloat(row.cess_amount) || 0 };
         const itcAllowed = row.itc_eligible !== false;
 
         if (itcAllowed) {

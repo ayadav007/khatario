@@ -633,3 +633,48 @@ Still open:
 | R9-VAL | Stock valuation consolidated = sum of warehouses = Inventory GL (within rounding) |
 | R9-TDS | Payment out ₹9,000 + TDS ₹1,000 (194C) against a ₹10,000 bill → bill paid; 2102 credit ₹1,000; the TDS register shows the entry |
 | R9-J | Journal touching Output CGST in a filed month → 403 `GST_PERIOD_FILED`; narration-only edit keeps the same ledger line ids |
+
+### Run 9 — 28 Sep 2026 (staging on 2e8b2b8; API plus read-only DB)
+
+Migrations 312–320 are all recorded as successful. The business-wide invoice number index is gone and `idx_invoices_branch_invoice_number` exists. Migration 320 found no fixed assets or posted depreciation to back-post.
+
+| # | Result | Seen |
+|---|--------|------|
+| MB3 | Pass | AMD-004 (draft): Ahmedabad → Gujarat customer → POS 24, CGST ₹1,800 + SGST ₹1,800 |
+| MB4 | Pass | AMD-005 (draft): Ahmedabad → Maharashtra customer → POS 27, IGST ₹3,600 |
+| MB5 | Pass | INV-026 (draft), no POS sent: Pune → Maharashtra customer → POS 27, CGST + SGST |
+| MB6 | Pass | Draft bill QA-R9-MB6 at AMD from CA-Surat Steel → POS 24, CGST ₹720 + SGST ₹720 |
+| MB7 | Pass | AMD-004 view prints `GSTIN 24AAQCT1234A1ZR`, Plot 12 Naroda GIDC, Ahmedabad, POS Gujarat |
+| MB9 | Pass | TB 30 Sep: MAIN ₹9,14,189.94 + AMD ₹94,400 = consolidated ₹10,08,589.94 |
+| WH5 | **Fail → fixed locally** | Dispatch of CA-TR-R9-01 (Godown 2 → 1) → 500 `could not determine data type of parameter $1`. The quantity cast now works; the status UPDATE had an untyped `$1 IS NOT NULL` and ran outside the transaction. Same pattern fixed in receive and approve. Rolled back, so stock is unchanged |
+| WH6 | Pass | CA-TR-R9-02 (Pune Godown 1 → Ahmedabad Godown) raised INV-027 to "Branch: CA-Ahmedabad" (24AAQCT1234A1ZR), POS 24, IGST ₹1,260 on ₹7,000, balanced. Cancelling set INV-027 cancelled with balance 0, and every ledger account nets to 0 |
+| WH6-obs | Observation | The inter-branch invoice is priced at the item master price (₹7,000), while COGS posts at the branch weighted average (₹7,166.67). Rule 28 second proviso accepts the declared value when the recipient gets full ITC, but the transfer value should default to cost |
+| WH7 | Pass | Valuation: consolidated 9, MAIN 9 (owns both Pune godowns), AMD 0, Godown 1 = 6; `lifo` → 400 |
+| P1 | Pass | AM/2026/45 (RCM legal fees, supplier owed ₹10,000): pay ₹9,000 + TDS ₹1,000 (194J) → Dr 2101 ₹10,000 / Cr Bank ₹9,000 / Cr 2102 ₹1,000; bill paid; `tds_transactions` 194J 10% Q2 2026-27. Paying ₹10,800 + ₹1,000 was rejected, correctly (RCM GST is not owed to the supplier) |
+| J4 | Pass | JRN/2026/000001 narration-only PATCH → header updated, ledger line ids unchanged |
+
+Not run: R9-WH (the toggle would reshuffle QA stock; use a throwaway business), J8 (no GST-filed period in QA), GSTR-1 JSON for AMD, contra / BRS / advances / recurring / fixed assets.
+
+QA data added by Run 9: drafts AMD-004, AMD-005, INV-026 and bill QA-R9-MB6; payment of ₹9,000 + TDS ₹1,000 on AM/2026/45; narration edit on JRN/2026/000001; transfers CA-TR-R9-01 and CA-TR-R9-02 (both cancelled, INV-027 cancelled).
+
+## Fixes after Run 9 (local, awaiting deploy; migration 321)
+
+| Id | Fix |
+|----|-----|
+| WH5 | Stock transfer dispatch / receive / approve: untyped parameters cast (`$1::text`, `$n::numeric`); the dispatch status UPDATE runs inside the transaction |
+| F1 | Invoice → purchase conversion takes the buyer's state from the buyer branch's registration (branch GSTIN), then the seller branch's; the business comes from the session |
+| F2 | Inter-branch transfer invoice is priced at the sending branch's weighted-average cost (then cost snapshot, then purchase price), not the master price |
+| F3 | Purchase lines flagged capital goods are not stocked and are left out of the inventory transfer; the purchase voucher adds Dr 1201 Fixed Assets / Cr 5101 Purchases (taxable value, plus tax when ITC is blocked). Fixed-asset form gains "Already booked on a purchase bill", which registers the asset without posting capitalisation again |
+| F4 | Purchase compensation cess: per-line `cess_amount` on the purchase form and APIs, stored on `purchase_items.cess_amount` / `purchases.cess_total`, included in the bill total, posted Dr 1113 Input Cess, and read by 2B reconciliation, GSTR-9 Table 6 and GSTR-3B 4A(5) cess |
+| F5 | Migration 321 back-posts disposals of assets marked disposed before migration 318: Dr proceeds (recorded disposal account, else 3100) + Dr 1202 (ledger accumulated depreciation) / Cr asset cost, gain to 4205 or loss to 5218. Skips rows with a NOTICE when a period is locked or accounts are missing |
+
+### Run 10 checklist (after deploying and running migration 321)
+
+| # | Check | Expected |
+|---|-------|----------|
+| R10-WH5 | Dispatch then receive a Godown 2 → Godown 1 transfer | 200 both; `location_stock` moves; status in_transit → received |
+| R10-F1 | Convert an AMD invoice (to MAIN customer) to a purchase for MAIN | Purchase POS 27, IGST; buyer GSTIN is MAIN's |
+| R10-F2 | Inter-branch transfer of CA-Steel Almirah | Invoice unit price = sending branch WAC (e.g. ₹7,166.67), not ₹7,000 |
+| R10-F3 | Final bill: one stock line + one "Capital goods" line (₹50,000 + 18% GST) | Capital line creates no stock movement; voucher Dr 1201 ₹50,000 / Cr 5101 ₹50,000 extra; GSTR-9 6B shows it. Registering the asset with "Already booked on a purchase bill" posts no new ledger lines |
+| R10-F4 | Final bill with cess ₹1,200 on a line | Grand total includes ₹1,200; Dr 1113 ₹1,200; supplier balance includes it; GSTR-3B 4A(5) cess ₹1,200; 2B recon books cess ₹1,200 |
+| R10-F5 | `SELECT * FROM schema_migrations WHERE migration_name LIKE '321%'` | success; any legacy disposed asset now has `asset_disposal` ledger lines and balanced voucher |

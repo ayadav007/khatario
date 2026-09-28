@@ -518,8 +518,10 @@ export async function ensureInterBranchInvoiceForTransfer(
     description: r.name || 'Item',
     qty: Number(r.qty) || 0,
     unit: r.unit || 'PCS',
-    // Rule 28: value between distinct persons = open market value; cost is the accepted fallback (Rule 30 uses cost + 10%).
-    unit_price: round2(Number(r.cost_snapshot) || wac.get(r.item_id) || Number(r.purchase_price) || 0),
+    // Rule 28 (2nd proviso): with full ITC at the recipient the declared value is accepted. Declare the
+    // sending branch's weighted-average cost so the invoice matches the COGS it posts; cost_snapshot
+    // is the master price captured at creation and is only a fallback.
+    unit_price: round2(wac.get(r.item_id) || Number(r.cost_snapshot) || Number(r.purchase_price) || 0),
     tax_rate: Number(r.tax_rate) || 0,
     hsn_sac: r.hsn_sac || undefined,
   }));

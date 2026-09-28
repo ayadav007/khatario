@@ -88,8 +88,8 @@ export async function POST(
           approved_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP,
           notes = CASE 
-            WHEN $2 IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || 'Approved: ' || $2
-            WHEN $2 IS NOT NULL THEN 'Approved: ' || $2
+            WHEN $2::text IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || 'Approved: ' || $2::text
+            WHEN $2::text IS NOT NULL THEN 'Approved: ' || $2::text
             WHEN notes IS NOT NULL THEN notes || E'\n' || 'Approved'
             ELSE 'Approved'
           END

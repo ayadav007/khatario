@@ -337,6 +337,7 @@ export default function FixedAssetsPage() {
               <option value="cash">Cash</option>
               <option value="credit">On credit (Sundry creditors)</option>
               <option value="opening">Opening balance (asset held before books start)</option>
+              <option value="purchase_bill">Already booked on a purchase bill (capital goods line)</option>
             </Select>
             <Input label="Vendor" value={form.vendor_name} onChange={(e) => setForm({ ...form, vendor_name: e.target.value })} />
             <Input label="Invoice number" value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} />

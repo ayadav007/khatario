@@ -147,17 +147,16 @@ export async function PATCH(
     }
 
     // Update transfer status to 'in_transit'
-    const updatedTransfer = await queryOne(`
+    await client.query(`
       UPDATE stock_transfers 
       SET status = 'in_transit',
           updated_at = CURRENT_TIMESTAMP,
           notes = CASE 
-            WHEN $1 IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || $1
-            WHEN $1 IS NOT NULL THEN $1
+            WHEN $1::text IS NOT NULL AND notes IS NOT NULL THEN notes || E'\n' || $1::text
+            WHEN $1::text IS NOT NULL THEN $1::text
             ELSE notes
           END
       WHERE id = $2
-      RETURNING *
     `, [notes || null, params.id]);
 
     await client.query('COMMIT');
