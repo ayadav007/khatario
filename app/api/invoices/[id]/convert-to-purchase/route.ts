@@ -220,6 +220,18 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice has no items' }, { status: 400 });
     }
 
+    // Tax split is copied from the supplier's invoice; POS is the one it declared, else the
+    // receiving branch's own registration state (s.25(4): a branch GSTIN is a distinct person).
+    const buyerReg = await resolveSupplierRegistration(client, business_id, purchaseBranchId);
+    const sellerReg = await resolveSupplierRegistration(client, invoice.business_id, invoice.branch_id);
+    if (sellerReg.gstin) invoice.supplier_gstin = sellerReg.gstin;
+    const placeOfSupplyStateCode =
+      (invoice.place_of_supply_state_code && String(invoice.place_of_supply_state_code).trim()) ||
+      buyerReg.stateCode ||
+      sellerReg.stateCode ||
+      invoice.supplier_state_code ||
+      '';
+
     // Find or create supplier
     let supplierId: string | null = null;
     if (invoice.supplier_business_id) {
@@ -249,7 +261,7 @@ export async function POST(
           null, // Email not available from business
           null, // Address not available from business
           null, // City not available from business
-          invoice.supplier_state || null,
+          sellerReg.stateName || invoice.supplier_state || null,
           null, // Pincode not available from business
           invoice.supplier_gstin || null,
           invoice.supplier_business_id
@@ -258,22 +270,15 @@ export async function POST(
       }
     }
 
-    // Tax split is copied from the supplier's invoice; POS is the one it declared, else the
-    // receiving branch's own registration state (s.25(4): a branch GSTIN is a distinct person).
-    const buyerReg = await resolveSupplierRegistration(client, business_id, purchaseBranchId);
-    const sellerReg = await resolveSupplierRegistration(client, invoice.business_id, invoice.branch_id);
-    if (sellerReg.gstin) invoice.supplier_gstin = sellerReg.gstin;
-    const placeOfSupplyStateCode =
-      (invoice.place_of_supply_state_code && String(invoice.place_of_supply_state_code).trim()) ||
-      buyerReg.stateCode ||
-      sellerReg.stateCode ||
-      invoice.supplier_state_code ||
-      '';
-
     // Create purchase
-    // Note: purchases table has balance_amount and payment_status (from migration 017) but NOT discount_total
-    const balanceAmount = (invoice.grand_total || 0) - (invoice.paid_amount || 0);
-    const paymentStatus = balanceAmount <= 0 ? 'paid' : (invoice.paid_amount > 0 ? 'partially_paid' : 'unpaid');
+    // The seller's receipts are not the buyer's payments: the bill starts unpaid and payments
+    // are recorded against it, so AP and the supplier balance carry the full amount.
+    const grandTotal = Number(invoice.grand_total) || 0;
+    const balanceAmount = grandTotal;
+    const paymentStatus = balanceAmount <= 0 ? 'paid' : 'unpaid';
+    const cessTotal = Math.round(
+      invoiceItems.reduce((s: number, it: any) => s + (Number(it.cess_amount) || 0), 0) * 100
+    ) / 100;
     
     const purchaseRes = await client.query(`
       INSERT INTO purchases (
@@ -281,9 +286,9 @@ export async function POST(
         status, subtotal, tax_total,
         grand_total, place_of_supply_state_code, supplier_gstin,
         cgst_total, sgst_total, igst_total, document_type,
-        itc_eligible, notes, paid_amount, balance_amount, payment_status
+        itc_eligible, notes, paid_amount, balance_amount, payment_status, cess_total
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *
     `, [
       business_id,
@@ -303,9 +308,10 @@ export async function POST(
       invoice.document_type || 'tax_invoice',
       true, // Default ITC eligible
       invoice.notes || null,
-      invoice.paid_amount || 0,
+      0,
       balanceAmount,
-      paymentStatus
+      paymentStatus,
+      cessTotal,
     ]);
 
     const purchase = purchaseRes.rows[0];
@@ -341,9 +347,9 @@ export async function POST(
         INSERT INTO purchase_items (
           purchase_id, item_id, item_name, hsn_sac, quantity, unit, unit_price,
           discount_percent, discount_amount, tax_rate, tax_mode, tax_amount, taxable_value,
-          cgst_amount, sgst_amount, igst_amount, line_total, location_id
+          cgst_amount, sgst_amount, igst_amount, line_total, location_id, cess_amount
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       `, [
         purchase.id,
         customerItemId, // Use customer's item_id, not supplier's
@@ -363,6 +369,7 @@ export async function POST(
         item.igst_amount || 0,
         item.line_total || 0,
         locationIdForPurchase,
+        Number(item.cess_amount) || 0,
       ]);
 
       // Update stock if item was found in customer's inventory
@@ -508,6 +515,41 @@ export async function POST(
       } else if (!customerItemId) {
         console.warn(`[Convert Invoice] Cannot update stock - item not found in customer inventory: ${item.item_name}`);
       }
+    }
+
+    const invRes = await client.query(
+      `SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
+         FROM purchase_items pi
+         JOIN items i ON i.id = pi.item_id AND i.business_id = $2
+        WHERE pi.purchase_id = $1 AND COALESCE(i.item_type, 'goods') = 'goods'`,
+      [purchase.id, business_id]
+    );
+    const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
+    await createPurchaseLedgerEntries({
+      businessId: business_id,
+      purchaseId: purchase.id,
+      purchaseNumber: purchase.bill_number || String(purchase.id).substring(0, 8),
+      purchaseDate: purchase.bill_date,
+      grandTotal,
+      supplierId,
+      isCashPurchase: !supplierId,
+      inventoryAmount: Number(invRes.rows[0]?.total) || 0,
+      branchId: purchaseBranchId,
+      poolClient: client,
+      taxableValue: Number(invoice.subtotal) || 0,
+      cgstTotal: Number(invoice.cgst_total) || 0,
+      sgstTotal: Number(invoice.sgst_total) || 0,
+      igstTotal: Number(invoice.igst_total) || 0,
+      cessTotal,
+      itcEligible: true,
+      isReverseCharge: false,
+    });
+    if (supplierId && balanceAmount !== 0) {
+      await client.query(
+        `UPDATE suppliers SET current_balance = COALESCE(current_balance, 0) + $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2 AND business_id = $3`,
+        [balanceAmount, supplierId, business_id]
+      );
     }
 
     // Link purchase to quantity request if invoice was linked to a request

@@ -678,3 +678,30 @@ QA data added by Run 9: drafts AMD-004, AMD-005, INV-026 and bill QA-R9-MB6; pay
 | R10-F3 | Final bill: one stock line + one "Capital goods" line (₹50,000 + 18% GST) | Capital line creates no stock movement; voucher Dr 1201 ₹50,000 / Cr 5101 ₹50,000 extra; GSTR-9 6B shows it. Registering the asset with "Already booked on a purchase bill" posts no new ledger lines |
 | R10-F4 | Final bill with cess ₹1,200 on a line | Grand total includes ₹1,200; Dr 1113 ₹1,200; supplier balance includes it; GSTR-3B 4A(5) cess ₹1,200; 2B recon books cess ₹1,200 |
 | R10-F5 | `SELECT * FROM schema_migrations WHERE migration_name LIKE '321%'` | success; any legacy disposed asset now has `asset_disposal` ledger lines and balanced voucher |
+
+### Run 10 — 28 Sep 2026 (staging on 6c1ec3b; API plus read-only DB)
+
+| # | Result | Seen |
+|---|--------|------|
+| R10-F5 | Pass | 321 recorded successful; `purchase_items.cess_amount` and `purchases.cess_total` exist; 0 disposed assets without a disposal voucher |
+| R10-WH5 | Pass | CA-TR-R10-01 (Godown 2 → 1, 1 × Almirah): create 201, dispatch 200 (in_transit), receive 200 (completed). `location_stock` G2 3 → 2, G1 6 → 7; no ledger lines (same branch) |
+| R10-F2 | Pass | CA-TR-R10-02 (Pune Godown 1 → Ahmedabad) raised INV-028 at ₹7,166.67 (WAC), IGST ₹1,290; Inter-Branch Sales = COGS = ₹7,166.67; balanced. Cancelled: INV-028 cancelled, every account nets 0, stock back to 7 / 2 |
+| R10-F2-obs | Observation | The transfer's `stock_movements.unit_cost` still shows ₹7,000 (cost snapshot); the ledger uses WAC, so this is a record-only difference |
+| R10-F3 | Pass | QA-R10-CAP (CA-Deccan Steel Works, MAIN, final): machine line `itc_type = capital_goods`, no catalogue item, no stock movement; voucher Dr 1201 ₹50,000 / Cr 5101 ₹50,000, Dr 1104 ₹8,000 / Cr 5101 ₹8,000, 5101 nets 0. Asset QA-R10-FA1 registered with funding `purchase_bill` → 0 ledger lines |
+| R10-F4 | Pass | Same bill, ₹1,200 cess on the Almirah line: grand total ₹69,640 (58,000 + 5,220 + 5,220 + 1,200), balance ₹69,640, Dr 1113 ₹1,200, line_total ₹10,640. GSTR-3B Sep 2026 4A(5) cess ₹1,200, net ITC cess ₹1,200 |
+| R10-F1 | Pass | Draft AMD-006 (Ahmedabad → CA-Shreeji Furnishers, ₹100 service, POS 27, IGST ₹18) converted at MAIN: purchase `supplier_gstin` 24AAQCT1234A1ZR (Ahmedabad branch, not head office 27…), POS 27, IGST ₹18, grand ₹118; no stock movement |
+| R10-N1 | **Fail (pre-existing)** | The converted purchase is `final` but posts **no ledger lines** — `convert-to-purchase` never calls `createPurchaseLedgerEntries`, so converted bills are missing from AP, Purchases and Input GST (and from GSTR-3B ITC, which reads the ledger) |
+| R10-N1-obs | Observation | The linked supplier record "QA Trial Traders" carries the head-office GSTIN 27AAQCT1234A1ZL; the purchase row has the correct branch GSTIN, which is what GSTR-2B matching uses |
+
+### Fixes after Run 10 (local, awaiting deploy; migration 322)
+
+| Id | Fix |
+|----|-----|
+| N1 | `convert-to-purchase` posts the purchase voucher (AP / Purchases / Input GST and cess / inventory transfer) and raises the supplier balance. The bill starts unpaid (the seller's receipts are no longer copied as the buyer's payment); cess lines carry over |
+| N1-obs | A supplier created by conversion takes the selling branch's registration (GSTIN, state), not the head office's. Existing linked supplier rows are unchanged |
+| F2-obs | New stock transfers snapshot the sending branch's weighted-average cost, so dispatch / cancel `stock_movements.unit_cost` match the ledger |
+| M322 | Migration 322 back-posts final purchases with no voucher whose bill number and total match an invoice of the same business (converted bills); resets paid / balance to recorded payments and raises the supplier balance. On staging this is AMD-006 only |
+
+Retest: convert another throwaway invoice → voucher balanced, supplier balance + grand total; after 322, AMD-006 has Dr 5101 ₹100 / Dr 1112 ₹18 / Cr 2101 ₹118; a new inter-branch transfer's dispatch movement `unit_cost` = WAC.
+
+QA data added by Run 10: transfers CA-TR-R10-01 (completed) and CA-TR-R10-02 (cancelled, INV-028 cancelled); final bill QA-R10-CAP (AP ₹69,640 to CA-Deccan Steel Works, +1 Almirah in Godown 1); fixed asset QA-R10-FA1; draft invoice AMD-006 and its converted purchase AMD-006 (₹118, no ledger lines).

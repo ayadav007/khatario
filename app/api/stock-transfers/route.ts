@@ -4,6 +4,7 @@ import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { weightedAverageCosts } from '@/lib/inventory/cogs-posting';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
@@ -239,15 +240,26 @@ export async function POST(request: NextRequest) {
 
       const transfer = transferResult.rows[0];
 
+      // Snapshot the sending branch's weighted-average cost (what COGS and the transfer invoice use);
+      // the item master price is only a fallback.
+      const fromBranch = await client.query(`SELECT branch_id FROM warehouses WHERE id = $1`, [from_location_id]);
+      const wac = await weightedAverageCosts(
+        client,
+        business_id,
+        items.map((it: { item_id: string }) => it.item_id),
+        transfer_date,
+        fromBranch.rows[0]?.branch_id ?? null
+      );
+
       // Create transfer items (NO stock movement - stock will be deducted on DISPATCH)
       for (const item of items) {
         const requestedQty = parseFloat(item.qty || '0');
         
-        // Get item cost for snapshot
         const itemData = await client.query(`
           SELECT purchase_price FROM items WHERE id = $1
         `, [item.item_id]);
-        const costSnapshot = parseFloat(itemData.rows[0]?.purchase_price || '0');
+        const costSnapshot =
+          Math.round((wac.get(item.item_id) || parseFloat(itemData.rows[0]?.purchase_price || '0')) * 100) / 100;
 
         await client.query(`
           INSERT INTO stock_transfer_items (
