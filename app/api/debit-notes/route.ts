@@ -13,6 +13,20 @@ import { computeLineGst, round2 } from '@/lib/invoices/line-gst';
 
 export const dynamic = 'force-dynamic';
 
+async function nextDebitNoteNumber(
+  db: { query: (sql: string, params: unknown[]) => Promise<{ rows: Array<{ max_used: string | null }> }> },
+  businessId: string
+): Promise<string> {
+  const res = await db.query(
+    `SELECT MAX(SUBSTRING(debit_note_number FROM '(\\d+)$')::bigint) AS max_used
+       FROM debit_notes
+      WHERE business_id = $1 AND debit_note_number ~ '\\d+$'`,
+    [businessId]
+  );
+  const next = Number(res.rows[0]?.max_used || 0) + 1;
+  return `DN-${String(next).padStart(3, '0')}`;
+}
+
 /**
  * GET /api/debit-notes
  * Fetch all debit notes for a business
@@ -43,6 +57,10 @@ export async function GET(request: NextRequest) {
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    if (request.nextUrl.searchParams.get('next_number') === '1') {
+      return NextResponse.json({ next_debit_note_number: await nextDebitNoteNumber(getPool(), business_id) });
     }
 
     let accessibleBranchIds: string[] = [];
@@ -109,7 +127,7 @@ export async function POST(request: NextRequest) {
       branch_id: body_branch_id,
       customer_id,
       invoice_id,
-      debit_note_number,
+      debit_note_number: requestedDebitNoteNumber,
       debit_note_date,
       reason,
       place_of_supply_state_code,
@@ -120,9 +138,9 @@ export async function POST(request: NextRequest) {
       created_by,
     } = body;
 
-    if (!business_id || !debit_note_number || !debit_note_date || !items || items.length === 0) {
+    if (!business_id || !customer_id || !debit_note_date || !items || items.length === 0) {
       return NextResponse.json(
-        { error: 'business_id, debit_note_number, debit_note_date, and items are required' },
+        { error: 'business_id, customer_id, debit_note_date, and items are required' },
         { status: 400 }
       );
     }
@@ -249,18 +267,62 @@ export async function POST(request: NextRequest) {
     
     const businessStateCode = businessRes.rows[0].state_code || '';
 
-    // Calculate place of supply state code if not provided
-    let finalPosStateCode = place_of_supply_state_code;
-    if (!finalPosStateCode && customer_id) {
-      const customerRes = await client.query(
-        'SELECT state, state_code FROM customers WHERE id = $1',
-        [customer_id]
+    const rejectDebitNote = async (status: number, code: string, error: string) => {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error, code }, { status });
+    };
+
+    const customerRes = await client.query<{ state: string | null; state_code: string | null; gstin: string | null }>(
+      'SELECT state, state_code, gstin FROM customers WHERE id = $1 AND business_id = $2',
+      [customer_id, business_id]
+    );
+    const noteCustomer = customerRes.rows[0];
+    if (!noteCustomer) {
+      return rejectDebitNote(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    }
+    if (noteCustomer.gstin && noteCustomer.gstin.trim() && !invoice_id) {
+      return rejectDebitNote(
+        400,
+        'ORIGINAL_INVOICE_REQUIRED',
+        'A debit note to a registered customer must reference the original invoice (s.34 CGST Act; reported in GSTR-1 CDNR)'
       );
-      if (customerRes.rows.length > 0 && customerRes.rows[0].state_code) {
-        finalPosStateCode = customerRes.rows[0].state_code;
-      } else if (customerRes.rows.length > 0 && customerRes.rows[0].state) {
-        finalPosStateCode = getStateCode(customerRes.rows[0].state);
+    }
+
+    let linkedInvoice: { customer_id: string | null; status: string; place_of_supply_state_code: string | null; invoice_date: string } | null = null;
+    if (invoice_id) {
+      const invRes = await client.query(
+        'SELECT customer_id, status, place_of_supply_state_code, invoice_date FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        [invoice_id, business_id]
+      );
+      linkedInvoice = invRes.rows[0] ?? null;
+      if (!linkedInvoice) return rejectDebitNote(404, 'INVOICE_NOT_FOUND', 'Linked invoice not found');
+      if (linkedInvoice.status !== 'final') {
+        return rejectDebitNote(400, 'INVOICE_NOT_FINAL', 'A debit note can only be issued against a final invoice');
       }
+      if (linkedInvoice.customer_id && linkedInvoice.customer_id !== customer_id) {
+        return rejectDebitNote(400, 'CUSTOMER_MISMATCH', 'The linked invoice belongs to a different customer');
+      }
+    }
+
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('debit_note_number:' || $1::text))`, [business_id]);
+    const debit_note_number =
+      requestedDebitNoteNumber && String(requestedDebitNoteNumber).trim()
+        ? String(requestedDebitNoteNumber).trim()
+        : await nextDebitNoteNumber(client, business_id);
+    const dupRes = await client.query(
+      'SELECT 1 FROM debit_notes WHERE business_id = $1 AND debit_note_number = $2 LIMIT 1',
+      [business_id, debit_note_number]
+    );
+    if (dupRes.rows.length > 0) {
+      return rejectDebitNote(409, 'DUPLICATE_NUMBER', `Debit note number ${debit_note_number} already exists`);
+    }
+
+    let finalPosStateCode = linkedInvoice?.place_of_supply_state_code || place_of_supply_state_code;
+    if (!finalPosStateCode) {
+      finalPosStateCode =
+        noteCustomer.state_code ||
+        (noteCustomer.gstin ? noteCustomer.gstin.trim().slice(0, 2) : '') ||
+        (noteCustomer.state ? getStateCode(noteCustomer.state) : '');
     }
 
     const intraState = (finalPosStateCode?.substring(0, 2) || '') === businessStateCode;
@@ -307,7 +369,7 @@ export async function POST(request: NextRequest) {
       debit_note_date,
       reason || null,
       finalPosStateCode || null,
-      original_invoice_date || null,
+      original_invoice_date || linkedInvoice?.invoice_date || null,
       computedSubtotal,
       computedDiscount,
       computedTax,
@@ -332,7 +394,8 @@ export async function POST(request: NextRequest) {
           discount, tax_rate, tax_amount, cgst_amount, sgst_amount, igst_amount,
           taxable_value, line_total, sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, COALESCE(NULLIF(TRIM($4::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)),
+                $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       `, [
         debitNote.id, item.item_id || null, item.description || item.name || 'Adjustment', item.hsn_sac || null,
         qty, item.unit || 'PCS', unitPrice,

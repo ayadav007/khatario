@@ -4,6 +4,7 @@ import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
 import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import {
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
@@ -83,6 +84,14 @@ export async function PATCH(
       throw error;
     }
 
+    const lockRes = await periodGuardResponse({
+      businessId: purchase.business_id,
+      branchId: purchase.branch_id ?? null,
+      dates: [payment_date || new Date()],
+      action: 'record a payment',
+    });
+    if (lockRes) return lockRes;
+
     // PHASE-5: wrap payment INSERT, balance updates, and ledger posting in one
     // transaction so the deferred validate_voucher_balance trigger sees both
     // ledger lines at COMMIT. If any step throws, we ROLLBACK everything.
@@ -92,7 +101,8 @@ export async function PATCH(
       await client.query('BEGIN');
 
       const lockedRes = await client.query(
-        `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted
+        `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted,
+                COALESCE(advance_adjusted, 0) AS advance_adjusted
            FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
         [purchase.id, purchase.business_id],
       );

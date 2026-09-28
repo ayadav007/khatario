@@ -152,24 +152,49 @@ export async function GET(request: NextRequest) {
 
     const items = await queryRows(sql, params);
 
+    const today = new Date().toISOString().split('T')[0];
+    const historical = !!asOnDate && /^\d{4}-\d{2}-\d{2}$/.test(asOnDate) && asOnDate < today;
+    if (historical && branchIdParam && !locationId) {
+      return NextResponse.json(
+        {
+          error: 'Historical valuation is available business-wide or per warehouse. Remove the branch filter or pick a warehouse.',
+          code: 'AS_ON_DATE_BRANCH_UNSUPPORTED',
+        },
+        { status: 400 }
+      );
+    }
+    let after = new Map<string, number>();
+    let wac = new Map<string, number>();
+    if (historical) {
+      const { movementsAfter } = await import('@/lib/inventory/stock-as-of');
+      const { weightedAverageCosts } = await import('@/lib/inventory/cogs-posting');
+      after = await movementsAfter(businessId, asOnDate!, { locationId });
+      wac = await weightedAverageCosts(undefined, businessId, items.map((i: any) => i.id), asOnDate!);
+    }
+
     const reportItems: any[] = [];
     let totalValue = 0;
 
     for (const item of items) {
-      const stockQty = parseFloat(item.current_stock?.toString() || '0');
-      
+      const currentQty = parseFloat(item.current_stock?.toString() || '0');
+      const stockQty = historical
+        ? Math.round((currentQty - (after.get(item.id) || 0)) * 1000) / 1000
+        : currentQty;
+
       if (stockQty <= 0) continue; // Skip items with no stock
 
-      const itemValuationMethod = (item.valuation_method || valuationMethod) as ValuationMethod;
-      
-      // Get stock value using the valuation method
-      const stockValue = await getStockValue(
-        item.id,
-        itemValuationMethod,
-        businessId,
-        locationId || undefined,
-        branchIdParam && !locationId ? branchIdParam : undefined
-      );
+      const itemValuationMethod = (historical ? 'weighted_avg' : item.valuation_method || valuationMethod) as ValuationMethod;
+
+      // Past dates are valued at the weighted average cost as of that date (AS 2).
+      const stockValue = historical
+        ? Math.round(stockQty * (wac.get(item.id) ?? (Number(item.purchase_price) || 0)) * 100) / 100
+        : await getStockValue(
+            item.id,
+            itemValuationMethod,
+            businessId,
+            locationId || undefined,
+            branchIdParam && !locationId ? branchIdParam : undefined
+          );
 
       const unitCost = stockQty > 0 ? stockValue / stockQty : 0;
 
@@ -191,8 +216,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       report: {
-        as_on_date: asOnDate || new Date().toISOString().split('T')[0],
-        valuation_method: valuationMethod,
+        as_on_date: historical ? asOnDate : today,
+        valuation_method: historical ? 'weighted_avg' : valuationMethod,
         location_id: locationId || null,
         items: reportItems,
         total_value: totalValue,

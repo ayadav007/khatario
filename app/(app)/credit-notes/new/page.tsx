@@ -44,6 +44,7 @@ interface CreditNoteItem {
   item_id: string;
   item_name: string;
   description: string;
+  hsn_sac?: string;
   qty: number;
   unit: string;
   unit_price: number;
@@ -202,6 +203,7 @@ export default function NewCreditNotePage() {
             item_id: item.item_id || '',
             item_name: item.item_name,
             description: item.item_name,
+            hsn_sac: item.hsn_sac || '',
             qty,
             unit: item.unit || 'PCS',
             unit_price: unitPrice,
@@ -263,6 +265,7 @@ export default function NewCreditNotePage() {
         updatedItems[index].item_name = item.name;
         updatedItems[index].description = item.name;
         updatedItems[index].unit = item.unit || 'PCS';
+        updatedItems[index].hsn_sac = item.hsn_sac || '';
         updatedItems[index].unit_price = Number(item.selling_price);
         updatedItems[index].tax_rate = Number(item.tax_rate);
       }
@@ -324,6 +327,10 @@ export default function NewCreditNotePage() {
 
     if (!formData.customer_id || !formData.credit_note_number || creditNoteItems.length === 0) {
       toast.error('Please fill all required fields and add at least one item');
+      return;
+    }
+    if (selectedCustomer?.gstin && !formData.invoice_id) {
+      toast.error('Select the original invoice: required for a registered (GSTIN) customer');
       return;
     }
 
@@ -471,7 +478,7 @@ export default function NewCreditNotePage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Link to Invoice (Optional)
+                Original Invoice {selectedCustomer?.gstin ? '(required for GSTIN customer)' : '(optional)'}
               </label>
               <select
                 value={formData.invoice_id}

@@ -69,8 +69,8 @@ export async function POST(
       financialYear.year_code,
       financialYear.start_date,
       financialYear.end_date,
-      user_id || null,
-      tax_rate || 30
+      user_id || request.headers.get('x-authenticated-user-id') || null,
+      Number(tax_rate) > 0 ? Number(tax_rate) : 0
     );
 
     return NextResponse.json({

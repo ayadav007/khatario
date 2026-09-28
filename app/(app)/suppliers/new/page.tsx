@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { isValidGstin } from '@/lib/tax/gstin';
 import { useState, useMemo, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
@@ -165,9 +166,7 @@ export default function NewSupplierPage() {
       return;
     }
 
-    // Validate GSTIN format
-    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstinRegex.test(formData.gstin)) {
+    if (!isValidGstin(formData.gstin)) {
       setGstinError(true);
       setGstinVerified(false);
       return;

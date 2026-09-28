@@ -202,25 +202,14 @@ export async function GET(request: NextRequest) {
 
     // Helper function to calculate account balance with branch filter
     const calculateAccountBalance = async (accountId: string, accountNature: string) => {
-      // Get opening balance
+      // Opening balances are posted as opening_balance vouchers; the column is display-only.
       const account = await queryOne(`
-        SELECT opening_balance, opening_balance_type, nature
+        SELECT nature
         FROM accounts
         WHERE id = $1 AND business_id = $2
       `, [accountId, businessId]);
 
       let balance = 0;
-      if (account?.opening_balance) {
-        const openingBalance = parseFloat(account.opening_balance || '0');
-        const openingType = account.opening_balance_type;
-        const nature = account.nature || accountNature;
-
-        if (nature === 'debit') {
-          balance = openingType === 'debit' ? openingBalance : -openingBalance;
-        } else {
-          balance = openingType === 'credit' ? -openingBalance : openingBalance;
-        }
-      }
 
       // Calculate transaction totals with branch filter
       // Note: Inter-branch accounts are handled at the account level, not in SQL filter
@@ -275,7 +264,9 @@ export async function GET(request: NextRequest) {
     // Calculate balances for capital
     const capitalDetails = await Promise.all(
       capitalAccounts.map(async (account: any) => {
-        const balance = await calculateAccountBalance(account.id, 'credit');
+        const raw = await calculateAccountBalance(account.id, 'credit');
+        // Credit-positive so Drawings (debit nature) reduces capital.
+        const balance = account.nature === 'debit' ? -raw : raw;
         return {
           ...account,
           balance,
@@ -328,29 +319,10 @@ export async function GET(request: NextRequest) {
       ? `${financialYear.split('-')[0]}-04-01`
       : new Date(new Date().getFullYear(), 3, 1).toISOString().split('T')[0];
 
-    // Get opening retained earnings from previous FY
-    let openingRetainedEarnings = 0;
-    if (financialYear) {
-      const previousFY = `${parseInt(financialYear.split('-')[0]) - 1}-${financialYear.split('-')[1].split('-')[0]}`;
-      const openingRE = await queryOne(`
-        SELECT opening_balance, opening_balance_type
-        FROM opening_balances ob
-        JOIN accounts a ON ob.account_id = a.id
-        JOIN financial_years fy ON ob.financial_year_id = fy.id
-        WHERE a.business_id = $1
-          AND a.account_code = '3002'
-          AND fy.year_code = $2
-      `, [businessId, previousFY]);
-
-      if (openingRE) {
-        openingRetainedEarnings = parseFloat(openingRE.opening_balance || 0);
-        if (openingRE.opening_balance_type === 'debit') {
-          openingRetainedEarnings = -openingRetainedEarnings;
-        }
-      }
-    }
-
-    // Current year profit (from P&L)
+    // Retained Earnings (3002) already carries closed years via year_close vouchers and is part of
+    // capital; unclosed profit is every income/expense line up to the date (closed years net to zero).
+    void fyStart;
+    const openingRetainedEarnings = 0;
     const pnlResult = await queryOne(`
       SELECT 
         COALESCE(SUM(CASE WHEN a.account_type = 'income' THEN lel.credit - lel.debit ELSE 0 END), 0) as total_income,
@@ -358,10 +330,9 @@ export async function GET(request: NextRequest) {
       FROM ledger_entry_lines lel
       LEFT JOIN accounts a ON lel.account_id = a.id
       WHERE lel.business_id = $1
-        AND lel.entry_date >= $2
-        AND lel.entry_date <= $3
+        AND lel.entry_date <= $2
         AND a.account_type IN ('income', 'expense')
-    `, [businessId, fyStart, asOnDate]);
+    `, [businessId, asOnDate]);
 
     const currentYearProfit = parseFloat(pnlResult?.total_income || '0') - parseFloat(pnlResult?.total_expenses || '0');
     const retainedEarnings = openingRetainedEarnings + currentYearProfit;
@@ -444,7 +415,7 @@ export async function GET(request: NextRequest) {
     const totalLongTermLiabilities = longTermLiabilities.reduce((sum, acc) => sum + Math.max(0, Math.abs(acc.balance)), 0);
     const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
 
-    const totalCapital = capitalDetails.reduce((sum, acc) => sum + Math.max(0, Math.abs(acc.balance)), 0);
+    const totalCapital = capitalDetails.reduce((sum, acc) => sum + (Number(acc.balance) || 0), 0);
     const totalEquity = totalCapital + retainedEarnings;
     const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
 

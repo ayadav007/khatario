@@ -54,6 +54,10 @@ export const POST = withPremiumSubscriptionApi(
       // Check if the function exists
       try {
         await client.query('SELECT create_default_chart_of_accounts($1)', [business_id]);
+        const headsFn = await client.query(`SELECT to_regproc('ensure_standard_account_heads') IS NOT NULL AS ok`);
+        if (headsFn.rows[0]?.ok) {
+          await client.query(`SELECT ensure_standard_account_heads($1)`, [business_id]);
+        }
       } catch (error: any) {
         await client.query('ROLLBACK');
 

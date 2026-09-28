@@ -1134,228 +1134,78 @@ async function createCashSaleInvoice(
   items: Array<{ item_id: string; quantity: number; price?: number; name?: string }>,
   customerId?: string
 ): Promise<{ invoice_id: string; invoice_number: string }> {
-  const { queryOne, queryRows, getPool } = await import('@/lib/db');
-  const { checkLimitInTransaction } = await import('@/lib/subscription');
-  const pool = getPool();
-  const client = await pool.connect();
+  const { queryOne, getPool } = await import('@/lib/db');
+  const { createInvoiceInTransaction } = await import('@/lib/invoices/invoice-create-service');
+  const { todayIsoDate } = await import('@/lib/invoices/convert-to-invoice');
 
+  const owner = await queryOne<{ id: string }>(
+    `SELECT id FROM users WHERE business_id = $1 AND is_active = true
+      ORDER BY is_primary_admin DESC NULLS LAST, created_at ASC LIMIT 1`,
+    [businessId]
+  );
+  if (!owner) throw new Error('No active user found for this business. Cannot create WhatsApp invoice.');
+
+  const lines = [];
+  for (const itemInput of items) {
+    const item = await queryOne<{ id: string; name: string; selling_price: number; tax_rate: number; unit: string; hsn_sac: string | null }>(
+      `SELECT id, name, selling_price, tax_rate, unit, hsn_sac FROM items WHERE id = $1 AND business_id = $2`,
+      [itemInput.item_id, businessId]
+    );
+    if (!item) throw new Error(`Item ${itemInput.item_id} not found`);
+    lines.push({
+      item_id: item.id,
+      item_name: item.name,
+      hsn_sac: item.hsn_sac,
+      quantity: Number(itemInput.quantity) || 0,
+      unit: item.unit || undefined,
+      unit_price: Number(itemInput.price || item.selling_price) || 0,
+      tax_rate: Number(item.tax_rate) || 0,
+    });
+  }
+
+  const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-
-    // CRITICAL: Check subscription limit INSIDE transaction with locking
-    // This prevents WhatsApp bot from bypassing invoice limits
-    const limitCheck = await checkLimitInTransaction(client, businessId, 'invoices');
-    
-    if (!limitCheck.allowed) {
-      // Subscription limit exceeded - rollback transaction
-      await client.query('ROLLBACK');
-      client.release();
-      throw new Error(limitCheck.message || 'Invoice limit reached. Cannot create invoice via WhatsApp bot.');
-    }
-
-    // Fetch item details
-    const invoiceItems = [];
-    let subtotal = 0;
-    let taxTotal = 0;
-    let cgstTotal = 0;
-    let sgstTotal = 0;
-    let igstTotal = 0;
-
-    for (const itemInput of items) {
-      const item = await queryOne<{
-        id: string;
-        name: string;
-        selling_price: number;
-        tax_rate: number;
-        unit: string;
-        current_stock: number;
-      }>(
-        `SELECT id, name, selling_price, tax_rate, unit, current_stock 
-         FROM items WHERE id = $1 AND business_id = $2`,
-        [itemInput.item_id, businessId]
-      );
-
-      if (!item) {
-        throw new Error(`Item ${itemInput.item_id} not found`);
-      }
-
-      const price = itemInput.price || item.selling_price;
-      const quantity = itemInput.quantity;
-      const lineTotal = price * quantity;
-      const taxRate = item.tax_rate || 0;
-      const taxAmount = (lineTotal * taxRate) / 100;
-      
-      // For simplicity, assume CGST/SGST (half each) for now
-      // In production, you'd need to check business state and customer state
-      const cgstAmount = taxAmount / 2;
-      const sgstAmount = taxAmount / 2;
-
-      subtotal += lineTotal;
-      taxTotal += taxAmount;
-      cgstTotal += cgstAmount;
-      sgstTotal += sgstAmount;
-
-      invoiceItems.push({
-        ...item,
-        quantity,
-        price,
-        taxRate,
-        taxAmount,
-        lineTotal,
-        cgstAmount,
-        sgstAmount
-      });
-    }
-
-    const grandTotal = subtotal + taxTotal;
-    const today = new Date().toISOString().split('T')[0];
-
     const defaultBranchRes = await client.query(
       `SELECT id FROM branches WHERE business_id = $1 AND is_default = true LIMIT 1`,
       [businessId]
     );
-    const defaultBranchIdForInvoice = defaultBranchRes.rows[0]?.id as string | undefined;
-    if (!defaultBranchIdForInvoice) {
-      await client.query('ROLLBACK');
-      client.release();
-      throw new Error('No default branch configured for this business. Cannot create WhatsApp invoice.');
-    }
+    const branchId = defaultBranchRes.rows[0]?.id as string | undefined;
+    if (!branchId) throw new Error('No default branch configured for this business. Cannot create WhatsApp invoice.');
 
-    const { reserveFormattedDocumentNumber } = await import('@/lib/invoices/document-counter');
-    const invoiceNumber = await reserveFormattedDocumentNumber(client, defaultBranchIdForInvoice, 'tax_invoice');
-
-    // Create invoice
-    const invoiceRes = await client.query(
-      `INSERT INTO invoices (
-        business_id, branch_id, customer_id, invoice_number, invoice_date, due_date,
-        status, payment_status, subtotal, discount_total, additional_charges, tax_total,
-        round_off, grand_total, paid_amount, balance_amount,
-        cgst_total, sgst_total, igst_total, document_type
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-      RETURNING id, invoice_number`,
-      [
-        businessId,
-        defaultBranchIdForInvoice,
-        customerId || null,
-        invoiceNumber,
-        today,
-        today,
-        'final', // Auto-finalize bot invoices
-        'unpaid', // Cash sale is unpaid by default (can be updated later)
-        subtotal,
-        0, // discount_total
-        0, // additional_charges
-        taxTotal,
-        0, // round_off
-        grandTotal,
-        0, // paid_amount (unpaid by default)
-        grandTotal, // balance_amount
-        cgstTotal,
-        sgstTotal,
-        igstTotal,
-        'tax_invoice'
-      ]
-    );
-
-    const invoice = invoiceRes.rows[0];
-
-    // Get default warehouse if warehouse mode is enabled (reuse for all items)
     const { isWarehouseModeEnabled } = await import('./warehouse-mode');
-    const warehouseModeEnabled = await isWarehouseModeEnabled(businessId);
-    let defaultLocationId: string | null = null;
-    
-    if (warehouseModeEnabled) {
+    let locationId: string | null = null;
+    if (await isWarehouseModeEnabled(businessId)) {
       const { getDefaultWarehouseForBranch } = await import('./warehouse-access');
-      defaultLocationId = await getDefaultWarehouseForBranch(defaultBranchIdForInvoice);
-      
-      if (!defaultLocationId) {
-        await client.query('ROLLBACK');
-        client.release();
+      locationId = await getDefaultWarehouseForBranch(branchId);
+      if (!locationId) {
         throw new Error('Warehouse mode is enabled but no default warehouse found. Please configure a default warehouse for your default branch.');
       }
     }
 
-    // Create invoice items and update stock
-    for (const itemData of invoiceItems) {
-      await client.query(
-        `INSERT INTO invoice_items (
-          invoice_id, item_id, item_name, quantity, unit_price, tax_rate,
-          line_total, cgst_rate, cgst_amount, sgst_rate, sgst_amount, igst_rate, igst_amount,
-          location_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [
-          invoice.id,
-          itemData.id,
-          itemData.name,
-          itemData.quantity,
-          itemData.price,
-          itemData.taxRate,
-          itemData.lineTotal,
-          itemData.taxRate / 2, // CGST rate
-          itemData.cgstAmount,
-          itemData.taxRate / 2, // SGST rate
-          itemData.sgstAmount,
-          0, // IGST rate
-          0, // IGST amount
-          defaultLocationId
-        ]
-      );
-
-      // Update stock
-      const itemTypeRes = await client.query('SELECT item_type FROM items WHERE id = $1', [itemData.id]);
-      const itemType = itemTypeRes.rows[0]?.item_type || 'goods';
-
-      if (itemType === 'goods') {
-        if (warehouseModeEnabled && defaultLocationId) {
-          // Warehouse mode: update location_stock
-          await client.query(
-            `INSERT INTO location_stock (location_id, item_id, current_stock_qty, last_updated)
-             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-             ON CONFLICT (location_id, item_id)
-             DO UPDATE SET
-               current_stock_qty = location_stock.current_stock_qty - $3,
-               last_updated = CURRENT_TIMESTAMP`,
-            [defaultLocationId, itemData.id, itemData.quantity]
-          );
-        } else if (!warehouseModeEnabled) {
-          const { adjustBranchItemStock, refreshItemGlobalStockFromBranches } = await import('./branch-stock');
-          await adjustBranchItemStock(
-            client,
-            businessId,
-            defaultBranchIdForInvoice,
-            itemData.id,
-            -itemData.quantity
-          );
-          await refreshItemGlobalStockFromBranches(client, businessId, itemData.id);
-        }
-
-        // Record stock movement (always include location_id when provided)
-        await client.query(
-          `INSERT INTO stock_movements (business_id, item_id, location_id, type, quantity, reference_type, reference_id, notes)
-           VALUES ($1, $2, $3, 'out', $4, 'invoice', $5, $6)`,
-          [businessId, itemData.id, defaultLocationId, itemData.quantity, invoice.id, `Invoice ${invoiceNumber}`]
-        );
-      }
-    }
-
-    // Update customer balance if customer exists
+    let placeOfSupply: string | null = null;
     if (customerId) {
-      await client.query(
-        `UPDATE customers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2`,
-        [grandTotal, customerId]
-      );
+      const c = await client.query(`SELECT state_code FROM customers WHERE id = $1 AND business_id = $2`, [customerId, businessId]);
+      placeOfSupply = c.rows[0]?.state_code || null;
     }
 
+    const today = todayIsoDate();
+    const result = await createInvoiceInTransaction(client, {
+      business_id: businessId,
+      created_by: owner.id,
+      branch_id: branchId,
+      customer_id: customerId || null,
+      invoice_date: today,
+      due_date: today,
+      status: 'final',
+      document_type: 'tax_invoice',
+      place_of_supply_state_code: placeOfSupply,
+      items: lines.map((l) => ({ ...l, location_id: locationId })),
+    });
     await client.query('COMMIT');
-
-    return {
-      invoice_id: invoice.id,
-      invoice_number: invoice.invoice_number
-    };
+    return { invoice_id: result.invoiceId, invoice_number: result.invoiceNumber };
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     client.release();

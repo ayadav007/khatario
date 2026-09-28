@@ -79,6 +79,8 @@ export interface ReceiptData {
   grandTotal: number;
   paidAmount?: number;
   balance?: number;
+  cashTendered?: number;
+  changeGiven?: number;
   paymentMode?: string;
   notes?: string | null;
   /** Optional UPI / URL / invoice link encoded as QR at the footer. */
@@ -187,6 +189,12 @@ export function buildInvoiceReceiptEscPos(
     if (data.paymentMode) b.line(`Paid by: ${data.paymentMode}`);
     if (data.paidAmount != null) {
       b.line(`Paid amount: ${fmtAmount(data.paidAmount)}`);
+    }
+    if (data.changeGiven != null && data.changeGiven > 0.0001) {
+      if (data.cashTendered != null) {
+        b.line(`Tendered: ${fmtAmount(data.cashTendered)}`);
+      }
+      b.line(`Change: ${fmtAmount(data.changeGiven)}`);
     }
     if (data.balance != null && data.balance > 0.0001) {
       b.bold(true).line(`Balance due: ${fmtAmount(data.balance)}`).bold(false);

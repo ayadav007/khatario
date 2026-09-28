@@ -9,6 +9,10 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/cron/recurring-invoices",
+      "schedule": "30 19 * * *"
+    },
+    {
       "path": "/api/cron/send-daily-invoice-summary",
       "schedule": "30 3 * * *"
     },

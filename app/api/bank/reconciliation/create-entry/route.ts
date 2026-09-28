@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne, getPool } from '@/lib/db';
 import { createLedgerEntryLine } from '@/lib/ledger-utils';
@@ -17,9 +19,11 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     const body = await request.json();
-    const businessId = (body.business_id as string) || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const userId = resolveCreatedByUserId(request, body);
-    if (!businessId || !userId) {
+    if (!userId) {
       return NextResponse.json({ error: 'business_id and user context are required' }, { status: 400 });
     }
 
@@ -137,13 +141,17 @@ export async function POST(request: NextRequest) {
       amount = Math.round(creditAmt * 100) / 100;
     }
 
+    const lockRes = await periodGuardResponse({
+      businessId,
+      branchId,
+      dates: [line.transaction_date],
+      action: 'post a bank charge or interest entry',
+    });
+    if (lockRes) return lockRes;
+
     await client.query('BEGIN');
 
-    const voucherNumberResult = await client.query(
-      'SELECT generate_voucher_number($1, $2, $3) as voucher_number',
-      [businessId, 'journal', line.transaction_date]
-    );
-    const voucherNumber = voucherNumberResult.rows[0].voucher_number as string;
+    const voucherNumber = await allocateJournalVoucherNumber(client, businessId, line.transaction_date);
     const voucherIdResult = await client.query('SELECT uuid_generate_v4() as id');
     const voucherId = voucherIdResult.rows[0].id as string;
 

@@ -1,5 +1,8 @@
 import { getPool } from '@/lib/db';
-import { toGstUqc } from '@/lib/gst/uqc';
+import { resolveItemUqc, toGstUqc } from '@/lib/gst/uqc';
+import { loadAdvanceTables, type AdvanceTableRow } from '@/lib/gst/gstr1-advances';
+
+export type { AdvanceTableRow };
 
 export interface GSTR1Filters {
   business_id: string;
@@ -166,7 +169,7 @@ export interface GSTR1DocIssueSummary {
 
 /** Table 13 row: one number series of one document nature (GSTN doc_num 1 = invoices, 4 = debit notes, 5 = credit notes). */
 export interface GSTR1DocIssueRow {
-  doc_num: 1 | 4 | 5;
+  doc_num: DocNum;
   nature: string;
   from: string;
   to: string;
@@ -175,10 +178,14 @@ export interface GSTR1DocIssueRow {
   net_issue: number;
 }
 
-const DOC_NATURE: Record<1 | 4 | 5, string> = {
+type DocNum = 1 | 4 | 5 | 6 | 8;
+
+const DOC_NATURE: Record<DocNum, string> = {
   1: 'Invoices for outward supply',
   4: 'Debit Note',
   5: 'Credit Note',
+  6: 'Receipt voucher',
+  8: 'Refund voucher',
 };
 
 /** GSTN date format (dd-mm-yyyy). pg returns DATE columns as local-midnight Dates. */
@@ -195,7 +202,7 @@ export function formatGstDate(value: Date | string | null | undefined): string {
 
 /** Groups document numbers into series by their non-numeric prefix (e.g. INV-, EXP/). */
 function buildDocSeries(
-  docNum: 1 | 4 | 5,
+  docNum: DocNum,
   docs: Array<{ number: string; cancelled: boolean }>
 ): GSTR1DocIssueRow[] {
   const bySeries = new Map<string, Array<{ number: string; cancelled: boolean }>>();
@@ -320,6 +327,7 @@ export class GSTR1Generator {
           c.gstin as customer_gstin, c.name as customer_name,
           ii.tax_rate, COALESCE(NULLIF(TRIM(ii.hsn_sac), ''), it.hsn_sac) AS hsn_sac,
           ii.quantity, ii.unit, ii.taxable_value as item_taxable_value,
+          CASE WHEN UPPER(TRIM(COALESCE(ii.unit, ''))) = UPPER(TRIM(COALESCE(it.unit, ''))) THEN it.uqc END AS item_uqc,
           ii.cgst_amount, ii.sgst_amount, ii.igst_amount,
           COALESCE(ii.cess_amount, 0) AS item_cess_amount,
           ii.item_name
@@ -375,7 +383,7 @@ export class GSTR1Generator {
 
       const addHsn = (list: HSNEntry[], item: any, rate: number) => {
         const key = item.hsn_sac || 'NA';
-        const uqc = toGstUqc(item.unit, item.hsn_sac);
+        const uqc = resolveItemUqc({ uqc: item.item_uqc, unit: item.unit, hsn_sac: item.hsn_sac });
         let entry = list.find((h) => h.hsn_sac === key && h.rate === rate && h.uqc === uqc);
         if (!entry) {
           entry = {
@@ -769,6 +777,42 @@ export class GSTR1Generator {
         if (docs.length > 0) doc_issues.push(...buildDocSeries(docNum, docs));
       }
 
+      let at: AdvanceTableRow[] = [];
+      let atadj: AdvanceTableRow[] = [];
+      const periodFrom = from_date || periodStartStr;
+      let periodTo = to_date;
+      if (!periodTo && month && year) {
+        const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        periodTo = `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+      }
+      if (periodFrom && periodTo) {
+        ({ at, atadj } = await loadAdvanceTables(client, {
+          businessId: business_id,
+          branchId: branch_id || null,
+          from: periodFrom,
+          to: periodTo,
+        }));
+        const voucherDocs = await client.query<{ doc_num: number; number: string }>(
+          `SELECT 6 AS doc_num, a.voucher_number AS number
+             FROM advance_payments a
+            WHERE a.business_id = $1 AND a.type = 'received' AND a.voucher_number IS NOT NULL
+              AND a.payment_date BETWEEN $2::date AND $3::date ${branch_id ? 'AND a.branch_id = $4' : ''}
+           UNION ALL
+           SELECT 8, aa.voucher_number
+             FROM advance_adjustments aa
+             JOIN advance_payments a ON a.id = aa.advance_id
+            WHERE aa.business_id = $1 AND aa.kind = 'refund' AND a.type = 'received'
+              AND aa.adjustment_date BETWEEN $2::date AND $3::date ${branch_id ? 'AND a.branch_id = $4' : ''}`,
+          branch_id ? [business_id, periodFrom, periodTo, branch_id] : [business_id, periodFrom, periodTo]
+        );
+        for (const docNum of [6, 8] as const) {
+          const docs = voucherDocs.rows
+            .filter((r) => Number(r.doc_num) === docNum && r.number)
+            .map((r) => ({ number: String(r.number), cancelled: false }));
+          if (docs.length > 0) doc_issues.push(...buildDocSeries(docNum, docs));
+        }
+      }
+
       const cdnResult = await client.query(cdnQuery, cdnParams);
       cdnResult.rows.forEach((row) => {
         const gstin = row.customer_gstin ? String(row.customer_gstin).trim() : null;
@@ -853,7 +897,7 @@ export class GSTR1Generator {
 
       // Table 12 is reported net of credit/debit notes issued in the period.
       const noteLines = await client.query(
-        `SELECT -1 AS sign, COALESCE(it.hsn_sac, 'NA') AS hsn_sac, cni.description AS item_name, cni.unit,
+        `SELECT -1 AS sign, COALESCE(NULLIF(TRIM(cni.hsn_sac), ''), it.hsn_sac, 'NA') AS hsn_sac, cni.description AS item_name, cni.unit,
                 cni.qty AS quantity, cni.tax_rate,
                 (cni.line_total - cni.tax_amount) AS item_taxable_value,
                 CASE WHEN cn.igst_total > 0 THEN cni.tax_amount ELSE 0 END AS igst_amount,
@@ -915,6 +959,8 @@ export class GSTR1Generator {
         sez,
         cdn,
         cdn_b2cs,
+        at,
+        atadj,
         doc_issue_summary,
         doc_issues,
       };

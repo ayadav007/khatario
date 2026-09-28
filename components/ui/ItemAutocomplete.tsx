@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Camera } from 'lucide-react';
 import { BarcodeScanner } from './BarcodeScanner';
@@ -747,8 +748,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         </button>
       )}
       
-      {/* Dropdown - Fixed positioning to escape overflow constraints */}
-      {isOpen && (dropdownPosition || results.length > 0 || loading) && (
+      {/* Portalled to body: a transformed/filtered ancestor would otherwise become the containing block for `fixed`. */}
+      {isOpen && (dropdownPosition || results.length > 0 || loading) && typeof document !== 'undefined' && createPortal(
         <div 
           ref={dropdownRef}
           className="fixed bg-white border border-border rounded-lg shadow-lg z-[9999] max-h-60 overflow-y-auto"
@@ -758,7 +759,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
             bottom: dropdownPosition?.bottom != null ? `${dropdownPosition.bottom}px` : 'auto',
             left: dropdownPosition ? `${dropdownPosition.left}px` : 'auto',
             width: dropdownPosition ? `${dropdownPosition.width}px` : '300px',
-            position: 'fixed' // Explicitly set fixed positioning
+            position: 'fixed',
+            visibility: dropdownPosition ? 'visible' : 'hidden',
           }}
         >
           {loading && (
@@ -839,7 +841,8 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                </button>
              </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Variant Selector Modal */}

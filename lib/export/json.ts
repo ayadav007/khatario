@@ -342,9 +342,33 @@ export async function generateGSTR1JSON(
     }))
     .filter((row: any) => row.nil_amt !== 0 || row.expt_amt !== 0 || row.ngsup_amt !== 0);
 
+  // ─── Advances (Table 11A `at`, 11B `txpd`), grouped by POS ───────────────────
+  const advanceSection = (rows: any[]) => {
+    const byPos = new Map<string, any[]>();
+    for (const r of rows || []) {
+      const pos = posCode(r.place_of_supply, bizStateCode);
+      if (!byPos.has(pos)) byPos.set(pos, []);
+      byPos.get(pos)!.push({
+        rt: r.rate,
+        ad_amt: r2(r.taxable_value),
+        iamt: r2(r.igst),
+        camt: r2(r.cgst),
+        samt: r2(r.sgst),
+        csamt: r2(r.cess),
+      });
+    }
+    return [...byPos.entries()].map(([pos, itms]) => ({
+      pos,
+      sply_ty: pos === bizStateCode ? 'INTRA' : 'INTER',
+      itms,
+    }));
+  };
+  const at = advanceSection(report.at ?? []);
+  const txpd = advanceSection(report.atadj ?? []);
+
   // ─── Documents issued (Table 13) ────────────────────────────────────────────
   const docRows: any[] = report.doc_issues ?? [];
-  const docIssue = ([1, 4, 5] as const)
+  const docIssue = ([1, 4, 5, 6, 8] as const)
     .map((docNum) => {
       const rows = docRows.filter((d) => d.doc_num === docNum);
       return rows.length === 0
@@ -381,6 +405,8 @@ export async function generateGSTR1JSON(
     cdnr,
     cdnur:   cdnurArr,
     nil:     { inv: nilInv },
+    ...(at.length ? { at } : {}),
+    ...(txpd.length ? { txpd } : {}),
     hsn:     hsnSection,
     doc_issue: docIssue,
   };

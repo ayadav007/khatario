@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { getPool } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { isInterBranchTransfer, createInterBranchInvoice, isEwayBillRequired } from '@/lib/inter-branch-utils';
+import { isInterBranchTransfer, ensureInterBranchInvoiceForTransfer, isEwayBillRequired } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 
@@ -239,57 +239,6 @@ export async function POST(request: NextRequest) {
 
       const transfer = transferResult.rows[0];
 
-      // If inter-branch transfer, create invoice (only for approved transfers)
-      let interBranchInvoiceId: string | undefined;
-      if (isInterBranch && transferInfo.fromWarehouse.branch && transferInfo.toWarehouse.branch && initialStatus === 'pending') {
-        try {
-          // Get item details for invoice
-          const invoiceItems = await Promise.all(items.map(async (item: any) => {
-            const itemData = await client.query(`
-              SELECT name, hsn_sac, tax_rate, purchase_price
-              FROM items
-              WHERE id = $1
-            `, [item.item_id]);
-            
-            return {
-              item_id: item.item_id,
-              description: item.description || itemData.rows[0]?.name || 'Item',
-              qty: item.qty,
-              unit: item.unit || 'PCS',
-              unit_price: item.unit_price || 0,
-              tax_rate: item.tax_rate || itemData.rows[0]?.tax_rate || 0,
-              discount: item.discount || 0,
-              hsn_sac: item.hsn_sac || itemData.rows[0]?.hsn_sac || null,
-            };
-          }));
-
-          const invoice = await createInterBranchInvoice({
-            businessId: business_id,
-            fromBranchId: transferInfo.fromWarehouse.branch.id,
-            toBranchId: transferInfo.toWarehouse.branch.id,
-            transferId: transfer.id,
-            transferNumber: transfer_number,
-            transferDate: transfer_date,
-            items: invoiceItems,
-            notes: notes,
-            ewayBillNumber: body.eway_bill_number,
-            ewayBillDate: body.eway_bill_date,
-          });
-
-          interBranchInvoiceId = invoice.invoiceId;
-
-          // Update transfer with invoice ID
-          await client.query(`
-            UPDATE stock_transfers
-            SET inter_branch_invoice_id = $1
-            WHERE id = $2
-          `, [invoice.invoiceId, transfer.id]);
-        } catch (invoiceError: any) {
-          console.error('Error creating inter-branch invoice:', invoiceError);
-          // Don't fail transfer if invoice creation fails, but log it
-        }
-      }
-
       // Create transfer items (NO stock movement - stock will be deducted on DISPATCH)
       for (const item of items) {
         const requestedQty = parseFloat(item.qty || '0');
@@ -315,6 +264,15 @@ export async function POST(request: NextRequest) {
           requestedQty,
           costSnapshot
         ]);
+      }
+
+      if (isInterBranch && initialStatus === 'pending') {
+        const invoiceId = await ensureInterBranchInvoiceForTransfer(client, transfer.id, {
+          ewayBillNumber: body.eway_bill_number,
+          ewayBillDate: body.eway_bill_date,
+          createdBy: created_by,
+        });
+        if (invoiceId) transfer.inter_branch_invoice_id = invoiceId;
       }
 
       await client.query('COMMIT');

@@ -4,6 +4,7 @@
  */
 
 import { queryRows, queryOne, getPool } from '@/lib/db';
+import { accountIdByCode, insertVoucherLines } from '@/lib/accounting/voucher-posting';
 
 export type ProvisionType =
   | 'bad_debts'
@@ -130,13 +131,26 @@ export async function createProvisionEntry(
   amount: number,
   referenceType?: string,
   referenceId?: string,
-  narration?: string
+  narration?: string,
+  options: { branchId?: string | null; counterAccountId?: string | null } = {}
 ): Promise<string> {
   const pool = getPool();
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
+
+    const provRes = await client.query(
+      `SELECT id, provision_name, provision_type, provision_account_id, expense_account_id
+         FROM provisions WHERE id = $1 AND business_id = $2`,
+      [provisionId, businessId]
+    );
+    const provision = provRes.rows[0];
+    if (!provision) throw new Error('Provision not found');
+    if (!(Number(amount) > 0)) throw new Error('amount must be greater than 0');
+    if (entryType === 'utilization' && !options.counterAccountId && provision.provision_type !== 'bad_debts') {
+      throw new Error('counter_account_id is required for a utilization entry (the account the cost is settled against)');
+    }
 
     // Get current balance for the provision
     const currentBalance = await getProvisionBalance(
@@ -189,8 +203,51 @@ export async function createProvisionEntry(
       ]
     );
 
+    const entryId: string = result.rows[0].id;
+    const effective = Math.round(Math.abs(closingBalance - openingBalance) * 100) / 100;
+    if (effective > 0) {
+      const provisionAccount =
+        provision.provision_account_id || (await accountIdByCode(client, businessId, '2108'));
+      const expenseAccount =
+        provision.expense_account_id || (await accountIdByCode(client, businessId, '5207'));
+      if (!provisionAccount || !expenseAccount) {
+        throw new Error('Provision or expense ledger account is not configured');
+      }
+      let counter: string | null = expenseAccount;
+      if (entryType === 'utilization') {
+        counter = options.counterAccountId || (await accountIdByCode(client, businessId, '1103'));
+        if (!counter) throw new Error('Counter account for utilization not found');
+      }
+      const { resolveBranchId } = await import('@/lib/branch-helpers');
+      const branchId = await resolveBranchId({ branchId: options.branchId || null, businessId });
+      const label = narration || `${provision.provision_name} - ${entryType}`;
+      const lines =
+        entryType === 'addition'
+          ? [
+              { accountId: expenseAccount, debit: effective, credit: 0, narration: label },
+              { accountId: provisionAccount, debit: 0, credit: effective, narration: label },
+            ]
+          : [
+              { accountId: provisionAccount, debit: effective, credit: 0, narration: label },
+              { accountId: counter, debit: 0, credit: effective, narration: label },
+            ];
+      await insertVoucherLines(client, {
+        businessId,
+        branchId,
+        voucherId: entryId,
+        voucherType: 'provision',
+        entryDate,
+        reference: provision.provision_name,
+        lines,
+      });
+      await client.query(
+        `UPDATE provision_entries SET is_posted = true, posted_date = $2, journal_entry_id = $1 WHERE id = $1`,
+        [entryId, entryDate]
+      );
+    }
+
     await client.query('COMMIT');
-    return result.rows[0].id;
+    return entryId;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

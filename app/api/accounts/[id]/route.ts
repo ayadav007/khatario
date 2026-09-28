@@ -3,8 +3,27 @@ import { queryOne, query } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import {
+  AccountRuleError,
+  assertGroupMatchesType,
+  setAccountOpeningBalance,
+} from '@/lib/accounting/account-rules';
 
 export const dynamic = 'force-dynamic';
+
+/** Column names come only from these sets; request keys are never used as SQL identifiers otherwise. */
+const EDITABLE_FIELDS = new Set([
+  'account_name',
+  'account_code',
+  'account_group_id',
+  'parent_account_id',
+  'description',
+  'sort_order',
+  'is_active',
+  'opening_balance',
+  'opening_balance_type',
+]);
+const SYSTEM_EDITABLE_FIELDS = new Set(['description', 'sort_order', 'is_active']);
 
 /**
  * GET /api/accounts/[id]
@@ -59,15 +78,11 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
               WHEN a.nature = 'debit' THEN (le.debit - le.credit)
               ELSE (le.credit - le.debit)
             END
-          ), 0) + 
-          CASE 
-            WHEN a.opening_balance_type = 'debit' THEN a.opening_balance
-            ELSE -a.opening_balance
-          END as balance
+          ), 0) as balance
         FROM accounts a
-        LEFT JOIN ledger_entries le ON le.account_id = a.id AND le.business_id = $2 ${dateFilter}
+        LEFT JOIN ledger_entry_lines le ON le.account_id = a.id AND le.business_id = $2 ${dateFilter}
         WHERE a.id = $1 AND a.business_id = $2
-        GROUP BY a.id, a.opening_balance, a.opening_balance_type
+        GROUP BY a.id
       `, params);
 
         account.current_balance = parseFloat(balanceResult?.balance?.toString() || '0');
@@ -137,9 +152,17 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         throw error;
       }
 
-      // Get account details including is_system flag
-      const existing = await queryOne(
-        'SELECT id, is_system FROM accounts WHERE id = $1 AND business_id = $2',
+      const existing = await queryOne<{
+        id: string;
+        is_system: boolean;
+        account_code: string;
+        account_type: string;
+        account_group_id: string;
+        opening_balance: string;
+        opening_balance_type: 'debit' | 'credit';
+      }>(
+        `SELECT id, is_system, account_code, account_type, account_group_id, opening_balance, opening_balance_type
+           FROM accounts WHERE id = $1 AND business_id = $2`,
         [accountId, business_id]
       );
 
@@ -150,65 +173,110 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         );
       }
 
-      // Prevent editing system accounts (except description and sort_order)
-      if (existing.is_system) {
-        const allowedFields = ['description', 'sort_order', 'is_active'];
-        const updateKeys = Object.keys(updates);
-        const invalidFields = updateKeys.filter(key => !allowedFields.includes(key));
+      const updateKeys = Object.keys(updates).filter((k) => updates[k] !== undefined);
+      const unknown = updateKeys.filter((k) => !EDITABLE_FIELDS.has(k));
+      if (unknown.length > 0) {
+        return NextResponse.json(
+          { error: `These fields cannot be updated: ${unknown.join(', ')}`, code: 'FIELD_NOT_EDITABLE' },
+          { status: 400 }
+        );
+      }
 
-        if (invalidFields.length > 0) {
+      if (existing.is_system) {
+        const invalid = updateKeys.filter((k) => !SYSTEM_EDITABLE_FIELDS.has(k));
+        if (invalid.length > 0) {
           return NextResponse.json(
-            { error: `Cannot update system account fields: ${invalidFields.join(', ')}` },
+            { error: `Cannot update system account fields: ${invalid.join(', ')}` },
             { status: 400 }
           );
         }
       }
 
-      // Check if account has transactions (prevent deleting account_code if used)
-      if (updates.account_code && updates.account_code !== existing.account_code) {
+      if (updates.account_code !== undefined && updates.account_code !== existing.account_code) {
         const hasTransactions = await queryOne(
-          'SELECT COUNT(*) as count FROM ledger_entries WHERE account_id = $1',
-          [accountId]
+          `SELECT COUNT(*) as count FROM ledger_entry_lines
+            WHERE account_id = $1 AND business_id = $2 AND voucher_type <> 'opening_balance'`,
+          [accountId, business_id]
         );
-
         if (parseInt(hasTransactions?.count || '0') > 0) {
           return NextResponse.json(
             { error: 'Cannot change account code for account with transactions' },
             { status: 400 }
           );
         }
+        const dup = await queryOne(
+          'SELECT id FROM accounts WHERE business_id = $1 AND account_code = $2 AND id <> $3',
+          [business_id, updates.account_code, accountId]
+        );
+        if (dup) {
+          return NextResponse.json({ error: 'Account code already exists' }, { status: 409 });
+        }
       }
 
-      // Build dynamic UPDATE query
-      const updateFields: string[] = [];
-      const updateValues: any[] = [];
-      let paramIndex = 1;
-
-      Object.entries(updates).forEach(([key, value]) => {
-        if (value !== undefined) {
-          updateFields.push(`${key} = $${paramIndex}`);
-          updateValues.push(value);
-          paramIndex++;
+      const nextGroup = (updates.account_group_id as string | undefined) ?? existing.account_group_id;
+      if (updates.account_group_id !== undefined) {
+        try {
+          await assertGroupMatchesType(business_id, nextGroup, existing.account_type);
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
         }
-      });
+      }
 
-      if (updateFields.length === 0) {
+      if (updates.opening_balance !== undefined || updates.opening_balance_type !== undefined) {
+        const amount = updates.opening_balance !== undefined
+          ? Number(updates.opening_balance)
+          : Number(existing.opening_balance || 0);
+        const type = (updates.opening_balance_type ?? existing.opening_balance_type ?? 'debit') as string;
+        if (!Number.isFinite(amount) || amount < 0 || (type !== 'debit' && type !== 'credit')) {
+          return NextResponse.json(
+            { error: 'opening_balance must be a non-negative number and opening_balance_type debit or credit' },
+            { status: 400 }
+          );
+        }
+        try {
+          await setAccountOpeningBalance({ businessId: business_id, accountId, amount, type });
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
+        }
+      }
+
+      const updateFields: string[] = [];
+      const updateValues: unknown[] = [];
+      let paramIndex = 1;
+      for (const key of updateKeys) {
+        if (key === 'opening_balance' || key === 'opening_balance_type') continue;
+        updateFields.push(`${key} = $${paramIndex}`);
+        updateValues.push(updates[key]);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0 && updates.opening_balance === undefined && updates.opening_balance_type === undefined) {
         return NextResponse.json(
           { error: 'No fields to update' },
           { status: 400 }
         );
       }
 
-      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-      updateValues.push(accountId, business_id);
-
-      const account = await queryOne<Account>(
-        `UPDATE accounts
-       SET ${updateFields.join(', ')}
-       WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
-       RETURNING *`,
-        updateValues
-      );
+      let account: Account | null;
+      if (updateFields.length > 0) {
+        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+        updateValues.push(accountId, business_id);
+        account = await queryOne<Account>(
+          `UPDATE accounts
+         SET ${updateFields.join(', ')}
+         WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
+         RETURNING *`,
+          updateValues
+        );
+      } else {
+        account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1 AND business_id = $2', [accountId, business_id]);
+      }
 
       return NextResponse.json({ account });
     } catch (error: any) {

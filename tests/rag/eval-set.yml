@@ -133,6 +133,69 @@
 - q: bill kaise banaye
   audience: tenant_user
   expect: [how-to/invoices.md, how-to/invoice-setup.md]
+- q: How do I create item categories?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I enable product variants for size and colour?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I add a godown or warehouse?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md, how-to/items-stock.md]
+- q: How do I design barcode labels?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md, how-to/items-stock.md]
+- q: How do I add a custom field on invoice?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: Can I bill an item when stock is zero?
+  audience: tenant_user
+  expect: [how-to/items-inventory-settings.md]
+- q: How do I start my online store?
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: online store kaise banaye
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: Where do I see orders from my online store?
+  audience: tenant_user
+  expect: [how-to/online-store.md]
+- q: How do I set up email to send invoices?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: How do I add my UPI ID for payment links?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md, how-to/invoice-setup.md]
+- q: How do I set up the AI sales agent on WhatsApp?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: Can I send SMS to customers?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: What are account mappings?
+  audience: tenant_user
+  expect: [how-to/integrations-settings.md]
+- q: How do I turn on POS mode?
+  audience: tenant_user
+  expect: [how-to/general-settings.md, how-to/items-inventory-settings.md]
+- q: How do I switch to dark mode or change brand colour?
+  audience: tenant_user
+  expect: [how-to/general-settings.md]
+- q: How do I sync offline bills?
+  audience: tenant_user
+  expect: [how-to/general-settings.md, prospect/modules/offline-mobile-printing.md]
+- q: What is the suppliers directory?
+  audience: tenant_user
+  expect: [how-to/general-settings.md]
+- q: staff ko access kaise de
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How do I create a custom role with permissions?
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How do I deactivate a staff user?
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
 - q: What is the weather in Delhi today?
   confident: false
 - q: Write me a poem about cricket

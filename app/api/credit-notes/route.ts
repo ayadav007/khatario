@@ -303,20 +303,30 @@ export async function POST(request: NextRequest) {
 
     // Calculate place of supply if not provided
     let finalPosStateCode = place_of_supply_state_code;
-    if (!finalPosStateCode && customer_id) {
-      const customerRes = await client.query(
-        'SELECT state_code FROM customers WHERE id = $1',
-        [customer_id]
-      );
-      if (customerRes.rows.length > 0) {
-        finalPosStateCode = customerRes.rows[0].state_code;
-      }
+    const customerRes = await client.query<{ state_code: string | null; gstin: string | null }>(
+      'SELECT state_code, gstin FROM customers WHERE id = $1 AND business_id = $2',
+      [customer_id, business_id]
+    );
+    const noteCustomer = customerRes.rows[0];
+    if (!finalPosStateCode && noteCustomer) {
+      finalPosStateCode = noteCustomer.state_code || (noteCustomer.gstin ? noteCustomer.gstin.trim().slice(0, 2) : null);
     }
 
     const rejectCreditNote = async (status: number, code: string, error: string) => {
       await client.query('ROLLBACK');
       return NextResponse.json({ error, code }, { status });
     };
+
+    if (!noteCustomer) {
+      return rejectCreditNote(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+    }
+    if (noteCustomer.gstin && noteCustomer.gstin.trim() && !invoice_id) {
+      return rejectCreditNote(
+        400,
+        'ORIGINAL_INVOICE_REQUIRED',
+        'A credit note to a registered customer must reference the original invoice (s.34 CGST Act; reported in GSTR-1 CDNR)'
+      );
+    }
 
     let invoice: any = null;
     const invoicedByItem = new Map<string, { qty: number; taxRate: number }>();
@@ -467,9 +477,10 @@ export async function POST(request: NextRequest) {
       await client.query(`
         INSERT INTO credit_note_items (
           credit_note_id, item_id, description, qty, unit, unit_price,
-          discount, tax_rate, tax_amount, line_total, sort_order
+          discount, tax_rate, tax_amount, line_total, sort_order, hsn_sac
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                COALESCE(NULLIF(TRIM($12::text), ''), (SELECT hsn_sac FROM items WHERE id = $2::uuid)))
       `, [
         creditNote.id,
         item.item_id || null,
@@ -481,7 +492,8 @@ export async function POST(request: NextRequest) {
         taxRate,
         taxAmount,
         lineTotal,
-        i
+        i,
+        item.hsn_sac || null,
       ]);
 
       // Get location_id from original invoice if available

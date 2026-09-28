@@ -6,6 +6,7 @@ import { Supplier } from '@/types/database';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -214,8 +215,20 @@ export async function PUT(
       return map[name] || '';
     };
 
-    // Use provided state_code or calculate from state name
-    const finalStateCode = state_code || (state ? getStateCode(state) : null);
+    let finalState: string | null | undefined = state;
+    let finalGstin: string | null | undefined = gstin;
+    let gstinStateCode: string | null = null;
+    if (typeof gstin === 'string' && gstin.trim()) {
+      const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      finalGstin = gstinCheck.gstin;
+      finalState = gstinCheck.state;
+      gstinStateCode = gstinCheck.state_code;
+    }
+
+    const finalStateCode = gstinStateCode || state_code || (finalState ? getStateCode(finalState) : null);
     const phoneNorm = phone !== undefined ? normalizePhoneOrNull(phone) : undefined;
 
     // CRITICAL: Enforce subscription feature access
@@ -278,10 +291,10 @@ export async function PUT(
       WHERE id = $15 AND business_id = $16
       RETURNING *
     `, [
-      name, phoneNorm, email, address, city, state, finalStateCode, pincode, gstin,
+      name, phoneNorm, email, address, city, finalState, finalStateCode, pincode, finalGstin,
       opening_balance, opening_balance_type, notes, is_active, finalAllowLowStockAccess, supplierId,
       business_id,
-      normalizePan(pan) ?? panFromGstin(gstin),
+      normalizePan(pan) ?? panFromGstin(finalGstin),
     ]);
 
     if (!supplier) {

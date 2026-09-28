@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       FROM purchase_returns pr
       LEFT JOIN purchases p ON pr.purchase_id = p.id AND p.deleted_at IS NULL
       LEFT JOIN suppliers s ON pr.supplier_id = s.id
-      WHERE pr.business_id = $1 ${dateFilter}
+      WHERE pr.business_id = $1 AND COALESCE(pr.status, 'final') <> 'cancelled' ${dateFilter}
       ORDER BY pr.return_date DESC, pr.return_number DESC
     `, queryParams);
 

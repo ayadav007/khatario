@@ -14,7 +14,7 @@ Reports > Receivables Aging lists every customer's balance by how long it has be
 
 ## How do I send a payment reminder on WhatsApp?
 
-Connect WhatsApp first (More > Send invoices on WhatsApp). Then send a reminder from the invoice or customer, or send reminders in bulk to customers with dues. Automatic scheduled reminders are available on plans that include WhatsApp automation.
+Connect WhatsApp first (More > Send invoices on WhatsApp). Then send a reminder from the invoice or customer. Bulk reminders (Send Reminders) and automatic scheduled reminders (Auto Reminders) are in Settings > Connect > Bot & messaging and need the WhatsApp Bot add-on.
 
 ## How do I add a payment link to invoices?
 

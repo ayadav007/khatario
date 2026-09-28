@@ -95,7 +95,8 @@ export const POST = withPremiumSubscriptionApi(
       if (purchaseId) {
         const purRes = await client.query(
           `SELECT id, supplier_id, branch_id, status, grand_total, tax_total, is_reverse_charge,
-                  paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted, bill_number
+                  paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted,
+                  COALESCE(advance_adjusted, 0) AS advance_adjusted, bill_number
              FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
           [purchaseId, businessId]
         );

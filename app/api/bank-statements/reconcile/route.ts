@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { queryRows, queryOne, getPool } from '@/lib/db';
+import { getPool } from '@/lib/db';
 import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
+import { signedStatementAmount } from '@/lib/bank/brs';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,11 +30,12 @@ export const POST = withPremiumSubscriptionApi(
 
       await client.query('BEGIN');
 
-      // Get bank account's ledger account
-      const bankAccount = await queryOne(
-        'SELECT ledger_account_id FROM bank_accounts WHERE id = $1 AND business_id = $2',
-        [bank_account_id, businessId]
-      );
+      const bankAccount = (
+        await client.query(
+          'SELECT ledger_account_id FROM bank_accounts WHERE id = $1 AND business_id = $2',
+          [bank_account_id, businessId]
+        )
+      ).rows[0];
 
       if (!bankAccount || !bankAccount.ledger_account_id) {
         await client.query('ROLLBACK');
@@ -43,47 +45,54 @@ export const POST = withPremiumSubscriptionApi(
         );
       }
 
-      // Get unmatched statement lines
-      const statementLines = await queryRows(`
-      SELECT * FROM bank_statement_lines
-      WHERE bank_statement_id = $1 AND business_id = $2 AND is_matched = false
-      ORDER BY transaction_date
-    `, [bank_statement_id, businessId]);
+      const statementLines = (
+        await client.query(
+          `SELECT * FROM bank_statement_lines
+            WHERE bank_statement_id = $1 AND business_id = $2
+              AND is_matched = false AND COALESCE(match_status, 'unmatched') = 'unmatched'
+            ORDER BY transaction_date, id`,
+          [bank_statement_id, businessId]
+        )
+      ).rows;
 
       let matchedCount = 0;
 
-      // Try to match each statement line with ledger entries
       for (const line of statementLines) {
-        const amount = parseFloat(line.debit_amount || '0') > 0
-          ? parseFloat(line.debit_amount)
-          : parseFloat(line.credit_amount || '0');
+        // Statement credit (deposit) = Dr bank in books; statement debit (withdrawal) = Cr bank.
+        const signedAmount = signedStatementAmount(line.debit_amount, line.credit_amount);
+        if (signedAmount === 0) continue;
 
-        // Try to find matching ledger entry by amount and date (within 7 days)
-        const match = await queryOne(`
-        SELECT lel.id, lel.voucher_id, lel.voucher_type
-        FROM ledger_entry_lines lel
-        WHERE lel.business_id = $1
-          AND lel.account_id = $2
-          AND ABS(lel.debit - lel.credit - $3) < 0.01
-          AND lel.entry_date BETWEEN $4::date - INTERVAL '7 days' AND $4::date + INTERVAL '7 days'
-          AND NOT EXISTS (
-            SELECT 1 FROM bank_statement_lines bsl 
-            WHERE bsl.matched_ledger_entry_id = lel.id
+        const match = (
+          await client.query(
+            `SELECT lel.id
+               FROM ledger_entry_lines lel
+              WHERE lel.business_id = $1
+                AND lel.account_id = $2
+                AND ABS((lel.debit - lel.credit) - $3::numeric) < 0.01
+                AND lel.entry_date BETWEEN $4::date - 7 AND $4::date + 7
+                AND NOT EXISTS (
+                  SELECT 1 FROM bank_statement_lines bsl
+                   WHERE bsl.business_id = $1
+                     AND (bsl.matched_ledger_entry_id = lel.id
+                          OR bsl.matched_ledger_ids @> to_jsonb(ARRAY[lel.id::text]))
+                )
+              ORDER BY ABS(lel.entry_date - $4::date), lel.id
+              LIMIT 1`,
+            [businessId, bankAccount.ledger_account_id, signedAmount, line.transaction_date]
           )
-        ORDER BY ABS(EXTRACT(EPOCH FROM (lel.entry_date - $4::date)))
-        LIMIT 1
-      `, [businessId, bankAccount.ledger_account_id, amount, line.transaction_date]);
+        ).rows[0];
 
         if (match) {
-          // Mark as matched
           await client.query(
             `UPDATE bank_statement_lines
-           SET is_matched = true,
-               matched_ledger_entry_id = $1,
-               match_type = 'exact',
-               matched_at = CURRENT_TIMESTAMP
-           WHERE id = $2`,
-            [match.id, line.id]
+                SET is_matched = true,
+                    match_status = 'matched',
+                    matched_ledger_entry_id = $1,
+                    matched_ledger_ids = to_jsonb(ARRAY[$1::text]),
+                    match_type = 'exact',
+                    matched_at = CURRENT_TIMESTAMP
+              WHERE id = $2 AND business_id = $3`,
+            [match.id, line.id, businessId]
           );
           matchedCount++;
         }

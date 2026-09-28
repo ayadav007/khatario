@@ -448,6 +448,13 @@ export class GSTR3BGenerator {
       if (isZeroRatedNote) addTo(zeroB, noteSign(n), v);
       else addDomestic(n.place_of_supply, v, noteSign(n), !n.gstin_uin_recipient);
     }
+    // Tax on service advances is payable in 3.1(a) on receipt (GSTR-1 11A) and reduced when adjusted (11B).
+    for (const a of gstr1Data.at ?? []) {
+      addDomestic(a.place_of_supply, { taxable: a.taxable_value, igst: a.igst, cgst: a.cgst, sgst: a.sgst, cess: a.cess });
+    }
+    for (const a of gstr1Data.atadj ?? []) {
+      addDomestic(a.place_of_supply, { taxable: a.taxable_value, igst: a.igst, cgst: a.cgst, sgst: a.sgst, cess: a.cess }, -1);
+    }
 
     const roundTax = (t: TaxBreakdown): TaxBreakdown => ({
       taxable_value: round2(t.taxable_value),
@@ -501,7 +508,28 @@ export class GSTR3BGenerator {
         AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
         AND p.bill_date >= $2::date AND p.bill_date <= $3::date
         AND ($4::uuid IS NULL OR p.branch_id = $4::uuid)
-      GROUP BY 1, 2`,
+      GROUP BY 1, 2
+      UNION ALL
+      SELECT 'rcm', COALESCE(e.itc_eligible, true),
+             COALESCE(SUM(e.amount), 0), COALESCE(SUM(e.igst_amount), 0),
+             COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
+        FROM expenses e
+       WHERE e.business_id = $1::uuid
+         AND COALESCE(e.is_reverse_charge, false)
+         AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+         AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)
+       GROUP BY 2
+      UNION ALL
+      SELECT 'regular', false,
+             COALESCE(SUM(e.amount - COALESCE(e.igst_amount, 0) - COALESCE(e.cgst_amount, 0) - COALESCE(e.sgst_amount, 0)), 0),
+             COALESCE(SUM(e.igst_amount), 0), COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
+        FROM expenses e
+       WHERE e.business_id = $1::uuid
+         AND NOT COALESCE(e.is_reverse_charge, false)
+         AND e.itc_eligible = false
+         AND (COALESCE(e.igst_amount, 0) + COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0)) > 0
+         AND e.expense_date >= $2::date AND e.expense_date <= $3::date
+         AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)`,
       [business_id, startOfMonth, endOfMonth, branch]
     );
     const bucket = (name: string, eligible?: boolean): TaxBreakdown => {
@@ -539,9 +567,33 @@ export class GSTR3BGenerator {
         emptyTax()
       );
 
-    // 4A(5): books ITC less the credits reported in 4A(1)-(3), plus blocked credit reversed in 4B(1).
+    // s.17(5)(h) reversals (stock lost / destroyed / free samples) are credits to input GST in the
+    // ledger; add them back to 4A(5) and report them in 4B(1).
+    const rev = await pool.query(
+      `SELECT a.account_code, COALESCE(SUM(l.credit - l.debit), 0) AS amt
+         FROM ledger_entry_lines l
+         JOIN accounts a ON a.id = l.account_id
+        WHERE l.business_id = $1::uuid
+          AND l.voucher_type = 'itc_reversal'
+          AND a.account_code IN ($5, $6, $7)
+          AND l.entry_date >= $2::date AND l.entry_date <= $3::date
+          AND ($4::uuid IS NULL OR l.branch_id = $4::uuid)
+        GROUP BY a.account_code`,
+      [business_id, startOfMonth, endOfMonth, branch, GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST]
+    );
+    const revAmt = (code: string) => round2(Number(rev.rows.find((r) => r.account_code === code)?.amt ?? 0));
+    const stockLossReversal = {
+      igst: revAmt(GSTR3B_INPUT_IGST),
+      cgst: revAmt(GSTR3B_INPUT_CGST),
+      sgst: revAmt(GSTR3B_INPUT_SGST),
+    };
+
+    // 4A(5): books ITC less the credits reported in 4A(1)-(3), plus credit reversed in 4B(1).
     const otherHead = (ledger: number, head: 'igst' | 'cgst' | 'sgst') =>
-      round2(Math.max(0, ledger - itcImports[head] - itcImportServices[head] - itcRcm[head]) + blocked[head]);
+      round2(
+        Math.max(0, ledger + stockLossReversal[head] - itcImports[head] - itcImportServices[head] - itcRcm[head]) +
+          blocked[head]
+      );
     const other_itc: TaxBreakdown = {
       taxable_value: 0,
       igst: otherHead(itcIGST, 'igst'),
@@ -549,7 +601,13 @@ export class GSTR3BGenerator {
       sgst: otherHead(itcSGST, 'sgst'),
       cess: 0,
     };
-    const itc_reversed: TaxBreakdown = { ...blocked, taxable_value: 0 };
+    const itc_reversed: TaxBreakdown = roundTax({
+      taxable_value: 0,
+      igst: blocked.igst + stockLossReversal.igst,
+      cgst: blocked.cgst + stockLossReversal.cgst,
+      sgst: blocked.sgst + stockLossReversal.sgst,
+      cess: 0,
+    });
     const net_itc: TaxBreakdown = roundTax({
       taxable_value: 0,
       igst: itcImports.igst + itcImportServices.igst + itcRcm.igst + other_itc.igst - itc_reversed.igst,

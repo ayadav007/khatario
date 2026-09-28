@@ -184,8 +184,10 @@ export async function PATCH(
         
         // Calculate new invoice amount (balance after any payments)
         // Use ?? instead of || to avoid treating 0 as falsy
-        const invoiceBalance = inv.balance_amount ?? (parseFloat(inv.grand_total ?? '0') - parseFloat(inv.paid_amount ?? '0'));
-        const newTotalBalance = currentBalance + invoiceBalance;
+        const invoiceBalance = Number(
+          inv.balance_amount ?? (parseFloat(inv.grand_total ?? '0') - parseFloat(inv.paid_amount ?? '0'))
+        ) || 0;
+        const newTotalBalance = Number(currentBalance) + invoiceBalance;
 
         // Only enforce if credit_limit > 0 (0 means unlimited credit)
         if (creditLimit > 0 && newTotalBalance > creditLimit) {

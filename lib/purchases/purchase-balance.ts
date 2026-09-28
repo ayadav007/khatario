@@ -15,7 +15,8 @@ export async function recomputePurchaseBalance(
   businessId: string
 ): Promise<{ payable: number; paid_amount: number; tds_deducted: number; balance_amount: number; payment_status: string } | null> {
   const res = await client.query(
-    `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted
+    `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted,
+            COALESCE(advance_adjusted, 0) AS advance_adjusted
        FROM purchases
       WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [purchaseId, businessId]
@@ -26,8 +27,9 @@ export async function recomputePurchaseBalance(
   const payable = supplierPayableAmount(row.grand_total, row.tax_total, row.is_reverse_charge);
   const paid = Number(row.paid_amount) || 0;
   const tds = Number(row.tds_deducted) || 0;
-  const balance = Math.max(0, round2(payable - paid - tds));
-  const settled = paid + tds;
+  const adv = Number(row.advance_adjusted) || 0;
+  const balance = Math.max(0, round2(payable - paid - tds - adv));
+  const settled = paid + tds + adv;
   const status = settled <= INR_EPS ? 'unpaid' : balance <= INR_EPS ? 'paid' : 'partially_paid';
 
   await client.query(
@@ -45,7 +47,16 @@ export function purchaseOutstanding(row: {
   is_reverse_charge: boolean | null;
   paid_amount: number | string | null;
   tds_deducted?: number | string | null;
+  advance_adjusted?: number | string | null;
 }): number {
   const payable = supplierPayableAmount(row.grand_total, row.tax_total, row.is_reverse_charge);
-  return Math.max(0, round2(payable - (Number(row.paid_amount) || 0) - (Number(row.tds_deducted) || 0)));
+  return Math.max(
+    0,
+    round2(
+      payable -
+        (Number(row.paid_amount) || 0) -
+        (Number(row.tds_deducted) || 0) -
+        (Number(row.advance_adjusted) || 0)
+    )
+  );
 }

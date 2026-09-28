@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
       FROM credit_notes cn
       LEFT JOIN customers c ON cn.customer_id = c.id AND c.deleted_at IS NULL
       LEFT JOIN invoices i ON cn.invoice_id = i.id AND i.deleted_at IS NULL
-      WHERE cn.business_id = $1 ${dateFilter}
+      WHERE cn.business_id = $1 AND COALESCE(cn.status, 'active') <> 'cancelled' ${dateFilter}
       ORDER BY cn.credit_note_date DESC, cn.credit_note_number DESC
     `, queryParams);
 

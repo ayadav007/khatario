@@ -7,6 +7,7 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -164,20 +165,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (gstin && typeof gstin === 'string') {
-      const trimmedGstin = gstin.trim();
-      if (trimmedGstin.length !== 15) {
-        return NextResponse.json(
-          { error: `Invalid GSTIN "${trimmedGstin}" — must be exactly 15 characters (got ${trimmedGstin.length}). Please correct and try again.` },
-          { status: 400 }
-        );
-      }
-      if (!/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z0-9]{2}$/.test(trimmedGstin.toUpperCase())) {
-        return NextResponse.json(
-          { error: `Invalid GSTIN format "${trimmedGstin}". Expected format: 22AAAAA0000A1Z5` },
-          { status: 400 }
-        );
-      }
+    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+    if (!gstinCheck.ok) {
+      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+    }
+    if (gstinCheck.pan && pan && normalizePan(pan) && normalizePan(pan) !== gstinCheck.pan) {
+      return NextResponse.json(
+        { error: `PAN ${String(pan).toUpperCase()} does not match the PAN inside GSTIN (${gstinCheck.pan}).`, code: 'PAN_GSTIN_MISMATCH' },
+        { status: 400 }
+      );
     }
 
     if (!createdByUserId) {
@@ -230,7 +226,8 @@ export async function POST(request: NextRequest) {
     };
 
     // Use provided state_code or calculate from state name
-    const finalStateCode = state_code || (state ? getStateCode(state) : null);
+    const finalState = gstinCheck.state;
+    const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
 
     // Auto-approve when linked to business (remove approval requirement)
     const approvalStatus = linked_business_id ? 'approved' : 'none';
@@ -241,10 +238,7 @@ export async function POST(request: NextRequest) {
 
     const phoneNorm = normalizePhoneOrNull(phone);
 
-    const gstinNorm =
-      gstin && typeof gstin === 'string' && gstin.trim()
-        ? gstin.trim().toUpperCase()
-        : null;
+    const gstinNorm = gstinCheck.gstin;
 
     if (gstinNorm) {
       const existingGstin = await db.queryOne<Supplier>(
@@ -285,7 +279,7 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `, [
       business_id, name, phoneNorm, email, address,
-      city, state, finalStateCodeResolved, pincode, gstinNorm,
+      city, finalState, finalStateCodeResolved, pincode, gstinNorm,
       opening_balance, opening_balance_type,
       linked_business_id || null,
       linked_business_id ? business_id : null, // Set requester if linking

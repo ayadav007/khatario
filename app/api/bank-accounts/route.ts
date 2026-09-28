@@ -3,6 +3,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId 
 import { queryRows, queryOne } from '@/lib/db';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
+import { postBankOpeningBalance } from '@/lib/accounting/account-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -159,8 +160,33 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    console.log('[Bank Accounts API] Bank account created successfully:', account?.id);
-    return NextResponse.json({ account }, { status: 201 });
+    let saved = account;
+    if (account && Number(opening_balance) !== 0) {
+      try {
+        const ledgerId = await postBankOpeningBalance({
+          businessId: business_id,
+          bankAccountId: account.id,
+          ledgerAccountId: ledger_account_id || null,
+          amount: Number(opening_balance),
+          date: opening_balance_date || null,
+          label: `${bank_name} ${account_name}`,
+        });
+        if (ledgerId && !ledger_account_id) {
+          saved = await queryOne(
+            'UPDATE bank_accounts SET ledger_account_id = $1 WHERE id = $2 RETURNING *',
+            [ledgerId, account.id]
+          );
+        }
+      } catch (e: any) {
+        await queryOne('DELETE FROM bank_accounts WHERE id = $1', [account.id]);
+        return NextResponse.json(
+          { error: `Opening balance could not be posted to the ledger: ${e.message}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    return NextResponse.json({ account: saved }, { status: 201 });
   } catch (error: any) {
     console.error('Error adding bank account:', error);
     return NextResponse.json(
@@ -357,6 +383,10 @@ export async function DELETE(request: NextRequest) {
       throw error;
     }
 
+    await queryOne(
+      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'opening_balance'`,
+      [businessId, id]
+    );
     await queryOne(
       'DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2',
       [id, businessId]

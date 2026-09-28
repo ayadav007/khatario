@@ -7,6 +7,7 @@ import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
 import { X } from 'lucide-react';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
+import { checkGstin, isValidGstin } from '@/lib/tax/gstin';
 import { Customer } from '@/types/database';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -168,6 +169,11 @@ export function CreateCustomerModal({
       if (name === 'gstin') {
         setGstinVerified(false);
         setGstinError(false);
+        const check = checkGstin(value);
+        if (check.valid && check.stateName && (INDIAN_STATES as readonly string[]).includes(check.stateName)) {
+          newData.state = check.stateName;
+        }
+        else if (value.trim().length === 15) setGstinError(true);
       }
       
       if (sameAsBilling && (name === 'billing_address' || name === 'city' || name === 'state' || name === 'pincode')) {
@@ -189,8 +195,7 @@ export function CreateCustomerModal({
       return;
     }
 
-    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstinRegex.test(formData.gstin)) {
+    if (!isValidGstin(formData.gstin)) {
       setGstinError(true);
       setGstinVerified(false);
       return;

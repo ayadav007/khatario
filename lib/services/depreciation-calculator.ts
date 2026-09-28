@@ -5,6 +5,7 @@
  */
 
 import { queryRows, queryOne, getPool } from '@/lib/db';
+import { postDepreciationVoucher } from '@/lib/accounting/fixed-asset-posting';
 
 export type DepreciationMethod = 'SLM' | 'WDV';
 
@@ -122,6 +123,7 @@ export async function calculateDepreciation(
       // Automatic calculation
       depreciationAmount = calculateDepreciationAmount(
         openingBookValue,
+        parseFloat(assetData.purchase_cost || 0),
         assetData.depreciation_method,
         parseFloat(assetData.depreciation_rate || 0),
         parseFloat(assetData.useful_life_years || 0),
@@ -158,8 +160,9 @@ export async function calculateDepreciation(
 /**
  * Calculate depreciation amount based on method
  */
-function calculateDepreciationAmount(
+export function calculateDepreciationAmount(
   openingBookValue: number,
+  purchaseCost: number,
   method: DepreciationMethod,
   rate: number,
   usefulLifeYears: number,
@@ -169,20 +172,20 @@ function calculateDepreciationAmount(
 ): number {
   const startDate = new Date(periodStartDate);
   const endDate = new Date(periodEndDate);
-  
-  // Calculate number of days in period
-  const daysInPeriod = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  const daysInYear = 365;
-  const periodFraction = daysInPeriod / daysInYear;
+
+  // Inclusive day count: 1-Apr to 31-Mar is a full year.
+  const daysInPeriod = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  const periodFraction = Math.min(1, daysInPeriod / 365);
 
   if (method === 'SLM') {
-    // Straight Line Method: (Cost - Residual Value) / Useful Life
-    const annualDepreciation = (openingBookValue - residualValue) / usefulLifeYears;
-    return annualDepreciation * periodFraction;
+    // SLM is always on original cost (Schedule II), not on the written-down value.
+    if (!(usefulLifeYears > 0)) return 0;
+    const annualDepreciation = (purchaseCost - residualValue) / usefulLifeYears;
+    return Math.round(annualDepreciation * periodFraction * 100) / 100;
   } else if (method === 'WDV') {
     // Written Down Value: Opening Book Value * Rate
     const annualDepreciation = openingBookValue * (rate / 100);
-    return annualDepreciation * periodFraction;
+    return Math.round(annualDepreciation * periodFraction * 100) / 100;
   }
 
   return 0;
@@ -246,6 +249,17 @@ export async function saveDepreciationSchedule(
   try {
     await client.query('BEGIN');
 
+    const prior = await client.query(
+      `SELECT id, is_posted FROM depreciation_schedule
+        WHERE asset_id = $1 AND financial_year = $2 AND period_start_date = $3 AND period_end_date = $4
+        FOR UPDATE`,
+      [calculation.asset_id, calculation.financial_year, calculation.period_start_date, calculation.period_end_date]
+    );
+    if (prior.rows[0]?.is_posted) {
+      await client.query('ROLLBACK');
+      return prior.rows[0].id;
+    }
+
     // Insert or update depreciation schedule
     const result = await client.query(
       `INSERT INTO depreciation_schedule (
@@ -287,6 +301,27 @@ export async function saveDepreciationSchedule(
 
     // Update fixed asset's accumulated depreciation and current book value
     if (isPosted) {
+      const scheduleId: string = result.rows[0].id;
+      const assetRow = await client.query(
+        `SELECT depreciation_account_id, asset_name, asset_code FROM fixed_assets WHERE id = $1 AND business_id = $2`,
+        [calculation.asset_id, businessId]
+      );
+      const a = assetRow.rows[0];
+      if (a && calculation.depreciation_amount > 0) {
+        const { resolveBranchId } = await import('@/lib/branch-helpers');
+        const branchId = await resolveBranchId({ branchId: null, businessId });
+        await postDepreciationVoucher(client, {
+          businessId,
+          branchId,
+          voucherId: scheduleId,
+          expenseAccountId: a.depreciation_account_id,
+          amount: Math.round(calculation.depreciation_amount * 100) / 100,
+          date: calculation.period_end_date,
+          label: `Depreciation: ${a.asset_name} - ${calculation.financial_year}`,
+          reference: a.asset_code,
+        });
+        await client.query(`UPDATE depreciation_schedule SET journal_entry_id = $1 WHERE id = $1`, [scheduleId]);
+      }
       await client.query(
         `UPDATE fixed_assets
          SET accumulated_depreciation = accumulated_depreciation + $1,

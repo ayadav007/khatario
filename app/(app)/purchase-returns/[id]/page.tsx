@@ -52,6 +52,8 @@ interface PurchaseReturnDetail {
   refund_amount?: number | null;
   itc_reversed?: boolean;
   notes?: string;
+  status?: string | null;
+  cancellation_reason?: string | null;
   items: ReturnItem[];
 }
 
@@ -84,6 +86,7 @@ export default function PurchaseReturnDetailPage() {
   useMobileHeaderTitleOverride(data?.return_number);
   const [loading, setLoading] = useState(true);
   const [savingRefund, setSavingRefund] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [refundForm, setRefundForm] = useState({
     refund_status: 'pending' as RefundStatus,
     refund_mode: '',
@@ -180,6 +183,36 @@ export default function PurchaseReturnDetailPage() {
     }
   }
 
+  async function cancelReturn() {
+    if (!business?.id || !data) return;
+    const reason = window.prompt(
+      `Cancel ${data.return_number}? Stock goes back in, and the debit note's ledger entries are reversed. Enter a reason:`
+    );
+    if (!reason || !reason.trim()) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/purchase-returns/${returnId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ business_id: business.id, reason: reason.trim() }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setData((prev) => (prev ? { ...prev, ...json.purchaseReturn, items: prev.items } : prev));
+        toast.success('Purchase return cancelled');
+      } else {
+        const err = await safeJsonParse(res);
+        toast.error(getApiErrorMessage(err, 'Failed to cancel purchase return'));
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to cancel purchase return');
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -212,13 +245,33 @@ export default function PurchaseReturnDetailPage() {
           </>
         }
         trailing={
-          <span
-            className={`px-3 py-1 text-sm font-medium rounded-full border capitalize ${statusClass(data.refund_status)}`}
-          >
-            {data.refund_status}
-          </span>
+          data.status === 'cancelled' ? (
+            <span className="px-3 py-1 text-sm font-medium rounded-full border bg-red-50 text-red-800 border-red-200">
+              Cancelled
+            </span>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-3 py-1 text-sm font-medium rounded-full border capitalize ${statusClass(data.refund_status)}`}
+              >
+                {data.refund_status}
+              </span>
+              {canUpdate && (
+                <Button variant="outline" size="sm" onClick={cancelReturn} disabled={cancelling}>
+                  {cancelling ? 'Cancelling…' : 'Cancel return'}
+                </Button>
+              )}
+            </div>
+          )
         }
       />
+
+      {data.status === 'cancelled' && data.cancellation_reason && (
+        <Card padding="md">
+          <p className="text-sm text-text-secondary">Cancellation reason</p>
+          <p className="text-sm text-text-primary">{data.cancellation_reason}</p>
+        </Card>
+      )}
 
       <Card padding="md">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

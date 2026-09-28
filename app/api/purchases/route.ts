@@ -753,10 +753,13 @@ export async function POST(request: NextRequest) {
         ],
       );
 
-      // If item_id is missing, resolve against catalogue (exact → HSN → fuzzy name)
+      const lineIsService = lineIntent === 'service';
+
+      // If item_id is missing, resolve against catalogue (exact → HSN → fuzzy name).
+      // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
       let effectiveItemId =
         item.item_id && String(item.item_id).trim() !== '' ? String(item.item_id).trim() : null;
-      if (!effectiveItemId && item.item_name) {
+      if (!effectiveItemId && item.item_name && !lineIsService) {
         effectiveItemId = await resolveCatalogItemIdForPurchase(client, business_id, {
           name: String(item.item_name),
           hsn_sac: item.hsn_sac ?? null,
@@ -807,7 +810,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const lineIsService = lineIntent === 'service';
       if (status === 'final' && !lineIsService && !effectiveItemId) {
         await client.query('ROLLBACK');
         return NextResponse.json(
@@ -819,7 +821,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (status === 'final' && effectiveItemId) {
+      if (status === 'final' && effectiveItemId && !lineIsService) {
         const itemTypeRes = await client.query(
           'SELECT item_type, track_batch, track_serial FROM items WHERE id = $1 AND business_id = $2',
           [effectiveItemId, business_id]
@@ -878,17 +880,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate inventory amount (total of goods lines persisted on purchase_items)
+    // Inventory is capitalised at this bill's cost (net of discount, excl. GST), matching the
+    // unit_cost written to stock_movements — not the item master's purchase_price.
     let totalInventoryAmount = 0;
     if (status === 'final') {
       const invRes = await client.query(
         `
-        SELECT COALESCE(SUM(
-          (COALESCE(i.purchase_price::numeric, pi.unit_price::numeric)) * pi.quantity::numeric
-        ), 0) AS total
+        SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
         FROM purchase_items pi
         JOIN items i ON i.id = pi.item_id AND i.business_id = $2
         WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+          AND COALESCE(pi.line_item_type, 'goods') <> 'service'
       `,
         [purchase.id, business_id]
       );

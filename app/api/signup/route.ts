@@ -337,6 +337,14 @@ export async function POST(request: NextRequest) {
       if (!coa.ok) {
         softFailures.push(`chart_of_accounts: ${errorMessage(coa.error)}`);
         console.error('Error creating default Chart of Accounts:', coa.error);
+      } else {
+        const heads = await withSignupSavepoint(client, 'sp_coa_heads', async () => {
+          const fn = await client.query(`SELECT to_regproc('ensure_standard_account_heads') IS NOT NULL AS ok`);
+          if (fn.rows[0]?.ok) {
+            await client.query(`SELECT ensure_standard_account_heads($1)`, [businessId]);
+          }
+        });
+        if (!heads.ok) softFailures.push(`standard_account_heads: ${errorMessage(heads.error)}`);
       }
     }
     

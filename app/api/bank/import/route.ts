@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getUserIdFromRequest,
-  getBusinessIdFromRequest,
+  requireTenantBusinessId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne } from '@/lib/db';
@@ -36,8 +36,9 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get('file');
     const bankAccountId = String(form.get('bank_account_id') || '').trim();
-    const businessId =
-      String(form.get('business_id') || '').trim() || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, String(form.get('business_id') || '').trim() || null);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 });

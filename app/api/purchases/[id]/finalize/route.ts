@@ -124,8 +124,10 @@ export async function PATCH(
         const currentBalance = parseFloat(supplierData.rows[0].current_balance ?? '0');
         
         // Calculate new purchase amount (balance after any payments)
-        const purchaseBalance = purchase.balance_amount ?? (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'));
-        const newTotalBalance = currentBalance + purchaseBalance;
+        const purchaseBalance = Number(
+          purchase.balance_amount ?? (parseFloat(purchase.grand_total ?? '0') - parseFloat(purchase.paid_amount ?? '0'))
+        ) || 0;
+        const newTotalBalance = Number(currentBalance) + purchaseBalance;
 
         // Only enforce if credit_limit > 0 (0 means unlimited credit)
         if (creditLimit > 0 && newTotalBalance > creditLimit) {

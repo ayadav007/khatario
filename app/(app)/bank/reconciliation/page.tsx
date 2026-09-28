@@ -16,6 +16,7 @@ import {
   tierBadgeClass,
 } from '@/lib/bank/reconciliation-ui-helpers';
 import { AlertTriangle, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { BrsStatementPanel } from '@/components/bank/BrsStatementPanel';
 
 const REC_NOTE_STORAGE_PREFIX = 'bank-reconciliation-note:';
 
@@ -600,6 +601,10 @@ function BankReconciliationPageContent() {
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
+
+      {business?.id && bankAccountId ? (
+        <BrsStatementPanel businessId={business.id} bankAccountId={bankAccountId} />
+      ) : null}
 
       {statementId && loading && !data ? (
         <div className="rounded-xl border border-border bg-white p-6 shadow-sm">

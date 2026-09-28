@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { createExpenseLedgerEntries } from '@/lib/ledger-utils';
+import { postExpenseVoucher, ExpenseValidationError, type ExpenseSplit } from '@/lib/accounting/expense-posting';
+import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
@@ -95,6 +97,11 @@ export async function GET(request: NextRequest) {
         COALESCE(e.cgst_amount, 0)::float AS cgst_amount,
         COALESCE(e.sgst_amount, 0)::float AS sgst_amount,
         COALESCE(e.igst_amount, 0)::float AS igst_amount,
+        COALESCE(e.itc_eligible, true) AS itc_eligible,
+        COALESCE(e.is_reverse_charge, false) AS is_reverse_charge,
+        e.tds_section,
+        COALESCE(e.tds_amount, 0)::float AS tds_amount,
+        e.supplier_id, e.branch_id,
         ec.name AS category_name
       FROM expenses e
       LEFT JOIN expense_categories ec ON e.category_id = ec.id
@@ -296,72 +303,90 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const expense = await db.queryOne(`
-      INSERT INTO expenses (
-        business_id, branch_id, category_id, amount, description,
-        expense_date, payment_mode, reference_number, created_by,
-        cgst_amount, sgst_amount, igst_amount
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *
-    `, [
-      business_id, finalBranchId, category_id || null, amount, description,
-      expense_date, payment_mode, reference_number, created_by,
-      cgstAmt, sgstAmt, igstAmt,
-    ]);
+    const gstGuard = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [expense_date],
+      action: 'record this expense',
+      checkGstFiled: expenseGstTotal > 0,
+    });
+    if (gstGuard) return gstGuard;
 
-    let expenseLedgerAccountId: string | undefined;
+    let category: ExpenseCategoryRow | null = null;
     if (category_id) {
-      const catRow = await db.queryOne<{ account_id: string | null }>(
-        `SELECT account_id FROM expense_categories WHERE id = $1 AND business_id = $2`,
+      category = await db.queryOne<ExpenseCategoryRow>(
+        `SELECT account_id, COALESCE(itc_blocked, false) AS itc_blocked
+           FROM expense_categories WHERE id = $1 AND business_id = $2`,
         [category_id, business_id]
       );
-      if (catRow?.account_id) {
-        expenseLedgerAccountId = catRow.account_id;
+      if (!category) {
+        return NextResponse.json({ error: 'Invalid category_id for this business' }, { status: 400 });
       }
     }
+    const tax = parseExpenseTaxFields(body, category);
 
-    // Ledger must succeed or the expense is rolled back — P&L reads ledger_entry_lines only.
+    let expense: any;
+    let split: ExpenseSplit;
+    const client = await db.getPool().connect();
     try {
-      await createExpenseLedgerEntries({
+      await client.query('BEGIN');
+      const ins = await client.query(
+        `INSERT INTO expenses (
+           business_id, branch_id, category_id, amount, description,
+           expense_date, payment_mode, reference_number, created_by,
+           cgst_amount, sgst_amount, igst_amount,
+           itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         RETURNING *`,
+        [
+          business_id, finalBranchId, category_id || null, amount, description,
+          expense_date, payment_mode, reference_number, created_by,
+          cgstAmt, sgstAmt, igstAmt,
+          tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount,
+          isOnAccount ? supplier_id : null,
+        ]
+      );
+      expense = ins.rows[0];
+      split = await postExpenseVoucher(client, {
         businessId: business_id,
+        branchId: finalBranchId,
         expenseId: expense.id,
         expenseDate: expense_date,
-        amount: Number(amount),
-        description: description,
+        expenseAccountId: category?.account_id ?? null,
         paymentMode: payment_mode,
-        expenseAccountId: expenseLedgerAccountId,
-        branchId: finalBranchId, // Pass branch_id for branch-wise accounting
-        cgstTotal: cgstAmt,
-        sgstTotal: sgstAmt,
-        igstTotal: igstAmt,
+        description: description ?? null,
+        reference: reference_number ?? null,
+        amount: Number(amount),
+        cgst: cgstAmt,
+        sgst: sgstAmt,
+        igst: igstAmt,
+        ...tax,
       });
+      if (isOnAccount && supplier_id) {
+        await client.query(
+          `UPDATE suppliers
+           SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2 AND business_id = $3`,
+          [split.paymentCredit, supplier_id, business_id]
+        );
+      }
+      await client.query('COMMIT');
     } catch (ledgerError: any) {
-      console.error('Error creating ledger entries for expense:', ledgerError);
-      await db.query(`DELETE FROM expenses WHERE id = $1 AND business_id = $2`, [
-        expense.id,
-        business_id,
-      ]);
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('Error creating expense:', ledgerError);
+      const validation = ledgerError instanceof ExpenseValidationError;
       return NextResponse.json(
         {
           error:
             ledgerError?.message ||
             'Could not post this expense to the ledger. Fix the issue below and try again.',
-          code: 'LEDGER_POST_FAILED',
+          code: validation ? 'EXPENSE_INVALID' : 'LEDGER_POST_FAILED',
         },
-        { status: 500 }
+        { status: validation ? 400 : 500 }
       );
-    }
-
-    // Bill received, not yet paid: increase supplier’s “you owe them” if linked (matches settlement via Payment Out)
-    if (isOnAccount && supplier_id) {
-      const amt = Number(amount);
-      await db.query(
-        `UPDATE suppliers
-         SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2 AND business_id = $3`,
-        [amt, supplier_id, business_id]
-      );
+    } finally {
+      client.release();
     }
 
     // CRITICAL: Log activity for audit trail

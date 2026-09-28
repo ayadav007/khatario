@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { getStateCode } from '@/lib/gst-utils';
+import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { normalizePan } from '@/lib/tax/pan';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +56,21 @@ export async function PATCH(
     const businessId = params.id;
     const body = await request.json();
 
+    const userId = getUserIdFromRequest(request, body);
+    const scopedBusinessId = getBusinessIdFromRequest(request, body);
+    if (!userId || !scopedBusinessId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (scopedBusinessId !== businessId) {
+      return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    }
+    try {
+      await authorize(userId, 'settings', 'update', { businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
     const {
       name,
       email,
@@ -59,11 +78,11 @@ export async function PATCH(
       address_line1,
       address_line2,
       city,
-      state,
-      state_code,
+      state: stateIn,
+      state_code: stateCodeIn,
       pincode,
-      gstin,
-      pan,
+      gstin: gstinIn,
+      pan: panIn,
       logo_url,
       currency,
       invoice_prefix,
@@ -77,6 +96,31 @@ export async function PATCH(
       industry,
       business_model,
     } = body;
+
+    let state = stateIn as string | null | undefined;
+    let state_code = stateCodeIn as string | null | undefined;
+    let gstin = gstinIn as string | null | undefined;
+    let pan = panIn as string | null | undefined;
+    if (typeof gstinIn === 'string' && gstinIn.trim()) {
+      const gstinCheck = resolveGstinAndState({ gstin: gstinIn, state: stateIn, state_code: stateCodeIn });
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      gstin = gstinCheck.gstin;
+      state = gstinCheck.state;
+      state_code = gstinCheck.state_code;
+      if (panIn && normalizePan(panIn) && gstinCheck.pan && normalizePan(panIn) !== gstinCheck.pan) {
+        return NextResponse.json(
+          { error: `PAN does not match the PAN inside GSTIN (${gstinCheck.pan}).`, code: 'PAN_GSTIN_MISMATCH' },
+          { status: 400 }
+        );
+      }
+      pan = gstinCheck.pan ?? pan;
+    }
+    if (typeof pan === 'string' && pan.trim() && !normalizePan(pan)) {
+      return NextResponse.json({ error: 'Invalid PAN. Expected format: ABCDE1234F', code: 'INVALID_PAN' }, { status: 400 });
+    }
+    if (typeof pan === 'string') pan = normalizePan(pan) ?? null;
 
     // Build update query dynamically
     const updates: string[] = [];

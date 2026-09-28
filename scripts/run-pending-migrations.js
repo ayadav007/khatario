@@ -117,18 +117,47 @@ async function maybeAutoBootstrapExistingDb(client, allFiles) {
     return;
   }
 
-  const baseline = parseInt(process.env.MIGRATION_BASELINE || '239', 10);
+  if (!process.env.MIGRATION_BASELINE) {
+    console.log(
+      'Existing database with empty schema_migrations and no MIGRATION_BASELINE set — nothing auto-marked; all migrations will run (they are expected to be idempotent).\n'
+    );
+    return;
+  }
+  const baseline = parseInt(process.env.MIGRATION_BASELINE, 10);
   if (Number.isNaN(baseline)) return;
 
-  const toMark = allFiles.filter((f) => {
+  const candidates = allFiles.filter((f) => {
     const match = f.match(/^(\d+)_/);
     return match && parseInt(match[1], 10) < baseline;
   });
 
+  // Only mark a file as applied when every table it creates already exists.
+  const toMark = [];
+  const skipped = [];
+  for (const file of candidates) {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'database', 'migrations', file), 'utf8');
+    const tables = [...sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?/gi)].map(
+      (m) => m[1].toLowerCase()
+    );
+    let missing = null;
+    for (const t of tables) {
+      const { rows: r } = await client.query(`SELECT to_regclass($1) IS NOT NULL AS ok`, [`public.${t}`]);
+      if (!r[0]?.ok) {
+        missing = t;
+        break;
+      }
+    }
+    if (missing) skipped.push(`${file} (missing table ${missing})`);
+    else toMark.push(file);
+  }
+
   console.log(
     `Existing database (schema_migrations empty). Auto-marking ${toMark.length} migrations below ${baseline}...`
   );
-  console.log(`(Set MIGRATION_BASELINE in .env.production to change this one-time bootstrap.)\n`);
+  if (skipped.length) {
+    console.log(`Not marked (will run because their tables are missing):\n  ${skipped.join('\n  ')}`);
+  }
+  console.log(`(MIGRATION_BASELINE controls this one-time bootstrap.)\n`);
 
   for (const file of toMark) {
     await client.query(

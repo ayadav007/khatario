@@ -194,51 +194,25 @@ export async function POST(
 
     // If inter-branch transfer, create purchase entries for destination branch
     if (transfer.inter_branch_invoice_id) {
-      try {
-        const invoice = await queryOne(`
-          SELECT id, invoice_number, invoice_date, grand_total, subtotal
-          FROM invoices
-          WHERE id = $1
-        `, [transfer.inter_branch_invoice_id]);
-
-        if (invoice) {
-          // Get destination warehouse branch
-          const toWarehouse = await queryOne(`
-            SELECT branch_id FROM warehouses WHERE id = $1
-          `, [transfer.to_location_id]);
-
-          if (toWarehouse?.branch_id) {
-            // Calculate inventory amount (COGS)
-            let inventoryAmount = 0;
-            for (const receivedItem of itemsToReceive) {
-              if (receivedItem.item_id) {
-                const itemData = await client.query(`
-                  SELECT purchase_price, item_type FROM items WHERE id = $1
-                `, [receivedItem.item_id]);
-                
-                if (itemData.rows[0]?.item_type === 'goods' && itemData.rows[0]?.purchase_price) {
-                  const itemCost = Number(itemData.rows[0].purchase_price) || 0;
-                  const quantity = Number(receivedItem.received_qty || receivedItem.qty || 0);
-                  inventoryAmount += itemCost * quantity;
-                }
-              }
-            }
-
-            await createInterBranchPurchaseEntries({
-              businessId: transfer.business_id,
-              toBranchId: toWarehouse.branch_id,
-              invoiceId: invoice.id,
-              invoiceNumber: invoice.invoice_number,
-              invoiceDate: invoice.invoice_date,
-              grandTotal: invoice.grand_total,
-              subtotal: invoice.subtotal,
-              inventoryAmount: inventoryAmount,
-            });
-          }
-        }
-      } catch (accountingError) {
-        console.error('Error creating inter-branch purchase entries:', accountingError);
-        // Don't fail transfer receipt if accounting fails
+      const invoice = await client.query(
+        `SELECT id, invoice_date FROM invoices WHERE id = $1`,
+        [transfer.inter_branch_invoice_id]
+      );
+      const toWarehouse = await client.query(`SELECT branch_id FROM warehouses WHERE id = $1`, [transfer.to_location_id]);
+      if (invoice.rows[0] && toWarehouse.rows[0]?.branch_id) {
+        const cogs = await client.query(
+          `SELECT COALESCE(SUM(credit), 0) AS amt
+             FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
+            WHERE l.voucher_id = $1 AND l.voucher_type = 'invoice' AND a.account_code = '1104'`,
+          [transfer.inter_branch_invoice_id]
+        );
+        await createInterBranchPurchaseEntries(client, {
+          businessId: transfer.business_id,
+          toBranchId: toWarehouse.rows[0].branch_id,
+          invoiceId: invoice.rows[0].id,
+          invoiceDate: invoice.rows[0].invoice_date,
+          inventoryAmount: Number(cogs.rows[0]?.amt || 0),
+        });
       }
     }
 

@@ -385,3 +385,199 @@ Retest after deploy: TB shows 3100 Cr ₹2,43,500 and Inventory ₹2,99,250; can
 - HSN netting of a note merges into the invoice row with the same HSN and rate when units differ.
 
 Staging data to correct after deploy: delete test bill AM/2026/52 (reverses stock, GL and the ₹8,000 TDS) and re-enter it as a service bill.
+
+### Run 5 — after deploying 7bd3808 (27 Sep 2026, UI/API plus read-only DB checks)
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| G-HSN2 | Pass | INV-021 Almirah now in Table 12 via item HSN; B2B NOS row = INV-021 2 × ₹9,000 − CN-002 1 × ₹9,000 = 1 / ₹9,000 | Separate PCS / NOS rows only because the QA API calls sent `unit: 'NOS'`; the portal accepts one HSN under two UQCs. Not a product bug |
+| P-DEL | Pass | Probe bill QA-SAC-PROBE-1 + TDS deducted, then deleted → bill soft-deleted, 0 TDS records, 0 ledger lines (purchase and TDS), stock movement gone; TB back to Inventory ₹3,04,250 / TDS Payable ₹8,000, Dr = Cr ₹8,43,129.94 | |
+| P-SAC2 | **Fail** | Probe line SAC 998216 saved as `service`, but catalogue matching linked it by name/HSN to the goods item auto-created by AM/2026/52 → stock +1 | Service lines must never be matched to catalogue goods |
+| P-INVVAL | **Fail** | Same ₹1,000 bill posted Dr Inventory / Cr Purchases **₹40,000** | Purchase capitalised Inventory at `items.purchase_price × qty` instead of the bill's taxable value, while `stock_movements.unit_cost` used the bill cost. Any bill whose price differs from the item master mis-states Inventory and Purchases. Staging DB: 4 bills in other businesses differ by −₹827.94 in total. Purchase returns had the same master-price valuation |
+| F-FINALIZE | Note | `PATCH /api/purchases/[id]/finalize` adds stock but posts no ledger entries | Not called from the UI today; do not wire it up without adding the purchase voucher |
+
+### Fixes after Run 5 (local, awaiting deploy; no migration)
+
+- Service lines (SAC / `service`) skip catalogue matching and never touch stock, even when linked to an item.
+- Purchase Inventory debit = sum of goods lines' `taxable_value` (net of discount, excl. GST), matching stock valuation.
+- Purchase return Inventory credit = returned lines' taxable value, not the item master price.
+
+Open: repair migration for historical bills where the Inventory debit ≠ goods taxable value (4 bills, −₹827.94, non-QA businesses) — pending approval.
+
+## Phase 8 - Books beyond GST (Run 6)
+
+| # | Area | Test |
+|---|------|------|
+| C1–C8 | Chart of accounts | Standard heads present; duplicate code; nature vs type; type vs group; system account rename/delete; edit field whitelist; `is_system` escalation; opening balance edit keeps TB balanced |
+| J1–J9 | Journals | Unbalanced / both-sided lines rejected; create; fetch shows lines; edit narration only; edit lines; delete; voucher numbering unique; locked period on create / move-in; deleted journal leaves no header |
+| B1–B6 | Bank | Bank account opening balance in GL; statement import (CSV/JSON); auto-match; BRS (uncleared cheques / deposits, adjusted balances); bank charges / interest from statement; contra (cash deposit, withdrawal, bank-to-bank) |
+| E1–E5 | Expenses | GST split to Input GST; blocked credit s.17(5); RCM on expense; TDS on expense; edit / delete; category → ledger account |
+| P1–P3 | Payments | Locked period; GST-filed period; TDS on payment out |
+| F1–F4 | Fixed assets | Capitalise asset (Dr asset / Cr bank or creditor); depreciation (IT Act block WDV, 180-day half rate; Companies Act Sch II); disposal gain/loss |
+| V1–V2 | Provisions | Provision entry posts Dr expense / Cr provision; reversal |
+| Y1–Y2 | Year end | Close FY: nominal accounts to Retained Earnings, balanced voucher; carry-forward to new FY |
+| R1–R8 | Reports | Cash flow closing = cash+bank GL; stock valuation = Inventory GL; ageing total = AR GL; party statement = customer balance; BS balances; GSTR-9 Tables 4/6; GSTR-1 vs 3B reconciliation |
+
+### Run 6 — 27 Sep 2026 (API plus read-only DB; code is 7bd3808 on staging)
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| C1 | Minor | 61 accounts / 15 groups; GST, TDS, RCM, ITC suspense present | Missing common Indian heads: Drawings, Salaries & Wages, Rent, Freight Inward, Bank OD/CC, Secured / Unsecured Loans (group 2200 empty), Salary / PF / ESI / Professional Tax Payable, TCS, Suspense |
+| C2–C3 | Pass | Duplicate code 409; asset with credit nature 400 | |
+| C4 | **Fail** | Income account 4290 accepted under group 5200 Indirect Expenses | Type must match group type, else it lands in the wrong statement head |
+| C5 | Pass | System account rename / delete → 400 | |
+| C6 | **Fail (security)** | PATCH `/api/accounts/[id]` with an unknown key → 500 naming the DB column | Body keys are interpolated as SQL identifiers (injection / mass assignment) |
+| C7 | **Fail (security)** | PATCH `{is_system:true}` on a custom account → 200 | Users can make accounts undeletable / uneditable. QA account 4290 is now stuck as system |
+| C8 | **Fail** | PATCH opening_balance ₹5,000 on an expense account → TB Dr ₹8,48,129.94 vs Cr ₹8,43,129.94, `is_balanced:false` (reverted) | Opening balance edits need the contra in Opening Balance Adjustment (3100) or must go through a voucher |
+| J1–J2 | Pass | Unbalanced ₹1,000/₹900 → 400; both sides on one line → 400 | |
+| J3 | **Fail** | GET journal → `lines: []` | Journal view cannot show its entries |
+| J4 | **Fail (data loss)** | PATCH narration only → 200 and all ledger lines of JRN/2026/000002 deleted | Edit without `lines` wipes the voucher |
+| J5 | **Fail** | PATCH with lines → 500 `column "voucher_number" does not exist` | Journal edit is unusable |
+| J6 | **Fail** | Next journal also numbered JRN/2026/000002 (duplicate in DB) | Voucher series must be unique and gap-free for audit trail (Rule 3(1) Companies (Accounts) Rules) |
+| J7 | **Fail** | DELETE journal removes lines but `journal_entries` header remains (two empty headers listed) | |
+| J8 | Partial | Journal moved into locked Aug → 500 from DB trigger (not `PERIOD_LOCKED`); create in Aug hit backdate check first | Lock holds, but the message is a raw 500 |
+| A-DEL | Pass | Account with transactions → deactivated, not deleted | |
+| B1 | **Fail** | Bank account created with opening ₹50,000 → Bank GL unchanged ₹74,590 | Opening balance never posted (Dr Bank / Cr 3100) |
+| B2 | **Fail (env)** | `/api/bank/import/confirm` → 500 `relation "bank_statement_imports" does not exist` | Staging `schema_migrations` marked 177, 196–199 "auto-bootstrap: existing database" on 21-May without running them. Missing: `bank_statement_imports`, `bank_statement_lines.match_status` etc., `bank_statements.reconciliation_status`, `gst_reconciliation_alert_history`, `gst_alert_notification_prefs/logs`, `quantity_request_events`. Check production before go-live |
+| B3 | **Fail** | Legacy `/api/bank-statements/reconcile` → 500 `function extract(unknown, integer) does not exist` | Date difference is an integer; auto-match never runs |
+| B4 | **Fail** | Legacy reconciliation report: statement ₹99,722 vs ledger ₹74,590, difference ₹25,132 only | Not a BRS: no list of cheques issued not presented / deposits not credited, no adjusted balance |
+| B5 | **Missing** | No contra voucher (cash deposit / withdrawal / bank transfer) | Must be done as a journal |
+| E1 | Pass | Expense ₹1,180 (CGST 90 + SGST 90): Dr Admin ₹1,000, Dr Input CGST/SGST ₹90 each, Cr Cash ₹1,180; picked up in GSTR-3B 4A | 3B 4A CGST ₹13,590 = purchases ₹12,960 + ITC-ineligible bill ₹450 (reversed in 4B) + expenses ₹180 |
+| E2 | **Fail** | No blocked-credit flag: food / staff welfare GST always claimed | s.17(5) ITC must be expensed, not debited to Input GST |
+| E3 | **Missing** | No RCM or TDS on expenses; no edit / delete (PUT / DELETE → 405) | Wrong expense can only be fixed by a manual journal |
+| E4 | Minor | 10 default categories, none linked to a ledger account → all post to 5201 Administrative Expenses; no food / staff welfare / travel category | |
+| P1 | Partial | Payment dated in locked Aug → 500 DB trigger message | No route-level `PERIOD_LOCKED` / GST-filed check; payment out cannot record TDS |
+| F1 | **Fail** | `POST /api/fixed-assets` → 500 "Voucher is not balanced … asset_purchase Debit 60000 Credit 0" | Only Dr asset is posted; no Cr bank / creditor. No fixed asset exists in any staging business |
+| F2 | **Fail** (code) | Depreciation posts Dr expense only (no Cr Accumulated Depreciation); `/api/depreciation/calculate` "post" writes no GL; SLM computed on book value | No IT Act block rates / 180-day half rate, no Schedule II lives, no disposal API; no UI page |
+| V1 | **Fail** | Provision QA-PBD + ₹5,000 addition saved; Provisions (2108) still ₹0, no P&L charge | Provisions and tax provisions never post to GL |
+| Y1 | **Fail** (code, not executed) | `/api/accounts/close-year` inserts non-existent columns; `/api/financial-years/[id]/close` posts a one-sided Retained Earnings line and does not close income / expense accounts | Not run on staging (irreversible) |
+| R1 | **Fail** | Cash flow Apr–Sep: actual closing cash+bank ₹75,093.97 vs calculated ₹62,663.97 (₹12,430 unexplained) | Indirect method ignores GST, TDS, other current items; opening cash 0 |
+| R2 | Pass | Stock valuation ₹3,04,250 = Inventory GL ₹3,04,250 | `as_on_date` is ignored |
+| R3 | **Fail** | Receivables ageing ₹2,57,691.96 vs AR GL ₹2,20,955.96 (= customer balances) | Ignores credit notes and shows INV-005 (settled ₹21,600 + TDS ₹2,000) as fully outstanding |
+| R4 | **Fail** | CA-Shreeji statement closing ₹89,690 vs balance ₹79,070 | Credit note CN-002 ₹10,620 missing from party statement / ledger |
+| R5 | Pass | Balance sheet `is_balanced: true`, current-year profit ₹73,049.93 | |
+| R6 | **Fail** | GSTR-9 Table 6B/6C/6D (inputs / capital goods / services) all 0 while 6A = ₹39,580 | Table 6 breakup is mandatory; warning "Purchase Register ₹0" |
+| R7 | **Fail** | GSTR-9 Table 4I–4L (credit / debit notes) 0 though CN/DN exist; warning compares 4N (₹2,62,999.94) with GSTR-1 incl. exempt / exports (₹2,83,499.94) | 4N must be net of notes; the ₹20,500 warning is a false alarm (Table 5) |
+| R8 | Minor | GSTR-1 vs 3B Sep: all heads match (₹35,192) but status "mismatch" | False flags: nil vs exempt split (3B 3.1(c) combines them), RCM inward, B2CS invoices INV-007/008/020 reported as "no GSTR-1 line" |
+
+### Run 7 — 27 Sep 2026 (stock, returns, 2B, conversions, registers)
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| IA1 | **Fail** | DAMAGE adjustment ADJ-000001, 1 Almirah: stock 4 → 3, **no ledger entry**; stock valuation ₹2,97,250 vs Inventory GL ₹3,04,250 | GL posting error is swallowed; reason-code accounts map to 5103 Inter-Branch Purchases / 5104 COGS / 4103 etc. |
+| IA2 | **Fail** | No ITC reversal (₹1,260) on damaged goods | s.17(5)(h): ITC on goods lost, stolen, destroyed, written off or given as free samples must be reversed |
+| PR1 | Pass | QA-PR-001, 2 bags rice ₹2,000 + IGST ₹100: Dr AP ₹2,100 / Cr Input IGST ₹100 / Cr Purchases ₹2,000; Inventory −₹2,000; stock −2; bill and supplier balance ₹50,400; GSTR-3B 4A IGST ₹2,500 → ₹2,400 | |
+| PR2 | **Fail** | 11 bulbs returned against a 10-bulb bill → accepted; bill balance −₹318 | Return qty must be capped at purchased − already returned |
+| PR3 | **Fail** | Client-sent CGST/SGST ₹50 each on a ₹100 line at 18% → accepted; ITC reversed ₹100 instead of ₹18 | Server must recompute GST on returns (as it does for sales debit notes) |
+| 2B1 | **Fail** | Real portal GSTR-2B JSON (`data.docdata.b2b`, invoice-level `txval/igst/cgst/sgst`, `dt`, `rev`, `itcavl`) → `success: true`, **0 invoices imported** | Silent failure; users think 2B is loaded |
+| 2B2 | **Fail** | Same data in GSTR-2A-style flat layout → 4 imported; `POST /api/gst/gstr2b/reconcile` → 500 `column pi.cess_amount does not exist` | Column exists in no migration — 2B reconciliation cannot run anywhere |
+| SO1 | **Fail** (DB) | Sales-order conversion: final invoice ₹100 (another business) with **no ledger lines**; one more final ₹10 invoice without ledger lines | QA plan lacks `sales_orders`, so not re-run; code confirms convert route never posts |
+| ADV | **Missing** | No API to record / adjust / refund advances (table and accounts 2106 / 1107 exist, nothing posts) | GST on advances for services (receipt voucher, Rule 50) and adjustment on invoice not possible |
+| RI | **Missing** (code) | Recurring invoices are stored but no job generates them | |
+| EI | **Missing** (code) | No e-invoice (IRN / QR / GSP); e-way bill is a text field, threshold (inter-state > ₹50,000) only warned on stock transfers | Mandatory e-invoicing above ₹5 Cr AATO |
+| ST | Not run (code) | Inter-branch invoice posts Dr 1109 / Cr 4103 without Output GST; receive posts without Input GST → unbalanced (errors swallowed); approve-later transfers never get the invoice | QA business has one branch |
+| REG1 | Pass | Sales register taxable ₹2,83,399.94 − CN ₹9,300 + DN ₹100 = Sales GL ₹2,74,199.94 | |
+| REG2 | **Fail** | Sales returns report ₹64,074 (3 notes) includes cancelled CN-PROBE-OVER ₹53,100; live notes ₹10,974 | |
+
+QA data left on staging by Run 7: ADJ-000001 (damage, no GL); purchase returns QA-PR-001, QA-PR-OVER, QA-PR-TAX (SEW/RT/501 balance −₹318); two GSTR-2B imports for 2026-09.
+
+QA data left on staging by Run 6: accounts 4290 (stuck as system) and 5291 (inactive); empty journal headers JRN/2026/000002 ×2; bank account QA HDFC + one legacy statement; expense QA-EXP-1 ₹1,180 (cannot be deleted); provision QA-PBD with a ₹5,000 entry (no GL).
+
+## Phase 9 - Two branches and two warehouses (Run 8)
+
+### Run 8 — 28 Sep 2026 (API and UI; staging code is still 7bd3808, so the Phase 0–6 fixes below are not deployed)
+
+Setup, all in QA Trial Traders:
+- Second branch **CA-Ahmedabad** (code AMD), Gujarat, GSTIN `24AAQCT1234A1ZR`.
+- Customer CA-Ahmedabad Textiles (`24AABCA1234F1ZF`) and supplier CA-Surat Steel (`24AAFCS5678K1ZU`).
+- Warehouse mode switched on, with warehouses CA-Pune Godown 1 and 2 (branch MAIN) and CA-Ahmedabad Godown (branch AMD).
+
+Two branches:
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| MB1 | **Fail** | Branch accepted with a GSTIN whose PAN differs from the business (`24AAQCT9999B1ZL`), with GSTIN 24 but state Maharashtra, and with a bad check digit | All GSTINs of one person share the PAN. Validation is in the local Phase 5 fix, not deployed. The three probe branches were deactivated |
+| MB2 | **Fail (blocker)** | First invoice from the new branch → 500 `duplicate key … idx_invoices_business_invoice_number` | The per-branch series restarts at INV-001, but staging still has the business-wide unique index. Migration 125 drops it, so it was probably never run (same auto-bootstrap gap as B2). Workaround used: branch prefix `AMD` |
+| MB3 | **Fail** | AMD-003: Ahmedabad → Gujarat customer, POS 24 sent → IGST ₹3,600 | Must be CGST ₹1,800 + SGST ₹1,800. Intra- vs inter-state is decided against the business state (27), never the branch state. Still true in local code |
+| MB4 | Pass (by accident) | AMD-002: Ahmedabad → Maharashtra customer → IGST ₹1,800 | Right tax, but POS stored blank |
+| MB5 | **Fail** | Invoice without POS (API / offline path) → POS null and IGST, even for a Maharashtra customer from Pune (INV-024) | The local Phase 5 fix derives POS from the customer GSTIN. INV-024 is a wrong September invoice and should be cancelled |
+| MB6 | **Fail** | Purchase SS/26/101 at Ahmedabad from Gujarat supplier → POS 27, IGST ₹7,200 | Should be CGST + SGST ₹3,600 each, credited to the Gujarat GSTIN. Purchases also use the business state |
+| MB7 | **Fail** | AMD-001 view / PDF prints "Pune, Maharashtra, GSTIN 27AAQCT1234A1ZL", no POS | Rule 46: the invoice must carry the GSTIN and address of the registration that supplies. As printed it is not a valid invoice of the Gujarat GSTIN |
+| MB8 | Partial | GSTR-1 split by branch works: AMD JSON carries `gstin 24AAQCT1234A1ZR` and only AMD invoices, doc series AMD-001..002 | JSON fills blank POS with `24`, so AMD-001 (POS 24, IGST) and AMD-002 (POS 24, customer in 27) would both be rejected by the portal |
+| MB9 | **Fail** | Consolidated TB ₹10,07,091.94; MAIN ₹6,69,191.94 + AMD ₹94,400 = ₹7,63,591.94; Inventory ₹3,42,339.66 vs ₹78,239.66 + ₹20,600 | ₹2,43,500 of lines carry no branch, so branch TBs and balance sheets are not complete. To confirm with psql |
+| MB10 | Observation | AMD COGS ₹7,200 per almirah although AMD only bought at ₹8,000; AMD Inventory debit ₹35,000 on a ₹40,000 bill | Master-price valuation (Run 5 P-INVVAL, fixed locally). COGS is not per-branch cost |
+
+Two warehouses:
+
+| # | Result | Seen | CA comment |
+|---|--------|------|------------|
+| WH1 | **Fail** | Turning warehouse mode on changes only a flag. Stock stays in the branch table, and every warehouse starts at 0 | Existing businesses lose sellable stock the moment they switch. The PATCH has no permission check (any signed-in staff can switch it) |
+| WH2 | **Fail** | "Migrate stock" (offered in the UI after creating a warehouse) put the business total, 6 almirahs, into CA-Pune Godown 1, including Ahmedabad's 3. Ahmedabad Godown = 0, so AMD cannot sell | It ignores branch split and adds again on every run (a second click doubles stock). It also takes `business_id` from the body with no tenant check (IDOR), and early returns release the DB client twice |
+| WH3 | Pass | Ahmedabad sale from a Pune godown → 400 "not accessible by branch"; from empty AMD godown → 400 insufficient stock | |
+| WH4 | Pass | Purchase DSW/26/880 into Godown 2 (4 × ₹8,000, CGST/SGST ₹2,880 each); sale INV-024 from Godown 2 → Godown 2 = 3 | |
+| WH5 | **Fail (blocker)** | Transfer Godown 2 → Godown 1: created `pending`, dispatch → 500 `operator is not unique: - unknown` | `VALUES ($1, $2, -$3)` on an untyped parameter. No transfer can ever be dispatched. Same code locally |
+| WH6 | **Fail** | Transfer Pune Godown 1 → Ahmedabad Godown (different GSTINs) created with no inter-branch tax invoice | Supply between distinct persons (Sch. I para 2) needs a tax invoice at the transfer value, with IGST 27 → 24. Both test transfers cancelled |
+| WH7 | **Fail** | Stock valuation: consolidated 6 almirahs; Godown 1 = 6, Godown 2 = 3, AMD = 0 (true total 9); branch view MAIN 3 / AMD 3 (stale branch table); all valued at master price ₹7,000 | In warehouse mode `items.current_stock` and the branch view are never updated. The consolidated and branch reports disagree with the warehouses and with Inventory GL |
+
+QA data left on staging by Run 8:
+- **Branches:** CA-Ahmedabad (active, prefix AMD) and CA-Probe PAN / State / Chk (deactivated).
+- **Warehouses:** CA-Pune Godown 1 and 2, CA-Ahmedabad Godown. Warehouse mode is **on**.
+- **Documents:**
+  - invoices AMD-001, AMD-002, AMD-003, INV-024 (wrong tax) and INV-025;
+  - purchases SS/26/101 (wrong tax) and DSW/26/880;
+  - transfers CA-TR-001 and CA-TR-002, both cancelled.
+- **Parties:** customer CA-Ahmedabad Textiles; supplier CA-Surat Steel.
+
+## Fix plan, Phases 0–6 (local, awaiting commit and deploy)
+
+Migrations 313–318 must run in order, as `khatario_user`. Each is safe to re-run and starts with a `-- repair:` header. Migration 318 must ship with the code, because the invoice and purchase balance recomputation now reads `advance_adjusted`.
+
+| Phase | Findings fixed | Migration |
+|-------|----------------|-----------|
+| 0 | Run 5 fixes (service lines, purchase / return Inventory at taxable value); migration runner no longer marks unapplied files as applied without `MIGRATION_BASELINE` | 312 |
+| 1 | C6, C7 (account PATCH whitelist, no `is_system`); C8 (opening balance through a 3100 voucher); J3–J7 (journal lines on GET, narration-only PATCH, line replace, unique numbering, header+lines delete); J8, P1 (route-level `PERIOD_LOCKED` / `GST_PERIOD_FILED`) | 313 |
+| 2 | C4 (type vs group); C1 (standard heads); B1 (bank opening balance); F1, F2 (capitalisation and depreciation vouchers balanced); V1 (provisions post); IA1, IA2 (stock adjustment GL and s.17(5)(h) ITC reversal); E2–E4 (blocked credit, RCM, TDS, edit / delete, category accounts); SO1 (conversions post through the invoice service); ST (inter-branch GST); Y1 (year close) | 314, 315 |
+| 3 | PR2, PR3 (return quantity cap, server-side GST, cancel); 2B1 (portal GSTR-2B JSON); 2B2 (cess column) | 316 |
+| 4 | R1 (cash flow ties to cash+bank GL); R2 (stock as-on date); R3 (ageing = AR GL); R4 (party statement with notes and TDS); R6, R7 (GSTR-9 6B–6D, 4I–4L); R8 (GSTR-1 vs 3B false flags); REG2 (cancelled notes excluded); `credit_metrics` string concatenation | — |
+| 5 | M1 (PAN from GSTIN); M2 (GSTIN check digit, state); M3 (POS from GSTIN); M4 (HSN master and digits by turnover); M5 (rate slabs); LIFO removed; UQC; invoice-level inclusive pricing; future-date warning; debit-note numbering, HSN on notes, CDNR link; purchase picker and discount-account UX | 317 |
+| 6 | See below | 318 |
+
+Phase 6 (missing accounting basics):
+
+- **Contra (B5):** `/contra` page and `POST /api/contra` for cash deposit, cash withdrawal and bank-to-bank transfer; numbered `CTR/YYYY/nnnnnn`; cash-to-cash rejected.
+- **Bank (B3, B4):**
+  - Legacy auto-match date-difference crash fixed.
+  - Bank routes take the business from the session, not the body. This closes an IDOR in auto-match, match, complete, ignore, undo, import and create-entry.
+  - BRS panel on the reconciliation page: balance per books, cheques issued but not presented, deposits not credited, bank debits / credits not in books, balance per bank, and any unexplained difference. The QA HDFC account shows ₹59,000 unexplained, from the legacy test statement.
+  - One-click bank charge / interest posting now checks period locks and uses the journal number series.
+- **Advances (ADV):** `/advances` page.
+  - Receipt: Dr Bank / Cr 2106. For services, the receipt voucher carries GST on the tax-inclusive advance (Rule 50), split intra- or inter-state by place of supply. Goods advances carry no GST.
+  - Adjustment against a final invoice reverses the advance GST proportionally.
+  - Refund voucher (Rule 51).
+  - Supplier advances go through 1107.
+  - Vouchers are numbered RV / ADJ / RFV / ADVP / ADVR `/FY/nnnnn`.
+  - GSTR-1 Tables 11A / 11B (`at` / `txpd` in the JSON) and document series 6 and 8 in Table 13. GSTR-3B 3.1(a) adds advances received and deducts advances adjusted.
+- **Recurring invoices (RI):**
+  - `/recurring-invoices` page.
+  - Cron `/api/cron/recurring-invoices` (Bearer `CRON_SECRET`, daily 01:00 IST) generates draft or final invoices through the invoice service.
+  - Idempotent on `(recurring_invoice_id, run_date)`; skips locked periods and records `last_error`.
+  - The crontab lines are in `docs/SERVER_INFRASTRUCTURE.md`.
+- **Fixed assets (F2):** `/fixed-assets` page.
+  - Capitalisation now checks PBAC, the period lock and account ownership. It stores the put-to-use date, Income-tax block and Schedule II category.
+  - Book depreciation follows Schedule II lives, pro rata by days from the put-to-use date. SLM is on cost; the WDV rate is derived from life and residual value. A run cannot overlap an earlier one or cross 31 March.
+  - The depreciate route now uses the session business, not `business_id` from the body.
+  - Disposal charges depreciation up to the disposal date, then posts Dr proceeds + Dr 1202 / Cr asset cost, with profit to 4205 or loss to 5218.
+  - Income-tax s.32 block WDV report: half rate when the asset is put to use for fewer than 180 days in its first year; sale proceeds reduce the block; s.50 STCG, or STCL when a block ceases. Additional depreciation under s.32(1)(iia) is not included.
+
+Jest: 51 tests across the accounting, bank and recurring suites pass; `tsc --noEmit` is clean.
+
+### Run 8 checklist (after deploy)
+
+| # | Check |
+|---|-------|
+| R8-CT | Contra: cash deposit ₹5,000 into QA HDFC; TB unchanged in total, Cash −₹5,000, Bank +₹5,000 |
+| R8-BRS | BRS panel for QA HDFC as on 30 Sep: adjusted book balance = balance per bank, or the difference is explained |
+| R8-ADV | Service advance ₹11,800 at 18% intra-state, then adjust against an invoice and refund the rest; check 2106, output GST, GSTR-1 11A / 11B and 3B 3.1(a) |
+| R8-RI | Monthly recurring draft from a template invoice; run now twice → one invoice only |
+| R8-FA | Asset ₹1,00,000 put to use 1 Oct, SLM 5 years: depreciation to 31 Mar = ₹9,473.97 (residual ₹5,000); dispose for ₹80,000 → gain / loss posted; IT block report shows a half-rate addition |
+| R8-TB | Read-only psql: TB Dr = Cr; no voucher with Dr ≠ Cr; no journal header without lines |

@@ -216,13 +216,15 @@ function categoriesFromGstr1Bundle(
     zero.cess += (r as { cess_amount: number }).cess_amount ?? 0;
   }
 
+  // GSTR-3B 3.1(c)/(e) reports nil, exempt and non-GST together, so compare them as one bucket.
   const exempt = emptyBlock();
   const nilRated = emptyBlock();
   for (const n of bundle.nil) {
-    exempt.taxable_value += n.exempt_supply + n.non_gst_supply;
+    exempt.taxable_value += n.nil_supply + n.exempt_supply + n.non_gst_supply;
     nilRated.taxable_value += n.nil_supply;
   }
 
+  // 3.1(a)/(b) are net of credit/debit notes; fold notes into the same buckets for a like-for-like compare.
   const cdn = emptyBlock();
   for (const n of bundle.cdn) {
     const s = n.note_type === 'C' ? -1 : 1;
@@ -231,6 +233,15 @@ function categoriesFromGstr1Bundle(
     cdn.cgst += s * n.cgst_amount;
     cdn.sgst += s * n.sgst_amount;
     cdn.cess += s * n.cess_amount;
+    const zeroRatedNote =
+      n.place_of_supply?.startsWith('96') || n.cdnur_typ === 'EXPWP' || n.cdnur_typ === 'EXPWOP' ||
+      String(n.note_supply_type || '').startsWith('SEZ');
+    const target = zeroRatedNote ? zero : outward;
+    target.taxable_value += s * n.taxable_value;
+    target.igst += s * n.igst_amount;
+    target.cgst += s * n.cgst_amount;
+    target.sgst += s * n.sgst_amount;
+    target.cess += s * n.cess_amount;
   }
 
   return {
@@ -244,8 +255,8 @@ function categoriesFromGstr1Bundle(
     zero_rated: {
       taxable_value: round2(zero.taxable_value),
       igst: round2(zero.igst),
-      cgst: 0,
-      sgst: 0,
+      cgst: round2(zero.cgst),
+      sgst: round2(zero.sgst),
       cess: round2(zero.cess),
     },
     exempt: {
@@ -472,6 +483,25 @@ async function fetchInvoiceDateMismatchIds(
   return new Set(rows.map((r) => r.id));
 }
 
+/** Invoices reported only in aggregate (B2CS): no recipient GSTIN, domestic, not in B2CL. */
+async function fetchB2csInvoiceIds(businessId: string, invoiceIds: string[]): Promise<Set<string>> {
+  if (invoiceIds.length === 0) return new Set();
+  const pool = getPool();
+  const { rows } = await pool.query<{ id: string }>(
+    `
+    SELECT i.id::text AS id
+    FROM invoices i
+    LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE i.business_id = $1::uuid
+      AND i.id = ANY($2::uuid[])
+      AND COALESCE(NULLIF(TRIM(c.gstin), ''), '') = ''
+      AND COALESCE(i.place_of_supply_state_code, '') NOT IN ('96', '97')
+    `,
+    [businessId, invoiceIds]
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
 async function assertOutputAccountsExist(businessId: string): Promise<{ ok: boolean; missing: string[] }> {
   const pool = getPool();
   const codes = [GSTR3B_OUTPUT_IGST, GSTR3B_OUTPUT_CGST, GSTR3B_OUTPUT_SGST, GSTR3B_OUTPUT_CESS];
@@ -598,18 +628,18 @@ export async function runGstr13bReconciliation(params: ReconciliationParams): Pr
     exempt: mkCategoryCompare(catG1.exempt, catG3.exempt),
     nil_rated: mkCategoryCompare(
       catG1.nil_rated,
-      catG3.nil_rated,
-      'GSTR-3B other_outward combines nil/exempt in other_outward_supplies; nil_rated split is approximate.'
+      catG1.nil_rated,
+      'Included in the exempt comparison: GSTR-3B reports nil-rated and exempt supplies together.'
     ),
     inward_rcm: mkCategoryCompare(
-      emptyBlock(),
       catG3.inward_rcm,
-      'RCM is not part of GSTR-1 outward supply; shown for 3B context only.'
+      catG3.inward_rcm,
+      'Inward RCM (3.1(d)) is not reported in GSTR-1; excluded from the comparison.'
     ),
     cdn_adjustments: mkCategoryCompare(
       catG1.cdn_adjustments,
-      emptyBlock(),
-      'CDN is embedded in net output ledgers for GSTR-3B; no separate voucher bucket in 3B JSON.'
+      catG1.cdn_adjustments,
+      'Credit/debit notes are already netted into the outward and zero-rated comparisons above.'
     ),
   };
 
@@ -620,12 +650,6 @@ export async function runGstr13bReconciliation(params: ReconciliationParams): Pr
   if (gstr1HeadSource === 'filed_snapshot') {
     warnings.push(
       'Voucher-level comparison uses current invoice/CDN lines from the database (GSTR1Generator); filed snapshot supplies headline tax heads only.'
-    );
-  }
-
-  if (catG1.b2cs_count > 0) {
-    warnings.push(
-      `B2CS has ${catG1.b2cs_count} aggregated row(s) in GSTR-1 — not expanded to per-invoice voucher keys.`
     );
   }
 
@@ -664,6 +688,70 @@ export async function runGstr13bReconciliation(params: ReconciliationParams): Pr
   let mismatched = 0;
   let missingInLedger = 0;
   let missingInGstr1 = 0;
+
+  // B2CS is filed as rate-wise summary rows, so compare those invoices in aggregate.
+  const unkeyedInvoiceIds = [...ledgerMap.keys()]
+    .filter((k) => k.startsWith('invoice:') && !g1Map.has(k))
+    .map((k) => parseVoucherKey(k).id);
+  const b2csIds = await fetchB2csInvoiceIds(businessId, unkeyedInvoiceIds);
+  if (b2csIds.size > 0 || liveBundle.b2cs.length > 0) {
+    const ledgerB2cs = { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    for (const id of b2csIds) {
+      const led = ledgerMap.get(`invoice:${id}`)!;
+      ledgerB2cs.igst += led.igst;
+      ledgerB2cs.cgst += led.cgst;
+      ledgerB2cs.sgst += led.sgst;
+      ledgerB2cs.cess += led.cess;
+      allKeys.delete(`invoice:${id}`);
+    }
+    const g1B2cs = liveBundle.b2cs.reduce(
+      (acc, r) => ({
+        igst: acc.igst + r.igst_amount,
+        cgst: acc.cgst + r.cgst_amount,
+        sgst: acc.sgst + r.sgst_amount,
+        cess: acc.cess + r.cess_amount,
+        taxable_value: acc.taxable_value + r.taxable_value,
+      }),
+      { igst: 0, cgst: 0, sgst: 0, cess: 0, taxable_value: 0 }
+    );
+    const maxD = Math.max(
+      Math.abs(round2(g1B2cs.igst - ledgerB2cs.igst)),
+      Math.abs(round2(g1B2cs.cgst - ledgerB2cs.cgst)),
+      Math.abs(round2(g1B2cs.sgst - ledgerB2cs.sgst)),
+      Math.abs(round2(g1B2cs.cess - ledgerB2cs.cess))
+    );
+    const ok = maxD <= TOLERANCE;
+    if (ok) matched++;
+    else {
+      mismatched++;
+      exceptions.push({
+        type: 'tax_mismatch',
+        voucher_type: 'invoice',
+        difference: maxD,
+        details: `B2CS summary (${liveBundle.b2cs.length} rate row(s), ${b2csIds.size} invoice(s)) differs from output GST ledger by up to ${maxD}.`,
+      });
+    }
+    vouchers.push({
+      voucher_key: 'b2cs:summary',
+      voucher_type: 'invoice',
+      document_id: 'b2cs',
+      status: ok ? 'matched' : 'value_mismatch',
+      gstr1: {
+        igst: round2(g1B2cs.igst),
+        cgst: round2(g1B2cs.cgst),
+        sgst: round2(g1B2cs.sgst),
+        cess: round2(g1B2cs.cess),
+        taxable_value: round2(g1B2cs.taxable_value),
+      },
+      ledger: {
+        igst: round2(ledgerB2cs.igst),
+        cgst: round2(ledgerB2cs.cgst),
+        sgst: round2(ledgerB2cs.sgst),
+        cess: round2(ledgerB2cs.cess),
+      },
+      max_head_diff: maxD,
+    });
+  }
 
   for (const key of allKeys) {
     const { type, id } = parseVoucherKey(key);

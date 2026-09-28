@@ -18,6 +18,7 @@ import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
+import { checkGstin } from '@/lib/tax/gstin';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -67,6 +68,7 @@ export interface CreateInvoiceInput {
   billing_address?: string | null;
   shipping_address?: string | null;
   place_of_supply_state_code?: string | null;
+  prices_include_gst?: boolean;
   document_type?: string;
   is_export?: boolean;
   template_id?: string | null;
@@ -90,6 +92,8 @@ export interface CreateInvoiceOptions {
   forceServerInvoiceNumber?: boolean;
   replayLogId?: string | null;
   deviceId?: string | null;
+  /** Recurring invoices: a draft is numbered and saved but posts no stock, balance or ledger. */
+  allowDraft?: boolean;
 }
 
 export interface CreateInvoiceResult {
@@ -328,7 +332,8 @@ export async function createInvoiceInTransaction(
   if (!created_by) {
     throw new InvoiceCreateServiceError('created_by is required', 400, 'VALIDATION_ERROR');
   }
-  if (status !== 'final') {
+  const isDraft = status === 'draft' && options.allowDraft === true;
+  if (status !== 'final' && !isDraft) {
     throw new InvoiceCreateServiceError(
       'Offline replay only supports status final',
       400,
@@ -373,12 +378,16 @@ export async function createInvoiceInTransaction(
   });
 
   if (body.customer_id) {
-    const cust = await client.query(
-      `SELECT id FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    const cust = await client.query<{ id: string; gstin: string | null }>(
+      `SELECT id, gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
       [body.customer_id, business_id]
     );
     if (cust.rows.length === 0) {
       throw new InvoiceCreateServiceError('Customer not found', 400, 'CUSTOMER_NOT_FOUND');
+    }
+    if (!body.place_of_supply_state_code && !body.is_export) {
+      const gstinCheck = checkGstin(cust.rows[0].gstin ?? '');
+      if (gstinCheck.valid) body.place_of_supply_state_code = gstinCheck.stateCode;
     }
   }
 
@@ -482,7 +491,7 @@ export async function createInvoiceInTransaction(
       totals.cgstTotal,
       totals.sgstTotal,
       totals.igstTotal,
-      false,
+      isDraft,
       document_type,
       body.is_export ?? false,
       created_by,
@@ -493,6 +502,10 @@ export async function createInvoiceInTransaction(
 
   const invoice = invoiceRes.rows[0] as Record<string, unknown>;
   const invoiceId = String(invoice.id);
+  if (body.prices_include_gst === true) {
+    await client.query('UPDATE invoices SET prices_include_gst = true WHERE id = $1', [invoiceId]);
+    invoice.prices_include_gst = true;
+  }
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
@@ -504,7 +517,8 @@ export async function createInvoiceInTransaction(
     const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
       item,
       intraState,
-      zeroRated
+      zeroRated,
+      body.prices_include_gst === true
     );
 
     await client.query(
@@ -540,13 +554,30 @@ export async function createInvoiceInTransaction(
       ]
     );
 
-    await deductGoodsStockForLine(client, {
-      businessId: business_id,
-      branchId: finalBranchId,
+    if (!isDraft) {
+      await deductGoodsStockForLine(client, {
+        businessId: business_id,
+        branchId: finalBranchId,
+        invoiceId,
+        customerId: body.customer_id || null,
+        item,
+      });
+    }
+  }
+
+  if (isDraft) {
+    return {
+      invoice,
       invoiceId,
-      customerId: body.customer_id || null,
-      item,
-    });
+      invoiceNumber,
+      offlineReferenceNumber: null,
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      grandTotal: totals.grandTotal,
+      cgstTotal: totals.cgstTotal,
+      sgstTotal: totals.sgstTotal,
+      igstTotal: totals.igstTotal,
+    };
   }
 
   const insertedPayments: Array<{

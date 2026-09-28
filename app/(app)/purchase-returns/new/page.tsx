@@ -345,6 +345,7 @@ export default function NewPurchaseReturnPage() {
       place_of_supply_state_code: selectedSupplier?.state_code,
       items: returnItems.map(item => ({
         item_id: item.item_id || null,
+        item_name: item.item_name,
         description: item.description,
         hsn_sac: item.hsn_sac,
         qty: item.qty,

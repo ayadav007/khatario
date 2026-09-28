@@ -195,6 +195,33 @@ export async function PATCH(
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
+    const existingRate = Number((existingItem as { tax_rate?: unknown }).tax_rate ?? 0);
+    if (tax_rate !== undefined && Math.abs(Number(tax_rate || 0) - existingRate) > 0.0001) {
+      const { gstRateError } = await import('@/lib/gst/rates');
+      const rateError = gstRateError(tax_rate || 0);
+      if (rateError) {
+        return NextResponse.json({ error: rateError, code: 'INVALID_GST_RATE' }, { status: 400 });
+      }
+    }
+    const hsnClean = hsn_sac ? String(hsn_sac).replace(/\s/g, '') : '';
+    if (hsnClean && hsnClean !== (existingItem as { hsn_sac?: string | null }).hsn_sac && !/^\d{4,8}$/.test(hsnClean)) {
+      return NextResponse.json(
+        { error: 'HSN/SAC must be 4 to 8 digits', code: 'INVALID_HSN' },
+        { status: 400 },
+      );
+    }
+    const { resolveItemUqc } = await import('@/lib/gst/uqc');
+    const finalUqc = resolveItemUqc({
+      uqc:
+        body.uqc !== undefined
+          ? body.uqc
+          : (unit || 'PCS') === existingItem.unit
+            ? (existingItem as { uqc?: string | null }).uqc
+            : null,
+      unit: unit || 'PCS',
+      hsn_sac: hsnClean || null,
+    });
+
     const bundleFlagProvided = Object.prototype.hasOwnProperty.call(body, 'is_bundle');
     const rawBundleActive =
       bundleFlagProvided && patchIsBundle !== undefined
@@ -326,6 +353,9 @@ export async function PATCH(
       const parts: string[] = [];
       const extra: unknown[] = [];
       let idx = startIndex;
+      parts.push(`, uqc = $${idx}`);
+      extra.push(finalUqc);
+      idx += 1;
       if (patchCategory) {
         parts.push(`, category_id = $${idx}`);
         extra.push(resolvedCategoryForPatch ?? null);
@@ -383,7 +413,7 @@ export async function PATCH(
       updateParams = [
         itemId, businessId, name, code || null, normalizedBarcode, finalBarcodeType, unit || 'PCS',
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
-        hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
+        hsnClean || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,
@@ -404,7 +434,7 @@ export async function PATCH(
       updateParams = [
         itemId, businessId, name, code || null, unit || 'PCS',
         finalSellingPrice, purchase_price || 0, tax_rate || 0,
-        hsn_sac || null, item_type || 'goods', min_stock || 0, description || null,
+        hsnClean || null, item_type || 'goods', min_stock || 0, description || null,
         default_supplier_id || null, image_url, finalHasVariants, gst_included ?? false,
         persistedMrp,
         fssai_licence_no || null, net_quantity || null, country_of_origin || null, brand || null,

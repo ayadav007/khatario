@@ -10,8 +10,8 @@ import {
   getBranchVariantQuantityDb,
   refreshVariantGlobalStockFromBranches,
 } from '@/lib/branch-variant-stock';
-import { createLedgerEntryLine } from './ledger-utils';
-import { getDefaultAccounts } from './ledger-utils';
+import { weightedAverageCosts } from '@/lib/inventory/cogs-posting';
+import { postInventoryAdjustment } from '@/lib/inventory/adjustment-posting';
 
 export type AdjustmentType = 'QUANTITY' | 'VALUE';
 export type AdjustmentDirection = 'INCREASE' | 'DECREASE';
@@ -127,7 +127,12 @@ export async function createQuantityAdjustment(
     }
 
     const item = itemResult.rows[0];
-    const currentPurchasePrice = parseFloat(item.purchase_price || '0');
+    let currentPurchasePrice = parseFloat(item.purchase_price || '0');
+    if (!params.variantId) {
+      const wac = await weightedAverageCosts(client, params.businessId, [params.itemId], params.adjustmentDate);
+      const rate = wac.get(params.itemId);
+      if (rate !== undefined && rate > 0) currentPurchasePrice = Math.round(rate * 100) / 100;
+    }
     
     // Get current stock - conditional based on warehouse mode and variant
     let currentStock: number;
@@ -328,96 +333,24 @@ export async function createQuantityAdjustment(
 
     const branchId = adjustmentBranchId || undefined;
 
-    // Create journal entry if accounting is enabled
-    let journalEntryId: string | undefined;
-    try {
-      const accounts = await getDefaultAccounts(params.businessId);
-      
-      if (accounts.inventory) {
-        // For quantity adjustments:
-        // - If INCREASE: Debit Inventory, Credit Adjustment Account (or Expense Reversal)
-        // - If DECREASE: Debit Adjustment Account (or Expense), Credit Inventory
-        
-        const adjustmentAccount = await getAccountForReasonCode(
-          params.businessId,
-          params.reasonCode,
-          params.direction === 'DECREASE'
-        );
-
-        if (adjustmentAccount) {
-          if (params.direction === 'INCREASE') {
-            // Debit Inventory, Credit Adjustment Account
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(valueChange),
-              credit: 0,
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(valueChange),
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          } else {
-            // Debit Adjustment Account, Credit Inventory
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(valueChange),
-              credit: 0,
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(valueChange),
-              narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          }
-
-          // Update adjustment with journal entry reference (only if journal entry was created)
-          if (journalEntryId) {
-            await client.query(
-              `UPDATE inventory_adjustments SET journal_entry_id = $1 WHERE id = $2`,
-              [journalEntryId, adjustmentId]
-            );
-          }
-        }
-      }
-    } catch (accountingError) {
-      console.error('Error creating journal entry for adjustment:', accountingError);
-      // Don't fail the adjustment if accounting fails
-    }
+    const journalEntryId: string | undefined = undefined;
+    const { itcReversed } = await postInventoryAdjustment(client, {
+      businessId: params.businessId,
+      branchId: branchId ?? null,
+      adjustmentId,
+      adjustmentNumber,
+      date: params.adjustmentDate,
+      reason: params.reasonCode,
+      isDecrease: params.direction === 'DECREASE',
+      amount: valueChange,
+      itemId: params.itemId,
+      narration: `Inventory adjustment: ${params.direction} ${Math.abs(params.quantity)} units - ${params.reasonCode}`,
+      quantityAdjustment: true,
+    });
+    await client.query(
+      `UPDATE inventory_adjustments SET value_change = $1, gst_impact = $2 WHERE id = $3`,
+      [Math.round(valueChange * 100) / 100, itcReversed ? -itcReversed : null, adjustmentId]
+    );
 
     // Commit the transaction
     await client.query('COMMIT');
@@ -684,94 +617,20 @@ export async function createValueAdjustment(
 
     const branchId: string | undefined = adjustmentBranchIdForRow || undefined;
 
-    // Create journal entry if accounting is enabled
-    let journalEntryId: string | undefined;
-    try {
-      const accounts = await getDefaultAccounts(params.businessId);
-      
-      if (accounts.inventory) {
-        // For value adjustments:
-        // - If value INCREASE: Debit Inventory, Credit Adjustment Account
-        // - If value DECREASE: Debit Adjustment Account, Credit Inventory
-        
-        const adjustmentAccount = await getAccountForReasonCode(
-          params.businessId,
-          params.reasonCode,
-          params.valueChange < 0
-        );
-
-        if (adjustmentAccount) {
-          if (params.valueChange > 0) {
-            // Debit Inventory, Credit Adjustment Account
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(params.valueChange),
-              credit: 0,
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(params.valueChange),
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          } else {
-            // Debit Adjustment Account, Credit Inventory
-            await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: adjustmentAccount.id,
-              entryDate: params.adjustmentDate,
-              debit: Math.abs(params.valueChange),
-              credit: 0,
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            const entryId = await createLedgerEntryLine({
-              businessId: params.businessId,
-              voucherId: adjustmentId,
-              voucherType: 'journal',
-              accountId: accounts.inventory.id,
-              entryDate: params.adjustmentDate,
-              debit: 0,
-              credit: Math.abs(params.valueChange),
-              narration: `Inventory value adjustment: ${params.reasonCode} - ${params.reasonNotes || ''}`,
-              referenceNumber: adjustmentNumber,
-              branchId: branchId,
-            });
-
-            journalEntryId = entryId;
-          }
-
-          // Update adjustment with journal entry reference
-          await client.query(
-            `UPDATE inventory_adjustments SET journal_entry_id = $1 WHERE id = $2`,
-            [journalEntryId, adjustmentId]
-          );
-        }
-      }
-    } catch (accountingError) {
-      console.error('Error creating journal entry for adjustment:', accountingError);
-      // Don't fail the adjustment if accounting fails
-    }
+    const journalEntryId: string | undefined = undefined;
+    await postInventoryAdjustment(client, {
+      businessId: params.businessId,
+      branchId: branchId ?? null,
+      adjustmentId,
+      adjustmentNumber,
+      date: params.adjustmentDate,
+      reason: params.reasonCode,
+      isDecrease: params.valueChange < 0,
+      amount: params.valueChange,
+      itemId: params.itemId,
+      narration: `Inventory value adjustment: ${params.reasonCode}${params.reasonNotes ? ` - ${params.reasonNotes}` : ''}`,
+      quantityAdjustment: false,
+    });
 
     await client.query('COMMIT');
 
@@ -808,46 +667,3 @@ async function generateAdjustmentNumber(
   return result.rows[0].number;
 }
 
-/**
- * Get appropriate account for reason code
- * Maps reason codes to appropriate expense/income accounts
- */
-async function getAccountForReasonCode(
-  businessId: string,
-  reasonCode: ReasonCode,
-  isExpense: boolean
-): Promise<any> {
-  const { getAccountByCode, getAccountByName } = await import('./ledger-utils');
-  
-  // Map reason codes to account codes
-  const accountMappings: Record<ReasonCode, { expense: string; income: string }> = {
-    STOCK_TAKE: { expense: '5102', income: '4102' }, // Stock Adjustment Expense / Stock Adjustment Income
-    DAMAGE: { expense: '5103', income: '4103' }, // Damage/Loss Expense / Damage Recovery
-    THEFT: { expense: '5104', income: '4104' }, // Theft Loss / Theft Recovery
-    EXPIRED: { expense: '5105', income: '4105' }, // Expiry Loss / Expiry Recovery
-    FREE_SAMPLE: { expense: '5106', income: '4106' }, // Sample Expense / Sample Income
-    COST_CORRECTION: { expense: '5107', income: '4107' }, // Cost Correction Expense / Cost Correction Income
-    LANDED_COST: { expense: '5108', income: '4108' }, // Landed Cost / Landed Cost Recovery
-    REVALUATION: { expense: '5109', income: '4109' }, // Revaluation Loss / Revaluation Gain
-    WRITE_DOWN: { expense: '5110', income: '4110' } // Write Down Expense / Write Down Recovery
-  };
-
-  const mapping = accountMappings[reasonCode];
-  const accountCode = isExpense ? mapping.expense : mapping.income;
-  
-  // Try to get account by code first
-  let account = await getAccountByCode(businessId, accountCode);
-  
-  // If not found, try to get a generic adjustment account
-  if (!account) {
-    account = await getAccountByName(businessId, isExpense ? 'Stock Adjustment Expense' : 'Stock Adjustment Income');
-  }
-  
-  // If still not found, try to get any expense/income account
-  if (!account) {
-    const accounts = await getDefaultAccounts(businessId);
-    account = (isExpense ? accounts.expenses : accounts.sales) || null;
-  }
-  
-  return account;
-}

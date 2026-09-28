@@ -34,6 +34,8 @@ export interface CalculateRowContext {
   isExport: boolean;
   exportType?: 'wop' | 'with_payment';
   documentType: 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply' | 'credit_note' | 'debit_note' | 'delivery_challan' | 'sales_order' | 'purchase_order';
+  /** Invoice-level switch: row prices are GST-inclusive (mirrors computeLineGst on the server). */
+  pricesIncludeGst?: boolean;
 }
 
 /**
@@ -77,7 +79,7 @@ export function calculateRow(
   }
   
   discAmt = round2(discAmt);
-  const taxableAmount = round2(subtotal - discAmt);
+  let taxableAmount = round2(subtotal - discAmt);
   
   // Determine tax type
   const taxType = determineTaxType({
@@ -90,6 +92,32 @@ export function calculateRow(
   });
   
   let cgst = 0, sgst = 0, igst = 0, taxAmt = 0;
+
+  if (context.pricesIncludeGst) {
+    const zeroTax = taxType.isNonTaxable || (context.isExport && context.exportType === 'wop');
+    const rate = zeroTax ? 0 : row.taxPercent;
+    const gross = taxableAmount;
+    taxableAmount = round2((gross * 100) / (100 + rate));
+    taxAmt = round2(gross - taxableAmount);
+    if (!context.isExport && taxType.useCGSTSGST) {
+      cgst = round2(taxAmt / 2);
+      sgst = round2(taxAmt - cgst);
+    } else {
+      igst = taxAmt;
+    }
+    return {
+      ...row,
+      taxPercent: taxType.isNonTaxable ? 0 : row.taxPercent,
+      discountPercent: discPercent,
+      discountAmount: discAmt,
+      taxableValue: taxableAmount,
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      taxAmount: taxAmt,
+      total: gross,
+    };
+  }
   
   if (taxType.isNonTaxable) {
     // Bill of Supply: Force 0% tax

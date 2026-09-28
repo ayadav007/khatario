@@ -34,4 +34,4 @@ Khatario Connect is the WhatsApp-only product: a free account with no monthly pl
 
 ## Does Khatario send payment reminders on WhatsApp?
 
-Yes. Send reminders to customers with outstanding balances manually or in bulk, and on plans with WhatsApp automation, reminders can go out automatically. Delivery status and errors are logged.
+Yes. Send reminders to customers with outstanding balances one by one, and with the WhatsApp Bot add-on send them in bulk or schedule them to go out automatically. Delivery status and errors are logged.

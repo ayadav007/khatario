@@ -6,14 +6,33 @@ import {
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
 } from '@/lib/auth-helpers';
-import { queryOne, query, getPool } from '@/lib/db';
+import { queryOne, queryRows, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+
+import {
+  type JournalLineInput,
+  toJournalAmount as toAmount,
+  validateJournalLines,
+} from '@/lib/accounting/journal-lines';
+
+async function loadJournal(voucherId: string, businessId: string) {
+  return queryOne(
+    `SELECT je.*,
+            (SELECT lel.branch_id FROM ledger_entry_lines lel
+              WHERE lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
+                AND lel.voucher_type = 'journal' AND lel.branch_id IS NOT NULL
+              LIMIT 1) AS line_branch_id
+       FROM journal_entries je
+      WHERE je.voucher_id = $1 AND je.business_id = $2 AND je.deleted_at IS NULL`,
+    [voucherId, businessId]
+  );
+}
 
 /**
  * GET /api/journal-entries/[id]
- * Get journal entry details
  */
 export async function GET(
   request: NextRequest,
@@ -26,63 +45,35 @@ export async function GET(
     const userId = getUserIdFromRequest(request);
 
     if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
     }
-
     if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
     }
 
-    // Get journal entry metadata from journal_entries table
     const journalEntry = await queryOne(
-      `SELECT 
-        je.id,
-        je.business_id,
-        je.voucher_id,
-        je.voucher_number,
-        je.entry_date,
-        je.reference_number,
-        je.narration,
-        je.is_locked,
-        je.locked_at,
-        je.locked_by,
-        je.lock_reason,
-        je.is_reversing,
-        je.reverses_entry_id,
-        je.reversal_date,
-        je.template_id,
-        je.tags,
-        je.created_by,
-        je.created_at,
-        je.updated_at,
-        u.name as locked_by_name
-      FROM journal_entries je
-      LEFT JOIN users u ON je.locked_by = u.id
-      WHERE je.voucher_id = $1 AND je.business_id = $2`,
+      `SELECT je.id, je.business_id, je.voucher_id, je.voucher_number, je.entry_date,
+              je.reference_number, je.narration, je.is_locked, je.locked_at, je.locked_by,
+              je.lock_reason, je.is_reversing, je.reverses_entry_id, je.reversal_date,
+              je.template_id, je.tags, je.created_by, je.created_at, je.updated_at,
+              u.name as locked_by_name
+         FROM journal_entries je
+         LEFT JOIN users u ON je.locked_by = u.id
+        WHERE je.voucher_id = $1 AND je.business_id = $2 AND je.deleted_at IS NULL`,
       [voucherId, businessId]
     );
 
     if (!journalEntry) {
-      return NextResponse.json(
-        { error: 'Journal entry not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Journal entry not found' }, { status: 404 });
     }
 
-    // Get branch_id from ledger_entry_lines for authorization
-    const branchInfo = await queryOne(`
-      SELECT DISTINCT branch_id FROM ledger_entry_lines 
-      WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal' 
-      LIMIT 1
-    `, [voucherId, businessId]);
+    const branchInfo = await queryOne(
+      `SELECT branch_id FROM ledger_entry_lines
+        WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
+        LIMIT 1`,
+      [voucherId, businessId]
+    );
 
-    // AUTHORIZATION: Check read permission (PBAC will check branch access, business ownership)
     try {
       await authorize(userId, 'journal', 'read', {
         businessId: journalEntry.business_id || businessId,
@@ -91,259 +82,210 @@ export async function GET(
         resource: journalEntry,
       });
     } catch (error) {
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
-      }
+      if (error instanceof AuthorizationError) return error.toNextResponse();
       throw error;
     }
 
-    // Get line count and totals from ledger_entry_lines
-    const entrySummary = await queryOne(
-      `SELECT 
-        COUNT(DISTINCT lel.id) as line_count,
-        SUM(lel.debit) as total_debit,
-        SUM(lel.credit) as total_credit
-      FROM ledger_entry_lines lel
-      WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'`,
+    const lines = await queryRows(
+      `SELECT lel.id, lel.account_id, lel.debit, lel.credit, lel.narration,
+              lel.reference_number, lel.entry_date, lel.created_at,
+              a.account_code, a.account_name
+         FROM ledger_entry_lines lel
+         LEFT JOIN accounts a ON lel.account_id = a.id
+        WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
+        ORDER BY lel.created_at, lel.id`,
       [voucherId, businessId]
     );
 
-    const entry = {
-      ...journalEntry,
-      line_count: parseInt(entrySummary?.line_count || '0'),
-      total_debit: parseFloat(entrySummary?.total_debit || '0'),
-      total_credit: parseFloat(entrySummary?.total_credit || '0'),
-    };
-
-    // Get lines
-    const lines = await queryOne(`
-      SELECT 
-        lel.id,
-        lel.account_id,
-        lel.debit,
-        lel.credit,
-        lel.narration,
-        lel.reference_number,
-        lel.entry_date,
-        lel.created_at,
-        a.account_code,
-        a.account_name
-      FROM ledger_entry_lines lel
-      LEFT JOIN accounts a ON lel.account_id = a.id
-      WHERE lel.voucher_id = $1 AND lel.business_id = $2
-      ORDER BY lel.created_at
-    `, [voucherId, businessId]);
+    const totalDebit = lines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0);
+    const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0);
 
     return NextResponse.json({
-      entry,
-      lines: lines || [],
+      entry: {
+        ...journalEntry,
+        line_count: lines.length,
+        total_debit: Math.round(totalDebit * 100) / 100,
+        total_credit: Math.round(totalCredit * 100) / 100,
+      },
+      lines,
     });
   } catch (error: any) {
     console.error('Error fetching journal entry:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
 
 /**
  * PATCH /api/journal-entries/[id]
- * Update journal entry (if not locked)
+ * Without `lines`: updates narration / reference / date of the header and existing lines.
+ * With `lines`: replaces all lines in one transaction (must balance).
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const pool = getPool();
-  const client = await pool.connect();
+  const voucherId = params.id;
+  let body: Record<string, any>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+  const business_id = getSessionScopedBusinessId(request);
+  const { entry_date, reference_number, narration, lines } = body;
+  const updated_by = body.updated_by || getUserIdFromRequest(request, body) || request.headers.get('x-user-id');
+
+  if (!business_id) {
+    return NextResponse.json({ error: 'business_id is required (session scope)' }, { status: 400 });
+  }
+  if (!updated_by) {
+    return NextResponse.json({ error: 'updated_by (user_id) is required for authorization' }, { status: 400 });
+  }
+
+  const journalEntry = await loadJournal(voucherId, business_id);
+  if (!journalEntry) {
+    return NextResponse.json({ error: 'Journal entry not found' }, { status: 404 });
+  }
+  const branchId: string | null = journalEntry.line_branch_id || journalEntry.branch_id || null;
+  const newDate = entry_date || journalEntry.entry_date;
 
   try {
-    const voucherId = params.id;
-    const body = await request.json();
-    const business_id = getSessionScopedBusinessId(request);
-    const { entry_date, reference_number, narration, lines } = body;
-    const updated_by = body.updated_by || getUserIdFromRequest(request, body) || request.headers.get('x-user-id');
+    await authorize(updated_by, 'journal', 'update', {
+      businessId: business_id,
+      branchId: branchId ?? undefined,
+      resourceId: voucherId,
+      entry_date: newDate,
+      resource: journalEntry,
+    });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
-    if (!business_id) {
-      client.release();
-      return NextResponse.json(
-        { error: 'business_id is required (session scope)' },
-        { status: 400 }
-      );
-    }
+  try {
+    await enforceAccess({
+      businessId: business_id,
+      userId: updated_by,
+      branchId,
+      feature: FeatureKeys.LEDGER_ACCOUNTING,
+    });
+  } catch (e) {
+    const res = enforceAccessErrorResponse(e);
+    if (res) return res;
+    throw e;
+  }
 
-    if (!updated_by) {
-      client.release();
-      return NextResponse.json(
-        { error: 'updated_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
-    }
+  if (journalEntry.is_locked) {
+    return NextResponse.json({ error: 'Journal entry is locked', code: 'JOURNAL_LOCKED' }, { status: 403 });
+  }
 
-    // Fetch journal entry for authorization
-    const journalEntry = await queryOne(
-      `SELECT je.*, lel.branch_id
-       FROM journal_entries je
-       LEFT JOIN ledger_entry_lines lel ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id AND lel.voucher_type = 'journal'
-       WHERE je.voucher_id = $1 AND je.business_id = $2
-       LIMIT 1`,
-      [voucherId, business_id]
+  const lockRes = await periodGuardResponse({
+    businessId: business_id,
+    branchId,
+    dates: [journalEntry.entry_date, entry_date],
+    action: 'edit this journal entry',
+  });
+  if (lockRes) return lockRes;
+
+  const replaceLines = Array.isArray(lines);
+  if (replaceLines) {
+    const err = validateJournalLines(lines);
+    if (err) return NextResponse.json({ error: err }, { status: 400 });
+    const accountIds = [...new Set(lines.map((l: JournalLineInput) => l.account_id))];
+    const found = await queryOne<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[]) AND is_active = true`,
+      [business_id, accountIds]
     );
-
-    if (!journalEntry) {
-      client.release();
-      return NextResponse.json(
-        { error: 'Journal entry not found' },
-        { status: 404 }
-      );
+    if (Number(found?.n || 0) !== accountIds.length) {
+      return NextResponse.json({ error: 'One or more accounts are invalid or inactive' }, { status: 400 });
     }
+  }
 
-    // AUTHORIZATION: Check update permission (PBAC will check branch access, business ownership, is_locked, period lock)
-    // Note: Status and period lock validation is now handled by PBAC policy - removed inline checks
-    try {
-      await authorize(updated_by, 'journal', 'update', {
-        businessId: business_id,
-        branchId: journalEntry.branch_id || null,
-        resourceId: voucherId,
-        entry_date: entry_date || journalEntry.entry_date,
-        resource: journalEntry,
-      });
-    } catch (error) {
-      client.release();
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
-      }
-      throw error;
-    }
-
-    const patchBranchId = (journalEntry as { branch_id?: string | null }).branch_id ?? null;
-    try {
-      await enforceAccess({
-        businessId: business_id,
-        userId: updated_by,
-        branchId: patchBranchId,
-        feature: FeatureKeys.LEDGER_ACCOUNTING,
-      });
-    } catch (e) {
-      const res = enforceAccessErrorResponse(e);
-      if (res) {
-        return res;
-      }
-      throw e;
-    }
-
-    // Validate debit = credit if lines provided
-    if (lines && Array.isArray(lines)) {
-      const totalDebit = lines.reduce((sum, line) => sum + (parseFloat(line.debit?.toString() || '0')), 0);
-      const totalCredit = lines.reduce((sum, line) => sum + (parseFloat(line.credit?.toString() || '0')), 0);
-
-      if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        return NextResponse.json(
-          { error: `Debit and Credit must be equal. Debit: ${totalDebit}, Credit: ${totalCredit}` },
-          { status: 400 }
-        );
-      }
-    }
-
+  const client = await getPool().connect();
+  try {
     await client.query('BEGIN');
 
-    // Delete existing lines
     await client.query(
-      'DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2',
-      [voucherId, business_id]
+      `UPDATE journal_entries
+          SET entry_date = COALESCE($3, entry_date),
+              reference_number = CASE WHEN $4::boolean THEN $5 ELSE reference_number END,
+              narration = CASE WHEN $6::boolean THEN $7 ELSE narration END,
+              updated_by = $8,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE voucher_id = $1 AND business_id = $2`,
+      [
+        voucherId,
+        business_id,
+        entry_date || null,
+        reference_number !== undefined,
+        reference_number ?? null,
+        narration !== undefined,
+        narration ?? null,
+        updated_by,
+      ]
     );
 
-    await client.query(
-      'DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = $3',
-      [voucherId, business_id, 'journal']
-    );
+    // Ledger lines are immutable (prevent_ledger_entry_update trigger), so a date or
+    // narration change re-posts the same amounts instead of updating rows in place.
+    let linesToPost: JournalLineInput[] | null = replaceLines ? (lines as JournalLineInput[]) : null;
+    if (!replaceLines && (entry_date || narration !== undefined || reference_number !== undefined)) {
+      const existing = await client.query(
+        `SELECT account_id, debit, credit, narration FROM ledger_entry_lines
+          WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
+          ORDER BY created_at, id`,
+        [voucherId, business_id]
+      );
+      if (existing.rows.length >= 2) {
+        linesToPost = existing.rows.map((r: any) => ({
+          account_id: r.account_id,
+          debit: r.debit,
+          credit: r.credit,
+          narration: narration !== undefined ? undefined : r.narration,
+        }));
+      }
+    }
 
-    // Insert new lines
-    if (lines && Array.isArray(lines)) {
-      for (const line of lines) {
-        await client.query(`
-          INSERT INTO ledger_entry_lines (
-            business_id, voucher_id, voucher_type, account_id, entry_date,
-            debit, credit, narration, reference_number, branch_id
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [
-          business_id,
-          voucherId,
-          'journal',
-          line.account_id,
-          entry_date || new Date().toISOString().split('T')[0],
-          parseFloat(line.debit?.toString() || '0'),
-          parseFloat(line.credit?.toString() || '0'),
-          line.narration || narration || null,
-          reference_number || null,
-          patchBranchId,
-        ]);
-
-        // Also create entry in ledger_entries
-        const account = await client.query(
-          'SELECT nature FROM accounts WHERE id = $1 AND business_id = $2',
-          [line.account_id, business_id]
+    if (linesToPost) {
+      await client.query(
+        `DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'`,
+        [voucherId, business_id]
+      );
+      await client.query(
+        `DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = 'journal'`,
+        [voucherId, business_id]
+      );
+      for (const line of linesToPost) {
+        const d = toAmount(line.debit);
+        const c = toAmount(line.credit);
+        const lineNarration = line.narration || narration || journalEntry.narration || null;
+        const lineRef = reference_number !== undefined ? reference_number : journalEntry.reference_number;
+        await client.query(
+          `INSERT INTO ledger_entry_lines (
+             business_id, voucher_id, voucher_type, account_id, entry_date,
+             debit, credit, narration, reference_number, branch_id
+           ) VALUES ($1, $2, 'journal', $3, $4, $5, $6, $7, $8, $9)`,
+          [business_id, voucherId, line.account_id, newDate, d, c, lineNarration, lineRef || null, branchId]
         );
-        const accountNature = account.rows[0]?.nature || 'debit';
-        
-        const currentBalance = await client.query(`
-          SELECT get_account_balance($1, $2, $3, $4) as balance
-        `, [line.account_id, business_id, entry_date || new Date().toISOString().split('T')[0], patchBranchId]);
-        
-        const balance = parseFloat(currentBalance.rows[0]?.balance || '0');
-        const debit = parseFloat(line.debit?.toString() || '0');
-        const credit = parseFloat(line.credit?.toString() || '0');
-        
-        let newBalance = balance;
-        if (accountNature === 'debit') {
-          newBalance = balance + debit - credit;
-        } else {
-          newBalance = balance + credit - debit;
-        }
-
-        const voucherNumber = await client.query(
-          `SELECT voucher_number FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2 LIMIT 1`,
-          [voucherId, business_id]
+        await client.query(
+          `INSERT INTO ledger_entries (
+             business_id, branch_id, entry_date, account_id, account_type, transaction_type,
+             transaction_id, debit, credit, balance, description,
+             voucher_number, voucher_type, reference_number
+           ) VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, 0, $8, $9, 'journal', $10)`,
+          [
+            business_id, branchId, newDate, line.account_id, voucherId, d, c,
+            lineNarration || 'Journal Entry', journalEntry.voucher_number, lineRef || null,
+          ]
         );
-
-        await client.query(`
-          INSERT INTO ledger_entries (
-            business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-            transaction_id, debit, credit, balance, description,
-            voucher_number, voucher_type, reference_number
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        `, [
-          business_id,
-          patchBranchId,
-          entry_date || new Date().toISOString().split('T')[0],
-          line.account_id,
-          'account',
-          'journal',
-          voucherId,
-          debit,
-          credit,
-          newBalance,
-          line.narration || narration || 'Journal Entry',
-          voucherNumber.rows[0]?.voucher_number || null,
-          'journal',
-          reference_number || null,
-        ]);
       }
     }
 
     await client.query('COMMIT');
-
     return NextResponse.json({ message: 'Journal entry updated successfully' });
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error updating journal entry:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   } finally {
     client.release();
   }
@@ -351,99 +293,80 @@ export async function PATCH(
 
 /**
  * DELETE /api/journal-entries/[id]
- * Delete journal entry (if not locked)
+ * Removes the ledger lines and soft-deletes the header (number stays used for the audit trail).
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const pool = getPool();
-  const client = await pool.connect();
+  const voucherId = params.id;
+  const businessId =
+    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
+  const userId = getUserIdFromRequest(request);
+  const reason = new URL(request.url).searchParams.get('reason');
+
+  if (!businessId) {
+    return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+  }
+  if (!userId) {
+    return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
+  }
+
+  const journalEntry = await loadJournal(voucherId, businessId);
+  if (!journalEntry) {
+    return NextResponse.json({ error: 'Journal entry not found' }, { status: 404 });
+  }
+  const branchId: string | null = journalEntry.line_branch_id || journalEntry.branch_id || null;
 
   try {
-    const voucherId = params.id;
-    const businessId =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    await authorize(userId, 'journal', 'delete', {
+      businessId,
+      branchId: branchId ?? undefined,
+      resourceId: voucherId,
+      entry_date: journalEntry.entry_date,
+      resource: journalEntry,
+    });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
 
-    if (!businessId) {
-      client.release();
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+  if (journalEntry.is_locked) {
+    return NextResponse.json({ error: 'Journal entry is locked', code: 'JOURNAL_LOCKED' }, { status: 403 });
+  }
 
-    if (!userId) {
-      client.release();
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
+  const lockRes = await periodGuardResponse({
+    businessId,
+    branchId,
+    dates: [journalEntry.entry_date],
+    action: 'delete this journal entry',
+  });
+  if (lockRes) return lockRes;
 
-    // Fetch journal entry for authorization
-    const journalEntry = await queryOne(
-      `SELECT je.*, lel.branch_id
-       FROM journal_entries je
-       LEFT JOIN ledger_entry_lines lel ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id AND lel.voucher_type = 'journal'
-       WHERE je.voucher_id = $1 AND je.business_id = $2
-       LIMIT 1`,
-      [voucherId, businessId]
-    );
-
-    if (!journalEntry) {
-      client.release();
-      return NextResponse.json(
-        { error: 'Journal entry not found' },
-        { status: 404 }
-      );
-    }
-
-    // AUTHORIZATION: Check delete permission (PBAC will check branch access, business ownership, is_locked, period lock)
-    // Note: Status and period lock validation is now handled by PBAC policy - removed inline checks
-    try {
-      await authorize(userId, 'journal', 'delete', {
-        businessId: businessId,
-        branchId: journalEntry.branch_id || null,
-        resourceId: voucherId,
-        entry_date: journalEntry.entry_date,
-        resource: journalEntry,
-      });
-    } catch (error) {
-      client.release();
-      if (error instanceof AuthorizationError) {
-        return error.toNextResponse();
-      }
-      throw error;
-    }
-
+  const client = await getPool().connect();
+  try {
     await client.query('BEGIN');
-
-    // Delete lines
     await client.query(
-      'DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2',
+      `DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'`,
       [voucherId, businessId]
     );
-
-    // Delete ledger entries
     await client.query(
-      'DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = $3',
-      [voucherId, businessId, 'journal']
+      `DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = 'journal'`,
+      [voucherId, businessId]
     );
-
+    await client.query(
+      `UPDATE journal_entries
+          SET deleted_at = CURRENT_TIMESTAMP, deleted_by = $3, delete_reason = $4, updated_at = CURRENT_TIMESTAMP
+        WHERE voucher_id = $1 AND business_id = $2`,
+      [voucherId, businessId, userId, reason || null]
+    );
     await client.query('COMMIT');
-
     return NextResponse.json({ message: 'Journal entry deleted successfully' });
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error deleting journal entry:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   } finally {
     client.release();
   }
 }
-

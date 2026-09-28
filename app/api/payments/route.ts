@@ -6,6 +6,7 @@ import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } 
 import { FeatureKeys } from '@/lib/featureKeys';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -441,6 +442,14 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    const lockRes = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [payment_date || new Date()],
+      action: 'record a payment',
+    });
+    if (lockRes) return lockRes;
+
     // Validate branch exists, is active, and belongs to business (if not already validated)
     if (finalBranchId && branch_id) {
       const branchCheck = await queryOne<{ id: string; is_active: boolean }>(`
@@ -622,7 +631,7 @@ export async function POST(request: NextRequest) {
       if (reference_type === 'purchase' && reference_id) {
         const purRes = await client.query(
           `SELECT paid_amount, grand_total, tax_total, is_reverse_charge, COALESCE(tds_deducted, 0) AS tds_deducted,
-                  supplier_id, status
+                  COALESCE(advance_adjusted, 0) AS advance_adjusted, supplier_id, status
              FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
           [reference_id, business_id],
         );

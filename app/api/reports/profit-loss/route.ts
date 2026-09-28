@@ -257,6 +257,7 @@ export async function GET(request: NextRequest) {
               AND lel.business_id = $2
               AND lel.entry_date >= $3
               AND lel.entry_date <= $4
+              AND lel.voucher_type <> 'year_close'
               ${branchFilter}
           `, transactionParams);
 
@@ -294,6 +295,7 @@ export async function GET(request: NextRequest) {
               AND lel.business_id = $2
               AND lel.entry_date >= $3
               AND lel.entry_date <= $4
+              AND lel.voucher_type <> 'year_close'
               ${branchFilter}
           `, transactionParams);
 

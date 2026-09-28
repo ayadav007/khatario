@@ -58,6 +58,7 @@ import {
 import { isCapacitorNative } from '@/lib/capacitor/platform';
 import { registerMobileBackInterceptor } from '@/lib/navigation/mobile-back-registry';
 import { POSLayout } from '@/components/pos/POSLayout';
+import { applyPosTenders } from '@/lib/pos-tender';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import type { ReceiptData } from '@/lib/bluetooth/invoice-to-escpos';
@@ -99,6 +100,12 @@ const getStateCode = (stateName: string): string => {
     'ladakh': '38', 'lakshadweep': '31', 'puducherry': '34'
   };
   return stateCodeMap[name] || '';
+};
+
+/** A registered buyer's place of supply defaults to the state in their GSTIN, not the typed address. */
+const stateFromGstin = (gstin: string | null | undefined): string | undefined => {
+  const code = gstin && /^\d{2}/.test(gstin.trim()) ? gstin.trim().slice(0, 2) : '';
+  return code ? INDIAN_STATES.find((s) => getStateCode(s) === code) : undefined;
 };
 
 interface CustomerAutocompleteProps {
@@ -343,6 +350,8 @@ function NewInvoiceContent() {
   const [expiryDate, setExpiryDate] = useState('');
   const [estimateStatus, setEstimateStatus] = useState<'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted'>('draft');
   const [placeOfSupply, setPlaceOfSupply] = useState(business?.state || '');
+  const [pricesIncludeGst, setPricesIncludeGst] = useState(false);
+  const [posDiffersFromGstin, setPosDiffersFromGstin] = useState(false);
   const [invoiceTemplate, setInvoiceTemplate] = useState<string | null>(null);
   const [templateSettings, setTemplateSettings] = useState<any>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -818,8 +827,17 @@ function NewInvoiceContent() {
 
   // Callbacks and Memos
   const calculateRow = useCallback((row: InvoiceItemRow, skipDiscountRecalc: boolean = false): InvoiceItemRow => {
-    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType }, skipDiscountRecalc);
-  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType]);
+    return engineCalculateRow(row, { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst }, skipDiscountRecalc);
+  }, [business?.state, business?.state_code, placeOfSupply, isExport, exportType, documentType, pricesIncludeGst]);
+
+  const isFutureInvoiceDate = !!invoiceDate && invoiceDate > format(new Date(), 'yyyy-MM-dd');
+
+  const pricesIncludeGstRef = useRef(pricesIncludeGst);
+  useEffect(() => {
+    if (pricesIncludeGstRef.current === pricesIncludeGst) return;
+    pricesIncludeGstRef.current = pricesIncludeGst;
+    setRows((prev) => prev.map((r) => calculateRow(r, true)));
+  }, [pricesIncludeGst, calculateRow]);
 
   const fetchPartyPriceCached = useCallback(async (partyId: string, itemId: string): Promise<number | null> => {
     const cache = partyPriceCacheRef.current;
@@ -974,7 +992,10 @@ function NewInvoiceContent() {
       let displayName = variantName ? `${item.name} - ${variantName}` : item.name;
       if (displayName === item.barcode && item.code && item.code !== item.barcode) displayName = variantName ? `${item.code} - ${variantName}` : item.code;
       let price = Number(item.selling_price), tr = Number(item.tax_rate || 0);
-      if (item.gst_included && tr > 0) price = price / (1 + tr / 100);
+      if (tr > 0) {
+        if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
+        else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
+      }
       const newRowData = calculateRow({ itemId, name: displayName, variantId, variantName, hsnSac: item.hsn_sac || '', price, taxPercent: tr, quantity: 1, freeQty: 0, unit: item.unit || 'PCS', discountPercent: 0, discountAmount: 0, taxAmount: 0, taxableValue: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, total: 0, gstIncluded: !!item.gst_included, priceUserOverride: false, code: item.code || item.sku || '', mrp: Number(item.mrp) || 0 });
       if (targetIndex >= 0 && targetIndex < newRows.length) newRows[targetIndex] = newRowData; else newRows.push(newRowData);
       // In POS mode, focus item search after adding
@@ -1060,7 +1081,10 @@ function NewInvoiceContent() {
           }
           let price = Number(item.selling_price);
           const tr = Number(item.tax_rate || 0);
-          if (item.gst_included && tr > 0) price = price / (1 + tr / 100);
+          if (tr > 0) {
+            if (pricesIncludeGst && !item.gst_included) price = price * (1 + tr / 100);
+            else if (!pricesIncludeGst && item.gst_included) price = price / (1 + tr / 100);
+          }
           const newRowData = calculateRow({
             itemId: item.id,
             name: displayName,
@@ -1142,7 +1166,7 @@ function NewInvoiceContent() {
     setCustomerId(''); setSelectedCustomer(null); setRows([]);
     setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
-    setPlaceOfSupply(business?.state || ''); setIsDirty(false); setFormKey(prev => prev + 1);
+    setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setIsDirty(false); setFormKey(prev => prev + 1);
     if (business?.id) {
       // buildApiUrl automatically includes branch_id from global context
       // PHASE 2: Fetch series from API
@@ -1158,7 +1182,7 @@ function NewInvoiceContent() {
     setCustomerId(''); setSelectedCustomer(null); setNotes(''); setExtraCharges([]); setPayments([]); setBillingAddress(''); setShippingAddress(''); setIsExport(false); setExportType('wop'); setPortCode(''); setShippingBillNumber(''); setShippingBillDate(''); setInvoiceCurrency('INR'); setExchangeRate(''); setCountryOfOrigin('India'); setPortOfLoading(''); setPortOfDischarge(''); setPlaceOfDelivery(''); setIncoterms(''); setTransportMode(''); setAwbNumber(''); setBlNumber(''); setBuyerTaxId(''); setEwayBillNumber(''); setEwayBillDate(''); setPurchaseOrderNumber(''); setPurchaseOrderDate(''); setReferenceNumber(''); setDeliveryNote(''); setPaymentTerms(''); setOtherReferences(''); setDispatchedThrough(''); setDestination(''); setTermsOfDelivery(''); setEnableRoundOff(false); setAttachments([]);
     setExpiryDate(''); setEstimateStatus('draft');
     setRows([]);
-    setPlaceOfSupply(business?.state || ''); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
+    setPlaceOfSupply(business?.state || ''); setPricesIncludeGst(false); setSavedInvoiceId(null); setSavedStatus(null); setIsInvoiceLocked(false); setLockReason(null); setFetchedNextNumber(false); setIsDirty(false); setFormKey(prev => prev + 1);
     
     // PHASE 1: Clear prefix/number - let API set it
     setInvoicePrefix(null);
@@ -1334,8 +1358,8 @@ function NewInvoiceContent() {
       if (customer.shipping_address || customer.address) {
         setShippingAddress(customer.shipping_address || customer.address || '');
       }
-      if (customer.state) {
-        setPlaceOfSupply(customer.state);
+      if (customer.state || stateFromGstin(customer.gstin)) {
+        setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
         setRows(prev => prev.map(r => calculateRow(r, true)));
       }
     } else {
@@ -1346,14 +1370,32 @@ function NewInvoiceContent() {
   }, [calculateRow]);
 
   const totals = useMemo(() => {
-    const calculated = engineCalculateTotals({ rows, extraCharges: extraCharges as any, context: { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType } });
+    const calculated = engineCalculateTotals({ rows, extraCharges: extraCharges as any, context: { businessStateCode: business?.state_code, businessState: business?.state, placeOfSupply, isExport, exportType: exportType as any, documentType, pricesIncludeGst } });
     if (enableRoundOff) { const rounded = Math.round(calculated.grandTotal); return { ...calculated, grandTotal: rounded, roundOff: rounded - calculated.grandTotal }; }
     return { ...calculated, roundOff: 0 };
-  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff]);
+  }, [rows, extraCharges, business?.state_code, business?.state, placeOfSupply, isExport, exportType, documentType, enableRoundOff, pricesIncludeGst]);
 
   const { itemSubtotal, totalDiscount, subtotal, itemTax, itemCGST, itemSGST, itemIGST, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST } = totals;
   const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = !!bStateCode && !!pStateCode && bStateCode === pStateCode;
   const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), balance = grandTotal - totalPaid, recordPayment = payments.length > 0 && totalPaid > 0;
+  const posSettlement = posMode
+    ? applyPosTenders(
+        grandTotal,
+        payments.map((p) => ({
+          mode: p.mode,
+          amount: Number(p.amount) || 0,
+          date: p.date,
+          reference: p.reference,
+        }))
+      )
+    : null;
+  const invoicePaidAmount = posSettlement ? posSettlement.paidAmount : totalPaid;
+  const invoiceBalanceAmount = posSettlement ? posSettlement.balanceAmount : balance;
+  const invoicePaymentRows = posSettlement
+    ? posSettlement.payments
+    : payments.map((p) => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference }));
+  const invoicePaymentStatus =
+    invoicePaidAmount >= grandTotal ? 'paid' : invoicePaidAmount > 0 ? 'partially_paid' : 'unpaid';
 
   // Build a ReceiptData object from the current in-memory POS state.
   // Used by Bluetooth auto-print / manual BT print so we don't need to
@@ -1407,9 +1449,11 @@ function NewInvoiceContent() {
         igstTotal: totalIGST,
         roundOff,
         grandTotal,
-        paidAmount: totalPaid,
-        balance,
+        paidAmount: invoicePaidAmount,
+        balance: invoiceBalanceAmount,
         paymentMode: mode,
+        cashTendered: posSettlement?.cashTendered,
+        changeGiven: posSettlement?.changeGiven,
         notes: notes || null,
       };
     },
@@ -1425,8 +1469,9 @@ function NewInvoiceContent() {
       totalIGST,
       roundOff,
       grandTotal,
-      totalPaid,
-      balance,
+      invoicePaidAmount,
+      invoiceBalanceAmount,
+      posSettlement,
       payments,
       notes,
     ]
@@ -1541,6 +1586,8 @@ function NewInvoiceContent() {
           billing_address: billingAddress, 
           shipping_address: shippingAddress, 
           place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+          prices_include_gst: pricesIncludeGst,
+          pos_differs_from_gstin: posDiffersFromGstin,
           document_type: documentType, 
           is_export: isExport, 
           template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
@@ -1592,10 +1639,10 @@ function NewInvoiceContent() {
           tax_total: totalTax, 
           round_off: roundOff, 
           grand_total: grandTotal, 
-          payments: payments.length > 0 ? payments.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
-          payment_status: totalPaid >= grandTotal ? 'paid' : (totalPaid > 0 ? 'partially_paid' : 'unpaid'), 
-          paid_amount: totalPaid, 
-          balance_amount: balance, 
+          payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+          payment_status: invoicePaymentStatus, 
+          paid_amount: invoicePaidAmount, 
+          balance_amount: invoiceBalanceAmount, 
           created_by: user?.id || null,
           expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined,
           estimate_status: documentType === 'proforma_invoice' ? estimateStatus : undefined
@@ -1903,7 +1950,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -2016,6 +2063,8 @@ function NewInvoiceContent() {
         billing_address: billingAddress, 
         shipping_address: shippingAddress, 
         place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
+        prices_include_gst: pricesIncludeGst,
+        pos_differs_from_gstin: posDiffersFromGstin,
         document_type: documentType, 
         is_export: isExport, 
         template_id: isExport ? 'export_invoice' : invoiceTemplate || null, 
@@ -2056,10 +2105,10 @@ function NewInvoiceContent() {
         tax_total: totalTax, 
         round_off: roundOff, 
         grand_total: grandTotal, 
-        payments: payments.length > 0 ? payments.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
-        payment_status: totalPaid >= grandTotal ? 'paid' : (totalPaid > 0 ? 'partially_paid' : 'unpaid'), 
-        paid_amount: totalPaid, 
-        balance_amount: balance, 
+        payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+        payment_status: invoicePaymentStatus, 
+        paid_amount: invoicePaidAmount, 
+        balance_amount: invoiceBalanceAmount, 
         created_by: user?.id || null, 
         expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined, 
         estimate_status: finalEstimateStatus
@@ -2146,6 +2195,10 @@ function NewInvoiceContent() {
         setToastMessage({ message: successMessage, type: 'success' });
       }
       
+      if (Array.isArray(data.compliance_warnings) && data.compliance_warnings.length > 0) {
+        hotToast(data.compliance_warnings.join(' '), { duration: 10000 });
+      }
+
       // Display stock warnings for proforma invoices (if any)
       
       if (data.stock_warnings && Array.isArray(data.stock_warnings) && data.stock_warnings.length > 0) {
@@ -2209,7 +2262,7 @@ function NewInvoiceContent() {
       hotToast.error(errorMsg, { duration: 8000 });
       return false;
     } finally { setLoading(false); }
-  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
 
   const handlePosSaveBill = useCallback(async () => {
     const ok = await handleSave('final');
@@ -2355,6 +2408,7 @@ function NewInvoiceContent() {
             setInvoiceNumber(inv.invoice_number || '');
           }
           setPlaceOfSupply(inv.place_of_supply_state_code || ''); 
+          setPricesIncludeGst(inv.prices_include_gst === true);
           // Set document type but don't trigger form reset in edit mode
           const newDocType = inv.document_type || 'tax_invoice';
           if (documentType !== newDocType) {
@@ -2411,7 +2465,7 @@ function NewInvoiceContent() {
       setSelectedCustomer(c);
       setBillingAddress(c.billing_address || c.address || '');
       setShippingAddress(c.shipping_address || c.address || '');
-      setPlaceOfSupply(c.state || business.state || '');
+      setPlaceOfSupply(stateFromGstin(c.gstin) || c.state || business.state || '');
       setRows(prev => prev.map(r => calculateRow(r, true)));
       
       // PHASE 6: Fetch credit metrics for customer
@@ -2666,8 +2720,8 @@ function NewInvoiceContent() {
     setCustomerPhone(customer.phone || '');
     setBillingAddress(customer.billing_address || customer.address || '');
     setShippingAddress(customer.shipping_address || customer.address || '');
-    if (customer.state) {
-      setPlaceOfSupply(customer.state);
+    if (customer.state || stateFromGstin(customer.gstin)) {
+      setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
       setRows((prev) => prev.map((r) => calculateRow(r, true)));
     }
   }, [calculateRow]);
@@ -2869,6 +2923,9 @@ function NewInvoiceContent() {
               disabled={isFinal || isInvoiceLocked}
               className="!px-3 !py-2 !text-sm"
             />
+            {isFutureInvoiceDate ? (
+              <p className="mt-1 text-2xs text-amber-700">Date is in the future</p>
+            ) : null}
           </div>
           <div className="w-[138px] lg:w-[160px] min-w-0">
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-text-secondary">Due Date</label>
@@ -3110,6 +3167,9 @@ function NewInvoiceContent() {
               disabled={isFinal || isInvoiceLocked}
               className="h-9 min-h-0 border-0 border-b border-border rounded-none bg-transparent px-0 py-1 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-primary-500"
             />
+            {isFutureInvoiceDate ? (
+              <p className="text-2xs text-amber-700">Date is in the future</p>
+            ) : null}
           </div>
           <div className="min-w-0 space-y-0.5">
             <label className="block text-2xs font-semibold uppercase tracking-wide text-text-secondary">
@@ -3188,7 +3248,33 @@ function NewInvoiceContent() {
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              {!isExport && selectedCustomer?.gstin && stateFromGstin(selectedCustomer.gstin) && placeOfSupply && stateFromGstin(selectedCustomer.gstin) !== placeOfSupply ? (
+                <label className="mt-1 flex items-start gap-2 text-xs text-amber-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={posDiffersFromGstin}
+                    onChange={(e) => setPosDiffersFromGstin(e.target.checked)}
+                    disabled={isFinal}
+                  />
+                  <span>
+                    Differs from the buyer&apos;s GSTIN state ({stateFromGstin(selectedCustomer.gstin)}). Tick only if goods are shipped to {placeOfSupply}.
+                  </span>
+                </label>
+              ) : null}
             </div>
+            <label className="flex items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={pricesIncludeGst}
+                onChange={(e) => {
+                  setPricesIncludeGst(e.target.checked);
+                  setIsDirty(true);
+                }}
+                disabled={isFinal}
+              />
+              Prices include GST
+            </label>
             {selectedCustomer ? (
               <>
                 <div>
@@ -3728,8 +3814,8 @@ function NewInvoiceContent() {
             setBillingAddress(customer.billing_address || customer.address || '');
             setShippingAddress(customer.shipping_address || customer.address || '');
             // Update place of supply if customer has state
-            if (customer.state) {
-              setPlaceOfSupply(customer.state);
+            if (customer.state || stateFromGstin(customer.gstin)) {
+              setPlaceOfSupply(stateFromGstin(customer.gstin) || customer.state || '');
               setRows(prev => prev.map(r => calculateRow(r, true)));
             }
             // Close modal

@@ -173,7 +173,6 @@ export default function StockValuationReportPage() {
               >
                 <option value="simple">Simple</option>
                 <option value="fifo">FIFO</option>
-                <option value="lifo">LIFO</option>
                 <option value="weighted_avg">Weighted Average</option>
               </select>
             </div>

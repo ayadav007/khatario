@@ -22,6 +22,20 @@ const UQC_ALIASES: Record<string, string> = {
   HOUR: 'NA', HOURS: 'NA', HRS: 'NA', SERVICE: 'NA',
 };
 
+export const GST_UQC_CODES: readonly string[] = Array.from(GST_UQC).sort();
+
+export function isGstUqc(value: unknown): boolean {
+  return typeof value === 'string' && GST_UQC.has(value.trim().toUpperCase());
+}
+
+/** An explicit item-master UQC wins over the unit-text mapping. */
+export function resolveItemUqc(
+  item: { uqc?: string | null; unit?: string | null; hsn_sac?: string | null },
+): string {
+  if (item.uqc && isGstUqc(item.uqc)) return item.uqc.trim().toUpperCase();
+  return toGstUqc(item.unit, item.hsn_sac);
+}
+
 /** Maps a free-text unit to a GSTN UQC; services (SAC 99xxxx) report 'NA'. */
 export function toGstUqc(unit: string | null | undefined, hsnSac?: string | null): string {
   if (hsnSac && String(hsnSac).startsWith('99')) return 'NA';

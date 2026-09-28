@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
+import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -1173,6 +1174,55 @@ export async function POST(request: NextRequest) {
 
     const businessStateCode = business.state_code || getStateCode(business.state || '');
 
+    const pricesIncludeGst = (body as { prices_include_gst?: unknown }).prices_include_gst === true;
+    const complianceCustomer = customer_id
+      ? (
+          await client.query<{ gstin: string | null }>(
+            'SELECT gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+            [customer_id, business_id],
+          )
+        ).rows[0]
+      : undefined;
+    const turnoverRes = await client.query<{ above: boolean | null }>(
+      'SELECT aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1',
+      [business_id],
+    );
+    const masterItemIds = (items as Array<{ item_id?: string | null }>)
+      .map((it) => it.item_id)
+      .filter((id): id is string => !!id);
+    const masterHsn = new Map<string, string | null>();
+    if (masterItemIds.length > 0) {
+      const hsnRows = await client.query<{ id: string; hsn_sac: string | null }>(
+        'SELECT id, hsn_sac FROM items WHERE id = ANY($1::uuid[]) AND business_id = $2',
+        [masterItemIds, business_id],
+      );
+      for (const r of hsnRows.rows) masterHsn.set(r.id, r.hsn_sac);
+    }
+    const compliance = checkInvoiceCompliance({
+      lines: (items as Array<{ item_id?: string | null; item_name?: string; hsn_sac?: string; tax_rate?: unknown }>).map(
+        (it) => ({
+          item_name: it.item_name,
+          hsn_sac: it.hsn_sac,
+          tax_rate: it.tax_rate,
+          master_hsn_sac: it.item_id ? masterHsn.get(it.item_id) ?? null : null,
+        }),
+      ),
+      invoiceDate: invoice_date,
+      status,
+      documentType: finalDocumentType,
+      customerGstin: complianceCustomer?.gstin ?? null,
+      placeOfSupply: place_of_supply_state_code,
+      isExport: !!is_export,
+      turnoverAbove5Cr: turnoverRes.rows[0]?.above === true,
+      allowPosDifferentFromGstin: (body as { pos_differs_from_gstin?: unknown }).pos_differs_from_gstin === true,
+    });
+    if (!compliance.ok) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: compliance.error, code: compliance.code }, { status: 400 });
+    }
+    const posStateCode: string | null = compliance.placeOfSupply ?? place_of_supply_state_code ?? null;
+    const complianceWarnings = compliance.warnings;
+
     let invoiceItems: any[] = items;
     let appliedOffersPayload: AppliedOfferLine[] = [];
     try {
@@ -1238,21 +1288,22 @@ export async function POST(request: NextRequest) {
     let igstTotal = 0;
 
     const intraStateSupply = !!(
-      place_of_supply_state_code && businessStateCode && place_of_supply_state_code === businessStateCode
+      posStateCode && businessStateCode && posStateCode === businessStateCode
     );
     const zeroRatedWithoutTax = isZeroRatedWithoutTax({
       is_export,
       supply_type,
       export_type,
       lut_declaration,
-      place_of_supply_state_code,
+      place_of_supply_state_code: posStateCode,
     });
 
     invoiceItems.forEach((item: any) => {
       const { itemDiscount, taxable, cgst, sgst, igst, taxAmount } = computeLineGst(
         item,
         intraStateSupply,
-        zeroRatedWithoutTax
+        zeroRatedWithoutTax,
+        pricesIncludeGst
       );
 
       subtotal += taxable;
@@ -1311,9 +1362,9 @@ export async function POST(request: NextRequest) {
     let finalSupplyType = supply_type;
     if (!finalSupplyType) {
       // Export/SEZ: Check place_of_supply_state_code or is_export flag (overrides other classifications)
-      if (is_export || place_of_supply_state_code === '96') {
+      if (is_export || posStateCode === '96') {
         finalSupplyType = 'export';
-      } else if (place_of_supply_state_code === '97') {
+      } else if (posStateCode === '97') {
         finalSupplyType = 'sez';
       }
       // For other types, check if customer has GSTIN (B2B)
@@ -1433,7 +1484,7 @@ export async function POST(request: NextRequest) {
         template_settings ? JSON.stringify(template_settings) : null,
         billing_address || null,
         shipping_address || null,
-        place_of_supply_state_code || null,
+        posStateCode,
         cgstTotal,
         sgstTotal,
         igstTotal,
@@ -1540,7 +1591,7 @@ export async function POST(request: NextRequest) {
         template_settings ? JSON.stringify(template_settings) : null,
         billing_address || null,
         shipping_address || null,
-        place_of_supply_state_code || null,
+        posStateCode,
         cgstTotal,
         sgstTotal,
         igstTotal,
@@ -1601,8 +1652,14 @@ export async function POST(request: NextRequest) {
     
     
     const invoice = invoiceRes.rows[0];
-    
-    // Invoice created successfully
+
+    if (pricesIncludeGst || invoice.prices_include_gst) {
+      await client.query('UPDATE invoices SET prices_include_gst = $1 WHERE id = $2', [
+        pricesIncludeGst,
+        invoice.id,
+      ]);
+      invoice.prices_include_gst = pricesIncludeGst;
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {
       const { saveInvoiceCustomFields } = await import('@/lib/custom-fields-persist');
@@ -1629,7 +1686,8 @@ export async function POST(request: NextRequest) {
       const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
         item,
         intraStateSupply,
-        zeroRatedWithoutTax
+        zeroRatedWithoutTax,
+        pricesIncludeGst
       );
 
       
@@ -2572,6 +2630,7 @@ export async function POST(request: NextRequest) {
       credit_metrics: creditMetrics,
       credit_warning: creditWarning,
       stock_warnings: stockWarnings.length > 0 ? stockWarnings : undefined,
+      compliance_warnings: complianceWarnings.length > 0 ? complianceWarnings : undefined,
     };
     const responseObj = NextResponse.json(response, { status: 201 });
     

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkGstin } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +12,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid GSTIN format. Must be 15 characters.' }, { status: 400 });
     }
 
-    // Validate GSTIN format
-    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstinRegex.test(gstin)) {
-      return NextResponse.json({ error: 'Invalid GSTIN format' }, { status: 400 });
+    const check = checkGstin(gstin);
+    if (!check.valid) {
+      return NextResponse.json({ error: check.error, code: check.code }, { status: 400 });
     }
 
     // Try multiple APIs in sequence

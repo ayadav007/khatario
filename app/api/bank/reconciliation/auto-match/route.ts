@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { queryOne, queryRows, getPool } from '@/lib/db';
 import {
@@ -22,9 +22,11 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     const body = await request.json();
-    const businessId = (body.business_id as string) || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const userId = resolveCreatedByUserId(request, body);
-    if (!businessId || !userId) {
+    if (!userId) {
       return NextResponse.json({ error: 'business_id and user context are required' }, { status: 400 });
     }
 
@@ -139,6 +141,18 @@ export async function POST(request: NextRequest) {
         for (const id of parseMatchedLedgerIds(l.matched_ledger_ids)) usedLedger.add(id);
       }
     }
+    const otherStatementMatches = await queryRows<{ matched_ledger_entry_id: string | null; matched_ledger_ids: unknown }>(
+      `SELECT bsl.matched_ledger_entry_id::text, bsl.matched_ledger_ids
+         FROM bank_statement_lines bsl
+         JOIN bank_statements bs ON bs.id = bsl.bank_statement_id
+        WHERE bsl.business_id = $1 AND bs.bank_account_id = $2 AND bsl.bank_statement_id <> $3
+          AND (bsl.is_matched = true OR bsl.match_status IN ('matched', 'partial'))`,
+      [businessId, stmt.bank_account_id, statementId]
+    );
+    for (const r of otherStatementMatches) {
+      if (r.matched_ledger_entry_id) usedLedger.add(r.matched_ledger_entry_id);
+      for (const id of parseMatchedLedgerIds(r.matched_ledger_ids)) usedLedger.add(id);
+    }
 
     const ledgerForEngine = ledgerInputs.filter((l) => !usedLedger.has(l.id));
     const engine = runBankReconciliationEngine({
@@ -161,14 +175,13 @@ export async function POST(request: NextRequest) {
       const conflict = await client.query(
         `SELECT 1 FROM bank_statement_lines
          WHERE business_id = $1
-           AND bank_statement_id = $2
-           AND id <> $3::uuid
+           AND id <> $2::uuid
            AND (
-             matched_ledger_entry_id = $4::uuid
-             OR matched_ledger_ids @> to_jsonb(ARRAY[$4::text]::text[])
+             matched_ledger_entry_id = $3::uuid
+             OR matched_ledger_ids @> to_jsonb(ARRAY[$3::text]::text[])
            )
          LIMIT 1`,
-        [businessId, statementId, sug.bankLineId, ledgerId]
+        [businessId, sug.bankLineId, ledgerId]
       );
       if (conflict.rows.length > 0) {
         skippedCount++;

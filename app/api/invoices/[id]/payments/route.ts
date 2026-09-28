@@ -3,6 +3,7 @@ import { queryOne, getPool } from '@/lib/db';
 import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import {
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
@@ -93,6 +94,14 @@ export async function PATCH(
         );
       }
     }
+
+    const lockRes = await periodGuardResponse({
+      businessId: inv.business_id as string,
+      branchId: paymentBranchId ?? null,
+      dates: [payment_date || new Date()],
+      action: 'record a receipt',
+    });
+    if (lockRes) return lockRes;
 
     // PHASE-5: wrap payment INSERT, balance updates, and ledger posting in one
     // transaction so the deferred validate_voucher_balance trigger sees both

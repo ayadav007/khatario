@@ -20,12 +20,28 @@ interface Expense {
   cgst_amount?: number;
   sgst_amount?: number;
   igst_amount?: number;
+  reference_number?: string | null;
+  itc_eligible?: boolean;
+  is_reverse_charge?: boolean;
+  tds_section?: string | null;
+  tds_amount?: number;
+  supplier_id?: string | null;
 }
 
 interface ExpenseCategory {
   id: string;
   name: string;
+  itc_blocked?: boolean;
 }
+
+const TDS_SECTION_OPTIONS = [
+  ['194C', '194C — Contractors'],
+  ['194J', '194J — Professional / technical fees'],
+  ['194H', '194H — Commission / brokerage'],
+  ['194I', '194I — Rent'],
+  ['194A', '194A — Interest'],
+  ['OTHER', 'Other'],
+];
 
 export default function ExpensesPage() {
   const router = useRouter();
@@ -36,6 +52,20 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const toast = useToastContext();
+
+  async function deleteExpense(expense: Expense) {
+    if (!window.confirm('Delete this expense? Its ledger entries will be removed.')) return;
+    const res = await fetch(`/api/expenses/${expense.id}?business_id=${business!.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error || 'Could not delete expense');
+      return;
+    }
+    toast.success('Expense deleted');
+    fetchExpenses();
+  }
 
   useEffect(() => {
     // Wait for branch context to be ready before fetching
@@ -165,6 +195,7 @@ export default function ExpensesPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Payment Mode</th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">GST (ITC)</th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Amount</th>
+                    <th className="py-3 px-4" />
                   </tr>
                 </thead>
                 <tbody>
@@ -201,13 +232,35 @@ export default function ExpensesPage() {
                             (Number(expense.cgst_amount) || 0) +
                             (Number(expense.sgst_amount) || 0) +
                             (Number(expense.igst_amount) || 0);
-                          return g > 0 ? `₹${g.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—';
+                          if (g <= 0) return '—';
+                          const label = `₹${g.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                          if (expense.is_reverse_charge) return `${label} (RCM)`;
+                          return expense.itc_eligible === false ? `${label} (blocked)` : label;
                         })()}
                       </td>
                       <td className="py-4 px-4 text-right">
                         <span className="text-sm font-semibold text-red-600">
                           ₹{parseFloat(expense.amount.toString()).toLocaleString()}
                         </span>
+                        {Number(expense.tds_amount) > 0 && (
+                          <p className="text-xs text-gray-500">TDS ₹{Number(expense.tds_amount).toLocaleString('en-IN')}</p>
+                        )}
+                      </td>
+                      <td className="py-4 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setEditing(expense)}
+                          className="text-sm text-primary-600 hover:underline mr-3"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteExpense(expense)}
+                          className="text-sm text-red-600 hover:underline"
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -218,16 +271,21 @@ export default function ExpensesPage() {
         </div>
 
         {/* Add Expense Modal */}
-        {showAddModal && (
+        {(showAddModal || editing) && (
           <AddExpenseModal
             businessId={business!.id}
             userId={user!.id}
             branchId={currentBranchId || undefined}
             categories={categories}
-            onClose={() => setShowAddModal(false)}
+            expense={editing}
+            onClose={() => {
+              setShowAddModal(false);
+              setEditing(null);
+            }}
             onSuccess={() => {
               fetchExpenses();
               setShowAddModal(false);
+              setEditing(null);
             }}
           />
         )}
@@ -242,6 +300,7 @@ function AddExpenseModal({
   userId,
   branchId,
   categories,
+  expense,
   onClose,
   onSuccess,
 }: {
@@ -249,21 +308,27 @@ function AddExpenseModal({
   userId: string;
   branchId?: string;
   categories: ExpenseCategory[];
+  expense?: Expense | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const toast = useToastContext();
+  const num = (v: unknown) => (Number(v) > 0 ? String(v) : '');
   const [formData, setFormData] = useState({
-    category_id: '',
-    amount: '',
-    description: '',
-    expense_date: new Date().toISOString().split('T')[0],
-    payment_mode: 'cash',
-    reference_number: '',
-    supplier_id: '',
-    cgst_amount: '',
-    sgst_amount: '',
-    igst_amount: '',
+    category_id: expense?.category_id || '',
+    amount: expense ? String(expense.amount) : '',
+    description: expense?.description || '',
+    expense_date: expense ? String(expense.expense_date).slice(0, 10) : new Date().toISOString().split('T')[0],
+    payment_mode: expense?.payment_mode || 'cash',
+    reference_number: expense?.reference_number || '',
+    supplier_id: expense?.supplier_id || '',
+    cgst_amount: num(expense?.cgst_amount),
+    sgst_amount: num(expense?.sgst_amount),
+    igst_amount: num(expense?.igst_amount),
+    itc_eligible: expense ? expense.itc_eligible !== false : true,
+    is_reverse_charge: !!expense?.is_reverse_charge,
+    tds_section: expense?.tds_section || '',
+    tds_amount: num(expense?.tds_amount),
   });
   const [saving, setSaving] = useState(false);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
@@ -294,8 +359,10 @@ function AddExpenseModal({
       const sgst = parseFloat(formData.sgst_amount) || 0;
       const igst = parseFloat(formData.igst_amount) || 0;
 
-      const response = await fetch('/api/expenses', {
-        method: 'POST',
+      const tds = parseFloat(formData.tds_amount) || 0;
+
+      const response = await fetch(expense ? `/api/expenses/${expense.id}` : '/api/expenses', {
+        method: expense ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -303,19 +370,21 @@ function AddExpenseModal({
           branch_id: branchId,
           created_by: userId,
           amount: parseFloat(formData.amount),
-          supplier_id: isOnAccount && formData.supplier_id ? formData.supplier_id : undefined,
-          cgst_amount: cgst > 0 ? cgst : undefined,
-          sgst_amount: sgst > 0 ? sgst : undefined,
-          igst_amount: igst > 0 ? igst : undefined,
+          supplier_id: isOnAccount && formData.supplier_id ? formData.supplier_id : null,
+          cgst_amount: cgst,
+          sgst_amount: sgst,
+          igst_amount: igst,
+          tds_amount: tds,
+          tds_section: tds > 0 ? formData.tds_section || 'OTHER' : null,
         }),
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to create expense');
+        throw new Error(err.error || 'Failed to save expense');
       }
 
-      toast.success('Expense added successfully!');
+      toast.success(expense ? 'Expense updated' : 'Expense added successfully!');
       onSuccess();
     } catch (error: unknown) {
       console.error('Error creating expense:', error);
@@ -328,14 +397,17 @@ function AddExpenseModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Add Expense</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
             <select
               value={formData.category_id}
-              onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+              onChange={(e) => {
+                const cat = categories.find((c) => c.id === e.target.value);
+                setFormData({ ...formData, category_id: e.target.value, itc_eligible: !cat?.itc_blocked });
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
             >
               <option value="">Select category</option>
@@ -361,7 +433,11 @@ function AddExpenseModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
               placeholder="0.00"
             />
-            <p className="text-xs text-gray-500 mt-1">Total on the bill (including GST, if any).</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {formData.is_reverse_charge
+                ? 'Amount charged by the supplier (no GST on the bill under reverse charge).'
+                : 'Total on the bill (including GST, if any).'}
+            </p>
           </div>
 
           <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 p-3 space-y-2">
@@ -405,6 +481,65 @@ function AddExpenseModal({
                 />
               </div>
             </div>
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={formData.itc_eligible}
+                onChange={(e) => setFormData({ ...formData, itc_eligible: e.target.checked })}
+              />
+              <span>
+                Claim ITC on this GST
+                <span className="block text-xs text-gray-500">
+                  Untick for blocked credit u/s 17(5) — food, club, personal use, motor vehicles etc. The GST is then
+                  added to the expense.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={formData.is_reverse_charge}
+                onChange={(e) => setFormData({ ...formData, is_reverse_charge: e.target.checked })}
+              />
+              <span>
+                Reverse charge (RCM)
+                <span className="block text-xs text-gray-500">
+                  For GTA, advocate, unregistered-dealer notified services: enter the GST you must pay; it is
+                  booked to RCM payable.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 p-3 space-y-2">
+            <p className="text-sm font-medium text-gray-800">TDS deducted (optional)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={formData.tds_section}
+                onChange={(e) => setFormData({ ...formData, tds_section: e.target.value })}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Section</option>
+                {TDS_SECTION_OPTIONS.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.tds_amount}
+                onChange={(e) => setFormData({ ...formData, tds_amount: e.target.value })}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                placeholder="TDS amount"
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              Paid / payable to the vendor = amount − TDS. TDS is credited to TDS Payable (2102).
+            </p>
           </div>
 
           <div>

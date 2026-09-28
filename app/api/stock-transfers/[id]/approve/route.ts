@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { ensureInterBranchInvoiceForTransfer } from '@/lib/inter-branch-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,6 @@ export async function POST(
 
     const userId = approved_by || body.user_id; // REQUIRED for authorization
     if (!userId) {
-      client.release();
       return NextResponse.json(
         { error: 'approved_by (user_id) is required for authorization' },
         { status: 400 }
@@ -35,7 +35,6 @@ export async function POST(
     `, [params.id]);
 
     if (transferResult.rows.length === 0) {
-      client.release();
       return NextResponse.json(
         { error: 'Transfer not found' },
         { status: 404 }
@@ -48,7 +47,6 @@ export async function POST(
     try {
       await assertFeatureAccess(transfer.business_id, 'multi_warehouse');
     } catch (error) {
-      client.release();
       if (error instanceof FeatureAccessDeniedError) {
         return error.toNextResponse();
       }
@@ -66,7 +64,6 @@ export async function POST(
         resource: transfer,
       });
     } catch (error) {
-      client.release();
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
       }
@@ -75,7 +72,6 @@ export async function POST(
 
     // Validate status
     if (transfer.status !== 'draft' && transfer.status !== 'pending_approval') {
-      client.release();
       return NextResponse.json(
         { error: `Cannot approve transfer in ${transfer.status} status. Only draft or pending_approval transfers can be approved.` },
         { status: 400 }
@@ -84,8 +80,8 @@ export async function POST(
 
     await client.query('BEGIN');
 
-    // Update transfer status to 'pending' (approved and ready for dispatch)
-    const updatedTransfer = await queryOne(`
+    await client.query(`SELECT 1 FROM stock_transfers WHERE id = $1 FOR UPDATE`, [params.id]);
+    await client.query(`
       UPDATE stock_transfers 
       SET status = 'pending',
           approved_by = $1,
@@ -98,8 +94,13 @@ export async function POST(
             ELSE 'Approved'
           END
       WHERE id = $3
-      RETURNING *
     `, [userId, approval_notes || null, params.id]);
+
+    await ensureInterBranchInvoiceForTransfer(client, params.id, {
+      ewayBillNumber: body.eway_bill_number,
+      ewayBillDate: body.eway_bill_date,
+      createdBy: userId,
+    });
 
     await client.query('COMMIT');
 

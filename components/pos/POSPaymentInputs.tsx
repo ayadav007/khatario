@@ -119,12 +119,17 @@ export function POSPaymentInputs({ grandTotal, payments, onChange }: POSPaymentI
             </span>
           </div>
           {returnAmount > 0 && (
-            <div className="flex justify-between items-center">
-              <span className="text-display font-semibold text-text-secondary">Return Amount:</span>
-              <span className="text-display-lg font-bold text-gray-900">
-                ₹{returnAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-display font-semibold text-text-secondary">Return Amount:</span>
+                <span className="text-display-lg font-bold text-gray-900">
+                  ₹{returnAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary">
+                Give this change to the customer. Save records the bill as fully paid (₹0 balance), not as extra credit.
+              </p>
+            </>
           )}
         </div>
       )}

@@ -3,6 +3,11 @@ import { queryRows, queryOne } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import {
+  AccountRuleError,
+  assertGroupMatchesType,
+  setAccountOpeningBalance,
+} from '@/lib/accounting/account-rules';
 
 export const dynamic = 'force-dynamic';
 
@@ -228,13 +233,30 @@ export const POST = withPremiumSubscriptionApi(
         );
       }
 
-      const account = await queryOne<Account>(
+      try {
+        await assertGroupMatchesType(business_id, account_group_id, account_type);
+      } catch (e) {
+        if (e instanceof AccountRuleError) {
+          return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        }
+        throw e;
+      }
+
+      const obAmount = Number(opening_balance) || 0;
+      if (obAmount < 0 || (opening_balance_type !== 'debit' && opening_balance_type !== 'credit')) {
+        return NextResponse.json(
+          { error: 'opening_balance must be non-negative and opening_balance_type debit or credit' },
+          { status: 400 }
+        );
+      }
+
+      let account = await queryOne<Account>(
         `INSERT INTO accounts (
         business_id, account_code, account_name, account_type, account_group_id,
         parent_account_id, nature, opening_balance, opening_balance_type,
         description, sort_order
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10)
       RETURNING *`,
         [
           business_id,
@@ -244,12 +266,21 @@ export const POST = withPremiumSubscriptionApi(
           account_group_id,
           parent_account_id || null,
           nature,
-          opening_balance,
           opening_balance_type,
           description || null,
           sort_order,
         ]
       );
+
+      if (account && obAmount > 0) {
+        await setAccountOpeningBalance({
+          businessId: business_id,
+          accountId: account.id,
+          amount: obAmount,
+          type: opening_balance_type as 'debit' | 'credit',
+        });
+        account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1', [account.id]);
+      }
 
       return NextResponse.json({ account }, { status: 201 });
     } catch (error: any) {

@@ -4,6 +4,8 @@ import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -244,6 +246,14 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    const lockRes = await periodGuardResponse({
+      businessId: business_id,
+      branchId: finalBranchId,
+      dates: [entry_date],
+      action: 'post a journal entry',
+    });
+    if (lockRes) return lockRes;
+
     // CRITICAL: Validate backdated entry
     const { validateBackdate, hasBackdateApprovalPermission } = await import('@/lib/backdate-controls');
     const backdateValidation = validateBackdate(entry_date, 365, 30); // Max 365 days, approval required after 30 days
@@ -328,12 +338,7 @@ export async function POST(request: NextRequest) {
 
     await client.query('BEGIN');
 
-    // Generate voucher number
-    const voucherNumberResult = await client.query(
-      'SELECT generate_voucher_number($1, $2, $3) as voucher_number',
-      [business_id, 'journal', entry_date]
-    );
-    const voucherNumber = voucherNumberResult.rows[0].voucher_number;
+    const voucherNumber = await allocateJournalVoucherNumber(client, business_id, entry_date);
 
     // Generate voucher_id (UUID)
     const voucherIdResult = await client.query('SELECT uuid_generate_v4() as id');
@@ -441,7 +446,7 @@ export async function POST(request: NextRequest) {
       (finalLines[0] as { _branch_id?: string })?._branch_id ?? finalBranchId;
 
     // Create journal entry metadata record
-    await query(
+    await client.query(
       `INSERT INTO journal_entries (
         business_id, branch_id, voucher_id, voucher_number, entry_date, 
         reference_number, narration, is_locked, created_by,

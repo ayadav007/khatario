@@ -10,6 +10,7 @@ import {
 } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -276,7 +277,12 @@ export async function POST(request: NextRequest) {
       return map[name] || '';
     };
 
-    const finalStateCode = state_code || (state ? getStateCode(state) : null);
+    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+    if (!gstinCheck.ok) {
+      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+    }
+    const finalState = gstinCheck.state;
+    const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
 
     const sql = `
       INSERT INTO customers (
@@ -320,14 +326,14 @@ export async function POST(request: NextRequest) {
           finalBillingAddress,
           finalShippingAddress,
           city || null,
-          state || null,
+          finalState,
           finalStateCode || null,
           pincode || null,
           shipping_city || null,
           shipping_state || null,
           shipping_pincode || null,
           country || 'India',
-          gstin || null,
+          gstinCheck.gstin,
           opening_balance,
           opening_balance_type,
           credit_limit,

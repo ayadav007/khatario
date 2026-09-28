@@ -4,6 +4,7 @@ import { Customer, Payment, Invoice } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -232,6 +233,26 @@ export async function PUT(
         return error.toNextResponse();
       }
       throw error;
+    }
+
+    if ('gstin' in updateData || 'state' in updateData || 'state_code' in updateData) {
+      const next = {
+        gstin: 'gstin' in updateData ? updateData.gstin : existingCustomer.gstin,
+        state: ('state' in updateData ? updateData.state : (existingCustomer as { state?: string | null }).state) as string | null,
+        state_code: ('state_code' in updateData
+          ? updateData.state_code
+          : (existingCustomer as { state_code?: string | null }).state_code) as string | null,
+      };
+      // A state_code carried over from an older GSTIN must not block a GSTIN change.
+      if ('gstin' in updateData && !('state_code' in updateData)) next.state_code = null;
+      if ('gstin' in updateData && !('state' in updateData)) next.state = null;
+      const gstinCheck = resolveGstinAndState(next);
+      if (!gstinCheck.ok) {
+        return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+      }
+      updateData.gstin = gstinCheck.gstin;
+      if (gstinCheck.state) updateData.state = gstinCheck.state;
+      if (gstinCheck.state_code) updateData.state_code = gstinCheck.state_code;
     }
 
     // PHASE 2: Lock opening balance only when it *changes* (the edit form always resends the same values)

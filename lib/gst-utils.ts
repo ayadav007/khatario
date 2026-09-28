@@ -3,6 +3,8 @@
  * Shared utilities for GST compliance features
  */
 
+import { isValidGstin } from '@/lib/tax/gstin';
+
 /**
  * Convert Indian state/UT name to 2-digit GST state code
  * 
@@ -166,10 +168,7 @@ export const INDIAN_STATES = [
  * @returns true if format is valid (15 characters, alphanumeric)
  */
 export function isValidGSTIN(gstin: string): boolean {
-  if (!gstin) return false;
-  // GSTIN format: 15 characters, alphanumeric
-  const gstinRegex = /^[0-9A-Z]{15}$/;
-  return gstinRegex.test(gstin.toUpperCase());
+  return isValidGstin(gstin);
 }
 
 /**

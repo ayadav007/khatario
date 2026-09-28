@@ -3,6 +3,7 @@ import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpe
 import * as db from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { fetchPartyLedgerDocs, type PartyType } from '@/lib/reports/party-ledger-docs';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     const fromDate = searchParams.get('from_date');
     const toDate = searchParams.get('to_date');
 
-    if (!businessId || !partyType || !partyId) {
+    if (!businessId || (partyType !== 'customer' && partyType !== 'supplier') || !partyId) {
       return NextResponse.json(
         { error: 'business_id, party_type, and party_id are required' },
         { status: 400 }
@@ -94,345 +95,128 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Fetch party opening balance and opening balance type
-    let storedOpeningBalance = 0;
-    let storedOpeningBalanceType: 'debit' | 'credit' | null = null;
-    
-    if (partyType === 'customer') {
-      const customer = await db.queryOne<{
-        opening_balance: string | null;
-        opening_balance_type: 'debit' | 'credit' | null;
-      }>(`
-        SELECT opening_balance, opening_balance_type
-        FROM customers
-        WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-      `, [partyId, businessId]);
-      
-      if (customer) {
-        storedOpeningBalance = parseFloat(customer.opening_balance ?? '0');
-        storedOpeningBalanceType = customer.opening_balance_type;
-      }
-    } else if (partyType === 'supplier') {
-      const supplier = await db.queryOne<{
-        opening_balance: string | null;
-        opening_balance_type: 'debit' | 'credit' | null;
-      }>(`
-        SELECT opening_balance, opening_balance_type
-        FROM suppliers
-        WHERE id = $1 AND business_id = $2
-      `, [partyId, businessId]);
-      
-      if (supplier) {
-        storedOpeningBalance = parseFloat(supplier.opening_balance ?? '0');
-        storedOpeningBalanceType = supplier.opening_balance_type;
-      }
-    }
+    // A party deals with every branch; only narrow when the caller explicitly asks.
+    const branchFilter = branchIdParam ? finalBranchId : null;
 
-    // Calculate opening balance from transactions BEFORE fromDate
-    // Opening Balance = Stored opening balance + Sum(debit - credit) of ALL transactions BEFORE fromDate
-    let transactionsBeforePeriod: any[] = [];
-    
-    if (partyType === 'customer') {
-      // Invoices (Debit) before fromDate
-      const invoicesBefore = await db.queryRows(`
-        SELECT 
-          i.grand_total as debit,
-          0 as credit
-        FROM invoices i
-        WHERE i.business_id = $1 
-          AND i.customer_id = $2
-          AND i.deleted_at IS NULL
-          AND i.status != 'cancelled'
-          AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
-          AND i.invoice_date < $3
-      `, [businessId, partyId, fromDate]);
+    const docs = await fetchPartyLedgerDocs({
+      businessId,
+      partyType: partyType as PartyType,
+      asOfDate: toDate,
+      partyId,
+      branchId: branchFilter,
+    });
 
-      // Payments received (Credit) before fromDate
-      const paymentsBefore = await db.queryRows(`
-        SELECT 
-          0 as debit,
-          p.amount as credit
-        FROM payments p
-        WHERE p.business_id = $1 
-          AND p.customer_id = $2
-          AND p.deleted_at IS NULL
-          AND p.type = 'receivable'
-          AND p.payment_date < $3
-      `, [businessId, partyId, fromDate]);
+    type Row = {
+      id: string | null;
+      reference_number: string;
+      transaction_date: string;
+      transaction_type: string;
+      description: string;
+      debit: number;
+      credit: number;
+    };
+    // Customer: debit = amount owed by the party. Supplier statements keep the ledger view
+    // (bill = credit, payment/return/TDS = debit) with the balance signed as "to pay".
+    const toRow = (d: { voucherId: string | null; reference: string; docDate: string; voucherType: string; description: string; amount: number }): Row => {
+      const increase = d.amount > 0 ? d.amount : 0;
+      const decrease = d.amount < 0 ? -d.amount : 0;
+      return {
+        id: d.voucherId,
+        reference_number: d.reference,
+        transaction_date: d.docDate,
+        transaction_type: d.voucherType,
+        description: d.description,
+        debit: partyType === 'customer' ? increase : decrease,
+        credit: partyType === 'customer' ? decrease : increase,
+      };
+    };
+    const signed = (r: Row) => (partyType === 'customer' ? r.debit - r.credit : r.credit - r.debit);
 
-      // Advance received (Credit) before fromDate
-      const advancesBefore = await db.queryRows(`
-        SELECT 
-          0 as debit,
-          ap.amount as credit
-        FROM advance_payments ap
-        WHERE ap.business_id = $1 
-          AND ap.customer_id = $2
-          AND ap.type = 'received'
-          AND ap.payment_date < $3
-      `, [businessId, partyId, fromDate]);
-
-      transactionsBeforePeriod = [...invoicesBefore, ...paymentsBefore, ...advancesBefore];
-    } else if (partyType === 'supplier') {
-      // Purchases (Credit) before fromDate
-      const purchasesBefore = await db.queryRows(`
-        SELECT 
-          0 as debit,
-          p.grand_total as credit
-        FROM purchases p
-        WHERE p.business_id = $1 
-          AND p.supplier_id = $2
-          AND p.deleted_at IS NULL
-          AND p.status != 'cancelled'
-          AND p.bill_date < $3
-      `, [businessId, partyId, fromDate]);
-
-      // Payments made (Debit) before fromDate
-      const paymentsBefore = await db.queryRows(`
-        SELECT 
-          p.amount as debit,
-          0 as credit
-        FROM payments p
-        WHERE p.business_id = $1 
-          AND p.supplier_id = $2
-          AND p.deleted_at IS NULL
-          AND p.type = 'payable'
-          AND p.payment_date < $3
-      `, [businessId, partyId, fromDate]);
-
-      // Advance paid (Debit) before fromDate
-      const advancesBefore = await db.queryRows(`
-        SELECT 
-          ap.amount as debit,
-          0 as credit
-        FROM advance_payments ap
-        WHERE ap.business_id = $1 
-          AND ap.supplier_id = $2
-          AND ap.type = 'paid'
-          AND ap.payment_date < $3
-      `, [businessId, partyId, fromDate]);
-
-      transactionsBeforePeriod = [...purchasesBefore, ...paymentsBefore, ...advancesBefore];
-    }
-
-    // Calculate net balance from transactions before period
-    const netBalanceFromTransactions = transactionsBeforePeriod.reduce((sum, t) => {
-      return sum + parseFloat(t.debit || 0) - parseFloat(t.credit || 0);
-    }, 0);
-
-    // Calculate adjusted opening balance as a signed number
-    // For customer: "To Receive" (debit) is positive, "To Pay" (credit) is negative
-    // For supplier: "To Pay" (credit) is positive, "To Receive" (debit) is negative
-    let adjustedOpeningBalance = 0;
+    const allDocRows: Row[] = docs.map(toRow);
 
     if (partyType === 'customer') {
-      // Customer opening balance contribution
-      if (storedOpeningBalanceType === 'debit') {
-        adjustedOpeningBalance += storedOpeningBalance; // "To Receive" → positive
-      } else if (storedOpeningBalanceType === 'credit') {
-        adjustedOpeningBalance -= storedOpeningBalance; // "To Pay" → negative
-      }
-    } else if (partyType === 'supplier') {
-      // Supplier opening balance contribution
-      if (storedOpeningBalanceType === 'credit') {
-        adjustedOpeningBalance += storedOpeningBalance; // "To Pay" → positive
-      } else if (storedOpeningBalanceType === 'debit') {
-        adjustedOpeningBalance -= storedOpeningBalance; // "To Receive" → negative
+      // Cash sales post straight to cash/bank, so they never touch receivables; show them as sale + receipt.
+      const cashSales = await db.queryRows<{ id: string; invoice_number: string; invoice_date: string; grand_total: string }>(
+        `SELECT i.id, i.invoice_number, i.invoice_date::text AS invoice_date, i.grand_total
+           FROM invoices i
+          WHERE i.business_id = $1 AND i.customer_id = $2 AND i.deleted_at IS NULL
+            AND i.status NOT IN ('draft', 'cancelled')
+            AND COALESCE(i.document_type, 'tax_invoice') NOT IN ('proforma_invoice', 'quotation', 'delivery_challan')
+            AND i.invoice_date <= $3::date
+            AND ($4::uuid IS NULL OR i.branch_id = $4::uuid)
+            AND NOT EXISTS (
+              SELECT 1 FROM ledger_entry_lines l JOIN accounts a ON a.id = l.account_id
+               WHERE l.voucher_type = 'invoice' AND l.voucher_id = i.id AND a.account_code LIKE '1103%'
+            )`,
+        [businessId, partyId, toDate, branchFilter]
+      );
+      for (const inv of cashSales) {
+        const amount = Number(inv.grand_total) || 0;
+        const date = String(inv.invoice_date).slice(0, 10);
+        allDocRows.push(
+          { id: inv.id, reference_number: inv.invoice_number, transaction_date: date, transaction_type: 'invoice', description: 'Sale (cash)', debit: amount, credit: 0 },
+          { id: inv.id, reference_number: inv.invoice_number, transaction_date: date, transaction_type: 'payment', description: 'Received at sale', debit: 0, credit: amount }
+        );
       }
     }
 
-    // Add net balance from transactions before period
-    adjustedOpeningBalance += netBalanceFromTransactions;
-    
-    // Convert adjusted opening balance to debit/credit for virtual row
-    // Positive balance = debit, Negative balance = credit
-    let adjustedOpeningDebit = 0;
-    let adjustedOpeningCredit = 0;
-    if (adjustedOpeningBalance >= 0) {
-      adjustedOpeningDebit = adjustedOpeningBalance;
-    } else {
-      adjustedOpeningCredit = Math.abs(adjustedOpeningBalance);
+    const advances = await db.queryRows<{ id: string; payment_date: string; amount: string }>(
+      `SELECT ap.id, ap.payment_date::text AS payment_date, ap.amount
+         FROM advance_payments ap
+        WHERE ap.business_id = $1 AND ${partyType === 'customer' ? 'ap.customer_id' : 'ap.supplier_id'} = $2
+          AND ap.type = $3 AND ap.payment_date <= $4::date`,
+      [businessId, partyId, partyType === 'customer' ? 'received' : 'paid', toDate]
+    ).catch(() => []);
+    for (const ap of advances) {
+      const amount = Number(ap.amount) || 0;
+      allDocRows.push({
+        id: ap.id,
+        reference_number: `ADV-${ap.id.slice(0, 8)}`,
+        transaction_date: String(ap.payment_date).slice(0, 10),
+        transaction_type: 'advance',
+        description: partyType === 'customer' ? 'Advance received' : 'Advance paid',
+        debit: partyType === 'customer' ? 0 : amount,
+        credit: partyType === 'customer' ? amount : 0,
+      });
     }
 
-    // PHASE 3.3: Create virtual opening balance row (not a transaction)
-    // Opening balance injected for statement visibility (not a transaction)
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const adjustedOpeningBalance = r2(
+      allDocRows.filter((r) => r.transaction_date < fromDate).reduce((s, r) => s + signed(r), 0)
+    );
+
     const openingBalanceRow = {
-      id: null, // Not a real transaction
+      id: null,
       reference_number: 'Opening Balance',
-      transaction_date: fromDate, // Statement period start date
+      transaction_date: fromDate,
       transaction_type: 'opening_balance',
       description: 'Opening Balance',
-      debit: adjustedOpeningDebit,
-      credit: adjustedOpeningCredit,
+      debit: partyType === 'customer' ? Math.max(adjustedOpeningBalance, 0) : Math.max(-adjustedOpeningBalance, 0),
+      credit: partyType === 'customer' ? Math.max(-adjustedOpeningBalance, 0) : Math.max(adjustedOpeningBalance, 0),
       running_balance: adjustedOpeningBalance,
-      is_virtual: true, // Mark as virtual row
+      is_virtual: true,
     };
 
-    // Fetch transactions BETWEEN fromDate and toDate
-    let transactions: any[] = [];
-
-    if (partyType === 'customer') {
-      // Invoices (Debit) between fromDate and toDate
-      const invoices = await db.queryRows(`
-        SELECT 
-          i.id,
-          i.invoice_number as reference_number,
-          i.invoice_date as transaction_date,
-          'invoice' as transaction_type,
-          'Sale' as description,
-          i.grand_total as debit,
-          0 as credit
-        FROM invoices i
-        WHERE i.business_id = $1 
-          AND i.customer_id = $2
-          AND i.deleted_at IS NULL
-          AND i.status != 'cancelled'
-          AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
-          AND i.invoice_date >= $3
-          AND i.invoice_date <= $4
-        ORDER BY i.invoice_date ASC, i.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      // Payments received (Credit) between fromDate and toDate
-      const payments = await db.queryRows(`
-        SELECT 
-          p.id,
-          ('PAY-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
-          p.payment_date as transaction_date,
-          'payment' as transaction_type,
-          CONCAT('Payment - ', p.payment_mode) as description,
-          0 as debit,
-          p.amount as credit
-        FROM payments p
-        WHERE p.business_id = $1 
-          AND p.customer_id = $2
-          AND p.deleted_at IS NULL
-          AND p.type = 'receivable'
-          AND p.payment_date >= $3
-          AND p.payment_date <= $4
-        ORDER BY p.payment_date ASC, p.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      // Advance received (Credit) between fromDate and toDate
-      const advances = await db.queryRows(`
-        SELECT 
-          ap.id,
-          ap.id::text as reference_number,
-          ap.payment_date as transaction_date,
-          'advance' as transaction_type,
-          'Advance Received' as description,
-          0 as debit,
-          ap.amount as credit
-        FROM advance_payments ap
-        WHERE ap.business_id = $1 
-          AND ap.customer_id = $2
-          AND ap.type = 'received'
-          AND ap.payment_date >= $3
-          AND ap.payment_date <= $4
-        ORDER BY ap.payment_date ASC, ap.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      transactions = [...invoices, ...payments, ...advances];
-    } else if (partyType === 'supplier') {
-      // Purchases (Credit) between fromDate and toDate
-      const purchases = await db.queryRows(`
-        SELECT 
-          p.id,
-          p.bill_number as reference_number,
-          p.bill_date as transaction_date,
-          'purchase' as transaction_type,
-          'Purchase' as description,
-          0 as debit,
-          p.grand_total as credit
-        FROM purchases p
-        WHERE p.business_id = $1 
-          AND p.supplier_id = $2
-          AND p.deleted_at IS NULL
-          AND p.status != 'cancelled'
-          AND p.bill_date >= $3
-          AND p.bill_date <= $4
-        ORDER BY p.bill_date ASC, p.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      // Payments made (Debit) between fromDate and toDate
-      const payments = await db.queryRows(`
-        SELECT 
-          p.id,
-          ('PAY-' || SUBSTRING(p.id::text, 1, 8)) as reference_number,
-          p.payment_date as transaction_date,
-          'payment' as transaction_type,
-          CONCAT('Payment - ', p.payment_mode) as description,
-          p.amount as debit,
-          0 as credit
-        FROM payments p
-        WHERE p.business_id = $1 
-          AND p.supplier_id = $2
-          AND p.deleted_at IS NULL
-          AND p.type = 'payable'
-          AND p.payment_date >= $3
-          AND p.payment_date <= $4
-        ORDER BY p.payment_date ASC, p.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      // Advance paid (Debit) between fromDate and toDate
-      const advances = await db.queryRows(`
-        SELECT 
-          ap.id,
-          ap.id::text as reference_number,
-          ap.payment_date as transaction_date,
-          'advance' as transaction_type,
-          'Advance Paid' as description,
-          ap.amount as debit,
-          0 as credit
-        FROM advance_payments ap
-        WHERE ap.business_id = $1 
-          AND ap.supplier_id = $2
-          AND ap.type = 'paid'
-          AND ap.payment_date >= $3
-          AND ap.payment_date <= $4
-        ORDER BY ap.payment_date ASC, ap.created_at ASC
-      `, [businessId, partyId, fromDate, toDate]);
-
-      transactions = [...purchases, ...payments, ...advances];
-    }
-
-    // Sort by transaction_date ASC (stable ordering)
-    transactions.sort((a, b) => {
-      const dateA = new Date(a.transaction_date).getTime();
-      const dateB = new Date(b.transaction_date).getTime();
-      if (dateA !== dateB) {
-        return dateA - dateB;
-      }
-      // Stable ordering for same-date entries: by id
-      return (a.id || '').localeCompare(b.id || '');
-    });
-
-    // Calculate running balance starting from adjusted opening balance
-    // running_balance = previous_balance + debit - credit
     let runningBalance = adjustedOpeningBalance;
-    transactions = transactions.map(t => {
-      runningBalance = runningBalance + parseFloat(t.debit || 0) - parseFloat(t.credit || 0);
-      return { ...t, running_balance: runningBalance };
-    });
+    const transactions = allDocRows
+      .filter((r) => r.transaction_date >= fromDate)
+      .sort((a, b) =>
+        a.transaction_date !== b.transaction_date
+          ? a.transaction_date < b.transaction_date ? -1 : 1
+          : signed(b) - signed(a)
+      )
+      .map((r) => {
+        runningBalance = r2(runningBalance + signed(r));
+        return { ...r, running_balance: runningBalance };
+      });
 
-    // Combine opening balance row with transactions
     const allRows = [openingBalanceRow, ...transactions];
-
-    // Calculate totals
-    const totalDebit = allRows.reduce((sum, t) => sum + parseFloat(t.debit || 0), 0);
-    const totalCredit = allRows.reduce((sum, t) => sum + parseFloat(t.credit || 0), 0);
-    const closingBalance = runningBalance; // Final running balance
-    const closingBalanceType = closingBalance >= 0 ? 'debit' : 'credit';
-
-    // Validation: opening_balance + total_debit - total_credit === closing_balance
-    const calculatedClosingBalance = adjustedOpeningBalance + totalDebit - totalCredit;
-    if (Math.abs(calculatedClosingBalance - closingBalance) > 0.01) {
-      console.warn(
-        `[Party Statement] Balance mismatch for ${partyType} ${partyId}: ` +
-        `opening=${adjustedOpeningBalance}, total_debit=${totalDebit}, total_credit=${totalCredit}, ` +
-        `calculated=${calculatedClosingBalance}, closing=${closingBalance}`
-      );
-    }
+    const totalDebit = r2(allRows.reduce((sum, t) => sum + Number(t.debit || 0), 0));
+    const totalCredit = r2(allRows.reduce((sum, t) => sum + Number(t.credit || 0), 0));
+    const closingBalance = runningBalance;
+    const closingBalanceType = partyType === 'customer'
+      ? (closingBalance >= 0 ? 'debit' : 'credit')
+      : (closingBalance >= 0 ? 'credit' : 'debit');
 
     // Get party details
     let partyDetails: any = {};
@@ -465,7 +249,9 @@ export async function GET(request: NextRequest) {
       from_date: fromDate,
       to_date: toDate,
       opening_balance: adjustedOpeningBalance,
-      opening_balance_type: adjustedOpeningBalance >= 0 ? 'debit' : 'credit',
+      opening_balance_type: partyType === 'customer'
+        ? (adjustedOpeningBalance >= 0 ? 'debit' : 'credit')
+        : (adjustedOpeningBalance >= 0 ? 'credit' : 'debit'),
       transactions: allRows, // Includes virtual opening balance row
       total_debit: totalDebit,
       total_credit: totalCredit,

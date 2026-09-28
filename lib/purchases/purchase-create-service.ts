@@ -431,9 +431,11 @@ export async function createPurchaseInTransaction(
       ]
     );
 
+    const lineIsService = lineIntent === 'service';
+    // Service lines are never matched: a name/HSN hit could be a goods item and would stock it.
     let effectiveItemId =
       item.item_id && String(item.item_id).trim() !== '' ? String(item.item_id).trim() : null;
-    if (!effectiveItemId && item.item_name) {
+    if (!effectiveItemId && item.item_name && !lineIsService) {
       effectiveItemId = await resolveCatalogItemIdForPurchase(client, business_id, {
         name: String(item.item_name),
         hsn_sac: (item.hsn_sac as string) ?? null,
@@ -476,7 +478,7 @@ export async function createPurchaseInTransaction(
       }
     }
 
-    if (status === 'final' && lineIntent !== 'service' && !effectiveItemId) {
+    if (status === 'final' && !lineIsService && !effectiveItemId) {
       throw new PurchaseCreateServiceError(
         `Goods line "${item.item_name || 'Item'}" is not linked to a catalogue item.`,
         400,
@@ -484,7 +486,7 @@ export async function createPurchaseInTransaction(
       );
     }
 
-    if (status === 'final' && effectiveItemId) {
+    if (status === 'final' && effectiveItemId && !lineIsService) {
       const itemTypeRes = await client.query(
         'SELECT item_type, track_batch, track_serial FROM items WHERE id = $1 AND business_id = $2',
         [effectiveItemId, business_id]
@@ -530,14 +532,14 @@ export async function createPurchaseInTransaction(
 
   if (status === 'final') {
     let totalInventoryAmount = 0;
+    // Capitalise at this bill's cost (matches stock_movements.unit_cost), not items.purchase_price.
     const invRes = await client.query(
       `
-      SELECT COALESCE(SUM(
-        (COALESCE(i.purchase_price::numeric, pi.unit_price::numeric)) * pi.quantity::numeric
-      ), 0) AS total
+      SELECT COALESCE(SUM(pi.taxable_value::numeric), 0) AS total
       FROM purchase_items pi
       JOIN items i ON i.id = pi.item_id AND i.business_id = $2
       WHERE pi.purchase_id = $1 AND i.item_type = 'goods'
+        AND COALESCE(pi.line_item_type, 'goods') <> 'service'
       `,
       [purchase.id, business_id]
     );

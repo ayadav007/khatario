@@ -265,7 +265,7 @@ export async function DELETE(
 
       // Check for purchase returns
       const returnsCheck = await client.query(
-        `SELECT COUNT(*) as count FROM purchase_returns WHERE purchase_id = $1`,
+        `SELECT COUNT(*) as count FROM purchase_returns WHERE purchase_id = $1 AND COALESCE(status, 'final') <> 'cancelled'`,
         [purchaseId]
       );
 

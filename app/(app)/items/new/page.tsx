@@ -10,6 +10,8 @@ import { FormSection } from '@/components/ui/FormSection';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { HSNLookup } from '@/components/ui/HSNLookup';
+import { GST_RATE_SLABS, isAllowedGstRate } from '@/lib/gst/rates';
+import { GST_UQC_CODES, toGstUqc } from '@/lib/gst/uqc';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
@@ -68,6 +70,7 @@ export default function NewItemPage() {
     barcode: '',
     barcode_type: '',
     unit: 'PCS',
+    uqc: '',
     item_type: 'goods' as 'goods' | 'service',
     selling_price: '',
     purchase_price: '',
@@ -83,7 +86,7 @@ export default function NewItemPage() {
     has_variants: false,
     track_batch: false,
     track_serial: false,
-    valuation_method: 'simple' as 'fifo' | 'lifo' | 'weighted_avg' | 'simple',
+    valuation_method: 'simple' as 'fifo' | 'weighted_avg' | 'simple',
     gst_included: false,
     mrp: '',
     fssai_licence_no: '',
@@ -427,6 +430,7 @@ export default function NewItemPage() {
               barcode: item.barcode || '',
               barcode_type: item.barcode_type || '',
               unit: item.unit || 'PCS',
+              uqc: (item as { uqc?: string | null }).uqc || '',
               item_type: item.item_type || 'goods',
               selling_price: item.selling_price?.toString() || '',
               purchase_price: item.purchase_price?.toString() || '',
@@ -783,6 +787,7 @@ export default function NewItemPage() {
         barcode: formData.barcode || null,
         barcode_type: formData.barcode_type || null,
         unit: formData.unit,
+        uqc: formData.uqc || toGstUqc(formData.unit, formData.hsn_sac),
         item_type: formData.item_type,
         selling_price: formData.item_type === 'service' || formData.has_variants
           ? (formData.selling_price ? Number(formData.selling_price) : null)
@@ -1235,6 +1240,21 @@ export default function NewItemPage() {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">GST UQC</label>
+                <select
+                  name="uqc"
+                  className="input"
+                  value={formData.uqc || toGstUqc(formData.unit, formData.hsn_sac)}
+                  onChange={handleChange}
+                >
+                  {GST_UQC_CODES.map((code) => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-text-secondary">Unit code reported in the GSTR-1 HSN summary</p>
+              </div>
+
               {!formData.has_variants && (
                 <>
                   <Input 
@@ -1348,16 +1368,25 @@ export default function NewItemPage() {
                 description="Default tax treatment when this item has no variants."
               >
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 gap-y-6 items-start">
-              <Input 
-                label="Tax Rate (%)" 
-                name="tax_rate" 
-                type="number" 
-                inputMode="decimal"
-                value={formData.tax_rate} 
-                onChange={handleChange} 
-                placeholder="0"
-                helperText="Auto-filled when HSN/SAC code is selected"
-              />
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">GST Rate (%)</label>
+                <select
+                  name="tax_rate"
+                  className="input"
+                  value={formData.tax_rate === '' ? '0' : String(Number(formData.tax_rate))}
+                  onChange={handleChange}
+                >
+                  {[...GST_RATE_SLABS, 28].map((r) => (
+                    <option key={r} value={String(r)}>{r === 28 ? '28 (cess goods only)' : r}</option>
+                  ))}
+                  {formData.tax_rate !== '' && !isAllowedGstRate(formData.tax_rate) ? (
+                    <option value={String(Number(formData.tax_rate))} disabled>
+                      {Number(formData.tax_rate)} (not a current slab)
+                    </option>
+                  ) : null}
+                </select>
+                <p className="mt-1 text-xs text-text-secondary">Auto-filled when HSN/SAC code is selected</p>
+              </div>
               
               <div className="space-y-2">
               <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
@@ -1831,7 +1860,7 @@ export default function NewItemPage() {
                       <span className="text-sm text-text-primary">Track Batch Numbers</span>
                     </label>
                     <p className="text-xs text-text-secondary ml-6">
-                      Enable batch tracking for expiry dates, manufacturing dates, and FIFO/LIFO valuation
+                      Enable batch tracking for expiry dates, manufacturing dates, and FIFO valuation
                     </p>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1860,12 +1889,10 @@ export default function NewItemPage() {
                       >
                         <option value="simple">Simple (Purchase Price × Quantity)</option>
                         <option value="fifo">FIFO (First In First Out)</option>
-                        <option value="lifo">LIFO (Last In First Out)</option>
                         <option value="weighted_avg">Weighted Average</option>
                       </select>
                       <p className="text-xs text-text-secondary mt-1">
                         {formData.valuation_method === 'fifo' && 'Uses oldest batches first for cost calculation'}
-                        {formData.valuation_method === 'lifo' && 'Uses newest batches first for cost calculation'}
                         {formData.valuation_method === 'weighted_avg' && 'Uses average cost of all batches'}
                         {formData.valuation_method === 'simple' && 'Uses item purchase price for all stock'}
                       </p>

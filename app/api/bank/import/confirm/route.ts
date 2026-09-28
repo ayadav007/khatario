@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getUserIdFromRequest,
-  getBusinessIdFromRequest,
+  requireTenantBusinessId,
   resolveCreatedByUserId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -29,7 +29,9 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     const body = await request.json();
-    const businessId = (body.business_id as string) || getBusinessIdFromRequest(request);
+    const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
     const userId = getUserIdFromRequest(request);
     const createdBy = resolveCreatedByUserId(request, body);
 

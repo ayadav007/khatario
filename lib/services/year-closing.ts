@@ -3,7 +3,10 @@
  * Executes complete financial year closing process
  */
 
-import { queryRows, queryOne, getPool } from '@/lib/db';
+import type { PoolClient } from 'pg';
+import { queryOne, getPool } from '@/lib/db';
+import { insertVoucherLines, requireAccountByCode, round2 } from '@/lib/accounting/voucher-posting';
+import { postYearClosingVoucher } from '@/lib/accounting/year-close';
 import {
   createClosingStockSnapshot,
   type ClosingValuationMethod,
@@ -11,9 +14,6 @@ import {
 import { calculateDepreciationForAllAssets, saveDepreciationSchedule } from './depreciation-calculator';
 import { getTotalProvisions } from './provisions-manager';
 import { getAllTaxProvisions, createOrUpdateTaxProvision, calculateCurrentTax } from './tax-provision-calculator';
-import { createLedgerEntryLine } from '@/lib/ledger-utils';
-import { getAccountByCode } from '@/lib/ledger-utils';
-
 export interface YearClosingResult {
   financial_year_id: string;
   financial_year: string;
@@ -30,7 +30,12 @@ export interface YearClosingResult {
 }
 
 /**
- * Execute year closing process
+ * Execute year closing:
+ * 1. closing stock snapshot and depreciation for the year (posted to the GL);
+ * 2. optional current-tax provision (Dr 5210 / Cr 2109) when a tax rate is given;
+ * 3. one balanced closing voucher that zeroes every income and expense account to
+ *    Retained Earnings (3002);
+ * 4. opening balance snapshot, FY marked closed and the whole FY period locked.
  */
 export async function executeYearClosing(
   businessId: string,
@@ -38,237 +43,152 @@ export async function executeYearClosing(
   financialYear: string,
   fyStartDate: string,
   fyEndDate: string,
-  userId: string,
-  taxRate: number = 30 // Default 30% tax rate
+  userId: string | null,
+  taxRate: number = 0
 ): Promise<YearClosingResult> {
+  const valuationRow = await queryOne<{ stock_valuation_method: string }>(
+    `SELECT COALESCE(stock_valuation_method, 'fifo') AS stock_valuation_method
+     FROM business_settings WHERE business_id = $1`,
+    [businessId]
+  );
+  const valuationMethod = (valuationRow?.stock_valuation_method ?? 'fifo') as ClosingValuationMethod;
+  const closingStock = await createClosingStockSnapshot(
+    businessId,
+    financialYearId,
+    financialYear,
+    fyEndDate,
+    valuationMethod,
+    userId ?? ''
+  );
+
+  const depreciationCalculations = await calculateDepreciationForAllAssets(
+    businessId,
+    financialYear,
+    fyStartDate,
+    fyEndDate
+  );
+  let depreciationTotal = 0;
+  for (const calc of depreciationCalculations) {
+    await saveDepreciationSchedule(calc, businessId, true);
+    depreciationTotal += calc.depreciation_amount;
+  }
+
+  const provisions = await getTotalProvisions(businessId, financialYear);
+
   const pool = getPool();
   const client = await pool.connect();
-
   try {
     await client.query('BEGIN');
 
-    // 1. Create closing stock snapshot
-    const valuationRow = await queryOne<{ stock_valuation_method: string }>(
-      `SELECT COALESCE(stock_valuation_method, 'fifo') AS stock_valuation_method
-       FROM business_settings WHERE business_id = $1`,
-      [businessId]
+    const fy = await client.query(`SELECT is_closed FROM financial_years WHERE id = $1 FOR UPDATE`, [financialYearId]);
+    if (fy.rows[0]?.is_closed) throw new Error(`FY ${financialYear} is already closed`);
+
+    const profitBeforeTax = await ledgerProfit(client, businessId, fyStartDate, fyEndDate);
+
+    let currentTaxAmount = 0;
+    await client.query(
+      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'tax_provision'`,
+      [businessId, financialYearId]
     );
-    const valuationMethod = (valuationRow?.stock_valuation_method ??
-      'fifo') as ClosingValuationMethod;
-    const closingStock = await createClosingStockSnapshot(
-      businessId,
-      financialYearId,
-      financialYear,
-      fyEndDate,
-      valuationMethod,
-      userId
-    );
-
-    // 2. Calculate and post depreciation for the year
-    const depreciationCalculations = await calculateDepreciationForAllAssets(
-      businessId,
-      financialYear,
-      fyStartDate,
-      fyEndDate
-    );
-
-    let depreciationTotal = 0;
-    for (const calc of depreciationCalculations) {
-      await saveDepreciationSchedule(calc, businessId, true);
-      depreciationTotal += calc.depreciation_amount;
-    }
-
-    // 3. Get provisions total
-    const provisions = await getTotalProvisions(businessId, financialYear);
-    const provisionsTotal = provisions.total;
-
-    // 4. Calculate P&L to get profit before tax
-    const profitBeforeTax = await calculateProfitBeforeTax(
-      client,
-      businessId,
-      fyStartDate,
-      fyEndDate,
-      closingStock.total_value,
-      depreciationTotal
-    );
-
-    // 5. Calculate and create tax provisions
-    const currentTaxAmount = calculateCurrentTax(profitBeforeTax, taxRate);
-    
-    // Get tax accounts
-    const currentTaxAccount = await getAccountByCode(businessId, '2109'); // Current Tax Payable
-    const taxExpenseAccount = await getAccountByCode(businessId, '5210'); // Current Tax Expense
-
-    if (currentTaxAccount && taxExpenseAccount) {
+    if (taxRate > 0 && profitBeforeTax > 0) {
+      currentTaxAmount = round2(calculateCurrentTax(profitBeforeTax, taxRate));
+      const taxExpense = await requireAccountByCode(client, businessId, '5210', 'Current Tax Expense');
+      const taxPayable = await requireAccountByCode(client, businessId, '2109', 'Current Tax Payable');
+      const label = `Provision for current tax FY ${financialYear} @ ${taxRate}%`;
+      await insertVoucherLines(client, {
+        businessId,
+        branchId: null,
+        voucherId: financialYearId,
+        voucherType: 'tax_provision',
+        entryDate: fyEndDate,
+        reference: `TAX-${financialYear}`,
+        lines: [
+          { accountId: taxExpense, debit: currentTaxAmount, credit: 0, narration: label },
+          { accountId: taxPayable, debit: 0, credit: currentTaxAmount, narration: label },
+        ],
+      });
       await createOrUpdateTaxProvision(
         businessId,
         financialYear,
         'current_tax',
         currentTaxAmount,
-        currentTaxAccount.id,
-        taxExpenseAccount.id,
+        taxPayable,
+        taxExpense,
         taxRate,
         profitBeforeTax,
         'flat_rate'
       );
     }
 
-    // Deferred tax (simplified - should be calculated from timing differences)
-    const deferredTaxAmount = 0; // Placeholder - implement based on timing differences
-
-    const profitAfterTax = profitBeforeTax - currentTaxAmount - deferredTaxAmount;
-
-    // 6. Transfer P&L to Retained Earnings
-    const retainedEarningsAccount = await getAccountByCode(businessId, '3002'); // Retained Earnings
-    let journalEntriesCreated = 0;
-
-    if (retainedEarningsAccount) {
-      // Create journal entry: Debit P&L accounts, Credit Retained Earnings (if profit)
-      // Or: Debit Retained Earnings, Credit P&L accounts (if loss)
-      
-      if (profitAfterTax > 0) {
-        // Profit: Transfer to Retained Earnings
-        // This is a simplified version - in practice, you'd close all income/expense accounts
-        const voucherId = crypto.randomUUID();
-        
-        // Debit: Income accounts (closing)
-        // Credit: Retained Earnings
-        await createLedgerEntryLine({
-          businessId,
-          voucherId,
-          voucherType: 'journal',
-          accountId: retainedEarningsAccount.id,
-          entryDate: fyEndDate,
-          debit: 0,
-          credit: profitAfterTax,
-          narration: `Year closing - Profit transferred to Retained Earnings for FY ${financialYear}`,
-          referenceNumber: `YC-${financialYear}`,
-        });
-
-        journalEntriesCreated++;
-      } else if (profitAfterTax < 0) {
-        // Loss: Transfer from Retained Earnings
-        const voucherId = crypto.randomUUID();
-        
-        await createLedgerEntryLine({
-          businessId,
-          voucherId,
-          voucherType: 'journal',
-          accountId: retainedEarningsAccount.id,
-          entryDate: fyEndDate,
-          debit: Math.abs(profitAfterTax),
-          credit: 0,
-          narration: `Year closing - Loss transferred from Retained Earnings for FY ${financialYear}`,
-          referenceNumber: `YC-${financialYear}`,
-        });
-
-        journalEntriesCreated++;
-      }
-    }
-
-    // 7. Create opening balances for next financial year
-    const openingBalancesCreated = await createOpeningBalances(
-      client,
+    const closing = await postYearClosingVoucher(client, {
       businessId,
       financialYearId,
-      fyEndDate
-    );
+      yearCode: financialYear,
+      startDate: fyStartDate,
+      endDate: fyEndDate,
+    });
 
-    // 8. Mark financial year as closed
+    const openingBalancesCreated = await createOpeningBalances(client, businessId, financialYearId, fyEndDate);
+
     await client.query(
       `UPDATE financial_years
-       SET is_closed = true,
-           closed_at = CURRENT_TIMESTAMP,
-           closed_by = $1
+       SET is_closed = true, closed_at = CURRENT_TIMESTAMP, closed_by = $1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
       [userId, financialYearId]
+    );
+    await client.query(
+      `INSERT INTO period_locks (business_id, branch_id, financial_year, period_start, period_end, is_locked, locked_at, locked_by, notes)
+       SELECT $1, NULL, $2, $3, $4, true, CURRENT_TIMESTAMP, $5, 'Locked by year closing'
+       WHERE NOT EXISTS (
+         SELECT 1 FROM period_locks
+          WHERE business_id = $1 AND branch_id IS NULL AND period_start = $3 AND period_end = $4
+       )`,
+      [businessId, financialYear, fyStartDate, fyEndDate, userId]
+    );
+    await client.query(
+      `UPDATE period_locks SET is_locked = true, locked_at = CURRENT_TIMESTAMP, locked_by = $4, updated_at = CURRENT_TIMESTAMP
+        WHERE business_id = $1 AND branch_id IS NULL AND period_start = $2 AND period_end = $3`,
+      [businessId, fyStartDate, fyEndDate, userId]
     );
 
     await client.query('COMMIT');
 
+    const profitAfterTax = round2(closing.profit);
     return {
       financial_year_id: financialYearId,
       financial_year: financialYear,
       closing_stock_value: closingStock.total_value,
       depreciation_total: depreciationTotal,
-      provisions_total: provisionsTotal,
+      provisions_total: provisions.total,
       current_tax: currentTaxAmount,
-      deferred_tax: deferredTaxAmount,
+      deferred_tax: 0,
       profit_before_tax: profitBeforeTax,
       profit_after_tax: profitAfterTax,
       retained_earnings: profitAfterTax,
-      journal_entries_created: journalEntriesCreated,
+      journal_entries_created: closing.lines > 0 ? 1 : 0,
       opening_balances_created: openingBalancesCreated,
     };
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
     client.release();
   }
 }
 
-/**
- * Calculate profit before tax from P&L
- */
-async function calculateProfitBeforeTax(
-  client: any,
-  businessId: string,
-  fromDate: string,
-  toDate: string,
-  closingStockValue: number,
-  depreciation: number
-): Promise<number> {
-  // Get total income
-  const income = await client.query(
-    `SELECT COALESCE(SUM(credit - debit), 0) as total
-     FROM ledger_entry_lines lel
-     JOIN accounts a ON lel.account_id = a.id
-     WHERE lel.business_id = $1
-       AND lel.entry_date >= $2
-       AND lel.entry_date <= $3
-       AND a.account_type = 'income'`,
+/** Net profit from the ledger (income - expense) for the FY, before the closing voucher. */
+async function ledgerProfit(client: PoolClient, businessId: string, fromDate: string, toDate: string): Promise<number> {
+  const res = await client.query(
+    `SELECT COALESCE(SUM(l.credit - l.debit), 0) AS profit
+       FROM ledger_entry_lines l
+       JOIN accounts a ON a.id = l.account_id
+      WHERE l.business_id = $1
+        AND a.account_type IN ('income', 'expense')
+        AND l.entry_date >= $2::date AND l.entry_date <= $3::date
+        AND l.voucher_type NOT IN ('year_close', 'tax_provision')`,
     [businessId, fromDate, toDate]
   );
-
-  // Get total expenses (excluding depreciation which is passed separately)
-  const expenses = await client.query(
-    `SELECT COALESCE(SUM(debit - credit), 0) as total
-     FROM ledger_entry_lines lel
-     JOIN accounts a ON lel.account_id = a.id
-     WHERE lel.business_id = $1
-       AND lel.entry_date >= $2
-       AND lel.entry_date <= $3
-       AND a.account_type = 'expense'
-       AND a.account_code != '5204'`, // Exclude depreciation (already included)
-    [businessId, fromDate, toDate]
-  );
-
-  const totalIncome = parseFloat(income.rows[0]?.total || 0);
-  const totalExpenses = parseFloat(expenses.rows[0]?.total || 0);
-
-  // Calculate COGS: Opening Stock + Purchases - Closing Stock
-  // For simplicity, using purchases directly (opening stock should be from previous FY)
-  const purchases = await client.query(
-    `SELECT COALESCE(SUM(grand_total), 0) as total
-     FROM purchases
-     WHERE business_id = $1
-       AND bill_date >= $2
-       AND bill_date <= $3
-       AND status != 'cancelled'`,
-    [businessId, fromDate, toDate]
-  );
-
-  const totalPurchases = parseFloat(purchases.rows[0]?.total || 0);
-  // Note: Opening stock should come from previous FY closing stock
-  // For now, assuming 0 opening stock for first year
-  const openingStockValue = 0; // Should be fetched from previous FY
-  const cogs = openingStockValue + totalPurchases - closingStockValue;
-
-  // Profit = Income - COGS - Expenses - Depreciation
-  const profit = totalIncome - cogs - totalExpenses - depreciation;
-
-  return profit;
+  return round2(Number(res.rows[0]?.profit || 0));
 }
 
 /**
@@ -358,8 +278,14 @@ export async function validateYearClosing(
   );
 
   if (!closingStockFinalized?.is_finalized) {
-    errors.push('Closing stock snapshot is not finalized');
+    warnings.push('Closing stock snapshot is not finalized; one will be taken at the FY end date during closing');
   }
+
+  const fy = await queryOne<{ is_closed: boolean }>(
+    `SELECT is_closed FROM financial_years WHERE business_id = $1 AND year_code = $2`,
+    [businessId, financialYear]
+  );
+  if (fy?.is_closed) errors.push(`FY ${financialYear} is already closed`);
 
   // Check if all depreciation is posted
   const unpostedDepreciation = await queryOne<{ count: number }>(

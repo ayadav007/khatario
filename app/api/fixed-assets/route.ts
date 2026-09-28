@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows, queryOne, getPool } from '@/lib/db';
-import { generateDepreciationSchedule } from '@/lib/accounting/depreciation';
+import { queryRows, getPool } from '@/lib/db';
+import { fundingAccountId, postAssetCapitalisation } from '@/lib/accounting/fixed-asset-posting';
+import { itBlockByKey, scheduleIIByKey, wdvRateFromLife } from '@/lib/accounting/it-depreciation';
+import { guardLedgerRoute } from '@/lib/http/ledger-route-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +30,9 @@ export async function GET(request: NextRequest) {
     let sql = `
       SELECT 
         fa.*,
+        to_char(COALESCE(fa.put_to_use_date, fa.purchase_date), 'YYYY-MM-DD') AS put_to_use_on,
+        (SELECT to_char(MAX(ds.period_end_date), 'YYYY-MM-DD')
+           FROM depreciation_schedule ds WHERE ds.asset_id = fa.id) AS last_depreciated_to,
         a.account_code as asset_account_code,
         a.account_name as asset_account_name,
         da.account_code as depreciation_account_code,
@@ -62,119 +67,158 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/fixed-assets
- * Add fixed asset
+ * Add fixed asset and post the capitalisation voucher
  */
 export async function POST(request: NextRequest) {
-  const pool = getPool();
-  const client = await pool.connect();
+  const body = (await request.json().catch(() => ({}))) as Record<string, any>;
+  const {
+    asset_code,
+    asset_name,
+    asset_category,
+    purchase_date,
+    purchase_cost,
+    account_id,
+    depreciation_account_id,
+    depreciation_method,
+    residual_value = 0,
+    location,
+    vendor_name,
+    invoice_number,
+    warranty_expiry_date,
+    notes,
+    funding = 'bank',
+    credit_account_id,
+    branch_id,
+    it_block,
+    schedule_ii_category,
+  } = body;
+  const putToUseDate = body.put_to_use_date || purchase_date;
 
+  if (!['bank', 'cash', 'credit', 'opening'].includes(funding)) {
+    return NextResponse.json(
+      { error: "funding must be one of 'bank', 'cash', 'credit' or 'opening'" },
+      { status: 400 }
+    );
+  }
+  if (!(Number(purchase_cost) > 0)) {
+    return NextResponse.json({ error: 'purchase_cost must be greater than 0' }, { status: 400 });
+  }
+  if (!['SLM', 'WDV'].includes(depreciation_method)) {
+    return NextResponse.json({ error: "depreciation_method must be 'SLM' or 'WDV'" }, { status: 400 });
+  }
+  if (it_block && !itBlockByKey(it_block)) {
+    return NextResponse.json({ error: 'Unknown Income-tax block' }, { status: 400 });
+  }
+  const schedCat = schedule_ii_category ? scheduleIIByKey(schedule_ii_category) : undefined;
+  if (schedule_ii_category && !schedCat) {
+    return NextResponse.json({ error: 'Unknown Schedule II category' }, { status: 400 });
+  }
+  const usefulLife = Number(body.useful_life_years) || schedCat?.usefulLifeYears || 0;
+
+  if (!asset_code || !asset_name || !purchase_date || !account_id || !depreciation_account_id || !(usefulLife > 0)) {
+    return NextResponse.json(
+      { error: 'Required fields: asset_code, asset_name, purchase_date, purchase_cost, account_id, depreciation_account_id, useful_life_years (or a Schedule II category)' },
+      { status: 400 }
+    );
+  }
+  if (String(putToUseDate) < String(purchase_date)) {
+    return NextResponse.json({ error: 'put_to_use_date cannot be before purchase_date' }, { status: 400 });
+  }
+  const residual = Number(residual_value) || 0;
+  if (residual < 0 || residual >= Number(purchase_cost)) {
+    return NextResponse.json({ error: 'residual_value must be at least 0 and below the cost' }, { status: 400 });
+  }
+  const depreciationRate =
+    depreciation_method === 'WDV'
+      ? Number(body.depreciation_rate) || wdvRateFromLife(usefulLife, residual > 0 ? residual / Number(purchase_cost) : 0.05)
+      : Number(body.depreciation_rate) || null;
+
+  const guard = await guardLedgerRoute(request, {
+    claimedBusinessId: body.business_id,
+    branchId: branch_id,
+    action: 'create',
+    // Opening-balance assets carry historical dates that are usually in closed periods.
+    dates: funding === 'opening' ? undefined : [purchase_date],
+    actionLabel: 'capitalise this asset',
+  });
+  if (!guard.ok) return guard.response;
+  const business_id = guard.businessId;
+
+  const client = await getPool().connect();
   try {
-    const body = await request.json();
-    const tenant = requireTenantBusinessId(request, body.business_id);
-    if (!tenant.ok) return tenant.response;
-    const business_id = tenant.businessId;
-    const {
-      asset_code,
-      asset_name,
-      asset_category,
-      purchase_date,
-      purchase_cost,
-      account_id,
-      depreciation_account_id,
-      depreciation_method,
-      useful_life_years,
-      depreciation_rate,
-      residual_value = 0,
-      location,
-      vendor_name,
-      invoice_number,
-      warranty_expiry_date,
-      notes,
-    } = body;
-
-    if (!business_id || !asset_code || !asset_name || !purchase_date || !purchase_cost || 
-        !account_id || !depreciation_account_id || !depreciation_method || !useful_life_years) {
-      return NextResponse.json(
-        { error: 'Required fields: business_id, asset_code, asset_name, purchase_date, purchase_cost, account_id, depreciation_account_id, depreciation_method, useful_life_years' },
-        { status: 400 }
-      );
-    }
-
-    if (depreciation_method === 'WDV' && !depreciation_rate) {
-      return NextResponse.json(
-        { error: 'depreciation_rate is required for WDV method' },
-        { status: 400 }
-      );
-    }
-
     await client.query('BEGIN');
 
-    // Check if asset code already exists
-    const existing = await queryOne(
+    const accountIds = [account_id, depreciation_account_id, credit_account_id].filter(Boolean);
+    const owned = await client.query(
+      `SELECT id FROM accounts WHERE business_id = $1 AND is_active = true AND id = ANY($2::uuid[])`,
+      [business_id, accountIds]
+    );
+    if (owned.rowCount !== new Set(accountIds).size) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'One or more accounts do not belong to this business' }, { status: 400 });
+    }
+
+    const existing = await client.query(
       'SELECT id FROM fixed_assets WHERE business_id = $1 AND asset_code = $2',
       [business_id, asset_code]
     );
-
-    if (existing) {
+    if (existing.rows[0]) {
       await client.query('ROLLBACK');
-      return NextResponse.json(
-        { error: 'Asset code already exists' },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: 'Asset code already exists' }, { status: 409 });
     }
+
+    const postingBranchId = funding === 'opening' ? null : guard.branchId;
+    const block = itBlockByKey(it_block);
 
     const asset = await client.query(
       `INSERT INTO fixed_assets (
         business_id, asset_code, asset_name, asset_category, purchase_date,
         purchase_cost, account_id, depreciation_account_id, depreciation_method,
         useful_life_years, depreciation_rate, residual_value, current_book_value,
-        location, vendor_name, invoice_number, warranty_expiry_date, notes
+        location, vendor_name, invoice_number, warranty_expiry_date, notes,
+        put_to_use_date, it_block, it_rate, schedule_ii_category, branch_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $6, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *`,
       [
         business_id,
         asset_code,
         asset_name,
-        asset_category || null,
+        asset_category || schedCat?.label || null,
         purchase_date,
         purchase_cost,
         account_id,
         depreciation_account_id,
         depreciation_method,
-        useful_life_years,
-        depreciation_rate || null,
-        residual_value,
-        purchase_cost, // Initial book value = purchase cost
+        usefulLife,
+        depreciationRate,
+        residual,
         location || null,
         vendor_name || null,
         invoice_number || null,
         warranty_expiry_date || null,
         notes || null,
+        putToUseDate,
+        block?.key ?? null,
+        block?.rate ?? null,
+        schedCat?.key ?? null,
+        postingBranchId,
       ]
     );
 
-    // Create journal entry for asset purchase
-    const voucherId = await client.query('SELECT uuid_generate_v4() as id');
-    const voucherIdValue = voucherId.rows[0].id;
+    const creditAccountId = await fundingAccountId(client, business_id, funding, credit_account_id);
 
-    await client.query(`
-      INSERT INTO ledger_entry_lines (
-        business_id, voucher_id, voucher_type, account_id, entry_date,
-        debit, credit, narration, reference_number
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      business_id,
-      voucherIdValue,
-      'asset_purchase',
-      account_id,
-      purchase_date,
-      purchase_cost,
-      0,
-      `Fixed asset purchase: ${asset_name}`,
-      asset_code,
-    ]);
+    await postAssetCapitalisation(client, {
+      businessId: business_id,
+      branchId: postingBranchId,
+      voucherId: asset.rows[0].id,
+      assetAccountId: account_id,
+      creditAccountId,
+      amount: Number(purchase_cost),
+      date: purchase_date,
+      assetName: asset_name,
+      assetCode: asset_code,
+    });
 
     await client.query('COMMIT');
 
@@ -183,7 +227,7 @@ export async function POST(request: NextRequest) {
       message: 'Fixed asset added successfully',
     }, { status: 201 });
   } catch (error: any) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error adding fixed asset:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
@@ -193,4 +237,3 @@ export async function POST(request: NextRequest) {
     client.release();
   }
 }
-

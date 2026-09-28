@@ -57,7 +57,7 @@ export function computeInvoiceTotals(
   let igstTotal = 0;
 
   for (const item of items) {
-    const line = computeLineGst(item, intraState, zeroRated);
+    const line = computeLineGst(item, intraState, zeroRated, body.prices_include_gst === true);
     subtotal += line.taxable;
     discountTotal += line.itemDiscount;
     cgstTotal += line.cgst;

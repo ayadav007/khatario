@@ -591,6 +591,10 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/accounts', label: 'Chart of Accounts', module: 'settings' },
         { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
+        { href: '/contra', label: 'Contra (cash / bank)', module: 'journal' },
+        { href: '/advances', label: 'Advances', module: 'journal' },
+        { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
+        { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },
         { href: '/bank/import', label: 'Bank import', module: 'settings' },
         { href: '/bank/reconciliation', label: 'Bank reconciliation', module: 'settings' },
         { href: '/ledger', label: 'Ledger', module: 'invoices' },

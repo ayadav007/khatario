@@ -1806,7 +1806,10 @@ export default function NewPurchasePage() {
                             >
                               <option value="">No Account</option>
                               {accounts
-                                .filter(acc => acc.account_type === 'income' && acc.is_active)
+                                .filter(acc =>
+                                  acc.is_active &&
+                                  ((acc.account_type === 'income' && /discount/i.test(acc.account_name)) ||
+                                    (acc.account_type === 'expense' && /purchase/i.test(acc.account_name))))
                                 .map(account => (
                                   <option key={account.id} value={account.id}>
                                     {account.account_code} - {account.account_name}

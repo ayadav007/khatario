@@ -291,6 +291,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { gstRateError } = await import('@/lib/gst/rates');
+    const rateError = gstRateError(tax_rate);
+    if (rateError) {
+      return NextResponse.json({ error: rateError, code: 'INVALID_GST_RATE' }, { status: 400 });
+    }
+    const hsnClean = hsn_sac ? String(hsn_sac).replace(/\s/g, '') : '';
+    if (hsnClean && !/^\d{4,8}$/.test(hsnClean)) {
+      return NextResponse.json(
+        { error: 'HSN/SAC must be 4 to 8 digits', code: 'INVALID_HSN' },
+        { status: 400 },
+      );
+    }
+    const { resolveItemUqc } = await import('@/lib/gst/uqc');
+    const finalUqc = resolveItemUqc({ uqc: body.uqc, unit, hsn_sac: hsnClean || null });
+
     // Force values for services or items with variants
     const finalOpeningStock = (item_type === 'service' || has_variants) ? 0 : opening_stock;
     const finalMinStock = (item_type === 'service' || has_variants) ? 0 : min_stock;
@@ -345,10 +360,10 @@ export async function POST(request: NextRequest) {
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
         is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock,
-        show_in_store, featured_in_store
+        show_in_store, featured_in_store, uqc
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
       RETURNING *
     `, [
       business_id,
@@ -361,7 +376,7 @@ export async function POST(request: NextRequest) {
       finalSellingPrice,
       purchase_price,
       tax_rate,
-      hsn_sac || null,
+      hsnClean || null,
       item_type,
       finalOpeningStock,
       finalOpeningStock,
@@ -381,6 +396,7 @@ export async function POST(request: NextRequest) {
       oversellOverride,
       !!show_in_store || !!featured_in_store,
       !!featured_in_store,
+      finalUqc,
     ]);
 
       item = insertResult.rows[0] ?? null;

@@ -5,6 +5,8 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { panFromGstin } from '@/lib/tax/pan';
 
 export const dynamic = 'force-dynamic';
 
@@ -163,6 +165,21 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    const gstinCheck = resolveGstinAndState({ gstin, state, state_code });
+    if (!gstinCheck.ok) {
+      return NextResponse.json({ error: gstinCheck.error, code: gstinCheck.code }, { status: 400 });
+    }
+    if (gstinCheck.pan) {
+      const biz = await db.queryOne<{ gstin: string | null }>(`SELECT gstin FROM businesses WHERE id = $1`, [business_id]);
+      const bizPan = panFromGstin(biz?.gstin);
+      if (bizPan && bizPan !== gstinCheck.pan) {
+        return NextResponse.json(
+          { error: `Branch GSTIN must belong to the same PAN as the business (${bizPan}).`, code: 'BRANCH_GSTIN_PAN_MISMATCH' },
+          { status: 400 }
+        );
+      }
+    }
+
     // CRITICAL: Handle is_default flag
     // If setting as default, unset other default branches
     // CRITICAL: Ensure exactly one default branch per business
@@ -194,8 +211,8 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `, [
-      business_id, name, branch_code, gstin, address_line1, address_line2,
-      city, state, state_code, pincode, country || 'India', phoneNorm, email,
+      business_id, name, branch_code, gstinCheck.gstin, address_line1, address_line2,
+      city, gstinCheck.state, gstinCheck.state_code, pincode, country || 'India', phoneNorm, email,
       branch_type || 'retail', is_primary || false, is_default || false, invoice_prefix
     ]);
 

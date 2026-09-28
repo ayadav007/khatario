@@ -12,15 +12,18 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { Loader2 } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
+import { GST_RATE_SLABS } from '@/lib/gst/rates';
 
 interface Customer {
   id: string;
   name: string;
+  gstin?: string | null;
 }
 
 interface InvoiceSummary {
   id: string;
   invoice_number: string;
+  customer_id?: string | null;
 }
 
 export default function NewDebitNotePage() {
@@ -46,9 +49,21 @@ export default function NewDebitNotePage() {
 
   // Single line item simplified
   const [description, setDescription] = useState('Adjustment');
+  const [hsnSac, setHsnSac] = useState('');
   const [qty, setQty] = useState(1);
   const [unitPrice, setUnitPrice] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
+
+  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const isRegisteredCustomer = !!selectedCustomer?.gstin?.trim();
+  const customerInvoices = useMemo(
+    () => (customerId ? invoices.filter((inv) => inv.customer_id === customerId) : []),
+    [invoices, customerId]
+  );
+
+  useEffect(() => {
+    if (invoiceId && !customerInvoices.some((inv) => inv.id === invoiceId)) setInvoiceId('');
+  }, [customerInvoices, invoiceId]);
 
   const subtotal = useMemo(() => qty * unitPrice, [qty, unitPrice]);
   const taxAmount = useMemo(() => subtotal * (taxRate / 100), [subtotal, taxRate]);
@@ -58,10 +73,17 @@ export default function NewDebitNotePage() {
     if (!business?.id) return;
     const fetchData = async () => {
       try {
-        const [custRes, invRes] = await Promise.all([
+        const [custRes, invRes, numRes] = await Promise.all([
           fetch(`/api/customers?business_id=${business.id}&user_id=${user?.id}`),
-          fetch(`/api/invoices?business_id=${business.id}&status=final&user_id=${user?.id}`)
+          fetch(`/api/invoices?business_id=${business.id}&status=final&user_id=${user?.id}`),
+          fetch(`/api/debit-notes?business_id=${business.id}&user_id=${user?.id}&next_number=1`)
         ]);
+        if (numRes.ok) {
+          const data = await numRes.json();
+          if (data.next_debit_note_number) {
+            setDebitNoteNumber((prev) => prev || data.next_debit_note_number);
+          }
+        }
         if (custRes.ok) {
           const data = await custRes.json();
           setCustomers(data.customers || []);
@@ -83,14 +105,14 @@ export default function NewDebitNotePage() {
       toast.error('Please select a customer');
       return;
     }
-    if (!debitNoteNumber) {
-      toast.error('Please enter debit note number');
+    if (isRegisteredCustomer && !invoiceId) {
+      toast.error('Select the original invoice: required for a registered (GSTIN) customer');
       return;
     }
     const itemPayload = {
       item_id: null,
       description,
-      hsn_sac: null,
+      hsn_sac: hsnSac.trim() || null,
       qty,
       unit: 'PCS',
       unit_price: unitPrice,
@@ -108,7 +130,7 @@ export default function NewDebitNotePage() {
       business_id: business.id,
       customer_id: customerId,
       invoice_id: invoiceId || null,
-      debit_note_number: debitNoteNumber,
+      debit_note_number: debitNoteNumber.trim() || undefined,
       debit_note_date: debitNoteDate,
       reason,
       items: [itemPayload],
@@ -162,21 +184,28 @@ export default function NewDebitNotePage() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600">Linked Invoice (optional)</label>
+              <label className="text-xs font-semibold text-gray-600">
+                Original Invoice {isRegisteredCustomer ? '(required for GSTIN customer)' : '(optional)'}
+              </label>
               <select
                 className="input w-full mt-1"
                 value={invoiceId}
                 onChange={(e) => setInvoiceId(e.target.value)}
+                disabled={!customerId}
               >
-                <option value="">None</option>
-                {invoices.map((inv) => (
+                <option value="">{customerId ? 'None' : 'Select a customer first'}</option>
+                {customerInvoices.map((inv) => (
                   <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600">Debit Note Number</label>
-              <Input value={debitNoteNumber} onChange={(e) => setDebitNoteNumber(e.target.value)} />
+              <Input
+                value={debitNoteNumber}
+                onChange={(e) => setDebitNoteNumber(e.target.value)}
+                placeholder="Auto-numbered if left blank"
+              />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600">Date</label>
@@ -198,10 +227,19 @@ export default function NewDebitNotePage() {
 
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
           <h3 className="text-sm font-semibold text-gray-800">Line Item (simplified)</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-600">Description</label>
               <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600">HSN/SAC</label>
+              <Input
+                value={hsnSac}
+                inputMode="numeric"
+                maxLength={8}
+                onChange={(e) => setHsnSac(e.target.value.replace(/\D/g, ''))}
+              />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600">Quantity</label>
@@ -213,7 +251,15 @@ export default function NewDebitNotePage() {
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600">Tax %</label>
-              <Input type="number" value={taxRate} onChange={(e) => setTaxRate(Number(e.target.value))} />
+              <select
+                className="input w-full"
+                value={String(taxRate)}
+                onChange={(e) => setTaxRate(Number(e.target.value))}
+              >
+                {[...GST_RATE_SLABS, 28].map((r) => (
+                  <option key={r} value={String(r)}>{r}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">

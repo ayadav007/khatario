@@ -179,9 +179,13 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 ```cron
 # Staging
 15 3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron-staging.log 2>&1
+45 0 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
+50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
 ```
+
+`/api/cron/recurring-invoices` raises recurring invoices due on the current IST date (00:45 server time assumes the server runs in IST; adjust if it is UTC). Each run date is claimed in `recurring_invoice_history`, so re-running the job the same day does not duplicate invoices.
 
 The JSON response’s `summary.notificationsSent` counts only reminders that actually reached someone (email, WhatsApp or in-app). `subscription_notifications.metadata.channels` shows which channels delivered. Other jobs under `app/api/cron/` (payment reminders, low stock, backups, HR) use the same Bearer header.
 

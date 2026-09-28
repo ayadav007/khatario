@@ -88,7 +88,8 @@ export async function POST(
       amount,
       reference_type,
       reference_id,
-      narration
+      narration,
+      { branchId: body.branch_id || null, counterAccountId: body.counter_account_id || null }
     );
 
     return NextResponse.json({ id: entryId }, { status: 201 });

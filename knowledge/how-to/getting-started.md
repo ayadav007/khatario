@@ -23,7 +23,7 @@ If you are starting mid-year, enter opening balances so reports start from the r
 
 ## Where do I find a feature I can't see?
 
-Use the search in Settings, or open the More menu. Some features only appear when they are switched on in Settings > UI features, and some are locked on your current plan; locked features show an upgrade prompt.
+Use the search in Settings, or open the More menu. Some features are locked on your current plan and show an upgrade prompt; some need a switch first (for example warehouses and product variants in Settings > Inventory & items > Item defaults); and HR or Connect features need that product added in Settings > Plan & billing > Your products.
 
 ## How do I take the guided tour again?
 

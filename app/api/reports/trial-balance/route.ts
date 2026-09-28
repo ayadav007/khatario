@@ -129,17 +129,9 @@ export async function GET(request: NextRequest) {
     // Calculate balance for each account
     const trialBalance = await Promise.all(
       accounts.map(async (account: any) => {
-        // Get opening balance
-        let openingBalance = 0;
-        if (account.opening_balance_type === 'debit') {
-          openingBalance = account.nature === 'debit' 
-            ? parseFloat(account.opening_balance || '0')
-            : -parseFloat(account.opening_balance || '0');
-        } else {
-          openingBalance = account.nature === 'credit'
-            ? -parseFloat(account.opening_balance || '0')
-            : parseFloat(account.opening_balance || '0');
-        }
+        // Account opening balances are posted as `opening_balance` ledger lines
+        // (see setAccountOpeningBalance), so they are already in the totals below.
+        const openingBalance = 0;
 
         // Get transaction totals up to as_on_date (with branch filter if applicable)
         const transactionParams: any[] = [account.id, businessId, asOnDate];
@@ -160,9 +152,10 @@ export async function GET(request: NextRequest) {
             COALESCE(SUM(debit), 0) as total_debit,
             COALESCE(SUM(credit), 0) as total_credit
           FROM ledger_entry_lines
-          WHERE account_id = $1 
+          WHERE account_id = $1
             AND business_id = $2
             AND entry_date <= $3
+            AND NOT (voucher_type = 'year_close' AND entry_date = $3::date)
             ${branchFilter}
         `, transactionParams);
 

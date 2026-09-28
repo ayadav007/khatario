@@ -206,6 +206,24 @@ function addTaxBreakdown(target: TaxBreakdown, source: TaxBreakdown) {
   target.cess += source.cess || 0;
 }
 
+export type ItcType = 'inputs' | 'capital_goods' | 'input_services';
+
+/** Explicit itc_type wins; otherwise services → input services, everything else → inputs. */
+export function classifyItcType(row: {
+  itc_type?: string | null;
+  line_item_type?: string | null;
+  item_type?: string | null;
+  hsn_sac?: string | null;
+}): ItcType {
+  if (row.itc_type === 'inputs' || row.itc_type === 'capital_goods' || row.itc_type === 'input_services') {
+    return row.itc_type;
+  }
+  if (row.line_item_type === 'capital_goods') return 'capital_goods';
+  if (row.line_item_type === 'service' || row.item_type === 'service') return 'input_services';
+  if (!row.line_item_type && !row.item_type && String(row.hsn_sac || '').startsWith('99')) return 'input_services';
+  return 'inputs';
+}
+
 export class GSTR9Generator {
   private pool = getPool();
   private gstr1Generator = new GSTR1Generator();
@@ -290,19 +308,6 @@ export class GSTR9Generator {
         rcm_unclassified: 0,
       };
 
-      // ... rest of the logic ... (fetching books/returns)
-
-      // AT THE END, APPLY OVERRIDES
-      Object.keys(overrides).forEach(path => {
-        const parts = path.split('.');
-        let current: any = data;
-        for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) current[parts[i]] = {};
-          current = current[parts[i]];
-        }
-        current[parts[parts.length - 1]] = overrides[path];
-      });
-
       const hsnOutMap = new Map<string, any>();
       const hsnInMap = new Map<string, any>();
 
@@ -348,37 +353,76 @@ export class GSTR9Generator {
         }
       });
 
-      // Comparison for Table 5
+      // Credit / debit notes issued to customers: taxed notes → 4I / 4J, untaxed → 5H / 5I.
+      const notesRes = await client.query(
+        `SELECT 'credit' AS kind, subtotal, igst_total, cgst_total, sgst_total
+           FROM credit_notes
+          WHERE business_id = $1 AND credit_note_date BETWEEN $2 AND $3
+            AND COALESCE(status, 'active') <> 'cancelled'
+         UNION ALL
+         SELECT 'debit' AS kind, subtotal, igst_total, cgst_total, sgst_total
+           FROM debit_notes
+          WHERE business_id = $1 AND debit_note_date BETWEEN $2 AND $3
+            AND COALESCE(status, 'active') <> 'cancelled'`,
+        [business_id, fyFrom, fyTo]
+      );
+      notesRes.rows.forEach((n) => {
+        const tb = {
+          taxable_value: parseFloat(n.subtotal) || 0,
+          igst: parseFloat(n.igst_total) || 0,
+          cgst: parseFloat(n.cgst_total) || 0,
+          sgst: parseFloat(n.sgst_total) || 0,
+          cess: 0,
+        };
+        const taxed = tb.igst + tb.cgst + tb.sgst > 0;
+        if (n.kind === 'credit') addTaxBreakdown(taxed ? data.table_4.I : data.table_5.H, tb);
+        else addTaxBreakdown(taxed ? data.table_4.J : data.table_5.I, tb);
+      });
+
+      // Table 4G: inward supplies liable to reverse charge (tax payable by us).
+      const rcmRes = await client.query(
+        `SELECT COALESCE(SUM(subtotal), 0) AS taxable, COALESCE(SUM(igst_total), 0) AS igst,
+                COALESCE(SUM(cgst_total), 0) AS cgst, COALESCE(SUM(sgst_total), 0) AS sgst
+           FROM purchases
+          WHERE business_id = $1 AND bill_date BETWEEN $2 AND $3
+            AND status = 'final' AND deleted_at IS NULL AND is_reverse_charge = true`,
+        [business_id, fyFrom, fyTo]
+      );
+      const rcm = rcmRes.rows[0] || {};
+      addTaxBreakdown(data.table_4.G, {
+        taxable_value: parseFloat(rcm.taxable) || 0,
+        igst: parseFloat(rcm.igst) || 0,
+        cgst: parseFloat(rcm.cgst) || 0,
+        sgst: parseFloat(rcm.sgst) || 0,
+        cess: 0,
+      });
+
       data.table_5_return = { taxable_value: 0 };
 
-      // 2. SOURCING FROM BOOKS (Purchases) - Primary for Table 6B-6H
-      // Rule: Only include invoices with decision = 'ITC_ELIGIBLE_THIS_PERIOD'
-      // or MATCHED invoices with no contrary decision.
+      // 2. SOURCING FROM BOOKS (Purchases) - Table 6B-6F, ITC availed per books.
+      // Excludes bills whose 2B reconciliation decision defers or denies the credit.
       const purchasesQuery = `
-        SELECT pi.*, p.supplier_gstin, p.is_reverse_charge, p.document_type, p.itc_eligible, i.item_type,
-               rd.decision as reconciliation_decision,
-               gr.match_status as reconciliation_status
+        SELECT pi.*, p.supplier_gstin, p.is_reverse_charge, p.document_type, p.itc_eligible, i.item_type
         FROM purchase_items pi
         JOIN purchases p ON pi.purchase_id = p.id AND p.deleted_at IS NULL
         LEFT JOIN items i ON pi.item_id = i.id
-        LEFT JOIN gstr2b_reconciliation gr ON p.id = gr.purchase_id
-        LEFT JOIN reconciliation_decisions rd ON gr.id = rd.reconciliation_id
         WHERE p.business_id = $1 AND p.bill_date >= $2 AND p.bill_date <= $3
-        AND (
-          -- Rule: Eligible this period or Matched without contrary decision
-          (rd.decision = 'ITC_ELIGIBLE_THIS_PERIOD')
-          OR
-          (gr.match_status = 'MATCHED' AND rd.decision IS NULL)
-        )
+          AND p.status = 'final'
+          AND NOT EXISTS (
+            SELECT 1 FROM gstr2b_reconciliation gr
+            JOIN reconciliation_decisions rd ON rd.reconciliation_id = gr.id
+            WHERE gr.purchase_id = p.id
+              AND rd.decision IN ('ITC_DEFERRED_TO_FUTURE', 'ITC_NOT_ELIGIBLE', 'PENDING_SUPPLIER_CORRECTION', 'IGNORE')
+          )
       `;
       const purchasesRes = await client.query(purchasesQuery, [business_id, fyFrom, fyTo]);
-      
+
       purchasesRes.rows.forEach(row => {
-        // CA: REMOVE automatic classification. Only use itc_type if explicitly tagged.
-        const type = row.itc_type as 'inputs' | 'capital_goods' | 'input_services' | null;
+        const type = classifyItcType(row);
         const tb = { taxable_value: parseFloat(row.taxable_value) || 0, igst: parseFloat(row.igst_amount) || 0, cgst: parseFloat(row.cgst_amount) || 0, sgst: parseFloat(row.sgst_amount) || 0, cess: 0 };
-        
-        if (type) {
+        const itcAllowed = row.itc_eligible !== false;
+
+        if (itcAllowed) {
           // IMPORT CLASSIFICATION LOGIC (for GSTR-9 Table 6E and 6F)
           // Import of Goods: Typically has IGST only (paid at customs), no CGST/SGST, document_type = 'bill_of_entry'
           // OR: IGST > 0, CGST = 0, SGST = 0, and no supplier GSTIN (foreign supplier) with goods item
@@ -446,6 +490,42 @@ export class GSTR9Generator {
             existing.sgst += tb.sgst;
             existing.cess += tb.cess;
           }
+        }
+      });
+
+      // Purchase returns (debit notes to suppliers) reduce ITC availed on the original bill.
+      const returnsRes = await client.query(
+        `SELECT pr.subtotal, pr.igst_total, pr.cgst_total, pr.sgst_total, p.is_reverse_charge, p.supplier_gstin,
+                EXISTS (
+                  SELECT 1 FROM purchase_items pi
+                  LEFT JOIN items it ON it.id = pi.item_id
+                  WHERE pi.purchase_id = p.id AND COALESCE(pi.line_item_type, it.item_type) = 'service'
+                ) AND NOT EXISTS (
+                  SELECT 1 FROM purchase_items pi
+                  LEFT JOIN items it ON it.id = pi.item_id
+                  WHERE pi.purchase_id = p.id AND COALESCE(pi.line_item_type, it.item_type, 'goods') <> 'service'
+                ) AS all_services
+           FROM purchase_returns pr
+           JOIN purchases p ON p.id = pr.purchase_id
+          WHERE pr.business_id = $1 AND pr.return_date BETWEEN $2 AND $3
+            AND COALESCE(pr.status, 'final') <> 'cancelled'
+            AND COALESCE(p.itc_eligible, true)`,
+        [business_id, fyFrom, fyTo]
+      );
+      returnsRes.rows.forEach((r) => {
+        const neg = {
+          taxable_value: -(parseFloat(r.subtotal) || 0),
+          igst: -(parseFloat(r.igst_total) || 0),
+          cgst: -(parseFloat(r.cgst_total) || 0),
+          sgst: -(parseFloat(r.sgst_total) || 0),
+          cess: 0,
+        };
+        const bucket = r.all_services ? 'input_services' : 'inputs';
+        if (r.is_reverse_charge) {
+          const isReg = r.supplier_gstin && r.supplier_gstin.length >= 15;
+          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C)[bucket], neg);
+        } else {
+          addTaxBreakdown(data.table_6.B[bucket], neg);
         }
       });
 
@@ -567,6 +647,20 @@ export class GSTR9Generator {
         }
       }
 
+      // GSTR-1 summary counts every invoice; Table 4 covers only supplies on which tax is payable.
+      data.table_4_return.taxable_value -= data.table_5_return.taxable_value;
+
+      // Manual overrides replace computed components before sub-totals are derived.
+      Object.keys(overrides).forEach(path => {
+        const parts = path.split('.');
+        let current: any = data;
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (!current[parts[i]]) current[parts[i]] = {};
+          current = current[parts[i]];
+        }
+        current[parts[parts.length - 1]] = overrides[path];
+      });
+
       // Finalize Table 4 Sub-totals & Totals
       const t4 = data.table_4;
       [t4.A, t4.B, t4.C, t4.D, t4.E, t4.F, t4.G].forEach(tb => addTaxBreakdown(t4.H, tb));
@@ -624,9 +718,14 @@ export class GSTR9Generator {
       t8.K.igst = t8.E.igst + t8.F.igst + t8.J.igst;
 
       // Validation warnings (DECLARATIVE)
-      // 1. Books vs GSTR-1
-      if (Math.abs(data.table_4.N.taxable_value - data.table_4_return.taxable_value) > 10) {
-        data.validation.warnings.push(`Books vs GSTR-1 Mismatch (Table 4): Books (₹${data.table_4.N.taxable_value.toFixed(2)}) vs GSTR-1 (₹${data.table_4_return.taxable_value.toFixed(2)})`);
+      // 1. Books vs GSTR-1 (invoice-level outward taxable supplies: 4A–4E)
+      const booksOutward = t4.A.taxable_value + t4.B.taxable_value + t4.C.taxable_value + t4.D.taxable_value + t4.E.taxable_value;
+      if (Math.abs(booksOutward - data.table_4_return.taxable_value) > 10) {
+        data.validation.warnings.push(`Books vs GSTR-1 Mismatch (Table 4A-4E): Books (₹${booksOutward.toFixed(2)}) vs GSTR-1 (₹${data.table_4_return.taxable_value.toFixed(2)})`);
+      }
+      const books5 = t5.A.taxable_value + t5.B.taxable_value + t5.D.taxable_value + t5.E.taxable_value + t5.F.taxable_value;
+      if (Math.abs(books5 - data.table_5_return.taxable_value) > 10) {
+        data.validation.warnings.push(`Books vs GSTR-1 Mismatch (Table 5): Books (₹${books5.toFixed(2)}) vs GSTR-1 exports WOPAY + nil/exempt/non-GST (₹${data.table_5_return.taxable_value.toFixed(2)})`);
       }
       
       // 2. ITC Register vs GSTR-3B
