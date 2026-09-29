@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import {
+  getAuthenticatedUserId,
+  getUserIdFromRequest,
+  getBusinessIdFromRequest,
+  getSessionScopedBusinessId,
+} from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
@@ -331,10 +336,13 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Writes take the acting user and business from the session only; body identity fields are ignored.
+    const created_by = getAuthenticatedUserId(request);
+    const business_id = getSessionScopedBusinessId(request);
+    if (!created_by || !business_id) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
     const body = await request.json();
-    // Writes must never use client-supplied business_id alone — JWT/session is source of truth
-    const sessionBusinessId = getSessionScopedBusinessId(request);
-    const business_id = sessionBusinessId;
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that processed this payment
       type, // 'receivable' (Payment In) or 'payable' (Payment Out)
@@ -346,7 +354,6 @@ export async function POST(request: NextRequest) {
       payment_mode = 'cash',
       payment_date,
       notes,
-      created_by, // User ID who created the payment
       tds_section,
     } = body;
     const tdsAmount = Math.round((Number(body.tds_amount) || 0) * 100) / 100;
@@ -362,16 +369,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!business_id || !type || Number(amount) < 0 || settles <= 0) {
+    if (!type || Number(amount) < 0 || settles <= 0) {
       return NextResponse.json(
-        { error: 'business_id, type, and amount are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'type and amount are required' },
         { status: 400 }
       );
     }
@@ -563,8 +563,8 @@ export async function POST(request: NextRequest) {
       const paymentRes = await client.query(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, tds_amount, tds_section
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *`,
         [
           business_id,
@@ -580,6 +580,7 @@ export async function POST(request: NextRequest) {
           notes || null,
           tdsAmount,
           tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          created_by,
         ],
       );
       payment = paymentRes.rows[0];

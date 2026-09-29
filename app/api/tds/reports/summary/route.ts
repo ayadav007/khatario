@@ -23,7 +23,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
         SUM(CASE WHEN is_deposited THEN tds_amount ELSE 0 END) as deposited_amount,
         SUM(CASE WHEN NOT is_deposited THEN tds_amount ELSE 0 END) as pending_amount
       FROM tds_transactions
-      WHERE business_id = $1
+      WHERE business_id = $1 AND status = 'active'
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -54,7 +54,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
         SUM(t.tds_amount) as total_amount
       FROM tds_transactions t
       LEFT JOIN tds_categories tc ON t.tds_category_id = tc.id
-      WHERE t.business_id = $1
+      WHERE t.business_id = $1 AND t.status = 'active'
         ${financialYear ? `AND t.financial_year = $2` : ''}
         ${quarter ? `AND t.quarter = $3` : ''}
       GROUP BY t.section_code, tc.section_name

@@ -7,6 +7,9 @@ import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import { Account } from '@/types/database';
 import { computeGoodsCost, getInventoryModel, postCostOfGoods } from '@/lib/inventory/cogs-posting';
+import { resolveGstScheme } from '@/lib/gst/registration';
+import { recipientMayClaimItc } from '@/lib/gst/scheme-policy';
+import { isItcTimeBarred, thirtyNovAfterFy, todayIst } from '@/lib/gst/time-limits';
 
 /** Use the same PoolClient as an outer BEGIN so deferred voucher-balance triggers see all lines at COMMIT. */
 async function ledgerQueryOne<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -967,7 +970,9 @@ export async function createPurchaseLedgerEntries(params: {
   cessTotal?: number;
   itcEligible?: boolean;       // false → tax stays in Purchases (5101) per s.17(5)
   isReverseCharge?: boolean;   // true → also Cr RCM Output (2155); ITC still Dr Input
-}): Promise<void> {
+  /** Date ITC is being claimed in the books (defaults to today, IST) — s.16(4) check. */
+  itcClaimDate?: string;
+}): Promise<{ itcEligible: boolean; itcBlockedReason: string | null }> {
   const {
     businessId,
     purchaseId,
@@ -983,9 +988,10 @@ export async function createPurchaseLedgerEntries(params: {
     sgstTotal = 0,
     igstTotal = 0,
     cessTotal = 0,
-    itcEligible = true,
     isReverseCharge = false,
   } = params;
+  let itcEligible = params.itcEligible ?? true;
+  let itcBlockedReason: string | null = null;
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -993,6 +999,32 @@ export async function createPurchaseLedgerEntries(params: {
     throw new Error(
       `Purchases account (5101) not found for business ${businessId}. ` +
       `Cannot post purchase ${purchaseNumber}.`,
+    );
+  }
+
+  // s.10(4): a composition / unregistered recipient cannot take ITC — GST is part of cost.
+  // Enforced here so every purchase path (create, finalize, conversion) agrees, and the
+  // document flag is aligned so GSTR-3B / 2B read the same treatment.
+  if (itcEligible) {
+    const scheme = await resolveGstScheme(
+      { query: (text, values) => (poolClient ? poolClient.query(text, values) : db.getPool().query(text, values)) as any },
+      businessId,
+      params.branchId ?? null,
+    );
+    if (!recipientMayClaimItc(scheme)) {
+      itcEligible = false;
+      itcBlockedReason = `recipient is ${scheme} (s.10(4))`;
+    }
+  }
+  // s.16(4): ITC on a bill cannot be taken after 30 Nov following the end of its FY.
+  if (itcEligible && isItcTimeBarred(purchaseDate, params.itcClaimDate ?? todayIst())) {
+    itcEligible = false;
+    itcBlockedReason = `ITC time-barred after ${thirtyNovAfterFy(purchaseDate)} (s.16(4))`;
+  }
+  if (itcBlockedReason) {
+    await (poolClient ?? db.getPool()).query(
+      `UPDATE purchases SET itc_eligible = false WHERE id = $1 AND business_id = $2`,
+      [purchaseId, businessId],
     );
   }
 
@@ -1062,7 +1094,11 @@ export async function createPurchaseLedgerEntries(params: {
   // The discount is already accounted for via Cr Discount Received (Entry 5).
   //   - RCM purchase → credit = taxable only (tax leg balanced by Cr RCM Output).
   const rcmReady = isReverseCharge && useGstSplit && !!accounts.rcmOutput;
-  const apCreditNet = rcmReady
+  // RCM without ITC (s.17(5) blocked, or composition recipient): the recipient still owes the
+  // tax in cash (s.9(3)/(4)), the supplier is owed only the taxable value, and the tax is cost.
+  //   Dr Purchases (taxable + tax)  Cr AP (taxable)  Cr RCM Output (tax)
+  const rcmNoItc = isReverseCharge && !useGstSplit && totalGst > 0 && !!accounts.rcmOutput;
+  const apCreditNet = rcmReady || rcmNoItc
     ? Math.max(0, derivedTaxable)
     : grandTotal;
 
@@ -1124,7 +1160,7 @@ export async function createPurchaseLedgerEntries(params: {
     narration: useGstSplit
       ? `Purchases (taxable) - ${purchaseNumber}`
       : (totalGst > 0 && !itcEligible
-          ? `Purchases (incl. blocked ITC) - ${purchaseNumber}`
+          ? `Purchases (incl. blocked ITC${itcBlockedReason ? `: ${itcBlockedReason}` : ''}) - ${purchaseNumber}`
           : `Purchases - ${purchaseNumber}`),
     referenceNumber: purchaseNumber,
     branchId: params.branchId,
@@ -1181,6 +1217,14 @@ export async function createPurchaseLedgerEntries(params: {
         referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
       });
     }
+  } else if (rcmNoItc && accounts.rcmOutput) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.rcmOutput.id, entryDate: purchaseDate,
+      debit: 0, credit: totalGst,
+      narration: `RCM Output Tax Payable (no ITC) - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
   } else if (totalGst > 0 && !splitAccountsReady) {
     console.warn(
       `[PHASE-3 WARN] Purchase ${purchaseNumber} has GST=₹${totalGst.toFixed(2)} but business ${businessId} ` +
@@ -1270,6 +1314,8 @@ export async function createPurchaseLedgerEntries(params: {
       referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
     });
   }
+
+  return { itcEligible, itcBlockedReason };
 }
 
 /**
@@ -1723,6 +1769,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
   const splitAccountsReady = !!(accounts.inputCgst && accounts.inputSgst && accounts.inputIgst);
   const useGstSplit = totalGst > 0 && splitAccountsReady && itcEligible;
   const rcmReady = isReverseCharge && useGstSplit && !!accounts.rcmOutput;
+  // Mirrors the blocked-ITC RCM purchase (Cr AP taxable, Cr RCM Output tax).
+  const rcmNoItc = isReverseCharge && !useGstSplit && totalGst > 0 && !!accounts.rcmOutput;
   const derivedTaxable = totalGst > 0
     ? Math.max(0, Number((grandTotal - totalGst).toFixed(2)))
     : grandTotal;
@@ -1730,7 +1778,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     ? derivedTaxable
     : (taxableValue && taxableValue > 0 && totalGst === 0 ? taxableValue : grandTotal);
   // Mirror the source-purchase AP behaviour: RCM AP debit = taxable; otherwise grand_total.
-  const apDebit = rcmReady ? derivedTaxable : grandTotal;
+  const apDebit = rcmReady || rcmNoItc ? derivedTaxable : grandTotal;
 
   // Entry 1: Credit Purchases Account (reversal — reduce purchases for taxable only)
   await createLedgerEntryLine({
@@ -1798,6 +1846,14 @@ export async function createPurchaseReturnLedgerEntries(params: {
         referenceNumber: returnNumber, branchId: params.branchId, poolClient,
       });
     }
+  } else if (rcmNoItc && accounts.rcmOutput) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+      accountId: accounts.rcmOutput.id, entryDate: returnDate,
+      debit: totalGst, credit: 0,
+      narration: `RCM Output Tax reversal (ITC not claimed) - ${returnNumber}`,
+      referenceNumber: returnNumber, branchId: params.branchId, poolClient,
+    });
   } else if (totalGst > 0 && !splitAccountsReady) {
     console.warn(
       `[PHASE-3 WARN] Purchase return ${returnNumber} has GST=₹${totalGst.toFixed(2)} but split accounts missing — Purchases credited the full grand_total.`,

@@ -116,11 +116,12 @@ export async function createQuantityAdjustment(
 
     // Lock the item/variant row for update
     const itemLockQuery = params.variantId
-      ? `SELECT * FROM item_variants WHERE id = $1 FOR UPDATE`
-      : `SELECT * FROM items WHERE id = $1 FOR UPDATE`;
+      ? `SELECT v.* FROM item_variants v JOIN items i ON i.id = v.item_id
+          WHERE v.id = $1 AND i.business_id = $2 FOR UPDATE OF v`
+      : `SELECT * FROM items WHERE id = $1 AND business_id = $2 FOR UPDATE`;
     
     const itemIdToLock = params.variantId || params.itemId;
-    const itemResult = await client.query(itemLockQuery, [itemIdToLock]);
+    const itemResult = await client.query(itemLockQuery, [itemIdToLock, params.businessId]);
     
     if (itemResult.rows.length === 0) {
       throw new Error(params.variantId ? 'Variant not found' : 'Item not found');
@@ -486,11 +487,12 @@ export async function createValueAdjustment(
 
     // Lock the item/variant row for update
     const itemLockQuery = params.variantId
-      ? `SELECT * FROM item_variants WHERE id = $1 FOR UPDATE`
-      : `SELECT * FROM items WHERE id = $1 FOR UPDATE`;
+      ? `SELECT v.* FROM item_variants v JOIN items i ON i.id = v.item_id
+          WHERE v.id = $1 AND i.business_id = $2 FOR UPDATE OF v`
+      : `SELECT * FROM items WHERE id = $1 AND business_id = $2 FOR UPDATE`;
     
     const itemIdToLock = params.variantId || params.itemId;
-    const itemResult = await client.query(itemLockQuery, [itemIdToLock]);
+    const itemResult = await client.query(itemLockQuery, [itemIdToLock, params.businessId]);
     
     if (itemResult.rows.length === 0) {
       throw new Error(params.variantId ? 'Variant not found' : 'Item not found');
@@ -561,8 +563,8 @@ export async function createValueAdjustment(
       await client.query(
         `UPDATE items 
          SET purchase_price = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2`,
-        [newUnitCost, params.itemId]
+         WHERE id = $2 AND business_id = $3`,
+        [newUnitCost, params.itemId, params.businessId]
       );
     }
 

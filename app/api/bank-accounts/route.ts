@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
-import { queryRows, queryOne } from '@/lib/db';
+import { queryRows, queryOne, getPool } from '@/lib/db';
+import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import { authorize } from '@/lib/authorization';
 import { AuthorizationError } from '@/lib/authorization';
 import { postBankOpeningBalance } from '@/lib/accounting/account-rules';
@@ -383,14 +384,18 @@ export async function DELETE(request: NextRequest) {
       throw error;
     }
 
-    await queryOne(
-      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'opening_balance'`,
-      [businessId, id]
-    );
-    await queryOne(
-      'DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2',
-      [id, businessId]
-    );
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await deleteVoucher(client, businessId, id, 'opening_balance', 'regenerate:opening_balance', userId);
+      await client.query('DELETE FROM bank_accounts WHERE id = $1 AND business_id = $2', [id, businessId]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ message: 'Bank account deleted successfully' });
   } catch (error: any) {

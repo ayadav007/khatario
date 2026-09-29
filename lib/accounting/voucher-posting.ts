@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { withLedgerDelete, type LedgerDeleteReason } from '@/lib/accounting/ledger-delete-guard';
 
 export type VoucherLine = { accountId: string; debit: number; credit: number; narration: string };
 
@@ -67,10 +68,14 @@ export async function deleteVoucher(
   client: PoolClient,
   businessId: string,
   voucherId: string,
-  voucherType: string
+  voucherType: string,
+  reason: LedgerDeleteReason,
+  actorId: string | null
 ): Promise<void> {
-  await client.query(
-    `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = $3`,
-    [businessId, voucherId, voucherType]
+  await withLedgerDelete(client, reason, actorId, () =>
+    client.query(
+      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = $3`,
+      [businessId, voucherId, voucherType]
+    )
   );
 }

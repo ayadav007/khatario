@@ -4,7 +4,8 @@
 
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { query, queryOne, queryRows } from '@/lib/db';
+import { getPool, query, queryOne, queryRows } from '@/lib/db';
+import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { clearSubscriptionCache } from '@/lib/subscription';
 import { logAdminAction } from '@/lib/platform-auth';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
@@ -52,9 +53,16 @@ export async function deleteBusinessCompletely(
     throw new Error('Business not found');
   }
 
+  const client = await getPool().connect();
   try {
-    await query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+    await client.query('BEGIN');
+    await withLedgerDelete(client, 'tenant_purge', null, async () => {
+      await client.query(`DELETE FROM ledger_entry_deletions WHERE business_id = $1`, [businessId]);
+      await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+    });
+    await client.query('COMMIT');
   } catch (error: unknown) {
+    await client.query('ROLLBACK').catch(() => {});
     const code = (error as { code?: string })?.code;
     const detail = (error as { detail?: string; message?: string })?.detail
       || (error as { message?: string })?.message
@@ -65,6 +73,8 @@ export async function deleteBusinessCompletely(
       );
     }
     throw new Error(`Failed to delete tenant: ${detail}`);
+  } finally {
+    client.release();
   }
 
   clearSubscriptionCache(businessId);

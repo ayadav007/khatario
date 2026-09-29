@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const adjustments = await queryRows(
       `SELECT aa.id, aa.kind, aa.adjustment_date::text, aa.amount, aa.taxable_value, aa.cgst, aa.sgst, aa.igst,
-              aa.cess, aa.voucher_number, i.invoice_number, p.bill_number
+              aa.cess, aa.voucher_number, aa.reversed_at, aa.reversal_reason, i.invoice_number, p.bill_number
          FROM advance_adjustments aa
          LEFT JOIN invoices i ON i.id = aa.invoice_id
          LEFT JOIN purchases p ON p.id = aa.purchase_id

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { guardLedgerRoute } from '@/lib/http/ledger-route-guard';
 import { disposeAsset, FixedAssetError, lockAsset } from '@/lib/accounting/fixed-asset-service';
+import { capitalGoodsSaleTax } from '@/lib/gst/capital-goods-sale';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,37 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       chargeDepreciation: body.charge_depreciation !== false,
     });
     await client.query('COMMIT');
-    return NextResponse.json({ disposal: result, message: 'Asset disposed' }, { status: 201 });
+
+    // s.18(6): a sale of a capital asset on which ITC was taken is a taxable supply. The output
+    // tax is not posted here (it must be invoiced to the buyer and reported in GSTR-1).
+    const taxRate = Number(body.tax_rate ?? 0);
+    const itcTaken = Number(body.itc_taken ?? 0);
+    const gst_on_disposal =
+      proceeds > 0 && (taxRate > 0 || itcTaken > 0)
+        ? capitalGoodsSaleTax({
+            itcTaken,
+            purchaseInvoiceDate: String(body.purchase_invoice_date || asset.put_to_use_date).slice(0, 10),
+            saleDate: disposalDate,
+            transactionValue: proceeds,
+            taxRate,
+          })
+        : null;
+    return NextResponse.json(
+      {
+        disposal: result,
+        message: 'Asset disposed',
+        ...(gst_on_disposal
+          ? {
+              gst_on_disposal,
+              warnings: [
+                `Output GST of ₹${gst_on_disposal.payable.toFixed(2)} is payable on this sale (s.18(6), Rule 40(2)). ` +
+                  'Raise a tax invoice to the buyer so it is posted to output GST and reported in GSTR-1.',
+              ],
+            }
+          : {}),
+      },
+      { status: 201 }
+    );
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {});
     if (error instanceof FixedAssetError) {

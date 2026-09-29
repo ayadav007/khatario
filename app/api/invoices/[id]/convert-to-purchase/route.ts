@@ -4,7 +4,9 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { allocateStockOnPurchase } from '@/lib/stock-valuation';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 
 export const dynamic = 'force-dynamic';
@@ -158,6 +160,30 @@ export async function POST(
         { error: e?.message || 'Could not resolve branch for purchase' },
         { status: 400 }
       );
+    }
+
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    try {
+      await authorize(userId, 'purchases', 'create', { businessId: business_id, branchId: purchaseBranchId });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+    const guard = await periodGuardResponse({
+      businessId: business_id,
+      branchId: purchaseBranchId,
+      dates: [invoice.invoice_date],
+      action: 'convert this invoice into a purchase',
+      checkGstFiled: true,
+    });
+    if (guard) {
+      await client.query('ROLLBACK');
+      return guard;
     }
 
     const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');

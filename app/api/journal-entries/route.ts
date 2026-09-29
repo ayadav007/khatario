@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
 import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
+import { activeLedgerLineSql } from '@/lib/ledger-reversal';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,6 +73,7 @@ export async function GET(request: NextRequest) {
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
+        AND ${activeLedgerLineSql('lel')} AND (je.id IS NULL OR je.deleted_at IS NULL)
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -96,6 +98,7 @@ export async function GET(request: NextRequest) {
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
+        AND ${activeLedgerLineSql('lel')} AND (je.id IS NULL OR je.deleted_at IS NULL)
       ${fromDate ? `AND lel.entry_date >= $${params.length}` : ''}
       ${toDate ? `AND lel.entry_date <= $${params.length + (fromDate ? 1 : 0)}` : ''}
     `;
@@ -125,7 +128,8 @@ export async function GET(request: NextRequest) {
             a.account_name
           FROM ledger_entry_lines lel
           LEFT JOIN accounts a ON lel.account_id = a.id
-          WHERE lel.voucher_id = $1 AND lel.business_id = $2
+          WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
+            AND ${activeLedgerLineSql('lel')}
           ORDER BY lel.created_at
         `, [entry.voucher_id, businessId]);
 
@@ -164,8 +168,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const sessionUserId = getUserIdFromRequest(request);
+    if (!sessionUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const business_id = tenant.businessId;
+    const created_by = sessionUserId;
     const {
-      business_id,
       branch_id, // CRITICAL: Branch ID for branch-wise accounting
       entry_date,
       reference_number,
@@ -177,7 +188,6 @@ export async function POST(request: NextRequest) {
       template_id,
       tags,
       backdate_reason, // Reason for backdating (if applicable)
-      created_by, // User ID who created the journal entry
     } = body;
 
     if (!business_id || !entry_date || !lines || !Array.isArray(lines) || lines.length < 2) {
@@ -187,10 +197,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!created_by) {
+    const lineAccountIds = Array.from(new Set(
+      (lines as Array<{ account_id?: string }>).map((l) => l.account_id).filter((x): x is string => !!x)
+    ));
+    if ((lines as Array<{ account_id?: string }>).some((l) => !l.account_id)) {
+      return NextResponse.json({ error: 'Every journal line needs an account' }, { status: 400 });
+    }
+    const ownedAccounts = await client.query(
+      `SELECT COUNT(*)::int AS n FROM accounts WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+      [business_id, lineAccountIds]
+    );
+    if (Number(ownedAccounts.rows[0]?.n || 0) !== lineAccountIds.length) {
       return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
+        { error: 'One or more accounts do not belong to this business', code: 'ACCOUNT_NOT_IN_BUSINESS' },
+        { status: 403 }
       );
     }
 
@@ -352,10 +372,11 @@ export async function POST(request: NextRequest) {
     let finalLines = lines;
     if (is_reversing && reverses_entry_id) {
       const originalLinesResult = await client.query(
-        `SELECT account_id, debit, credit, narration, branch_id
-         FROM ledger_entry_lines 
-         WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
-         ORDER BY created_at`,
+        `SELECT l.account_id, l.debit, l.credit, l.narration, l.branch_id
+         FROM ledger_entry_lines l
+         WHERE l.voucher_id = $1 AND l.business_id = $2 AND l.voucher_type = 'journal'
+           AND ${activeLedgerLineSql('l')}
+         ORDER BY l.created_at`,
         [reverses_entry_id, business_id]
       );
 

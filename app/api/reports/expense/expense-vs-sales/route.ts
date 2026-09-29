@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
         ${groupByClause.replace(/transaction_date/g, 'e.expense_date')} as period,
         COALESCE(SUM(e.amount), 0) as expenses
       FROM expenses e
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter.replace(/transaction_date/g, 'e.expense_date')}
       GROUP BY ${groupByClause.replace(/transaction_date/g, 'e.expense_date')}
     `, queryParams);

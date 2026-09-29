@@ -7,241 +7,211 @@ import {
   getUserIdFromRequest,
   requirePortalSession,
 } from '@/lib/auth-helpers';
-import {
-  enforceAccess,
-  enforceAccessErrorResponse,
-} from '@/lib/enforce-access';
-import { FeatureKeys } from '@/lib/featureKeys';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import { resolveBranchId } from '@/lib/branch-helpers';
-import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
+import { periodGuardResponse } from '@/lib/http/period-guards';
+import {
+  createInvoiceInTransaction,
+  InvoiceCreateServiceError,
+  type CreateInvoiceInput,
+  type CreateInvoiceItemInput,
+} from '@/lib/invoices/invoice-create-service';
 
+/**
+ * POST /api/invoices/[id]/convert-to-tax-invoice  body: { status?: 'draft' | 'final', invoice_date? }
+ *
+ * Creates the tax invoice through the same service as POST /api/invoices, so GST is recomputed
+ * server-side (scheme / bill-of-supply rules) and a final invoice posts stock, customer balance
+ * and its ledger voucher in the same transaction as the document.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const gate = await requirePortalSession(request);
+  if (gate) return gate;
+
+  const businessId = getSessionScopedBusinessId(request);
+  if (!businessId) {
+    return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+  }
+  const userId = getUserIdFromRequest(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
+  }
+
+  const proformaId = params.id;
+  const body = await request.json().catch(() => ({}));
+  const targetStatus = (body.status === 'final' ? 'final' : 'draft') as 'draft' | 'final';
+
   const pool = getPool();
   const client = await pool.connect();
-  
   try {
-    const gate = await requirePortalSession(request);
-    if (gate) return gate;
-
-    const businessScope = getSessionScopedBusinessId(request);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    const userId = getUserIdFromRequest(request);
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const { id: proformaId } = params;
-    
-    // Get target status from request body (default to 'draft' for backward compatibility)
-    const body = await request.json().catch(() => ({}));
-    const targetStatus = (body.status === 'final' ? 'final' : 'draft') as 'draft' | 'final';
-    
-    // Get proforma invoice
     const proformaRes = await client.query(
-      `SELECT * FROM invoices WHERE id = $1 AND business_id = $2 AND document_type = 'proforma_invoice' AND deleted_at IS NULL`,
-      [proformaId, businessScope]
+      `SELECT * FROM invoices
+        WHERE id = $1 AND business_id = $2 AND document_type = 'proforma_invoice' AND deleted_at IS NULL`,
+      [proformaId, businessId]
     );
-    
     if (proformaRes.rows.length === 0) {
       return NextResponse.json({ error: 'Proforma invoice not found or is not a proforma invoice' }, { status: 404 });
     }
-    
-    const proformaData = proformaRes.rows[0];
-    
-    // Get invoice items
+    const proforma = proformaRes.rows[0];
+
+    let invoiceBranchId: string;
+    try {
+      invoiceBranchId = await resolveBranchId({ businessId, branchId: proforma.branch_id || null });
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message || 'Could not resolve branch for invoice' }, { status: 400 });
+    }
+
+    try {
+      await authorize(userId, 'invoices', 'create', { businessId, branchId: invoiceBranchId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
+    const rawDate = body.invoice_date ?? proforma.invoice_date;
+    const invoiceDate =
+      rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
+
+    if (targetStatus === 'final') {
+      const guard = await periodGuardResponse({
+        businessId,
+        branchId: invoiceBranchId,
+        dates: [invoiceDate],
+        action: 'create this invoice',
+        checkGstFiled: true,
+      });
+      if (guard) return guard;
+    }
+
+    await client.query('BEGIN');
+
+    const locked = await client.query(
+      `SELECT proforma_lifecycle_status FROM invoices WHERE id = $1 FOR UPDATE`,
+      [proformaId]
+    );
+    if (locked.rows[0]?.proforma_lifecycle_status === 'converted_to_tax_invoice') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Proforma invoice already converted to a tax invoice' }, { status: 409 });
+    }
+
     const itemsRes = await client.query(
       `SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order, id`,
       [proformaId]
     );
-    
-    const items = itemsRes.rows;
-    
-    if (items.length === 0) {
+    if (itemsRes.rows.length === 0) {
+      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Proforma invoice has no items' }, { status: 400 });
     }
-    
-    await client.query('BEGIN');
-    
-    try {
-      try {
-        await enforceAccess({
-          businessId: proformaData.business_id,
-          userId,
-          feature: FeatureKeys.INVOICE_CREATION,
-          limitType: 'invoices',
-          poolClient: client,
-        });
-      } catch (e) {
-        const res = enforceAccessErrorResponse(e);
-        if (res) {
-          await client.query('ROLLBACK');
-          return res;
-        }
-        throw e;
-      }
 
-      const invoiceBranchId: string =
-        proformaData.branch_id ||
-        (await resolveBranchId({ businessId: proformaData.business_id, branchId: null }));
-      const invoiceNumber = await reserveFormattedDocumentNumber(client, invoiceBranchId, 'tax_invoice');
-      
-      // Create tax invoice
-      const newInvoiceRes = await client.query(
-        `INSERT INTO invoices (
-          branch_id, business_id, customer_id, invoice_number, invoice_date, due_date,
-          status, payment_status, subtotal, discount_total, additional_charges, tax_total,
-          round_off, grand_total, paid_amount, balance_amount, notes, terms,
-          template_id, template_settings, billing_address, shipping_address, place_of_supply_state_code,
-          cgst_total, sgst_total, igst_total, is_editable, cancellation_details,
-          document_type, supply_type, export_type, shipping_bill_number, shipping_bill_date, port_code,
-          ecommerce_operator_gstin, is_ecommerce_supply, is_export, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
-        RETURNING id`,
-        [
-          invoiceBranchId,
-          proformaData.business_id,
-          proformaData.customer_id,
-          invoiceNumber,
-          proformaData.invoice_date,
-          proformaData.due_date,
-          targetStatus, // Use the status chosen by user (draft or final)
-          'unpaid',
-          proformaData.subtotal,
-          proformaData.discount_total,
-          proformaData.additional_charges,
-          proformaData.tax_total,
-          proformaData.round_off,
-          proformaData.grand_total,
-          0, // paid_amount
-          proformaData.grand_total, // balance_amount
-          proformaData.notes,
-          proformaData.terms,
-          proformaData.template_id,
-          proformaData.template_settings,
-          proformaData.billing_address,
-          proformaData.shipping_address,
-          proformaData.place_of_supply_state_code,
-          proformaData.cgst_total,
-          proformaData.sgst_total,
-          proformaData.igst_total,
-          true, // is_editable
-          null, // cancellation_details
-          'tax_invoice',
-          proformaData.supply_type,
-          proformaData.export_type,
-          proformaData.shipping_bill_number,
-          proformaData.shipping_bill_date,
-          proformaData.port_code,
-          proformaData.ecommerce_operator_gstin,
-          proformaData.is_ecommerce_supply,
-          proformaData.is_export || false,
-          proformaData.created_by
-        ]
-      );
-      
-      const newInvoiceId = newInvoiceRes.rows[0].id;
-      
-      // Copy items
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        
-        // Calculate line_total if not present: taxable_value + tax_amount
-        // If taxable_value is null, calculate it: (unit_price * quantity) - discount_amount
-        // Ensure all values are numbers, not strings
-        const unitPrice = parseFloat(item.unit_price) || 0;
-        const quantity = parseFloat(item.quantity) || 0;
-        const discountAmount = parseFloat(item.discount_amount) || 0;
-        const taxAmount = parseFloat(item.tax_amount) || 0;
-        
-        const taxableValue = item.taxable_value != null 
-          ? parseFloat(item.taxable_value)
-          : (unitPrice * quantity) - discountAmount;
-        
-        const lineTotal = taxableValue + taxAmount;
-        
-        await client.query(
-          `INSERT INTO invoice_items (
-            invoice_id, item_id, variant_id, item_name, description, hsn_sac,
-            quantity, unit, unit_price, discount_percent, discount_amount,
-            tax_rate, taxable_value, cgst_amount, sgst_amount, igst_amount, tax_amount,
-            line_total, sort_order
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
-          [
-            newInvoiceId,
-            item.item_id,
-            item.variant_id,
-            item.item_name,
-            item.description,
-            item.hsn_sac,
-            parseFloat(item.quantity) || 0,
-            item.unit,
-            parseFloat(item.unit_price) || 0,
-            parseFloat(item.discount_percent) || 0,
-            parseFloat(item.discount_amount) || 0,
-            parseFloat(item.tax_rate) || 0,
-            taxableValue,
-            parseFloat(item.cgst_amount) || 0,
-            parseFloat(item.sgst_amount) || 0,
-            parseFloat(item.igst_amount) || 0,
-            taxAmount,
-            lineTotal,
-            item.sort_order || i
-          ]
+    let locationId: string | null = null;
+    const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
+    if (await isWarehouseModeEnabled(businessId)) {
+      const { getDefaultWarehouseForBranch } = await import('@/lib/warehouse-access');
+      locationId = await getDefaultWarehouseForBranch(invoiceBranchId);
+      if (!locationId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Warehouse mode is enabled but no default warehouse is configured for this branch.', code: 'WAREHOUSE_REQUIRED' },
+          { status: 400 }
         );
       }
-      
-      // Mark proforma as converted (update lifecycle status and add note)
-      // Get user ID from request body, headers, or use invoice's created_by
-      const actorUserId = getUserIdFromRequest(request, body) || userId || proformaData.created_by;
-      
-      await client.query(
-        `UPDATE invoices 
-         SET notes = COALESCE(notes || E'\n\n', '') || 'Converted to Tax Invoice: ' || $1 || ' on ' || CURRENT_TIMESTAMP::text,
-             proforma_lifecycle_status = 'converted_to_tax_invoice',
-             proforma_lifecycle_notes = 'Converted to Tax Invoice: ' || $1,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [invoiceNumber, proformaId]
-      );
-      
-      // Add timeline entry for conversion
-      await client.query(
-        `INSERT INTO proforma_lifecycle_timeline (invoice_id, status, notes, created_by)
-         VALUES ($1, 'converted_to_tax_invoice', $2, $3)`,
-        [proformaId, `Converted to Tax Invoice: ${invoiceNumber}`, actorUserId]
-      );
-      
-      await client.query('COMMIT');
-      
-      return NextResponse.json({
-        success: true,
-        invoice_id: newInvoiceId,
-        invoice_number: invoiceNumber,
-        message: 'Proforma invoice converted to tax invoice successfully'
-      });
-      
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
     }
-    
+
+    const items: CreateInvoiceItemInput[] = itemsRes.rows.map((it: any) => ({
+      item_id: it.item_id || null,
+      variant_id: it.variant_id || null,
+      item_name: it.item_name,
+      description: it.description || null,
+      hsn_sac: it.hsn_sac || null,
+      quantity: Number(it.quantity) || 0,
+      unit: it.unit || undefined,
+      unit_price: Number(it.unit_price) || 0,
+      discount_percent: Number(it.discount_percent) || 0,
+      tax_rate: Number(it.tax_rate) || 0,
+      location_id: locationId,
+    }));
+
+    const payload: CreateInvoiceInput & Record<string, unknown> = {
+      business_id: businessId,
+      created_by: userId,
+      branch_id: invoiceBranchId,
+      customer_id: proforma.customer_id || null,
+      invoice_date: invoiceDate,
+      due_date: proforma.due_date || null,
+      status: targetStatus,
+      document_type: 'tax_invoice',
+      items,
+      additional_charges: Number(proforma.additional_charges) || 0,
+      round_off: Number(proforma.round_off) || 0,
+      enable_round_off: proforma.enable_round_off ?? false,
+      notes: proforma.notes,
+      billing_address: proforma.billing_address,
+      shipping_address: proforma.shipping_address,
+      place_of_supply_state_code: proforma.place_of_supply_state_code,
+      prices_include_gst: proforma.prices_include_gst === true,
+      is_export: proforma.is_export || false,
+      supply_type: proforma.supply_type,
+      export_type: proforma.export_type,
+      template_id: proforma.template_id || null,
+    };
+
+    const result = await createInvoiceInTransaction(client, payload, { allowDraft: true });
+
+    await client.query(
+      `UPDATE invoices
+          SET terms = $2, template_settings = $3, shipping_bill_number = $4, shipping_bill_date = $5, port_code = $6,
+              ecommerce_operator_gstin = $7, is_ecommerce_supply = $8, supply_type = $9, export_type = $10
+        WHERE id = $1`,
+      [
+        result.invoiceId,
+        proforma.terms,
+        proforma.template_settings,
+        proforma.shipping_bill_number,
+        proforma.shipping_bill_date,
+        proforma.port_code,
+        proforma.ecommerce_operator_gstin,
+        proforma.is_ecommerce_supply,
+        proforma.supply_type,
+        proforma.export_type,
+      ]
+    );
+
+    await client.query(
+      `UPDATE invoices
+          SET notes = COALESCE(notes || E'\n\n', '') || 'Converted to Tax Invoice: ' || $1 || ' on ' || CURRENT_TIMESTAMP::text,
+              proforma_lifecycle_status = 'converted_to_tax_invoice',
+              proforma_lifecycle_notes = 'Converted to Tax Invoice: ' || $1,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2`,
+      [result.invoiceNumber, proformaId]
+    );
+    await client.query(
+      `INSERT INTO proforma_lifecycle_timeline (invoice_id, status, notes, created_by)
+       VALUES ($1, 'converted_to_tax_invoice', $2, $3)`,
+      [proformaId, `Converted to Tax Invoice: ${result.invoiceNumber}`, userId]
+    );
+
+    await client.query('COMMIT');
+    return NextResponse.json({
+      success: true,
+      invoice_id: result.invoiceId,
+      invoice_number: result.invoiceNumber,
+      message: 'Proforma invoice converted to tax invoice successfully',
+    });
   } catch (error: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (error instanceof InvoiceCreateServiceError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code, ...(error.details || {}) },
+        { status: error.statusCode }
+      );
+    }
     console.error('Error converting proforma:', error);
-    return NextResponse.json({ error: error.message || 'Failed to convert proforma invoice' }, { status: 500 });
+    return NextResponse.json({ error: error?.message || 'Failed to convert proforma invoice' }, { status: 500 });
   } finally {
     client.release();
   }
 }
-

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { resolveBranchId } from '@/lib/branch-helpers';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
@@ -25,9 +25,12 @@ export async function POST(
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
+  const tenant = requireTenantBusinessId(request);
+  if (!tenant.ok) return tenant.response;
+
   const estimateMeta = await queryOne<{ business_id: string }>(
-    'SELECT business_id FROM estimates WHERE id = $1',
-    [estimateId],
+    'SELECT business_id FROM estimates WHERE id = $1 AND business_id = $2',
+    [estimateId, tenant.businessId],
   );
   if (!estimateMeta) {
     return NextResponse.json({ error: 'Estimate not found' }, { status: 404 });
@@ -80,9 +83,9 @@ export async function POST(
       `SELECT e.*, c.state_code AS customer_state_code, c.billing_address AS customer_billing_address
          FROM estimates e
          LEFT JOIN customers c ON c.id = e.customer_id
-        WHERE e.id = $1
+        WHERE e.id = $1 AND e.business_id = $2
         FOR UPDATE OF e`,
-      [estimateId]
+      [estimateId, tenant.businessId]
     );
     if (estimateRes.rows.length === 0) {
       await client.query('ROLLBACK');

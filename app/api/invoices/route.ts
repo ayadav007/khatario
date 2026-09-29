@@ -4,6 +4,7 @@ import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import { Invoice } from '@/types/database';
 import { checkLowStockForMultipleItems } from '@/lib/low-stock-checker';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -33,6 +34,7 @@ import {
 } from '@/lib/closing-stock-period-lock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
+import { reverseInvoicePostingForRepost, reverseReplacedInvoicePayments } from '@/lib/invoices/invoice-edit-postings';
 import {
   applyOffers,
   type AppliedOfferLine,
@@ -876,9 +878,25 @@ export async function POST(request: NextRequest) {
     // Check if this is an update (has id) and if invoice is locked
     if (invoiceId) {
       const existingInvoice = await client.query(
-        'SELECT is_editable FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT is_editable, status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [invoiceId, business_id]
       );
+
+      // A posted tax invoice is corrected by cancelling it (reversal) and issuing a new one,
+      // or by a credit/debit note; it is never re-saved over its own postings.
+      const prev = existingInvoice.rows[0];
+      if (prev && (prev.status === 'cancelled' || (prev.status === 'final' && prev.document_type !== 'proforma_invoice'))) {
+        return NextResponse.json(
+          {
+            error:
+              prev.status === 'cancelled'
+                ? 'A cancelled invoice cannot be edited.'
+                : 'A final invoice cannot be edited. Cancel it and issue a new invoice, or raise a credit/debit note.',
+            code: 'INVOICE_POSTED_IMMUTABLE',
+          },
+          { status: 409 }
+        );
+      }
       
       if (existingInvoice.rows.length > 0 && existingInvoice.rows[0].is_editable === false) {
         // Get GSTR-1 filing info for better error message (scoped to this business)
@@ -1064,6 +1082,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+    const schemeRes = await client.query<{ gst_registration_type: string | null }>(
+      'SELECT gst_registration_type FROM businesses WHERE id = $1',
+      [business_id]
+    );
+    const taxPolicy = outwardTaxPolicy({
+      scheme: effectiveGstScheme(schemeRes.rows[0]?.gst_registration_type, registration.gstin),
+      documentType: document_type,
+    });
+
     // Mapping of document types to prefixes and counter columns
     const DOCUMENT_TYPE_CONFIG: Record<string, { prefix: string; counterColumn: string }> = {
         'tax_invoice': { prefix: 'INV', counterColumn: 'next_tax_invoice_number' },
@@ -1072,7 +1100,7 @@ export async function POST(request: NextRequest) {
         'bill_of_supply': { prefix: 'BOS', counterColumn: 'next_tax_invoice_number' },
       };
       
-      const finalDocumentType = document_type || 'tax_invoice';
+      const finalDocumentType = taxPolicy.documentType;
       const config = DOCUMENT_TYPE_CONFIG[finalDocumentType] || DOCUMENT_TYPE_CONFIG['tax_invoice'];
     
     let invoiceNumber = '';
@@ -1179,7 +1207,6 @@ export async function POST(request: NextRequest) {
       return map[name] || '';
     };
 
-    const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
     const businessStateCode =
       registration.stateCode || business.state_code || getStateCode(business.state || '');
 
@@ -1236,7 +1263,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: compliance.error, code: compliance.code }, { status: 400 });
     }
     const posStateCode: string | null = compliance.placeOfSupply ?? place_of_supply_state_code ?? null;
-    const complianceWarnings = compliance.warnings;
+    const complianceWarnings = taxPolicy.warning ? [...compliance.warnings, taxPolicy.warning] : compliance.warnings;
 
     let invoiceItems: any[] = items;
     let appliedOffersPayload: AppliedOfferLine[] = [];
@@ -1312,12 +1339,13 @@ export async function POST(request: NextRequest) {
       lut_declaration,
       place_of_supply_state_code: posStateCode,
     });
+    const noTaxOnLines = zeroRatedWithoutTax || !taxPolicy.collectTax;
 
     invoiceItems.forEach((item: any) => {
       const { itemDiscount, taxable, cgst, sgst, igst, taxAmount } = computeLineGst(
         item,
         intraStateSupply,
-        zeroRatedWithoutTax,
+        noTaxOnLines,
         pricesIncludeGst
       );
 
@@ -1701,7 +1729,7 @@ export async function POST(request: NextRequest) {
       const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(
         item,
         intraStateSupply,
-        zeroRatedWithoutTax,
+        noTaxOnLines,
         pricesIncludeGst
       );
 
@@ -1729,7 +1757,7 @@ export async function POST(request: NextRequest) {
         item.unit_price,
         item.discount_percent || 0,
         itemDiscount,
-        item.tax_rate || 0,
+        taxPolicy.collectTax ? item.tax_rate || 0 : 0,
         taxAmount,
         taxable,
         cgst,
@@ -2191,25 +2219,11 @@ export async function POST(request: NextRequest) {
     // Proforma invoices don't accept payments - they are estimates/quotes
     // Payments should only be recorded after converting to tax invoice
     //
-    // PHASE-2: when an invoice is edited (invoiceId present), we also need to
-    // delete any payment-voucher ledger lines that were posted against the
-    // OLD payment rows we're about to delete — otherwise they orphan and
-    // double-count Cash + AR forever.
+    // When an edit supplies payment entries, the old payment rows are replaced: their
+    // receipt vouchers are reversed (not deleted) so Cash and AR are not double-counted.
+    // Without payment entries the existing payments and their vouchers stay as they are.
     if (invoiceId && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
-      const oldPayments = await client.query<{ id: string }>(
-        `SELECT id FROM payments WHERE reference_type = 'invoice' AND reference_id = $1 AND business_id = $2 AND deleted_at IS NULL`,
-        [invoiceId, business_id]
-      );
-      const oldPaymentIds = oldPayments.rows.map(r => r.id);
-      if (oldPaymentIds.length > 0) {
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'payment'
-              AND voucher_id = ANY($2::uuid[])`,
-          [business_id, oldPaymentIds]
-        );
-      }
+      await reverseReplacedInvoicePayments(client, { businessId: business_id, invoiceId, userId: actorUserId });
       await client.query(
         `UPDATE invoices SET tds_received = 0 WHERE id = $1 AND business_id = $2`,
         [invoiceId, business_id]
@@ -2309,24 +2323,15 @@ export async function POST(request: NextRequest) {
     // with HTTP 500 — no more orphan invoice rows without ledger entries.
     // ------------------------------------------------------------------
     if (status === 'final' && document_type !== 'proforma_invoice') {
-      // Edit path: wipe stale ledger lines for this invoice so we don't double-post.
+      // Edit path (draft -> final): any posting still active on this invoice voucher is
+      // reversed before the new one, so the voucher nets to the new posting only.
       if (invoiceId) {
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'invoice'
-              AND voucher_id = $2`,
-          [business_id, invoice.id]
-        );
-        // Also wipe payment-voucher ledger lines for this invoice's payments
-        // (the payments themselves were re-inserted above with new ids).
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-            WHERE business_id = $1
-              AND voucher_type = 'payment'
-              AND voucher_id IN (SELECT id FROM payments WHERE reference_type = 'invoice' AND reference_id = $2 AND business_id = $1 AND deleted_at IS NULL)`,
-          [business_id, invoice.id]
-        );
+        await reverseInvoicePostingForRepost(client, {
+          businessId: business_id,
+          invoiceId: invoice.id,
+          invoiceNumber,
+          userId: actorUserId,
+        });
       }
 
       // PHASE-2: a true cash sale has NO customer (walk-in). Any invoice with

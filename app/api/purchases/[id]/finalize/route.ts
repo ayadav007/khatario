@@ -118,6 +118,7 @@ export async function PATCH(
   const pool = getPool();
   const client = await pool.connect();
   let updated: any = null;
+  let itcWarning: string | null = null;
 
   try {
     await client.query('BEGIN');
@@ -128,6 +129,10 @@ export async function PATCH(
     if (lockedRow.rows[0]?.status === 'final') {
       await client.query('ROLLBACK');
       return NextResponse.json({ purchase });
+    }
+    if (lockedRow.rows[0]?.status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Cannot finalize cancelled purchase' }, { status: 400 });
     }
 
     if (!purchase.branch_id) {
@@ -370,7 +375,7 @@ export async function PATCH(
       const paid = Number(purchase.paid_amount) || 0;
       const balance = Number(purchase.balance_amount ?? grandTotal - paid) || 0;
       const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
-      await createPurchaseLedgerEntries({
+      const posted = await createPurchaseLedgerEntries({
         businessId: purchase.business_id,
         purchaseId: id,
         purchaseNumber: purchase.bill_number || String(id).substring(0, 8),
@@ -389,6 +394,7 @@ export async function PATCH(
         itcEligible: purchase.itc_eligible !== false,
         isReverseCharge: purchase.is_reverse_charge === true,
       });
+      itcWarning = posted.itcBlockedReason;
       if (purchase.supplier_id && balance !== 0) {
         await client.query(
           `UPDATE suppliers SET current_balance = COALESCE(current_balance, 0) + $1, updated_at = CURRENT_TIMESTAMP
@@ -428,6 +434,9 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ purchase: updated });
+  return NextResponse.json({
+    purchase: updated,
+    ...(itcWarning ? { warnings: [`Input GST not claimed: ${itcWarning}. Tax booked to cost.`] } : {}),
+  });
 }
 

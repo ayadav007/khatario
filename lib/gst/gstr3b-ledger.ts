@@ -35,7 +35,7 @@ export interface GSTR3BLedgerBasis {
     itc_claimed_total: number;
     possible_rcm_itc_mismatch: boolean;
   };
-  itc: { igst: number; cgst: number; sgst: number };
+  itc: { igst: number; cgst: number; sgst: number; cess?: number };
   utilization: {
     igst_to_igst: number;
     igst_to_cgst: number;
@@ -44,8 +44,10 @@ export interface GSTR3BLedgerBasis {
     cgst_to_igst: number;
     sgst_to_sgst: number;
     sgst_to_igst: number;
+    cess_to_cess: number;
   };
-  net_payable: { igst: number; cgst: number; sgst: number };
+  /** Cash payable on output tax after ITC; RCM is paid in cash on top of this (see GSTR-3B summary). */
+  net_payable: { igst: number; cgst: number; sgst: number; cess: number };
 }
 
 export interface ResolvedRcmLedger {
@@ -225,8 +227,49 @@ export function round2(n: number): number {
 }
 
 /**
- * Statutory ITC utilization order (display / working): IGST ITC → IGST, CGST, SGST; then CGST ITC →
- * CGST, IGST; then SGST ITC → SGST, IGST. No CGST ↔ SGST cross-utilization.
+ * GSTR-3B Table 6.1 cash working: ITC is set off against output tax only; RCM (split heads or
+ * pooled 2155) is added afterwards as cash (s.49(4) with s.2(82) — RCM is not "output tax").
+ */
+export function computeGstr3bCashPayable(params: {
+  output: { igst: number; cgst: number; sgst: number; cess: number };
+  itc: { igst: number; cgst: number; sgst: number; cess: number };
+  rcm: Pick<ResolvedRcmLedger, 'mode' | 'igst' | 'cgst' | 'sgst' | 'total'>;
+}) {
+  const util = computeItcUtilizationDisplay({
+    igstLiability: params.output.igst,
+    cgstLiability: params.output.cgst,
+    sgstLiability: params.output.sgst,
+    cessLiability: params.output.cess,
+    itcIgst: params.itc.igst,
+    itcCgst: params.itc.cgst,
+    itcSgst: params.itc.sgst,
+    itcCess: params.itc.cess,
+  });
+  const split = params.rcm.mode === 'split';
+  const rcmHead = (v: number | null) => (split ? Math.max(0, round2(v ?? 0)) : 0);
+  const payable_by_head = {
+    igst: round2(util.net_payable.igst + rcmHead(params.rcm.igst)),
+    cgst: round2(util.net_payable.cgst + rcmHead(params.rcm.cgst)),
+    sgst: round2(util.net_payable.sgst + rcmHead(params.rcm.sgst)),
+    cess: util.net_payable.cess,
+  };
+  const rcm_pooled_cash = split ? 0 : Math.max(0, round2(params.rcm.total));
+  const net_tax_payable = round2(
+    payable_by_head.igst + payable_by_head.cgst + payable_by_head.sgst + payable_by_head.cess + rcm_pooled_cash
+  );
+  return { util, payable_by_head, rcm_pooled_cash, net_tax_payable };
+}
+
+/**
+ * ITC utilization per s.49(5) and Rule 88A. Pass OUTPUT tax only: RCM liability (s.49(4)) is
+ * discharged in cash and must not be offered to this function.
+ *
+ * - IGST ITC goes to IGST first; the balance may go to CGST and SGST "in any order and in any
+ *   proportion" (Rule 88A). It is allocated to the CGST/SGST liability that own-head ITC cannot
+ *   cover, so eligible CGST/SGST ITC is not stranded while cash is paid on the other head.
+ * - IGST ITC is exhausted (as far as liability allows) before CGST/SGST ITC is used.
+ * - CGST ITC → CGST, then IGST; SGST ITC → SGST, then IGST. No CGST ↔ SGST cross-utilization.
+ * - Cess ITC is usable only against cess (Compensation Cess Act s.11(2) proviso).
  */
 export function computeItcUtilizationDisplay(params: {
   igstLiability: number;
@@ -235,25 +278,35 @@ export function computeItcUtilizationDisplay(params: {
   itcIgst: number;
   itcCgst: number;
   itcSgst: number;
+  cessLiability?: number;
+  itcCess?: number;
 }): GSTR3BLedgerBasis['utilization'] & { net_payable: GSTR3BLedgerBasis['net_payable'] } {
-  let igstLiability = round2(params.igstLiability);
-  let cgstLiability = round2(params.cgstLiability);
-  let sgstLiability = round2(params.sgstLiability);
+  const pos = (n: number) => Math.max(0, round2(n));
+  let igstLiability = pos(params.igstLiability);
+  let cgstLiability = pos(params.cgstLiability);
+  let sgstLiability = pos(params.sgstLiability);
 
-  let igstITC = round2(params.itcIgst);
-  let cgstITC = round2(params.itcCgst);
-  let sgstITC = round2(params.itcSgst);
+  let igstITC = pos(params.itcIgst);
+  let cgstITC = pos(params.itcCgst);
+  let sgstITC = pos(params.itcSgst);
 
   const igst_to_igst = round2(Math.min(igstITC, igstLiability));
   igstITC = round2(igstITC - igst_to_igst);
   igstLiability = round2(igstLiability - igst_to_igst);
 
-  const igst_to_cgst = round2(Math.min(igstITC, cgstLiability));
-  igstITC = round2(igstITC - igst_to_cgst);
+  const cgstGap = pos(cgstLiability - cgstITC);
+  const sgstGap = pos(sgstLiability - sgstITC);
+  let igst_to_cgst = round2(Math.min(igstITC, cgstGap));
+  let igst_to_sgst = round2(Math.min(igstITC - igst_to_cgst, sgstGap));
+  igstITC = round2(igstITC - igst_to_cgst - igst_to_sgst);
+  // Remaining IGST ITC must still be used before CGST/SGST ITC (Rule 88A proviso).
+  const extraC = round2(Math.min(igstITC, cgstLiability - igst_to_cgst));
+  igst_to_cgst = round2(igst_to_cgst + extraC);
+  igstITC = round2(igstITC - extraC);
+  const extraS = round2(Math.min(igstITC, sgstLiability - igst_to_sgst));
+  igst_to_sgst = round2(igst_to_sgst + extraS);
+  igstITC = round2(igstITC - extraS);
   cgstLiability = round2(cgstLiability - igst_to_cgst);
-
-  const igst_to_sgst = round2(Math.min(igstITC, sgstLiability));
-  igstITC = round2(igstITC - igst_to_sgst);
   sgstLiability = round2(sgstLiability - igst_to_sgst);
 
   const cgst_to_cgst = round2(Math.min(cgstITC, cgstLiability));
@@ -272,10 +325,14 @@ export function computeItcUtilizationDisplay(params: {
   sgstITC = round2(sgstITC - sgst_to_igst);
   igstLiability = round2(igstLiability - sgst_to_igst);
 
+  const cessLiability = pos(params.cessLiability ?? 0);
+  const cess_to_cess = round2(Math.min(pos(params.itcCess ?? 0), cessLiability));
+
   const net_payable = {
-    igst: Math.max(0, round2(igstLiability)),
-    cgst: Math.max(0, round2(cgstLiability)),
-    sgst: Math.max(0, round2(sgstLiability)),
+    igst: pos(igstLiability),
+    cgst: pos(cgstLiability),
+    sgst: pos(sgstLiability),
+    cess: pos(cessLiability - cess_to_cess),
   };
 
   return {
@@ -286,6 +343,7 @@ export function computeItcUtilizationDisplay(params: {
     cgst_to_igst,
     sgst_to_sgst,
     sgst_to_igst,
+    cess_to_cess,
     net_payable,
   };
 }

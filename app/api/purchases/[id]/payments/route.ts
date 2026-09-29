@@ -102,10 +102,14 @@ export async function PATCH(
 
       const lockedRes = await client.query(
         `SELECT grand_total, tax_total, is_reverse_charge, paid_amount, COALESCE(tds_deducted, 0) AS tds_deducted,
-                COALESCE(advance_adjusted, 0) AS advance_adjusted
+                COALESCE(advance_adjusted, 0) AS advance_adjusted, status
            FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
         [purchase.id, purchase.business_id],
       );
+      if (lockedRes.rows[0]?.status === 'cancelled') {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Cannot pay a cancelled purchase' }, { status: 400 });
+      }
       const outstanding = purchaseOutstanding(lockedRes.rows[0]);
       if (Number(amount) > outstanding + 0.01) {
         await client.query('ROLLBACK');

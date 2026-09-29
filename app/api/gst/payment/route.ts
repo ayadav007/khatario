@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
+import { GST_TAX_HEADS, recordGstPayment, type GstTaxHead } from '@/lib/gst/gst-settlement';
 import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
 
 export const dynamic = 'force-dynamic';
@@ -32,8 +32,8 @@ export const POST = withPremiumSubscriptionApi({ parseJsonBody: true }, async ({
     const paymentMode = parsed.payment_mode;
     const narrationPrefix = parsed.narration_prefix;
 
-    if (!['IGST', 'CGST', 'SGST', 'RCM'].includes(taxHead)) {
-      return NextResponse.json({ error: 'tax_head must be IGST, CGST, SGST, or RCM' }, { status: 400 });
+    if (!GST_TAX_HEADS.includes(taxHead)) {
+      return NextResponse.json({ error: `tax_head must be one of ${GST_TAX_HEADS.join(', ')}` }, { status: 400 });
     }
     if (!paymentDate) {
       return NextResponse.json({ error: 'payment_date is required (YYYY-MM-DD)' }, { status: 400 });

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
 import { restoreBundleChildrenAfterInvoiceCancel } from '@/lib/invoice-bundle-stock';
-import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
+import { reverseInvoiceAccountingOnCancel } from '@/lib/invoices/cancel-invoice-accounting';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,23 +15,17 @@ export async function PATCH(
 ) {
   const id = params.id;
   try {
-    const body = await request.json();
-    const { reason, cancelled_by } = body;
+    const body = await request.json().catch(() => ({}));
+    const { reason } = body ?? {};
 
+    const cancelled_by = getAuthenticatedUserId(request);
     if (!cancelled_by) {
-      return NextResponse.json(
-        { error: 'cancelled_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
-    const businessScope =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+    const businessScope = getSessionScopedBusinessId(request);
     if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
     const inv = await queryOne(
@@ -102,7 +96,7 @@ export async function PATCH(
 
     const cancellationDetails = {
       reason: reason || 'Cancelled',
-      cancelled_by: cancelled_by || null,
+      cancelled_by,
       cancelled_at: new Date().toISOString(),
     };
 
@@ -111,6 +105,18 @@ export async function PATCH(
     let updated: any = null;
     try {
       await client.query('BEGIN');
+
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [id, businessScope]
+      );
+      if (!locked.rows[0] || locked.rows[0].status !== inv.status) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Invoice changed while cancelling; reload and try again', code: 'INVOICE_STATE_CHANGED' },
+          { status: 409 }
+        );
+      }
 
       // Reverse stock, books and receivable if final (including batch/serial reversals)
       if (inv.status === 'final') {
@@ -236,24 +242,7 @@ export async function PATCH(
           }
         }
 
-        // Dated on the invoice date so the cancelled supply drops out of that period's books
-        // and GST, matching its removal from GSTR-1.
-        await reverseVoucherLedgerEntries(client, {
-          businessId: inv.business_id,
-          voucherType: 'invoice',
-          voucherId: inv.id,
-          reason: `Invoice ${inv.invoice_number} cancelled`,
-        });
-
-        // Anything already received stays on the customer's account as an advance.
-        if (inv.customer_id && inv.document_type !== 'proforma_invoice') {
-          await client.query(
-            `UPDATE customers
-                SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP
-              WHERE id = $2 AND business_id = $3`,
-            [Number(inv.grand_total) || 0, inv.customer_id, inv.business_id]
-          );
-        }
+        await reverseInvoiceAccountingOnCancel(client, inv, cancelled_by);
       }
 
       const res = await client.query(

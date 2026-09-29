@@ -41,6 +41,15 @@ export function getUserIdFromRequest(request: NextRequest, body?: any): string |
 }
 
 /**
+ * Authenticated user from the JWT/session only (set by middleware, which strips any
+ * client-supplied copy). No body, query or legacy header fallback: use for actions whose
+ * actor is recorded or authorized and must not be impersonated.
+ */
+export function getAuthenticatedUserId(request: NextRequest): string | null {
+  return request.headers.get('x-authenticated-user-id');
+}
+
+/**
  * Acting user id for create endpoints: prefers `created_by_user_id` or legacy `created_by`
  * in the JSON body, then session/header fallbacks via {@link getUserIdFromRequest}.
  */

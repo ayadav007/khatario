@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/tds/transactions
- * List TDS transactions
+ * List TDS transactions. Active rows only unless ?status=cancelled or ?status=all.
  */
 export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
   try {
@@ -15,6 +15,7 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
     const quarter = searchParams.get('quarter');
     const supplierId = searchParams.get('supplier_id');
     const isDeposited = searchParams.get('is_deposited');
+    const status = searchParams.get('status');
 
     let sql = `
       SELECT 
@@ -28,6 +29,12 @@ export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
+
+    if (status !== 'all') {
+      sql += ` AND t.status = $${paramIndex}`;
+      params.push(status === 'cancelled' ? 'cancelled' : 'active');
+      paramIndex++;
+    }
 
     if (financialYear) {
       sql += ` AND t.financial_year = $${paramIndex}`;

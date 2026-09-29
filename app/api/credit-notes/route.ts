@@ -349,6 +349,20 @@ export async function POST(request: NextRequest) {
       }
       if (invoice.place_of_supply_state_code) finalPosStateCode = invoice.place_of_supply_state_code;
 
+      const { isCreditNoteTaxReductionTimeBarred, thirtyNovAfterFy } = await import('@/lib/gst/time-limits');
+      if (
+        invoice.invoice_date &&
+        Number(invoice.tax_total) > 0 &&
+        isCreditNoteTaxReductionTimeBarred(invoice.invoice_date, credit_note_date)
+      ) {
+        return rejectCreditNote(
+          400,
+          'CREDIT_NOTE_TIME_BARRED',
+          `Invoice ${invoice.invoice_number}: GST can be reduced by a credit note only up to ${thirtyNovAfterFy(invoice.invoice_date)} (s.34(2) CGST Act). ` +
+            'Record any commercial settlement as a financial adjustment outside GST.'
+        );
+      }
+
       const invItems = await client.query(
         `SELECT item_id, SUM(quantity)::numeric AS qty, MAX(tax_rate)::numeric AS tax_rate
            FROM invoice_items WHERE invoice_id = $1 AND item_id IS NOT NULL GROUP BY item_id`,

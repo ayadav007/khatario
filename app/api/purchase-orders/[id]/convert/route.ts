@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { assertItemBelongsToBusiness, ItemOwnershipError } from '@/lib/item-ownership';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import {
   createPurchaseInTransaction,
   PurchaseCreateServiceError,
@@ -27,6 +27,8 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
+  const tenant = requireTenantBusinessId(request, (body as { business_id?: string }).business_id);
+  if (!tenant.ok) return tenant.response;
   const pool = getPool();
   const client = await pool.connect();
 
@@ -38,9 +40,9 @@ export async function POST(
       `SELECT po.*, s.state_code AS supplier_state_code, s.gstin AS supplier_gstin
          FROM purchase_orders po
          LEFT JOIN suppliers s ON po.supplier_id = s.id
-        WHERE po.id = $1
+        WHERE po.id = $1 AND po.business_id = $2
         FOR UPDATE OF po`,
-      [purchaseOrderId]
+      [purchaseOrderId, tenant.businessId]
     );
     if (orderRes.rows.length === 0) {
       await client.query('ROLLBACK');

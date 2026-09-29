@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(e.amount), 0) as total_expenses,
         COUNT(*) as expense_count
       FROM expenses e
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter.replace(/transaction_date/g, 'e.expense_date')}
     `, queryParams);
 

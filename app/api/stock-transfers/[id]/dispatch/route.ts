@@ -19,14 +19,11 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { dispatched_by, dispatch_date, notes } = body;
+    const { dispatch_date, notes } = body;
 
-    const userId = getUserIdFromRequest(request, body) || dispatched_by;
+    const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return NextResponse.json(
-        { error: 'dispatched_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Get transfer with lock
@@ -76,6 +73,18 @@ export async function PATCH(
     }
 
     await client.query('BEGIN');
+
+    const locked = await client.query(
+      `SELECT status FROM stock_transfers WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.id, tenant.businessId]
+    );
+    if (locked.rows[0]?.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: `Transfer is ${locked.rows[0]?.status ?? 'missing'}; only pending transfers can be dispatched.`, code: 'TRANSFER_STATE_CHANGED' },
+        { status: 409 }
+      );
+    }
 
     // Get transfer items with lock
     const transferItemsResult = await client.query(`

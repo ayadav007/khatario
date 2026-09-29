@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import {
+  getAuthenticatedUserId,
+  getBusinessIdFromRequest,
+  getSessionScopedBusinessId,
+  getUserIdFromRequest,
+} from '@/lib/auth-helpers';
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
-import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
-import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
-import { resolveBranchId } from '@/lib/branch-helpers';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
+import { cancelFinalPurchase, PurchaseCancelError } from '@/lib/purchases/cancel-purchase';
+import { deleteDraftPurchase } from '@/lib/purchases/delete-draft-purchase';
 
 export const dynamic = 'force-dynamic';
 
@@ -155,7 +159,10 @@ export async function GET(
 
 /**
  * DELETE /api/purchases/[id]
- * Delete a purchase (only drafts, or final purchases with stock reversal)
+ * - Final bill: cancelled through reversal (lib/purchases/cancel-purchase.ts); nothing posted is
+ *   deleted. With soft delete the cancelled bill is also hidden from lists, as before.
+ * - Draft bill: removed (soft or hard delete); vouchers of its payments/TDS are reversed.
+ * - Cancelled bill: hidden with soft delete only; it is never hard-deleted.
  */
 export async function DELETE(
   request: NextRequest,
@@ -164,448 +171,125 @@ export async function DELETE(
   const purchaseId = params.id;
 
   try {
-    // Get user_id from request body or query params
     let body: Record<string, unknown> | undefined;
     try {
       body = await request.json();
     } catch {
       body = undefined;
     }
-    const userId =
-      getUserIdFromRequest(request, body) ||
-      (body && ((body.deleted_by as string) || undefined));
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
+    const userId = getAuthenticatedUserId(request);
+    const businessScope = getSessionScopedBusinessId(request);
+    if (!userId || !businessScope) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
-
-    const businessScope = getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
+    const reason = typeof body?.reason === 'string' ? (body.reason as string).trim().slice(0, 500) || null : null;
 
     const pool = getPool();
-    const client = await pool.connect();
+    const purchaseResult = await pool.query(
+      `SELECT id, business_id, branch_id, status, bill_date, bill_number
+         FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [purchaseId, businessScope]
+    );
+    const purchase = purchaseResult.rows[0];
+    if (!purchase) {
+      return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
+    }
 
     try {
-      // Check which columns exist in stock_movements table BEFORE starting transaction
-      const columnsCheck = await client.query(
-        `SELECT column_name 
-         FROM information_schema.columns 
-         WHERE table_name = 'stock_movements' 
-         AND column_name IN ('unit_cost', 'batch_id', 'serial_id', 'location_id', 'variant_id')`
-      );
-      
-      const availableColumns = new Set(columnsCheck.rows.map(row => row.column_name));
-      const hasUnitCost = availableColumns.has('unit_cost');
-      const hasBatchId = availableColumns.has('batch_id');
-      const hasSerialId = availableColumns.has('serial_id');
-      const hasLocationId = availableColumns.has('location_id');
-      const hasVariantId = availableColumns.has('variant_id');
-
-      const useSoftDeletePurchase = await shouldUseSoftDelete(businessScope);
-      
-      await client.query('BEGIN');
-
-      // Fetch purchase details
-      const purchaseResult = await client.query(
-        `SELECT p.*, s.name as supplier_name
-         FROM purchases p
-         LEFT JOIN suppliers s ON p.supplier_id = s.id
-         WHERE p.id = $1 AND p.business_id = $2 AND p.deleted_at IS NULL`,
-        [purchaseId, businessScope]
-      );
-
-      if (purchaseResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: 'Purchase not found' },
-          { status: 404 }
-        );
-      }
-
-      const purchase = purchaseResult.rows[0];
-
-      const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
-      const warehouseModeEnabled = await isWarehouseModeEnabled(purchase.business_id);
-      let stockBranchId: string;
-      try {
-        stockBranchId = await resolveBranchId({
-          businessId: purchase.business_id,
-          branchId: purchase.branch_id,
-        });
-      } catch (e: any) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: e?.message || 'Purchase has no valid branch for stock reversal' },
-          { status: 400 }
-        );
-      }
-
-      // AUTHORIZATION: Check delete permission
-      try {
-        await authorize(userId, 'purchases', 'delete', {
-          businessId: purchase.business_id,
-          branchId: purchase.branch_id,
-          resourceId: purchaseId,
-        });
-      } catch (error) {
-        await client.query('ROLLBACK');
-        if (error instanceof AuthorizationError) {
-          return error.toNextResponse();
-        }
-        throw error;
-      }
-
-      // Check for purchase returns
-      const returnsCheck = await client.query(
-        `SELECT COUNT(*) as count FROM purchase_returns WHERE purchase_id = $1 AND COALESCE(status, 'final') <> 'cancelled'`,
-        [purchaseId]
-      );
-
-      if (parseInt(returnsCheck.rows[0].count) > 0) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: 'Cannot delete purchase that has associated returns. Please delete the returns first.' },
-          { status: 400 }
-        );
-      }
-
-      if (purchase.status === 'final') {
-        const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
-        const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
-        try {
-          await assertGstPeriodNotFiledForDocumentDate(purchase.business_id, purchase.branch_id, purchase.bill_date, 'delete purchase');
-        } catch (error: any) {
-          await client.query('ROLLBACK');
-          return NextResponse.json({ error: error.message, code: 'GST_PERIOD_FILED' }, { status: 403 });
-        }
-        try {
-          await assertPeriodNotLocked(purchase.business_id, purchase.branch_id, purchase.bill_date, 'purchase deletion');
-        } catch (error: any) {
-          await client.query('ROLLBACK');
-          return NextResponse.json({ error: error.message, code: 'PERIOD_LOCKED' }, { status: 403 });
-        }
-      }
-
-      const tdsRes = await client.query<{ id: string; is_deposited: boolean }>(
-        `SELECT id, COALESCE(is_deposited, false) AS is_deposited
-           FROM tds_transactions WHERE business_id = $1 AND purchase_id = $2`,
-        [purchase.business_id, purchaseId]
-      );
-      if (tdsRes.rows.some((r) => r.is_deposited)) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          {
-            error: 'TDS on this bill is already deposited. Correct it through a TDS return revision instead of deleting the bill.',
-            code: 'BILL_TDS_DEPOSITED',
-          },
-          { status: 409 }
-        );
-      }
-
-      // If purchase is final, reverse stock movements
-      if (purchase.status === 'final') {
-        // Fetch purchase items
-        const itemsResult = await client.query(
-          `SELECT item_id, quantity, unit_price
-           FROM purchase_items
-           WHERE purchase_id = $1 AND item_id IS NOT NULL`,
-          [purchaseId]
-        );
-
-        // Reverse stock for each item
-        for (const item of itemsResult.rows) {
-          const purchaseQuantity = parseFloat(item.quantity.toString());
-          
-          // Build SELECT query based on available columns
-          let selectColumns = ['id', 'quantity'];
-          if (hasUnitCost) selectColumns.push('unit_cost');
-          if (hasBatchId) selectColumns.push('batch_id');
-          if (hasSerialId) selectColumns.push('serial_id');
-          if (hasLocationId) selectColumns.push('location_id');
-          if (hasVariantId) selectColumns.push('variant_id');
-          
-          // Get stock movements for this purchase
-          const stockMovements = await client.query(
-            `SELECT ${selectColumns.join(', ')}
-             FROM stock_movements
-             WHERE reference_type = 'purchase' AND reference_id = $1 AND item_id = $2`,
-            [purchaseId, item.item_id]
-          );
-
-          // Reverse stock by processing stock movements
-          for (const movement of stockMovements.rows) {
-            const movementQty = parseFloat(movement.quantity.toString());
-            
-            if (hasVariantId && movement.variant_id) {
-              if (warehouseModeEnabled && hasLocationId && movement.location_id) {
-                await client.query(
-                  `SELECT 1 FROM location_stock WHERE location_id = $1 AND item_id = $2 FOR UPDATE`,
-                  [movement.location_id, item.item_id]
-                );
-                await client.query(
-                  `UPDATE location_stock
-                   SET current_stock_qty = GREATEST(0, current_stock_qty - $1),
-                       last_updated = CURRENT_TIMESTAMP
-                   WHERE location_id = $2 AND item_id = $3`,
-                  [movementQty, movement.location_id, item.item_id]
-                );
-              } else if (!warehouseModeEnabled) {
-                await adjustBranchVariantStock(
-                  client,
-                  purchase.business_id,
-                  stockBranchId,
-                  movement.variant_id,
-                  -movementQty
-                );
-                await refreshVariantGlobalStockFromBranches(
-                  client,
-                  purchase.business_id,
-                  movement.variant_id
-                );
-              }
-            } else if (hasLocationId && movement.location_id && warehouseModeEnabled) {
-              await client.query(
-                `SELECT 1 FROM location_stock WHERE location_id = $1 AND item_id = $2 FOR UPDATE`,
-                [movement.location_id, item.item_id]
-              );
-              await client.query(
-                `UPDATE location_stock
-                 SET current_stock_qty = GREATEST(0, current_stock_qty - $1),
-                     last_updated = CURRENT_TIMESTAMP
-                 WHERE location_id = $2 AND item_id = $3`,
-                [movementQty, movement.location_id, item.item_id]
-              );
-            } else if (!warehouseModeEnabled) {
-              await adjustBranchItemStock(
-                client,
-                purchase.business_id,
-                stockBranchId,
-                item.item_id,
-                -movementQty
-              );
-              await refreshItemGlobalStockFromBranches(client, purchase.business_id, item.item_id);
-            }
-
-            // If batch tracking column exists and has a value, handle batch reversal
-            if (hasBatchId && movement.batch_id) {
-              try {
-                await client.query(
-                  `UPDATE item_batches
-                   SET quantity = GREATEST(0, quantity - $1),
-                       updated_at = CURRENT_TIMESTAMP
-                   WHERE id = $2`,
-                  [movementQty, movement.batch_id]
-                );
-              } catch (error: any) {
-                // If item_batches table doesn't exist, just log and continue
-                console.warn('Could not update item_batches:', error.message);
-              }
-            }
-
-            // If serial tracking column exists and has a value, handle serial reversal
-            if (hasSerialId && movement.serial_id) {
-              try {
-                await client.query(
-                  `UPDATE item_serials
-                   SET status = 'available',
-                       updated_at = CURRENT_TIMESTAMP
-                   WHERE id = $1`,
-                  [movement.serial_id]
-                );
-              } catch (error: any) {
-                // If item_serials table doesn't exist, just log and continue
-                console.warn('Could not update item_serials:', error.message);
-              }
-            }
-
-            // Delete stock movement
-            await client.query(
-              `DELETE FROM stock_movements WHERE id = $1`,
-              [movement.id]
-            );
-          }
-
-          // If no stock movements were found, still reverse the stock directly
-          // This handles cases where stock was updated but movements weren't recorded
-          if (stockMovements.rows.length === 0) {
-            const piRes = await client.query(
-              `SELECT variant_id, location_id FROM purchase_items WHERE purchase_id = $1 AND item_id = $2 LIMIT 1`,
-              [purchaseId, item.item_id]
-            );
-            const pi = piRes.rows[0];
-            if (pi?.variant_id) {
-              if (warehouseModeEnabled && pi?.location_id) {
-                await client.query(
-                  `SELECT 1 FROM location_stock WHERE location_id = $1 AND item_id = $2 FOR UPDATE`,
-                  [pi.location_id, item.item_id]
-                );
-                await client.query(
-                  `UPDATE location_stock
-                   SET current_stock_qty = GREATEST(0, current_stock_qty - $1),
-                       last_updated = CURRENT_TIMESTAMP
-                   WHERE location_id = $2 AND item_id = $3`,
-                  [purchaseQuantity, pi.location_id, item.item_id]
-                );
-              } else if (!warehouseModeEnabled) {
-                await adjustBranchVariantStock(
-                  client,
-                  purchase.business_id,
-                  stockBranchId,
-                  pi.variant_id,
-                  -purchaseQuantity
-                );
-                await refreshVariantGlobalStockFromBranches(
-                  client,
-                  purchase.business_id,
-                  pi.variant_id
-                );
-              }
-            } else if (warehouseModeEnabled && pi?.location_id) {
-              await client.query(
-                `SELECT 1 FROM location_stock WHERE location_id = $1 AND item_id = $2 FOR UPDATE`,
-                [pi.location_id, item.item_id]
-              );
-              await client.query(
-                `UPDATE location_stock
-                 SET current_stock_qty = GREATEST(0, current_stock_qty - $1),
-                     last_updated = CURRENT_TIMESTAMP
-                 WHERE location_id = $2 AND item_id = $3`,
-                [purchaseQuantity, pi.location_id, item.item_id]
-              );
-            } else if (!warehouseModeEnabled) {
-              await adjustBranchItemStock(
-                client,
-                purchase.business_id,
-                stockBranchId,
-                item.item_id,
-                -purchaseQuantity
-              );
-              await refreshItemGlobalStockFromBranches(client, purchase.business_id, item.item_id);
-            }
-          }
-        }
-      }
-
-      // Remove GL impact: purchase + payment voucher lines (otherwise balance sheet / TB stay wrong),
-      // and reverse supplier subledger (current_balance) for the net outstanding on this bill.
-      if (purchase.status === 'final') {
-        const businessId = purchase.business_id as string;
-        const payIdRes = await client.query<{ id: string }>(
-          `SELECT id FROM payments
-           WHERE business_id = $1 AND reference_type = 'purchase' AND reference_id = $2 AND deleted_at IS NULL`,
-          [businessId, purchaseId]
-        );
-        const paymentIds = payIdRes.rows.map((r) => r.id);
-        if (paymentIds.length > 0) {
-          await client.query(
-            `DELETE FROM ledger_entry_lines
-             WHERE business_id = $1
-               AND voucher_type = 'payment'
-               AND voucher_id = ANY($2::uuid[])`,
-            [businessId, paymentIds]
-          );
-        }
-        await client.query(
-          `DELETE FROM ledger_entry_lines
-           WHERE business_id = $1
-             AND voucher_type = 'purchase'
-             AND voucher_id = $2`,
-          [businessId, purchaseId]
-        );
-        const tdsIds = tdsRes.rows.map((r) => r.id);
-        if (tdsIds.length > 0) {
-          await client.query(
-            `DELETE FROM ledger_entry_lines
-              WHERE business_id = $1 AND voucher_type = 'tds' AND voucher_id = ANY($2::uuid[])`,
-            [businessId, tdsIds]
-          );
-          await client.query(`DELETE FROM tds_transactions WHERE business_id = $1 AND id = ANY($2::uuid[])`, [
-            businessId,
-            tdsIds,
-          ]);
-        }
-        if (purchase.supplier_id) {
-          const netOutstanding = Number(purchase.balance_amount ?? 0) || 0;
-          if (netOutstanding !== 0) {
-            await client.query(
-              `UPDATE suppliers
-               SET current_balance = current_balance - $1,
-                   updated_at = CURRENT_TIMESTAMP
-               WHERE id = $2 AND business_id = $3`,
-              [netOutstanding, purchase.supplier_id, businessId]
-            );
-          }
-        }
-      }
-
-      // Remove related payments: soft-delete when entitled, else hard delete
-      if (useSoftDeletePurchase) {
-        await client.query(
-          `UPDATE payments
-           SET deleted_at = CURRENT_TIMESTAMP
-           WHERE reference_type = 'purchase'
-             AND reference_id = $1
-             AND business_id = $2
-             AND deleted_at IS NULL`,
-          [purchaseId, purchase.business_id]
-        );
-      } else {
-        await client.query(
-          `DELETE FROM payments
-           WHERE reference_type = 'purchase'
-             AND reference_id = $1
-             AND business_id = $2`,
-          [purchaseId, purchase.business_id]
-        );
-      }
-
-      // Delete quantity request links
-      await client.query(
-        `UPDATE quantity_requests
-         SET purchase_id = NULL, updated_at = CURRENT_TIMESTAMP
-         WHERE purchase_id = $1`,
-        [purchaseId]
-      );
-
-      const purchaseDel = useSoftDeletePurchase
-        ? await client.query(
-            `UPDATE purchases
-             SET deleted_at = CURRENT_TIMESTAMP
-             WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
-             RETURNING id`,
-            [purchaseId, purchase.business_id]
-          )
-        : await client.query(
-            `DELETE FROM purchases
-             WHERE id = $1 AND business_id = $2
-             RETURNING id`,
-            [purchaseId, purchase.business_id]
-          );
-
-      if (purchaseDel.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: 'Purchase not found' },
-          { status: 404 }
-        );
-      }
-
-      await client.query('COMMIT');
-
-      return NextResponse.json({ 
-        success: true,
-        message: 'Purchase deleted successfully' 
+      await authorize(userId, 'purchases', 'delete', {
+        businessId: purchase.business_id,
+        branchId: purchase.branch_id,
+        resourceId: purchaseId,
       });
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (error instanceof AuthorizationError) {
+        return error.toNextResponse();
+      }
+      throw error;
+    }
+
+    if (purchase.status === 'final') {
+      const { assertGstPeriodNotFiledForDocumentDate } = await import('@/lib/gst/gst-filing');
+      const { assertPeriodNotLocked } = await import('@/lib/period-lock-utils');
+      try {
+        await assertGstPeriodNotFiledForDocumentDate(purchase.business_id, purchase.branch_id, purchase.bill_date, 'delete purchase');
+      } catch (error: any) {
+        return NextResponse.json({ error: error.message, code: 'GST_PERIOD_FILED' }, { status: 403 });
+      }
+      try {
+        await assertPeriodNotLocked(purchase.business_id, purchase.branch_id, purchase.bill_date, 'purchase deletion');
+      } catch (error: any) {
+        return NextResponse.json({ error: error.message, code: 'PERIOD_LOCKED' }, { status: 403 });
+      }
+    }
+
+    const useSoftDeletePurchase = await shouldUseSoftDelete(businessScope);
+    const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
+    const warehouseModeEnabled = await isWarehouseModeEnabled(purchase.business_id);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (purchase.status === 'final') {
+        await cancelFinalPurchase(client, {
+          businessId: purchase.business_id,
+          purchaseId,
+          userId,
+          reason: reason || 'Deleted',
+          warehouseModeEnabled,
+        });
+        if (useSoftDeletePurchase) {
+          await client.query(
+            `UPDATE purchases SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2`,
+            [purchaseId, purchase.business_id]
+          );
+        }
+        await client.query('COMMIT');
+        return NextResponse.json({
+          success: true,
+          cancelled: true,
+          message: 'Purchase cancelled; its postings were reversed',
+        });
+      }
+
+      if (purchase.status === 'cancelled') {
+        if (!useSoftDeletePurchase) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Cancelled bills are kept for the audit trail', code: 'PURCHASE_CANCELLED' },
+            { status: 409 }
+          );
+        }
+        await client.query(
+          `UPDATE purchases SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+          [purchaseId, purchase.business_id]
+        );
+        await client.query('COMMIT');
+        return NextResponse.json({ success: true, message: 'Purchase deleted successfully' });
+      }
+
+      const result = await deleteDraftPurchase(client, {
+        businessId: purchase.business_id,
+        purchaseId,
+        userId,
+        softDelete: useSoftDeletePurchase,
+      });
+      await client.query('COMMIT');
+      return NextResponse.json({
+        success: true,
+        message: 'Purchase deleted successfully',
+        supplier_balance_restored: result.supplierRestored,
+        mode: result.mode,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      if (error instanceof PurchaseCancelError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      if ((error as { hint?: string })?.hint === 'LEDGER_PERIOD_LOCKED' || /locked period/i.test((error as Error)?.message || '')) {
+        return NextResponse.json({ error: (error as Error).message, code: 'PERIOD_LOCKED' }, { status: 403 });
+      }
       throw error;
     } finally {
       client.release();

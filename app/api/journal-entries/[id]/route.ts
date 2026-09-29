@@ -11,12 +11,10 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
+import { activeLedgerLineSql } from '@/lib/ledger-reversal';
+import { activeJournalLines, deleteJournalByReversal, repostJournal } from '@/lib/accounting/journal-corrections';
 
-import {
-  type JournalLineInput,
-  toJournalAmount as toAmount,
-  validateJournalLines,
-} from '@/lib/accounting/journal-lines';
+import { type JournalLineInput, validateJournalLines } from '@/lib/accounting/journal-lines';
 
 async function journalAccountIds(voucherId: string, businessId: string): Promise<string[]> {
   const rows = await queryRows<{ account_id: string }>(
@@ -102,6 +100,7 @@ export async function GET(
          FROM ledger_entry_lines lel
          LEFT JOIN accounts a ON lel.account_id = a.id
         WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
+          AND ${activeLedgerLineSql('lel')}
         ORDER BY lel.created_at, lel.id`,
       [voucherId, businessId]
     );
@@ -247,55 +246,30 @@ export async function PATCH(
     const dateChanged = !!entry_date && String(entry_date).slice(0, 10) !== oldDay;
     let linesToPost: JournalLineInput[] | null = replaceLines ? (lines as JournalLineInput[]) : null;
     if (!replaceLines && dateChanged) {
-      const existing = await client.query(
-        `SELECT account_id, debit, credit, narration FROM ledger_entry_lines
-          WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'
-          ORDER BY created_at, id`,
-        [voucherId, business_id]
-      );
-      if (existing.rows.length >= 2) {
-        linesToPost = existing.rows.map((r: any) => ({
+      const existing = await activeJournalLines(client, business_id, voucherId);
+      if (existing.length >= 2) {
+        linesToPost = existing.map((r) => ({
           account_id: r.account_id,
           debit: r.debit,
           credit: r.credit,
-          narration: narration !== undefined ? undefined : r.narration,
+          narration: narration !== undefined ? undefined : r.narration ?? undefined,
         }));
       }
     }
 
     if (linesToPost) {
-      await client.query(
-        `DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'`,
-        [voucherId, business_id]
-      );
-      await client.query(
-        `DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = 'journal'`,
-        [voucherId, business_id]
-      );
-      for (const line of linesToPost) {
-        const d = toAmount(line.debit);
-        const c = toAmount(line.credit);
-        const lineNarration = line.narration || narration || journalEntry.narration || null;
-        const lineRef = reference_number !== undefined ? reference_number : journalEntry.reference_number;
-        await client.query(
-          `INSERT INTO ledger_entry_lines (
-             business_id, voucher_id, voucher_type, account_id, entry_date,
-             debit, credit, narration, reference_number, branch_id
-           ) VALUES ($1, $2, 'journal', $3, $4, $5, $6, $7, $8, $9)`,
-          [business_id, voucherId, line.account_id, newDate, d, c, lineNarration, lineRef || null, branchId]
-        );
-        await client.query(
-          `INSERT INTO ledger_entries (
-             business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-             transaction_id, debit, credit, balance, description,
-             voucher_number, voucher_type, reference_number
-           ) VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, 0, $8, $9, 'journal', $10)`,
-          [
-            business_id, branchId, newDate, line.account_id, voucherId, d, c,
-            lineNarration || 'Journal Entry', journalEntry.voucher_number, lineRef || null,
-          ]
-        );
-      }
+      const lineRef = reference_number !== undefined ? reference_number : journalEntry.reference_number;
+      await repostJournal(client, {
+        businessId: business_id,
+        voucherId,
+        userId: updated_by,
+        branchId,
+        entryDate: newDate,
+        lines: linesToPost,
+        narration: (narration !== undefined ? narration : journalEntry.narration) || null,
+        reference: lineRef || null,
+        voucherNumber: journalEntry.voucher_number ?? null,
+      });
     }
 
     await client.query('COMMIT');
@@ -365,20 +339,11 @@ export async function DELETE(
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `DELETE FROM ledger_entry_lines WHERE voucher_id = $1 AND business_id = $2 AND voucher_type = 'journal'`,
-      [voucherId, businessId]
-    );
-    await client.query(
-      `DELETE FROM ledger_entries WHERE transaction_id = $1 AND business_id = $2 AND transaction_type = 'journal'`,
-      [voucherId, businessId]
-    );
-    await client.query(
-      `UPDATE journal_entries
-          SET deleted_at = CURRENT_TIMESTAMP, deleted_by = $3, delete_reason = $4, updated_at = CURRENT_TIMESTAMP
-        WHERE voucher_id = $1 AND business_id = $2`,
-      [voucherId, businessId, userId, reason || null]
-    );
+    const ok = await deleteJournalByReversal(client, { businessId, voucherId, userId, reason: reason || null });
+    if (!ok) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Journal entry not found' }, { status: 404 });
+    }
     await client.query('COMMIT');
     return NextResponse.json({ message: 'Journal entry deleted successfully' });
   } catch (error: any) {

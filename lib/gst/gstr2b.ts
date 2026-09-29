@@ -111,6 +111,7 @@ export class GSTR2BGenerator {
         LEFT JOIN reconciliation_decisions rd ON gr.id = rd.reconciliation_id
         WHERE p.business_id = $1
           ${dateCondition}
+          AND COALESCE(p.status, '') NOT IN ('draft', 'cancelled')
           AND p.deleted_at IS NULL
       `;
 

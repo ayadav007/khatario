@@ -5,7 +5,7 @@
 
 import type { PoolClient } from 'pg';
 import { queryOne, getPool } from '@/lib/db';
-import { insertVoucherLines, requireAccountByCode, round2 } from '@/lib/accounting/voucher-posting';
+import { deleteVoucher, insertVoucherLines, requireAccountByCode, round2 } from '@/lib/accounting/voucher-posting';
 import { postYearClosingVoucher } from '@/lib/accounting/year-close';
 import {
   createClosingStockSnapshot,
@@ -86,10 +86,7 @@ export async function executeYearClosing(
     const profitBeforeTax = await ledgerProfit(client, businessId, fyStartDate, fyEndDate);
 
     let currentTaxAmount = 0;
-    await client.query(
-      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'tax_provision'`,
-      [businessId, financialYearId]
-    );
+    await deleteVoucher(client, businessId, financialYearId, 'tax_provision', 'regenerate:tax_provision', userId);
     if (taxRate > 0 && profitBeforeTax > 0) {
       currentTaxAmount = round2(calculateCurrentTax(profitBeforeTax, taxRate));
       const taxExpense = await requireAccountByCode(client, businessId, '5210', 'Current Tax Expense');

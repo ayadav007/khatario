@@ -71,6 +71,7 @@ const SUPPLIER_SQL = `
         WHEN v.voucher_type = 'payment' THEN 'Payment - ' || COALESCE(p.payment_mode, '')
         WHEN v.voucher_type = 'purchase_return' THEN 'Purchase return (debit note)'
         WHEN v.voucher_type = 'tds' THEN 'TDS deducted u/s ' || COALESCE(t.section_code, '')
+             || CASE WHEN t.status = 'cancelled' THEN ' (cancelled)' ELSE '' END
         WHEN v.voucher_type = 'opening_balance' THEN 'Opening balance'
         ELSE initcap(replace(v.voucher_type, '_', ' '))
       END AS description

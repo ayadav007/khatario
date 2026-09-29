@@ -133,7 +133,8 @@ export const POST = withPremiumSubscriptionApi(
         const aggRes = await client.query(
           `SELECT
              COALESCE((SELECT SUM(payment_amount) FROM tds_transactions
-                        WHERE business_id = $1 AND supplier_id = $2 AND section_code = $3 AND financial_year = $4), 0) AS tds_base,
+                        WHERE business_id = $1 AND supplier_id = $2 AND section_code = $3 AND financial_year = $4
+                          AND status = 'active'), 0) AS tds_base,
              COALESCE((SELECT SUM(subtotal) FROM purchases
                         WHERE business_id = $1 AND supplier_id = $2 AND deleted_at IS NULL
                           AND COALESCE(status, '') NOT IN ('cancelled', 'draft')

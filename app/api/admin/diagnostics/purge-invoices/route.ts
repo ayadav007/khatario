@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  *   GET    -> dry-run JSON listing what would be deleted
  *   DELETE -> executes hard purge when ?confirm=<token> matches the dry-run token
  *
- * Auth: must be authenticated AND either have settings.read or be primary admin.
+ * Auth: the business's own primary admin only.
  *
  * Safe to delete after the audit cleanup is complete.
  */
@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { queryOne, queryRows, getPool } from '@/lib/db';
+import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 
 async function authorize(request: NextRequest): Promise<
   { ok: true; businessId: string; userId: string } | { ok: false; response: NextResponse }
@@ -37,21 +38,11 @@ async function authorize(request: NextRequest): Promise<
     };
   }
 
-  let isAdmin = false;
-  try {
-    const { checkUserPermission } = await import('@/lib/permissions');
-    isAdmin = await checkUserPermission(userId, 'settings', 'read');
-  } catch {
-    isAdmin = false;
-  }
-  if (!isAdmin) {
-    const u = await queryOne<{ is_primary_admin: boolean }>(
-      'SELECT is_primary_admin FROM users WHERE id = $1',
-      [userId],
-    );
-    isAdmin = !!u?.is_primary_admin;
-  }
-  if (!isAdmin) {
+  const u = await queryOne<{ is_primary_admin: boolean }>(
+    'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2 AND is_active = true',
+    [userId, businessId],
+  );
+  if (!u?.is_primary_admin) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -255,29 +246,35 @@ export async function DELETE(request: NextRequest) {
 
     await client.query('BEGIN');
 
-    // 1a. Orphan invoice-voucher ledger lines (no FK, defensive)
-    const ledgerInvoiceDel = await client.query(
-      `DELETE FROM ledger_entry_lines
-        WHERE business_id = $1
-          AND voucher_type = 'invoice'
-          AND voucher_id = ANY($2::uuid[])`,
-      [auth.businessId, ids],
-    );
-
-    // 1b. PHASE-2: payment-voucher ledger lines (Dr Cash, Cr AR receipts
-    // posted alongside credit invoices). Must be deleted BEFORE the payments
-    // they reference, otherwise the voucher_id would orphan.
-    const ledgerPaymentDel = await client.query(
-      `DELETE FROM ledger_entry_lines
-        WHERE business_id = $1
-          AND voucher_type = 'payment'
-          AND voucher_id IN (
-            SELECT id FROM payments
-             WHERE business_id = $1
-               AND reference_type = 'invoice'
-               AND reference_id = ANY($2::uuid[])
-          )`,
-      [auth.businessId, ids],
+    const { ledgerInvoiceDel, ledgerPaymentDel } = await withLedgerDelete(
+      client,
+      'admin:purge_invoices',
+      auth.userId,
+      async () => ({
+        // 1a. Orphan invoice-voucher ledger lines (no FK, defensive)
+        ledgerInvoiceDel: await client.query(
+          `DELETE FROM ledger_entry_lines
+            WHERE business_id = $1
+              AND voucher_type = 'invoice'
+              AND voucher_id = ANY($2::uuid[])`,
+          [auth.businessId, ids],
+        ),
+        // 1b. PHASE-2: payment-voucher ledger lines (Dr Cash, Cr AR receipts
+        // posted alongside credit invoices). Must be deleted BEFORE the payments
+        // they reference, otherwise the voucher_id would orphan.
+        ledgerPaymentDel: await client.query(
+          `DELETE FROM ledger_entry_lines
+            WHERE business_id = $1
+              AND voucher_type = 'payment'
+              AND voucher_id IN (
+                SELECT id FROM payments
+                 WHERE business_id = $1
+                   AND reference_type = 'invoice'
+                   AND reference_id = ANY($2::uuid[])
+              )`,
+          [auth.businessId, ids],
+        ),
+      }),
     );
 
     // 2. Payment rows (no FK from payments to invoices — remove before invoice DELETE)

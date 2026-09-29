@@ -43,13 +43,15 @@ export function computeInvoiceTotals(
     export_type?: string | null;
     lut_declaration?: boolean | null;
   };
-  const zeroRated = isZeroRatedWithoutTax({
-    is_export: exportFields.is_export,
-    supply_type: exportFields.supply_type,
-    export_type: exportFields.export_type,
-    lut_declaration: exportFields.lut_declaration,
-    place_of_supply_state_code: body.place_of_supply_state_code,
-  });
+  const zeroRated =
+    body.document_type === 'bill_of_supply' ||
+    isZeroRatedWithoutTax({
+      is_export: exportFields.is_export,
+      supply_type: exportFields.supply_type,
+      export_type: exportFields.export_type,
+      lut_declaration: exportFields.lut_declaration,
+      place_of_supply_state_code: body.place_of_supply_state_code,
+    });
   let subtotal = 0;
   let discountTotal = 0;
   let cgstTotal = 0;

@@ -8,6 +8,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useRouter } from 'next/navigation';
+import { ReasonConfirmModal } from '@/components/modals/ReasonConfirmModal';
+import {
+  canManagePeriodLocks,
+  describeAccountingError,
+  type AccountingErrorView,
+} from '@/lib/accounting-ui/errors';
+import { buildReversalUrl, REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
 
 interface Expense {
   id: string;
@@ -45,9 +52,10 @@ const TDS_SECTION_OPTIONS = [
 
 export default function ExpensesPage() {
   const router = useRouter();
-  const { business, user } = useAuth();
+  const { business, user, permissions, isPrimaryAdmin } = useAuth();
   const { currentBranchId, isLoading: branchLoading } = useBranch();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [reversing, setReversing] = useState<Expense | null>(null);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -55,16 +63,28 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const toast = useToastContext();
 
-  async function deleteExpense(expense: Expense) {
-    if (!window.confirm('Delete this expense? Its ledger entries will be removed.')) return;
-    const res = await fetch(`/api/expenses/${expense.id}?business_id=${business!.id}`, { method: 'DELETE' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toast.error(data.error || 'Could not delete expense');
-      return;
+  async function reverseExpense(reason: string): Promise<AccountingErrorView | null> {
+    if (!reversing || !business?.id) return null;
+    let res: Response;
+    try {
+      res = await fetch(buildReversalUrl(`/api/expenses/${reversing.id}`, business.id, reason), { method: 'DELETE' });
+    } catch {
+      return { message: 'Could not reach the server. Check your connection and try again.' };
     }
-    toast.success('Expense deleted');
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return describeAccountingError(res.status, data, {
+        context: 'expense',
+        verb: 'reversed',
+        canManagePeriods: canManagePeriodLocks(isPrimaryAdmin, permissions),
+        currentPath: '/expenses',
+        fallback: 'Could not reverse the expense. Please try again.',
+      });
+    }
+    setReversing(null);
+    toast.success(REVERSAL_COPY.success);
     fetchExpenses();
+    return null;
   }
 
   useEffect(() => {
@@ -256,10 +276,10 @@ export default function ExpensesPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteExpense(expense)}
+                          onClick={() => setReversing(expense)}
                           className="text-sm text-red-600 hover:underline"
                         >
-                          Delete
+                          {REVERSAL_COPY.expense.button}
                         </button>
                       </td>
                     </tr>
@@ -269,6 +289,21 @@ export default function ExpensesPage() {
             </div>
           )}
         </div>
+
+        {reversing && (
+          <ReasonConfirmModal
+            key={reversing.id}
+            title={REVERSAL_COPY.expense.title}
+            subject={`${reversing.description || 'Expense'} · ₹${Number(reversing.amount).toLocaleString('en-IN')}`}
+            description={REVERSAL_COPY.expense.description}
+            confirmLabel={REVERSAL_COPY.confirm}
+            requireReason
+            reasonLabel={REVERSAL_COPY.reasonLabel}
+            reasonPlaceholder={REVERSAL_COPY.reasonPlaceholder}
+            onConfirm={reverseExpense}
+            onClose={() => setReversing(null)}
+          />
+        )}
 
         {/* Add Expense Modal */}
         {(showAddModal || editing) && (
@@ -380,8 +415,10 @@ function AddExpenseModal({
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to save expense');
+        const err = await response.json().catch(() => null);
+        throw new Error(
+          describeAccountingError(response.status, err, { context: 'expense', fallback: 'Failed to save expense' }).message
+        );
       }
 
       toast.success(expense ? 'Expense updated' : 'Expense added successfully!');

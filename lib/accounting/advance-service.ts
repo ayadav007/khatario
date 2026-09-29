@@ -152,7 +152,7 @@ async function lockAdvance(client: PoolClient, businessId: string, advanceId: st
       `SELECT COALESCE(SUM(amount),0) AS amount, COALESCE(SUM(taxable_value),0) AS taxable,
               COALESCE(SUM(cgst),0) AS cgst, COALESCE(SUM(sgst),0) AS sgst,
               COALESCE(SUM(igst),0) AS igst, COALESCE(SUM(cess),0) AS cess
-         FROM advance_adjustments WHERE advance_id = $1 AND business_id = $2`,
+         FROM advance_adjustments WHERE advance_id = $1 AND business_id = $2 AND reversed_at IS NULL`,
       [advanceId, businessId]
     )
   ).rows[0];
@@ -194,7 +194,7 @@ async function setAdvanceStatus(client: PoolClient, businessId: string, advanceI
        SELECT COALESCE(SUM(amount) FILTER (WHERE kind <> 'refund'), 0) AS adjusted,
               COALESCE(SUM(amount) FILTER (WHERE kind = 'refund'), 0) AS refunded,
               MAX(adjustment_date) AS last_date
-         FROM advance_adjustments WHERE advance_id = $1 AND business_id = $2
+         FROM advance_adjustments WHERE advance_id = $1 AND business_id = $2 AND reversed_at IS NULL
      ) s
      WHERE a.id = $1 AND a.business_id = $2`,
     [advanceId, businessId]
@@ -389,6 +389,73 @@ export async function adjustAdvance(
   }
   await setAdvanceStatus(client, p.businessId, p.advanceId);
   return { id, voucher_number: voucherNumber, reversal };
+}
+
+/**
+ * Releases every live advance adjustment against a cancelled invoice or purchase: reverses
+ * the adjustment voucher, marks the adjustment reversed, gives the amount back to the
+ * advance and takes it off the document's advance_adjusted. Party balances are left to the
+ * caller, which knows how the document's own cancellation moves them.
+ */
+export async function releaseDocumentAdvances(
+  client: PoolClient,
+  p: {
+    businessId: string;
+    userId: string | null;
+    invoiceId?: string | null;
+    purchaseId?: string | null;
+    reason: string;
+  }
+): Promise<{ released: number; adjustments: number }> {
+  if (!p.invoiceId === !p.purchaseId) throw new Error('releaseDocumentAdvances needs exactly one of invoiceId / purchaseId');
+  const rows = (
+    await client.query<{ id: string; advance_id: string; amount: string; voucher_id: string | null }>(
+      `SELECT id, advance_id, amount, voucher_id FROM advance_adjustments
+        WHERE business_id = $1 AND reversed_at IS NULL AND kind <> 'refund'
+          AND ${p.invoiceId ? 'invoice_id' : 'purchase_id'} = $2
+        ORDER BY created_at, id
+        FOR UPDATE`,
+      [p.businessId, p.invoiceId || p.purchaseId]
+    )
+  ).rows;
+  if (rows.length === 0) return { released: 0, adjustments: 0 };
+
+  const { reverseVoucherLedgerEntries } = await import('@/lib/ledger-reversal');
+  let released = 0;
+  for (const r of rows) {
+    await client.query(`SELECT 1 FROM advance_payments WHERE id = $1 AND business_id = $2 FOR UPDATE`, [
+      r.advance_id,
+      p.businessId,
+    ]);
+    if (r.voucher_id) {
+      await reverseVoucherLedgerEntries(client, {
+        businessId: p.businessId,
+        voucherType: 'advance_adjustment',
+        voucherId: r.voucher_id,
+        reason: p.reason,
+        actorId: p.userId,
+      });
+    }
+    await client.query(
+      `UPDATE advance_adjustments SET reversed_at = CURRENT_TIMESTAMP, reversed_by = $3, reversal_reason = $4
+        WHERE id = $1 AND business_id = $2`,
+      [r.id, p.businessId, p.userId, p.reason.slice(0, 500)]
+    );
+    await setAdvanceStatus(client, p.businessId, r.advance_id);
+    released = round2(released + Number(r.amount));
+  }
+
+  const docCol = p.invoiceId ? 'invoice_id' : 'purchase_id';
+  await client.query(
+    `UPDATE ${p.invoiceId ? 'invoices' : 'purchases'} d
+        SET advance_adjusted = (
+          SELECT COALESCE(SUM(aa.amount), 0) FROM advance_adjustments aa
+           WHERE aa.business_id = d.business_id AND aa.${docCol} = d.id
+             AND aa.reversed_at IS NULL AND aa.kind <> 'refund')
+      WHERE d.id = $1 AND d.business_id = $2`,
+    [p.invoiceId || p.purchaseId, p.businessId]
+  );
+  return { released, adjustments: rows.length };
 }
 
 export async function refundAdvance(

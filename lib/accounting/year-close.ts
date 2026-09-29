@@ -1,5 +1,11 @@
 import type { PoolClient } from 'pg';
-import { insertVoucherLines, requireAccountByCode, round2, type VoucherLine } from '@/lib/accounting/voucher-posting';
+import {
+  deleteVoucher,
+  insertVoucherLines,
+  requireAccountByCode,
+  round2,
+  type VoucherLine,
+} from '@/lib/accounting/voucher-posting';
 
 export const YEAR_CLOSE_VOUCHER = 'year_close';
 
@@ -40,10 +46,7 @@ export async function postYearClosingVoucher(
   client: PoolClient,
   p: { businessId: string; financialYearId: string; yearCode: string; startDate: string; endDate: string }
 ): Promise<{ profit: number; lines: number }> {
-  await client.query(
-    `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = $3`,
-    [p.businessId, p.financialYearId, YEAR_CLOSE_VOUCHER]
-  );
+  await deleteVoucher(client, p.businessId, p.financialYearId, YEAR_CLOSE_VOUCHER, 'regenerate:year_close', null);
   const res = await client.query<{ account_id: string; account_code: string; account_type: 'income' | 'expense'; net: string }>(
     `SELECT a.id AS account_id, a.account_code, a.account_type,
             COALESCE(SUM(l.debit - l.credit), 0) AS net

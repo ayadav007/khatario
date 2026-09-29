@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
  *   POST   -> posts the entries (requires confirm token from GET)
  *   DELETE -> removes any previously seeded demo entries (uses narration marker)
  *
- * Auth: must be authenticated AND either have settings.read or be primary admin.
+ * Auth: the business's own primary admin only.
  *
  * The voucher narration is prefixed with `[PHASE1_SEED]` so cleanup is precise.
  */
@@ -24,6 +24,7 @@ import {
   requirePortalSession,
 } from '@/lib/auth-helpers';
 import { queryOne, getPool } from '@/lib/db';
+import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 
 const SEED_NARRATION_PREFIX = '[PHASE1_SEED]';
 
@@ -56,21 +57,11 @@ async function authorize(request: NextRequest): Promise<
   if (!userId) {
     return { ok: false, response: NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 }) };
   }
-  let isAdmin = false;
-  try {
-    const { checkUserPermission } = await import('@/lib/permissions');
-    isAdmin = await checkUserPermission(userId, 'settings', 'read');
-  } catch {
-    isAdmin = false;
-  }
-  if (!isAdmin) {
-    const u = await queryOne<{ is_primary_admin: boolean }>(
-      'SELECT is_primary_admin FROM users WHERE id = $1',
-      [userId],
-    );
-    isAdmin = !!u?.is_primary_admin;
-  }
-  if (!isAdmin) {
+  const u = await queryOne<{ is_primary_admin: boolean }>(
+    'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2 AND is_active = true',
+    [userId, businessId],
+  );
+  if (!u?.is_primary_admin) {
     return { ok: false, response: NextResponse.json({ error: 'Forbidden: admin only', code: 'NOT_ADMIN' }, { status: 403 }) };
   }
   return { ok: true, businessId, userId };
@@ -323,12 +314,14 @@ export async function DELETE(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     await client.query('BEGIN');
-    const res = await client.query(
-      `DELETE FROM ledger_entry_lines
-        WHERE business_id = $1
-          AND voucher_type = 'journal'
-          AND narration LIKE $2`,
-      [auth.businessId, `${SEED_NARRATION_PREFIX}%`],
+    const res = await withLedgerDelete(client, 'admin:seed_demo', auth.userId, () =>
+      client.query(
+        `DELETE FROM ledger_entry_lines
+          WHERE business_id = $1
+            AND voucher_type = 'journal'
+            AND narration LIKE $2`,
+        [auth.businessId, `${SEED_NARRATION_PREFIX}%`],
+      ),
     );
     await client.query('COMMIT');
 

@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
         DATE_TRUNC('month', e.expense_date) as month,
         COALESCE(SUM(e.amount), 0) as expenses
       FROM expenses e
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter.replace(/transaction_date/g, 'e.expense_date')}
       GROUP BY DATE_TRUNC('month', e.expense_date)
       ORDER BY month

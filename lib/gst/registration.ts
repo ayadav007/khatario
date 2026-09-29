@@ -1,4 +1,5 @@
 import { checkGstin, GST_STATE_NAMES } from '@/lib/tax/gstin';
+import { effectiveGstScheme, type GstScheme } from '@/lib/gst/scheme-policy';
 
 type Queryable = {
   query: <R = any>(text: string, params?: unknown[]) => Promise<{ rows: R[] }>;
@@ -103,4 +104,20 @@ export async function resolveSupplierRegistration(
     phone: r.b_phone,
     email: r.b_email,
   };
+}
+
+/** Effective GST scheme of the registration a document is issued / received under. */
+export async function resolveGstScheme(
+  db: Queryable,
+  businessId: string,
+  branchId: string | null | undefined,
+): Promise<GstScheme> {
+  const [reg, biz] = await Promise.all([
+    resolveSupplierRegistration(db, businessId, branchId),
+    db.query<{ gst_registration_type: string | null }>(
+      'SELECT gst_registration_type FROM businesses WHERE id = $1',
+      [businessId],
+    ),
+  ]);
+  return effectiveGstScheme(biz.rows[0]?.gst_registration_type, reg.gstin);
 }

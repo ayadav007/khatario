@@ -205,6 +205,24 @@ export async function authorize(
     }
   }
 
+  // Tenant boundary — applies to everyone, including the primary admin, whose
+  // short-circuit below would otherwise skip resourceBelongsToBusiness.
+  const targetBusinessId = context?.businessId;
+  if (targetBusinessId && callingUser && targetBusinessId !== callingUser.business_id) {
+    const membership = await queryOne<{ one: number }>(
+      'SELECT 1 AS one FROM user_businesses WHERE user_id = $1 AND business_id = $2 LIMIT 1',
+      [userId, targetBusinessId]
+    );
+    if (!membership) {
+      throw new AuthorizationError(
+        'You do not have access to this business',
+        'CROSS_TENANT_DENIED',
+        { businessId: targetBusinessId },
+        403
+      );
+    }
+  }
+
   if (callingUser?.is_primary_admin) {
     return;
   }

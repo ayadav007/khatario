@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 
     const isAdmin = await isPrimaryAdminForBusiness(userId, businessId).catch(() => false);
 
-    let whereClause = 'WHERE e.business_id = $1';
+    let whereClause = 'WHERE e.business_id = $1 AND e.deleted_at IS NULL';
     const queryParams: any[] = [businessId];
     let paramIndex = 2;
 

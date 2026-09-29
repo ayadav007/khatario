@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import { getPool, queryOne } from '@/lib/db';
+import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import {
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
@@ -52,11 +53,7 @@ export async function replaceOpeningVoucher(
     label: string;
   }
 ): Promise<void> {
-  await client.query(
-    `DELETE FROM ledger_entry_lines
-      WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'opening_balance'`,
-    [p.businessId, p.voucherId]
-  );
+  await deleteVoucher(client, p.businessId, p.voucherId, 'opening_balance', 'regenerate:opening_balance', null);
   const amount = Math.round(Math.abs(p.signedAmount) * 100) / 100;
   if (amount === 0) return;
   const dr = p.signedAmount > 0 ? amount : 0;

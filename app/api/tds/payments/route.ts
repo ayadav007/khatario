@@ -128,7 +128,8 @@ export const POST = withPremiumSubscriptionApi(
        WHERE business_id = $4 
          AND financial_year = $5 
          AND quarter = $6
-         AND is_deposited = false`,
+         AND is_deposited = false
+         AND status = 'active'`,
         [deposit_date, challan_number, challan_date, businessId, financial_year, quarter]
       );
 

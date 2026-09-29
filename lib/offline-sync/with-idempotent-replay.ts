@@ -179,7 +179,15 @@ export async function withIdempotentReplay(
     await markReplayProcessing(client, row.id);
     row = (await lockReplayLogRow(client, ctx.businessId, ctx.idempotencyKey))!;
 
+    // Executors catch their own errors and return ok:false, possibly after
+    // writing documents/stock. Those partial writes must never be committed.
+    await client.query('SAVEPOINT replay_exec');
     const execResult = await executor(client, ctx);
+    if (execResult.ok) {
+      await client.query('RELEASE SAVEPOINT replay_exec');
+    } else {
+      await client.query('ROLLBACK TO SAVEPOINT replay_exec');
+    }
 
     if (execResult.ok) {
       await markReplayCompleted(client, row.id, execResult.response, {

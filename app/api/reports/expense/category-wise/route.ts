@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
         AVG(e.amount) as avg_amount
       FROM expenses e
       LEFT JOIN expense_categories ec ON e.category_id = ec.id
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter}
       GROUP BY ec.id, ec.name, e.category
       ORDER BY total_amount DESC

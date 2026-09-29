@@ -20,6 +20,7 @@ import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
 import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
+import { effectiveGstScheme, outwardTaxPolicy } from '@/lib/gst/scheme-policy';
 import {
   computeInvoiceTotals,
   getStateCode,
@@ -321,7 +322,7 @@ export async function createInvoiceInTransaction(
   const created_by = body.created_by;
   const status = body.status ?? 'final';
   const items = body.items ?? [];
-  const document_type = body.document_type ?? 'tax_invoice';
+  let document_type = body.document_type ?? 'tax_invoice';
 
   if (!business_id || !body.invoice_date || items.length === 0) {
     throw new InvoiceCreateServiceError(
@@ -412,14 +413,25 @@ export async function createInvoiceInTransaction(
   }
 
   const businessRes = await client.query(
-    `SELECT state_code, state, aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1`,
+    `SELECT state_code, state, aggregate_turnover_above_5cr AS above, gst_registration_type FROM businesses WHERE id = $1`,
     [business_id]
   );
   if (businessRes.rows.length === 0) {
     throw new InvoiceCreateServiceError('Business not found', 400, 'BUSINESS_NOT_FOUND');
   }
-  const business = businessRes.rows[0] as { state_code?: string; state?: string; above?: boolean | null };
+  const business = businessRes.rows[0] as {
+    state_code?: string;
+    state?: string;
+    above?: boolean | null;
+    gst_registration_type?: string | null;
+  };
   const registration = await resolveSupplierRegistration(client, business_id, finalBranchId);
+  const taxPolicy = outwardTaxPolicy({
+    scheme: effectiveGstScheme(business.gst_registration_type, registration.gstin),
+    documentType: document_type,
+  });
+  document_type = taxPolicy.documentType;
+  body.document_type = document_type;
   const businessStateCode =
     registration.stateCode || business.state_code || getStateCode(business.state || '');
 
@@ -465,13 +477,15 @@ export async function createInvoiceInTransaction(
     export_type?: string | null;
     lut_declaration?: boolean | null;
   };
-  const zeroRated = isZeroRatedWithoutTax({
-    is_export: exportFields.is_export,
-    supply_type: exportFields.supply_type,
-    export_type: exportFields.export_type,
-    lut_declaration: exportFields.lut_declaration,
-    place_of_supply_state_code: body.place_of_supply_state_code,
-  });
+  const zeroRated =
+    !taxPolicy.collectTax ||
+    isZeroRatedWithoutTax({
+      is_export: exportFields.is_export,
+      supply_type: exportFields.supply_type,
+      export_type: exportFields.export_type,
+      lut_declaration: exportFields.lut_declaration,
+      place_of_supply_state_code: body.place_of_supply_state_code,
+    });
   const paymentEntries = body.payments ?? [];
   let paidAmount = body.paid_amount ?? 0;
   if (paymentEntries.length > 0) {
@@ -550,7 +564,7 @@ export async function createInvoiceInTransaction(
     const item = items[i];
     const qty = Number(item.quantity) || 0;
     const unitPrice = Number(item.unit_price) || 0;
-    const taxRate = Number(item.tax_rate) || 0;
+    const taxRate = taxPolicy.collectTax ? Number(item.tax_rate) || 0 : 0;
     const placeOfSupply = body.place_of_supply_state_code || businessStateCode;
     const intraState = !!(placeOfSupply && businessStateCode && placeOfSupply === businessStateCode);
     const { itemDiscount, taxable, cgst, sgst, igst, taxAmount, lineTotal } = computeLineGst(

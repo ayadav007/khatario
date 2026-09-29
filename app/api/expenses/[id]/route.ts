@@ -3,35 +3,11 @@ import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { periodGuardResponse } from '@/lib/http/period-guards';
-import { deleteVoucher, round2 } from '@/lib/accounting/voucher-posting';
-import {
-  postExpenseVoucher,
-  ExpenseValidationError,
-  ON_ACCOUNT_MODES,
-} from '@/lib/accounting/expense-posting';
+import { ExpenseValidationError, ON_ACCOUNT_MODES } from '@/lib/accounting/expense-posting';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
+import { deleteExpenseByReversal, repostExpense, type ExpenseRow } from '@/lib/accounting/expense-corrections';
 
 export const dynamic = 'force-dynamic';
-
-type ExpenseRow = {
-  id: string;
-  business_id: string;
-  branch_id: string | null;
-  category_id: string | null;
-  amount: string;
-  description: string | null;
-  expense_date: string;
-  payment_mode: string | null;
-  reference_number: string | null;
-  cgst_amount: string | null;
-  sgst_amount: string | null;
-  igst_amount: string | null;
-  itc_eligible: boolean | null;
-  is_reverse_charge: boolean | null;
-  tds_section: string | null;
-  tds_amount: string | null;
-  supplier_id: string | null;
-};
 
 async function loadExpense(id: string, businessId: string): Promise<ExpenseRow | null> {
   return db.queryOne<ExpenseRow>(
@@ -39,18 +15,13 @@ async function loadExpense(id: string, businessId: string): Promise<ExpenseRow |
             to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, reference_number,
             cgst_amount, sgst_amount, igst_amount, itc_eligible, is_reverse_charge,
             tds_section, tds_amount, supplier_id
-       FROM expenses WHERE id = $1 AND business_id = $2`,
+       FROM expenses WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [id, businessId]
   );
 }
 
 const gstOf = (e: Pick<ExpenseRow, 'cgst_amount' | 'sgst_amount' | 'igst_amount'>) =>
   Number(e.cgst_amount || 0) + Number(e.sgst_amount || 0) + Number(e.igst_amount || 0);
-
-const supplierDue = (e: ExpenseRow) =>
-  e.supplier_id && ON_ACCOUNT_MODES.includes(String(e.payment_mode || '').toLowerCase())
-    ? round2(Number(e.amount) - Number(e.tds_amount || 0))
-    : 0;
 
 async function authz(userId: string, action: 'read' | 'update' | 'delete', branchId: string | null) {
   try {
@@ -141,50 +112,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const client = await db.getPool().connect();
     try {
       await client.query('BEGIN');
-      const oldDue = supplierDue(old);
-      if (oldDue > 0) {
-        await client.query(
-          `UPDATE suppliers SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND business_id = $3`,
-          [oldDue, old.supplier_id, businessId]
-        );
-      }
-      await deleteVoucher(client, businessId, id, 'expense');
-      await client.query(
-        `UPDATE expenses SET
-           category_id = $3, amount = $4, description = $5, expense_date = $6, payment_mode = $7,
-           reference_number = $8, cgst_amount = $9, sgst_amount = $10, igst_amount = $11,
-           itc_eligible = $12, is_reverse_charge = $13, tds_section = $14, tds_amount = $15,
-           supplier_id = $16, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1 AND business_id = $2`,
-        [
-          id, businessId, next.category_id, next.amount, next.description, next.expense_date, next.payment_mode,
-          next.reference_number, next.cgst_amount, next.sgst_amount, next.igst_amount,
-          tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount, next.supplier_id,
-        ]
-      );
-      await postExpenseVoucher(client, {
+      const ok = await repostExpense(client, {
         businessId,
-        branchId: old.branch_id,
-        expenseId: id,
-        expenseDate: next.expense_date,
+        userId,
+        old,
+        next,
+        tax,
         expenseAccountId: category?.account_id ?? null,
-        paymentMode: next.payment_mode,
-        description: next.description,
-        reference: next.reference_number,
-        amount: Number(next.amount),
-        cgst: Number(next.cgst_amount || 0),
-        sgst: Number(next.sgst_amount || 0),
-        igst: Number(next.igst_amount || 0),
-        ...tax,
       });
-      const newDue = supplierDue(next);
-      if (newDue > 0) {
-        await client.query(
-          `UPDATE suppliers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND business_id = $3`,
-          [newDue, next.supplier_id, businessId]
-        );
+      if (!ok) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
       }
       await client.query('COMMIT');
     } catch (e) {
@@ -239,19 +177,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     });
     if (guard) return guard;
 
+    const reason = new URL(request.url).searchParams.get('reason');
     const client = await db.getPool().connect();
     try {
       await client.query('BEGIN');
-      const due = supplierDue(old);
-      if (due > 0) {
-        await client.query(
-          `UPDATE suppliers SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND business_id = $3`,
-          [due, old.supplier_id, businessId]
-        );
+      const ok = await deleteExpenseByReversal(client, { businessId, userId, old, reason });
+      if (!ok) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
       }
-      await deleteVoucher(client, businessId, id, 'expense');
-      await client.query(`DELETE FROM expenses WHERE id = $1 AND business_id = $2`, [id, businessId]);
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});

@@ -1,4 +1,5 @@
 import { getPool } from '@/lib/db';
+import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import {
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
@@ -42,10 +43,7 @@ export async function syncItemOpeningStockLedger(businessId: string, itemId: str
       )
     ).rows[0];
 
-    await client.query(
-      `DELETE FROM ledger_entry_lines WHERE business_id = $1 AND voucher_type = 'opening_stock' AND voucher_id = $2`,
-      [businessId, itemId]
-    );
+    await deleteVoucher(client, businessId, itemId, 'opening_stock', 'regenerate:opening_stock', null);
 
     const value = item.item_type === 'goods' ? Number(item.value) || 0 : 0;
     if (value > 0) {

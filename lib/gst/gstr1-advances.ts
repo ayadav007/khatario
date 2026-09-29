@@ -92,7 +92,7 @@ export async function loadAdvanceTables(
             (a.payment_date >= $2::date) AS same_period
        FROM advance_adjustments aa
        JOIN advance_payments a ON a.id = aa.advance_id
-      WHERE ${base} AND aa.adjustment_date BETWEEN $2::date AND $3::date`,
+      WHERE ${base} AND aa.adjustment_date BETWEEN $2::date AND $3::date AND aa.reversed_at IS NULL`,
     params
   );
   return buildAdvanceTables({

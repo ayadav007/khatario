@@ -705,3 +705,25 @@ QA data added by Run 9: drafts AMD-004, AMD-005, INV-026 and bill QA-R9-MB6; pay
 Retest: convert another throwaway invoice → voucher balanced, supplier balance + grand total; after 322, AMD-006 has Dr 5101 ₹100 / Dr 1112 ₹18 / Cr 2101 ₹118; a new inter-branch transfer's dispatch movement `unit_cost` = WAC.
 
 QA data added by Run 10: transfers CA-TR-R10-01 (completed) and CA-TR-R10-02 (cancelled, INV-028 cancelled); final bill QA-R10-CAP (AP ₹69,640 to CA-Deccan Steel Works, +1 Almirah in Godown 1); fixed asset QA-R10-FA1; draft invoice AMD-006 and its converted purchase AMD-006 (₹118, no ledger lines).
+
+## Phase 10 - Provisions of the Act and Rules not yet covered (Run 11)
+
+Source: `GST Rules.md` (CGST Act / Rules, IGST Act, Compensation Cess Act). Staging on 457f4e7 (Run 10 fixes and migration 322 not yet verified). Run 11 is code review plus API; the read-only DB tunnel was down.
+
+| # | Provision | Case | Expected | Result |
+|---|-----------|------|----------|--------|
+| L1 | Rule 49; s.10(4), s.31(3)(c) | Bill of supply (or any document of a composition / unregistered business) with an 18% line | No tax on a bill of supply; composition dealer cannot collect tax | **Fail** — draft BOS-001 (₹1,000 service, 18%) saved with CGST ₹90 + SGST ₹90, total ₹1,180. The server never reads `gst_registration_type`; only the invoice form hides tax |
+| L2 | s.10(4) | Purchase bill entered by a composition (or unregistered) business | No ITC: tax is part of cost | **Fail (code)** — purchase create / finalize ignore `gst_registration_type`; `itc_eligible` defaults true, so Input CGST/SGST/IGST is debited |
+| L3 | s.18(6); Rule 40(2); Sch. I para 1 | Sell / dispose of a capital asset on which ITC was taken (e.g. QA-R10-FA1) | Output tax = higher of tax on transaction value or ITC taken less 5 percentage points per quarter; asset sale reported in GSTR-1 | **Fail (code)** — `POST /api/fixed-assets/[id]/dispose` posts proceeds / accumulated depreciation / cost / gain-loss only; no output GST, no invoice, nothing in GSTR-1 |
+| L4 | s.49(4) with s.2(82); Rule 88A | 3B working when RCM heads are split (accounts 2156–2158 exist) | RCM tax paid in cash only; ITC set off against output tax only | **Fail (code, latent)** — `gstr3b.ts` adds head-wise RCM to the liabilities passed to `computeItcUtilizationDisplay`, so ITC offsets RCM. Pooled mode (default chart, QA business) is correct: net payable ₹10,800 = RCM in cash. Settlement voucher is correct in both modes |
+| L5 | Rule 88A; Circular 98/17/2019 | Liability CGST 100, SGST 100; ITC IGST 100, CGST 100, SGST 0 | IGST ITC may go to CGST or SGST in any order → nil cash | **Fail (code)** — fixed order IGST→CGST→SGST uses IGST on CGST, strands CGST ITC and shows SGST ₹100 payable in cash (3B working and set-off voucher) |
+| L6 | Cess Act s.11(2) proviso; Rule 88A | Output cess ₹X, input cess ₹Y | Cess ITC only against cess; net cess payable max(0, X − Y) in 3B 6.1 and totals | **Fail (code)** — 3B `tax_liability.cess` is hard-coded 0, cess is not in `net_tax_payable` / `total_tax_liability`, and the GST set-off voucher never touches 2153 / 1113 |
+| L7 | s.34(2) | Credit note for an FY 2024-25 invoice raised after 30 Nov 2025 | Tax reduction not allowed (warn or block; note may be issued as financial CN) | **Fail (code)** — no date check in credit-note create (original N5 row was reused for cancellation) |
+| L8 | s.16(4) | Purchase / supplier debit note of FY 2024-25 entered after 30 Nov 2025 | ITC time-barred: no Input GST (tax to cost) or warning | **Fail (code)** — no check; ITC always posts to the bill month |
+| L9 | s.16(2) 2nd proviso; Rule 37 | Supplier bill unpaid 180 days after invoice date | Reverse ITC (with interest s.50) until paid; re-avail on payment | **Missing** — no 180-day report, alert or reversal voucher |
+| L10 | Rules 42 / 43 | Business with taxable + exempt / nil supplies (S6 exists) and common inputs | Monthly D1/D2 reversal of common credit; annual true-up | **Missing** — no common-credit apportionment |
+| L11 | GSTR-3B Table 5; s.39 | Purchases from composition / unregistered suppliers, nil / exempt / non-GST inward | Reported in 3B Table 5 (inter / intra) | **Missing** — 3B response has no Table 5 |
+| L12 | Rule 59(4) | Inter-state B2C invoice ₹1,00,001 on / after 1 Aug 2024 | B2CL | Pass (code) — threshold ₹1,00,000 from 2024-08-01, ₹2,50,000 before |
+| L13 | Rule 138(1) | Intra-state inter-godown movement of goods > ₹50,000 | E-way bill (state intra thresholds vary) | Observation — `isEwayBillRequired` only for inter-state transfers |
+
+QA data added by Run 11: draft bill of supply BOS-001 (₹1,180; draft, no ledger).

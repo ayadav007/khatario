@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
         p.document_type, p.itc_eligible, p.itc_availed,
         s.name as supplier_name,
         CASE 
-          WHEN p.bill_date < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
+          WHEN p.status <> 'cancelled' AND p.bill_date < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
             THEN CURRENT_DATE - p.bill_date
           ELSE 0
         END as days_overdue
@@ -148,7 +148,6 @@ export async function GET(request: NextRequest) {
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       WHERE p.business_id = $1
         AND p.deleted_at IS NULL
-        AND p.status != 'cancelled'
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -185,12 +184,13 @@ export async function GET(request: NextRequest) {
       paramIndex++;
     }
 
-    // Add status filter
+    // Cancelled bills keep their last payment_status but carry no payable, so payment and
+    // aging filters must never match them.
     if (status !== 'all') {
       if (status === 'unpaid') {
-        sql += ` AND p.payment_status IN ('unpaid', 'partially_paid')`;
+        sql += ` AND p.status <> 'cancelled' AND p.payment_status IN ('unpaid', 'partially_paid')`;
       } else if (status === 'paid') {
-        sql += ` AND p.payment_status = 'paid'`;
+        sql += ` AND p.status <> 'cancelled' AND p.payment_status = 'paid'`;
       } else {
         sql += ` AND p.status = $${paramIndex}`;
         params.push(status);
@@ -215,7 +215,7 @@ export async function GET(request: NextRequest) {
       const minDays = parseInt(agingDaysMin);
       const maxDays = parseInt(agingDaysMax);
       if (!isNaN(minDays) && !isNaN(maxDays)) {
-        sql += ` AND (
+        sql += ` AND p.status <> 'cancelled' AND (
           CASE 
             WHEN p.bill_date < CURRENT_DATE 
               THEN CURRENT_DATE - p.bill_date
@@ -922,12 +922,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Create ledger entries for purchase (only if status is final)
+    let itcWarning: string | null = null;
     if (status === 'final') {
       const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
       const isCashPurchase =
         !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
 
-      await createPurchaseLedgerEntries({
+      const posted = await createPurchaseLedgerEntries({
         businessId: business_id,
         purchaseId: purchase.id,
         purchaseNumber: bill_number || purchase.id.substring(0, 8),
@@ -949,6 +950,10 @@ export async function POST(request: NextRequest) {
         itcEligible: itc_eligible !== false,
         isReverseCharge: !!is_reverse_charge,
       });
+      if (posted.itcBlockedReason) {
+        purchase.itc_eligible = false;
+        itcWarning = `Input GST not claimed: ${posted.itcBlockedReason}. Tax booked to cost.`;
+      }
     }
 
     // Update supplier current_balance (only if status is final and supplier exists)
@@ -1082,6 +1087,7 @@ export async function POST(request: NextRequest) {
         purchase,
         credit_metrics: creditMetrics,
         credit_warning: creditWarning,
+        ...(itcWarning ? { warnings: [itcWarning] } : {}),
       },
       { status: 201 }
     );

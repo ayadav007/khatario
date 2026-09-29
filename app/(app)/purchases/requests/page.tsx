@@ -170,7 +170,7 @@ function PurchaseRequestsContent() {
         }))
       );
       setPurchasePickerOptions(
-        (puData.purchases || []).map((p: any) => ({
+        (puData.purchases || []).filter((p: any) => p.status !== 'cancelled').map((p: any) => ({
           id: p.id,
           label: `${p.bill_number || String(p.id).slice(0, 8)} · ${String(p.bill_date || '').slice(0, 10)}`,
         }))

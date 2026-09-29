@@ -112,6 +112,7 @@ export const POST = withPremiumSubscriptionApi(
         AND financial_year = $3
         AND quarter = $4
         AND is_deposited = true
+        AND status = 'active'
     `, [businessId, supplier_id, financial_year, quarter]);
 
       if (parseFloat(tdsTotal?.total || '0') === 0) {

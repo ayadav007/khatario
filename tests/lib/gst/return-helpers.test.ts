@@ -99,18 +99,26 @@ describe('recomputeInvoiceBalance', () => {
 
 describe('reverseVoucherLedgerEntries', () => {
   const lines = [
-    { account_id: 'ar', entry_date: '2026-09-10', debit: '11800', credit: '0', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
-    { account_id: 'sales', entry_date: '2026-09-10', debit: '0', credit: '10000', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
-    { account_id: 'gst', entry_date: '2026-09-10', debit: '0', credit: '1800', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
+    { id: 'l1', account_id: 'ar', entry_date: '2026-09-10', debit: '11800', credit: '0', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
+    { id: 'l2', account_id: 'sales', entry_date: '2026-09-10', debit: '0', credit: '10000', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
+    { id: 'l3', account_id: 'gst', entry_date: '2026-09-10', debit: '0', credit: '1800', narration: 'Sale', reference_number: 'INV-1', branch_id: 'b' },
   ];
 
-  it('posts mirrored lines so the voucher nets to zero', async () => {
-    const { client, calls } = fakeClient([{ rows: lines }]);
+  it('posts mirrored lines and links each to its original', async () => {
+    const { client, calls } = fakeClient([
+      { rows: lines },
+      { rows: [{ id: 'r1' }] }, { rows: [] },
+      { rows: [{ id: 'r2' }] }, { rows: [] },
+      { rows: [{ id: 'r3' }] }, { rows: [] },
+    ]);
     const n = await reverseVoucherLedgerEntries(client, {
       businessId: 'biz', voucherType: 'invoice', voucherId: 'inv', reason: 'Invoice cancelled',
     });
     expect(n).toBe(3);
-    const inserts = calls.slice(1).map((c) => c.params);
+    expect(calls[0].sql).toMatch(/ledger_entry_reversals/);
+    const inserts = calls.filter((c) => /INSERT INTO ledger_entry_lines/.test(c.sql)).map((c) => c.params);
+    const links = calls.filter((c) => /INSERT INTO ledger_entry_reversals/.test(c.sql)).map((c) => c.params);
+    expect(inserts).toHaveLength(3);
     const debit = inserts.reduce((s, p) => s + Number(p[5]), 0);
     const credit = inserts.reduce((s, p) => s + Number(p[6]), 0);
     expect(debit).toBe(11800);
@@ -118,10 +126,11 @@ describe('reverseVoucherLedgerEntries', () => {
     expect(inserts[0][5]).toBe(0);
     expect(inserts[0][6]).toBe(11800);
     expect(String(inserts[0][7])).toMatch(/^Reversal:/);
+    expect(links.map((p) => [p[0], p[1]])).toEqual([['l1', 'r1'], ['l2', 'r2'], ['l3', 'r3']]);
   });
 
-  it('is idempotent once reversal lines exist', async () => {
-    const { client, calls } = fakeClient([{ rows: [...lines, { ...lines[0], narration: 'Reversal: x (Sale)' }] }]);
+  it('does nothing when the voucher has no unreversed lines', async () => {
+    const { client, calls } = fakeClient([{ rows: [] }]);
     const n = await reverseVoucherLedgerEntries(client, {
       businessId: 'biz', voucherType: 'invoice', voucherId: 'inv', reason: 'again',
     });

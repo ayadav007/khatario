@@ -158,7 +158,16 @@ export async function getModulePlanId(
 
 export async function deleteBusinessCascade(businessId: string): Promise<void> {
   await withDbClient(async (c) => {
-    await c.query('DELETE FROM businesses WHERE id = $1', [businessId]);
+    await c.query('BEGIN');
+    try {
+      await c.query(`SELECT set_config('khatario.ledger_delete_reason', 'tenant_purge', true)`);
+      await c.query('DELETE FROM ledger_entry_deletions WHERE business_id = $1', [businessId]);
+      await c.query('DELETE FROM businesses WHERE id = $1', [businessId]);
+      await c.query('COMMIT');
+    } catch (e) {
+      await c.query('ROLLBACK').catch(() => {});
+      throw e;
+    }
   });
 }
 

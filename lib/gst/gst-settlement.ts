@@ -6,9 +6,11 @@ import {
   computeItcUtilizationDisplay,
   getItcFromInputLedgerNet,
   getLedgerNetCreditMinusDebit,
+  GSTR3B_INPUT_CESS,
   GSTR3B_INPUT_CGST,
   GSTR3B_INPUT_IGST,
   GSTR3B_INPUT_SGST,
+  GSTR3B_OUTPUT_CESS,
   GSTR3B_OUTPUT_CGST,
   GSTR3B_OUTPUT_IGST,
   GSTR3B_OUTPUT_SGST,
@@ -22,7 +24,12 @@ import { calendarMonthBounds, lockGstPeriod } from '@/lib/gst/gst-period-lock';
 
 const BANK_DEFAULT_CODE = '1102';
 
-export type GstTaxHead = 'IGST' | 'CGST' | 'SGST' | 'RCM';
+export const GST_TAX_HEADS = ['IGST', 'CGST', 'SGST', 'CESS', 'RCM', 'RCM_IGST', 'RCM_CGST', 'RCM_SGST'] as const;
+export type GstTaxHead = (typeof GST_TAX_HEADS)[number];
+
+function isRcmHead(head: GstTaxHead): boolean {
+  return head === 'RCM' || head.startsWith('RCM_');
+}
 
 export interface GstSetoffSummary {
   igst_to_igst: number;
@@ -32,7 +39,19 @@ export interface GstSetoffSummary {
   cgst_to_igst: number;
   sgst_to_sgst: number;
   sgst_to_igst: number;
+  cess_to_cess: number;
 }
+
+const EMPTY_SETOFF: GstSetoffSummary = {
+  igst_to_igst: 0,
+  igst_to_cgst: 0,
+  igst_to_sgst: 0,
+  cgst_to_cgst: 0,
+  cgst_to_igst: 0,
+  sgst_to_sgst: 0,
+  sgst_to_igst: 0,
+  cess_to_cess: 0,
+};
 
 export interface ApplyGstSetoffParams {
   businessId: string;
@@ -106,7 +125,10 @@ export interface OutstandingGstResult {
   output_igst: number;
   output_cgst: number;
   output_sgst: number;
+  output_cess: number;
   rcm_output_2155: number;
+  /** Head-wise RCM (2156–2158) when those accounts exist; 0 otherwise. */
+  rcm_output_split: number;
   total_liability: number;
 }
 
@@ -115,6 +137,7 @@ export const GST_PAYMENT_LIABILITY_ACCOUNT_CODES: readonly string[] = [
   GSTR3B_OUTPUT_IGST,
   GSTR3B_OUTPUT_CGST,
   GSTR3B_OUTPUT_SGST,
+  GSTR3B_OUTPUT_CESS,
   GSTR3B_RCM_OUTPUT,
   GSTR3B_RCM_CGST,
   GSTR3B_RCM_SGST,
@@ -276,8 +299,11 @@ function utilizationToLedgerPairs(util: GstSetoffSummary): Array<{
     { outCode: GSTR3B_OUTPUT_IGST, inCode: GSTR3B_INPUT_CGST, amount: util.cgst_to_igst, label: 'CGST ITC → IGST output' },
     { outCode: GSTR3B_OUTPUT_SGST, inCode: GSTR3B_INPUT_SGST, amount: util.sgst_to_sgst, label: 'SGST ITC → SGST output' },
     { outCode: GSTR3B_OUTPUT_IGST, inCode: GSTR3B_INPUT_SGST, amount: util.sgst_to_igst, label: 'SGST ITC → IGST output' },
+    { outCode: GSTR3B_OUTPUT_CESS, inCode: GSTR3B_INPUT_CESS, amount: util.cess_to_cess, label: 'Cess ITC → Cess output' },
   ].filter((p) => p.amount >= 0.005);
 }
+
+export { utilizationToLedgerPairs };
 
 /**
  * Post statutory GST ITC set-off: Dr Output GST (reduce liability), Cr Input GST (reduce ITC).
@@ -309,8 +335,12 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
   let itcIGST: number;
   let itcCGST: number;
   let itcSGST: number;
+  let outputCess: number;
+  let itcCess: number;
 
   if (mode === 'balance') {
+    outputCess = Math.max(0, round2(await getGstBalance(businessId, GSTR3B_OUTPUT_CESS, asOnDate, branchId)));
+    itcCess = getItcFromInputBalance(await getGstBalance(businessId, GSTR3B_INPUT_CESS, asOnDate, branchId));
     const rawOutI = await getGstBalance(businessId, GSTR3B_OUTPUT_IGST, asOnDate, branchId);
     const rawOutC = await getGstBalance(businessId, GSTR3B_OUTPUT_CGST, asOnDate, branchId);
     const rawOutS = await getGstBalance(businessId, GSTR3B_OUTPUT_SGST, asOnDate, branchId);
@@ -325,6 +355,10 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     itcCGST = getItcFromInputBalance(balC);
     itcSGST = getItcFromInputBalance(balS);
   } else {
+    outputCess = round2(await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CESS, from, to, branchId));
+    itcCess = getItcFromInputLedgerNet(
+      await getLedgerNetCreditMinusDebit(businessId, GSTR3B_INPUT_CESS, from, to, branchId)
+    );
     outputIGST = round2(
       await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_IGST, from, to, branchId)
     );
@@ -344,21 +378,13 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     itcIGST = getItcFromInputLedgerNet(netIn1112);
   }
 
-  const outputTotal = round2(outputIGST + outputCGST + outputSGST);
-  const itcTotal = round2(itcIGST + itcCGST + itcSGST);
+  const outputTotal = round2(outputIGST + outputCGST + outputSGST + outputCess);
+  const itcTotal = round2(itcIGST + itcCGST + itcSGST + itcCess);
   if (outputTotal < 0.005 && itcTotal < 0.005) {
     return {
       posted: false,
       reason: 'Nothing to settle',
-      gst_setoff_summary: {
-        igst_to_igst: 0,
-        igst_to_cgst: 0,
-        igst_to_sgst: 0,
-        cgst_to_cgst: 0,
-        cgst_to_igst: 0,
-        sgst_to_sgst: 0,
-        sgst_to_igst: 0,
-      },
+      gst_setoff_summary: { ...EMPTY_SETOFF },
       referenceNumber: `GST_SETOFF|${gst_period}|${mode}`,
       warnings: warnings.length ? warnings : undefined,
       gst_period,
@@ -373,6 +399,8 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     itcIgst: itcIGST,
     itcCgst: itcCGST,
     itcSgst: itcSGST,
+    cessLiability: outputCess,
+    itcCess,
   });
 
   const gst_setoff_summary: GstSetoffSummary = {
@@ -383,6 +411,7 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     cgst_to_igst: util.cgst_to_igst,
     sgst_to_sgst: util.sgst_to_sgst,
     sgst_to_igst: util.sgst_to_igst,
+    cess_to_cess: util.cess_to_cess,
   };
 
   const pairs = utilizationToLedgerPairs(gst_setoff_summary);
@@ -485,8 +514,16 @@ function taxHeadToOutputCode(head: GstTaxHead): string {
       return GSTR3B_OUTPUT_CGST;
     case 'SGST':
       return GSTR3B_OUTPUT_SGST;
+    case 'CESS':
+      return GSTR3B_OUTPUT_CESS;
     case 'RCM':
       return GSTR3B_RCM_OUTPUT;
+    case 'RCM_IGST':
+      return GSTR3B_RCM_IGST;
+    case 'RCM_CGST':
+      return GSTR3B_RCM_CGST;
+    case 'RCM_SGST':
+      return GSTR3B_RCM_SGST;
     default:
       throw new Error(`Unknown tax head: ${head}`);
   }
@@ -509,7 +546,7 @@ export async function recordGstPayment(params: RecordGstPaymentParams): Promise<
   } = params;
 
   // RCM cannot be discharged with ITC — only cash/bank (this entry is always Cr Bank).
-  if (taxHead === 'RCM') {
+  if (isRcmHead(taxHead)) {
     const mode = (paymentMode || '').toLowerCase();
     if (mode === 'itc' || mode === 'itc_setoff' || mode === 'credit') {
       throw new Error('RCM cannot be paid using ITC — use bank/cash payment only.');
@@ -528,7 +565,15 @@ export async function recordGstPayment(params: RecordGstPaymentParams): Promise<
   }
 
   let bankAccId = params.bankAccountId;
-  if (!bankAccId) {
+  if (bankAccId) {
+    const { rows: own } = await getPool().query(
+      `SELECT 1 FROM accounts WHERE id = $1::uuid AND business_id = $2::uuid LIMIT 1`,
+      [bankAccId, businessId]
+    );
+    if (own.length === 0) {
+      throw new Error('bank_account_id does not belong to this business');
+    }
+  } else {
     const bank = await getAccountByCode(businessId, BANK_DEFAULT_CODE);
     if (!bank) {
       throw new Error(`Bank account ${BANK_DEFAULT_CODE} not found — pass bankAccountId or create default bank`);
@@ -610,16 +655,24 @@ export async function getOutstandingGst(params: OutstandingGstParams): Promise<O
   const output_igst = await bal(GSTR3B_OUTPUT_IGST);
   const output_cgst = await bal(GSTR3B_OUTPUT_CGST);
   const output_sgst = await bal(GSTR3B_OUTPUT_SGST);
+  const output_cess = await bal(GSTR3B_OUTPUT_CESS);
   const rcm_output_2155 = await bal(GSTR3B_RCM_OUTPUT);
+  const rcm_output_split = round2(
+    (await bal(GSTR3B_RCM_CGST)) + (await bal(GSTR3B_RCM_SGST)) + (await bal(GSTR3B_RCM_IGST))
+  );
 
-  const total_liability = round2(output_igst + output_cgst + output_sgst + rcm_output_2155);
+  const total_liability = round2(
+    output_igst + output_cgst + output_sgst + output_cess + rcm_output_2155 + rcm_output_split
+  );
 
   return {
     as_on_date: asOnDate,
     output_igst,
     output_cgst,
     output_sgst,
+    output_cess,
     rcm_output_2155,
+    rcm_output_split,
     total_liability,
   };
 }

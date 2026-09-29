@@ -149,7 +149,8 @@ export async function POST(request: NextRequest) {
     let bill: any = null;
     if (purchase_id) {
       const pb = await client.query(
-        `SELECT id, branch_id, supplier_id, status, bill_date, place_of_supply_state_code, supplier_state_code
+        `SELECT id, branch_id, supplier_id, status, bill_date, place_of_supply_state_code, supplier_state_code,
+                COALESCE(itc_eligible, true) AS itc_eligible, COALESCE(is_reverse_charge, false) AS is_reverse_charge
            FROM purchases
           WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -180,7 +181,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await authorize(createdByUserId, 'purchases', 'create', { branchId: stockBranchId });
+      await authorize(createdByUserId, 'purchases', 'create', { branchId: stockBranchId, businessId: business_id });
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof AuthorizationError) return error.toNextResponse();
@@ -389,6 +390,8 @@ export async function POST(request: NextRequest) {
       cgstTotal: totals.cgst_total,
       sgstTotal: totals.sgst_total,
       igstTotal: totals.igst_total,
+      itcEligible: bill ? bill.itc_eligible !== false : true,
+      isReverseCharge: bill ? bill.is_reverse_charge === true : false,
       poolClient: client,
     });
 

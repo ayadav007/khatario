@@ -3,6 +3,7 @@ import { getPool, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { createInterBranchPurchaseEntries } from '@/lib/inter-branch-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,29 +20,28 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { received_items, notes, received_by } = body;
+    const { received_items, notes } = body;
 
-    const userId = received_by || body.user_id; // REQUIRED for authorization
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const userId = getUserIdFromRequest(request);
     if (!userId) {
-      return NextResponse.json(
-        { error: 'received_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get transfer with lock
-    const transferResult = await client.query(`
-      SELECT * FROM stock_transfers WHERE id = $1 FOR UPDATE
-    `, [params.id]);
+    const preview = await client.query(
+      `SELECT * FROM stock_transfers WHERE id = $1 AND business_id = $2`,
+      [params.id, tenant.businessId]
+    );
 
-    if (transferResult.rows.length === 0) {
+    if (preview.rows.length === 0) {
       return NextResponse.json(
         { error: 'Transfer not found' },
         { status: 404 }
       );
     }
 
-    const transfer = transferResult.rows[0];
+    const transfer = preview.rows[0];
 
     // CRITICAL: Enforce subscription feature access
     try {
@@ -72,19 +72,42 @@ export async function POST(
 
     await client.query('BEGIN');
 
+    const locked = await client.query(
+      `SELECT status FROM stock_transfers WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [params.id, tenant.businessId]
+    );
+    if (locked.rows[0]?.status !== 'in_transit') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: `Transfer is ${locked.rows[0]?.status ?? 'missing'}; only in-transit transfers can be received.`, code: 'TRANSFER_STATE_CHANGED' },
+        { status: 409 }
+      );
+    }
+
     // Get transfer items
     const transferItemsResult = await client.query(`
-      SELECT * FROM stock_transfer_items WHERE transfer_id = $1
+      SELECT * FROM stock_transfer_items WHERE transfer_id = $1 FOR UPDATE
     `, [params.id]);
 
     const transferItems = transferItemsResult.rows;
 
-    // If received_items provided, use those; otherwise use all items as expected
-    const itemsToReceive = received_items || transferItems.map(item => ({
-      item_id: item.item_id,
-      qty: item.qty,
-      received_qty: item.qty // Default to expected quantity
-    }));
+    // received_qty in the request is the cumulative total received so far (the UI
+    // pre-fills the previous figure); only the increase is added to stock.
+    const itemsToReceive: Array<{ item_id: string; qty?: number; received_qty?: number }> =
+      received_items || transferItems.map(item => ({
+        item_id: item.item_id,
+        qty: item.qty,
+        received_qty: item.quantity_dispatched ?? item.qty,
+      }));
+
+    const seenItemIds = new Set<string>();
+    for (const r of itemsToReceive) {
+      if (seenItemIds.has(r.item_id)) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: `Item ${r.item_id} appears more than once`, code: 'DUPLICATE_ITEM' }, { status: 400 });
+      }
+      seenItemIds.add(r.item_id);
+    }
 
     // Add stock to destination warehouse
     for (const receivedItem of itemsToReceive) {
@@ -98,7 +121,20 @@ export async function POST(
       }
 
       const dispatchedQty = parseFloat(transferItem.quantity_dispatched || transferItem.qty || '0');
-      const receivedQty = parseFloat(receivedItem.received_qty || receivedItem.qty || dispatchedQty);
+      const receivedQty = parseFloat(String(receivedItem.received_qty ?? receivedItem.qty ?? dispatchedQty));
+      const alreadyReceived = parseFloat(transferItem.received_qty || '0');
+      const receiveNow = Math.round((receivedQty - alreadyReceived) * 1000) / 1000;
+
+      if (!Number.isFinite(receivedQty) || receiveNow < 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: `Received quantity cannot go below what was already received (${alreadyReceived}).`,
+            item_id: receivedItem.item_id,
+          },
+          { status: 400 }
+        );
+      }
 
       // Validate: Cannot receive more than dispatched
       if (receivedQty > dispatchedQty) {
@@ -112,38 +148,38 @@ export async function POST(
         );
       }
 
-      // Lock destination location stock
-      await client.query(`
-        SELECT * FROM location_stock 
-        WHERE location_id = $1 AND item_id = $2
-        FOR UPDATE
-      `, [transfer.to_location_id, receivedItem.item_id]);
+      if (receiveNow > 0) {
+        await client.query(`
+          SELECT * FROM location_stock 
+          WHERE location_id = $1 AND item_id = $2
+          FOR UPDATE
+        `, [transfer.to_location_id, receivedItem.item_id]);
 
-      // Add stock to destination
-      await client.query(`
-        INSERT INTO location_stock (location_id, item_id, current_stock_qty)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (location_id, item_id)
-        DO UPDATE SET 
-          current_stock_qty = location_stock.current_stock_qty + $3,
-          last_updated = CURRENT_TIMESTAMP
-      `, [transfer.to_location_id, receivedItem.item_id, receivedQty]);
+        await client.query(`
+          INSERT INTO location_stock (location_id, item_id, current_stock_qty)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (location_id, item_id)
+          DO UPDATE SET 
+            current_stock_qty = location_stock.current_stock_qty + $3,
+            last_updated = CURRENT_TIMESTAMP
+        `, [transfer.to_location_id, receivedItem.item_id, receiveNow]);
 
-      // Record stock movement for receiving
-      await client.query(`
-        INSERT INTO stock_movements (
-          business_id, item_id, location_id, type, quantity,
-          reference_type, reference_id, notes
-        )
-        VALUES ($1, $2, $3, 'in', $4, 'stock_transfer', $5, $6)
-      `, [
-        transfer.business_id,
-        receivedItem.item_id,
-        transfer.to_location_id,
-        receivedQty,
-        transfer.id,
-        `Received transfer ${transfer.transfer_number}${receivedQty !== dispatchedQty ? ` (Expected: ${dispatchedQty}, Received: ${receivedQty})` : ''}`
-      ]);
+        await client.query(`
+          INSERT INTO stock_movements (
+            business_id, item_id, location_id, type, quantity,
+            reference_type, reference_id, notes, unit_cost
+          )
+          VALUES ($1, $2, $3, 'in', $4, 'stock_transfer', $5, $6, $7)
+        `, [
+          transfer.business_id,
+          receivedItem.item_id,
+          transfer.to_location_id,
+          receiveNow,
+          transfer.id,
+          `Received transfer ${transfer.transfer_number}${receivedQty !== dispatchedQty ? ` (Expected: ${dispatchedQty}, Received: ${receivedQty})` : ''}`,
+          transferItem.cost_snapshot ?? null,
+        ]);
+      }
 
       // Update transfer item with received quantity
       const dispatchedQtyForUpdate = parseFloat(transferItem.quantity_dispatched || transferItem.qty || '0');

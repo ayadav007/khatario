@@ -34,6 +34,36 @@ function forwardSetCookies(from: Response, to: NextResponse): void {
   }
 }
 
+/**
+ * Headers that route handlers treat as proof of authentication. Only this
+ * middleware may set them; any client-supplied copy must be dropped before the
+ * request reaches a handler (store subdomains, public paths, offline shells).
+ */
+const TRUSTED_IDENTITY_HEADERS = [
+  'x-authenticated-user-id',
+  'x-authenticated-business-id',
+  'x-authenticated-session-version',
+  'x-platform-admin-id',
+  'x-platform-admin-session-version',
+  'x-offline-catalog-session',
+  EMPLOYEE_PORTAL_SESSION_HEADER,
+];
+
+function sanitizedRequestHeaders(request: NextRequest): Headers {
+  const headers = new Headers(request.headers);
+  for (const h of TRUSTED_IDENTITY_HEADERS) headers.delete(h);
+  return headers;
+}
+
+function hasSpoofedIdentityHeader(request: NextRequest): boolean {
+  return TRUSTED_IDENTITY_HEADERS.some((h) => request.headers.has(h));
+}
+
+function nextWithoutSpoofedIdentity(request: NextRequest): NextResponse {
+  if (!hasSpoofedIdentityHeader(request)) return NextResponse.next();
+  return NextResponse.next({ request: { headers: sanitizedRequestHeaders(request) } });
+}
+
 const PUBLIC_PATHS = new Set([
   '/login',
   '/signup',
@@ -102,7 +132,7 @@ function tryEmployeePortalApiPassthrough(request: NextRequest): NextResponse | n
   if (!isEssApiAllowed(request.method, pathname)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
-  const requestHeaders = new Headers(request.headers);
+  const requestHeaders = sanitizedRequestHeaders(request);
   requestHeaders.set(EMPLOYEE_PORTAL_SESSION_HEADER, '1');
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
@@ -143,26 +173,11 @@ function isStaticAsset(pathname: string): boolean {
   );
 }
 
-/** Allow read-only catalog sync APIs when JWT expired but local session cookie is set. */
-function tryOfflineCatalogApiPassthrough(request: NextRequest): NextResponse | null {
-  if (request.method !== 'GET') return null;
-  if (request.cookies.get(LOCAL_SESSION_COOKIE)?.value !== '1') return null;
-  const { pathname, searchParams } = request.nextUrl;
-  if (!pathname.startsWith('/api/offline-sync/catalog/')) return null;
-  const userId = searchParams.get('user_id');
-  const businessId = searchParams.get('business_id');
-  if (!userId || !businessId) return null;
-  const uuidRe =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!uuidRe.test(businessId) || !uuidRe.test(userId)) return null;
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-authenticated-user-id', userId);
-  requestHeaders.set('x-authenticated-business-id', businessId);
-  requestHeaders.set('x-offline-catalog-session', '1');
-  return NextResponse.next({ request: { headers: requestHeaders } });
-}
-
-/** Allow app-shell GET/RSC when JWT expired but device has a cached offline session. */
+/**
+ * Allow app-shell GET/RSC when JWT expired but device has a cached offline session.
+ * The local-session cookie is client-set and unsigned: it must never grant API access
+ * or identity (offline catalog sync authenticates with the signed session cookies).
+ */
 function allowOfflineAppShellNavigation(request: NextRequest): boolean {
   if (request.method !== 'GET') return false;
   if (request.cookies.get(LOCAL_SESSION_COOKIE)?.value !== '1') return false;
@@ -181,7 +196,7 @@ export async function middleware(request: NextRequest) {
   if (storeSubdomain) {
     const url = request.nextUrl.clone();
     if (pathname.startsWith('/api/')) {
-      return NextResponse.next();
+      return nextWithoutSpoofedIdentity(request);
     }
     // Merchant AuthContext used to bounce guests to /login on the store host.
     // There is no merchant login here — send them to the storefront (or the
@@ -204,7 +219,7 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  if (isPublicPath(pathname)) return NextResponse.next();
+  if (isPublicPath(pathname)) return nextWithoutSpoofedIdentity(request);
 
   /** Employee portal ESS APIs: prefer portal cookie over business JWT when both exist. */
   if (pathname.startsWith('/api/') && isEssApiAllowed(request.method, pathname)) {
@@ -214,18 +229,18 @@ export async function middleware(request: NextRequest) {
 
   /** Public plan catalog (GET only) — landing page + in-app upgrade before platform-admin gate */
   if (pathname === '/api/admin/subscriptions/plans' && request.method === 'GET') {
-    return NextResponse.next();
+    return nextWithoutSpoofedIdentity(request);
   }
 
   /** Sidebar report route map — business app, not platform admin (handler is unauthenticated). */
   if (pathname === '/api/admin/reports' && request.method === 'GET') {
-    return NextResponse.next();
+    return nextWithoutSpoofedIdentity(request);
   }
 
   if (isPlatformAdminProtectedPath(pathname)) {
     const platformPayload = await getPlatformSessionFromRequest(request);
     if (platformPayload) {
-      const requestHeaders = new Headers(request.headers);
+      const requestHeaders = sanitizedRequestHeaders(request);
       requestHeaders.set('x-platform-admin-id', platformPayload.adminId);
       requestHeaders.set('x-platform-admin-session-version', String(platformPayload.sv));
       return NextResponse.next({ request: { headers: requestHeaders } });
@@ -245,15 +260,13 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/')) {
       const portalPassthrough = tryEmployeePortalApiPassthrough(request);
       if (portalPassthrough) return portalPassthrough;
-      const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
-      if (catalogPassthrough) return catalogPassthrough;
       return NextResponse.json(
         { error: 'Authentication required', code: 'UNAUTHENTICATED' },
         { status: 401 }
       );
     }
     if (allowOfflineAppShellNavigation(request)) {
-      return NextResponse.next();
+      return nextWithoutSpoofedIdentity(request);
     }
     return redirectToBrowserLogin(request, '/login', pathname);
   }
@@ -266,7 +279,7 @@ export async function middleware(request: NextRequest) {
       );
     }
     if (allowOfflineAppShellNavigation(request)) {
-      return NextResponse.next();
+      return nextWithoutSpoofedIdentity(request);
     }
     return redirectToBrowserLogin(request, '/login', pathname);
   }
@@ -284,7 +297,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const requestHeaders = new Headers(request.headers);
+  const requestHeaders = sanitizedRequestHeaders(request);
   requestHeaders.set('x-authenticated-user-id', payload.userId);
   requestHeaders.set('x-authenticated-business-id', payload.businessId);
   requestHeaders.set('x-authenticated-session-version', String(payload.sv));
@@ -308,11 +321,6 @@ export async function middleware(request: NextRequest) {
         if (portalPassthrough) {
           forwardSetCookies(refreshRes, portalPassthrough);
           return portalPassthrough;
-        }
-        const catalogPassthrough = tryOfflineCatalogApiPassthrough(request);
-        if (catalogPassthrough) {
-          forwardSetCookies(refreshRes, catalogPassthrough);
-          return catalogPassthrough;
         }
         const res = NextResponse.json(
           { error: 'Authentication required', code: 'UNAUTHENTICATED' },

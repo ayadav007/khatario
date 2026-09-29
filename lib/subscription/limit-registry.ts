@@ -128,7 +128,7 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       };
     case 'expenses':
       return {
-        sql: `SELECT COUNT(*)::int AS count FROM expenses WHERE business_id = $1 AND expense_date >= ${monthStart}`,
+        sql: `SELECT COUNT(*)::int AS count FROM expenses WHERE business_id = $1 AND deleted_at IS NULL AND expense_date >= ${monthStart}`,
         params: p,
       };
     case 'estimates':

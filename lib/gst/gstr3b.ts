@@ -6,7 +6,7 @@ import {
 } from '@/lib/gst/gstr1-reconciliation-basis';
 import { GSTR1Generator } from './gstr1';
 import {
-  computeItcUtilizationDisplay,
+  computeGstr3bCashPayable,
   getItcFromInputLedgerNet,
   getLedgerNetCreditMinusDebit,
   GSTR3B_INPUT_CESS,
@@ -22,6 +22,7 @@ import {
   resolveRcmLedgerNets,
   round2,
 } from './gstr3b-ledger';
+import { aggregateTable5, type GSTR3BTable5 } from './gstr3b-table5';
 
 export interface GSTR3BFilters {
   business_id: string;
@@ -63,7 +64,10 @@ export interface GSTR3BData {
   /** Net tax payable by head after ITC utilization on 2150–2152 plus head-wise RCM when split; excludes pooled RCM (see summary.net_tax_payable). */
   tax_liability: TaxBreakdown;
 
-  // Table 5 - Interest and Late Fee
+  /** Table 5 — exempt, nil-rated, composition-supplier and non-GST inward supplies (from purchase lines). */
+  inward_exempt_nil_non_gst: GSTR3BTable5;
+
+  /** Table 5.1 — interest and late fee */
   interest_late_fee: {
     igst: number;
     cgst: number;
@@ -253,18 +257,12 @@ export class GSTR3BGenerator {
     const rcmCgstForLiability = rcmResolved.cgst ?? 0;
     const rcmSgstForLiability = rcmResolved.sgst ?? 0;
 
-    const igstLiabilityGross = round2(outputIGST + rcmIgstForLiability);
-    const cgstLiabilityGross = round2(outputCGST + rcmCgstForLiability);
-    const sgstLiabilityGross = round2(outputSGST + rcmSgstForLiability);
-
-    const util = computeItcUtilizationDisplay({
-      igstLiability: igstLiabilityGross,
-      cgstLiability: cgstLiabilityGross,
-      sgstLiability: sgstLiabilityGross,
-      itcIgst: itcIGST,
-      itcCgst: itcCGST,
-      itcSgst: itcSGST,
+    const cashWorking = computeGstr3bCashPayable({
+      output: { igst: outputIGST, cgst: outputCGST, sgst: outputSGST, cess: outputCess },
+      itc: { igst: itcIGST, cgst: itcCGST, sgst: itcSGST, cess: itcCess },
+      rcm: rcmResolved,
     });
+    const util = cashWorking.util;
 
     const gstr1Out = aggregateGstr1OutputByHead(gstr1Data);
     const gstr1Tax = { igst: gstr1Out.igst, cgst: gstr1Out.cgst, sgst: gstr1Out.sgst };
@@ -377,6 +375,7 @@ export class GSTR3BGenerator {
         igst: round2(itcIGST),
         cgst: round2(itcCGST),
         sgst: round2(itcSGST),
+        cess: round2(itcCess),
       },
       utilization: {
         igst_to_igst: util.igst_to_igst,
@@ -386,6 +385,7 @@ export class GSTR3BGenerator {
         cgst_to_igst: util.cgst_to_igst,
         sgst_to_sgst: util.sgst_to_sgst,
         sgst_to_igst: util.sgst_to_igst,
+        cess_to_cess: util.cess_to_cess,
       },
       net_payable: util.net_payable,
     };
@@ -518,7 +518,7 @@ export class GSTR3BGenerator {
              COALESCE(SUM(e.amount), 0), COALESCE(SUM(e.igst_amount), 0),
              COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
         FROM expenses e
-       WHERE e.business_id = $1::uuid
+       WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
          AND COALESCE(e.is_reverse_charge, false)
          AND e.expense_date >= $2::date AND e.expense_date <= $3::date
          AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)
@@ -528,7 +528,7 @@ export class GSTR3BGenerator {
              COALESCE(SUM(e.amount - COALESCE(e.igst_amount, 0) - COALESCE(e.cgst_amount, 0) - COALESCE(e.sgst_amount, 0)), 0),
              COALESCE(SUM(e.igst_amount), 0), COALESCE(SUM(e.cgst_amount), 0), COALESCE(SUM(e.sgst_amount), 0)
         FROM expenses e
-       WHERE e.business_id = $1::uuid
+       WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
          AND NOT COALESCE(e.is_reverse_charge, false)
          AND e.itc_eligible = false
          AND (COALESCE(e.igst_amount, 0) + COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0)) > 0
@@ -536,6 +536,35 @@ export class GSTR3BGenerator {
          AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)`,
       [business_id, startOfMonth, endOfMonth, branch]
     );
+    const table5Res = await pool.query(
+      `SELECT pi.taxable_value, COALESCE(pi.tax_amount, 0) AS tax_amount, pi.hsn_sac,
+              COALESCE(p.is_reverse_charge, false) AS is_rcm,
+              (p.document_type = 'bill_of_entry' OR p.supplier_state_code = '96') AS is_import,
+              COALESCE(NULLIF(p.supplier_state_code, ''), LEFT(s.gstin, 2)) AS supplier_state,
+              COALESCE(NULLIF(LEFT(NULLIF(TRIM(br.gstin), ''), 2), ''), $5::text) AS recipient_state
+         FROM purchase_items pi
+         JOIN purchases p ON p.id = pi.purchase_id
+         LEFT JOIN suppliers s ON s.id = p.supplier_id
+         LEFT JOIN branches br ON br.id = p.branch_id
+        WHERE p.business_id = $1::uuid
+          AND p.deleted_at IS NULL
+          AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
+          AND p.bill_date >= $2::date AND p.bill_date <= $3::date
+          AND ($4::uuid IS NULL OR p.branch_id = $4::uuid)`,
+      [business_id, startOfMonth, endOfMonth, branch, selfState ?? null]
+    );
+    const inward_exempt_nil_non_gst = aggregateTable5(
+      table5Res.rows.map((r) => ({
+        taxableValue: Number(r.taxable_value) || 0,
+        taxAmount: Number(r.tax_amount) || 0,
+        hsn: r.hsn_sac,
+        isReverseCharge: r.is_rcm === true,
+        isImport: r.is_import === true,
+        supplierStateCode: r.supplier_state,
+        recipientStateCode: r.recipient_state,
+      }))
+    );
+
     const bucket = (name: string, eligible?: boolean): TaxBreakdown => {
       const t = emptyTax();
       for (const r of inward.rows) {
@@ -578,7 +607,7 @@ export class GSTR3BGenerator {
          FROM ledger_entry_lines l
          JOIN accounts a ON a.id = l.account_id
         WHERE l.business_id = $1::uuid
-          AND l.voucher_type = 'itc_reversal'
+          AND l.voucher_type IN ('itc_reversal', 'itc_reversal_r37')
           AND a.account_code IN ($5, $6, $7)
           AND l.entry_date >= $2::date AND l.entry_date <= $3::date
           AND ($4::uuid IS NULL OR l.branch_id = $4::uuid)
@@ -632,24 +661,17 @@ export class GSTR3BGenerator {
       cess: round2(outputCess),
     };
 
-    const netPayableFromUtil =
-      util.net_payable.igst + util.net_payable.cgst + util.net_payable.sgst;
     const rcmPooledComponent =
       rcmResolved.mode === 'pooled' && rcmResolved.total > 0.005 ? round2(rcmResolved.total) : undefined;
-    const net_tax_payable =
-      rcmResolved.mode === 'pooled'
-        ? round2(netPayableFromUtil + rcmResolved.total)
-        : round2(netPayableFromUtil);
 
     const tax_liability: TaxBreakdown = {
       taxable_value: gross_output_tax.taxable_value,
-      igst: util.net_payable.igst,
-      cgst: util.net_payable.cgst,
-      sgst: util.net_payable.sgst,
-      cess: 0,
+      ...cashWorking.payable_by_head,
     };
+    const net_tax_payable = cashWorking.net_tax_payable;
 
-    const grossHeadSum = gross_output_tax.igst + gross_output_tax.cgst + gross_output_tax.sgst;
+    const grossHeadSum =
+      gross_output_tax.igst + gross_output_tax.cgst + gross_output_tax.sgst + gross_output_tax.cess;
     const total_tax_liability = round2(
       grossHeadSum + (rcmResolved.mode === 'pooled' ? rcmResolved.total : 0)
     );
@@ -672,6 +694,7 @@ export class GSTR3BGenerator {
       },
       gross_output_tax,
       tax_liability,
+      inward_exempt_nil_non_gst,
       interest_late_fee: {
         igst: 0,
         cgst: 0,

@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total_expenses,
         COALESCE(SUM(e.amount), 0) as total_amount
       FROM expenses e
-      WHERE e.business_id = $1 
+      WHERE e.business_id = $1 AND e.deleted_at IS NULL
         ${dateFilter}
       GROUP BY ${groupByClause}
       ORDER BY ${orderByClause}

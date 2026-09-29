@@ -153,7 +153,7 @@ export default function NewPurchaseReturnPage() {
       if (response.ok) {
         const data = await response.json();
         const supplierPurchases = data.purchases.filter(
-          (p: Purchase) => (p as any).supplier_id === supplierId
+          (p: Purchase) => (p as any).supplier_id === supplierId && (p as any).status !== 'cancelled'
         );
         setPurchases(supplierPurchases);
       }

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Plus, ShoppingCart, Calendar, DollarSign, User, Tag, Eye, Edit, RotateCcw, Filter, Search, CreditCard, X, Trash2, Loader2 } from 'lucide-react';
+import { Plus, ShoppingCart, Calendar, DollarSign, User, Tag, Eye, Edit, RotateCcw, Filter, Search, CreditCard, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,21 @@ import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { PurchaseDetailPanel } from '@/components/purchases/PurchaseDetailPanel';
 import { Card } from '@/components/ui/Card';
 import { clsx } from 'clsx';
+import { PurchaseStatusAction } from '@/components/purchases/PurchaseStatusAction';
+import { ReasonConfirmModal } from '@/components/modals/ReasonConfirmModal';
+import {
+  canManagePeriodLocks,
+  describeAccountingError,
+  type AccountingErrorView,
+} from '@/lib/accounting-ui/errors';
+import {
+  buildCancelPurchaseBody,
+  computePurchaseTotals,
+  draftDeletedMessage,
+  matchesPurchaseStatusFilter,
+  PURCHASE_ACTION_COPY,
+  purchaseRowBalance,
+} from '@/lib/accounting-ui/purchase-actions';
 
 interface Purchase {
   id: string;
@@ -44,7 +59,7 @@ interface Purchase {
 
 function PurchasesPageContent() {
   const router = useRouter();
-  const { business, user } = useAuth();
+  const { business, user, permissions, isPrimaryAdmin } = useAuth();
   const { currentBranchId, isLoading: branchLoading } = useBranch();
   const toast = useToastContext();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -54,7 +69,10 @@ function PurchasesPageContent() {
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [paymentModalPurchase, setPaymentModalPurchase] = useState<Purchase | null>(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
-  const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    purchase: Purchase;
+    kind: 'delete_draft' | 'cancel_bill';
+  } | null>(null);
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null);
 
   // Authorization guard: Check if user can read purchases
@@ -182,63 +200,43 @@ function PurchasesPageContent() {
       }
     }
     
-    // Apply client-side status filtering
-    return purchases.filter((purchase) => {
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'draft' && purchase.status === 'draft') ||
-        (statusFilter === 'final' && purchase.status === 'final') ||
-        (statusFilter === 'cancelled' && purchase.status === 'cancelled') ||
-        (statusFilter === 'paid' && purchase.payment_status === 'paid') ||
-        (statusFilter === 'unpaid' &&
-          (purchase.payment_status === 'unpaid' || purchase.payment_status === 'partially_paid'));
-      return matchesStatus;
-    });
+    return purchases.filter((purchase) => matchesPurchaseStatusFilter(purchase, statusFilter));
   })();
 
-  const totalPurchases = filteredPurchases.reduce((sum, p) => sum + parseFloat(p.grand_total.toString()), 0);
-  const totalPaid = filteredPurchases.reduce((sum, p) => sum + parseFloat(p.paid_amount.toString()), 0);
-  const totalDue = totalPurchases - totalPaid;
+  const { total: totalPurchases, paid: totalPaid, due: totalDue } = computePurchaseTotals(filteredPurchases);
 
-  async function handleDeletePurchase(purchaseId: string) {
-    if (!confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) {
-      return;
-    }
-
-    setDeletingPurchaseId(purchaseId);
+  async function confirmPurchaseAction(reason: string): Promise<AccountingErrorView | null> {
+    if (!pendingAction) return null;
+    const { purchase, kind } = pendingAction;
+    const isCancel = kind === 'cancel_bill';
+    let response: Response;
     try {
-      const response = await fetch(`/api/purchases/${purchaseId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        let errorMessage = 'Failed to delete purchase';
-        try {
-          const data = await response.json();
-          errorMessage = data.error || data.details || errorMessage;
-        } catch (e) {
-          // If response is not JSON, use status text
-          errorMessage = response.statusText || errorMessage;
-        }
-        toast.error(errorMessage);
-        return;
-      }
-
-      // Try to parse JSON response
-      try {
-        const data = await response.json();
-        // Success - refresh purchases list
-        fetchPurchases();
-      } catch (e) {
-        // If no JSON response, still refresh (success)
-        fetchPurchases();
-      }
-    } catch (error) {
-      console.error('Error deleting purchase:', error);
-      toast.error('Failed to delete purchase. Please try again.');
-    } finally {
-      setDeletingPurchaseId(null);
+      response = isCancel
+        ? await fetch(`/api/purchases/${purchase.id}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: buildCancelPurchaseBody(reason),
+          })
+        : await fetch(`/api/purchases/${purchase.id}`, { method: 'DELETE' });
+    } catch {
+      return { message: 'Could not reach the server. Check your connection and try again.' };
     }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      return describeAccountingError(response.status, data, {
+        context: 'purchase',
+        verb: isCancel ? 'cancelled' : 'deleted',
+        canManagePeriods: canManagePeriodLocks(isPrimaryAdmin, permissions),
+        currentPath: '/purchases',
+        fallback: isCancel ? 'Could not cancel the bill. Please try again.' : 'Could not delete the draft. Please try again.',
+      });
+    }
+    setPendingAction(null);
+    toast.success(
+      isCancel || data?.cancelled ? PURCHASE_ACTION_COPY.cancelledSuccess : draftDeletedMessage(data)
+    );
+    fetchPurchases();
+    return null;
   }
 
   const getStatusColor = (status: string) => {
@@ -514,7 +512,7 @@ function PurchasesPageContent() {
               {/* Mobile Card View */}
               <div className="md:hidden space-y-3 p-4">
                 {filteredPurchases.map((purchase) => {
-                  const balance = parseFloat(purchase.grand_total.toString()) - parseFloat(purchase.paid_amount.toString());
+                  const balance = purchaseRowBalance(purchase);
                   return (
                     <div 
                       key={purchase.id} 
@@ -528,7 +526,9 @@ function PurchasesPageContent() {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <StatusBadge status={purchase.status} />
-                          <StatusBadge status={purchase.payment_status || 'unpaid'} />
+                          {purchase.status !== 'cancelled' && (
+                            <StatusBadge status={purchase.payment_status || 'unpaid'} />
+                          )}
                           {purchase.status === 'final' && (
                             <>
                               <GSTStatusIndicator 
@@ -572,23 +572,11 @@ function PurchasesPageContent() {
                             <RotateCcw className="w-4 h-4 mr-1" /> Return
                           </Button>
                         )}
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            handleDeletePurchase(purchase.id);
-                          }}
-                          disabled={deletingPurchaseId === purchase.id}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          {deletingPurchaseId === purchase.id ? (
-                            <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin mr-1" />
-                          ) : (
-                            <Trash2 className="w-4 h-4 mr-1" />
-                          )}
-                          Delete
-                        </Button>
+                        <PurchaseStatusAction
+                          purchase={purchase}
+                          layout="card"
+                          onSelect={(kind) => setPendingAction({ purchase, kind })}
+                        />
                       </div>
                     </div>
                   );
@@ -612,7 +600,7 @@ function PurchasesPageContent() {
                   </thead>
                   <tbody>
                     {filteredPurchases.map((purchase) => {
-                      const balance = parseFloat(purchase.grand_total.toString()) - parseFloat(purchase.paid_amount.toString());
+                      const balance = purchaseRowBalance(purchase);
 
                       return (
                         <tr
@@ -642,7 +630,9 @@ function PurchasesPageContent() {
                         <td className="py-4 px-4">
                           <div className="flex flex-col gap-1.5 items-start">
                             <StatusBadge status={purchase.status} />
-                            <StatusBadge status={purchase.payment_status || 'unpaid'} />
+                            {purchase.status !== 'cancelled' && (
+                              <StatusBadge status={purchase.payment_status || 'unpaid'} />
+                            )}
                             {purchase.status === 'final' && (
                               <>
                                 <GSTStatusIndicator 
@@ -740,21 +730,11 @@ function PurchasesPageContent() {
                                 </button>
                               )}
 
-                              <button
-                                className="h-8 w-8 p-0 flex items-center justify-center rounded-md hover:bg-red-50 text-gray-600 hover:text-red-600 transition-colors disabled:opacity-50"
-                                title="Delete Purchase"
-                                disabled={deletingPurchaseId === purchase.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePurchase(purchase.id);
-                                }}
-                              >
-                                {deletingPurchaseId === purchase.id ? (
-                                  <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
-                              </button>
+                              <PurchaseStatusAction
+                                purchase={purchase}
+                                layout="row"
+                                onSelect={(kind) => setPendingAction({ purchase, kind })}
+                              />
                             </div>
                           </td>
                         </tr>
@@ -821,6 +801,31 @@ function PurchasesPageContent() {
               setPaymentModalPurchase(null);
             }}
             onClose={() => setPaymentModalPurchase(null)}
+          />
+        )}
+
+        {pendingAction && (
+          <ReasonConfirmModal
+            key={`${pendingAction.kind}-${pendingAction.purchase.id}`}
+            {...(pendingAction.kind === 'cancel_bill'
+              ? {
+                  title: PURCHASE_ACTION_COPY.cancelBill.title,
+                  description: PURCHASE_ACTION_COPY.cancelBill.description,
+                  confirmLabel: PURCHASE_ACTION_COPY.cancelBill.confirm,
+                  requireReason: true,
+                  reasonLabel: PURCHASE_ACTION_COPY.cancelBill.reasonLabel,
+                  reasonPlaceholder: PURCHASE_ACTION_COPY.cancelBill.reasonPlaceholder,
+                }
+              : {
+                  title: PURCHASE_ACTION_COPY.deleteDraft.title,
+                  description: PURCHASE_ACTION_COPY.deleteDraft.description,
+                  confirmLabel: PURCHASE_ACTION_COPY.deleteDraft.confirm,
+                })}
+            subject={`Bill: ${pendingAction.purchase.bill_number || 'No bill number'}${
+              pendingAction.purchase.supplier_name ? ` · ${pendingAction.purchase.supplier_name}` : ''
+            }`}
+            onConfirm={confirmPurchaseAction}
+            onClose={() => setPendingAction(null)}
           />
         )}
       </div>
