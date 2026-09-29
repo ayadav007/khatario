@@ -72,6 +72,7 @@ export default function CashFlowPage() {
   const { business, user } = useAuth();
   const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [fromDate, setFromDate] = useState(() => {
     const now = new Date();
@@ -113,10 +114,10 @@ export default function CashFlowPage() {
   };
 
   useEffect(() => {
-    if (business?.id) {
+    if (business?.id && user?.id) {
       fetchCashFlow();
     }
-  }, [business?.id, fromDate, toDate]);
+  }, [business?.id, user?.id, fromDate, toDate]);
 
   const fetchCashFlow = async () => {
     if (!business?.id) return;
@@ -131,12 +132,18 @@ export default function CashFlowPage() {
       };
 
       const res = await fetch(buildApiUrl('/api/reports/cash-flow', params));
+      const result = await res.json().catch(() => ({}));
       if (res.ok) {
-        const result = await res.json();
+        setError(null);
         setData(result);
+      } else {
+        setData(null);
+        setError(typeof result.error === 'string' ? result.error : 'Could not load the cash flow statement');
       }
     } catch (error) {
       console.error('Error fetching cash flow:', error);
+      setData(null);
+      setError('Could not load the cash flow statement');
     } finally {
       setLoading(false);
     }
@@ -156,7 +163,7 @@ export default function CashFlowPage() {
     return (
       
         <div className="text-center py-12">
-          <p className="text-text-secondary">No data available</p>
+          <p className="text-text-secondary">{error || 'No data available'}</p>
         </div>
       
     );

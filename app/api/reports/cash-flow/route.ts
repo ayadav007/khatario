@@ -15,8 +15,10 @@ function lineAmount(lines: CfLine[], label: string) {
 
 /**
  * GET /api/reports/cash-flow
- * Indirect-method cash flow statement. Without branch_id the whole business is reported
- * (including lines posted without a branch); with branch_id only that branch's lines.
+ * Indirect-method cash flow statement.
+ * branch_id omitted or "ALL" is the whole company.
+ * The default branch also includes company lines that have no branch (opening stock,
+ * opening balances), so Main Branch plus every other branch equals All Branches.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -41,17 +43,29 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
+    const isConsolidatedView = !branchIdParam || branchIdParam.toLowerCase() === 'all';
     let branchFilter: string | null = null;
-    if (branchIdParam) {
-      const { resolveBranchId } = await import('@/lib/branch-helpers');
+    let includeUnassigned = false;
+    let accessibleBranchIds: string[] | null = null;
+
+    if (!isConsolidatedView) {
+      const { resolveBranchId, isDefaultBranch } = await import('@/lib/branch-helpers');
       try {
         branchFilter = await resolveBranchId({ branchId: branchIdParam, businessId });
+        includeUnassigned = await isDefaultBranch(branchFilter, businessId);
       } catch (error: any) {
         if (['BRANCH_NOT_FOUND', 'BRANCH_BUSINESS_MISMATCH', 'BRANCH_INACTIVE'].includes(error.code)) {
           return NextResponse.json({ error: error.message }, { status: 400 });
         }
+        if (error.code === 'NO_DEFAULT_BRANCH') {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
         throw error;
       }
+    } else {
+      const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
+      const accessible = await getUserAccessibleBranchIds(userId);
+      if (accessible.length > 0) accessibleBranchIds = accessible;
     }
 
     try {
@@ -76,6 +90,19 @@ export async function GET(request: NextRequest) {
       if (!toDate) toDate = now.toISOString().split('T')[0];
     }
 
+    const params: any[] = [businessId, fromDate, toDate, OPENING_VOUCHERS];
+    let branchClause = '';
+    if (branchFilter && includeUnassigned) {
+      branchClause = 'AND (lel.branch_id = $5::uuid OR lel.branch_id IS NULL)';
+      params.push(branchFilter);
+    } else if (branchFilter) {
+      branchClause = 'AND lel.branch_id = $5::uuid';
+      params.push(branchFilter);
+    } else if (accessibleBranchIds) {
+      branchClause = 'AND (lel.branch_id = ANY($5::uuid[]) OR lel.branch_id IS NULL)';
+      params.push(accessibleBranchIds);
+    }
+
     const rows = await queryRows<{
       account_code: string;
       account_name: string;
@@ -89,12 +116,12 @@ export async function GET(request: NextRequest) {
       `
       WITH lines AS (
         SELECT lel.account_id, lel.debit, lel.credit,
-          (lel.entry_date < $2::date OR lel.voucher_type = ANY($5::text[])) AS is_opening,
+          (lel.entry_date < $2::date OR lel.voucher_type = ANY($4::text[])) AS is_opening,
           lel.voucher_type
         FROM ledger_entry_lines lel
         WHERE lel.business_id = $1
           AND lel.entry_date <= $3::date
-          AND ($4::uuid IS NULL OR lel.branch_id = $4::uuid)
+          ${branchClause}
       )
       SELECT
         a.account_code,
@@ -116,7 +143,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN account_groups ag ON ag.id = a.account_group_id
       GROUP BY a.id, a.account_code, a.account_name, a.account_type, ag.group_code
       `,
-      [businessId, fromDate, toDate, branchFilter, OPENING_VOUCHERS]
+      params
     );
 
     const accounts: CfAccount[] = rows.map((r) => ({
