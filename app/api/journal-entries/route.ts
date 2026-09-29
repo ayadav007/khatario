@@ -99,8 +99,8 @@ export async function GET(request: NextRequest) {
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
         AND ${activeLedgerLineSql('lel')} AND (je.id IS NULL OR je.deleted_at IS NULL)
-      ${fromDate ? `AND lel.entry_date >= $${params.length}` : ''}
-      ${toDate ? `AND lel.entry_date <= $${params.length + (fromDate ? 1 : 0)}` : ''}
+      ${fromDate ? `AND lel.entry_date >= $2` : ''}
+      ${toDate ? `AND lel.entry_date <= $${fromDate ? 3 : 2}` : ''}
     `;
     const countParams = [businessId];
     if (fromDate) countParams.push(fromDate);
