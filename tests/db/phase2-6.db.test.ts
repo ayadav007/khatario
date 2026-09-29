@@ -701,24 +701,37 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
     expect(r2(julyAfter3b.cgst - julyBefore3b.cgst)).toBeCloseTo(activeBill.tax / 2, 2);
     expect(r2(julyAfter3b.sgst - julyBefore3b.sgst)).toBeCloseTo(activeBill.tax / 2, 2);
 
-    const expected8A = Number(
+    // No GSTR-2B imported: 8A falls back to active registered non-RCM bills in the books, by tax head.
+    const heads = async (status: string) =>
       (
         await pool.query(
-          `SELECT COALESCE(SUM(cgst_total + sgst_total + igst_total), 0) AS v FROM purchases
-            WHERE business_id = $1 AND status = 'final' AND deleted_at IS NULL AND itc_eligible AND itc_availed
-              AND bill_date >= '2026-04-01' AND bill_date <= '2027-03-31'`,
-          [B]
+          `SELECT COALESCE(SUM(pi.igst_amount), 0)::float8 AS igst, COALESCE(SUM(pi.cgst_amount), 0)::float8 AS cgst,
+                  COALESCE(SUM(pi.sgst_amount), 0)::float8 AS sgst
+             FROM purchases p JOIN purchase_items pi ON pi.purchase_id = p.id
+            WHERE p.business_id = $1 AND p.status = $2 AND p.deleted_at IS NULL AND NOT p.is_reverse_charge
+              AND LENGTH(COALESCE(p.supplier_gstin, '')) >= 15 AND COALESCE(p.itc_eligible, true)
+              AND p.bill_date BETWEEN '2026-04-01' AND '2027-03-31'`,
+          [B, status]
         )
-      ).rows[0].v
-    );
-    let monthly2b = 0;
-    for (const [m, y] of [[4, 2026], [5, 2026], [6, 2026], [7, 2026], [8, 2026], [9, 2026], [10, 2026], [11, 2026], [12, 2026], [1, 2027], [2, 2027], [3, 2027]]) {
-      monthly2b += (await g2b.generate({ business_id: B, month: m, year: y })).summary.total_itc_available || 0;
-    }
+      ).rows[0];
+    const returned = (
+      await pool.query(
+        `SELECT COALESCE(SUM(pr.cgst_total), 0)::float8 AS cgst, COALESCE(SUM(pr.sgst_total), 0)::float8 AS sgst
+           FROM purchase_returns pr JOIN purchases p ON p.id = pr.purchase_id
+          WHERE pr.business_id = $1 AND p.status = 'final' AND p.deleted_at IS NULL
+            AND COALESCE(pr.status, 'final') <> 'cancelled' AND pr.return_date BETWEEN '2026-04-01' AND '2027-03-31'`,
+        [B]
+      )
+    ).rows[0];
+    const active = await heads('final');
     const gstr9 = await new GSTR9Generator().generate({ business_id: B, financial_year: 2026 });
-    expect(r2(monthly2b)).toBeCloseTo(expected8A, 2);
-    expect(r2(gstr9.table_8.A.igst)).toBeCloseTo(expected8A, 2);
-    expect(expected8A).toBeCloseTo(activeBill.tax, 2);
+    const t8a = gstr9.table_8.A;
+    expect(r2(t8a.igst)).toBeCloseTo(r2(active.igst), 2);
+    expect(r2(t8a.cgst)).toBeCloseTo(r2(active.cgst - returned.cgst), 2);
+    expect(r2(t8a.sgst)).toBeCloseTo(r2(active.sgst - returned.sgst), 2);
+    expect(gstr9.validation.warnings.some((w) => w.startsWith('Table 8A: no GSTR-2B imported'))).toBe(true);
+    const cancelledHeads = await heads('cancelled');
+    expect(r2(cancelledHeads.cgst + cancelledHeads.sgst)).toBeGreaterThanOrEqual(r2(cancelled.tax));
   });
 
   describe('P1: invoice cancel uses only the authenticated identity', () => {

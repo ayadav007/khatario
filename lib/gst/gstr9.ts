@@ -1,7 +1,7 @@
 import { getPool } from '@/lib/db';
 import { GSTR1Generator } from './gstr1';
 import { GSTR3BGenerator, TaxBreakdown } from './gstr3b';
-import { GSTR2BGenerator } from './gstr2b';
+import { computeTable8A } from './gstr9-table8a';
 
 export interface GSTR9Filters {
   business_id: string;
@@ -228,7 +228,6 @@ export class GSTR9Generator {
   private pool = getPool();
   private gstr1Generator = new GSTR1Generator();
   private gstr3bGenerator = new GSTR3BGenerator();
-  private gstr2bGenerator = new GSTR2BGenerator();
 
   async generate(filters: GSTR9Filters, overrides: any = {}): Promise<GSTR9Data> {
     const { business_id, financial_year } = filters;
@@ -644,18 +643,11 @@ export class GSTR9Generator {
         } catch (e) {
           console.error(`Error processing GSTR-3B for ${actualMonth}/${actualYear}:`, e);
         }
-
-        // GSTR-2B (Read-only Reference for Table 8A)
-        try {
-          const gstr2b = await this.gstr2bGenerator.generate({ business_id, month: actualMonth, year: actualYear });
-          if (gstr2b.summary?.total_itc_available) {
-            // Add ITC available to table 8.A IGST directly
-            data.table_8.A.igst = (data.table_8.A.igst || 0) + (gstr2b.summary.total_itc_available || 0);
-          }
-        } catch (e) {
-          console.error(`Error processing GSTR-2B for ${actualMonth}/${actualYear}:`, e);
-        }
       }
+
+      const table8A = await computeTable8A(client, business_id, financial_year);
+      data.table_8.A = table8A.A;
+      data.validation.warnings.push(...table8A.warnings);
 
       // GSTR-1 summary counts every invoice; Table 4 covers only supplies on which tax is payable.
       data.table_4_return.taxable_value -= data.table_5_return.taxable_value;
@@ -722,6 +714,7 @@ export class GSTR9Generator {
       t8.D.igst = t8.A.igst - (t8.B.igst + t8.C.igst);
       t8.D.cgst = t8.A.cgst - (t8.B.cgst + t8.C.cgst);
       t8.D.sgst = t8.A.sgst - (t8.B.sgst + t8.C.sgst);
+      t8.D.cess = t8.A.cess - (t8.B.cess + t8.C.cess);
       
       t8.I.igst = t8.G.igst - t8.H.igst;
       t8.J.igst = t8.I.igst;
