@@ -17,7 +17,7 @@ import {
   describeAccountingError,
   type AccountingErrorView,
 } from '@/lib/accounting-ui/errors';
-import { buildReversalUrl, REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
+import { REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
 
 const JOURNAL_LOCKED_MESSAGE = describeAccountingError(403, { code: 'JOURNAL_LOCKED' }, { context: 'journal', verb: 'reversed' }).message;
 
@@ -31,6 +31,7 @@ interface JournalEntry {
   line_count: number;
   is_locked?: boolean;
   is_reversing?: boolean;
+  is_reversed?: boolean;
   template_id?: string;
   tags?: string[];
   lines?: Array<{
@@ -100,8 +101,10 @@ export default function JournalEntriesPage() {
     if (!reversing || !business?.id) return null;
     let res: Response;
     try {
-      res = await fetch(buildReversalUrl(`/api/journal-entries/${reversing.voucher_id}`, business.id, reason), {
-        method: 'DELETE',
+      res = await fetch(`/api/journal-entries/${reversing.voucher_id}/reverse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim() }),
       });
     } catch {
       return { message: 'Could not reach the server. Check your connection and try again.' };
@@ -201,7 +204,17 @@ export default function JournalEntriesPage() {
                       <td className="py-4 px-4">
                         {format(new Date(entry.entry_date), 'dd MMM yyyy')}
                       </td>
-                      <td className="py-4 px-4 font-mono text-sm">{entry.voucher_number}</td>
+                      <td className="py-4 px-4 font-mono text-sm">
+                        {entry.voucher_number}
+                        {entry.is_reversed && (
+                          <span
+                            className="ml-2 px-2 py-0.5 rounded-md text-xs font-sans bg-gray-100 text-gray-700"
+                            data-testid={`journal-reversed-${entry.voucher_id}`}
+                          >
+                            {REVERSAL_COPY.journal.reversedBadge}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-4 px-4 text-sm text-text-secondary">
                         {entry.reference_number || '-'}
                       </td>
@@ -223,17 +236,25 @@ export default function JournalEntriesPage() {
                               <Eye className="w-4 h-4" />
                             </Button>
                           </Link>
-                          <Link href={`/journal-entries/${entry.voucher_id}/edit`}>
-                            <Button size="sm" variant="ghost">
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                          </Link>
+                          {!entry.is_reversed && (
+                            <Link href={`/journal-entries/${entry.voucher_id}/edit`}>
+                              <Button size="sm" variant="ghost">
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => setReversing(entry)}
-                            disabled={entry.is_locked}
-                            title={entry.is_locked ? JOURNAL_LOCKED_MESSAGE : REVERSAL_COPY.journal.title}
+                            disabled={entry.is_locked || entry.is_reversed}
+                            title={
+                              entry.is_reversed
+                                ? REVERSAL_COPY.journal.alreadyReversed
+                                : entry.is_locked
+                                  ? JOURNAL_LOCKED_MESSAGE
+                                  : REVERSAL_COPY.journal.title
+                            }
                             aria-label={REVERSAL_COPY.journal.title}
                             data-testid={`journal-reverse-${entry.voucher_id}`}
                             className="text-red-600 hover:text-red-700 disabled:text-gray-400"

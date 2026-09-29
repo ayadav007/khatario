@@ -138,6 +138,67 @@ export async function repostJournal(
   return { reversed, posted };
 }
 
+const hasActiveJournalLineSql = (voucherId: string, businessId: string) =>
+  `EXISTS (SELECT 1 FROM ledger_entry_lines a
+            WHERE a.business_id = ${businessId} AND a.voucher_type = 'journal' AND a.voucher_id = ${voucherId}
+              AND ${activeLedgerLineSql('a')})`;
+
+/** True for a journal whose posting has been fully reversed: it has reversal links and no active lines. */
+export function journalIsReversedSql(voucherId: string, businessId: string): string {
+  return `(NOT ${hasActiveJournalLineSql(voucherId, businessId)}
+      AND EXISTS (SELECT 1 FROM ledger_entry_reversals r
+                   WHERE r.business_id = ${businessId} AND r.voucher_type = 'journal' AND r.voucher_id = ${voucherId}))`;
+}
+
+/**
+ * Lines of `alias` that show a journal's posting: its active lines or, once fully reversed, the
+ * original lines of its last reversal. Links written by one reversal share the transaction
+ * timestamp, so earlier correction reversals are not shown.
+ */
+export function journalDisplayLineSql(alias: string): string {
+  return `(${activeLedgerLineSql(alias)}
+      OR (NOT ${hasActiveJournalLineSql(`${alias}.voucher_id`, `${alias}.business_id`)}
+          AND EXISTS (SELECT 1 FROM ledger_entry_reversals x
+                       WHERE x.original_line_id = ${alias}.id
+                         AND x.created_at = (SELECT MAX(y.created_at) FROM ledger_entry_reversals y
+                                              WHERE y.business_id = ${alias}.business_id AND y.voucher_type = 'journal'
+                                                AND y.voucher_id = ${alias}.voucher_id))))`;
+}
+
+export const JOURNAL_REVERSAL_REASON_PREFIX = 'Journal reversed:';
+
+export type JournalReverseResult = 'reversed' | 'not_found' | 'already_reversed';
+
+/**
+ * Reversal of a posted journal on the caller's transaction: its current posting is mirrored and
+ * linked under the same voucher, and the journal stays live as a reversed record.
+ */
+export async function reverseJournal(
+  client: PoolClient,
+  p: { businessId: string; voucherId: string; userId: string; reason: string }
+): Promise<JournalReverseResult> {
+  const head = await client.query<{ voucher_number: string | null }>(
+    `SELECT voucher_number FROM journal_entries
+      WHERE voucher_id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+    [p.voucherId, p.businessId]
+  );
+  if (head.rows.length === 0) return 'not_found';
+  const reversed = await reverseJournalPosting(client, {
+    businessId: p.businessId,
+    voucherId: p.voucherId,
+    userId: p.userId,
+    reason: `${JOURNAL_REVERSAL_REASON_PREFIX} ${p.reason}`,
+    voucherNumber: head.rows[0].voucher_number,
+  });
+  if (reversed === 0) return 'already_reversed';
+  await client.query(
+    `UPDATE journal_entries SET updated_by = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE voucher_id = $1 AND business_id = $2`,
+    [p.voucherId, p.businessId, p.userId]
+  );
+  return 'reversed';
+}
+
 /**
  * Delete of a posted journal on the caller's transaction: its posting is reversed and the
  * header is soft-deleted (the number stays used). Returns false when already deleted.

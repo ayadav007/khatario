@@ -104,6 +104,10 @@ export function describeAccountingError(
       return { message: 'This bill changed while you were working on it. Refresh the list and try again.' };
     case 'JOURNAL_LOCKED':
       return { message: `This journal entry is locked. Unlock it before it can be ${verb}.` };
+    case 'JOURNAL_ALREADY_REVERSED':
+      return { message: 'This journal entry has already been reversed.' };
+    case 'JOURNAL_REVERSED':
+      return { message: 'This journal entry has been reversed and can no longer be edited.' };
     default:
       break;
   }

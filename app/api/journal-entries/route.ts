@@ -7,8 +7,13 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { allocateJournalVoucherNumber } from '@/lib/accounting/journal-number';
 import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
 import { activeLedgerLineSql } from '@/lib/ledger-reversal';
+import { journalDisplayLineSql } from '@/lib/accounting/journal-corrections';
 
 export const dynamic = 'force-dynamic';
+
+// A soft-deleted journal is listed only when fully reversed (older reversals soft-deleted the header).
+const journalListLineFilter = `${journalDisplayLineSql('lel')}
+        AND (je.id IS NULL OR je.deleted_at IS NULL OR NOT (${activeLedgerLineSql('lel')}))`;
 
 interface JournalEntryLine {
   account_id: string;
@@ -69,11 +74,12 @@ export async function GET(request: NextRequest) {
         je.tags,
         COUNT(DISTINCT lel.id) as line_count,
         SUM(lel.debit) as total_debit,
-        SUM(lel.credit) as total_credit
+        SUM(lel.credit) as total_credit,
+        BOOL_AND(NOT (${activeLedgerLineSql('lel')})) as is_reversed
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
-        AND ${activeLedgerLineSql('lel')} AND (je.id IS NULL OR je.deleted_at IS NULL)
+        AND ${journalListLineFilter}
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -98,7 +104,7 @@ export async function GET(request: NextRequest) {
       FROM ledger_entry_lines lel
       LEFT JOIN journal_entries je ON lel.voucher_id = je.voucher_id AND lel.business_id = je.business_id
       WHERE lel.business_id = $1 AND lel.voucher_type = 'journal'
-        AND ${activeLedgerLineSql('lel')} AND (je.id IS NULL OR je.deleted_at IS NULL)
+        AND ${journalListLineFilter}
       ${fromDate ? `AND lel.entry_date >= $2` : ''}
       ${toDate ? `AND lel.entry_date <= $${fromDate ? 3 : 2}` : ''}
     `;
@@ -129,7 +135,7 @@ export async function GET(request: NextRequest) {
           FROM ledger_entry_lines lel
           LEFT JOIN accounts a ON lel.account_id = a.id
           WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
-            AND ${activeLedgerLineSql('lel')}
+            AND ${journalDisplayLineSql('lel')}
           ORDER BY lel.created_at
         `, [entry.voucher_id, businessId]);
 

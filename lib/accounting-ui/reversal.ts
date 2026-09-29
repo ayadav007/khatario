@@ -12,6 +12,8 @@ export const REVERSAL_COPY = {
     title: 'Reverse journal entry',
     description:
       'This journal entry will be reversed by posting corresponding reversing entries. The original entry will remain available for audit history.',
+    reversedBadge: 'Reversed',
+    alreadyReversed: 'This journal entry has already been reversed.',
   },
   confirm: 'Reverse entry',
   reasonLabel: 'Reason for reversal',

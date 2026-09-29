@@ -11,8 +11,14 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { periodGuardResponse, touchesGstAccounts } from '@/lib/http/period-guards';
-import { activeLedgerLineSql } from '@/lib/ledger-reversal';
-import { activeJournalLines, deleteJournalByReversal, repostJournal } from '@/lib/accounting/journal-corrections';
+import {
+  activeJournalLines,
+  deleteJournalByReversal,
+  journalDisplayLineSql,
+  journalIsReversedSql,
+  JOURNAL_REVERSAL_REASON_PREFIX,
+  repostJournal,
+} from '@/lib/accounting/journal-corrections';
 
 import { type JournalLineInput, validateJournalLines } from '@/lib/accounting/journal-lines';
 
@@ -63,10 +69,12 @@ export async function GET(
               je.reference_number, je.narration, je.is_locked, je.locked_at, je.locked_by,
               je.lock_reason, je.is_reversing, je.reverses_entry_id, je.reversal_date,
               je.template_id, je.tags, je.created_by, je.created_at, je.updated_at,
-              u.name as locked_by_name
+              u.name as locked_by_name,
+              ${journalIsReversedSql('je.voucher_id', 'je.business_id')} AS is_reversed
          FROM journal_entries je
          LEFT JOIN users u ON je.locked_by = u.id
-        WHERE je.voucher_id = $1 AND je.business_id = $2 AND je.deleted_at IS NULL`,
+        WHERE je.voucher_id = $1 AND je.business_id = $2
+          AND (je.deleted_at IS NULL OR ${journalIsReversedSql('je.voucher_id', 'je.business_id')})`,
       [voucherId, businessId]
     );
 
@@ -100,13 +108,45 @@ export async function GET(
          FROM ledger_entry_lines lel
          LEFT JOIN accounts a ON lel.account_id = a.id
         WHERE lel.voucher_id = $1 AND lel.business_id = $2 AND lel.voucher_type = 'journal'
-          AND ${activeLedgerLineSql('lel')}
+          AND ${journalDisplayLineSql('lel')}
         ORDER BY lel.created_at, lel.id`,
       [voucherId, businessId]
     );
 
     const totalDebit = lines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0);
     const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0);
+
+    let reversal: {
+      reason: string | null;
+      reversed_at: string;
+      reversed_by_name: string | null;
+      lines: unknown[];
+    } | null = null;
+    if (journalEntry.is_reversed && lines.length > 0) {
+      const reversalLines = await queryRows(
+        `SELECT r.id, r.account_id, r.debit, r.credit, r.narration, r.entry_date, r.created_at,
+                a.account_code, a.account_name, ler.original_line_id, ler.reason, ler.created_at AS reversed_at,
+                u.name AS reversed_by_name
+           FROM ledger_entry_reversals ler
+           JOIN ledger_entry_lines r ON r.id = ler.reversal_line_id
+           LEFT JOIN accounts a ON a.id = r.account_id
+           LEFT JOIN users u ON u.id = ler.created_by
+          WHERE ler.business_id = $2 AND ler.voucher_type = 'journal' AND ler.voucher_id = $1
+            AND ler.original_line_id = ANY($3::uuid[])
+          ORDER BY r.created_at, r.id`,
+        [voucherId, businessId, lines.map((l) => l.id)]
+      );
+      const first = reversalLines[0];
+      if (first) {
+        const rawReason: string = first.reason || '';
+        reversal = {
+          reason: rawReason.replace(new RegExp(`^(${JOURNAL_REVERSAL_REASON_PREFIX}|Journal deleted:?)\\s*`), '') || null,
+          reversed_at: first.reversed_at,
+          reversed_by_name: first.reversed_by_name ?? null,
+          lines: reversalLines.map(({ reason: _r, reversed_at: _a, reversed_by_name: _n, ...l }) => l),
+        };
+      }
+    }
 
     return NextResponse.json({
       entry: {
@@ -116,6 +156,7 @@ export async function GET(
         total_credit: Math.round(totalCredit * 100) / 100,
       },
       lines,
+      reversal,
     });
   } catch (error: any) {
     console.error('Error fetching journal entry:', error);
@@ -185,6 +226,17 @@ export async function PATCH(
 
   if (journalEntry.is_locked) {
     return NextResponse.json({ error: 'Journal entry is locked', code: 'JOURNAL_LOCKED' }, { status: 403 });
+  }
+
+  const reversed = await queryOne<{ reversed: boolean }>(
+    `SELECT ${journalIsReversedSql('$1::uuid', '$2::uuid')} AS reversed`,
+    [voucherId, business_id]
+  );
+  if (reversed?.reversed) {
+    return NextResponse.json(
+      { error: 'A reversed journal entry cannot be edited', code: 'JOURNAL_REVERSED' },
+      { status: 409 }
+    );
   }
 
   const existingAccountIds = await journalAccountIds(voucherId, business_id);

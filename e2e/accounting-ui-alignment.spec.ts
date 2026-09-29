@@ -217,10 +217,12 @@ test.describe('purchases', () => {
 
 test.describe('expenses and journals', () => {
   const deleteUrls: string[] = [];
+  const reverseRequests: Array<{ url: string; method: string; body: any }> = [];
   let nextDelete: { status: number; body: unknown } = { status: 200, body: { success: true } };
 
   test.beforeEach(async ({ page }) => {
     deleteUrls.length = 0;
+    reverseRequests.length = 0;
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.route(
       (url) => url.pathname === '/api/expenses',
@@ -249,14 +251,20 @@ test.describe('expenses and journals', () => {
               entries: [
                 { voucher_id: 'e2e-jv-1', voucher_number: 'JV-E2E-1', entry_date: '2026-09-03', total_debit: 300, total_credit: 300, line_count: 2 },
                 { voucher_id: 'e2e-jv-2', voucher_number: 'JV-E2E-2', entry_date: '2026-09-03', total_debit: 90, total_credit: 90, line_count: 2, is_locked: true },
+                { voucher_id: 'e2e-jv-3', voucher_number: 'JV-E2E-3', entry_date: '2026-09-03', total_debit: 50, total_credit: 50, line_count: 2, is_reversed: true },
               ],
-              pagination: { page: 1, limit: 50, total: 2, totalPages: 1 },
+              pagination: { page: 1, limit: 50, total: 3, totalPages: 1 },
             })
           : route.continue()
     );
     await page.route(/\/api\/(expenses|journal-entries)\/e2e-[a-z0-9-]+\?/, async (route) => {
       if (route.request().method() !== 'DELETE') return route.continue();
       deleteUrls.push(route.request().url());
+      await json(route, nextDelete.status, nextDelete.body);
+    });
+    await page.route(/\/api\/journal-entries\/e2e-[a-z0-9-]+\/reverse$/, async (route) => {
+      const req = route.request();
+      reverseRequests.push({ url: req.url(), method: req.method(), body: req.postDataJSON() });
       await json(route, nextDelete.status, nextDelete.body);
     });
     await uiLogin(page);
@@ -302,10 +310,14 @@ test.describe('expenses and journals', () => {
     }
   });
 
-  test('journal delete is a reversal with a reason and mapped lock errors', async ({ page }) => {
+  test('journal reverse posts a reason to /reverse and maps lock errors', async ({ page }) => {
     await page.goto(`${baseUrl}/journal-entries`);
     await expect(page.getByTestId('journal-reverse-e2e-jv-2')).toBeDisabled({ timeout: 60000 });
     await expect(page.getByTestId('journal-reverse-e2e-jv-2')).toHaveAttribute('title', /locked/i);
+    await expect(page.getByTestId('journal-reversed-e2e-jv-3')).toHaveText('Reversed');
+    await expect(page.getByTestId('journal-reverse-e2e-jv-3')).toBeDisabled();
+    await expect(page.getByTestId('journal-reverse-e2e-jv-3')).toHaveAttribute('title', /already been reversed/i);
+    await expect(page.locator('a[href="/journal-entries/e2e-jv-3/edit"]')).toHaveCount(0);
 
     await page.getByTestId('journal-reverse-e2e-jv-1').click();
     const dialog = page.getByRole('dialog', { name: DIALOG_TITLE });
@@ -314,7 +326,7 @@ test.describe('expenses and journals', () => {
 
     await dialog.getByRole('button', { name: 'Reverse entry' }).click();
     await expect(dialog.getByRole('alert')).toHaveText(/Please enter a reason for reversal/);
-    expect(deleteUrls).toHaveLength(0);
+    expect(reverseRequests).toHaveLength(0);
 
     await dialog.getByLabel(/Reason for reversal/).fill('Wrong account');
 
@@ -334,15 +346,16 @@ test.describe('expenses and journals', () => {
       '/login?redirect=%2Fjournal-entries'
     );
 
-    nextDelete = { status: 200, body: { message: 'Journal entry deleted successfully' } };
+    nextDelete = { status: 200, body: { message: 'Journal entry reversed', reversed: true } };
     await dialog.getByRole('button', { name: 'Reverse entry' }).click();
     await expect(page.getByText('Entry reversed successfully.')).toBeVisible();
 
-    expect(deleteUrls).toHaveLength(cases.length + 1);
-    for (const url of deleteUrls) {
-      const u = new URL(url);
-      expect(u.pathname).toBe('/api/journal-entries/e2e-jv-1');
-      expect(u.searchParams.get('reason')).toBe('Wrong account');
+    expect(deleteUrls).toHaveLength(0);
+    expect(reverseRequests).toHaveLength(cases.length + 1);
+    for (const r of reverseRequests) {
+      expect(r.method).toBe('POST');
+      expect(new URL(r.url).pathname).toBe('/api/journal-entries/e2e-jv-1/reverse');
+      expect(r.body).toEqual({ reason: 'Wrong account' });
     }
     await page.screenshot({ path: 'test-results/accounting-ui/journal-reverse.png', fullPage: true });
   });

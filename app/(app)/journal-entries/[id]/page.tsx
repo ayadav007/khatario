@@ -22,6 +22,59 @@ interface JournalLine {
   narration?: string;
 }
 
+interface JournalReversal {
+  reason: string | null;
+  reversed_at: string;
+  reversed_by_name: string | null;
+  lines: JournalLine[];
+}
+
+const money = (v: number | string) => Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+function LinesTable({ lines, testId }: { lines: JournalLine[]; testId: string }) {
+  const totalDebit = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full" data-testid={testId}>
+        <thead>
+          <tr className="border-b border-border">
+            <th className="text-left py-3 px-4 font-semibold text-text-primary">Account</th>
+            <th className="text-right py-3 px-4 font-semibold text-text-primary">Debit</th>
+            <th className="text-right py-3 px-4 font-semibold text-text-primary">Credit</th>
+            <th className="text-left py-3 px-4 font-semibold text-text-primary">Narration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, index) => (
+            <tr key={index} className="border-b border-border">
+              <td className="py-4 px-4">
+                <div>
+                  <div className="font-medium">{line.account_name}</div>
+                  <div className="text-sm text-text-secondary font-mono">{line.account_code}</div>
+                </div>
+              </td>
+              <td className="py-4 px-4 text-right">
+                {Number(line.debit) > 0 && <span className="text-primary-600">₹{money(line.debit)}</span>}
+              </td>
+              <td className="py-4 px-4 text-right">
+                {Number(line.credit) > 0 && <span className="text-green-600">₹{money(line.credit)}</span>}
+              </td>
+              <td className="py-4 px-4 text-sm text-text-secondary">{line.narration || '-'}</td>
+            </tr>
+          ))}
+          <tr className="border-t-2 border-border font-semibold">
+            <td className="py-4 px-4">Total</td>
+            <td className="py-4 px-4 text-right text-primary-600">₹{money(totalDebit)}</td>
+            <td className="py-4 px-4 text-right text-green-600">₹{money(totalCredit)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function JournalEntryDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -32,6 +85,7 @@ export default function JournalEntryDetailPage() {
 
   useMobileHeaderTitleOverride(entry?.voucher_number);
   const [lines, setLines] = useState<JournalLine[]>([]);
+  const [reversal, setReversal] = useState<JournalReversal | null>(null);
   const [loading, setLoading] = useState(true);
   const [locking, setLocking] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
@@ -52,6 +106,7 @@ export default function JournalEntryDetailPage() {
         const data = await res.json();
         setEntry(data.entry);
         setLines(data.lines || []);
+        setReversal(data.reversal || null);
       } else {
         router.push('/journal-entries');
       }
@@ -148,7 +203,7 @@ export default function JournalEntryDetailPage() {
           description={`Voucher: ${entry.voucher_number}`}
           trailing={
             <div className="flex gap-2">
-              {entry.is_locked ? (
+              {entry.is_reversed ? null : entry.is_locked ? (
                 <Button variant="secondary" onClick={handleUnlock} disabled={locking}>
                   {locking ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -195,8 +250,25 @@ export default function JournalEntryDetailPage() {
                     Reversing Entry
                   </span>
                 )}
+                {entry.is_reversed && (
+                  <span
+                    className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium"
+                    data-testid="journal-reversed-badge"
+                  >
+                    Reversed
+                  </span>
+                )}
               </div>
               <p className="text-sm text-text-secondary mt-1">Voucher: {entry.voucher_number}</p>
+              {reversal && (
+                <div className="mt-2 text-sm text-text-secondary" data-testid="journal-reversal-info">
+                  <p>
+                    Reversed on {format(new Date(reversal.reversed_at), 'dd MMM yyyy HH:mm')}
+                    {reversal.reversed_by_name ? ` by ${reversal.reversed_by_name}` : ''}
+                  </p>
+                  {reversal.reason && <p>Reason: {reversal.reason}</p>}
+                </div>
+              )}
               {entry.is_locked && entry.locked_at && (
                 <div className="mt-2 text-sm text-text-secondary">
                   <p>Locked by: {entry.locked_by_name || 'Unknown'}</p>
@@ -226,59 +298,21 @@ export default function JournalEntryDetailPage() {
             </div>
 
             <div className="pt-4 border-t border-border">
-              <h2 className="text-lg font-semibold text-text-primary mb-4">Entry Lines</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Account</th>
-                      <th className="text-right py-3 px-4 font-semibold text-text-primary">Debit</th>
-                      <th className="text-right py-3 px-4 font-semibold text-text-primary">Credit</th>
-                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Narration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line, index) => (
-                      <tr key={index} className="border-b border-border">
-                        <td className="py-4 px-4">
-                          <div>
-                            <div className="font-medium">{line.account_name}</div>
-                            <div className="text-sm text-text-secondary font-mono">{line.account_code}</div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          {Number(line.debit) > 0 && (
-                            <span className="text-primary-600">
-                              ₹{Number(line.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          {Number(line.credit) > 0 && (
-                            <span className="text-green-600">
-                              ₹{Number(line.credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-4 text-sm text-text-secondary">
-                          {line.narration || '-'}
-                        </td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-border font-semibold">
-                      <td className="py-4 px-4">Total</td>
-                      <td className="py-4 px-4 text-right text-primary-600">
-                        ₹{Number(entry.total_debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-4 px-4 text-right text-green-600">
-                        ₹{Number(entry.total_credit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <h2 className="text-lg font-semibold text-text-primary mb-4">
+                {reversal ? 'Original Lines' : 'Entry Lines'}
+              </h2>
+              <LinesTable lines={lines} testId="journal-original-lines" />
             </div>
+
+            {reversal && (
+              <div className="pt-4 border-t border-border">
+                <h2 className="text-lg font-semibold text-text-primary mb-1">Reversal Lines</h2>
+                <p className="text-sm text-text-secondary mb-4">
+                  Posted against the original lines above; together they net to zero.
+                </p>
+                <LinesTable lines={reversal.lines} testId="journal-reversal-lines" />
+              </div>
+            )}
 
             {/* Documents */}
             <div className="pt-4 border-t border-border">
