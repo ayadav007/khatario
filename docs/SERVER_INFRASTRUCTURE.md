@@ -163,6 +163,7 @@ npm run cap:android:production:install   # only after https://khatario.com serve
 | PostgreSQL | Staging `khatario` and production `khatario_prod`; migrations via `npm run db:migrate:pending` in that clone |
 | Redis | Shared process; production uses logical DB 1 so BullMQ queues do not mix |
 | OCR | Optional `:4000` — not running as of 2026-09-26; camera extract uses Google Vision + Groq |
+| Todo reminders | PM2 `todo-reminder-worker` (`pm2 start npm --name todo-reminder-worker -- run worker:todo`, then `pm2 save`). Delivers BullMQ jobs at the exact time and sweeps the DB every 30s for anything due that the queue missed. Without it no todo reminder is ever delivered. Production clone: set `PM2_WORKER_NAME` to a separate name |
 | WhatsApp workers | Tenant Baileys inbox — see `docs/WHATSAPP_INTEGRATION.md`. Not in PM2 yet |
 | Platform Meta Cloud API | Save credentials in `/admin` → WhatsApp templates (encrypted in DB). Tenant Cloud API: Settings → WhatsApp. `META_WA_*` env is optional fallback only |
 | Razorpay | Add `PLATFORM_RAZORPAY_*` to the **production** env; webhook `https://khatario.com/api/webhooks/platform-billing/razorpay` |
