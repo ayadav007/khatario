@@ -6,13 +6,14 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Loader2, FileText, Download, TrendingUp, TrendingDown, Printer } from 'lucide-react';
+import { Loader2, Download, TrendingUp, TrendingDown, Printer, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildApiUrl, forPdfPrintInBrowser } from '@/lib/api-helpers';
 import { format } from 'date-fns';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { MobileReportHeader } from '@/components/layout/MobileReportHeader';
+import { ProfitLossDrilldownPanel, type DrillTarget } from '@/components/reports/ProfitLossDrilldownPanel';
 
 interface PnLAccount {
   id: string;
@@ -51,6 +52,9 @@ interface PnLData {
       unit_cost: number;
       total_value: number;
     }>;
+    phase4?: {
+      inventory_model: 'periodic' | 'perpetual';
+    } | null;
   };
   expenses: {
     direct: {
@@ -91,8 +95,186 @@ interface PnLData {
   warnings?: Array<{ code: string; message: string; severity: 'info' | 'warn' | 'error' }>;
 }
 
+const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+function DrillRow({
+  onClick,
+  className = '',
+  children,
+}: {
+  onClick?: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (!onClick) {
+    return <div className={`flex justify-between items-center ${className}`}>{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Click to see what makes up this amount"
+      className={`group flex w-full justify-between items-center text-left rounded-md hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DrillAmount({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <span className={`flex items-center gap-1 ${className}`}>
+      {children}
+      <ChevronRight className="w-4 h-4 text-text-secondary opacity-40 group-hover:opacity-100" />
+    </span>
+  );
+}
+
+function AccountLines({
+  accounts,
+  amountClass,
+  onDrill,
+}: {
+  accounts: PnLAccount[];
+  amountClass: string;
+  onDrill: (t: DrillTarget) => void;
+}) {
+  return (
+    <>
+      {accounts.map((account) => (
+        <DrillRow key={account.id} onClick={() => onDrill(accountTarget(account))} className="-mx-2 px-2 py-2 border-b border-border">
+          <div>
+            <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
+            <span>{account.account_name}</span>
+          </div>
+          <DrillAmount className={`font-semibold ${amountClass}`}>{inr(account.amount)}</DrillAmount>
+        </DrillRow>
+      ))}
+    </>
+  );
+}
+
+function TotalLine({
+  label,
+  amount,
+  amountClass,
+  target,
+  onDrill,
+}: {
+  label: string;
+  amount: number;
+  amountClass: string;
+  target?: DrillTarget;
+  onDrill: (t: DrillTarget) => void;
+}) {
+  return (
+    <DrillRow onClick={target ? () => onDrill(target) : undefined} className="-mx-2 px-2 py-2 border-t-2 border-border font-bold">
+      <span>{label}</span>
+      {target ? (
+        <DrillAmount className={amountClass}>{inr(amount)}</DrillAmount>
+      ) : (
+        <span className={amountClass}>{inr(amount)}</span>
+      )}
+    </DrillRow>
+  );
+}
+
+const accountTarget = (a: PnLAccount): DrillTarget => ({
+  kind: 'account',
+  label: `${a.account_code} ${a.account_name}`,
+  accountIds: [a.id],
+});
+
+const sectionTarget = (label: string, accounts: PnLAccount[]): DrillTarget | undefined =>
+  accounts.length > 0 ? { kind: 'account', label, accountIds: accounts.map((a) => a.id) } : undefined;
+
+function buildCogsTarget(data: PnLData): DrillTarget | undefined {
+  if (!data.cogs) return undefined;
+  if (data.cogs.phase4?.inventory_model === 'perpetual') {
+    const cogsAccount = data.expenses.direct.accounts.find((a) => a.account_code === '5104');
+    return cogsAccount ? { ...accountTarget(cogsAccount), label: 'Cost of Goods Sold' } : undefined;
+  }
+  return {
+    kind: 'breakdown',
+    label: 'Cost of Goods Sold',
+    total: data.cogs.total,
+    rows: [
+      { label: 'Opening Stock', amount: data.cogs.opening_stock, sign: 1, target: { kind: 'opening_stock', label: 'Opening Stock' } },
+      { label: 'Purchases', amount: data.cogs.purchases, sign: 1, target: { kind: 'purchases', label: 'Purchases' } },
+      { label: 'Closing Stock', amount: data.cogs.closing_stock, sign: -1, target: { kind: 'closing_stock', label: 'Closing Stock' } },
+    ],
+  };
+}
+
+function buildGrossProfitTarget(data: PnLData): DrillTarget {
+  const incomeAccounts = [...data.income.sales.accounts, ...data.income.other_income.accounts];
+  const costUsed = data.income.total - data.gross_profit;
+  const usesDirectAccounts = Math.abs(costUsed - data.expenses.direct.total) < 0.01;
+  const costRows = usesDirectAccounts
+    ? data.expenses.direct.accounts
+        .filter((a) => Math.abs(a.amount) > 0.004)
+        .map((a) => ({ label: `${a.account_code} ${a.account_name}`, amount: a.amount, sign: -1 as const, target: accountTarget(a) }))
+    : [{ label: 'Cost of Goods Sold', amount: costUsed, sign: -1 as const, target: buildCogsTarget(data) }];
+  const hiddenDirect =
+    data.cogs && usesDirectAccounts
+      ? data.expenses.direct.accounts.filter((a) => a.account_code !== '5104' && Math.abs(a.amount) > 0.004)
+      : [];
+
+  return {
+    kind: 'breakdown',
+    label: 'Gross Profit',
+    total: data.gross_profit,
+    note:
+      hiddenDirect.length > 0
+        ? `Gross profit deducts every direct-expense account, including ${hiddenDirect
+            .map((a) => a.account_name)
+            .join(', ')}, which is not listed in the Cost of Goods Sold schedule.`
+        : undefined,
+    rows: [
+      ...incomeAccounts
+        .filter((a) => Math.abs(a.amount) > 0.004)
+        .map((a) => ({ label: `${a.account_code} ${a.account_name}`, amount: a.amount, sign: 1 as const, target: accountTarget(a) })),
+      ...costRows,
+    ],
+  };
+}
+
+function buildOperatingProfitTarget(data: PnLData): DrillTarget {
+  const depreciation = data.expenses.indirect.depreciation ?? 0;
+  return {
+    kind: 'breakdown',
+    label: 'Operating Profit',
+    total: data.operating_profit,
+    rows: [
+      { label: 'Gross Profit', amount: data.gross_profit, sign: 1, target: buildGrossProfitTarget(data) },
+      ...data.expenses.indirect.accounts
+        .filter((a) => Math.abs(a.amount) > 0.004)
+        .map((a) => ({ label: `${a.account_code} ${a.account_name}`, amount: a.amount, sign: -1 as const, target: accountTarget(a) })),
+      ...(depreciation > 0 ? [{ label: 'Depreciation', amount: depreciation, sign: -1 as const }] : []),
+    ],
+  };
+}
+
+function buildNetProfitTarget(data: PnLData): DrillTarget {
+  const otherAccounts = data.expenses.other_expenses?.accounts ?? [];
+  const net = data.profit_after_tax ?? data.net_profit;
+  return {
+    kind: 'breakdown',
+    label: 'Net Profit',
+    total: net,
+    rows: [
+      { label: 'Operating Profit', amount: data.operating_profit, sign: 1, target: buildOperatingProfitTarget(data) },
+      ...otherAccounts
+        .filter((a) => Math.abs(a.amount) > 0.004)
+        .map((a) => ({ label: `${a.account_code} ${a.account_name}`, amount: a.amount, sign: -1 as const, target: accountTarget(a) })),
+      ...(data.tax && Math.abs(data.tax.total) > 0.004 ? [{ label: 'Tax', amount: data.tax.total, sign: -1 as const }] : []),
+    ],
+  };
+}
+
 function ProfitLossPage() {
   const { business, user } = useAuth();
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [data, setData] = useState<PnLData | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -297,23 +479,14 @@ function ProfitLossPage() {
               <div className="mb-4">
                 <h3 className="text-lg font-semibold text-text-primary mb-2">Sales</h3>
                 <div className="space-y-2">
-                  {data.income.sales.accounts.map((account) => (
-                    <div key={account.id} className="flex justify-between items-center py-2 border-b border-border">
-                      <div>
-                        <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
-                        <span>{account.account_name}</span>
-                      </div>
-                      <span className="font-semibold text-green-600">
-                        ₹{account.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                    <span>Total Sales</span>
-                    <span className="text-green-600">
-                      ₹{data.income.sales.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                  <AccountLines accounts={data.income.sales.accounts} amountClass="text-green-600" onDrill={setDrill} />
+                  <TotalLine
+                    label="Total Sales"
+                    amount={data.income.sales.total}
+                    amountClass="text-green-600"
+                    target={sectionTarget('Total Sales', data.income.sales.accounts)}
+                    onDrill={setDrill}
+                  />
                 </div>
               </div>
 
@@ -322,33 +495,29 @@ function ProfitLossPage() {
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-text-primary mb-2">Other Income</h3>
                   <div className="space-y-2">
-                    {data.income.other_income.accounts.map((account) => (
-                      <div key={account.id} className="flex justify-between items-center py-2 border-b border-border">
-                        <div>
-                          <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
-                          <span>{account.account_name}</span>
-                        </div>
-                        <span className="font-semibold text-green-600">
-                          ₹{account.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                      <span>Total Other Income</span>
-                      <span className="text-green-600">
-                        ₹{data.income.other_income.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
+                    <AccountLines accounts={data.income.other_income.accounts} amountClass="text-green-600" onDrill={setDrill} />
+                    <TotalLine
+                      label="Total Other Income"
+                      amount={data.income.other_income.total}
+                      amountClass="text-green-600"
+                      target={sectionTarget('Total Other Income', data.income.other_income.accounts)}
+                      onDrill={setDrill}
+                    />
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-between items-center py-3 border-t-2 border-border bg-green-50 px-4 rounded-lg font-bold text-lg">
+              <DrillRow
+                onClick={() =>
+                  setDrill(
+                    sectionTarget('Total Income', [...data.income.sales.accounts, ...data.income.other_income.accounts]) ?? null
+                  )
+                }
+                className="py-3 border-t-2 border-border bg-green-50 px-4 rounded-lg font-bold text-lg"
+              >
                 <span>Total Income</span>
-                <span className="text-green-600">
-                  ₹{data.income.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
+                <DrillAmount className="text-green-600">{inr(data.income.total)}</DrillAmount>
+              </DrillRow>
             </div>
 
             {/* COGS Section */}
@@ -356,30 +525,34 @@ function ProfitLossPage() {
               <div>
                 <h2 className="text-xl font-bold text-text-primary mb-4">Cost of Goods Sold (COGS)</h2>
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                  <DrillRow
+                    onClick={() => setDrill({ kind: 'opening_stock', label: 'Opening Stock' })}
+                    className="-mx-2 px-2 py-2 border-b border-border"
+                  >
                     <span>Opening Stock</span>
-                    <span className="font-semibold text-red-600">
-                      ₹{data.cogs.opening_stock.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <DrillAmount className="font-semibold text-red-600">{inr(data.cogs.opening_stock)}</DrillAmount>
+                  </DrillRow>
+                  <DrillRow
+                    onClick={() => setDrill({ kind: 'purchases', label: 'Purchases' })}
+                    className="-mx-2 px-2 py-2 border-b border-border"
+                  >
                     <span>Add: Purchases</span>
-                    <span className="font-semibold text-red-600">
-                      ₹{data.cogs.purchases.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                    <DrillAmount className="font-semibold text-red-600">{inr(data.cogs.purchases)}</DrillAmount>
+                  </DrillRow>
+                  <DrillRow
+                    onClick={() => setDrill({ kind: 'closing_stock', label: 'Closing Stock' })}
+                    className="-mx-2 px-2 py-2 border-b border-border"
+                  >
                     <span>Less: Closing Stock</span>
-                    <span className="font-semibold text-green-600">
-                      (₹{data.cogs.closing_stock.toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                    <span>Cost of Goods Sold</span>
-                    <span className="text-red-600">
-                      ₹{data.cogs.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                    <DrillAmount className="font-semibold text-green-600">({inr(data.cogs.closing_stock)})</DrillAmount>
+                  </DrillRow>
+                  <TotalLine
+                    label="Cost of Goods Sold"
+                    amount={data.cogs.total}
+                    amountClass="text-red-600"
+                    target={buildCogsTarget(data)}
+                    onDrill={setDrill}
+                  />
                 </div>
               </div>
             )}
@@ -389,50 +562,34 @@ function ProfitLossPage() {
               <div>
                 <h2 className="text-xl font-bold text-text-primary mb-4">Direct Expenses</h2>
                 <div className="space-y-2">
-                  {data.expenses.direct.accounts.map((account) => (
-                    <div key={account.id} className="flex justify-between items-center py-2 border-b border-border">
-                      <div>
-                        <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
-                        <span>{account.account_name}</span>
-                      </div>
-                      <span className="font-semibold text-red-600">
-                        ₹{account.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                    <span>Total Direct Expenses</span>
-                    <span className="text-red-600">
-                      ₹{data.expenses.direct.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                  <AccountLines accounts={data.expenses.direct.accounts} amountClass="text-red-600" onDrill={setDrill} />
+                  <TotalLine
+                    label="Total Direct Expenses"
+                    amount={data.expenses.direct.total}
+                    amountClass="text-red-600"
+                    target={sectionTarget('Total Direct Expenses', data.expenses.direct.accounts)}
+                    onDrill={setDrill}
+                  />
                 </div>
               </div>
             )}
 
             {/* Gross Profit */}
-            <div className="flex justify-between items-center py-4 border-t-2 border-b-2 border-border bg-slate-50 px-4 rounded-lg font-bold text-lg">
+            <DrillRow
+              onClick={() => setDrill(buildGrossProfitTarget(data))}
+              className="py-4 border-t-2 border-b-2 border-border bg-slate-50 px-4 rounded-lg font-bold text-lg"
+            >
               <span>Gross Profit</span>
-              <span className={data.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                ₹{data.gross_profit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+              <DrillAmount className={data.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                {inr(data.gross_profit)}
+              </DrillAmount>
+            </DrillRow>
 
             {/* Indirect Expenses */}
             <div>
               <h2 className="text-xl font-bold text-text-primary mb-4">Indirect Expenses</h2>
               <div className="space-y-2">
-                {data.expenses.indirect.accounts.map((account) => (
-                  <div key={account.id} className="flex justify-between items-center py-2 border-b border-border">
-                    <div>
-                      <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
-                      <span>{account.account_name}</span>
-                    </div>
-                    <span className="font-semibold text-red-600">
-                      ₹{account.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                ))}
+                <AccountLines accounts={data.expenses.indirect.accounts} amountClass="text-red-600" onDrill={setDrill} />
                 {data.expenses.indirect.depreciation !== undefined && data.expenses.indirect.depreciation > 0 && (
                   <div className="flex justify-between items-center py-2 border-b border-border">
                     <span>Depreciation</span>
@@ -441,12 +598,13 @@ function ProfitLossPage() {
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                  <span>Total Indirect Expenses</span>
-                  <span className="text-red-600">
-                    ₹{data.expenses.indirect.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <TotalLine
+                  label="Total Indirect Expenses"
+                  amount={data.expenses.indirect.total}
+                  amountClass="text-red-600"
+                  target={sectionTarget('Total Indirect Expenses', data.expenses.indirect.accounts)}
+                  onDrill={setDrill}
+                />
               </div>
             </div>
 
@@ -455,23 +613,14 @@ function ProfitLossPage() {
               <div>
                 <h2 className="text-xl font-bold text-text-primary mb-4">Other Expenses</h2>
                 <div className="space-y-2">
-                  {data.expenses.other_expenses.accounts.map((account) => (
-                    <div key={account.id} className="flex justify-between items-center py-2 border-b border-border">
-                      <div>
-                        <span className="font-mono text-sm text-text-secondary mr-2">{account.account_code}</span>
-                        <span>{account.account_name}</span>
-                      </div>
-                      <span className="font-semibold text-red-600">
-                        ₹{account.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center py-2 border-t-2 border-border font-bold">
-                    <span>Total Other Expenses</span>
-                    <span className="text-red-600">
-                      ₹{data.expenses.other_expenses.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
+                  <AccountLines accounts={data.expenses.other_expenses.accounts} amountClass="text-red-600" onDrill={setDrill} />
+                  <TotalLine
+                    label="Total Other Expenses"
+                    amount={data.expenses.other_expenses.total}
+                    amountClass="text-red-600"
+                    target={sectionTarget('Total Other Expenses', data.expenses.other_expenses.accounts)}
+                    onDrill={setDrill}
+                  />
                 </div>
               </div>
             )}
@@ -500,12 +649,15 @@ function ProfitLossPage() {
             )}
 
             {/* Operating Profit */}
-            <div className="flex justify-between items-center py-4 border-t-2 border-b-2 border-border bg-yellow-50 px-4 rounded-lg font-bold text-lg">
+            <DrillRow
+              onClick={() => setDrill(buildOperatingProfitTarget(data))}
+              className="py-4 border-t-2 border-b-2 border-border bg-yellow-50 px-4 rounded-lg font-bold text-lg"
+            >
               <span>Operating Profit</span>
-              <span className={data.operating_profit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                ₹{data.operating_profit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+              <DrillAmount className={data.operating_profit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                {inr(data.operating_profit)}
+              </DrillAmount>
+            </DrillRow>
 
             {/* Profit Before Tax */}
             {data.profit_before_tax !== undefined && (
@@ -547,15 +699,30 @@ function ProfitLossPage() {
             )}
 
             {/* Profit After Tax */}
-            <div className="flex justify-between items-center py-4 border-t-2 border-border bg-gray-100 px-4 rounded-lg font-bold text-xl">
+            <DrillRow
+              onClick={() => setDrill(buildNetProfitTarget(data))}
+              className="py-4 border-t-2 border-border bg-gray-100 px-4 rounded-lg font-bold text-xl"
+            >
               <span>Profit After Tax / Net Profit</span>
-              <span className={(data.profit_after_tax ?? data.net_profit) >= 0 ? 'text-green-600' : 'text-red-600'}>
+              <DrillAmount className={(data.profit_after_tax ?? data.net_profit) >= 0 ? 'text-green-600' : 'text-red-600'}>
                 {(data.profit_after_tax ?? data.net_profit) >= 0 ? <TrendingUp className="w-5 h-5 inline mr-2" /> : <TrendingDown className="w-5 h-5 inline mr-2" />}
-                ₹{(data.profit_after_tax ?? data.net_profit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+                {inr(data.profit_after_tax ?? data.net_profit)}
+              </DrillAmount>
+            </DrillRow>
           </div>
         </Card>
+
+        {business?.id && (
+          <ProfitLossDrilldownPanel
+            target={drill}
+            onClose={() => setDrill(null)}
+            businessId={business.id}
+            userId={user?.id || ''}
+            fromDate={data.period.from_date}
+            toDate={data.period.to_date}
+            financialYear={data.period.financial_year ?? undefined}
+          />
+        )}
       </div>
     
   );
