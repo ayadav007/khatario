@@ -162,10 +162,12 @@ export const ProformaLifecycleManager: React.FC<ProformaLifecycleManagerProps> =
     );
   }
 
-  const statusOptions = Object.entries(STATUS_CONFIG).map(([value, config]) => ({
-    value,
-    ...config
-  }));
+  const statusOptions = Object.entries(STATUS_CONFIG)
+    .filter(([value]) => value !== 'converted_to_tax_invoice')
+    .map(([value, config]) => ({
+      value,
+      ...config,
+    }));
 
   const currentStatusConfig = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.created;
   const CurrentIcon = currentStatusConfig.icon;

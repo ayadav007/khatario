@@ -486,13 +486,6 @@ export default function NewSalesOrderPage() {
         setSavedOrderId(data.salesOrder?.id || savedOrderId);
         setSavedStatus(targetStatus);
         toast.success(`Sales order ${targetStatus === 'draft' ? 'saved as draft' : 'confirmed'} successfully!`);
-        if (convertFromId && targetStatus === 'confirmed') {
-          fetch(`/api/invoices/${convertFromId}?user_id=${user?.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ estimate_status: 'converted' }),
-          }).catch((err) => console.error('[Convert] Failed to mark estimate converted:', err));
-        }
         if (targetStatus === 'confirmed') {
           router.push(`/sales-orders/${data.salesOrder.id}`);
         }

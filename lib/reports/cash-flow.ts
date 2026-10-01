@@ -40,6 +40,7 @@ const WC_LABELS: Array<[RegExp, string, 'asset' | 'liability']> = [
   [/^1103/, 'Trade receivables', 'asset'],
   [/^1104/, 'Inventories', 'asset'],
   [/^111[0-5]/, 'GST input credit', 'asset'],
+  [/^113[0-3]$/, 'GST electronic cash ledger', 'asset'],
   [/^111[67]/, 'TDS / advance tax paid', 'asset'],
   [/^1107/, 'Advances to suppliers', 'asset'],
   [/^2101/, 'Trade payables', 'liability'],
@@ -73,7 +74,16 @@ const lines = (m: Map<string, CfLine>) =>
     .map((l) => ({ ...l, amount: r2(l.amount) }))
     .filter((l) => l.amount !== 0);
 
-export function buildCashFlow(accounts: CfAccount[]): CashFlowStatement {
+export type CashFlowOptions = {
+  /**
+   * Closing-stock adjustment the Profit & Loss adds to ledger profit in periodic books
+   * (`ledger_check.inventory_adjustment`). It is added to net profit and taken out again as a
+   * change in inventories, so net profit matches the P&L and the statement still balances.
+   */
+  inventoryAdjustment?: number;
+};
+
+export function buildCashFlow(accounts: CfAccount[], opts: CashFlowOptions = {}): CashFlowStatement {
   let openingCash = 0;
   let cashMovement = 0;
   let netProfit = 0;
@@ -125,6 +135,11 @@ export function buildCashFlow(accounts: CfAccount[]): CashFlowStatement {
     const match = WC_LABELS.find(([re]) => re.test(a.code));
     const label = match ? match[1] : a.type === 'liability' ? 'Other current liabilities' : 'Other current assets';
     add(wc, label, -drCr, a.code);
+  }
+
+  if (opts.inventoryAdjustment) {
+    netProfit += opts.inventoryAdjustment;
+    add(wc, 'Inventories', -opts.inventoryAdjustment, 'closing_stock');
   }
 
   const adj = lines(adjustments);

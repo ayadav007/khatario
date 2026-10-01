@@ -203,3 +203,38 @@
 - q: How do I create an invoice?
   audience: prospect
   forbid: [how-to/invoices.md]
+
+# GST law corpus (searched only as a second pass for tenant users)
+- q: What is the time limit to issue a credit note?
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Who is liable to register under GST?
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Conditions for claiming input tax credit
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: What details must a tax invoice contain?
+  audience: gst_law
+  expect: [gst-law/cgst-rules.md, gst-law/cgst-act.md]
+- q: Penalty for not issuing an invoice
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Place of supply of goods for inter-state supply
+  audience: gst_law
+  expect: [gst-law/igst-act.md]
+- q: Turnover limit for composition levy
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: When is an e-way bill required?
+  audience: gst_law
+  expect: [gst-law/cgst-rules.md]
+- q: What does section 16 of the CGST Act say?
+  audience: prospect
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md, gst-law/igst-act.md]
+- q: Time limit for credit note under GST law
+  audience: tenant_user
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md]
+- q: How do I create a credit note?
+  audience: tenant_user
+  forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md]

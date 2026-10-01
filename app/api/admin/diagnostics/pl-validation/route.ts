@@ -28,6 +28,8 @@ import {
   requirePortalSession,
 } from '@/lib/auth-helpers';
 import { queryOne, queryRows } from '@/lib/db';
+import { buildProfitAndLoss, type BranchScope } from '@/lib/reports/profit-loss';
+import { effectivePlSection, plSectionFromGroup } from '@/lib/accounting/pl-sections';
 
 interface Check {
   id: string;
@@ -122,12 +124,13 @@ export async function GET(request: NextRequest) {
         '"Weighted Average Cost Method", Tally Avg. Cost). Net Purchases = ledger 5101 net debit − ledger 5102 ' +
         'net credit (returns netted in). Cross-FY P&L periods now return a top-level warnings[] entry.',
       finding: {
-        expense_buckets: {
-          direct_expenses: ['5101', '5102'],
-          indirect_expenses: ['5201', '5202', '5203'],
-          depreciation_separate_line: ['5204'],
-          other_expenses_incl_finance_costs_and_provisions: ['5205', '5206', '5207', '5208', '5209'],
-          tax_below_PBT_from_ledger: ['5210', '5211'],
+        pl_sections: {
+          model: 'Each income/expense account carries pl_section (Zoho-style); the report groups by it.',
+          sections: ['operating_income', 'cost_of_goods_sold', 'operating_expense', 'other_income', 'other_expense'],
+          default_for_group_5100: 'cost_of_goods_sold',
+          default_for_group_4200: 'other_income',
+          system_defaults: { '5210/5211 (tax)': 'other_expense', '4102 (sales returns)': 'operating_expense' },
+          inter_branch_4103_5103: 'eliminated in the consolidated view; shown in a branch view',
         },
         gst_split_accounts: {
           output_liabilities: {
@@ -150,9 +153,9 @@ export async function GET(request: NextRequest) {
         },
         provisions_service_now_informational_only: true,
         tax_service_now_informational_only: true,
-        pbt_formula:
-          'PBT = (Sales(taxable) + Other Income) − cogsUsed − Indirect Expenses − Depreciation − Other Expenses',
-        pat_formula: 'PAT = PBT − Σ(ledger 5210) − Σ(ledger 5211)',
+        gross_profit_formula: 'Gross Profit = Operating Income − Cost of Goods Sold',
+        operating_profit_formula: 'Operating Profit = Gross Profit − Operating Expense',
+        net_profit_formula: 'Net Profit = Operating Profit + Non Operating Income − Non Operating Expense',
       },
       impact:
         'After Phase-1+2+3+4, P&L Income equals SUM(invoice.subtotal) (taxable only). Output/Input GST live ' +
@@ -163,6 +166,126 @@ export async function GET(request: NextRequest) {
         'Open the P&L report (/reports/profit-loss) to confirm Sales matches taxable_value and that COGS uses ' +
         'date-aware Opening/Closing. Cross-FY ranges now show a yellow warning banner. Check the Trial Balance ' +
         'for the new 2150-2155 / 1110-1115 lines. If you have pre-Phase-3 invoices, run "Migrate legacy GST".',
+    });
+
+    // ------------------------------------------------------------------
+    // CHECK 0a: P&L engine reconciles to the ledger
+    // ------------------------------------------------------------------
+    let branchScope: BranchScope = { kind: 'all' };
+    if (branchId) {
+      const { isDefaultBranch } = await import('@/lib/branch-helpers');
+      branchScope = {
+        kind: 'branches',
+        branchIds: [branchId],
+        includeUnbranched: await isDefaultBranch(branchId, businessId),
+      };
+    }
+    try {
+      const pl = await buildProfitAndLoss({
+        businessId,
+        fromDate,
+        toDate,
+        branch: branchScope,
+        consolidated: isConsolidated,
+      });
+      const reconciles = Math.abs(pl.ledger_check.difference) < 0.01;
+      checks.push({
+        id: 'pl_engine_reconciliation',
+        title: reconciles
+          ? 'STATUS: PASS — Profit & Loss net profit reconciles to the ledger'
+          : 'Profit & Loss net profit does not reconcile to the ledger',
+        severity: reconciles ? 'success' : 'critical',
+        description:
+          'Runs the same engine as /reports/profit-loss and compares its net profit with the net of every ' +
+          'income and expense ledger line in the period (plus the closing-stock adjustment in periodic books).',
+        finding: {
+          inventory_model: pl.inventory_model,
+          section_totals: Object.fromEntries(
+            Object.values(pl.sections).map((s) => [s.key, s.total]),
+          ),
+          gross_profit: pl.gross_profit,
+          operating_profit: pl.operating_profit,
+          net_profit: pl.net_profit,
+          elimination: { applied: pl.elimination.applied, net: pl.elimination.net },
+          periodic_cogs: pl.periodic_cogs,
+          ledger_check: pl.ledger_check,
+        },
+        impact: reconciles
+          ? 'Every income and expense account is shown exactly once.'
+          : `Net profit differs from the ledger by ₹${pl.ledger_check.difference.toFixed(2)}; an account is missing or counted twice.`,
+        recommendation: reconciles
+          ? 'No action.'
+          : 'Look for accounts with an unexpected Profit & Loss section, or inter-branch accounts outside the elimination group.',
+      });
+    } catch (error) {
+      checks.push({
+        id: 'pl_engine_reconciliation',
+        title: 'Profit & Loss engine — diagnostic could not run',
+        severity: 'high',
+        description: 'buildProfitAndLoss threw while reconciling to the ledger.',
+        finding: { error: (error as Error)?.message ?? String(error) },
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // CHECK 0b: Profit & Loss section coverage (migration 334)
+    // ------------------------------------------------------------------
+    const plAccounts = await queryRows<{
+      account_code: string;
+      account_name: string;
+      account_type: string;
+      is_system: boolean | null;
+      is_active: boolean;
+      pl_section: string | null;
+      group_code: string | null;
+      group_type: string | null;
+    }>(
+      `SELECT a.account_code, a.account_name, a.account_type, a.is_system, a.is_active,
+              to_jsonb(a)->>'pl_section' AS pl_section,
+              ag.group_code, ag.group_type
+         FROM accounts a
+         LEFT JOIN account_groups ag ON ag.id = a.account_group_id
+        WHERE a.business_id = $1
+          AND a.account_type IN ('income', 'expense')
+        ORDER BY a.account_code`,
+      [businessId],
+    );
+    const unset = plAccounts.filter((a) => !a.pl_section);
+    const moved = plAccounts
+      .filter((a) => a.pl_section)
+      .map((a) => ({
+        account_code: a.account_code,
+        account_name: a.account_name,
+        section: effectivePlSection(a),
+        group_default: plSectionFromGroup(a.account_type, a.group_code, a.group_type),
+      }))
+      .filter((a) => a.section !== a.group_default);
+    checks.push({
+      id: 'pl_section_coverage',
+      title:
+        unset.length === 0
+          ? 'STATUS: PASS — every income/expense account has a stored Profit & Loss section'
+          : 'Some income/expense accounts have no stored Profit & Loss section',
+      severity: unset.length === 0 ? 'success' : 'medium',
+      description:
+        'Migration 334 stores pl_section on every income and expense account. Until it runs, the report ' +
+        'falls back to the system and group defaults, which give the same result for standard accounts.',
+      finding: {
+        income_expense_accounts: plAccounts.length,
+        without_stored_section: unset.length,
+        sample_without_section: unset.slice(0, 20).map((a) => ({
+          account_code: a.account_code,
+          account_name: a.account_name,
+          effective_section: effectivePlSection(a),
+        })),
+        placed_outside_group_default: moved,
+      },
+      impact:
+        unset.length === 0
+          ? `${moved.length} account(s) sit in a section other than their group default (system defaults or user choices).`
+          : `${unset.length} account(s) rely on fallback defaults; users cannot move accounts between sections until migration 334 runs.`,
+      recommendation:
+        unset.length === 0 ? 'No action.' : 'Run migration 334_pl_section.sql on this database.',
     });
 
     // ------------------------------------------------------------------
@@ -660,12 +783,12 @@ export async function GET(request: NextRequest) {
     );
     checks.push({
       id: 'other_expenses_double_count',
-      title: 'Other Expenses (5205-5209) — was double-counted in P&L',
+      title: 'Accounts 5205-5209 — schedule of period postings',
       severity: 'success',
       description:
-        'STATUS: FIXED in Phase-1. profit-loss/route.ts now uses an explicit otherExpenseCodes set ' +
-        'and excludes 5205-5209 from indirectExpenses. This card stays as an informational schedule of ' +
-        'what is currently posted to those accounts.',
+        'The P&L places every account in exactly one section (pl_section), so these accounts are counted once ' +
+        'in whichever section they belong to (by default 5205/5206 Non Operating Expense, 5207-5209 Operating Expense). ' +
+        'The pl_engine_reconciliation check above proves nothing is counted twice.',
       finding: {
         accounts: otherExpRows,
         ledger_balance_in_period: otherDouble,
@@ -673,10 +796,10 @@ export async function GET(request: NextRequest) {
       },
       impact:
         otherDouble !== 0
-          ? `Ledger has ₹${Math.abs(otherDouble).toFixed(2)} in 5205-5209. After Phase-1, this is reflected exactly once in PBT (under "Other Expenses").`
+          ? `Ledger has ₹${Math.abs(otherDouble).toFixed(2)} in 5205-5209, reflected once in the P&L under each account's section.`
           : 'No balances in 5205-5209 in this period.',
       recommendation:
-        'No action — Phase-1 already excludes these from indirectExpenses. Verify by re-running the P&L report.',
+        'No action. To move an account to another section, change "Profit & Loss section" on its edit page.',
     });
 
     // ------------------------------------------------------------------
@@ -705,23 +828,22 @@ export async function GET(request: NextRequest) {
     );
     checks.push({
       id: 'tax_expense_double_count',
-      title: 'Current/Deferred Tax (5210/5211) — was in Indirect Expenses AND Tax block',
+      title: 'Current/Deferred Tax (5210/5211) — schedule of period postings',
       severity: 'success',
       description:
-        'STATUS: FIXED in Phase-1 (with hotfix). profit-loss/route.ts now (a) excludes 5210/5211 from ' +
-        'indirectExpenses, AND (b) reads the Tax block from the ledger postings to 5210/5211 ' +
-        '(not from the tax-provision-calculator service, which is now informational only).',
+        'Tax accounts default to the Non Operating Expense section (like Zoho), so they reduce net profit once. ' +
+        'The legacy profit_before_tax / tax fields in the API are derived from the same ledger postings.',
       finding: {
         accounts: taxExpRows,
         ledger_balance_in_period: taxDouble,
-        phase1_fix_applied: true,
-        tax_now_sourced_from: 'ledger_5210_5211',
-        provision_service_is: 'informational_estimate_only_NOT_subtracted_from_PBT',
+        default_section: 'other_expense',
+        tax_sourced_from: 'ledger_5210_5211',
+        provision_service_is: 'informational_estimate_only',
       },
       impact:
         taxDouble !== 0
-          ? `Ledger has ₹${Math.abs(taxDouble).toFixed(2)} in 5210/5211. P&L Tax block reflects this exact amount; PAT = PBT − ₹${Math.abs(taxDouble).toFixed(2)}.`
-          : 'No balances in 5210/5211 in this period — PAT equals PBT.',
+          ? `Ledger has ₹${Math.abs(taxDouble).toFixed(2)} in 5210/5211, shown once under Non Operating Expense.`
+          : 'No balances in 5210/5211 in this period.',
       recommendation:
         'No action. To record tax: post a JV (Dr 5210/5211, Cr Tax Payable/Cash). The tax-provision-calculator estimate is shown alongside in tax.provision_service_estimate for transparency.',
     });
@@ -1063,10 +1185,10 @@ export async function GET(request: NextRequest) {
     );
     checks.push({
       id: 'provisions_triple_count',
-      title: 'Provisions (5207-5209) — was triple-counted in P&L',
+      title: 'Provisions (5207-5209) — ledger is the single source',
       severity: 'success',
       description:
-        'STATUS: FIXED in Phase-1. Single source of truth is now the ledger (5207-5209), included once via Other Expenses. ' +
+        'The ledger (5207-5209) is the single source, included once in the section each account belongs to. ' +
         'getTotalProvisions(provisions-manager) is still surfaced as an informational schedule under expenses.provisions ' +
         'but is no longer subtracted from PBT.',
       finding: {
@@ -1079,7 +1201,7 @@ export async function GET(request: NextRequest) {
         phase1_fix_applied: true,
       },
       impact:
-        'After Phase-1, period provisions charge appears exactly once (in Other Expenses). ' +
+        'The period provisions charge appears exactly once in the P&L. ' +
         'Cumulative balance from provision_entries is shown as a schedule for reconciliation only.',
       recommendation:
         'No action. If you want the schedule to reflect period addition rather than closing balance, that is a small future enhancement to provisions-manager.',

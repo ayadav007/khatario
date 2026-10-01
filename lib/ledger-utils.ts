@@ -7,6 +7,7 @@ import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
 import { Account } from '@/types/database';
 import { computeGoodsCost, getInventoryModel, postCostOfGoods } from '@/lib/inventory/cogs-posting';
+import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 import { resolveGstScheme } from '@/lib/gst/registration';
 import { recipientMayClaimItc } from '@/lib/gst/scheme-policy';
 import { isItcTimeBarred, thirtyNovAfterFy, todayIst } from '@/lib/gst/time-limits';
@@ -575,7 +576,9 @@ export async function createLedgerEntryLine(params: {
     | 'purchase_return'
     | 'debit_note'
     | 'gst_setoff'
-    | 'gst_payment';
+    | 'gst_payment'
+    | 'gst_cash_deposit'
+    | 'gst_cash_utilization';
   accountId: string;
   entryDate: Date | string;
   debit: number;
@@ -918,8 +921,8 @@ export async function createInvoiceLedgerEntries(params: {
   }
 
   // Perpetual inventory: goods purchases are capitalised in 1104, so each sale moves
-  // its weighted-average cost to COGS (5104). Cost is taken from the saved invoice
-  // lines; the caller's cogsAmount is ignored.
+  // its cost (FIFO lots or weighted average, per business setting) to COGS (5104). Cost is
+  // taken from the saved invoice lines; the caller's cogsAmount is ignored.
   void cogsAmount;
   if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
     const lines = await ledgerQueryRows<{ item_id: string | null; quantity: string }>(
@@ -932,7 +935,8 @@ export async function createInvoiceLedgerEntries(params: {
       businessId,
       lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.quantity) || 0 })),
       invoiceDate,
-      params.branchId
+      params.branchId,
+      { kind: 'invoice', docId: invoiceId }
     );
     await postCostOfGoods(poolClient, {
       businessId,
@@ -944,6 +948,7 @@ export async function createInvoiceLedgerEntries(params: {
       branchId: params.branchId,
       direction: 'sale',
     });
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'invoice', invoiceId));
   }
 }
 
@@ -1315,6 +1320,41 @@ export async function createPurchaseLedgerEntries(params: {
     });
   }
 
+  // Entry 8: services on a bill (repairs, fees, freight charged as a line) are expenses, not
+  // purchase of stock-in-trade; left in 5101 they inflate cost of goods. They go to 5201
+  // Administrative Expenses. Blocked ITC stays part of the expense, as with capital goods.
+  const svcRows = await ledgerQueryRows<{ total: string; account_id: string | null }>(poolClient, `
+    SELECT COALESCE(SUM(pi.taxable_value::numeric + CASE WHEN $2::boolean THEN 0 ELSE COALESCE(pi.tax_amount, 0)::numeric END), 0) AS total,
+           (SELECT id FROM accounts WHERE business_id = $3 AND account_code = '5201' AND is_active = true LIMIT 1) AS account_id
+      FROM purchase_items pi
+      LEFT JOIN items it ON it.id = pi.item_id
+     WHERE pi.purchase_id = $1
+       AND pi.itc_type IS DISTINCT FROM 'capital_goods'
+       AND COALESCE(pi.line_item_type, it.item_type) = 'service'
+  `, [purchaseId, useGstSplit, businessId]);
+  const serviceAmount = Math.round((Number(svcRows[0]?.total) || 0) * 100) / 100;
+  const serviceAccountId = svcRows[0]?.account_id;
+  if (serviceAmount > 0 && serviceAccountId) {
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: serviceAccountId, entryDate: purchaseDate,
+      debit: serviceAmount, credit: 0,
+      narration: `Services on bill - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+    await createLedgerEntryLine({
+      businessId, voucherId: purchaseId, voucherType: 'purchase',
+      accountId: accounts.purchases.id, entryDate: purchaseDate,
+      debit: 0, credit: serviceAmount,
+      narration: `Transfer services to expenses - ${purchaseNumber}`,
+      referenceNumber: purchaseNumber, branchId: params.branchId, poolClient,
+    });
+  }
+
+  if (poolClient && inventoryAmount > 0) {
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'purchase', purchaseId));
+  }
+
   return { itcEligible, itcBlockedReason };
 }
 
@@ -1682,7 +1722,10 @@ export async function createCreditNoteLedgerEntries(params: {
     poolClient,
   });
 
-  // Perpetual inventory: returned goods go back into stock at weighted-average cost.
+  // Perpetual inventory: returned goods go back into stock at the cost the original sale took
+  // out (FIFO: that invoice's lot cost; weighted average: the rate on the invoice date and
+  // branch), so the return reverses the invoice's COGS exactly. Unlinked notes use the
+  // rate on the credit note date.
   void cogsAmount;
   if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
     const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
@@ -1690,12 +1733,21 @@ export async function createCreditNoteLedgerEntries(params: {
       'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1',
       [creditNoteId]
     );
+    const [origin] = await ledgerQueryRows<{ invoice_date: string | Date; branch_id: string | null }>(
+      poolClient,
+      `SELECT i.invoice_date, i.branch_id
+         FROM credit_notes cn
+         JOIN invoices i ON i.id = cn.invoice_id AND i.business_id = cn.business_id
+        WHERE cn.id = $1 AND cn.business_id = $2`,
+      [creditNoteId, businessId]
+    );
     const cost = await computeGoodsCost(
       poolClient,
       businessId,
       lines.map((l) => ({ itemId: l.item_id, quantity: Number(l.qty) || 0 })),
-      creditNoteDate,
-      params.branchId
+      origin?.invoice_date ?? creditNoteDate,
+      origin ? origin.branch_id : params.branchId,
+      { kind: 'credit_note', docId: creditNoteId }
     );
     await postCostOfGoods(poolClient, {
       businessId,
@@ -1707,6 +1759,7 @@ export async function createCreditNoteLedgerEntries(params: {
       branchId: params.branchId,
       direction: 'return',
     });
+    await recostAfterStockChange(poolClient, businessId, await stockItemsForDocument(poolClient, 'credit_note', creditNoteId));
   }
 }
 
@@ -1765,6 +1818,10 @@ export async function createPurchaseReturnLedgerEntries(params: {
     );
   }
 
+  // Returns go to 5102 so Purchases (5101) stays gross and P&L shows "less: returns";
+  // the cost of revenue (5101 − 5102) is unchanged. Older charts without 5102 keep using 5101.
+  const returnsAccount = (await getAccountByCode(businessId, '5102')) ?? accounts.purchases;
+
   const totalGst = (cgstTotal || 0) + (sgstTotal || 0) + (igstTotal || 0) + (cessTotal || 0);
   const splitAccountsReady = !!(accounts.inputCgst && accounts.inputSgst && accounts.inputIgst);
   const useGstSplit = totalGst > 0 && splitAccountsReady && itcEligible;
@@ -1785,7 +1842,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     businessId,
     voucherId: purchaseReturnId,
     voucherType: 'purchase_return',
-    accountId: accounts.purchases.id,
+    accountId: returnsAccount.id,
     entryDate: returnDate,
     debit: 0,
     credit: purchasesCredit,
@@ -1919,7 +1976,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
       businessId,
       voucherId: purchaseReturnId,
       voucherType: 'purchase_return',
-      accountId: accounts.purchases.id,
+      accountId: returnsAccount.id,
       entryDate: returnDate,
       debit: inventoryAmount,
       credit: 0,
@@ -1928,6 +1985,13 @@ export async function createPurchaseReturnLedgerEntries(params: {
       branchId: params.branchId,
       poolClient,
     });
+    if (poolClient) {
+      await recostAfterStockChange(
+        poolClient,
+        businessId,
+        await stockItemsForDocument(poolClient, 'purchase_return', purchaseReturnId)
+      );
+    }
   }
 }
 

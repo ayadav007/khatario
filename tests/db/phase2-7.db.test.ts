@@ -48,7 +48,7 @@ jest.mock('@/lib/soft-delete-entitlements', () => ({
 import { getPool, closePool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess } from '@/lib/enforce-access';
-import { createPurchaseLedgerEntries } from '@/lib/ledger-utils';
+import { createPaymentLedgerEntries, createPurchaseLedgerEntries } from '@/lib/ledger-utils';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { listRule37Exposure, syncRule37ForBill, RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
@@ -321,7 +321,7 @@ d('Phase 2.7 accounting mutation identity (real DB)', () => {
 
   describe('POST /api/payments', () => {
     test('session user A + body created_by=OTHER: authorized, recorded and posted as A; accounting unchanged', async () => {
-      const p = await makeDraftPurchase(10000, '2026-09-02');
+      const p = await makeFinalPurchase(10000, '2026-09-02');
       const before = await supplierBalance();
       const r = await pay(p.id, 3000, '2026-09-03', A, 30);
       expect(r.status).toBe(201);
@@ -382,9 +382,31 @@ d('Phase 2.7 accounting mutation identity (real DB)', () => {
     test('session user A + body user OTHER: authorized and attributed to A; Phase 2.6 draft delete unchanged', async () => {
       const p = await makeDraftPurchase(5000, '2026-09-07');
       const X = await supplierBalance();
-      const paid = await pay(p.id, 1000, '2026-09-07', A);
-      expect(paid.status).toBe(201);
-      const payId = paid.json.payment.id;
+      const payId = randomUUID();
+      await tx(async (c) => {
+        await c.query(
+          `INSERT INTO payments (id, business_id, branch_id, type, supplier_id, reference_type, reference_id,
+              amount, payment_mode, payment_date, notes, created_by)
+           VALUES ($1, $2, $3, 'payable', $4, 'purchase', $5, 1000, 'cash', '2026-09-07', 'historical draft payment', $6)`,
+          [payId, B, BR, SUPP, p.id, A]
+        );
+        await c.query(
+          `UPDATE purchases SET paid_amount = COALESCE(paid_amount, 0) + 1000, balance_amount = COALESCE(balance_amount, 0) - 1000 WHERE id = $1`,
+          [p.id]
+        );
+        await c.query(`UPDATE suppliers SET current_balance = current_balance - 1000 WHERE id = $1`, [SUPP]);
+        await createPaymentLedgerEntries({
+          businessId: B,
+          paymentId: payId,
+          paymentDate: '2026-09-07',
+          amount: 1000,
+          type: 'payable',
+          supplierId: SUPP,
+          paymentMode: 'cash',
+          branchId: BR,
+          poolClient: c,
+        });
+      });
       authorizeMock.mockClear();
 
       const out = await del(p.id, A);

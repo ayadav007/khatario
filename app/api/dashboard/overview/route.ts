@@ -221,6 +221,7 @@ export async function GET(request: NextRequest) {
          FROM payments
          WHERE business_id = $1
            AND deleted_at IS NULL
+           AND status = 'active'
            AND type = 'receivable'
            ${collectionDateFilter}
            ${collectionBranchFilter}`,

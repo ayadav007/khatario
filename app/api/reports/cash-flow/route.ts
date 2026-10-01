@@ -4,6 +4,7 @@ import { queryRows } from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { buildCashFlow, type CfAccount, type CfLine } from '@/lib/reports/cash-flow';
+import { buildProfitAndLoss, type BranchScope } from '@/lib/reports/profit-loss';
 
 export const dynamic = 'force-dynamic';
 
@@ -157,7 +158,19 @@ export async function GET(request: NextRequest) {
       periodCredit: Number(r.period_credit) || 0,
     }));
 
-    const cf = buildCashFlow(accounts);
+    const branchScope: BranchScope = branchFilter
+      ? { kind: 'branches', branchIds: [branchFilter], includeUnbranched: includeUnassigned }
+      : accessibleBranchIds
+        ? { kind: 'branches', branchIds: accessibleBranchIds, includeUnbranched: true }
+        : { kind: 'all' };
+    const pl = await buildProfitAndLoss({
+      businessId,
+      fromDate,
+      toDate,
+      branch: branchScope,
+      consolidated: isConsolidatedView,
+    });
+    const cf = buildCashFlow(accounts, { inventoryAdjustment: pl.ledger_check.inventory_adjustment });
     const wc = cf.operating.workingCapital;
     const receivables = -lineAmount(wc, 'Trade receivables');
     const payables = lineAmount(wc, 'Trade payables');

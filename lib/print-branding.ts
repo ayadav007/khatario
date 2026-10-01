@@ -14,7 +14,7 @@ export { shouldShowKhatarioFooterFromSubscription };
 
 /** Inline SVG + label — bottom-right overlay for HTML/Puppeteer PDFs (no external asset fetch). */
 export const KHATARIO_PRINT_FOOTER_HTML = `
-<div class="khatario-print-branding" style="position:fixed;bottom:4mm;right:4mm;z-index:2147483647;display:flex;align-items:center;gap:6px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:9px;color:#475569;line-height:1.15;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+<div class="khatario-print-branding" style="position:fixed;bottom:8mm;right:8mm;z-index:2147483647;display:flex;align-items:center;gap:6px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:9px;color:#475569;line-height:1.15;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="#0f766e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="#0f766e" stroke-width="1.5" stroke-linecap="round"/>

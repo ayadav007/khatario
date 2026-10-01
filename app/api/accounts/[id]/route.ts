@@ -8,6 +8,11 @@ import {
   assertGroupMatchesType,
   setAccountOpeningBalance,
 } from '@/lib/accounting/account-rules';
+import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS } from '@/lib/accounting/pl-sections';
+import { hasPlSectionColumn } from '@/lib/accounting/pl-section-column';
+import { getClientIP, getUserAgent, logActivity } from '@/lib/activity-logger';
+
+const plSectionLabel = (v: unknown) => (isPlSection(v) ? PL_SECTION_LABELS[v] : 'default');
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +27,9 @@ const EDITABLE_FIELDS = new Set([
   'is_active',
   'opening_balance',
   'opening_balance_type',
+  'pl_section',
 ]);
+// System accounts keep their P&L section (like Zoho's locked system accounts).
 const SYSTEM_EDITABLE_FIELDS = new Set(['description', 'sort_order', 'is_active']);
 
 /**
@@ -43,7 +50,9 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
       const account = await queryOne<Account & { account_group_name: string }>(`
       SELECT 
         a.*,
-        ag.group_name as account_group_name
+        ag.group_name as account_group_name,
+        ag.group_code as account_group_code,
+        ag.group_type as account_group_type
       FROM accounts a
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
       WHERE a.id = $1 AND a.business_id = $2
@@ -156,13 +165,14 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         id: string;
         is_system: boolean;
         account_code: string;
+        account_name: string;
         account_type: string;
         account_group_id: string;
         opening_balance: string;
         opening_balance_type: 'debit' | 'credit';
+        [field: string]: unknown;
       }>(
-        `SELECT id, is_system, account_code, account_type, account_group_id, opening_balance, opening_balance_type
-           FROM accounts WHERE id = $1 AND business_id = $2`,
+        `SELECT * FROM accounts WHERE id = $1 AND business_id = $2`,
         [accountId, business_id]
       );
 
@@ -225,6 +235,22 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         }
       }
 
+      if (updates.pl_section !== undefined) {
+        const section = updates.pl_section;
+        if (!isPlSection(section) || !isAllowedPlSection(existing.account_type, section)) {
+          return NextResponse.json(
+            { error: `pl_section ${String(section)} is not valid for a ${existing.account_type} account`, code: 'INVALID_PL_SECTION' },
+            { status: 400 }
+          );
+        }
+        if (!(await hasPlSectionColumn())) {
+          return NextResponse.json(
+            { error: 'Changing the P&L section needs database migration 334.', code: 'PL_SECTION_UNAVAILABLE' },
+            { status: 409 }
+          );
+        }
+      }
+
       if (updates.opening_balance !== undefined || updates.opening_balance_type !== undefined) {
         const amount = updates.opening_balance !== undefined
           ? Number(updates.opening_balance)
@@ -276,6 +302,32 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         );
       } else {
         account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1 AND business_id = $2', [accountId, business_id]);
+      }
+
+      if (account) {
+        const after = account as unknown as Record<string, unknown>;
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        for (const key of updateKeys) {
+          if (String(existing[key] ?? '') !== String(after[key] ?? '')) {
+            changes[key] = { from: existing[key] ?? null, to: after[key] ?? null };
+          }
+        }
+        if (Object.keys(changes).length > 0) {
+          await logActivity({
+            business_id,
+            user_id: userId,
+            action_type: 'update',
+            module: 'accounts',
+            entity_id: accountId,
+            entity_type: 'account',
+            description: changes.pl_section
+              ? `Moved ${account.account_code} ${account.account_name} in Profit & Loss from ${plSectionLabel(changes.pl_section.from)} to ${plSectionLabel(changes.pl_section.to)}`
+              : `Updated account ${account.account_code} ${account.account_name} (${Object.keys(changes).join(', ')})`,
+            ip_address: getClientIP(ctx.request),
+            user_agent: getUserAgent(ctx.request),
+            metadata: { changes },
+          });
+        }
       }
 
       return NextResponse.json({ account });

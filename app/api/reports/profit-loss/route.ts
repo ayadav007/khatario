@@ -1,55 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
-import { queryRows, queryOne } from '@/lib/db';
-import { calculateCOGS } from '@/lib/services/cogs-calculator';
-import { getInventoryModel } from '@/lib/inventory/cogs-posting';
-import { getTotalDepreciation } from '@/lib/services/depreciation-calculator';
+import { queryOne } from '@/lib/db';
 import { getTotalProvisions } from '@/lib/services/provisions-manager';
 import { getAllTaxProvisions } from '@/lib/services/tax-provision-calculator';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { CREDIT_SECTIONS } from '@/lib/accounting/pl-sections';
+import {
+  buildProfitAndLoss,
+  flattenNodes,
+  REPORT_SECTIONS,
+  type BranchScope,
+  type PlAccountNode,
+  type ProfitAndLoss,
+} from '@/lib/reports/profit-loss';
 
 export const dynamic = 'force-dynamic';
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+function legacyAccounts(nodes: PlAccountNode[]) {
+  return flattenNodes(nodes).map((n) => ({
+    id: n.id,
+    account_code: n.account_code,
+    account_name: n.account_name,
+    account_type: n.account_type,
+    account_group_name: n.account_group_name,
+    is_active: n.is_active,
+    amount: n.amount,
+  }));
+}
+
+/** Movement of one account as an expense (debit − credit), wherever it is placed. */
+function expenseAmountOf(pl: ProfitAndLoss, code: string): number {
+  for (const key of REPORT_SECTIONS) {
+    const node = flattenNodes(pl.sections[key].accounts).find((n) => n.account_code === code);
+    if (node) return CREDIT_SECTIONS.has(key) ? -node.amount : node.amount;
+  }
+  return 0;
+}
+
 /**
  * GET /api/reports/profit-loss
- * Generate enhanced Profit & Loss statement with account-wise breakdown
+ * Profit & Loss in Zoho Books' layout: each income/expense account is reported in its P&L section.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-    const branchIdParam = searchParams.get('branch_id'); // Optional: Filter by branch
+    const userId = getUserIdFromRequest(request);
+    const branchIdParam = searchParams.get('branch_id');
     let fromDate = searchParams.get('from_date');
     let toDate = searchParams.get('to_date');
     const financialYear = searchParams.get('financial_year');
+    const includeZero = searchParams.get('include_zero') === 'true';
 
     if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
     }
-
     if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
     }
 
-    // CRITICAL: Enforce access boundary - reject attendance-only employees
     const { checkEmployeeAccessBoundary } = await import('@/lib/access-boundary');
     const accessCheck = await checkEmployeeAccessBoundary(userId, 'portal');
     if (!accessCheck.allowed) {
-      return NextResponse.json(
-        { error: accessCheck.reason, code: 'ACCESS_DENIED' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: accessCheck.reason, code: 'ACCESS_DENIED' }, { status: 403 });
     }
 
-    // CRITICAL: Enforce subscription report access
     try {
       await assertReportAccess(businessId, 'advanced');
     } catch (error) {
@@ -59,74 +77,49 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // CRITICAL: Support consolidated view (ALL branches) vs branch-specific view
-    // If branchIdParam is "ALL" or null/undefined, show consolidated view (admin only)
-    // Otherwise, filter by specific branch
+    // "ALL" or no branch = consolidated view (inter-branch accounts eliminated).
     const isConsolidatedView = !branchIdParam || branchIdParam === 'ALL' || branchIdParam === 'all';
-    
+
     let finalBranchId: string | null = null;
-    let branchFilter = ''; // SQL filter for branch_id
     let branchInfo: any = null;
-    
+    let branchScope: BranchScope = { kind: 'all' };
+
     if (!isConsolidatedView) {
-      // Branch-specific view: resolve and validate branch
-      const { resolveBranchId } = await import('@/lib/branch-helpers');
+      const { resolveBranchId, isDefaultBranch } = await import('@/lib/branch-helpers');
       try {
-        finalBranchId = await resolveBranchId({
-          branchId: branchIdParam,
-          businessId: businessId,
-        });
-        const { isDefaultBranch } = await import('@/lib/branch-helpers');
-        branchFilter = (await isDefaultBranch(finalBranchId, businessId))
-          ? 'AND (branch_id = $5 OR branch_id IS NULL)'
-          : 'AND branch_id = $5';
-        
-        // Get branch info
-        branchInfo = await queryOne(`
-          SELECT id, name, branch_code, gstin 
-          FROM branches 
-          WHERE id = $1 AND business_id = $2 AND is_active = true
-        `, [finalBranchId, businessId]);
-        
+        finalBranchId = await resolveBranchId({ branchId: branchIdParam, businessId });
+        branchInfo = await queryOne(
+          `SELECT id, name, branch_code, gstin
+             FROM branches
+            WHERE id = $1 AND business_id = $2 AND is_active = true`,
+          [finalBranchId, businessId]
+        );
         if (!branchInfo) {
-          return NextResponse.json(
-            { error: 'Branch not found or inactive' },
-            { status: 404 }
-          );
+          return NextResponse.json({ error: 'Branch not found or inactive' }, { status: 404 });
         }
+        branchScope = {
+          kind: 'branches',
+          branchIds: [finalBranchId],
+          // Business-level lines (opening balances, opening stock) carry no branch and belong to the default branch.
+          includeUnbranched: await isDefaultBranch(finalBranchId, businessId),
+        };
       } catch (error: any) {
         if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
-          return NextResponse.json(
-            { error: error.message },
-            { status: 400 }
-          );
+          return NextResponse.json({ error: error.message }, { status: 400 });
         }
         if (error.code === 'NO_DEFAULT_BRANCH') {
-          return NextResponse.json(
-            { error: error.message },
-            { status: 500 }
-          );
+          return NextResponse.json({ error: error.message }, { status: 500 });
         }
         throw error;
       }
     } else {
-      // Consolidated view: Check if user has permission to view all branches
-      // Get user's accessible branches - if they only have access to specific branches, enforce those
       const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
       const accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-      
       if (accessibleBranchIds.length > 0) {
-        // User has branch restrictions - filter by their accessible branches
-        // Business-level lines (opening balances, opening stock) carry no branch.
-        branchFilter = `AND (branch_id = ANY($5::uuid[]) OR branch_id IS NULL)`;
-        finalBranchId = null; // Not a single branch, but multiple
-      } else {
-        // User has no branch restrictions (admin) - show all branches (no filter)
-        branchFilter = ''; // No branch filter = consolidated view
+        branchScope = { kind: 'branches', branchIds: accessibleBranchIds, includeUnbranched: true };
       }
     }
 
-    // AUTHORIZATION: Check read permission for financial report (PBAC will check branch access, business ownership, accounting access)
     try {
       await authorize(userId, 'report.financial', 'read', {
         businessId,
@@ -143,17 +136,12 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Default to current financial year if not provided
     if (!fromDate || !toDate) {
       const now = new Date();
       const currentYear = now.getFullYear();
-      const fyStart = new Date(currentYear, 3, 1); // April 1
-      const fyEnd = new Date(currentYear + 1, 2, 31); // March 31
-      
+      const fyStart = new Date(currentYear, 3, 1);
       if (!fromDate) {
-        const startDate = now < fyStart 
-          ? new Date(currentYear - 1, 3, 1) 
-          : fyStart;
+        const startDate = now < fyStart ? new Date(currentYear - 1, 3, 1) : fyStart;
         fromDate = startDate.toISOString().split('T')[0];
       }
       if (!toDate) {
@@ -161,16 +149,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // -----------------------------------------------------------------
-    // PHASE-4: cross-FY soft warning
-    //
-    // Indian P&L is statutory only when aligned to one financial year
-    // (April 1 → March 31). Sub-year management reports are fine; ranges
-    // that straddle 31-March are *computable* but the Opening Stock
-    // semantics break (we'd be using one FY's "as of" stock against the
-    // other FY's transactions). We compute anyway (Tally parity) but
-    // surface a top-level warning so the UI can banner it.
-    // -----------------------------------------------------------------
+    // A P&L is statutory only within one financial year; across 31 March the opening stock no longer
+    // matches the purchases, so the report is computed but flagged.
     const warnings: Array<{ code: string; message: string; severity: 'info' | 'warn' | 'error' }> = [];
     {
       const fyOf = (iso: string) => {
@@ -195,148 +175,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get Income accounts (Sales, Other Income)
-    const incomeAccounts = await queryRows(`
-      SELECT 
-        a.id,
-        a.account_code,
-        a.account_name,
-        a.account_type,
-        ag.group_name as account_group_name
-      FROM accounts a
-      LEFT JOIN account_groups ag ON a.account_group_id = ag.id
-      WHERE a.business_id = $1 
-        AND a.account_type IN ('income')
-        AND a.is_active = true
-      ORDER BY a.account_code
-    `, [businessId]);
+    const pl = await buildProfitAndLoss({
+      businessId,
+      fromDate,
+      toDate,
+      branch: branchScope,
+      consolidated: isConsolidatedView,
+      financialYear,
+      includeZero,
+    });
+    const cogsData = pl.cogs_detail;
 
-    // Get Expense accounts (Direct and Indirect)
-    const expenseAccounts = await queryRows(`
-      SELECT 
-        a.id,
-        a.account_code,
-        a.account_name,
-        a.account_type,
-        ag.group_name as account_group_name,
-        ag.group_code
-      FROM accounts a
-      LEFT JOIN account_groups ag ON a.account_group_id = ag.id
-      WHERE a.business_id = $1 
-        AND a.account_type IN ('expense')
-        AND a.is_active = true
-      ORDER BY ag.group_code, a.account_code
-    `, [businessId]);
-
-    // CRITICAL: For branch-specific reports, exclude inter-branch accounts at account level
-    // For consolidated view, include inter-branch accounts (they cancel out)
-    const interBranchAccountCodes = ['4103', '5103']; // Inter-Branch Sales, Inter-Branch Purchases
-    const excludeInterBranch = !isConsolidatedView; // Only exclude for branch-specific views
-
-    // Calculate income for each account
-    const incomeDetails = await Promise.all(
-      incomeAccounts
-        .filter((account: any) => !excludeInterBranch || !interBranchAccountCodes.includes(account.account_code))
-        .map(async (account: any) => {
-          const transactionParams: any[] = [account.id, businessId, fromDate, toDate];
-          if (branchFilter) {
-            if (finalBranchId) {
-              // Single branch filter
-              transactionParams.push(finalBranchId);
-            } else {
-              // Multiple branches (user's accessible branches)
-              const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
-              const accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-              transactionParams.push(accessibleBranchIds);
-            }
-          }
-          
-          const transactions = await queryOne(`
-            SELECT 
-              COALESCE(SUM(credit - debit), 0) as net_amount
-            FROM ledger_entry_lines lel
-            JOIN accounts a ON lel.account_id = a.id
-            WHERE lel.account_id = $1 
-              AND lel.business_id = $2
-              AND lel.entry_date >= $3
-              AND lel.entry_date <= $4
-              AND lel.voucher_type <> 'year_close'
-              ${branchFilter}
-          `, transactionParams);
-
-        return {
-          ...account,
-          amount: parseFloat(transactions?.net_amount || '0'),
-        };
-      })
-    );
-
-    // Calculate expenses for each account
-    const expenseDetails = await Promise.all(
-      expenseAccounts
-        .filter((account: any) => !excludeInterBranch || !interBranchAccountCodes.includes(account.account_code))
-        .map(async (account: any) => {
-          const transactionParams: any[] = [account.id, businessId, fromDate, toDate];
-          if (branchFilter) {
-            if (finalBranchId) {
-              // Single branch filter
-              transactionParams.push(finalBranchId);
-            } else {
-              // Multiple branches (user's accessible branches)
-              const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
-              const accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-              transactionParams.push(accessibleBranchIds);
-            }
-          }
-          
-          const transactions = await queryOne(`
-            SELECT 
-              COALESCE(SUM(debit - credit), 0) as net_amount
-            FROM ledger_entry_lines lel
-            JOIN accounts a ON lel.account_id = a.id
-            WHERE lel.account_id = $1 
-              AND lel.business_id = $2
-              AND lel.entry_date >= $3
-              AND lel.entry_date <= $4
-              AND lel.voucher_type <> 'year_close'
-              ${branchFilter}
-          `, transactionParams);
-
-        return {
-          ...account,
-          amount: parseFloat(transactions?.net_amount || '0'),
-        };
-      })
-    );
-
-    // Calculate COGS (Opening Stock + Purchases - Closing Stock)
-    let cogsData = null;
-    try {
-      // Get previous financial year for opening stock
-      const previousFY = financialYear
-        ? `${parseInt(financialYear.split('-')[0]) - 1}-${financialYear.split('-')[1].split('-')[0]}`
-        : undefined;
-
-      cogsData = await calculateCOGS(
-        businessId,
-        fromDate,
-        toDate,
-        financialYear || undefined,
-        previousFY
-      );
-    } catch (error) {
-      console.error('Error calculating COGS:', error);
-      // Continue without COGS if calculation fails
-    }
-
-    // Closing stock reminder (periodic inventory): derived stock ≠ formal year-end close
-    if (cogsData && cogsData.meta.inventory_model === 'periodic' && (await getInventoryModel(undefined, businessId)) === 'periodic') {
-      const purchasesGross = cogsData.purchases?.gross_purchases ?? 0;
-      const openingVal = cogsData.openingStock?.value ?? 0;
-      const closingVal = cogsData.closingStock?.value ?? 0;
-      const closingSrc = cogsData.closingStock?.source;
+    if (pl.periodic_cogs && cogsData) {
       const hasInventoryActivity =
-        purchasesGross > 0.01 || openingVal > 0.01 || closingVal > 0.01;
+        (cogsData.purchases?.gross_purchases ?? 0) > 0.01 ||
+        (cogsData.openingStock?.value ?? 0) > 0.01 ||
+        (cogsData.closingStock?.value ?? 0) > 0.01;
+      const closingSrc = cogsData.closingStock?.source;
       if (hasInventoryActivity && closingSrc && closingSrc !== 'snapshot') {
         warnings.push({
           code: 'closing_stock_not_formalized',
@@ -348,29 +203,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get Depreciation
-    let depreciationTotal = 0;
-    if (financialYear) {
-      try {
-        depreciationTotal = await getTotalDepreciation(businessId, financialYear);
-      } catch (error) {
-        console.error('Error fetching depreciation:', error);
-      }
-    }
-
-    // Get Provisions
-    let provisionsData = null;
+    let provisionsData: Awaited<ReturnType<typeof getTotalProvisions>> | null = null;
+    let taxData: Awaited<ReturnType<typeof getAllTaxProvisions>> | null = null;
     if (financialYear) {
       try {
         provisionsData = await getTotalProvisions(businessId, financialYear);
       } catch (error) {
         console.error('Error fetching provisions:', error);
       }
-    }
-
-    // Get Tax Provisions
-    let taxData = null;
-    if (financialYear) {
       try {
         taxData = await getAllTaxProvisions(businessId, financialYear);
       } catch (error) {
@@ -378,146 +218,47 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ------------------------------------------------------------------
-    // PHASE-1 P&L CLASSIFICATION (single source of truth)
-    //
-    //   Direct Expenses (cost of revenue):  5101, 5102                       (also COGS via cogs-calculator)
-    //   Indirect Expenses (operating):      5201, 5202, 5203                 (Admin, Salaries, Rent)
-    //   Depreciation:                       5204                              (own line)
-    //   Finance Costs (Interest):           5205                              (own line, "Other Expenses")
-    //   Other / Provisions:                 5206, 5207, 5208, 5209           (own line, "Other Expenses")
-    //   Tax (current + deferred):           5210, 5211                       (below PBT only)
-    //
-    // Each account_code appears in EXACTLY ONE bucket so PBT/PAT cannot
-    // double-count. The provisions-manager service is no longer subtracted
-    // from PBT (its closing-balance semantics double-count what the ledger
-    // already has at 5207-5209).
-    // ------------------------------------------------------------------
-
-    const directExpenseCodes = new Set(['5101', '5102', '5104']);
-    const otherExpenseCodes = new Set(['5205', '5206', '5207', '5208', '5209']);
-    const depreciationCode = '5204';
-    const taxCodes = new Set(['5210', '5211']);
-
-    const directExpenses = expenseDetails.filter((exp: any) =>
-      directExpenseCodes.has(exp.account_code) ||
-      exp.group_code === '5100' ||
-      exp.account_group_name?.toLowerCase().includes('direct')
-    );
-    const indirectExpenses = expenseDetails.filter((exp: any) =>
-      !directExpenses.includes(exp) &&
-      exp.account_code !== depreciationCode &&
-      !otherExpenseCodes.has(exp.account_code) &&
-      !taxCodes.has(exp.account_code)
-    );
-    const otherExpenses = expenseDetails.filter((exp: any) =>
-      otherExpenseCodes.has(exp.account_code)
-    );
-    const taxExpenses = expenseDetails.filter((exp: any) =>
-      taxCodes.has(exp.account_code)
-    );
-
-    // Calculate totals
-    const totalIncome = incomeDetails.reduce((sum, acc) => sum + acc.amount, 0);
-    const totalDirectExpenses = directExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const totalIndirectExpenses = indirectExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const totalOtherExpenses = otherExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const currentTaxFromLedger = taxExpenses
-      .filter((exp: any) => exp.account_code === '5210')
-      .reduce((sum: number, exp: any) => sum + exp.amount, 0);
-    const deferredTaxFromLedger = taxExpenses
-      .filter((exp: any) => exp.account_code === '5211')
-      .reduce((sum: number, exp: any) => sum + exp.amount, 0);
-
-    // Perpetual books: 5104 already holds the cost of each sale and 5101 only the
-    // non-stock remainder of purchases, so the ledger direct expenses ARE cost of revenue.
-    const isPerpetual = (await getInventoryModel(undefined, businessId)) === 'perpetual';
-    const ledgerCogs = directExpenses
-      .filter((exp: any) => exp.account_code === '5104')
-      .reduce((sum: number, exp: any) => sum + exp.amount, 0);
-    const cogs = isPerpetual ? ledgerCogs : cogsData?.cogs || 0;
-    const openingStock = cogsData?.openingStock.value || 0;
-    const purchases = cogsData?.purchases.total || 0;
-    const closingStock = cogsData?.closingStock.value || 0;
-
-    // Gross Profit = Sales - COGS (or Sales - Direct Expenses if COGS not available)
-    // Note: when COGS is used, totalDirectExpenses (5101 ledger) represents the same
-    // purchases that COGS already accounts for - we deliberately avoid subtracting
-    // them again. cogsUsed is the canonical "cost of revenue" figure for this period.
-    const cogsUsed = isPerpetual ? totalDirectExpenses : cogs > 0 ? cogs : totalDirectExpenses;
-    const grossProfit = totalIncome - cogsUsed;
-
-    // Operating Profit = Gross Profit - Indirect Expenses - Depreciation
-    const operatingProfit = grossProfit - totalIndirectExpenses - depreciationTotal;
-
-    // Profit Before Tax = Operating Profit - Other Expenses (incl. provisions 5207-5209)
-    // provisionsData (from provisions-manager service) is exposed in the response for
-    // the schedule, but is NOT subtracted again - 5207-5209 ledger postings already
-    // captured the period charge inside totalOtherExpenses.
-    const provisionsTotal = provisionsData?.total || 0;
-    const profitBeforeTax = operatingProfit - totalOtherExpenses;
-
-    // Tax
-    // Single source of truth = ledger postings to 5210/5211 (real entries that
-    // actually moved money in the books — manual JVs, year-end provisions, etc.).
-    // The tax-provision-calculator service produces a *computed estimate* stored
-    // separately in the tax_provisions table; we expose it for transparency in
-    // tax_calculation_breakdown but DO NOT use it for PAT math, otherwise we'd
-    // double-count whenever both exist (the same risk we just removed for 5207-5209).
+    const s = pl.sections;
+    // Like Zoho there is no separate tax section: 5210/5211 sit in Non Operating Expense.
+    // The legacy PBT/tax fields are derived for older clients.
+    const currentTax = r2(expenseAmountOf(pl, '5210'));
+    const deferredTax = r2(expenseAmountOf(pl, '5211'));
+    const totalTax = r2(currentTax + deferredTax);
     const taxServiceCurrent = taxData?.current_tax?.provision_amount || 0;
     const taxServiceDeferred = taxData?.deferred_tax?.provision_amount || 0;
-    const currentTax = currentTaxFromLedger;
-    const deferredTax = deferredTaxFromLedger;
-    const totalTax = currentTax + deferredTax;
-
-    // Profit After Tax
-    const profitAfterTax = profitBeforeTax - totalTax;
-
-    // Group income by category
-    const salesIncome = incomeDetails.filter(inc => 
-      inc.account_group_name?.toLowerCase().includes('sales')
-    );
-    const otherIncome = incomeDetails.filter(inc => 
-      !salesIncome.includes(inc)
-    );
 
     return NextResponse.json({
-      branch: branchInfo ? {
-        id: branchInfo.id,
-        name: branchInfo.name,
-        branch_code: branchInfo.branch_code,
-        gstin: branchInfo.gstin,
-      } : null,
+      branch: branchInfo
+        ? { id: branchInfo.id, name: branchInfo.name, branch_code: branchInfo.branch_code, gstin: branchInfo.gstin }
+        : null,
       is_consolidated: isConsolidatedView,
-      period: {
-        from_date: fromDate,
-        to_date: toDate,
-        financial_year: financialYear,
-      },
+      period: { from_date: fromDate, to_date: toDate, financial_year: financialYear },
+
+      sections: REPORT_SECTIONS.map((key) => s[key]),
+      gross_profit: pl.gross_profit,
+      operating_profit: pl.operating_profit,
+      net_profit: pl.net_profit,
+      elimination: pl.elimination,
+      inventory_model: pl.inventory_model,
+      periodic_cogs: pl.periodic_cogs,
+      ledger_check: pl.ledger_check,
+
+      // Legacy shape, derived from the sections above.
       income: {
-        sales: {
-          accounts: salesIncome,
-          total: salesIncome.reduce((sum, acc) => sum + acc.amount, 0),
-        },
-        other_income: {
-          accounts: otherIncome,
-          total: otherIncome.reduce((sum, acc) => sum + acc.amount, 0),
-        },
-        total: totalIncome,
+        sales: { accounts: legacyAccounts(s.operating_income.accounts), total: s.operating_income.total },
+        other_income: { accounts: legacyAccounts(s.other_income.accounts), total: s.other_income.total },
+        total: r2(s.operating_income.total + s.other_income.total),
       },
       cogs: {
-        opening_stock: openingStock,
-        purchases: purchases,
-        closing_stock: closingStock,
-        total: cogs,
+        opening_stock: pl.periodic_cogs?.opening_stock ?? cogsData?.openingStock.value ?? 0,
+        purchases: pl.periodic_cogs?.purchases ?? cogsData?.purchases.total ?? 0,
+        closing_stock: pl.periodic_cogs?.closing_stock ?? cogsData?.closingStock.value ?? 0,
+        total: s.cost_of_goods_sold.total,
         items: cogsData?.openingStock.items || [],
-        // PHASE-4: surface the new metadata so the report can show which
-        // inputs were used (snapshot vs derived, valuation method, gross
-        // purchases vs returns netted into the single Purchases line).
         phase4: cogsData
           ? {
               valuation_method: cogsData.meta.valuation_method,
-              inventory_model: cogsData.meta.inventory_model,
+              inventory_model: pl.inventory_model,
               opening_source: cogsData.openingStock.source,
               opening_as_of: cogsData.openingStock.as_of_date,
               closing_source: cogsData.closingStock.source,
@@ -533,71 +274,41 @@ export async function GET(request: NextRequest) {
           : null,
       },
       expenses: {
-        direct: {
-          accounts: directExpenses,
-          total: totalDirectExpenses,
-        },
-        indirect: {
-          accounts: indirectExpenses,
-          total: totalIndirectExpenses,
-          depreciation: depreciationTotal,
-        },
-        other_expenses: {
-          accounts: otherExpenses,
-          total: totalOtherExpenses,
-        },
-        // Provisions schedule is informational only. The period charge is
-        // already captured in expenses.other_expenses (5207-5209 ledger).
+        direct: { accounts: legacyAccounts(s.cost_of_goods_sold.accounts), total: s.cost_of_goods_sold.total },
+        // Depreciation is posted to the ledger (5204) and already inside operating expense.
+        indirect: { accounts: legacyAccounts(s.operating_expense.accounts), total: s.operating_expense.total, depreciation: 0 },
+        other_expenses: { accounts: legacyAccounts(s.other_expense.accounts), total: s.other_expense.total },
         provisions: {
-          total: provisionsTotal,
+          total: provisionsData?.total || 0,
           by_type: provisionsData?.by_type || {},
           details: provisionsData?.details || [],
-          note:
-            'Informational schedule only. Period provisions charge is included ' +
-            'in other_expenses (5207-5209) - not double-counted in PBT.',
+          note: 'Informational schedule only. Provision charges posted to the ledger are already in the P&L.',
         },
-        // Mirrors what is actually subtracted in PBT:
-        //   cogsUsed (= COGS or direct expenses fallback)
-        // + indirect expenses + depreciation + other expenses (incl provisions).
-        // No double-counting.
-        total: cogsUsed + totalIndirectExpenses + totalOtherExpenses + depreciationTotal,
+        total: r2(s.cost_of_goods_sold.total + s.operating_expense.total + s.other_expense.total),
       },
-      gross_profit: grossProfit,
-      operating_profit: operatingProfit,
-      profit_before_tax: profitBeforeTax,
+      profit_before_tax: r2(pl.net_profit + totalTax),
       tax: {
         current_tax: currentTax,
         deferred_tax: deferredTax,
         total: totalTax,
         source: 'ledger_5210_5211',
-        ledger_breakdown: {
-          current_tax_5210: currentTaxFromLedger,
-          deferred_tax_5211: deferredTaxFromLedger,
-          line_count: taxExpenses.length,
-        },
+        note: 'Included in Non Operating Expense; shown separately for reference.',
+        ledger_breakdown: { current_tax_5210: currentTax, deferred_tax_5211: deferredTax },
         provision_service_estimate: {
           current_tax: taxServiceCurrent,
           deferred_tax: taxServiceDeferred,
           total: taxServiceCurrent + taxServiceDeferred,
           note:
             'Computed by tax-provision-calculator from tax_provisions table. ' +
-            'Shown for transparency only — NOT subtracted from PBT. To affect PAT, ' +
+            'Shown for transparency only — not in the P&L. To affect profit, ' +
             'post a journal voucher to 5210/5211 (or call recordTaxPayment which does so).',
         },
       },
-      profit_after_tax: profitAfterTax,
-      // Legacy field for backward compatibility
-      net_profit: profitAfterTax,
-      // PHASE-4: top-level warnings (e.g. period crosses FY boundary).
-      // The UI should surface these as a banner above the report.
+      profit_after_tax: pl.net_profit,
       warnings,
     });
   } catch (error: any) {
     console.error('Error generating profit & loss:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
-

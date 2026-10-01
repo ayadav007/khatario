@@ -12,6 +12,32 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/purchase-balance';
 import { periodGuardResponse } from '@/lib/http/period-guards';
+import {
+  blankPaymentId,
+  draftDocumentPaymentError,
+  isPaymentUuid,
+  paymentPartyInvalidError,
+  paymentPartyNotFoundError,
+  resolvePaymentReference,
+  walkInReceiptNotSupportedError,
+  parsePaymentMoney,
+  parsePaymentDay,
+  parsePaymentMode,
+  paymentAmountInvalidError,
+  paymentDateInvalidError,
+  paymentModeInvalidError,
+} from '@/lib/accounting/final-document-payment';
+import {
+  claimPaymentIdempotencyKey,
+  completePaymentIdempotencyKey,
+  findPaymentIdempotencyOutcome,
+  idempotencyKeyReusedError,
+  idempotencyReplayUnavailableError,
+  paymentRequestFingerprint,
+  readPaymentIdempotencyKey,
+  scopedPaymentIdempotencyKey,
+  type PaymentIdempotencyOutcome,
+} from '@/lib/accounting/payment-idempotency';
 
 export const dynamic = 'force-dynamic';
 
@@ -330,9 +356,28 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function idempotentPaymentResponse(outcome: PaymentIdempotencyOutcome): NextResponse {
+  if (outcome.kind === 'conflict') {
+    return NextResponse.json(idempotencyKeyReusedError(), { status: 409 });
+  }
+  if (outcome.kind === 'unavailable') {
+    return NextResponse.json(idempotencyReplayUnavailableError(), { status: 409 });
+  }
+  return NextResponse.json(
+    { payment: outcome.payment },
+    { status: 201, headers: { 'Idempotent-Replayed': 'true' } }
+  );
+}
+
 /**
  * POST /api/payments
  * Create a new payment (Payment In or Payment Out)
+ *
+ * Retry protection: send `X-Idempotency-Key` (or `Idempotency-Key`). The same key and request
+ * returns the original payment with `Idempotent-Replayed: true`; the same key with a different
+ * request returns 409 IDEMPOTENCY_KEY_REUSED. A stored record that fails ownership, scope, or
+ * payment-consistency checks returns 409 IDEMPOTENCY_REPLAY_UNAVAILABLE with no payment data.
+ * Requests without a key are never deduplicated.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -342,26 +387,43 @@ export async function POST(request: NextRequest) {
     if (!created_by || !business_id) {
       return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
+    const keyResult = readPaymentIdempotencyKey(request);
+    if (!keyResult.ok) {
+      return NextResponse.json(keyResult.body, { status: 400 });
+    }
+    const idempotencyKey = keyResult.key;
+
     const body = await request.json();
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that processed this payment
-      type, // 'receivable' (Payment In) or 'payable' (Payment Out)
       customer_id,
       supplier_id,
-      reference_type, // 'invoice' or 'purchase'
-      reference_id,
-      amount,
-      payment_mode = 'cash',
       payment_date,
       notes,
       tds_section,
     } = body;
-    const tdsAmount = Math.round((Number(body.tds_amount) || 0) * 100) / 100;
-    const settles = Math.round(((Number(amount) || 0) + tdsAmount) * 100) / 100;
-
-    if (tdsAmount < 0) {
-      return NextResponse.json({ error: 'tds_amount cannot be negative' }, { status: 400 });
+    const referenceDecision = resolvePaymentReference({
+      type: body.type,
+      referenceType: body.reference_type,
+      referenceId: body.reference_id,
+    });
+    if (!referenceDecision.ok) {
+      return NextResponse.json(referenceDecision.body, { status: referenceDecision.status });
     }
+    const { type, referenceType: reference_type, referenceId: reference_id } = referenceDecision;
+
+    const amount = parsePaymentMoney(body.amount);
+    if (amount === null) {
+      return NextResponse.json(paymentAmountInvalidError('amount must be a non-negative number'), { status: 400 });
+    }
+    const rawTds = body.tds_amount;
+    const parsedTds = rawTds === undefined || rawTds === null || rawTds === '' ? 0 : parsePaymentMoney(rawTds);
+    if (parsedTds === null) {
+      return NextResponse.json(paymentAmountInvalidError('tds_amount must be a non-negative number'), { status: 400 });
+    }
+    const tdsAmount = Math.round(parsedTds * 100) / 100;
+    const settles = Math.round((amount + tdsAmount) * 100) / 100;
+
     if (type === 'payable' && tdsAmount > 0 && !tds_section) {
       return NextResponse.json(
         { error: 'tds_section is required when deducting TDS on a payment out', code: 'TDS_SECTION_REQUIRED' },
@@ -369,12 +431,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!type || Number(amount) < 0 || settles <= 0) {
+    if (settles <= 0) {
       return NextResponse.json(
-        { error: 'type and amount are required' },
+        paymentAmountInvalidError('type and amount are required'),
         { status: 400 }
       );
     }
+    // An on-account payment has no document to settle with TDS alone, so it must move cash.
+    if (!reference_id && amount <= 0) {
+      return NextResponse.json(
+        paymentAmountInvalidError('An on-account payment must have an amount greater than zero'),
+        { status: 400 }
+      );
+    }
+
+    const paymentDay = parsePaymentDay(payment_date);
+    if (paymentDay === false) {
+      return NextResponse.json(paymentDateInvalidError(), { status: 400 });
+    }
+    const payment_mode = parsePaymentMode(body.payment_mode);
+    if (payment_mode === null) {
+      return NextResponse.json(paymentModeInvalidError(), { status: 400 });
+    }
+
+    const fingerprint = idempotencyKey
+      ? paymentRequestFingerprint({
+          type,
+          referenceType: reference_type,
+          referenceId: reference_id,
+          customerId: !reference_id && type === 'receivable' ? blankPaymentId(customer_id) || null : null,
+          supplierId: !reference_id && type === 'payable' ? blankPaymentId(supplier_id) || null : null,
+          branchId: blankPaymentId(branch_id) || null,
+          amount,
+          tdsAmount,
+          tdsSection: tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          paymentMode: payment_mode,
+          paymentDay,
+          notes: typeof notes === 'string' && notes.length > 0 ? notes : null,
+        })
+      : null;
+    const scopedKey = idempotencyKey ? scopedPaymentIdempotencyKey(idempotencyKey) : null;
 
     // AUTHORIZATION: Check create permission
     // Note: We'll check branch access after branch_id is determined
@@ -448,6 +544,17 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
+    // A retry of a committed request returns the original payment even if a period has since
+    // been locked or the document is now settled.
+    if (scopedKey && fingerprint) {
+      const prior = await findPaymentIdempotencyOutcome(getPool(), {
+        businessId: business_id,
+        scopedKey,
+        hash: fingerprint.hash,
+      });
+      if (prior) return idempotentPaymentResponse(prior);
+    }
+
     const lockRes = await periodGuardResponse({
       businessId: business_id,
       branchId: finalBranchId,
@@ -478,27 +585,66 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (type === 'receivable' && !customer_id && !reference_id) {
+    const requestedCustomerId = blankPaymentId(customer_id);
+    const requestedSupplierId = blankPaymentId(supplier_id);
+
+    if (!reference_id && requestedCustomerId && requestedSupplierId) {
       return NextResponse.json(
-        { error: 'customer_id or reference_id is required for receivable payments' },
+        paymentPartyInvalidError('A payment can name a customer or a supplier, not both'),
         { status: 400 }
       );
     }
 
-    if (type === 'payable' && !supplier_id && !reference_id) {
+    if (type === 'receivable' && !requestedCustomerId && !reference_id) {
       return NextResponse.json(
-        { error: 'supplier_id or reference_id is required for payable payments' },
+        paymentPartyInvalidError('customer_id is required for an on-account receipt'),
         { status: 400 }
       );
     }
 
-    // Get customer/supplier from reference if not provided
-    let finalCustomerId = customer_id;
-    let finalSupplierId = supplier_id;
+    if (type === 'payable' && !requestedSupplierId && !reference_id) {
+      return NextResponse.json(
+        paymentPartyInvalidError('supplier_id is required for an on-account payment'),
+        { status: 400 }
+      );
+    }
+
+    // Document payments take the party from the document. On-account payments must
+    // name a party that belongs to this session business before any row is written.
+    let finalCustomerId: string | null = null;
+    let finalSupplierId: string | null = null;
+
+    if (!reference_id && type === 'receivable') {
+      if (!isPaymentUuid(requestedCustomerId)) {
+        return NextResponse.json(paymentPartyInvalidError('customer_id must be a customer id'), { status: 400 });
+      }
+      const customer = await queryOne<{ id: string }>(
+        'SELECT id FROM customers WHERE id = $1 AND business_id = $2',
+        [requestedCustomerId, business_id]
+      );
+      if (!customer) {
+        return NextResponse.json(paymentPartyNotFoundError('customer'), { status: 404 });
+      }
+      finalCustomerId = customer.id;
+    }
+
+    if (!reference_id && type === 'payable') {
+      if (!isPaymentUuid(requestedSupplierId)) {
+        return NextResponse.json(paymentPartyInvalidError('supplier_id must be a supplier id'), { status: 400 });
+      }
+      const supplier = await queryOne<{ id: string }>(
+        'SELECT id FROM suppliers WHERE id = $1 AND business_id = $2',
+        [requestedSupplierId, business_id]
+      );
+      if (!supplier) {
+        return NextResponse.json(paymentPartyNotFoundError('supplier'), { status: 404 });
+      }
+      finalSupplierId = supplier.id;
+    }
 
     if (reference_type === 'invoice' && reference_id) {
       const invoice = await queryOne(
-        'SELECT customer_id, business_id FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT customer_id, business_id, status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [reference_id, business_id]
       );
       if (!invoice) {
@@ -514,18 +660,31 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-      finalCustomerId = invoice.customer_id;
-      if (!finalCustomerId && type === 'receivable') {
+      if (invoice.document_type === 'proforma_invoice') {
         return NextResponse.json(
-          { error: 'Invoice does not have a customer associated' },
+          { error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' },
           { status: 400 }
         );
+      }
+      if (invoice.status === 'cancelled') {
+        return NextResponse.json(
+          { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
+          { status: 400 }
+        );
+      }
+      if (invoice.status !== 'final') {
+        return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+      }
+      finalCustomerId = invoice.customer_id;
+      finalSupplierId = null;
+      if (!finalCustomerId) {
+        return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
       }
     }
 
     if (reference_type === 'purchase' && reference_id) {
       const purchase = await queryOne(
-        'SELECT supplier_id, business_id FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
+        'SELECT supplier_id, business_id, status FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
         [reference_id, business_id]
       );
       if (!purchase) {
@@ -541,10 +700,20 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-      finalSupplierId = purchase.supplier_id;
-      if (!finalSupplierId && type === 'payable') {
+      if (purchase.status === 'cancelled') {
         return NextResponse.json(
-          { error: 'Purchase does not have a supplier associated' },
+          { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+          { status: 400 }
+        );
+      }
+      if (purchase.status !== 'final') {
+        return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
+      }
+      finalSupplierId = purchase.supplier_id;
+      finalCustomerId = null;
+      if (!finalSupplierId) {
+        return NextResponse.json(
+          paymentPartyInvalidError('Purchase does not have a supplier associated'),
           { status: 400 }
         );
       }
@@ -556,8 +725,70 @@ export async function POST(request: NextRequest) {
     // the payment row is rolled back too — no orphan payments without ledgers.
     const client = await getPool().connect();
     let payment: any = null;
+    let idempotencyRowId: string | null = null;
     try {
       await client.query('BEGIN');
+
+      if (scopedKey && fingerprint) {
+        const claim = await claimPaymentIdempotencyKey(client, {
+          businessId: business_id,
+          userId: created_by,
+          scopedKey,
+          hash: fingerprint.hash,
+          storedPayload: fingerprint.storedPayload,
+        });
+        if (!claim.claimed) {
+          await client.query('ROLLBACK');
+          return idempotentPaymentResponse(claim.outcome);
+        }
+        idempotencyRowId = claim.rowId;
+      }
+
+      if (reference_id && (reference_type === 'invoice' || reference_type === 'purchase')) {
+        const locked = await client.query<{ status: string; document_type: string | null }>(
+          reference_type === 'invoice'
+            ? `SELECT status, document_type FROM invoices WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`
+            : `SELECT status, NULL::text AS document_type FROM purchases WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+          [reference_id, business_id]
+        );
+        const doc = locked.rows[0];
+        if (doc) {
+          if (reference_type === 'invoice' && doc.document_type === 'proforma_invoice') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              { error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' },
+              { status: 400 }
+            );
+          }
+          if (doc.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(
+              reference_type === 'invoice'
+                ? { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' }
+                : { error: 'Cannot pay a cancelled purchase', code: 'PURCHASE_CANCELLED' },
+              { status: 400 }
+            );
+          }
+          if (doc.status !== 'final') {
+            await client.query('ROLLBACK');
+            return NextResponse.json(draftDocumentPaymentError(reference_type === 'invoice' ? 'invoice' : 'purchase'), {
+              status: 409,
+            });
+          }
+        }
+      }
+
+      if (type === 'receivable' && !finalCustomerId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
+      }
+      if (type === 'payable' && !finalSupplierId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          paymentPartyInvalidError('A payment out requires a supplier in this business'),
+          { status: 400 }
+        );
+      }
 
       // Insert payment
       const paymentRes = await client.query(
@@ -761,6 +992,10 @@ export async function POST(request: NextRequest) {
         tdsAmount,
         poolClient: client,
       });
+
+      if (idempotencyRowId) {
+        await completePaymentIdempotencyKey(client, idempotencyRowId, payment.id);
+      }
 
       await client.query('COMMIT');
     } catch (txError: any) {

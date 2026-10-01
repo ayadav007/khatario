@@ -46,6 +46,39 @@ describe('buildCashFlow', () => {
     expect(cf.operating.workingCapital.find((l) => l.label === 'GST input credit')?.amount).toBe(-900);
   });
 
+  it('classifies an electronic cash ledger deposit as a bank outflow and a utilisation as no extra cash movement', () => {
+    const deposit = buildCashFlow([
+      acc('1102', 'asset', 0, 500, { isCash: true }),
+      acc('1130', 'asset', 500, 0),
+    ]);
+    expect(deposit.difference).toBe(0);
+    expect(deposit.netCashFlow).toBe(-500);
+    expect(deposit.operating.workingCapital.find((l) => l.label === 'GST electronic cash ledger')?.amount).toBe(-500);
+
+    const utilised = buildCashFlow([
+      acc('1102', 'asset', 0, 0, { isCash: true, opening: 1000 }),
+      acc('1130', 'asset', 0, 500),
+      acc('2152', 'liability', 500, 0),
+    ]);
+    expect(utilised.difference).toBe(0);
+    expect(utilised.netCashFlow).toBe(0);
+    expect(utilised.closingCash).toBe(1000);
+  });
+
+  it('starts from P&L net profit in periodic books and backs the closing stock out of inventories', () => {
+    // Purchases 8000 by bank, sales 6000 by bank; closing stock 3000 counted (periodic, no 1104 movement).
+    const accounts = [
+      acc('1102', 'asset', 6000, 8000, { isCash: true, opening: 10000 }),
+      acc('4101', 'income', 0, 6000),
+      acc('5101', 'expense', 8000, 0),
+    ];
+    const cf = buildCashFlow(accounts, { inventoryAdjustment: 3000 });
+    expect(cf.netProfit).toBe(1000);
+    expect(cf.operating.workingCapital.find((l) => l.label === 'Inventories')?.amount).toBe(-3000);
+    expect(cf.netCashFlow).toBe(-2000);
+    expect(cf.difference).toBe(0);
+  });
+
   it('treats bank overdraft as negative cash', () => {
     const cf = buildCashFlow([
       acc('2112', 'liability', 0, 3000, { isCash: true }),

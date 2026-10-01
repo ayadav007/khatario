@@ -1,5 +1,12 @@
 import type { PoolClient } from 'pg';
 import * as db from '@/lib/db';
+import {
+  fifoCostForDocument,
+  fifoIssueUnitCosts,
+  getValuationMethod,
+  toDateString,
+  type CostTarget,
+} from '@/lib/inventory/fifo-costing';
 
 type Queryable = Pick<PoolClient, 'query'>;
 
@@ -83,13 +90,34 @@ export async function weightedAverageCosts(
   return result;
 }
 
-/** Cost of the goods on the given lines; bundles are costed through their components, services cost nothing. */
+/**
+ * Unit cost of the next unit issued: FIFO businesses peek at the oldest open lot,
+ * others use the weighted average.
+ */
+export async function currentUnitCosts(
+  client: Queryable | undefined,
+  businessId: string,
+  itemIds: string[],
+  asOfDate: Date | string,
+  branchId?: string | null
+): Promise<Map<string, number>> {
+  if ((await getValuationMethod(client, businessId)) === 'fifo') {
+    return fifoIssueUnitCosts(client, businessId, itemIds, toDateString(asOfDate));
+  }
+  return weightedAverageCosts(client, businessId, itemIds, asOfDate, branchId);
+}
+
+/**
+ * Cost of the goods on the given lines; bundles are costed through their components, services cost nothing.
+ * FIFO businesses cost `target` (the document being posted) from its own lot allocations.
+ */
 export async function computeGoodsCost(
   client: Queryable | undefined,
   businessId: string,
   lines: Array<{ itemId: string | null | undefined; quantity: number }>,
   asOfDate: Date | string,
-  branchId?: string | null
+  branchId?: string | null,
+  target?: CostTarget
 ): Promise<number> {
   const ids = [...new Set(lines.map((l) => l.itemId).filter((id): id is string => !!id))];
   if (ids.length === 0) return 0;
@@ -125,6 +153,14 @@ export async function computeGoodsCost(
     }
   }
   if (qtyByItem.size === 0) return 0;
+
+  if ((await getValuationMethod(client, businessId)) === 'fifo') {
+    if (client && target) return fifoCostForDocument(client, businessId, qtyByItem, target);
+    const unit = await fifoIssueUnitCosts(client, businessId, [...qtyByItem.keys()], toDateString(asOfDate));
+    let fifoTotal = 0;
+    for (const [id, qty] of qtyByItem) fifoTotal += qty * (unit.get(id) ?? 0);
+    return round2(fifoTotal);
+  }
 
   const rates = await weightedAverageCosts(client, businessId, [...qtyByItem.keys()], asOfDate, branchId);
   let total = 0;

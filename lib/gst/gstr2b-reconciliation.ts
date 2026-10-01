@@ -105,7 +105,7 @@ export class GSTR2BReconciliationEngine {
   private async fetchBooksInvoices(client: any, business_id: string, filing_period: string) {
     const [year, month] = filing_period.split('-').map(Number);
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
+    const endDate = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
     
     const query = `
       SELECT 

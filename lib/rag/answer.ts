@@ -6,6 +6,7 @@ import {
   loadHistory,
   type ConversationOwner,
 } from './conversations';
+import { gstLawSignal, mergeWithLaw, type LawSignal } from './gst-law';
 import { streamChat, type LlmUsage } from './llm';
 import { buildAnswerMessages, citedIndexes } from './prompt';
 import { retrieve, type RetrieveResult } from './retrieve';
@@ -129,6 +130,16 @@ function extractiveAnswer(chunks: RetrievedChunk[], lang: Lang): string {
   const top = chunks[0];
   const body = top.content.replace(/\s+\n/g, '\n').trim();
   const excerpt = body.length > 700 ? `${body.slice(0, 700).replace(/\s+\S*$/, '')}…` : body;
+  if (top.corpus === 'law') {
+    const provision = top.headingPath.split(' > ').pop() || top.title;
+    const lead = t(lang, `Here's what the GST law says (${provision}):`, `GST law mein yeh likha hai (${provision}):`);
+    const note = t(
+      lang,
+      'This is general information from the GST law, not tax advice. Please check with your CA for your case.',
+      'Yeh GST law ki general jaankari hai, tax advice nahi. Apne case ke liye apne CA se zaroor confirm karein.',
+    );
+    return `${lead}\n\n${excerpt} [1]\n\n${note}`;
+  }
   const lead = t(lang, "Here's what our guide says:", 'Hamari guide mein yeh likha hai:');
   return `${lead}\n\n${excerpt} [1]`;
 }
@@ -147,7 +158,7 @@ function toCitations(chunks: RetrievedChunk[], indexes: number[]): Citation[] {
   return out;
 }
 
-function retrievalLog(rw: RewriteResult, r: RetrieveResult | null) {
+function retrievalLog(rw: RewriteResult, r: RetrieveResult | null, law?: { signal: LawSignal; result: RetrieveResult | null }) {
   return {
     searchQuery: rw.searchQuery,
     usedModelRewrite: rw.usedModel,
@@ -156,9 +167,18 @@ function retrievalLog(rw: RewriteResult, r: RetrieveResult | null) {
       ? {
           confident: r.confident,
           ...r.diagnostics,
-          chunks: r.chunks.map((c) => ({ id: c.id, title: c.title, heading: c.headingPath, score: Number(c.score.toFixed(4)), sim: c.vectorSimilarity })),
+          chunks: r.chunks.map((c) => ({
+            id: c.id,
+            title: c.title,
+            heading: c.headingPath,
+            score: Number(c.score.toFixed(4)),
+            sim: c.vectorSimilarity,
+            ...(c.corpus ? { corpus: c.corpus } : {}),
+          })),
         }
       : {}),
+    ...(law && law.signal !== 'none' ? { lawSignal: law.signal } : {}),
+    ...(law?.result ? { lawConfident: law.result.confident, lawDiagnostics: law.result.diagnostics } : {}),
   };
 }
 
@@ -201,6 +221,7 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
     usedModel: false,
   };
   const usages: LlmUsage[] = rw.usage ? [rw.usage] : [];
+  let lawLog: { signal: LawSignal; result: RetrieveResult | null } | undefined;
 
   const finish = async function* (args: {
     text: string;
@@ -224,7 +245,7 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
       role: 'assistant',
       content: args.text,
       citedChunkIds: args.citedChunkIds,
-      retrieval: retrievalLog(rw, args.retrieval),
+      retrieval: retrievalLog(rw, args.retrieval, lawLog),
       intent: rw.intent,
       action: args.action ?? null,
       model: args.model ?? usages[usages.length - 1]?.model ?? null,
@@ -244,12 +265,34 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
   }
 
   const scopeAudience = input.audience;
-  const result = await retrieve({
+  const guideResult = await retrieve({
     scope: { audience: scopeAudience, businessId: scopeAudience === 'tenant_customer' ? input.businessId : null },
     searchQuery: rw.searchQuery,
     originalQuery: message,
   });
-  const extra = followUpAction(rw.intent, sales);
+
+  // GST law is a reference corpus for signed-in business users only; prospects and shoppers never see it.
+  const lawSignal: LawSignal = input.audience === 'tenant_user' ? gstLawSignal(message, rw.searchQuery) : 'none';
+  const tryLaw = input.audience === 'tenant_user' && (lawSignal !== 'none' || !guideResult.confident);
+  const lawResult = tryLaw
+    ? await retrieve({ scope: { audience: 'gst_law', businessId: null }, searchQuery: rw.searchQuery, originalQuery: message }).catch(
+        (err) => {
+          console.warn('[rag/answer] law retrieval failed:', err instanceof Error ? err.message : err);
+          return null;
+        },
+      )
+    : null;
+  lawLog = { signal: lawSignal, result: lawResult };
+
+  let result: RetrieveResult = guideResult;
+  if (lawResult?.confident) {
+    const guide = guideResult.confident ? guideResult.chunks : [];
+    const chunks = mergeWithLaw(guide, lawResult.chunks, guide.length ? lawSignal : 'none', cfg.topK);
+    result = { ...guideResult, chunks, confident: true };
+  }
+
+  // "late fee" / "interest" questions are about the law, not about upgrading the Khatario plan.
+  const extra = lawSignal === 'strong' ? null : followUpAction(rw.intent, sales);
 
   if (!result.confident) {
     const text = notSureReply(rw.language, sales);

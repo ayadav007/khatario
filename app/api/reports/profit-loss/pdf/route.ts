@@ -9,6 +9,7 @@ import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { internalApiFetchFromRequest } from '@/lib/internal-api-fetch';
 import { absoluteUrlForServerSideAsset } from '@/lib/absolute-asset-url';
+import type { PlAccountNode, PlSectionBlock } from '@/lib/reports/profit-loss';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,13 +103,16 @@ export async function GET(req: NextRequest) {
         }
       : null;
 
+    const consolidated = !branchIdParam || branchIdParam.toUpperCase() === 'ALL';
     const plQs = new URLSearchParams({
       business_id: businessId,
       user_id: userId,
       from_date: fromDate,
       to_date: toDate,
-      branch_id: finalBranchId,
+      branch_id: consolidated ? 'ALL' : finalBranchId,
     });
+    const financialYear = searchParams.get('financial_year');
+    if (financialYear) plQs.set('financial_year', financialYear);
     const apiRes = await internalApiFetchFromRequest(
       req,
       `/api/reports/profit-loss?${plQs.toString()}`
@@ -128,51 +132,17 @@ export async function GET(req: NextRequest) {
     }
     const data = await apiRes.json();
 
-    // 3. Format data
-    const formatCurr = (val: any) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    
     const templateData = {
       business,
       data: {
-        ...data,
         period: {
           from_date: format(new Date(data.period.from_date), 'dd MMM yyyy'),
-          to_date: format(new Date(data.period.to_date), 'dd MMM yyyy')
+          to_date: format(new Date(data.period.to_date), 'dd MMM yyyy'),
         },
-        income: {
-          ...data.income,
-          total: formatCurr(data.income?.total),
-          sales: {
-            ...data.income?.sales,
-            total: formatCurr(data.income?.sales?.total),
-            accounts: (data.income?.sales?.accounts || []).map((a: any) => ({ ...a, amount: formatCurr(a.amount) }))
-          }
-        },
-        cogs: data.cogs ? {
-          ...data.cogs,
-          opening_stock: formatCurr(data.cogs.opening_stock),
-          purchases: formatCurr(data.cogs.purchases),
-          closing_stock: formatCurr(data.cogs.closing_stock),
-          total: formatCurr(data.cogs.total)
-        } : null,
-        expenses: {
-          ...data.expenses,
-          total: formatCurr(data.expenses?.total),
-          indirect: {
-            ...data.expenses?.indirect,
-            total: formatCurr(data.expenses?.indirect?.total),
-            depreciation: data.expenses?.indirect?.depreciation ? formatCurr(data.expenses.indirect.depreciation) : null,
-            accounts: (data.expenses?.indirect?.accounts || []).map((a: any) => ({ ...a, amount: formatCurr(a.amount) }))
-          }
-        },
-        gross_profit: formatCurr(data.gross_profit),
-        gross_profit_is_positive: data.gross_profit >= 0,
-        operating_profit: formatCurr(data.operating_profit),
-        operating_profit_is_positive: data.operating_profit >= 0,
-        net_profit: formatCurr(data.net_profit),
-        net_profit_is_positive: data.net_profit >= 0
+        branch_name: data.branch?.name ?? null,
+        blocks: buildPdfBlocks(data),
       },
-      generated_at: format(new Date(), 'dd MMM yyyy HH:mm')
+      generated_at: format(new Date(), 'dd MMM yyyy HH:mm'),
     };
 
     const renderer = new InvoiceRenderer();
@@ -207,5 +177,56 @@ export async function GET(req: NextRequest) {
     console.error('Error generating P&L PDF:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+const formatCurr = (val: unknown) =>
+  Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+interface PdfRow { label: string; code: string; amount: string; indent: number; inactive: boolean; subtotal: boolean }
+
+function pdfRows(nodes: PlAccountNode[], depth = 0): PdfRow[] {
+  return nodes.flatMap((n) => [
+    { label: n.account_name, code: n.account_code, amount: formatCurr(n.amount), indent: depth * 16, inactive: !n.is_active, subtotal: false },
+    ...pdfRows(n.children, depth + 1),
+    ...(n.children.length
+      ? [{ label: `Total for ${n.account_name}`, code: '', amount: formatCurr(n.total), indent: depth * 16, inactive: false, subtotal: true }]
+      : []),
+  ]);
+}
+
+/** Zoho order: sections with their totals, profit lines in between. */
+function buildPdfBlocks(data: any) {
+  const byKey = new Map<string, PlSectionBlock>((data.sections || []).map((s: PlSectionBlock) => [s.key, s]));
+  const section = (key: string) => {
+    const s = byKey.get(key);
+    if (!s) return null;
+    const rows = pdfRows(s.accounts);
+    if (key === 'cost_of_goods_sold' && data.periodic_cogs) {
+      const p = data.periodic_cogs;
+      rows.unshift(
+        { label: 'Opening Stock', code: '', amount: formatCurr(p.opening_stock), indent: 0, inactive: false, subtotal: false },
+        { label: 'Add: Purchases (net of returns)', code: '', amount: formatCurr(p.purchases), indent: 0, inactive: false, subtotal: false },
+        { label: 'Less: Closing Stock', code: '', amount: `(${formatCurr(p.closing_stock)})`, indent: 0, inactive: false, subtotal: false },
+      );
+    }
+    return { is_section: true, label: s.label, rows, total_label: `Total for ${s.label}`, total: formatCurr(s.total) };
+  };
+  const profit = (label: string, value: number, final = false) => ({
+    is_section: false,
+    label,
+    amount: formatCurr(value),
+    positive: Number(value) >= 0,
+    final,
+  });
+  return [
+    section('operating_income'),
+    section('cost_of_goods_sold'),
+    profit('Gross Profit', data.gross_profit),
+    section('operating_expense'),
+    profit('Operating Profit', data.operating_profit),
+    section('other_income'),
+    section('other_expense'),
+    profit('Net Profit/Loss', data.net_profit, true),
+  ].filter(Boolean);
 }
 

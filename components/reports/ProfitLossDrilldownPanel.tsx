@@ -8,7 +8,7 @@ import { SlideOverPanel } from '@/components/ui/SlideOverPanel';
 import { buildApiUrl } from '@/lib/api-helpers';
 
 export type DrillTarget =
-  | { kind: 'account'; label: string; accountIds: string[] }
+  | { kind: 'account'; label: string; accountIds: string[]; /** Signs amounts as shown in this P&L section. */ section?: string }
   | { kind: 'purchases'; label: string }
   | { kind: 'opening_stock'; label: string }
   | { kind: 'closing_stock'; label: string }
@@ -66,6 +66,7 @@ const VOUCHER_LABELS: Record<string, string> = {
   journal: 'Journal',
   opening_stock: 'Opening Stock',
   stock_adjustment: 'Stock Adjustment',
+  depreciation: 'Depreciation',
   itc_reversal: 'ITC Reversal',
   provision: 'Provision',
   tds: 'TDS',
@@ -126,7 +127,10 @@ export function ProfitLossDrilldownPanel({
       line: current.kind,
     };
     if (financialYear) params.financial_year = financialYear;
-    if (current.kind === 'account') params.account_ids = current.accountIds.join(',');
+    if (current.kind === 'account') {
+      params.account_ids = current.accountIds.join(',');
+      if (current.section) params.section = current.section;
+    }
 
     let cancelled = false;
     setLoading(true);

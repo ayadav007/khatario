@@ -3,11 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import {
-  getBusinessIdFromRequest,
-  getSessionScopedBusinessId,
-  getUserIdFromRequest,
-} from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { paymentRestoreUnsafeError } from '@/lib/accounting/final-document-payment';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 
@@ -30,15 +27,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
 
-  const userId = getUserIdFromRequest(request, body);
-  if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const businessScope =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
-  if (!businessScope) {
-    return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
+  const userId = getAuthenticatedUserId(request);
+  const businessScope = getSessionScopedBusinessId(request);
+  if (!userId || !businessScope) {
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
   }
 
   const row = await queryOne<{
@@ -80,16 +72,44 @@ export async function POST(request: NextRequest) {
   }
 
   const pool = getPool();
-  const upd = await pool.query(
-    `UPDATE payments
-     SET deleted_at = NULL
-     WHERE id = $1 AND business_id = $2 AND deleted_at IS NOT NULL
-     RETURNING id`,
-    [id, businessScope]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const locked = await client.query<{ id: string }>(
+      `SELECT id FROM payments WHERE id = $1 AND business_id = $2 AND deleted_at IS NOT NULL FOR UPDATE`,
+      [id, businessScope]
+    );
+    if (locked.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    }
 
-  if (upd.rowCount === 0) {
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    const activePosting = await client.query(
+      `SELECT 1
+         FROM ledger_entry_lines l
+        WHERE l.business_id = $1
+          AND l.voucher_type = 'payment'
+          AND l.voucher_id = $2
+          AND NOT EXISTS (SELECT 1 FROM ledger_entry_reversals r WHERE r.original_line_id = l.id)
+          AND NOT EXISTS (SELECT 1 FROM ledger_entry_reversals r WHERE r.reversal_line_id = l.id)
+        LIMIT 1`,
+      [businessScope, id]
+    );
+    if (activePosting.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(paymentRestoreUnsafeError(), { status: 409 });
+    }
+
+    await client.query(
+      `UPDATE payments SET deleted_at = NULL WHERE id = $1 AND business_id = $2 AND deleted_at IS NOT NULL`,
+      [id, businessScope]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
 
   return NextResponse.json({ success: true });

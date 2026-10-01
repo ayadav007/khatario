@@ -3,7 +3,7 @@ import { getPool } from '@/lib/db';
 import { createCreditNoteLedgerEntries } from '@/lib/ledger-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -164,7 +164,11 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request);
+    const created_by = getAuthenticatedUserId(request);
+    if (!business_id || !created_by) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
     const {
       branch_id, // MANDATORY: Branch (accounting entity) that issued this credit note
       customer_id,
@@ -181,19 +185,11 @@ export async function POST(request: NextRequest) {
       refund_date,
       refund_amount,
       notes,
-      created_by,
     } = body;
 
-    if (!business_id || !customer_id || !credit_note_number || !credit_note_date || !items || items.length === 0) {
+    if (!customer_id || !credit_note_number || !credit_note_date || !items || items.length === 0) {
       return NextResponse.json(
-        { error: 'business_id, customer_id, credit_note_number, credit_note_date, and items are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'customer_id, credit_note_number, credit_note_date, and items are required' },
         { status: 400 }
       );
     }

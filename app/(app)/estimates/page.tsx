@@ -620,7 +620,24 @@ export default function EstimatesPage() {
                           <button
                             onClick={() => {
                               setShowConvertMenu(false);
-                              router.push(`/invoices/new?convert_from=${selectedEstimateId}&type=tax_invoice`);
+                              if (!selectedEstimateId) return;
+                              setUpdatingStatus(true);
+                              fetch(`/api/invoices/${selectedEstimateId}/convert-to-tax-invoice`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({}),
+                              })
+                                .then(async (res) => {
+                                  const data = await safeJsonParse(res);
+                                  if (!res.ok || !data) {
+                                    toast.error(getApiErrorMessage(data, 'Failed to convert estimate'));
+                                    return;
+                                  }
+                                  toast.success(`Converted to invoice ${data.invoice_number}`);
+                                  router.push(`/invoices/${data.invoice_id}`);
+                                })
+                                .catch(() => toast.error('Failed to convert estimate'))
+                                .finally(() => setUpdatingStatus(false));
                             }}
                             className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 text-sm border-b border-gray-100"
                           >

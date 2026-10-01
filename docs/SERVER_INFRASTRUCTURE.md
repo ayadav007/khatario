@@ -181,10 +181,14 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 # Staging
 15 3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron-staging.log 2>&1
 45 0 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron-staging.log 2>&1
+0 9 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
+5 9 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron.log 2>&1
 ```
+
+`/api/cron/gst-compliance-alerts` runs the GST checks in `lib/gst/compliance` (Rule 37, the 30 November ITC and credit-note deadline, GSTR-3B due dates) and raises in-app notifications. It notifies only when an alert is new or reaches a new stage, so an extra run the same day is harmless. `?as_on=YYYY-MM-DD` replays a date for testing.
 
 `/api/cron/recurring-invoices` raises recurring invoices due on the current IST date (00:45 server time assumes the server runs in IST; adjust if it is UTC). Each run date is claimed in `recurring_invoice_history`, so re-running the job the same day does not duplicate invoices.
 

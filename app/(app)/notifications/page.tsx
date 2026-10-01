@@ -95,6 +95,8 @@ export default function NotificationsPage() {
       router.push('/tools/todo');
     } else if (notification.type === 'store_enquiry') {
       router.push('/settings/online-store/enquiries');
+    } else if (notification.type === 'gst_compliance') {
+      router.push('/reports/gst/compliance');
     }
   };
 
@@ -116,6 +118,8 @@ export default function NotificationsPage() {
         return <ClipboardList className="w-5 h-5 text-primary-500" />;
       case 'store_enquiry':
         return <MessageSquare className="w-5 h-5 text-primary-500" />;
+      case 'gst_compliance':
+        return <AlertTriangle className="w-5 h-5 text-amber-500" />;
       default:
         return <Bell className="w-5 h-5 text-gray-500" />;
     }

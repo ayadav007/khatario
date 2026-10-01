@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
         i.expiry_date,
         COALESCE(i.estimate_status, 'draft') as status,
         i.grand_total,
-        NULL as converted_invoice_id,
+        i.converted_invoice_id,
         i.created_at,
         i.updated_at
       FROM invoices i

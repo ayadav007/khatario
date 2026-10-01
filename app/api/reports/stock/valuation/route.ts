@@ -209,8 +209,16 @@ export async function GET(request: NextRequest) {
     }
     let after = new Map<string, number>();
     const { weightedAverageCosts } = await import('@/lib/inventory/cogs-posting');
-    // AS 2: inventory is carried at cost (weighted average of purchases), not at the master price.
-    const wac = await weightedAverageCosts(undefined, businessId, items.map((i: any) => i.id), historical ? asOnDate! : today);
+    const { getValuationMethod, fifoOpenUnitCosts } = await import('@/lib/inventory/fifo-costing');
+    // AS 2: inventory is carried at cost (open FIFO lots, or weighted average of purchases), not at the master price.
+    const businessMethod = await getValuationMethod(undefined, businessId);
+    const costDate = historical ? asOnDate! : today;
+    const itemIds = items.map((i: any) => i.id);
+    const wac =
+      businessMethod === 'fifo'
+        ? await fifoOpenUnitCosts(undefined, businessId, itemIds, costDate)
+        : await weightedAverageCosts(undefined, businessId, itemIds, costDate);
+    const costMethod = (businessMethod === 'fifo' ? 'fifo' : 'weighted_avg') as ValuationMethod;
     if (historical) {
       const { movementsAfter } = await import('@/lib/inventory/stock-as-of');
       after = await movementsAfter(businessId, asOnDate!, { locationId });
@@ -228,7 +236,7 @@ export async function GET(request: NextRequest) {
       if (stockQty <= 0) continue; // Skip items with no stock
 
       const batchFifo = !historical && item.valuation_method === 'fifo' && item.track_batch === true;
-      const itemValuationMethod = (batchFifo ? 'fifo' : 'weighted_avg') as ValuationMethod;
+      const itemValuationMethod = (batchFifo ? 'fifo' : costMethod) as ValuationMethod;
 
       const batchValue = batchFifo
         ? await getStockValue(item.id, 'fifo', businessId, locationId || undefined)
@@ -258,7 +266,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       report: {
         as_on_date: historical ? asOnDate : today,
-        valuation_method: 'weighted_avg',
+        valuation_method: costMethod,
         stock_source: warehouseMode ? 'warehouses' : locationId ? 'warehouse' : branchIdParam ? 'branch' : 'business',
         location_id: locationId || null,
         items: reportItems,

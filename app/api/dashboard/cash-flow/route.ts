@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
        FROM payments
        WHERE business_id = $1
          AND deleted_at IS NULL
+         AND status = 'active'
          AND type = 'receivable'
          AND payment_date >= $2
          AND payment_date <= $3
@@ -117,6 +118,7 @@ export async function GET(request: NextRequest) {
        FROM payments
        WHERE business_id = $1
          AND deleted_at IS NULL
+         AND status = 'active'
          AND type = 'payable'
          AND payment_date >= $2
          AND payment_date <= $3
@@ -135,7 +137,7 @@ export async function GET(request: NextRequest) {
         TO_CHAR(expense_date, 'YYYY-MM') as month,
         COALESCE(SUM(amount), 0) as total
        FROM expenses
-       WHERE business_id = $1
+       WHERE business_id = $1 AND deleted_at IS NULL
          AND expense_date >= $2
          AND expense_date <= $3
          AND LOWER(COALESCE(payment_mode, '')) NOT IN ('on_account', 'pay_later', 'unpaid', 'credit')

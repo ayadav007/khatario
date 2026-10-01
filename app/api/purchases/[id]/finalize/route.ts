@@ -6,7 +6,8 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
-import { getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +31,11 @@ export async function PATCH(
   const id = params.id;
 
   const body = await request.json().catch(() => ({}));
-  const businessScope =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+  const businessScope = getSessionScopedBusinessId(request);
   if (!businessScope) {
     return NextResponse.json(
-      { error: 'business_id is required' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -65,12 +65,11 @@ export async function PATCH(
     return NextResponse.json({ purchase });
   }
 
-  const userId = body.user_id || body.updated_by;
-  
+  const userId = getAuthenticatedUserId(request);
   if (!userId) {
     return NextResponse.json(
-      { error: 'user_id is required for authorization' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -133,6 +132,16 @@ export async function PATCH(
     if (lockedRow.rows[0]?.status === 'cancelled') {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Cannot finalize cancelled purchase' }, { status: 400 });
+    }
+
+    const historicalPayment = await historicalDraftPaymentBlock(client, {
+      businessId: purchase.business_id,
+      referenceType: 'purchase',
+      documentId: id,
+    });
+    if (historicalPayment) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(historicalPayment, { status: 409 });
     }
 
     if (!purchase.branch_id) {
@@ -406,7 +415,7 @@ export async function PATCH(
 
     const upd = await client.query(
       `UPDATE purchases
-       SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP
+       SET status = 'final', updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
        RETURNING *`,
       [id, businessScope]

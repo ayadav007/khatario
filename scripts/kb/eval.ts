@@ -12,11 +12,11 @@ import { join } from 'path';
 import { closePool, queryRows } from '@/lib/db';
 import { retrieve } from '@/lib/rag/retrieve';
 import { rewriteQuery } from '@/lib/rag/rewrite';
-import type { Audience } from '@/lib/rag/types';
+import type { KbAudience } from '@/lib/rag/types';
 
 interface EvalCase {
   q: string;
-  audience: Audience;
+  audience: KbAudience;
   expect: string[];
   forbid: string[];
   confident?: boolean;
@@ -47,7 +47,7 @@ export function parseEvalSet(source: string): EvalCase[] {
     const [, key, value] = kv;
     if (key === 'expect') current.expect = parseList(value);
     else if (key === 'forbid') current.forbid = parseList(value);
-    else if (key === 'audience') current.audience = value.trim() as Audience;
+    else if (key === 'audience') current.audience = value.trim() as KbAudience;
     else current.confident = value.trim() === 'true';
   }
   return cases;

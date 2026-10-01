@@ -9,6 +9,7 @@ import {
   userHasBranchAccess,
   resourceBelongsToBusiness,
   accountingPeriodIsOpen,
+  resourceStatusIsNot,
 } from '../conditions';
 
 /**
@@ -36,6 +37,20 @@ export function getCreditNotePolicies(): Policy[] {
       priority: 10,
       conditions: [
         resourceBelongsToBusiness(),
+        accountingPeriodIsOpen('credit_note_date'),
+      ],
+    },
+
+    // CANCEL: posted credit notes are reversed, not deleted. Same permission shape as invoice cancel.
+    {
+      resource: 'credit_notes',
+      action: 'cancel',
+      requiresPermission: 'credit_notes.delete',
+      priority: 10,
+      conditions: [
+        userHasBranchAccess(),
+        resourceBelongsToBusiness(),
+        resourceStatusIsNot(['cancelled'], 'Credit note is already cancelled'),
         accountingPeriodIsOpen('credit_note_date'),
       ],
     },

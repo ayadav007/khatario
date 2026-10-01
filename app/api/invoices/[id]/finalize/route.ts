@@ -7,8 +7,9 @@ import { allocateStockOnSale } from '@/lib/stock-valuation';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { adjustBranchVariantStock, refreshVariantGlobalStockFromBranches } from '@/lib/branch-variant-stock';
@@ -38,12 +39,11 @@ export async function PATCH(
   const id = params.id;
 
   const body = await request.json().catch(() => ({}));
-  const businessScope =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+  const businessScope = getSessionScopedBusinessId(request);
   if (!businessScope) {
     return NextResponse.json(
-      { error: 'business_id is required' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -61,12 +61,11 @@ export async function PATCH(
   }
   const stockBranchId = inv.branch_id as string;
 
-  const userId = getUserIdFromRequest(request, body) || body.updated_by;
-  
+  const userId = getAuthenticatedUserId(request);
   if (!userId) {
     return NextResponse.json(
-      { error: 'user_id is required for authorization' },
-      { status: 400 }
+      { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+      { status: 401 }
     );
   }
 
@@ -90,6 +89,8 @@ export async function PATCH(
     return NextResponse.json({ invoice: inv });
   }
 
+  // A proforma is not a posted sale, so finalizing it must not touch stock.
+  if (inv.document_type !== 'proforma_invoice') {
   // Preflight: bundle component stock before opening the stock transaction
   {
     const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
@@ -141,6 +142,7 @@ export async function PATCH(
       }
     }
   }
+  }
 
   // CRITICAL: Only check limit if finalizing a draft (not already final)
   // If already final, no limit check needed (already counted)
@@ -160,6 +162,16 @@ export async function PATCH(
 
   try {
     await client.query('BEGIN');
+
+    const historicalPayment = await historicalDraftPaymentBlock(client, {
+      businessId: inv.business_id,
+      referenceType: 'invoice',
+      documentId: id,
+    });
+    if (historicalPayment) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(historicalPayment, { status: 409 });
+    }
 
     try {
       await enforceAccess({
@@ -241,6 +253,7 @@ export async function PATCH(
     const warehouseModeEnabled = await isWarehouseModeEnabled(inv.business_id);
     
     for (const row of current.items) {
+      if (inv.document_type === 'proforma_invoice') break;
       if (!row.item_id) continue;
       
       // Validate warehouse is accessible by branch (if warehouse_id provided)

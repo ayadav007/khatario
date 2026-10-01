@@ -20,6 +20,7 @@ import {
   computePurchaseDocument,
   stateCodeFromGstin,
 } from '@/lib/purchase-gst-calculator';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 
 export class PurchaseCreateServiceError extends Error {
   constructor(
@@ -58,6 +59,11 @@ export interface CreatePurchaseInput {
   invoice_number?: string | null;
   supplier_gstin?: string | null;
   extraction_job_id?: string | null;
+}
+
+function optionalNumber(v: unknown): number | undefined {
+  const n = typeof v === 'string' && v.trim() ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
 export interface CreatePurchaseResult {
@@ -312,6 +318,7 @@ export async function createPurchaseInTransaction(
       manual_cgst: item.manual_cgst as number | undefined,
       manual_sgst: item.manual_sgst as number | undefined,
       manual_igst: item.manual_igst as number | undefined,
+      invoice_inclusive_line_total: optionalNumber(item.invoice_inclusive_line_total),
     })),
     {
       supplierStateCode: supplierStateForGst || '',
@@ -320,14 +327,27 @@ export async function createPurchaseInTransaction(
     }
   );
 
-  const finalSubtotal = body.subtotal !== undefined ? body.subtotal : gstDoc.subtotal;
-  const finalTaxTotal = body.tax_total !== undefined ? body.tax_total : gstDoc.taxTotal;
+  // Header totals always come from the stored lines; a client figure that disagrees would leave
+  // the bill header, its lines and the ledger (posted from the header) out of step.
+  const finalSubtotal = gstDoc.subtotal;
+  const finalTaxTotal = gstDoc.taxTotal;
   const finalRoundOff =
     typeof body.round_off === 'number' && isFinite(body.round_off) ? body.round_off : 0;
   const cessTotal = purchaseCessTotal(items);
-  const computedGrand = gstDoc.subtotal + gstDoc.taxTotal + cessTotal + finalRoundOff;
-  const finalGrandTotal = body.grand_total !== undefined ? body.grand_total : computedGrand;
+  const finalGrandTotal = Math.round((gstDoc.subtotal + gstDoc.taxTotal + cessTotal + finalRoundOff) * 100) / 100;
+  if (body.grand_total !== undefined && Math.abs(Number(body.grand_total) - finalGrandTotal) > 0.05) {
+    console.warn('[purchase-create] client grand_total differs from server lines', {
+      business_id,
+      bill_number: body.bill_number,
+      client: body.grand_total,
+      server: finalGrandTotal,
+    });
+  }
   const paid_amount = body.paid_amount ?? 0;
+  if (status !== 'final' && paid_amount > 0) {
+    const rejected = draftDocumentPaymentError('purchase');
+    throw new PurchaseCreateServiceError(rejected.error, 409, rejected.code);
+  }
   const supplierPayable = supplierPayableAmount(finalGrandTotal, finalTaxTotal + cessTotal, body.is_reverse_charge);
   const balanceAmount = supplierPayable - paid_amount;
 
@@ -595,12 +615,13 @@ export async function createPurchaseInTransaction(
     }
 
     if (paid_amount > 0) {
-      await client.query(
+      const payIns = await client.query<{ id: string }>(
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
           amount, payment_mode, payment_date, notes, created_by
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING id
         `,
         [
           business_id,
@@ -616,14 +637,29 @@ export async function createPurchaseInTransaction(
           created_by,
         ]
       );
+      if (normalizedSupplierId && paid_amount + 0.005 < supplierPayable) {
+        const { createPaymentLedgerEntries } = await import('@/lib/ledger-utils');
+        await createPaymentLedgerEntries({
+          businessId: business_id,
+          paymentId: payIns.rows[0].id,
+          paymentDate: body.bill_date,
+          amount: paid_amount,
+          type: 'payable',
+          supplierId: normalizedSupplierId,
+          paymentMode: 'cash',
+          referenceNumber: body.bill_number || String(purchase.id).substring(0, 8),
+          description: `Payment for purchase ${body.bill_number || String(purchase.id).substring(0, 8)}`,
+          branchId: finalBranchId,
+          poolClient: client,
+        });
+      }
     }
 
     await client.query(
-      `UPDATE purchases SET status = 'final', is_editable = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      `UPDATE purchases SET status = 'final', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [purchase.id]
     );
     purchase.status = 'final';
-    purchase.is_editable = false;
   }
 
   const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
@@ -662,8 +698,13 @@ export function validatePurchaseGstPayload(body: CreatePurchaseInput): {
       unit_price: Number(item.unit_price) || 0,
       discount_percent: Number(item.discount_percent) || 0,
       discount_amount: Number(item.discount_amount) || 0,
+      discount_on_tax_inclusive: item.discount_on_tax_inclusive === true,
       tax_rate: Number(item.tax_rate) || 0,
       tax_mode: item.tax_mode as string | undefined,
+      manual_cgst: item.manual_cgst as number | undefined,
+      manual_sgst: item.manual_sgst as number | undefined,
+      manual_igst: item.manual_igst as number | undefined,
+      invoice_inclusive_line_total: optionalNumber(item.invoice_inclusive_line_total),
     })),
     {
       supplierStateCode: String(body.supplier_state_code || '').slice(0, 2),

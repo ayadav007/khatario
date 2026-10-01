@@ -4,6 +4,8 @@ import { queryRows, queryOne } from '@/lib/db';
 import { calculateCOGS } from '@/lib/services/cogs-calculator';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { CREDIT_SECTIONS, isPlSection } from '@/lib/accounting/pl-sections';
+import { previousFinancialYear } from '@/lib/reports/profit-loss';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,10 +112,9 @@ export async function GET(request: NextRequest) {
 
     if (line === 'opening_stock' || line === 'closing_stock') {
       const financialYear = searchParams.get('financial_year');
-      const previousFY = financialYear
-        ? `${parseInt(financialYear.split('-')[0]) - 1}-${financialYear.split('-')[1].split('-')[0]}`
-        : undefined;
-      const cogs = await calculateCOGS(businessId, fromDate, toDate, financialYear || undefined, previousFY);
+      const cogs = await calculateCOGS(
+        businessId, fromDate, toDate, financialYear || undefined, previousFinancialYear(financialYear)
+      );
       const stock = line === 'opening_stock' ? cogs.openingStock : cogs.closingStock;
       const rows = [...stock.items]
         .filter((i) => Math.abs(i.quantity) > 0.0001 || Math.abs(i.total_value) > 0.005)
@@ -179,6 +180,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ kind: 'vouchers', title, total: 0, count: 0, truncated: false, rows: [] });
     }
 
+    // With a section, amounts are signed the way the statement shows them (contra accounts negative).
+    const sectionParam = searchParams.get('section');
+    const sectionSign = isPlSection(sectionParam) && sectionParam !== 'elimination'
+      ? (CREDIT_SECTIONS.has(sectionParam) ? 'lel.credit - lel.debit' : 'lel.debit - lel.credit')
+      : null;
+    const amountSql = sectionSign
+      ?? `CASE WHEN a.account_type = 'income' THEN lel.credit - lel.debit ELSE lel.debit - lel.credit END`;
+
     const params: any[] = [accountIds, businessId, fromDate, toDate];
     let scopeSql = '';
     if (!mirrorCogsCalculator) {
@@ -193,8 +202,7 @@ export async function GET(request: NextRequest) {
           lel.voucher_id,
           lel.voucher_type,
           MIN(lel.entry_date)::text AS entry_date,
-          SUM(CASE WHEN a.account_type = 'income' THEN lel.credit - lel.debit
-                   ELSE lel.debit - lel.credit END)::float AS amount,
+          SUM(${amountSql})::float AS amount,
           MAX(lel.narration) AS narration,
           MAX(lel.reference_number) AS reference_number
         FROM ledger_entry_lines lel

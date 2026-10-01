@@ -147,6 +147,9 @@ export default function StockValuationReportPage() {
             <h1 className="text-2xl font-bold text-text-primary">Stock Valuation Report</h1>
             <p className="text-sm text-text-secondary mt-1">View stock value by different valuation methods</p>
           </div>
+          <a href="/reports/stock/fifo-lots" className="text-sm text-primary-600 hover:underline font-medium">
+            FIFO cost lot tracking
+          </a>
         </div>
 
         <Card padding="md">

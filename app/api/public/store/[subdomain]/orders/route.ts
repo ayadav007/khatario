@@ -8,7 +8,8 @@ import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-s
 import { storePhonesMatch, storePhoneDigits } from '@/lib/store/store-phone';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { shouldDecrementStockOnPlace } from '@/lib/store/fulfillment-rules';
+import { validateStoreOrderLines } from '@/lib/store/fulfillment-rules';
+import { reserveStoreOrderNumber } from '@/lib/store/order-lifecycle';
 import { notifyStoreCustomerWhatsApp } from '@/lib/store/notify-whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -56,15 +57,16 @@ export async function POST(
       }
     }
 
+    const cart = validateStoreOrderLines(body.items);
+    if (!cart.ok) {
+      return NextResponse.json({ error: cart.error }, { status: 400 });
+    }
+
     const quote = await buildStoreQuote({
       businessId: store.business_id,
       minOrderAmount: store.store_min_order_amount,
       branchId: body.branch_id,
-      items: (body.items ?? []).map((i: { item_id: string; variant_id?: string; quantity: number }) => ({
-        item_id: i.item_id,
-        variant_id: i.variant_id,
-        quantity: i.quantity,
-      })),
+      items: cart.lines,
       deliveryMode: body.delivery_mode === 'pickup' ? 'pickup' : 'delivery',
       pincode: body.customer_pincode,
       customerLat: body.customer_lat != null ? Number(body.customer_lat) : null,
@@ -106,46 +108,9 @@ export async function POST(
       );
     }
     const storeCustomerId = verified.id;
-    const countRow = await queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM store_orders WHERE business_id = $1`,
-      [store.business_id],
-    );
-    const orderNum = `SO-${(parseInt(countRow?.count ?? '0', 10) + 1).toString().padStart(4, '0')}`;
 
-    const decrementStock = shouldDecrementStockOnPlace(paymentMethod);
     await client.query('BEGIN');
-
-    if (decrementStock) {
-      for (const line of quote.lines) {
-        if (line.variant_id) {
-          const stock = await client.query(
-            `UPDATE item_variants SET current_stock = current_stock - $1
-             WHERE id = $2 AND current_stock >= $1 RETURNING current_stock`,
-            [line.quantity, line.variant_id],
-          );
-          if (stock.rowCount === 0) {
-            await client.query('ROLLBACK');
-            return NextResponse.json(
-              { error: `"${line.item_name}" is out of stock` },
-              { status: 409 },
-            );
-          }
-        } else {
-          const stock = await client.query(
-            `UPDATE items SET current_stock = current_stock - $1
-             WHERE id = $2 AND business_id = $3 AND current_stock >= $1 RETURNING current_stock`,
-            [line.quantity, line.item_id, store.business_id],
-          );
-          if (stock.rowCount === 0) {
-            await client.query('ROLLBACK');
-            return NextResponse.json(
-              { error: `"${line.item_name}" is out of stock` },
-              { status: 409 },
-            );
-          }
-        }
-      }
-    }
+    const orderNum = await reserveStoreOrderNumber(client, store.business_id);
 
     const order = await client.query(
       `INSERT INTO store_orders

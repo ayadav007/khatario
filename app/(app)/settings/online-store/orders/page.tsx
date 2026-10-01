@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { printStorePackingSlip } from '@/lib/store/print-packing-slip';
+import { STORE_ORDER_TRANSITIONS } from '@/lib/store/fulfillment-rules';
 import clsx from 'clsx';
 
 interface StoreOrderItem {
@@ -72,13 +73,7 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 };
 
-const STATUS_FLOW: Record<string, string[]> = {
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['ready', 'cancelled'],
-  ready: ['delivered', 'cancelled'],
-  delivered: [],
-  cancelled: [],
-};
+const STATUS_FLOW: Record<string, readonly string[]> = STORE_ORDER_TRANSITIONS;
 
 export default function StoreOrdersPage() {
   const { business } = useAuth();

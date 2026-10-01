@@ -135,6 +135,8 @@ export function getMobileRouteTitle(
   if (p === '/reports/cash-flow') return 'Cash flow';
   if (p === '/reports/credit-risk') return 'Credit risk';
   if (p === '/reports/profit-by-invoice') return 'Profit by invoice';
+  if (p.startsWith('/reports/gst/cash-ledger')) return 'GST cash ledger';
+  if (p.startsWith('/reports/gst/compliance')) return 'GST alerts';
   if (p.startsWith('/reports/gst/gstr1')) return 'GSTR-1';
   if (p.startsWith('/reports/gst/gstr3b')) return 'GSTR-3B';
   if (p.startsWith('/reports/gst/gstr9')) return 'GSTR-9';

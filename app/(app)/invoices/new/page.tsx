@@ -2166,14 +2166,6 @@ function NewInvoiceContent() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { if (res.status === 403 && data.code === 'SUBSCRIPTION_LIMIT_EXCEEDED') { setLimitInfo({ current: data.current, limit: data.limit }); setShowUpgradePrompt(true); return; } throw new Error(data.error || 'Failed to save'); }
       setSavedInvoiceId(data.invoice.id); 
-      const sourceEstimateId = searchParams.get('convert_from');
-      if (sourceEstimateId && targetStatus === 'final' && documentType !== 'proforma_invoice') {
-        fetch(`/api/invoices/${sourceEstimateId}?user_id=${user?.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ estimate_status: 'converted' }),
-        }).catch((err) => console.error('[Convert] Failed to mark estimate converted:', err));
-      }
       // For proforma invoices, always track as 'draft' (they remain editable unless converted)
       // But if estimate_status is 'converted', track as 'final' to prevent editing
       // For regular invoices, track the actual status

@@ -8,6 +8,9 @@ import {
   assertGroupMatchesType,
   setAccountOpeningBalance,
 } from '@/lib/accounting/account-rules';
+import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS, plSectionFromGroup } from '@/lib/accounting/pl-sections';
+import { getClientIP, getUserAgent, logActivity } from '@/lib/activity-logger';
+import { hasPlSectionColumn } from '@/lib/accounting/pl-section-column';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +43,8 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
       const accounts = await queryRows<Account & { account_group_name: string }>(`
         SELECT 
           a.*,
-          ag.group_name as account_group_name
+          ag.group_name as account_group_name,
+          ag.group_code as account_group_code
         FROM accounts a
         LEFT JOIN account_groups ag ON a.account_group_id = ag.id
         WHERE a.business_id = $1
@@ -98,6 +102,17 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
     if (isActive !== null) {
       sql += ` AND a.is_active = $${paramIndex}`;
       params.push(isActive === 'true');
+      paramIndex++;
+    }
+
+    const plSectionFilter = searchParams.get('pl_section');
+    if (plSectionFilter) {
+      if (!isPlSection(plSectionFilter)) {
+        return NextResponse.json({ error: `Unknown pl_section ${plSectionFilter}` }, { status: 400 });
+      }
+      // to_jsonb keeps the query valid on databases without migration 334.
+      sql += ` AND to_jsonb(a) ->> 'pl_section' = $${paramIndex}`;
+      params.push(plSectionFilter);
       paramIndex++;
     }
 
@@ -164,6 +179,7 @@ export const POST = withPremiumSubscriptionApi(
         description,
         sort_order = 0,
         created_by,
+        pl_section,
       } = body as {
         account_code?: string;
         account_name?: string;
@@ -176,6 +192,7 @@ export const POST = withPremiumSubscriptionApi(
         description?: string;
         sort_order?: number;
         created_by?: string;
+        pl_section?: string | null;
       };
 
       const business_id = ctx.businessId;
@@ -250,13 +267,38 @@ export const POST = withPremiumSubscriptionApi(
         );
       }
 
+      // Omitted section = the database default for the group (trigger from migration 334).
+      let plSection: string | null = null;
+      if (pl_section != null && pl_section !== '') {
+        if (!isPlSection(pl_section) || !isAllowedPlSection(account_type, pl_section)) {
+          return NextResponse.json(
+            { error: `pl_section ${pl_section} is not valid for a ${account_type} account`, code: 'INVALID_PL_SECTION' },
+            { status: 400 }
+          );
+        }
+        plSection = pl_section;
+      }
+      const withSection = plSection !== null && (await hasPlSectionColumn());
+      if (plSection !== null && !withSection) {
+        const group = await queryOne<{ group_code: string; group_type: string }>(
+          'SELECT group_code, group_type FROM account_groups WHERE id = $1',
+          [account_group_id]
+        );
+        if (plSection !== plSectionFromGroup(account_type, group?.group_code, group?.group_type)) {
+          return NextResponse.json(
+            { error: 'Choosing a P&L section needs database migration 334. Leave the default or run the migration.', code: 'PL_SECTION_UNAVAILABLE' },
+            { status: 409 }
+          );
+        }
+      }
+
       let account = await queryOne<Account>(
         `INSERT INTO accounts (
         business_id, account_code, account_name, account_type, account_group_id,
         parent_account_id, nature, opening_balance, opening_balance_type,
-        description, sort_order
+        description, sort_order${withSection ? ', pl_section' : ''}
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10${withSection ? ', $11' : ''})
       RETURNING *`,
         [
           business_id,
@@ -269,6 +311,7 @@ export const POST = withPremiumSubscriptionApi(
           opening_balance_type,
           description || null,
           sort_order,
+          ...(withSection ? [plSection] : []),
         ]
       );
 
@@ -280,6 +323,24 @@ export const POST = withPremiumSubscriptionApi(
           type: opening_balance_type as 'debit' | 'credit',
         });
         account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1', [account.id]);
+      }
+
+      if (account) {
+        const section = (account as Account & { pl_section?: string | null }).pl_section;
+        await logActivity({
+          business_id,
+          user_id: created_by,
+          action_type: 'create',
+          module: 'accounts',
+          entity_id: account.id,
+          entity_type: 'account',
+          description: `Created account ${account.account_code} ${account.account_name}${
+            isPlSection(section) ? ` (Profit & Loss: ${PL_SECTION_LABELS[section]})` : ''
+          }`,
+          ip_address: getClientIP(ctx.request),
+          user_agent: getUserAgent(ctx.request),
+          metadata: { account_type: account.account_type, account_group_id: account.account_group_id, pl_section: section ?? null },
+        });
       }
 
       return NextResponse.json({ account }, { status: 201 });

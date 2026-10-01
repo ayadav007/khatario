@@ -137,7 +137,7 @@ export async function GET(
         amount as paid_amount,
         0 as balance_amount,
         NULL::text as document_type,
-        NULL::text as status,
+        status::text as status,
         NULL::text as payment_status,
         NULL::text as estimate_status,
         payment_mode::text as payment_mode

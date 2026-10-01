@@ -1,6 +1,13 @@
 export const AUDIENCES = ['prospect', 'tenant_user', 'tenant_customer', 'internal'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
+/**
+ * Labels a knowledge chunk can carry. `gst_law` is a reference corpus (the GST Acts and Rules),
+ * never a conversation audience: it is only searched as a second pass for tenant users.
+ */
+export const KB_AUDIENCES = [...AUDIENCES, 'gst_law'] as const;
+export type KbAudience = (typeof KB_AUDIENCES)[number];
+
 export const CHANNELS = ['web', 'signup', 'trial_app', 'in_app', 'whatsapp'] as const;
 export type Channel = (typeof CHANNELS)[number];
 
@@ -15,7 +22,7 @@ export type SourceKind =
 export type Locale = 'en' | 'hinglish' | 'hi';
 
 export interface RetrievalScope {
-  audience: Audience;
+  audience: KbAudience;
   /** Required for tenant_customer; must be null for platform audiences. */
   businessId?: string | null;
 }
@@ -24,7 +31,7 @@ export interface KbDocumentInput {
   docKey: string;
   title: string;
   url?: string | null;
-  audiences: Audience[];
+  audiences: KbAudience[];
   locale: Locale;
   tags: string[];
   requiredFeature?: string | null;
@@ -34,7 +41,7 @@ export interface KbDocumentInput {
 export interface KbSourceInput {
   kind: SourceKind;
   locator: string;
-  audiences: Audience[];
+  audiences: KbAudience[];
   businessId?: string | null;
   documents: KbDocumentInput[];
 }
@@ -57,6 +64,8 @@ export interface RetrievedChunk {
   vectorRank: number | null;
   textRank: number | null;
   vectorSimilarity: number | null;
+  /** Set when the chunk comes from the GST law corpus rather than Khatario's own guides. */
+  corpus?: 'law';
 }
 
 export type AssistantIntent =

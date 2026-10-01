@@ -90,7 +90,7 @@ export async function GET(
     // Get payments for this supplier
     const payments = await db.queryRows(`
       SELECT 
-        id, amount, payment_mode, payment_date, notes
+        id, amount, payment_mode, payment_date, notes, status
       FROM payments
       WHERE supplier_id = $1 AND business_id = $2
         ${branchFilter}

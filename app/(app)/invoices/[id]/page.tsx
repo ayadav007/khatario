@@ -55,7 +55,6 @@ export default function InvoiceDetailPage() {
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
   const [converting, setConverting] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
-  const [convertStatus, setConvertStatus] = useState<'draft' | 'final' | null>(null);
   const [creditMetrics, setCreditMetrics] = useState<{ current?: CreditMetrics; projected?: CreditMetrics } | null>(null);
   const [creditApproval, setCreditApproval] = useState<any>(null);
   const [profitSummary, setProfitSummary] = useState<InvoiceProfitSummaryDto | null>(null);
@@ -191,23 +190,18 @@ export default function InvoiceDetailPage() {
   };
 
   const handleConvertConfirm = async () => {
-    if (!convertStatus) {
-      toast.warning('Please select whether to create as Draft or Final');
-      return;
-    }
-    
     setShowConvertModal(false);
     setConverting(true);
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/convert-to-tax-invoice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: convertStatus })
+        body: JSON.stringify({})
       });
       
       if (res.ok) {
         const data = await res.json();
-        toast.success(`Proforma invoice converted successfully! New tax invoice: ${data.invoice_number} (${convertStatus})`);
+        toast.success(`Proforma invoice converted successfully! New tax invoice: ${data.invoice_number}`);
         router.push(`/invoices/${data.invoice_id}`);
       } else {
         const error = await safeJsonParse(res);
@@ -218,7 +212,6 @@ export default function InvoiceDetailPage() {
       toast.error('Failed to convert proforma invoice');
     } finally {
       setConverting(false);
-      setConvertStatus(null);
     }
   };
 
@@ -303,6 +296,14 @@ export default function InvoiceDetailPage() {
   const isFinal = status === 'final';
   const isCancelled = status === 'cancelled';
   const isProforma = invoice.document_type === 'proforma_invoice';
+  const canConvertProforma =
+    isProforma &&
+    !isCancelled &&
+    invoice.estimate_status !== 'converted' &&
+    invoice.estimate_status !== 'rejected' &&
+    invoice.estimate_status !== 'expired' &&
+    invoice.proforma_lifecycle_status !== 'converted_to_tax_invoice' &&
+    invoice.proforma_lifecycle_status !== 'cancelled';
 
   const bluetoothPrintButton = canBtPrint ? (
     <Button
@@ -459,7 +460,7 @@ export default function InvoiceDetailPage() {
             )}
 
             {/* Convert Proforma to Tax Invoice - Allow conversion from draft or final */}
-            {isProforma && (
+            {canConvertProforma && (
               <Button 
                 variant="primary" 
                 onClick={handleConvertToTaxInvoice}
@@ -532,7 +533,7 @@ export default function InvoiceDetailPage() {
                 </Button>
               </>
             )}
-            {isProforma && (
+            {canConvertProforma && (
               <Button variant="primary" onClick={handleConvertToTaxInvoice} disabled={converting} className="flex-1">
                 {converting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span className="ml-2">Convert</span>
@@ -613,6 +614,11 @@ export default function InvoiceDetailPage() {
                           ₹{Number(payment.amount).toLocaleString('en-IN')}
                         </span>
                         <span className="text-text-secondary ml-2">via {payment.payment_mode || 'N/A'}</span>
+                        {payment.status === 'reversed' && (
+                          <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                            Reversed
+                          </span>
+                        )}
                         {payment.notes && (
                           <span className="text-text-muted ml-2">({payment.notes})</span>
                         )}
@@ -722,47 +728,14 @@ export default function InvoiceDetailPage() {
               Convert Proforma Invoice to Tax Invoice
             </h3>
             <p className="text-sm text-text-secondary mb-6">
-              Choose how you want to create the new tax invoice:
+              This creates one final tax invoice. That invoice posts the stock and the accounting. This proforma will be marked converted and cannot be converted again.
             </p>
-            
-            <div className="space-y-3 mb-6">
-              <label className="flex items-center p-4 border-2 border-border rounded-lg cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors">
-                <input
-                  type="radio"
-                  name="convertStatus"
-                  value="draft"
-                  checked={convertStatus === 'draft'}
-                  onChange={(e) => setConvertStatus(e.target.value as 'draft')}
-                  className="mr-3 w-4 h-4 text-primary-600"
-                />
-                <div>
-                  <div className="font-medium text-text-primary">Draft (Editable)</div>
-                  <div className="text-sm text-text-muted">Create as draft so you can review and edit before finalizing</div>
-                </div>
-              </label>
-              
-              <label className="flex items-center p-4 border-2 border-border rounded-lg cursor-pointer hover:bg-slate-100/80 dark:hover:bg-slate-800 transition-colors">
-                <input
-                  type="radio"
-                  name="convertStatus"
-                  value="final"
-                  checked={convertStatus === 'final'}
-                  onChange={(e) => setConvertStatus(e.target.value as 'final')}
-                  className="mr-3 w-4 h-4 text-primary-600"
-                />
-                <div>
-                  <div className="font-medium text-text-primary">Final (Locked)</div>
-                  <div className="text-sm text-text-muted">Create as final invoice immediately (will deduct stock and affect GST)</div>
-                </div>
-              </label>
-            </div>
 
             <div className="flex gap-3">
               <Button
                 variant="secondary"
                 onClick={() => {
                   setShowConvertModal(false);
-                  setConvertStatus(null);
                 }}
                 className="flex-1"
                 disabled={converting}
@@ -773,7 +746,7 @@ export default function InvoiceDetailPage() {
                 variant="primary"
                 onClick={handleConvertConfirm}
                 className="flex-1"
-                disabled={converting || !convertStatus}
+                disabled={converting}
                 isLoading={converting}
               >
                 Convert

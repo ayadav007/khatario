@@ -10,7 +10,9 @@ import {
   getBranchVariantQuantityDb,
   refreshVariantGlobalStockFromBranches,
 } from '@/lib/branch-variant-stock';
-import { weightedAverageCosts } from '@/lib/inventory/cogs-posting';
+import { currentUnitCosts } from '@/lib/inventory/cogs-posting';
+import { fifoCostForDocument, getValuationMethod } from '@/lib/inventory/fifo-costing';
+import { recostAfterStockChange } from '@/lib/inventory/fifo-recost';
 import { postInventoryAdjustment } from '@/lib/inventory/adjustment-posting';
 
 export type AdjustmentType = 'QUANTITY' | 'VALUE';
@@ -129,9 +131,10 @@ export async function createQuantityAdjustment(
 
     const item = itemResult.rows[0];
     let currentPurchasePrice = parseFloat(item.purchase_price || '0');
-    if (!params.variantId) {
-      const wac = await weightedAverageCosts(client, params.businessId, [params.itemId], params.adjustmentDate);
-      const rate = wac.get(params.itemId);
+    const fifo = (await getValuationMethod(client, params.businessId)) === 'fifo';
+    if (!params.variantId || fifo) {
+      const unit = await currentUnitCosts(client, params.businessId, [params.itemId], params.adjustmentDate);
+      const rate = unit.get(params.itemId);
       if (rate !== undefined && rate > 0) currentPurchasePrice = Math.round(rate * 100) / 100;
     }
     
@@ -186,8 +189,8 @@ export async function createQuantityAdjustment(
       throw new Error('Quantity cannot go below zero');
     }
 
-    // Calculate value change (quantity_change * unit_cost)
-    const valueChange = quantityChange * currentPurchasePrice;
+    // Calculate value change (quantity_change * unit_cost); FIFO decreases are re-costed from lots below.
+    let valueChange = quantityChange * currentPurchasePrice;
     const currentTotalValue = currentStock * currentPurchasePrice;
     const newTotalValue = newQuantity * currentPurchasePrice;
 
@@ -334,6 +337,16 @@ export async function createQuantityAdjustment(
 
     const branchId = adjustmentBranchId || undefined;
 
+    if (fifo && quantityChange < 0) {
+      const cost = await fifoCostForDocument(
+        client,
+        params.businessId,
+        new Map([[params.itemId, Math.abs(quantityChange)]]),
+        { kind: 'adjustment_out', docId: adjustmentId }
+      );
+      valueChange = -cost;
+    }
+
     const journalEntryId: string | undefined = undefined;
     const { itcReversed } = await postInventoryAdjustment(client, {
       businessId: params.businessId,
@@ -352,6 +365,7 @@ export async function createQuantityAdjustment(
       `UPDATE inventory_adjustments SET value_change = $1, gst_impact = $2 WHERE id = $3`,
       [Math.round(valueChange * 100) / 100, itcReversed ? -itcReversed : null, adjustmentId]
     );
+    await recostAfterStockChange(client, params.businessId, [params.itemId]);
 
     // Commit the transaction
     await client.query('COMMIT');
@@ -633,6 +647,7 @@ export async function createValueAdjustment(
       narration: `Inventory value adjustment: ${params.reasonCode}${params.reasonNotes ? ` - ${params.reasonNotes}` : ''}`,
       quantityAdjustment: false,
     });
+    await recostAfterStockChange(client, params.businessId, [params.itemId]);
 
     await client.query('COMMIT');
 

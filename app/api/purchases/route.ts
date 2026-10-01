@@ -7,10 +7,12 @@ import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-ut
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { FeatureKeys } from '@/lib/featureKeys';
 import {
+  getAuthenticatedUserId,
   getUserIdFromRequest,
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
 } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 import { applyPurchaseGoodsStockLine, PurchaseStockError } from '@/lib/purchase-goods-stock';
 import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-item-for-purchase';
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
@@ -297,7 +299,6 @@ export async function POST(request: NextRequest) {
       document_type = 'tax_invoice',
       port_code,
       itc_eligible = true,
-      created_by, // User ID who created the purchase
       price_mode,
       supplier_state_code: supplier_state_code_input,
       invoice_number: invoice_number_input,
@@ -310,9 +311,14 @@ export async function POST(request: NextRequest) {
         ? String(supplier_id).trim()
         : null;
 
-    if (!business_id || !bill_date || !items || items.length === 0) {
+    const sessionUser = getAuthenticatedUserId(request);
+    if (!business_id || !sessionUser) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    const created_by: string = sessionUser;
+    if (!bill_date || !items || items.length === 0) {
       return NextResponse.json(
-        { error: 'Active business scope, bill_date, and items are required' },
+        { error: 'bill_date and items are required' },
         { status: 400 }
       );
     }
@@ -330,11 +336,8 @@ export async function POST(request: NextRequest) {
       throw e;
     }
 
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
-        { status: 400 }
-      );
+    if (status !== 'final' && Number(paid_amount) > 0) {
+      return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
     }
 
     // CRITICAL: Enforce access boundary - reject attendance-only employees
@@ -969,14 +972,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create payment record if paid_amount > 0 (for cash flow tracking)
+    // A partly paid final bill posts the paid portion as its own payment voucher.
+    // A fully settled cash bill is already credited to cash inside the purchase voucher.
     if (status === 'final' && paid_amount > 0) {
-      await client.query(
+      const payIns = await client.query<{ id: string }>(
         `
         INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
           amount, payment_mode, payment_date, notes, created_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id
       `,
         [
           business_id,
@@ -989,9 +994,25 @@ export async function POST(request: NextRequest) {
           'cash',
           bill_date,
           `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
-          created_by || null,
+          getAuthenticatedUserId(request),
         ]
       );
+      if (normalizedSupplierId && paid_amount + 0.005 < supplierPayable) {
+        const { createPaymentLedgerEntries } = await import('@/lib/ledger-utils');
+        await createPaymentLedgerEntries({
+          businessId: business_id,
+          paymentId: payIns.rows[0].id,
+          paymentDate: bill_date,
+          amount: paid_amount,
+          type: 'payable',
+          supplierId: normalizedSupplierId,
+          paymentMode: 'cash',
+          referenceNumber: bill_number || purchase.id.substring(0, 8),
+          description: `Payment for purchase ${bill_number || purchase.id.substring(0, 8)}`,
+          branchId: finalBranchId,
+          poolClient: client,
+        });
+      }
     }
 
     const { linkExtractionJobToPurchase } = await import('@/lib/purchases/extraction-job-purchase-link');
@@ -1012,7 +1033,7 @@ export async function POST(request: NextRequest) {
 
       await logActivity({
         business_id,
-        user_id: created_by || null,
+        user_id: created_by,
         action_type: 'create',
         module: 'purchases',
         entity_id: purchase.id,

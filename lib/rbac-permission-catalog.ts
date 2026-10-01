@@ -44,6 +44,7 @@ export const PERMISSION_MODULE_PLATFORM: Record<string, PlatformModule | 'core'>
   suppliers: 'billing',
   items: 'billing',
   payments: 'billing',
+  payment_reversals: 'billing',
   expenses: 'billing',
   warehouses: 'billing',
   warehouse_transfer: 'billing',

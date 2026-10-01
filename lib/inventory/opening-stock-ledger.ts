@@ -1,5 +1,6 @@
 import { getPool } from '@/lib/db';
 import { deleteVoucher } from '@/lib/accounting/voucher-posting';
+import { recostAfterStockChange } from '@/lib/inventory/fifo-recost';
 import {
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
@@ -62,6 +63,8 @@ export async function syncItemOpeningStockLedger(businessId: string, itemId: str
         );
       }
     }
+
+    if (item.item_type === 'goods') await recostAfterStockChange(client, businessId, [itemId]);
 
     await client.query('COMMIT');
     return value;

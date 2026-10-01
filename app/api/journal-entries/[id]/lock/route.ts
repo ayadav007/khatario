@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { query, queryOne, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
@@ -18,23 +18,16 @@ export async function POST(
 
   try {
     const voucherId = params.id;
-    const body = await request.json();
-    const { business_id, lock_reason } = body;
-    const userId = getUserIdFromRequest(request, body) || body.locked_by || request.headers.get('x-user-id');
+    const body = await request.json().catch(() => ({}));
+    const { lock_reason } = body;
+    const business_id = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
 
-    if (!business_id) {
+    if (!business_id || !userId) {
       client.release();
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      client.release();
-      return NextResponse.json(
-        { error: 'user_id (locked_by) is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
@@ -121,23 +114,14 @@ export async function DELETE(
 
   try {
     const voucherId = params.id;
-    const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request) || request.headers.get('x-user-id');
+    const businessId = getSessionScopedBusinessId(request);
+    const userId = getAuthenticatedUserId(request);
 
-    if (!businessId) {
+    if (!businessId || !userId) {
       client.release();
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      client.release();
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 

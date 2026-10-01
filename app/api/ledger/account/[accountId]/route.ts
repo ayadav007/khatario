@@ -86,16 +86,32 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
         );
       }
 
-      // Calculate opening balance
+      // accounts.opening_balance is display-only: the opening is an `opening_balance` voucher in
+      // ledger_entry_lines. Opening for the view = every line before from_date in the same scope.
+      let branchParam: string | string[] | null = null;
+      if (branchFilter) {
+        if (finalBranchId) {
+          branchParam = finalBranchId;
+        } else if (userId) {
+          const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
+          branchParam = await getUserAccessibleBranchIds(userId);
+        }
+      }
       let openingBalance = 0;
-      if (account.opening_balance_type === 'debit') {
-        openingBalance = account.nature === 'debit'
-          ? parseFloat(account.opening_balance || '0')
-          : -parseFloat(account.opening_balance || '0');
-      } else {
-        openingBalance = account.nature === 'credit'
-          ? -parseFloat(account.opening_balance || '0')
-          : parseFloat(account.opening_balance || '0');
+      if (fromDate) {
+        const openingBranchFilter = branchFilter ? branchFilter.replace(/\$\d+/, '$4') : '';
+        const openingParams: any[] = [accountId, businessId, fromDate];
+        if (openingBranchFilter) openingParams.push(branchParam);
+        const prior = await queryOne<{ debit: string; credit: string }>(
+          `SELECT COALESCE(SUM(lel.debit), 0)::text AS debit, COALESCE(SUM(lel.credit), 0)::text AS credit
+             FROM ledger_entry_lines lel
+            WHERE lel.account_id = $1 AND lel.business_id = $2 AND lel.entry_date < $3
+            ${openingBranchFilter}`,
+          openingParams
+        );
+        const dr = parseFloat(prior?.debit || '0');
+        const cr = parseFloat(prior?.credit || '0');
+        openingBalance = account.nature === 'debit' ? dr - cr : cr - dr;
       }
 
       // Get ledger entries from ledger_entry_lines (which has branch_id) instead of ledger_entries
@@ -135,14 +151,7 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
       // Add branch filter if applicable
       if (branchFilter) {
         sql += ` ${branchFilter}`;
-        if (finalBranchId) {
-          queryParams.push(finalBranchId);
-        } else if (userId) {
-          // Multiple branches (user's accessible branches)
-          const { getUserAccessibleBranchIds } = await import('@/lib/branch-access');
-          const accessibleBranchIds = await getUserAccessibleBranchIds(userId);
-          queryParams.push(accessibleBranchIds);
-        }
+        queryParams.push(branchParam);
       }
 
       sql += ` ORDER BY lel.entry_date ASC, lel.created_at ASC`;

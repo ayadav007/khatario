@@ -144,6 +144,7 @@
     "kb:eval": "ts-node --project tsconfig.worker.json --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/kb/eval.ts dotenv_config_path=.env.local",
     "kb:ask": "ts-node --project tsconfig.worker.json --transpile-only -r tsconfig-paths/register -r dotenv/config scripts/kb/ask.ts dotenv_config_path=.env.local",
     "kb:enable-vector": "node scripts/kb/enable-vector.js",
+    "kb:fetch-gst-law": "node --use-system-ca node_modules/ts-node/dist/bin.js --project tsconfig.worker.json --transpile-only scripts/kb/fetch-gst-law.ts",
     "worker:kb": "ts-node --project tsconfig.worker.json --transpile-only -r tsconfig-paths/register -r dotenv/config lib/workers/kbIndexWorker.ts dotenv_config_path=.env.local",
     "test:rag": "jest tests/rag tests/security/rag-isolation.test.ts --runInBand",
     "test:redis": "ts-node --transpile-only scripts/test-redis-connection.ts",

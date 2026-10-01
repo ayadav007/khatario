@@ -4,11 +4,8 @@ import { createPaymentLedgerEntries } from '@/lib/ledger-utils';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
-import {
-  getBusinessIdFromRequest,
-  getSessionScopedBusinessId,
-  getUserIdFromRequest,
-} from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError, walkInReceiptNotSupportedError } from '@/lib/accounting/final-document-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,21 +24,10 @@ export async function PATCH(
     }
     const settles = Math.round((amount + tdsAmount) * 100) / 100;
 
-    const userId = getUserIdFromRequest(request, body);
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const businessScope =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    const userId = getAuthenticatedUserId(request);
+    const businessScope = getSessionScopedBusinessId(request);
+    if (!userId || !businessScope) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
     const inv = await queryOne(
@@ -71,12 +57,17 @@ export async function PATCH(
         error: 'Cannot record payment for proforma invoice. Please convert it to a tax invoice first.' 
       }, { status: 400 });
     }
-    // Allow payment on draft or final (for tax invoices)
     if (inv.status === 'cancelled') {
       return NextResponse.json(
         { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' },
         { status: 400 }
       );
+    }
+    if (inv.status !== 'final') {
+      return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+    }
+    if (!inv.customer_id) {
+      return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
     }
 
     let paymentBranchId = inv.branch_id as string | null | undefined;
@@ -111,7 +102,23 @@ export async function PATCH(
     try {
       await client.query('BEGIN');
 
-      await client.query('SELECT id FROM invoices WHERE id = $1 AND business_id = $2 FOR UPDATE', [inv.id, inv.business_id]);
+      const locked = await client.query<{ status: string; customer_id: string | null }>(
+        `SELECT status, customer_id FROM invoices WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+        [inv.id, inv.business_id]
+      );
+      if (locked.rows[0]?.status !== 'final') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          locked.rows[0]?.status === 'cancelled'
+            ? { error: 'Cannot record a payment against a cancelled invoice', code: 'INVOICE_CANCELLED' }
+            : draftDocumentPaymentError('invoice'),
+          { status: locked.rows[0]?.status === 'cancelled' ? 400 : 409 }
+        );
+      }
+      if (!locked.rows[0]?.customer_id) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(walkInReceiptNotSupportedError(), { status: 400 });
+      }
       const current = await recomputeInvoiceBalance(client, inv.id, inv.business_id);
       const outstanding = current?.balance_amount ?? 0;
       if (settles > outstanding + 0.01) {
@@ -129,8 +136,8 @@ export async function PATCH(
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
           business_id, branch_id, type, customer_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes, tds_amount, tds_section
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          amount, payment_mode, payment_date, notes, tds_amount, tds_section, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         RETURNING id`,
         [
           inv.business_id,
@@ -145,6 +152,7 @@ export async function PATCH(
           reference ? String(reference) : null,
           tdsAmount,
           tdsAmount > 0 && tds_section ? String(tds_section).slice(0, 20) : null,
+          userId,
         ],
       );
       const paymentId = paymentRes.rows[0]?.id;

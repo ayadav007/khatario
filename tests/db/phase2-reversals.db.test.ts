@@ -68,6 +68,18 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
     }
   }
 
+  /** Migration DDL locks shared tables, so it can deadlock with DB suites running in parallel. */
+  async function reapplyMigration(sql: string) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await tx((c) => c.query(sql));
+      } catch (e) {
+        if ((e as { code?: string }).code !== '40P01' || attempt >= 5) throw e;
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
+    }
+  }
+
   async function errorOf(p: Promise<unknown>): Promise<{ message: string; code?: string; status?: number } | null> {
     try {
       await p;
@@ -306,8 +318,8 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
   beforeAll(async () => {
     pool = getPool();
     // Re-applying 324 must be a no-op on an already migrated database.
-    await tx((c) => c.query(migration324));
-    await tx((c) => c.query(migration325));
+    await reapplyMigration(migration324);
+    await reapplyMigration(migration325);
 
     await pool.query(
       `INSERT INTO businesses (id, name, gstin, state_code, gst_registration_type)

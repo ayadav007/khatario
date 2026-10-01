@@ -38,6 +38,7 @@ interface Transaction {
   paid_amount: number;
   balance_amount: number;
   document_type?: string | null;
+  status?: string | null;
 }
 
 function isProformaInvoice(tx: Transaction): boolean {
@@ -98,6 +99,7 @@ function transactionInRange(tx: Transaction, preset: TxRangePreset): boolean {
 /** Invoice: unpaid / partial / paid. Proforma: estimate only (not AR). Payment: received. */
 function transactionStatus(tx: Transaction): { label: string; tone: 'success' | 'warning' | 'error' | 'info' } {
   if (tx.type === 'payment') {
+    if (tx.status === 'reversed') return { label: 'Reversed', tone: 'error' };
     return { label: 'Received', tone: 'success' };
   }
   if (isProformaInvoice(tx)) {

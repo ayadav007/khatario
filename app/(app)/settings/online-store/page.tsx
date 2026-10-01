@@ -41,6 +41,7 @@ interface StoreSettings {
   store_theme?: unknown;
   store_hide_khatario_badge?: boolean;
   store_shiprocket_email?: string | null;
+  shiprocket_webhook_configured?: boolean;
   store_promo_sheet?: StorePromoSheetConfig | null;
   logo_url?: string | null;
   categories?: Array<{ id: string; name: string }>;
@@ -52,6 +53,14 @@ const TABS: Array<{ id: EditorTab; label: string }> = [
   { id: 'setup', label: 'Store setup' },
   { id: 'pages', label: 'Pages' },
 ];
+
+const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function generateWebhookToken(length = 40): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]).join('');
+}
 
 function Toggle({
   on,
@@ -105,6 +114,8 @@ export default function OnlineStoreSettingsPage() {
   const [hideBadge, setHideBadge] = useState(false);
   const [shipEmail, setShipEmail] = useState('');
   const [shipPassword, setShipPassword] = useState('');
+  const [shipWebhookToken, setShipWebhookToken] = useState('');
+  const [shipWebhookConfigured, setShipWebhookConfigured] = useState(false);
   const [promo, setPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [savedPromo, setSavedPromo] = useState<StorePromoSheetConfig>(DEFAULT_STORE_PROMO);
   const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME);
@@ -150,6 +161,8 @@ export default function OnlineStoreSettingsPage() {
         setBusinessLogo(data.logo_url ?? '');
         setHideBadge(!!data.store_hide_khatario_badge);
         setShipEmail(data.store_shiprocket_email ?? '');
+        setShipWebhookConfigured(!!data.shiprocket_webhook_configured);
+        setShipWebhookToken('');
         const nextPromo = sanitizeStorePromoSheet(data.store_promo_sheet);
         setPromo(nextPromo);
         setSavedPromo(nextPromo);
@@ -202,6 +215,7 @@ export default function OnlineStoreSettingsPage() {
           store_hide_khatario_badge: hideBadge,
           store_shiprocket_email: shipEmail || null,
           store_shiprocket_password: shipPassword || undefined,
+          store_shiprocket_webhook_token: shipWebhookToken || undefined,
           store_promo_sheet: {
             ...sanitizeStorePromoSheet(promo),
             version: nextPromoSheetVersion(savedPromo, sanitizeStorePromoSheet(promo)),
@@ -241,6 +255,7 @@ export default function OnlineStoreSettingsPage() {
     hideBadge,
     shipEmail,
     shipPassword,
+    shipWebhookToken,
     promo,
     savedPromo,
     fetchSettings,
@@ -741,6 +756,35 @@ export default function OnlineStoreSettingsPage() {
                       value={shipPassword}
                       onChange={(e) => setShipPassword(e.target.value)}
                     />
+                    <div className="rounded-lg border border-gray-200 p-3 text-xs text-gray-600">
+                      <p className="font-medium text-gray-800">Tracking webhook token</p>
+                      <p className="mt-1">
+                        {shipWebhookConfigured
+                          ? 'A token is saved. Generate a new one only if you are replacing it in Shiprocket.'
+                          : 'Tracking updates are refused until a token is saved here and in Shiprocket (Settings → API → Webhooks).'}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          readOnly
+                          data-testid="shiprocket-webhook-token"
+                          className="w-full rounded-lg border px-3 py-2 font-mono text-xs"
+                          placeholder={shipWebhookConfigured ? 'Saved (hidden)' : 'No token yet'}
+                          value={shipWebhookToken}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShipWebhookToken(generateWebhookToken())}
+                        >
+                          Generate
+                        </Button>
+                      </div>
+                      {shipWebhookToken ? (
+                        <p className="mt-2 text-amber-700">
+                          Copy this token into Shiprocket, then save. It is not shown again.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
               </Card>

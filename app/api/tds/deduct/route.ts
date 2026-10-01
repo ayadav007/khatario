@@ -76,12 +76,13 @@ export const POST = withPremiumSubscriptionApi(
 
       if (payment_id) {
         const payRes = await client.query(
-          `SELECT supplier_id, reference_type, reference_id, branch_id, type
+          `SELECT supplier_id, reference_type, reference_id, branch_id, type, status
              FROM payments WHERE id = $1 AND business_id = $2`,
           [payment_id, businessId]
         );
         const payment = payRes.rows[0];
         if (!payment) return reject(404, 'Payment not found', 'PAYMENT_NOT_FOUND');
+        if (payment.status === 'reversed') return reject(409, 'TDS cannot be deducted on a reversed payment', 'PAYMENT_REVERSED');
         if (payment.type !== 'payable') return reject(400, 'TDS can only be deducted on a payment made to a supplier', 'PAYMENT_NOT_PAYABLE');
         if (supplierId && payment.supplier_id && supplierId !== payment.supplier_id) {
           return reject(400, 'Payment belongs to a different supplier', 'SUPPLIER_MISMATCH');

@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import {
+  getAuthenticatedUserId,
   getSessionScopedBusinessId,
-  getUserIdFromRequest,
   requirePortalSession,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -18,11 +18,11 @@ import {
 } from '@/lib/invoices/invoice-create-service';
 
 /**
- * POST /api/invoices/[id]/convert-to-tax-invoice  body: { status?: 'draft' | 'final', invoice_date? }
+ * POST /api/invoices/[id]/convert-to-tax-invoice  body: { invoice_date? }
  *
- * Creates the tax invoice through the same service as POST /api/invoices, so GST is recomputed
- * server-side (scheme / bill-of-supply rules) and a final invoice posts stock, customer balance
- * and its ledger voucher in the same transaction as the document.
+ * The only conversion of a proforma into a tax invoice. The new invoice is always final:
+ * stock and the ledger are posted by createInvoiceInTransaction in the same transaction
+ * that marks this proforma converted. A requested draft status is ignored.
  */
 export async function POST(
   request: NextRequest,
@@ -35,14 +35,13 @@ export async function POST(
   if (!businessId) {
     return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
   }
-  const userId = getUserIdFromRequest(request);
+  const userId = getAuthenticatedUserId(request);
   if (!userId) {
-    return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
   }
 
   const proformaId = params.id;
   const body = await request.json().catch(() => ({}));
-  const targetStatus = (body.status === 'final' ? 'final' : 'draft') as 'draft' | 'final';
 
   const pool = getPool();
   const client = await pool.connect();
@@ -75,26 +74,57 @@ export async function POST(
     const invoiceDate =
       rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
 
-    if (targetStatus === 'final') {
-      const guard = await periodGuardResponse({
-        businessId,
-        branchId: invoiceBranchId,
-        dates: [invoiceDate],
-        action: 'create this invoice',
-        checkGstFiled: true,
-      });
-      if (guard) return guard;
-    }
+    const guard = await periodGuardResponse({
+      businessId,
+      branchId: invoiceBranchId,
+      dates: [invoiceDate],
+      action: 'create this invoice',
+      checkGstFiled: true,
+    });
+    if (guard) return guard;
 
     await client.query('BEGIN');
 
     const locked = await client.query(
-      `SELECT proforma_lifecycle_status FROM invoices WHERE id = $1 FOR UPDATE`,
-      [proformaId]
+      `SELECT status, proforma_lifecycle_status, estimate_status, converted_invoice_id
+         FROM invoices
+        WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+        FOR UPDATE`,
+      [proformaId, businessId]
     );
-    if (locked.rows[0]?.proforma_lifecycle_status === 'converted_to_tax_invoice') {
+    const lockedRow = locked.rows[0];
+    if (!lockedRow) {
       await client.query('ROLLBACK');
-      return NextResponse.json({ error: 'Proforma invoice already converted to a tax invoice' }, { status: 409 });
+      return NextResponse.json({ error: 'Proforma invoice not found or is not a proforma invoice' }, { status: 404 });
+    }
+    if (
+      lockedRow.converted_invoice_id ||
+      lockedRow.proforma_lifecycle_status === 'converted_to_tax_invoice' ||
+      lockedRow.estimate_status === 'converted'
+    ) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'This proforma has already been converted to a tax invoice.',
+          code: 'PROFORMA_ALREADY_CONVERTED',
+          invoice_id: lockedRow.converted_invoice_id || null,
+        },
+        { status: 409 }
+      );
+    }
+    if (lockedRow.status === 'cancelled' || lockedRow.proforma_lifecycle_status === 'cancelled') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'A cancelled proforma cannot be converted.', code: 'PROFORMA_CANCELLED' },
+        { status: 409 }
+      );
+    }
+    if (lockedRow.estimate_status === 'rejected' || lockedRow.estimate_status === 'expired') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'This estimate cannot be converted from its current status.', code: 'ESTIMATE_NOT_CONVERTIBLE' },
+        { status: 409 }
+      );
     }
 
     const itemsRes = await client.query(
@@ -141,7 +171,7 @@ export async function POST(
       customer_id: proforma.customer_id || null,
       invoice_date: invoiceDate,
       due_date: proforma.due_date || null,
-      status: targetStatus,
+      status: 'final',
       document_type: 'tax_invoice',
       items,
       additional_charges: Number(proforma.additional_charges) || 0,
@@ -158,7 +188,7 @@ export async function POST(
       template_id: proforma.template_id || null,
     };
 
-    const result = await createInvoiceInTransaction(client, payload, { allowDraft: true });
+    const result = await createInvoiceInTransaction(client, payload);
 
     await client.query(
       `UPDATE invoices
@@ -179,15 +209,20 @@ export async function POST(
       ]
     );
 
-    await client.query(
+    const marked = await client.query(
       `UPDATE invoices
           SET notes = COALESCE(notes || E'\n\n', '') || 'Converted to Tax Invoice: ' || $1 || ' on ' || CURRENT_TIMESTAMP::text,
               proforma_lifecycle_status = 'converted_to_tax_invoice',
               proforma_lifecycle_notes = 'Converted to Tax Invoice: ' || $1,
+              estimate_status = 'converted',
+              converted_invoice_id = $2,
               updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2`,
-      [result.invoiceNumber, proformaId]
+        WHERE id = $3 AND business_id = $4 AND converted_invoice_id IS NULL AND status <> 'cancelled'`,
+      [result.invoiceNumber, result.invoiceId, proformaId, businessId]
     );
+    if (marked.rowCount !== 1) {
+      throw new Error('Proforma conversion could not be recorded');
+    }
     await client.query(
       `INSERT INTO proforma_lifecycle_timeline (invoice_id, status, notes, created_by)
        VALUES ($1, 'converted_to_tax_invoice', $2, $3)`,

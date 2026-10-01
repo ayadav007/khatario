@@ -135,6 +135,8 @@ export default function LedgerPage() {
                 <option value="purchase">Purchase</option>
                 <option value="expense">Expense</option>
                 <option value="journal">Journal</option>
+                <option value="gst_cash_deposit">GST cash deposit</option>
+                <option value="gst_cash_utilization">GST cash utilisation</option>
               </select>
             </div>
           </div>

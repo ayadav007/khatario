@@ -5,6 +5,7 @@ import { generateGSTR1JSON } from '@/lib/export/json';
 import { getPool } from '@/lib/db';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { checkGstin } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -244,8 +245,20 @@ export async function GET(request: NextRequest) {
             { status: 400 }
           );
         }
-        
-        const jsonContent = await generateGSTR1JSON(data, filters, gstin);
+
+        const gstinCheck = checkGstin(gstin);
+        if (!gstinCheck.valid) {
+          return NextResponse.json(
+            {
+              error: `GSTIN ${gstin} is not valid: ${gstinCheck.error}`,
+              message: 'Correct the GSTIN in Settings → Business Profile (GST & tax) before exporting GSTR-1.',
+              code: 'GSTIN_INVALID',
+            },
+            { status: 400 }
+          );
+        }
+
+        const jsonContent = await generateGSTR1JSON(data, filters, gstinCheck.gstin);
         
         return new NextResponse(jsonContent, {
           headers: {

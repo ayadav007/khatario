@@ -52,10 +52,10 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
           if (line.period_month) {
             // For monthly budgets, filter by specific month
             const year = new Date(budget.period_start_date).getFullYear();
-            const monthStart = new Date(year, line.period_month - 1, 1);
-            const monthEnd = new Date(year, line.period_month, 0);
+            const mm = String(line.period_month).padStart(2, '0');
+            const lastDay = new Date(Date.UTC(year, line.period_month, 0)).getUTCDate();
             dateFilter = `AND lel.entry_date >= $4 AND lel.entry_date <= $5`;
-            queryParams.push(monthStart.toISOString().split('T')[0], monthEnd.toISOString().split('T')[0]);
+            queryParams.push(`${year}-${mm}-01`, `${year}-${mm}-${String(lastDay).padStart(2, '0')}`);
           }
 
           const actual = await queryOne(`

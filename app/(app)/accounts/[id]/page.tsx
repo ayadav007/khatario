@@ -12,14 +12,31 @@ import { format } from 'date-fns';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
+import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
+import {
+  effectivePlSection,
+  plSectionFromGroup,
+  type PlSection,
+} from '@/lib/accounting/pl-sections';
+
+type AccountDetail = Account & {
+  account_group_name: string;
+  account_group_code?: string | null;
+  account_group_type?: string | null;
+  pl_section?: string | null;
+  current_balance?: number;
+};
 
 export default function AccountDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
   const accountId = params.id as string;
-  const [account, setAccount] = useState<Account & { account_group_name: string; current_balance?: number } | null>(null);
+  const [account, setAccount] = useState<AccountDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [plSection, setPlSection] = useState<PlSection | ''>('');
+  const [plSaving, setPlSaving] = useState(false);
+  const [plMessage, setPlMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   useMobileHeaderTitleOverride(account?.account_name);
 
@@ -38,6 +55,10 @@ export default function AccountDetailPage() {
       if (res.ok) {
         const data = await res.json();
         setAccount(data.account);
+        const a = data.account as AccountDetail;
+        const fromGroup = plSectionFromGroup(a.account_type, a.account_group_code, a.account_group_type);
+        const effective = effectivePlSection({ ...a, group_code: a.account_group_code, group_type: a.account_group_type });
+        setPlSection(effective && effective !== fromGroup ? effective : '');
       } else {
         router.push('/accounts');
       }
@@ -46,6 +67,29 @@ export default function AccountDetailPage() {
       router.push('/accounts');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const savePlSection = async () => {
+    if (!account || !business?.id || !user?.id) return;
+    const section =
+      plSection || plSectionFromGroup(account.account_type, account.account_group_code, account.account_group_type);
+    setPlSaving(true);
+    setPlMessage(null);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}?business_id=${business.id}&user_id=${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pl_section: section }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save');
+      setPlMessage({ ok: true, text: 'Saved. The Profit & Loss report uses the new section.' });
+      await fetchAccount();
+    } catch (e: any) {
+      setPlMessage({ ok: false, text: e.message || 'Failed to save' });
+    } finally {
+      setPlSaving(false);
     }
   };
 
@@ -167,6 +211,32 @@ export default function AccountDetailPage() {
                 </div>
               )}
             </div>
+
+            {(account.account_type === 'income' || account.account_type === 'expense') && (
+              <div className="pt-4 border-t border-border">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                  <PlSectionSelect
+                    accountType={account.account_type}
+                    value={plSection}
+                    defaultSection={plSectionFromGroup(account.account_type, account.account_group_code, account.account_group_type)}
+                    onChange={(v) => { setPlSection(v); setPlMessage(null); }}
+                    disabled={!!account.is_system}
+                    disabledReason="System accounts keep their standard Profit & Loss section."
+                  />
+                  {!account.is_system && (
+                    <div className="pb-6">
+                      <Button type="button" variant="secondary" onClick={savePlSection} disabled={plSaving}>
+                        {plSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Save section
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {plMessage && (
+                  <p className={`text-sm mt-1 ${plMessage.ok ? 'text-green-700' : 'text-red-600'}`}>{plMessage.text}</p>
+                )}
+              </div>
+            )}
 
             {account.description && (
               <div>

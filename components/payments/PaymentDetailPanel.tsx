@@ -146,14 +146,21 @@ export function PaymentDetailPanel({ paymentId, onClose, paymentKind }: PaymentD
     });
   }
 
-  const amountColor =
-    paymentKind === 'receivable' ? 'text-emerald-600' : 'text-orange-700';
+  const isReversed = payment.status === 'reversed';
+  const amountColor = isReversed
+    ? 'text-text-secondary line-through'
+    : paymentKind === 'receivable'
+      ? 'text-emerald-600'
+      : 'text-orange-700';
 
   return (
     <DetailPanelShell
       title={formatINR(payment.amount)}
       subtitle={
         <div className="flex items-center gap-2 flex-wrap">
+          {isReversed && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Reversed</span>
+          )}
           <span>{partyName}</span>
           {payment.payment_date && (
             <>
@@ -195,6 +202,19 @@ export function PaymentDetailPanel({ paymentId, onClose, paymentKind }: PaymentD
               <div className="font-medium">{paymentKind === 'receivable' ? 'Payment In' : 'Payment Out'}</div>
             </div>
           </div>
+          {isReversed && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">
+              <div className="font-semibold">Reversed</div>
+              {payment.reversed_at && (
+                <div className="text-xs mt-0.5">
+                  {format(new Date(payment.reversed_at), 'dd MMM yyyy, HH:mm')}
+                </div>
+              )}
+              {payment.reversal_reason && (
+                <p className="mt-1 whitespace-pre-wrap">{payment.reversal_reason}</p>
+              )}
+            </div>
+          )}
           {payment.notes && (
             <div>
               <div className="text-text-secondary text-xs mb-1">Notes</div>

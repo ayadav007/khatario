@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    // Get all active accounts
+    // Inactive accounts that still carry ledger lines must stay, or the trial balance stops balancing.
     const accounts = await queryRows(`
       SELECT 
         a.id,
@@ -124,10 +124,14 @@ export async function GET(request: NextRequest) {
         a.nature,
         a.opening_balance,
         a.opening_balance_type,
+        a.is_active,
         ag.group_name as account_group_name
       FROM accounts a
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
-      WHERE a.business_id = $1 AND a.is_active = true
+      WHERE a.business_id = $1
+        AND (a.is_active = true OR EXISTS (
+          SELECT 1 FROM ledger_entry_lines l WHERE l.account_id = a.id AND l.business_id = a.business_id
+        ))
       ORDER BY a.account_code
     `, [businessId]);
 
@@ -201,6 +205,7 @@ export async function GET(request: NextRequest) {
           account_name: account.account_name,
           account_type: account.account_type,
           account_group_name: account.account_group_name,
+          is_active: account.is_active,
           opening_balance: openingBalance,
           debit: debitAmount,
           credit: creditAmount,

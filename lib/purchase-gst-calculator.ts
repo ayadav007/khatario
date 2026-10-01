@@ -59,6 +59,32 @@ function clamp0(n: number): number {
 }
 
 /**
+ * CGST and SGST are each levied at half the rate on the same taxable value, so each head is
+ * rounded on its own and they are always equal. Splitting a rounded total (tax/2 + remainder)
+ * leaves the heads a paisa apart whenever the total has an odd paisa.
+ */
+function intraStateHalf(taxable: number, gstRate: number): number {
+  return roundMoney2((taxable * gstRate) / 200);
+}
+
+/** Tax-inclusive amount fixed by the bill: equal halves, taxable value absorbs the rounding. */
+function splitFixedInclusive(
+  inclusive: number,
+  gstRate: number,
+  intraState: boolean
+): { taxable: number; taxTotal: number; cgst: number; sgst: number; igst: number } {
+  const div = 100 + gstRate;
+  const provisional = div > 0 ? roundMoney2((inclusive * 100) / div) : inclusive;
+  if (intraState && gstRate > 0) {
+    const half = intraStateHalf(provisional, gstRate);
+    const taxTotal = roundMoney2(half * 2);
+    return { taxable: roundMoney2(inclusive - taxTotal), taxTotal, cgst: half, sgst: half, igst: 0 };
+  }
+  const taxTotal = roundMoney2(inclusive - provisional);
+  return { taxable: provisional, taxTotal, cgst: 0, sgst: 0, igst: gstRate > 0 ? taxTotal : 0 };
+}
+
+/**
  * True = intra-state (CGST+SGST), false = inter-state (IGST).
  * Caller supplies result of supplier_state vs company_state rule (or POS-based fallback).
  */
@@ -120,17 +146,7 @@ export function calculatePurchaseLine(
       igst = 0;
       lineTotal = anchor;
     } else {
-      taxable = roundMoney2((anchor * 100) / (100 + gstRate));
-      taxTotal = roundMoney2(anchor - taxable);
-      if (intraState) {
-        cgst = roundMoney2(taxTotal / 2);
-        sgst = roundMoney2(taxTotal - cgst);
-        igst = 0;
-      } else {
-        igst = taxTotal;
-        cgst = 0;
-        sgst = 0;
-      }
+      ({ taxable, taxTotal, cgst, sgst, igst } = splitFixedInclusive(anchor, gstRate, intraState));
       lineTotal = anchor;
     }
   } else if (taxMode === 'exclusive') {
@@ -142,18 +158,7 @@ export function calculatePurchaseLine(
     ) {
       const inclusiveList = roundMoney2(gross * (1 + gstRate / 100));
       const inclusiveAfterDisc = roundMoney2(inclusiveList - discountAmt);
-      const div = 100 + gstRate;
-      taxable = div > 0 ? roundMoney2((inclusiveAfterDisc * 100) / div) : inclusiveAfterDisc;
-      taxTotal = roundMoney2(inclusiveAfterDisc - taxable);
-      if (intraState && gstRate > 0) {
-        cgst = roundMoney2(taxTotal / 2);
-        sgst = roundMoney2(taxTotal - cgst);
-        igst = 0;
-      } else {
-        igst = taxTotal;
-        cgst = 0;
-        sgst = 0;
-      }
+      ({ taxable, taxTotal, cgst, sgst, igst } = splitFixedInclusive(inclusiveAfterDisc, gstRate, intraState));
       lineTotal = roundMoney2(taxable + taxTotal);
     } else {
       const netGross = gross - discountAmt;
@@ -168,9 +173,10 @@ export function calculatePurchaseLine(
         taxable = roundMoney2(clamp0(netGross));
         taxTotal = roundMoney2((taxable * gstRate) / 100);
         if (intraState && gstRate > 0) {
-          cgst = roundMoney2(taxTotal / 2);
-          sgst = roundMoney2(taxTotal - cgst);
+          cgst = intraStateHalf(taxable, gstRate);
+          sgst = cgst;
           igst = 0;
+          taxTotal = roundMoney2(cgst + sgst);
         } else {
           igst = taxTotal;
           cgst = 0;
@@ -185,18 +191,7 @@ export function calculatePurchaseLine(
       gstRate === 0 && rawNet < 0
         ? roundMoney2(rawNet)
         : roundMoney2(clamp0(rawNet));
-    const div = 100 + gstRate;
-    taxable = div > 0 ? roundMoney2((enteredTotal * 100) / div) : enteredTotal;
-    taxTotal = roundMoney2(enteredTotal - taxable);
-    if (intraState && gstRate > 0) {
-      cgst = roundMoney2(taxTotal / 2);
-      sgst = roundMoney2(taxTotal - cgst);
-      igst = 0;
-    } else {
-      igst = taxTotal;
-      cgst = 0;
-      sgst = 0;
-    }
+    ({ taxable, taxTotal, cgst, sgst, igst } = splitFixedInclusive(enteredTotal, gstRate, intraState));
     lineTotal = enteredTotal;
   }
 

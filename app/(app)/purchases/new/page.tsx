@@ -1193,6 +1193,8 @@ export default function NewPurchasePage() {
             manual_cgst: item.manual_cgst,
             manual_sgst: item.manual_sgst,
             manual_igst: item.manual_igst,
+            invoice_inclusive_line_total: item.invoice_inclusive_line_total,
+            discount_on_tax_inclusive: item.discount_on_tax_inclusive === true,
             location_id: selectedWarehouseId || null,
           };
 

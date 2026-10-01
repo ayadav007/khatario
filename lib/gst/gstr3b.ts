@@ -23,6 +23,7 @@ import {
   round2,
 } from './gstr3b-ledger';
 import { aggregateTable5, type GSTR3BTable5 } from './gstr3b-table5';
+import { resolveSupplierRegistration } from './registration';
 
 export interface GSTR3BFilters {
   business_id: string;
@@ -183,7 +184,8 @@ export class GSTR3BGenerator {
     const { business_id, month, year, branch_id } = filters;
 
     const startOfMonth = `${year}-${month.toString().padStart(2, '0')}-01`;
-    const endOfMonth = new Date(year, month, 0).toISOString().split('T')[0];
+    // Built as text: Date#toISOString shifts to UTC and returns the previous day on IST servers.
+    const endOfMonth = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
     const branch = branch_id ?? null;
 
     const gstr1Data = await this.gstr1Generator.generate({
@@ -391,14 +393,10 @@ export class GSTR3BGenerator {
     };
 
     const pool = getPool();
-    const bizRes = await pool.query<{ gstin: string | null }>(
-      `SELECT gstin FROM businesses WHERE id = $1::uuid LIMIT 1`,
-      [business_id]
-    );
-    const selfState =
-      bizRes.rows[0]?.gstin && bizRes.rows[0].gstin.length >= 2
-        ? bizRes.rows[0].gstin.slice(0, 2)
-        : null;
+    // Same registration lookup the invoice tax split uses: a valid GSTIN decides the state,
+    // otherwise the registered state_code. A raw GSTIN prefix would disagree with the documents.
+    const registration = await resolveSupplierRegistration(pool, business_id, branch);
+    const selfState = registration.stateCode;
 
     // Table 3.1(a)/(b): tax heads come from the documents themselves, never pro-rated.
     const interA = emptyTax();

@@ -44,6 +44,35 @@ describe('calculatePurchaseLine anchorInclusiveLineTotal', () => {
   });
 });
 
+describe('calculatePurchaseLine intra-state halves', () => {
+  const base = { quantity: 1, discountPercent: 0, discountAmount: 0, gstRate: 5 };
+
+  it('exclusive: CGST equals SGST when the total tax has an odd paisa', () => {
+    // 100.1 × 5% = 5.005; a split of the rounded total would give 2.51 / 2.50.
+    const c = calculatePurchaseLine({ ...base, unitPrice: 100.1, taxMode: 'exclusive' }, true);
+    expect(c.cgstAmount).toBe(c.sgstAmount);
+    expect(c.taxAmount).toBeCloseTo(c.cgstAmount + c.sgstAmount, 5);
+    expect(c.lineTotal).toBeCloseTo(c.taxableValue + c.taxAmount, 5);
+  });
+
+  it('inclusive: halves are equal and the entered total is kept', () => {
+    const c = calculatePurchaseLine({ ...base, unitPrice: 105.11, taxMode: 'inclusive' }, true);
+    expect(c.cgstAmount).toBe(c.sgstAmount);
+    expect(c.lineTotal).toBe(105.11);
+    expect(c.taxableValue + c.taxAmount).toBeCloseTo(105.11, 5);
+  });
+
+  it('anchored: halves are equal and the printed line total is kept', () => {
+    const c = calculatePurchaseLine(
+      { ...base, unitPrice: 1, taxMode: 'exclusive', anchorInclusiveLineTotal: 113.29 },
+      true
+    );
+    expect(c.cgstAmount).toBe(c.sgstAmount);
+    expect(c.lineTotal).toBe(113.29);
+    expect(c.taxableValue + c.taxAmount).toBeCloseTo(113.29, 5);
+  });
+});
+
 describe('deriveExclusiveUnitPriceFromInvoiceAnchor', () => {
   it('derives exclusive unit rate from inclusive line (5% GST, qty 1)', () => {
     const up = deriveExclusiveUnitPriceFromInvoiceAnchor({

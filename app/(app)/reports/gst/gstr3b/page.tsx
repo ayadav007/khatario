@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw, TrendingUp, TrendingDown, MinusCircle } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -21,9 +22,18 @@ export default function GSTR3BPage() {
   const { ensureProfile } = useProfileRequiredGate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [cashBalances, setCashBalances] = useState<{ igst: number; cgst: number; sgst: number; cess: number } | null>(null);
   
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+
+  useEffect(() => {
+    const m = /^(\d{4})-(\d{2})$/.exec(new URLSearchParams(window.location.search).get('period') ?? '');
+    if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) {
+      setYear(Number(m[1]));
+      setMonth(Number(m[2]));
+    }
+  }, []);
 
   const profileContext = 'gst_compliance' as const;
   const profileGaps = getProfileGaps(business, profileContext);
@@ -40,13 +50,33 @@ export default function GSTR3BPage() {
         year: year.toString()
       });
       
-      const res = await fetch(`/api/reports/gst/gstr3b?${query}`);
+      const end = new Date(year, month, 0);
+      const asOn = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+      const cashQuery = new URLSearchParams({
+        business_id: business.id,
+        as_on_date: asOn,
+      });
+      const [res, cashRes] = await Promise.all([
+        fetch(`/api/reports/gst/gstr3b?${query}`),
+        fetch(`/api/gst/cash-ledger?${cashQuery}`),
+      ]);
       const json = await res.json();
       if (res.ok) {
         setData(json);
       } else {
         console.error(json.error);
         toast.error('Failed to fetch GSTR-3B data');
+      }
+      if (cashRes.ok) {
+        const cash = await cashRes.json();
+        setCashBalances({
+          igst: Number(cash.igst?.cash_balance || 0),
+          cgst: Number(cash.cgst?.cash_balance || 0),
+          sgst: Number(cash.sgst?.cash_balance || 0),
+          cess: Number(cash.cess?.cash_balance || 0),
+        });
+      } else {
+        setCashBalances(null);
       }
     } catch (error) {
       console.error(error);
@@ -189,6 +219,21 @@ export default function GSTR3BPage() {
               </div>
               <p className="text-3xl font-bold text-gray-900">₹{data.summary.net_tax_payable.toLocaleString('en-IN')}</p>
               <p className="text-xs text-gray-600 mt-1">After ITC set-off (IGST→IGST/CGST/SGST, then CGST/SGST rules)</p>
+            </div>
+          </div>
+        )}
+
+        {cashBalances && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-900">Electronic cash ledger</p>
+              <Link href="/reports/gst/cash-ledger" className="text-xs text-primary-700 hover:underline">Open ledger</Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><p className="text-gray-500">IGST</p><p className="font-semibold">₹{cashBalances.igst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">CGST</p><p className="font-semibold">₹{cashBalances.cgst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">SGST</p><p className="font-semibold">₹{cashBalances.sgst.toLocaleString('en-IN')}</p></div>
+              <div><p className="text-gray-500">Cess</p><p className="font-semibold">₹{cashBalances.cess.toLocaleString('en-IN')}</p></div>
             </div>
           </div>
         )}

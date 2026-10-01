@@ -549,6 +549,8 @@ export interface Account {
   is_system: boolean;
   description?: string;
   sort_order: number;
+  /** P&L section for income/expense accounts (migration 334); null for balance-sheet accounts. */
+  pl_section?: string | null;
   created_at: Date;
   updated_at: Date;
   // Joined fields

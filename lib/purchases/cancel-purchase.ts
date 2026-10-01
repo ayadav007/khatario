@@ -10,6 +10,7 @@ import { reverseVouchers, reverseVoucherLedgerEntries } from '@/lib/ledger-rever
 import { releaseDocumentAdvances } from '@/lib/accounting/advance-service';
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { RULE37_REAVAIL, RULE37_REVERSAL } from '@/lib/gst/rule37';
+import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 
 export class PurchaseCancelError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -51,9 +52,9 @@ export async function cancelTdsTransactions(
 /**
  * Cancels a final purchase bill on the caller's transaction. Nothing posted is deleted:
  *   - a bill with a live payment (or a paid amount) is refused with 409 PURCHASE_HAS_PAYMENTS.
- *     Payments are never reversed, refunded or turned into an advance automatically, and there
- *     is no payment void or supplier refund workflow, so a paid bill is corrected by a purchase
- *     return instead;
+ *     Payments are never reversed, refunded or turned into an advance automatically; reverse
+ *     each payment first (POST /api/payments/[id]/reverse) or correct the bill with a purchase
+ *     return. Reversed payments no longer count as live;
  *   - the bill voucher, the vouchers of its TDS deductions and its Rule 37 ITC reversal /
  *     re-availment vouchers are reversed (mirror lines linked in ledger_entry_reversals);
  *   - advance adjustments against the bill are released back to the advance;
@@ -105,7 +106,8 @@ export async function cancelFinalPurchase(
 
   const livePayments = await client.query(
     `SELECT 1 FROM payments
-      WHERE business_id = $1 AND reference_type = 'purchase' AND reference_id = $2 AND deleted_at IS NULL LIMIT 1`,
+      WHERE business_id = $1 AND reference_type = 'purchase' AND reference_id = $2 AND deleted_at IS NULL
+        AND status = 'active' LIMIT 1`,
     [p.businessId, p.purchaseId]
   );
   if (livePayments.rows.length > 0 || (Number(purchase.paid_amount) || 0) > EPS) {
@@ -215,6 +217,7 @@ export async function cancelFinalPurchase(
       WHERE id = $1 AND business_id = $2`,
     [p.purchaseId, p.businessId, p.userId, p.reason]
   );
+  await recostAfterStockChange(client, p.businessId, await stockItemsForDocument(client, 'purchase', p.purchaseId));
 
   return { reversedLines, releasedAdvance: released, stockMovements };
 }

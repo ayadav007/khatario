@@ -1,14 +1,70 @@
-import { getPool, queryRows } from '@/lib/db';
+import { getPool } from '@/lib/db';
 import { resolveBranchId } from '@/lib/branch-helpers';
-import { reserveFormattedDocumentNumber } from '@/lib/invoices/document-counter';
+import { createInvoiceInTransaction } from '@/lib/invoices/invoice-create-service';
+import { roundMoney } from '@/lib/store/pricing';
+import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
 
-export async function fulfillStoreOrderPayment(orderId: string, businessId: string): Promise<void> {
+export interface StorePaymentEvent {
+  provider: 'razorpay';
+  idempotencyKey: string;
+  amount: number | null | undefined;
+  currency?: string | null;
+  payload: string;
+  providerPaymentId?: string | null;
+  providerOrderId?: string | null;
+}
+
+export type StorePaymentRejection = 'ORDER_NOT_FOUND' | 'ALREADY_PAID' | 'ORDER_CANCELLED' | 'AMOUNT_MISMATCH';
+
+export type StorePaymentOutcome =
+  | { outcome: 'fulfilled' }
+  | { outcome: 'duplicate' }
+  | { outcome: 'rejected'; reason: StorePaymentRejection };
+
+/**
+ * Marks a store order paid for one verified provider event. The event row and the order change
+ * commit together: a failed fulfilment leaves the event retryable (status 'failed'), and a
+ * processed or rejected event is never applied twice.
+ */
+export async function fulfillStoreOrderPayment(
+  orderId: string,
+  businessId: string,
+  event: StorePaymentEvent,
+): Promise<StorePaymentOutcome> {
   const pool = getPool();
   const client = await pool.connect();
+  let notify: { couponCode: string | null; phone: string; orderNumber: string; grandTotal: number } | null = null;
   try {
     await client.query('BEGIN');
+    const claimed = await client.query<{ id: string }>(
+      `INSERT INTO store_payment_events
+         (business_id, order_id, provider, idempotency_key, payload, amount, status, processed_at)
+       VALUES ($1, (SELECT id FROM store_orders WHERE id = $2 AND business_id = $1),
+               $3, $4, $5::jsonb, $6, 'processed', CURRENT_TIMESTAMP)
+       ON CONFLICT (provider, idempotency_key) DO UPDATE
+         SET status = 'processed', payload = EXCLUDED.payload, amount = EXCLUDED.amount,
+             error_message = NULL, processed_at = CURRENT_TIMESTAMP
+         WHERE store_payment_events.status = 'failed'
+       RETURNING id`,
+      [businessId, orderId, event.provider, event.idempotencyKey, event.payload, event.amount ?? null],
+    );
+    const eventId = claimed.rows[0]?.id;
+    if (!eventId) {
+      await client.query('ROLLBACK');
+      await reconcilePaidStoreOrder(orderId, businessId);
+      return { outcome: 'duplicate' };
+    }
+
+    const reject = async (reason: StorePaymentRejection): Promise<StorePaymentOutcome> => {
+      await client.query(
+        `UPDATE store_payment_events SET status = 'rejected', error_message = $2 WHERE id = $1`,
+        [eventId, reason],
+      );
+      await client.query('COMMIT');
+      return { outcome: 'rejected', reason };
+    };
+
     const order = await client.query<{
-      id: string;
       payment_status: string;
       status: string;
       coupon_code: string | null;
@@ -16,89 +72,216 @@ export async function fulfillStoreOrderPayment(orderId: string, businessId: stri
       order_number: string;
       grand_total: string;
     }>(
-      `SELECT id, payment_status, status, coupon_code, customer_phone, order_number, grand_total::text
+      `SELECT payment_status, status, coupon_code, customer_phone, order_number, grand_total::text
        FROM store_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [orderId, businessId],
     );
     const row = order.rows[0];
-    if (!row) {
-      await client.query('ROLLBACK');
-      return;
-    }
-    if (row.payment_status === 'paid') {
-      await client.query('COMMIT');
-      return;
-    }
-
-    const items = await queryRows<{
-      item_id: string;
-      variant_id: string | null;
-      item_name: string;
-      quantity: string;
-    }>(
-      `SELECT item_id, variant_id, item_name, quantity::text FROM store_order_items WHERE order_id = $1`,
-      [orderId],
-    );
-
-    if (row.payment_status === 'unpaid') {
-      for (const item of items) {
-        const qty = parseFloat(item.quantity);
-        if (item.variant_id) {
-          const stock = await client.query(
-            `UPDATE item_variants SET current_stock = current_stock - $1
-             WHERE id = $2 AND current_stock >= $1 RETURNING id`,
-            [qty, item.variant_id],
-          );
-          if (stock.rowCount === 0) {
-            await client.query('ROLLBACK');
-            throw new Error(`"${item.item_name}" is out of stock`);
-          }
-        } else {
-          const stock = await client.query(
-            `UPDATE items SET current_stock = current_stock - $1
-             WHERE id = $2 AND business_id = $3 AND current_stock >= $1 RETURNING id`,
-            [qty, item.item_id, businessId],
-          );
-          if (stock.rowCount === 0) {
-            await client.query('ROLLBACK');
-            throw new Error(`"${item.item_name}" is out of stock`);
-          }
-        }
-      }
+    if (!row) return await reject('ORDER_NOT_FOUND');
+    if (row.payment_status === 'paid') return await reject('ALREADY_PAID');
+    if (row.status === 'cancelled') return await reject('ORDER_CANCELLED');
+    const grandTotal = parseFloat(row.grand_total) || 0;
+    const currency = (event.currency || 'INR').toUpperCase();
+    if (currency !== 'INR' || !storePaymentAmountMatches(event.amount, grandTotal)) {
+      return await reject('AMOUNT_MISMATCH');
     }
 
     await client.query(
       `UPDATE store_orders
-       SET payment_status = 'paid', status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+       SET payment_status = 'paid',
+           status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+           payment_provider = 'razorpay',
+           provider_payment_id = COALESCE($3, provider_payment_id),
+           payment_ref = COALESCE(payment_ref, $4),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [orderId],
+       WHERE id = $1 AND business_id = $2`,
+      [orderId, businessId, event.providerPaymentId ?? null, event.providerOrderId ?? null],
     );
     await client.query('COMMIT');
-
-    const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
-    await incrementStoreCouponUse(businessId, row.coupon_code);
-    const { notifyStoreCustomerWhatsApp } = await import('@/lib/store/notify-whatsapp');
-    void notifyStoreCustomerWhatsApp({
-      businessId,
+    notify = {
+      couponCode: row.coupon_code,
       phone: row.customer_phone,
-      text: `Order ${row.order_number} is paid. Total ₹${(parseFloat(row.grand_total) || 0).toLocaleString('en-IN')}. Thank you.`,
-    });
+      orderNumber: row.order_number,
+      grandTotal,
+    };
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
+    await recordFailedStorePaymentEvent(businessId, orderId, event, e).catch((err) => {
+      console.error('[store payment event]', err);
+    });
     throw e;
   } finally {
     client.release();
   }
 
-  await createInvoiceForStoreOrder(orderId, businessId).catch((err) => {
-    console.error('[store invoice]', err);
+  const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
+  await incrementStoreCouponUse(businessId, notify.couponCode);
+  const { notifyStoreCustomerWhatsApp } = await import('@/lib/store/notify-whatsapp');
+  void notifyStoreCustomerWhatsApp({
+    businessId,
+    phone: notify.phone,
+    text: `Order ${notify.orderNumber} is paid. Total ₹${notify.grandTotal.toLocaleString('en-IN')}. Thank you.`,
   });
+
+  await reconcilePaidStoreOrder(orderId, businessId);
+  return { outcome: 'fulfilled' };
 }
 
+/** Invoice failures that another delivery cannot fix. */
+function retryableStoreInvoiceError(code: string): boolean {
+  return ![
+    'ORDER_CANCELLED',
+    'STORE_ORDER_EMPTY',
+    'STORE_LINE_NOT_REPRESENTABLE',
+    'STORE_TAX_NOT_REPRESENTABLE',
+    'STORE_TOTALS_NOT_REPRESENTABLE',
+    'ACTOR_REQUIRED',
+    'ACTOR_MISMATCH',
+    'STORE_PAYMENT_NOT_VERIFIED',
+    'PAYMENT_AMOUNT_MISMATCH',
+    'STORE_ORDER_ALREADY_INVOICED',
+  ].includes(code);
+}
+
+async function reconcilePaidStoreOrder(orderId: string, businessId: string): Promise<void> {
+  const row = await getPool().query<{ payment_status: string }>(
+    `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2`,
+    [orderId, businessId],
+  );
+  if (row.rows[0]?.payment_status !== 'paid') return;
+  const { settleStoreOrderReceipt, StoreReceiptPendingError } = await import('@/lib/store/store-receipt');
+  try {
+    const invoiceId = await createInvoiceForStoreOrder(orderId, businessId);
+    if (!invoiceId) return;
+  } catch (err) {
+    console.error('[store invoice]', err);
+    if (err instanceof StoreInvoiceError && !retryableStoreInvoiceError(err.code)) return;
+    throw new StoreReceiptPendingError('The store invoice is not posted yet');
+  }
+  let settled: Awaited<ReturnType<typeof settleStoreOrderReceipt>>;
+  try {
+    settled = await settleStoreOrderReceipt(orderId, businessId);
+  } catch (err) {
+    console.error('[store receipt]', err);
+    throw new StoreReceiptPendingError('The store receipt is not posted yet');
+  }
+  if (settled.outcome === 'skipped' && settled.reason === 'NO_INVOICE') {
+    throw new StoreReceiptPendingError('The store invoice is not posted yet');
+  }
+}
+
+/** A failed provider attempt does not post a receipt or mark the order paid. */
+export async function recordStorePaymentFailure(
+  orderId: string,
+  businessId: string,
+  event: StorePaymentEvent,
+): Promise<'failed' | 'ignored'> {
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const order = await client.query<{ payment_status: string }>(
+      `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      [orderId, businessId],
+    );
+    if (!order.rows[0] || order.rows[0].payment_status !== 'unpaid') {
+      await client.query('ROLLBACK');
+      return 'ignored';
+    }
+    await client.query(
+      `INSERT INTO store_payment_events
+         (business_id, order_id, provider, idempotency_key, payload, amount, status, error_message, processed_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'rejected', 'PAYMENT_FAILED', CURRENT_TIMESTAMP)
+       ON CONFLICT (provider, idempotency_key) DO NOTHING`,
+      [businessId, orderId, event.provider, event.idempotencyKey, event.payload, event.amount ?? null],
+    );
+    await client.query(
+      `UPDATE store_orders SET payment_status = 'failed', updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND business_id = $2 AND payment_status = 'unpaid'`,
+      [orderId, businessId],
+    );
+    await client.query('COMMIT');
+    return 'failed';
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Keeps the event retryable; never overwrites an event another delivery already processed. */
+async function recordFailedStorePaymentEvent(
+  businessId: string,
+  orderId: string,
+  event: StorePaymentEvent,
+  error: unknown,
+): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  await getPool().query(
+    `INSERT INTO store_payment_events
+       (business_id, order_id, provider, idempotency_key, payload, amount, status, error_message)
+     VALUES ($1, (SELECT id FROM store_orders WHERE id = $2 AND business_id = $1),
+             $3, $4, $5::jsonb, $6, 'failed', $7)
+     ON CONFLICT (provider, idempotency_key) DO UPDATE
+       SET error_message = EXCLUDED.error_message
+       WHERE store_payment_events.status = 'failed'`,
+    [businessId, orderId, event.provider, event.idempotencyKey, event.payload, event.amount ?? null, message],
+  );
+}
+
+export class StoreInvoiceError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+  ) {
+    super(message);
+    this.name = 'StoreInvoiceError';
+  }
+}
+
+type StoreOrderLine = {
+  item_id: string;
+  variant_id: string | null;
+  item_name: string;
+  quantity: string;
+  unit: string | null;
+  unit_price: string;
+  tax_rate: string;
+  line_total: string;
+};
+
+function classifyStoreLine(line: StoreOrderLine): 'inclusive' | 'exclusive' {
+  const qty = parseFloat(line.quantity) || 0;
+  const unit = parseFloat(line.unit_price) || 0;
+  const rate = parseFloat(line.tax_rate) || 0;
+  const lineTotal = parseFloat(line.line_total) || 0;
+  const gross = roundMoney(unit * qty);
+  const exclusive = roundMoney(gross * (1 + rate / 100));
+  const tol = 0.02;
+  if (rate <= 0) return 'exclusive';
+  const looksInclusive = Math.abs(lineTotal - gross) <= tol;
+  const looksExclusive = Math.abs(lineTotal - exclusive) <= tol;
+  if (looksInclusive && !looksExclusive) return 'inclusive';
+  if (looksExclusive && !looksInclusive) return 'exclusive';
+  throw new StoreInvoiceError(
+    `Line "${line.item_name}" total does not match an exclusive or inclusive GST price`,
+    'STORE_LINE_NOT_REPRESENTABLE',
+  );
+}
+
+/**
+ * Finalises one store order as a normal final sales invoice.
+ * The order row is locked. Accounting, GST and the order→invoice link commit together.
+ * A second call returns the invoice already linked and does not post again.
+ *
+ * `actorUserId`, when passed, must be a user of `businessId` (the session user).
+ * It is never taken from a request body. Public checkout and the payment webhook
+ * omit it; the business primary admin is the author.
+ */
 export async function createInvoiceForStoreOrder(
   orderId: string,
   businessId: string,
+  actorUserId?: string | null,
 ): Promise<string | null> {
   const pool = getPool();
   const client = await pool.connect();
@@ -113,9 +296,16 @@ export async function createInvoiceForStoreOrder(
           invoice_id: string | null;
           branch_id: string | null;
           grand_total: string;
-          subtotal: string;
+          tax_total: string;
+          delivery_charge: string;
+          discount_amount: string;
           order_number: string;
           payment_status: string;
+          status: string;
+          customer_name: string;
+          customer_phone: string;
+          customer_address: string | null;
+          created_at: Date | string;
         }
       | undefined;
     if (!o) {
@@ -126,67 +316,149 @@ export async function createInvoiceForStoreOrder(
       await client.query('COMMIT');
       return o.invoice_id;
     }
+    if (o.status === 'cancelled') {
+      throw new StoreInvoiceError('A cancelled store order cannot be invoiced', 'ORDER_CANCELLED');
+    }
 
-    const branchId =
-      o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
-    const invoiceNumber = await reserveFormattedDocumentNumber(client, branchId, 'tax_invoice');
-    const today = new Date().toISOString().slice(0, 10);
-    const paid = o.payment_status === 'paid' || o.payment_status === 'cod';
     const grand = parseFloat(String(o.grand_total)) || 0;
-    const sub = parseFloat(String(o.subtotal)) || 0;
+    if (o.payment_status === 'paid') {
+      const events = await client.query<{ amount: string | null }>(
+        `SELECT amount::text AS amount FROM store_payment_events
+          WHERE order_id = $1 AND business_id = $2 AND status = 'processed'`,
+        [orderId, businessId],
+      );
+      if (events.rows.length === 0) {
+        throw new StoreInvoiceError(
+          'Paid store order has no verified payment',
+          'STORE_PAYMENT_NOT_VERIFIED',
+        );
+      }
+      const matches = events.rows.every((e) =>
+        storePaymentAmountMatches(e.amount == null ? null : parseFloat(e.amount), grand),
+      );
+      if (!matches) {
+        throw new StoreInvoiceError(
+          'Payment amount does not match the order total',
+          'PAYMENT_AMOUNT_MISMATCH',
+        );
+      }
+    }
 
-    const inv = await client.query(
-        `INSERT INTO invoices (
-        business_id, branch_id, invoice_number, invoice_date, due_date,
-        status, payment_status, subtotal, grand_total, paid_amount, balance_amount,
-        document_type, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      RETURNING id`,
-      [
-        businessId,
-        branchId,
-        invoiceNumber,
-        today,
-        today,
-        'final',
-        paid ? 'paid' : 'unpaid',
-        sub,
-        grand,
-        paid ? grand : 0,
-        paid ? 0 : grand,
-        'tax_invoice',
-      ],
-    );
-    const invoiceId = inv.rows[0].id as string;
-
-    const items = await client.query(
-      `SELECT item_id, item_name, quantity, unit_price, line_total, tax_rate
-       FROM store_order_items WHERE order_id = $1`,
+    const itemRes = await client.query<StoreOrderLine>(
+      `SELECT item_id, variant_id, item_name, quantity::text, unit, unit_price::text,
+              tax_rate::text, line_total::text
+         FROM store_order_items WHERE order_id = $1`,
       [orderId],
     );
-    for (const item of items.rows) {
-      await client.query(
-        `INSERT INTO invoice_items (
-          invoice_id, item_id, item_name, quantity, unit_price, line_total, tax_rate
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [
-          invoiceId,
-          item.item_id,
-          item.item_name,
-          item.quantity,
-          item.unit_price,
-          item.line_total,
-          item.tax_rate,
-        ],
+    const lines = itemRes.rows;
+    if (lines.length === 0) {
+      throw new StoreInvoiceError('Store order has no lines to invoice', 'STORE_ORDER_EMPTY');
+    }
+
+    const kinds = new Set(lines.map(classifyStoreLine));
+    if (kinds.size > 1) {
+      throw new StoreInvoiceError(
+        'This order mixes GST-inclusive and GST-exclusive prices, which one invoice cannot represent',
+        'STORE_TAX_NOT_REPRESENTABLE',
+      );
+    }
+    const pricesIncludeGst = kinds.has('inclusive');
+    const delivery = parseFloat(String(o.delivery_charge)) || 0;
+    const discount = parseFloat(String(o.discount_amount)) || 0;
+    const additional = roundMoney(delivery - discount);
+
+    let createdBy = actorUserId || null;
+    if (createdBy) {
+      const actor = await client.query(
+        `SELECT id FROM users WHERE id = $1 AND business_id = $2`,
+        [createdBy, businessId],
+      );
+      if (actor.rows.length === 0) {
+        throw new StoreInvoiceError('Actor does not belong to this business', 'ACTOR_MISMATCH');
+      }
+    } else {
+      const admin = await client.query<{ id: string }>(
+        `SELECT id FROM users
+          WHERE business_id = $1 AND COALESCE(is_primary_admin, false) = true
+          ORDER BY created_at ASC LIMIT 1`,
+        [businessId],
+      );
+      if (admin.rows.length === 0) {
+        throw new StoreInvoiceError('No business user available to author the invoice', 'ACTOR_REQUIRED');
+      }
+      createdBy = admin.rows[0].id;
+    }
+
+    const phone = String(o.customer_phone || '').replace(/\D/g, '');
+    const customer = phone.length >= 10
+      ? await client.query<{ id: string }>(
+          `SELECT id FROM customers
+            WHERE business_id = $1 AND deleted_at IS NULL
+              AND right(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = right($2, 10)
+            LIMIT 1`,
+          [businessId, phone],
+        )
+      : { rows: [] as { id: string }[] };
+
+    const branchId = o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
+
+    const invoiceDate = new Date(o.created_at).toISOString().slice(0, 10);
+    const payLabel =
+      o.payment_status === 'cod' ? 'COD' : o.payment_status === 'paid' ? 'Razorpay' : 'Unpaid';
+    const result = await createInvoiceInTransaction(
+      client,
+      {
+        business_id: businessId,
+        created_by: createdBy,
+        branch_id: branchId,
+        customer_id: customer.rows[0]?.id ?? null,
+        invoice_date: invoiceDate,
+        status: 'final',
+        document_type: 'tax_invoice',
+        prices_include_gst: pricesIncludeGst,
+        additional_charges: additional,
+        billing_address: o.customer_address,
+        notes: `Online store order ${o.order_number} (${payLabel})`,
+        items: lines.map((line) => ({
+          item_id: line.item_id,
+          variant_id: line.variant_id,
+          item_name: line.item_name,
+          quantity: parseFloat(line.quantity) || 0,
+          unit: line.unit || 'PCS',
+          unit_price: parseFloat(line.unit_price) || 0,
+          tax_rate: parseFloat(line.tax_rate) || 0,
+        })),
+      },
+    );
+
+    const orderTax = parseFloat(String(o.tax_total)) || 0;
+    if (
+      Math.abs(result.grandTotal - grand) > 0.02 ||
+      Math.abs(result.taxTotal - orderTax) > 0.05
+    ) {
+      throw new StoreInvoiceError(
+        `Store order totals cannot be represented on a normal invoice (order ${grand}/${orderTax}, invoice ${result.grandTotal}/${result.taxTotal})`,
+        'STORE_TOTALS_NOT_REPRESENTABLE',
       );
     }
 
-    await client.query(
-      `UPDATE store_orders SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [invoiceId, orderId],
+    await client.query(`UPDATE invoices SET store_order_id = $1 WHERE id = $2 AND business_id = $3`, [
+      orderId,
+      result.invoiceId,
+      businessId,
+    ]);
+    const linked = await client.query(
+      `UPDATE store_orders
+          SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND business_id = $3 AND invoice_id IS NULL`,
+      [result.invoiceId, orderId, businessId],
     );
+    if (linked.rowCount !== 1) {
+      throw new StoreInvoiceError('Store order was already invoiced', 'STORE_ORDER_ALREADY_INVOICED');
+    }
+
     await client.query('COMMIT');
-    return invoiceId;
+    return result.invoiceId;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

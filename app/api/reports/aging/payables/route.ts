@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(pay.amount), 0) as total_paid
       FROM purchases p
       LEFT JOIN suppliers s ON p.supplier_id = s.id
-      LEFT JOIN payments pay ON pay.reference_type = 'purchase' AND pay.reference_id = p.id AND pay.type = 'payable' AND pay.deleted_at IS NULL
+      LEFT JOIN payments pay ON pay.reference_type = 'purchase' AND pay.reference_id = p.id AND pay.type = 'payable' AND pay.deleted_at IS NULL AND pay.status = 'active'
       WHERE p.business_id = $1
         AND p.deleted_at IS NULL
         AND p.status != 'cancelled'

@@ -187,6 +187,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/aging/receivables', label: 'Receivables Aging', module: 'reports' },
       { href: '/reports/aging/payables', label: 'Payables Aging', module: 'reports' },
       { href: '/reports/gst/gstr1', label: 'GST Returns (GSTR-1)', module: 'reports' },
+      { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
       { href: '/reports/sales/summary', label: 'Sales — Summary', module: 'reports' },
       { href: '/reports/purchase/summary', label: 'Purchase — Summary', module: 'reports' },
     ],

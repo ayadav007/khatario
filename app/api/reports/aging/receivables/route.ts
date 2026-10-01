@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(p.amount), 0) as total_paid
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id AND c.deleted_at IS NULL
-      LEFT JOIN payments p ON p.reference_type = 'invoice' AND p.reference_id = i.id AND p.type = 'receivable' AND p.deleted_at IS NULL
+      LEFT JOIN payments p ON p.reference_type = 'invoice' AND p.reference_id = i.id AND p.type = 'receivable' AND p.deleted_at IS NULL AND p.status = 'active'
       WHERE i.business_id = $1
         AND i.deleted_at IS NULL
         AND i.status != 'cancelled'

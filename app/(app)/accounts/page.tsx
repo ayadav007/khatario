@@ -12,11 +12,17 @@ import { Account, AccountGroup } from '@/types/database';
 import Link from 'next/link';
 import { useToastContext } from '@/contexts/ToastContext';
 import { DeleteAction } from '@/components/common/DeleteAction';
+import { effectivePlSection, PL_SECTIONS, PL_SECTION_LABELS, type PlSection } from '@/lib/accounting/pl-sections';
 
 interface AccountWithGroup extends Account {
   account_group_name: string;
   account_group_code: string;
   children?: AccountWithGroup[];
+}
+
+function plSectionLabel(account: AccountWithGroup): string {
+  const section = effectivePlSection({ ...account, group_code: account.account_group_code });
+  return section ? PL_SECTION_LABELS[section] : '—';
 }
 
 export default function AccountsPage() {
@@ -29,6 +35,7 @@ export default function AccountsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterSection, setFilterSection] = useState<PlSection | 'all'>('all');
   const [initializing, setInitializing] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
 
@@ -37,7 +44,7 @@ export default function AccountsPage() {
       fetchAccounts();
       fetchGroups();
     }
-  }, [business?.id, viewMode, filterType, pagination.page]);
+  }, [business?.id, viewMode, filterType, filterSection, pagination.page]);
 
   useEffect(() => {
     if (business?.id) {
@@ -45,7 +52,7 @@ export default function AccountsPage() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, viewMode, filterType]);
+  }, [business?.id, viewMode, filterType, filterSection]);
 
   const fetchAccounts = async () => {
     if (!business?.id) return;
@@ -56,6 +63,7 @@ export default function AccountsPage() {
         business_id: business.id,
         user_id: user?.id || '', // Required for authorization
         ...(filterType !== 'all' && { account_type: filterType }),
+        ...(viewMode === 'list' && filterSection !== 'all' && { pl_section: filterSection }),
         ...(viewMode === 'tree' && { tree: 'true' }),
         ...(viewMode === 'list' && { 
           page: pagination.page.toString(),
@@ -134,7 +142,7 @@ export default function AccountsPage() {
     }
   };
 
-  const filteredAccounts = accounts.filter(account => {
+  const matchesSearch = (account: AccountWithGroup) => {
     if (!search) return true;
     const searchLower = search.toLowerCase();
     return (
@@ -142,7 +150,16 @@ export default function AccountsPage() {
       account.account_code.toLowerCase().includes(searchLower) ||
       account.account_group_name?.toLowerCase().includes(searchLower)
     );
-  });
+  };
+  const matchesSection = (account: AccountWithGroup) =>
+    filterSection === 'all' || effectivePlSection({ ...account, group_code: account.account_group_code }) === filterSection;
+  // The tree is loaded whole, so the section filter runs here and keeps parents of matching sub-accounts.
+  const pruneTree = (nodes: AccountWithGroup[]): AccountWithGroup[] =>
+    nodes.flatMap((n) => {
+      const children = pruneTree(n.children || []);
+      return matchesSection(n) || children.length ? [{ ...n, children }] : [];
+    });
+  const filteredAccounts = (viewMode === 'tree' && filterSection !== 'all' ? pruneTree(accounts) : accounts).filter(matchesSearch);
 
   const renderTreeView = () => {
     if (loading) {
@@ -155,7 +172,7 @@ export default function AccountsPage() {
 
     const renderAccount = (account: AccountWithGroup, level: number = 0) => {
       const hasChildren = account.children && account.children.length > 0;
-      const isExpanded = expandedGroups.has(account.id);
+      const isExpanded = expandedGroups.has(account.id) || filterSection !== 'all';
 
       return (
         <div key={account.id} className="border-b border-border">
@@ -190,6 +207,7 @@ export default function AccountsPage() {
               </div>
               <div className="text-sm text-text-secondary mt-1">
                 {account.account_group_name} • {account.account_type}
+                {(account.account_type === 'income' || account.account_type === 'expense') && ` • P&L: ${plSectionLabel(account)}`}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -275,6 +293,7 @@ export default function AccountsPage() {
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Account Name</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Group</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Type</th>
+              <th className="text-left py-3 px-4 font-semibold text-text-primary">Profit &amp; Loss section</th>
               <th className="text-left py-3 px-4 font-semibold text-text-primary">Nature</th>
               <th className="text-center py-3 px-4 font-semibold text-text-primary">Status</th>
               <th className="text-center py-3 px-4 font-semibold text-text-primary">Actions</th>
@@ -290,6 +309,9 @@ export default function AccountsPage() {
                   <span className="px-2 py-1 rounded-md text-xs bg-gray-100 text-gray-800">
                     {account.account_type}
                   </span>
+                </td>
+                <td className="py-4 px-4 text-sm text-text-secondary">
+                  {plSectionLabel(account)}
                 </td>
                 <td className="py-4 px-4">
                   <span className={`px-2 py-1 rounded-md text-xs ${
@@ -397,7 +419,7 @@ export default function AccountsPage() {
         </div>
 
         <Card>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary w-4 h-4" />
               <Input
@@ -419,6 +441,20 @@ export default function AccountsPage() {
                 <option value="income">Income</option>
                 <option value="expense">Expenses</option>
                 <option value="capital">Capital</option>
+              </select>
+            </div>
+            <div>
+              <select
+                value={filterSection}
+                onChange={(e) => setFilterSection(e.target.value as PlSection | 'all')}
+                className="input"
+                aria-label="Profit & Loss section"
+                data-testid="accounts-pl-section-filter"
+              >
+                <option value="all">All P&amp;L sections</option>
+                {PL_SECTIONS.map((s) => (
+                  <option key={s} value={s}>{PL_SECTION_LABELS[s]}</option>
+                ))}
               </select>
             </div>
             <div className="flex gap-2">

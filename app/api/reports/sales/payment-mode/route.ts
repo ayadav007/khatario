@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
       INNER JOIN invoices i ON p.reference_id = i.id AND p.reference_type = 'invoice' AND i.deleted_at IS NULL
       WHERE p.business_id = $1 
         AND p.deleted_at IS NULL
+        AND p.status = 'active'
         AND p.type = 'receivable'
         AND i.status = 'final'
         AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
@@ -135,6 +136,7 @@ export async function GET(request: NextRequest) {
             AND p.reference_type = 'invoice'
             AND p.business_id = $1
             AND p.deleted_at IS NULL
+            AND p.status = 'active'
         )
         ${dateFilter}
     `, queryParams);

@@ -47,7 +47,7 @@ jest.mock('@/lib/soft-delete-entitlements', () => ({
 import { getPool, closePool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
-import { createInvoiceLedgerEntries, createPurchaseLedgerEntries } from '@/lib/ledger-utils';
+import { createInvoiceLedgerEntries, createPaymentLedgerEntries, createPurchaseLedgerEntries } from '@/lib/ledger-utils';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { cancelFinalPurchase } from '@/lib/purchases/cancel-purchase';
 import { listRule37Exposure, syncRule37ForBill, RULE37_REVERSAL } from '@/lib/gst/rule37';
@@ -254,6 +254,55 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
     return { id, grand, tax: 2 * half };
   }
 
+  /**
+   * A payment that already exists on a draft. Phase 3.3 rejects new draft payments; delete still
+   * has to reverse one that was recorded before that rule.
+   */
+  async function seedHistoricalDraftPayment(purchaseId: string, amount: number, date: string, tdsAmount = 0) {
+    const id = randomUUID();
+    const settles = r2(amount + tdsAmount);
+    await tx(async (c) => {
+      await c.query(
+        `INSERT INTO payments (id, business_id, branch_id, type, supplier_id, reference_type, reference_id,
+            amount, payment_mode, payment_date, notes, created_by, tds_amount, tds_section)
+         VALUES ($1, $2, $3, 'payable', $4, 'purchase', $5, $6, 'cash', $7, 'historical draft payment', $8, $9, $10)`,
+        [id, B, BR, SUPP, purchaseId, amount, date, U, tdsAmount, tdsAmount > 0 ? '194C' : null]
+      );
+      await c.query(
+        `UPDATE purchases
+            SET paid_amount = COALESCE(paid_amount, 0) + $1,
+                tds_deducted = COALESCE(tds_deducted, 0) + $2,
+                balance_amount = COALESCE(balance_amount, 0) - $3
+          WHERE id = $4`,
+        [amount, tdsAmount, settles, purchaseId]
+      );
+      await c.query(`UPDATE suppliers SET current_balance = current_balance - $1 WHERE id = $2`, [settles, SUPP]);
+      await createPaymentLedgerEntries({
+        businessId: B,
+        paymentId: id,
+        paymentDate: date,
+        amount,
+        type: 'payable',
+        supplierId: SUPP,
+        paymentMode: 'cash',
+        branchId: BR,
+        tdsAmount,
+        poolClient: c,
+      });
+      if (tdsAmount > 0) {
+        await c.query(
+          `INSERT INTO tds_transactions (
+             business_id, supplier_id, payment_id, purchase_id, tds_category_id, section_code,
+             payment_amount, tds_rate, tds_amount, net_payment_amount,
+             transaction_date, financial_year, quarter, notes, created_by, status)
+           VALUES ($1, $2, $3, $4, $5, '194C', $6, $7, $8, $9, $10, '2026-2027', 'Q2', 'historical', $11, 'active')`,
+          [B, SUPP, id, purchaseId, CAT, settles, r2((tdsAmount / settles) * 100), tdsAmount, amount, date, U]
+        );
+      }
+    });
+    return id;
+  }
+
   const pay = (purchaseId: string, amount: number, date: string, tds?: { amount: number; section: string }) =>
     call(
       postPayment(
@@ -394,9 +443,7 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
     test('draft + payment', async () => {
       const X = await supplierBalance();
       const p = await makeDraftPurchase({ taxable: 1000, date: '2026-09-02' });
-      const r = await pay(p.id, 400, '2026-09-03');
-      expect(r.status).toBe(201);
-      const payId = r.json.payment.id;
+      const payId = await seedHistoricalDraftPayment(p.id, 400, '2026-09-03');
       expect(await supplierBalance()).toBeCloseTo(X - 400, 2);
       await expectSupplierMatchesGl();
 
@@ -438,9 +485,7 @@ d('Phase 2.6 pre-staging fixes (real DB)', () => {
       softDeleteMock.mockResolvedValue(false);
       const X = await supplierBalance();
       const p = await makeDraftPurchase({ taxable: 10000, date: '2026-09-05' });
-      const r1 = await pay(p.id, 3000, '2026-09-06', { amount: 30, section: '194C' });
-      expect(r1.status).toBe(201);
-      const payId = r1.json.payment.id;
+      const payId = await seedHistoricalDraftPayment(p.id, 3000, '2026-09-06', 30);
       const r2_ = await deduct(p.id, 2000, '2026-09-07');
       expect(r2_.status).toBe(201);
       expect(await supplierBalance()).toBeCloseTo(X - 3000 - 30 - 20, 2);

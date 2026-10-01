@@ -3,7 +3,7 @@ import { getPool } from '@/lib/db';
 import { getStateCode } from '@/lib/gst-utils';
 import { createDebitNoteLedgerEntries } from '@/lib/ledger-utils';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
@@ -122,7 +122,11 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    const business_id = getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
+    const business_id = getSessionScopedBusinessId(request);
+    const created_by = getAuthenticatedUserId(request);
+    if (!business_id || !created_by) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
     const {
       branch_id: body_branch_id,
       customer_id,
@@ -135,19 +139,11 @@ export async function POST(request: NextRequest) {
       items,
       round_off,
       notes,
-      created_by,
     } = body;
 
-    if (!business_id || !customer_id || !debit_note_date || !items || items.length === 0) {
+    if (!customer_id || !debit_note_date || !items || items.length === 0) {
       return NextResponse.json(
-        { error: 'business_id, customer_id, debit_note_date, and items are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!created_by) {
-      return NextResponse.json(
-        { error: 'created_by (user_id) is required for authorization' },
+        { error: 'customer_id, debit_note_date, and items are required' },
         { status: 400 }
       );
     }

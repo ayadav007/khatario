@@ -165,7 +165,9 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/gst/gstr2b-reconciliation': 'reports_gst',
     '/reports/gst/reconciliation': 'reports_gst',
     '/reports/gst/gstr3b': 'reports_gst',
+    '/reports/gst/cash-ledger': 'reports_gst',
     '/reports/gst/gstr9': 'reports_gst',
+    '/reports/gst/compliance': 'reports_gst',
     '/reports/sales/b2b-b2c': 'reports_gst',
     
     // Reports - Sales (Basic)
@@ -200,6 +202,7 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/stock/closing-stock': 'reports_advanced',
     '/reports/stock/closing-stock/finalize': 'reports_advanced',
     '/reports/stock/valuation': 'reports_advanced',
+    '/reports/stock/fifo-lots': 'reports_advanced',
     '/reports/stock/profit-margin': 'reports_advanced',
     '/reports/stock/purchase-vs-sales': 'reports_advanced',
     '/reports/stock-summary': 'reports_basic',
@@ -655,11 +658,13 @@ export const Sidebar = React.memo(function Sidebar() {
           label: 'GST Reports',
           collapsible: true,
           subItems: [
+            { href: '/reports/gst/compliance', label: 'GST Alerts', module: 'reports' },
             { href: '/reports/gst/gstr1', label: 'GSTR-1', module: 'reports' },
             { href: '/reports/gst/gstr2b', label: 'GSTR-2B', module: 'reports' },
             { href: '/reports/gst/gstr2b-reconciliation', label: 'GSTR-2B Reconciliation', module: 'reports' },
             { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
             { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
+            { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
           ],
         },

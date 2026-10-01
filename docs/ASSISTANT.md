@@ -10,6 +10,21 @@ Answers questions from Khatario's own guides, in English and Hinglish, on the we
 4. **Answering** (`lib/rag/answer.ts`) rewrites the question, retrieves, and streams an answer from Groq (Gemini as fallback) that cites sources as [1], [2]. When retrieval isn't confident it says so and offers a demo or a human. Without any model key, or over the daily token budget, it quotes the best matching guide section instead.
 5. **Actions** (demo booking with WhatsApp OTP, plan recommendation, lead capture, talk to a human) come from intent detection, never from model output.
 
+## GST law
+
+`knowledge/gst-law/` holds the official text of the CGST, IGST, UTGST and Compensation Acts and the CGST and IGST Rules, downloaded from the [CBIC Tax Information Portal](https://taxinformation.cbic.gov.in/). These files have the audience `gst_law`, which is never a conversation audience, so prospects and shoppers can't retrieve them.
+
+For signed-in business users (`tenant_user`) only, `answerTurn` runs a second search over the law when the question looks legal (`lib/rag/gst-law.ts`: sections, rules, penalties, time limits, ITC, reverse charge, registration and so on), or when Khatario's guides have no confident answer. Explicit law questions lead with the law; GST topics keep the Khatario guide first and add up to two law sections. When law sources are used, the model explains in plain words, cites the provision ("CGST Act, Section 31"), avoids stating rates or notified dates, and ends by suggesting the user check with their CA.
+
+Refresh the text after a Finance Act or major amendment:
+
+```bash
+npm run kb:fetch-gst-law                  # all six; --only=cgst-act for one
+npm run kb:reindex -- --source=markdown
+```
+
+The text omits amendment footnotes and doesn't include notifications, circulars or rate schedules. Keyword-only search (no embeddings) ranks legal text loosely; staging and production should run with embeddings.
+
 ## Where it appears
 
 | Surface | Channel | Audience | Route |
@@ -38,6 +53,7 @@ Unanswered questions and thumbs-down answers show up in /admin/assistant. Fix th
 ```bash
 npm run kb:reindex                        # everything; add --source=markdown|plans|marketing, --force, --dry-run
 npm run kb:generate                       # regenerate knowledge/generated/plans.md from the DB
+npm run kb:fetch-gst-law                  # re-download the GST Acts and Rules from CBIC into knowledge/gst-law/
 npm run kb:eval                           # retrieval hit rate + MRR against tests/rag/eval-set.yml (fails below 85%)
 npm run kb:ask -- --audience=tenant_user "GST report kaise nikale"
 npm run kb:enable-vector                  # add the embedding column + HNSW index after installing pgvector

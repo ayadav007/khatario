@@ -50,6 +50,7 @@ interface Payment {
   payment_mode: string;
   payment_date: string;
   notes?: string;
+  status?: 'active' | 'reversed';
 }
 
 export default function SupplierDetailPage({ params }: { params: { id: string } }) {
@@ -366,7 +367,14 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                           <td className="table-cell text-left">
                             {format(new Date(payment.payment_date), 'dd MMM yyyy')}
                           </td>
-                          <td className="table-cell text-left">{payment.payment_mode}</td>
+                          <td className="table-cell text-left">
+                            {payment.payment_mode}
+                            {payment.status === 'reversed' && (
+                              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                Reversed
+                              </span>
+                            )}
+                          </td>
                           <td className="table-cell text-right font-medium">
                             ₹ {Number(payment.amount).toLocaleString('en-IN')}
                           </td>

@@ -15,9 +15,9 @@ import {
 } from '@/lib/accounting/voucher-posting';
 import {
   computeGoodsCost,
+  currentUnitCosts,
   getInventoryModel,
   postCostOfGoods,
-  weightedAverageCosts,
 } from '@/lib/inventory/cogs-posting';
 
 export interface BranchInfo {
@@ -455,7 +455,8 @@ export async function createInterBranchInvoice(
       params.businessId,
       params.items.map((i) => ({ itemId: i.item_id, quantity: Number(i.qty) || 0 })),
       params.transferDate,
-      params.fromBranchId
+      params.fromBranchId,
+      { kind: 'invoice', docId: invoice.id }
     );
     await postCostOfGoods(client, {
       businessId: params.businessId,
@@ -506,7 +507,7 @@ export async function ensureInterBranchInvoiceForTransfer(
   );
   if (rows.rows.length === 0) return null;
 
-  const wac = await weightedAverageCosts(
+  const wac = await currentUnitCosts(
     client,
     transfer.business_id,
     rows.rows.map((r: any) => r.item_id),
@@ -519,7 +520,7 @@ export async function ensureInterBranchInvoiceForTransfer(
     qty: Number(r.qty) || 0,
     unit: r.unit || 'PCS',
     // Rule 28 (2nd proviso): with full ITC at the recipient the declared value is accepted. Declare the
-    // sending branch's weighted-average cost so the invoice matches the COGS it posts; cost_snapshot
+    // cost the transfer will post (FIFO next-out cost, or the sending branch's weighted average); cost_snapshot
     // is the master price captured at creation and is only a fallback.
     unit_price: round2(wac.get(r.item_id) || Number(r.cost_snapshot) || Number(r.purchase_price) || 0),
     tax_rate: Number(r.tax_rate) || 0,

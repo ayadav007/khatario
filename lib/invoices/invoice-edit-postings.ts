@@ -4,7 +4,8 @@ import { reverseVoucherLedgerEntries, reverseVouchers } from '@/lib/ledger-rever
 /**
  * Invoice save with explicit payment entries replaces the invoice's payment rows: the receipt
  * vouchers of the rows being replaced are reversed. Returns their ids. Saves without payment
- * entries must not call this, so recorded payments and their vouchers are preserved.
+ * entries must not call this, so recorded payments and their vouchers are preserved. Reversed
+ * payments are history and are never replaced.
  */
 export async function reverseReplacedInvoicePayments(
   client: PoolClient,
@@ -12,7 +13,8 @@ export async function reverseReplacedInvoicePayments(
 ): Promise<string[]> {
   const old = await client.query<{ id: string }>(
     `SELECT id FROM payments
-      WHERE reference_type = 'invoice' AND reference_id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      WHERE reference_type = 'invoice' AND reference_id = $1 AND business_id = $2 AND deleted_at IS NULL
+        AND status = 'active'`,
     [p.invoiceId, p.businessId]
   );
   const ids = old.rows.map((r) => r.id);

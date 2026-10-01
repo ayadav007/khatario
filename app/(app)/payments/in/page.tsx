@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,6 +16,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useBadges } from '@/contexts/BadgeContext';
+import {
+  createPaymentSubmissionKeys,
+  submitPaymentIn,
+  type PaymentSubmissionKeys,
+} from '@/lib/payments/payment-in-submission';
 
 interface Payment {
   id: string;
@@ -28,6 +33,7 @@ interface Payment {
   payment_date: string;
   notes: string | null;
   created_at: string;
+  status?: 'active' | 'reversed';
 }
 
 interface Invoice {
@@ -63,6 +69,8 @@ export default function PaymentInPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submissionKeysRef = useRef<PaymentSubmissionKeys | null>(null);
   
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -152,11 +160,13 @@ export default function PaymentInPage() {
       }
     }
 
+    const keys = (submissionKeysRef.current ??= createPaymentSubmissionKeys());
+    if (keys.inFlight) return;
+    setSubmitting(true);
     try {
-      const response = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const attempt = await submitPaymentIn(
+        keys,
+        {
           business_id: business.id,
           type: 'receivable',
           customer_id: formData.customer_id || null,
@@ -169,10 +179,11 @@ export default function PaymentInPage() {
           notes: formData.notes || null,
           tds_amount: tdsAmount,
           tds_section: tdsAmount > 0 ? formData.tds_section : null,
-        })
-      });
+        },
+        (init) => fetch('/api/payments', init)
+      );
 
-      if (response.ok) {
+      if (attempt.kind === 'success') {
         toast.success('Payment recorded successfully');
         setShowForm(false);
         setFormData({
@@ -187,14 +198,20 @@ export default function PaymentInPage() {
         });
         await refreshBadgeCounts();
         fetchPayments();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to record payment');
+      } else if (attempt.kind === 'failed') {
+        toast.error(attempt.body?.error || 'Failed to record payment');
+      } else if (attempt.kind === 'network-error') {
+        console.error('Error recording payment:', attempt.error);
+        toast.error('Failed to record payment');
       }
-    } catch (error) {
-      console.error('Error recording payment:', error);
-      toast.error('Failed to record payment');
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const openPaymentForm = (open: boolean) => {
+    submissionKeysRef.current?.reset();
+    setShowForm(open);
   };
 
   const [printingReceipt, setPrintingReceipt] = useState<string | null>(null);
@@ -340,7 +357,7 @@ export default function PaymentInPage() {
           description="Money received from customers — with or without a specific invoice."
           actions={
             !showForm ? (
-              <Button className="w-full sm:w-auto shrink-0" onClick={() => setShowForm(true)}>
+              <Button className="w-full sm:w-auto shrink-0" onClick={() => openPaymentForm(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Record payment
               </Button>
@@ -353,7 +370,7 @@ export default function PaymentInPage() {
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Record Payment</h2>
-              <Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => openPaymentForm(false)}>Cancel</Button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -503,10 +520,10 @@ export default function PaymentInPage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>
+                <Button type="button" variant="ghost" onClick={() => openPaymentForm(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Record Payment</Button>
+                <Button type="submit" disabled={submitting}>Record Payment</Button>
               </div>
             </form>
           </Card>
@@ -562,6 +579,11 @@ export default function PaymentInPage() {
                             <p className="text-xs text-text-muted capitalize mt-0.5">
                               {payment.payment_mode}
                             </p>
+                            {payment.status === 'reversed' && (
+                              <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                Reversed
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
@@ -646,6 +668,11 @@ export default function PaymentInPage() {
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-600 capitalize">
                               {payment.payment_mode}
+                              {payment.status === 'reversed' && (
+                                <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold normal-case bg-red-100 text-red-700">
+                                  Reversed
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-sm text-gray-500">
                               {payment.notes || '-'}

@@ -1,6 +1,7 @@
 import { getPool } from '@/lib/db';
 import { GSTR1Generator } from './gstr1';
 import { GSTR3BGenerator, TaxBreakdown } from './gstr3b';
+import { getGstCashPaidByHead } from './gst-settlement';
 import { computeTable8A } from './gstr9-table8a';
 
 export interface GSTR9Filters {
@@ -206,6 +207,14 @@ function addTaxBreakdown(target: TaxBreakdown, source: TaxBreakdown) {
   target.cess += source.cess || 0;
 }
 
+function subtractTaxBreakdown(target: TaxBreakdown, source: TaxBreakdown) {
+  target.taxable_value -= source.taxable_value || 0;
+  target.igst -= source.igst || 0;
+  target.cgst -= source.cgst || 0;
+  target.sgst -= source.sgst || 0;
+  target.cess -= source.cess || 0;
+}
+
 export type ItcType = 'inputs' | 'capital_goods' | 'input_services';
 
 /** Explicit itc_type wins; otherwise services → input services, everything else → inputs. */
@@ -318,10 +327,11 @@ export class GSTR9Generator {
       const salesQuery = `
         SELECT i.*, c.gstin as customer_gstin
         FROM invoices i
-        LEFT JOIN customers c ON i.customer_id = c.id AND c.deleted_at IS NULL
+        LEFT JOIN customers c ON i.customer_id = c.id
         WHERE i.business_id = $1 AND i.invoice_date >= $2 AND i.invoice_date <= $3
         AND i.status = 'final'
         AND i.deleted_at IS NULL
+        AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
       `;
       const salesRes = await client.query(salesQuery, [business_id, fyFrom, fyTo]);
       
@@ -357,12 +367,12 @@ export class GSTR9Generator {
         `SELECT 'credit' AS kind, subtotal, igst_total, cgst_total, sgst_total
            FROM credit_notes
           WHERE business_id = $1 AND credit_note_date BETWEEN $2 AND $3
-            AND COALESCE(status, 'active') <> 'cancelled'
+            AND status = 'active'
          UNION ALL
          SELECT 'debit' AS kind, subtotal, igst_total, cgst_total, sgst_total
            FROM debit_notes
           WHERE business_id = $1 AND debit_note_date BETWEEN $2 AND $3
-            AND COALESCE(status, 'active') <> 'cancelled'`,
+            AND status = 'active'`,
         [business_id, fyFrom, fyTo]
       );
       notesRes.rows.forEach((n) => {
@@ -538,6 +548,38 @@ export class GSTR9Generator {
         }
       });
 
+      // Expenses with GST post ITC to 1110–1112 (so they are in 6A) but carry no item lines.
+      // Expense heads (rent, fees, telecom, travel) are services, so they go to input services.
+      const expenseItcRes = await client.query(
+        `SELECT e.amount, e.cgst_amount, e.sgst_amount, e.igst_amount, e.is_reverse_charge, s.gstin AS supplier_gstin
+           FROM expenses e
+           LEFT JOIN suppliers s ON s.id = e.supplier_id
+          WHERE e.business_id = $1 AND e.expense_date BETWEEN $2 AND $3
+            AND e.deleted_at IS NULL
+            AND COALESCE(e.itc_eligible, true)
+            AND COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0) + COALESCE(e.igst_amount, 0) > 0`,
+        [business_id, fyFrom, fyTo]
+      );
+      expenseItcRes.rows.forEach((e) => {
+        const cgst = parseFloat(e.cgst_amount) || 0;
+        const sgst = parseFloat(e.sgst_amount) || 0;
+        const igst = parseFloat(e.igst_amount) || 0;
+        const amount = parseFloat(e.amount) || 0;
+        const tb = {
+          taxable_value: e.is_reverse_charge ? amount : amount - cgst - sgst - igst,
+          igst,
+          cgst,
+          sgst,
+          cess: 0,
+        };
+        if (e.is_reverse_charge) {
+          const isReg = e.supplier_gstin && e.supplier_gstin.length >= 15;
+          addTaxBreakdown((isReg ? data.table_6.D : data.table_6.C).input_services, tb);
+        } else {
+          addTaxBreakdown(data.table_6.B.input_services, tb);
+        }
+      });
+
       // 3. COMPARISON DATA FROM RETURNS (12 Months)
       for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
         const actualMonth = monthIndex < 9 ? monthIndex + 4 : monthIndex - 8;
@@ -618,28 +660,6 @@ export class GSTR9Generator {
           data.table_9.cgst.payable += cgstPay;
           data.table_9.sgst.payable += sgstPay;
           data.table_9.cess.payable += g3Gross.cess || 0;
-          
-          // Paid through ITC (estimated from 3B net_itc used)
-          const totalTax = igstPay + cgstPay + sgstPay;
-          const totalITC = (gstr3b.itc_details.net_itc.igst || 0) + (gstr3b.itc_details.net_itc.cgst || 0) + (gstr3b.itc_details.net_itc.sgst || 0);
-          
-          if (totalTax > 0 && totalITC > 0) {
-            const itcRatio = Math.min(1, totalITC / totalTax);
-            data.table_9.igst.credit += igstPay * itcRatio;
-            data.table_9.cgst.credit += cgstPay * itcRatio;
-            data.table_9.sgst.credit += sgstPay * itcRatio;
-            
-            data.table_9.igst.cash += igstPay * (1 - itcRatio);
-            data.table_9.cgst.cash += cgstPay * (1 - itcRatio);
-            data.table_9.sgst.cash += sgstPay * (1 - itcRatio);
-          } else {
-            data.table_9.igst.cash += igstPay;
-            data.table_9.cgst.cash += cgstPay;
-            data.table_9.sgst.cash += sgstPay;
-          }
-          
-          data.table_9.interest.payable += gstr3b.interest_late_fee.igst || 0;
-          data.table_9.late_fee.payable += gstr3b.interest_late_fee.cgst || 0;
         } catch (e) {
           console.error(`Error processing GSTR-3B for ${actualMonth}/${actualYear}:`, e);
         }
@@ -648,6 +668,38 @@ export class GSTR9Generator {
       const table8A = await computeTable8A(client, business_id, financial_year);
       data.table_8.A = table8A.A;
       data.validation.warnings.push(...table8A.warnings);
+
+      const cashPaid = await getGstCashPaidByHead({
+        businessId: business_id,
+        fromDate: fyFrom,
+        toDate: fyTo,
+      });
+      data.table_9.igst.cash = cashPaid.igst;
+      data.table_9.cgst.cash = cashPaid.cgst;
+      data.table_9.sgst.cash = cashPaid.sgst;
+      data.table_9.cess.cash = cashPaid.cess;
+
+      // Paid through ITC = output tax actually discharged by gst_setoff vouchers (Dr output account).
+      // Reversed set-offs keep the voucher type with swapped sides, so debit − credit nets them out.
+      const setoffRes = await client.query<{ account_code: string; paid: string }>(
+        `SELECT a.account_code, COALESCE(SUM(l.debit - l.credit), 0)::text AS paid
+           FROM ledger_entry_lines l
+           JOIN accounts a ON a.id = l.account_id
+          WHERE l.business_id = $1 AND l.voucher_type = 'gst_setoff'
+            AND l.entry_date BETWEEN $2 AND $3
+            AND a.account_code IN ('2150', '2151', '2152', '2153')
+          GROUP BY a.account_code`,
+        [business_id, fyFrom, fyTo]
+      );
+      const creditByCode = new Map(setoffRes.rows.map((r) => [r.account_code, parseFloat(r.paid) || 0]));
+      data.table_9.cgst.credit = creditByCode.get('2150') ?? 0;
+      data.table_9.sgst.credit = creditByCode.get('2151') ?? 0;
+      data.table_9.igst.credit = creditByCode.get('2152') ?? 0;
+      data.table_9.cess.credit = creditByCode.get('2153') ?? 0;
+
+      // GSTR-3B carries interest and late fee as one combined figure per head, so it cannot fill
+      // Table 9 interest and late fee separately.
+      data.flags.manual_declaration_required.push('Table 9 (interest, late fee, penalty)');
 
       // GSTR-1 summary counts every invoice; Table 4 covers only supplies on which tax is payable.
       data.table_4_return.taxable_value -= data.table_5_return.taxable_value;
@@ -666,14 +718,18 @@ export class GSTR9Generator {
       // Finalize Table 4 Sub-totals & Totals
       const t4 = data.table_4;
       [t4.A, t4.B, t4.C, t4.D, t4.E, t4.F, t4.G].forEach(tb => addTaxBreakdown(t4.H, tb));
-      [t4.I, t4.J, t4.K, t4.L].forEach(tb => addTaxBreakdown(t4.M, tb));
+      // 4I and 4L are reductions entered as positive amounts: 4M = J + K − I − L.
+      [t4.J, t4.K].forEach(tb => addTaxBreakdown(t4.M, tb));
+      [t4.I, t4.L].forEach(tb => subtractTaxBreakdown(t4.M, tb));
       addTaxBreakdown(t4.N, t4.H);
       addTaxBreakdown(t4.N, t4.M);
 
       // Finalize Table 5 Sub-totals & Totals
       const t5 = data.table_5;
       [t5.A, t5.B, t5.C, t5.D, t5.E, t5.F].forEach(tb => addTaxBreakdown(t5.G, tb));
-      [t5.H, t5.I, t5.J, t5.K].forEach(tb => addTaxBreakdown(t5.L, tb));
+      // 5H and 5K are reductions: 5L = I + J − H − K.
+      [t5.I, t5.J].forEach(tb => addTaxBreakdown(t5.L, tb));
+      [t5.H, t5.K].forEach(tb => subtractTaxBreakdown(t5.L, tb));
       addTaxBreakdown(t5.M, t5.G);
       addTaxBreakdown(t5.M, t5.L);
       addTaxBreakdown(t5.N, t4.N);

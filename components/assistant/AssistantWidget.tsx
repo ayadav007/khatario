@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import Link from 'next/link';
 import { Loader2, MessageCircle, RotateCcw, Send, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { ActionCard } from './ActionCards';
+import { ASSISTANT_ASK_EVENT } from './events';
 import { MessageContent } from './MessageContent';
 import {
   assistantApiBase,
@@ -85,6 +86,23 @@ export function AssistantWidget({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [chat.messages]);
+
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  useEffect(() => {
+    if (!enabled) return;
+    const onAsk = (e: Event) => {
+      const question = (e as CustomEvent<{ question?: string }>).detail?.question?.trim();
+      if (!question) return;
+      void (async () => {
+        await chatRef.current.restore();
+        setOpen(true);
+        void chatRef.current.send(question);
+      })();
+    };
+    window.addEventListener(ASSISTANT_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(ASSISTANT_ASK_EVENT, onAsk);
+  }, [enabled]);
 
   useEffect(() => {
     if (!open) return;

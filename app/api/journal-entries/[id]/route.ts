@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  getAuthenticatedUserId,
   getUserIdFromRequest,
   getBusinessIdFromRequest,
   getSessionScopedBusinessId,
@@ -182,13 +183,10 @@ export async function PATCH(
   }
   const business_id = getSessionScopedBusinessId(request);
   const { entry_date, reference_number, narration, lines } = body;
-  const updated_by = body.updated_by || getUserIdFromRequest(request, body) || request.headers.get('x-user-id');
+  const updated_by = getAuthenticatedUserId(request);
 
-  if (!business_id) {
-    return NextResponse.json({ error: 'business_id is required (session scope)' }, { status: 400 });
-  }
-  if (!updated_by) {
-    return NextResponse.json({ error: 'updated_by (user_id) is required for authorization' }, { status: 400 });
+  if (!business_id || !updated_by) {
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
   }
 
   const journalEntry = await loadJournal(voucherId, business_id);
@@ -344,16 +342,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   const voucherId = params.id;
-  const businessId =
-    getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request);
-  const userId = getUserIdFromRequest(request);
+  const businessId = getSessionScopedBusinessId(request);
+  const userId = getAuthenticatedUserId(request);
   const reason = new URL(request.url).searchParams.get('reason');
 
-  if (!businessId) {
-    return NextResponse.json({ error: 'business_id is required' }, { status: 400 });
-  }
-  if (!userId) {
-    return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 400 });
+  if (!businessId || !userId) {
+    return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
   }
 
   const journalEntry = await loadJournal(voucherId, businessId);

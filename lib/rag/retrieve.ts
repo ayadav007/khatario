@@ -4,7 +4,7 @@ import { embedQuery, embeddingsConfigured, toVectorLiteral } from './embed';
 import { expandQuery, type TermGroup } from './glossary';
 import { normalizeText, tsToken } from './text';
 import { hasVectorColumn } from './vector-support';
-import { AUDIENCES, type RetrievalScope, type RetrievedChunk } from './types';
+import { KB_AUDIENCES, type RetrievalScope, type RetrievedChunk } from './types';
 
 const RRF_K = 60;
 /**
@@ -12,6 +12,12 @@ const RRF_K = 60;
  * user's terms beat one that merely repeats a single common word ("bill") many times.
  */
 const COVERAGE_BOOST = 0.03;
+/**
+ * Extra weight when the chunk's own heading (the last heading segment) names the user's terms.
+ * Matters most for long legal text, where "Section 22: Persons liable for registration" should beat
+ * rules that merely mention registration many times.
+ */
+const HEADING_BOOST = 0.02;
 
 export interface RetrieveInput {
   scope: RetrievalScope;
@@ -46,7 +52,7 @@ type CandidateRow = {
 
 /** Tenant isolation is enforced here, in SQL parameters, never in the prompt. */
 export function scopeFilter(scope: RetrievalScope, startIndex: number): { sql: string; params: unknown[] } {
-  if (!(AUDIENCES as readonly string[]).includes(scope.audience)) {
+  if (!(KB_AUDIENCES as readonly string[]).includes(scope.audience)) {
     throw new Error(`Invalid audience: ${scope.audience}`);
   }
   if (scope.audience === 'tenant_customer') {
@@ -181,7 +187,10 @@ export async function retrieve(input: RetrieveInput): Promise<RetrieveResult> {
   ])
     .map((f) => ({
       ...f,
-      score: f.score + COVERAGE_BOOST * termCoverage(coverageGroups, `${f.row.title} ${f.row.heading_path} ${f.row.content}`),
+      score:
+        f.score +
+        COVERAGE_BOOST * termCoverage(coverageGroups, `${f.row.title} ${f.row.heading_path} ${f.row.content}`) +
+        HEADING_BOOST * termCoverage(coverageGroups, f.row.heading_path.split(' > ').pop() ?? ''),
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);

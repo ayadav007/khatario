@@ -14,6 +14,8 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { AccountGroup } from '@/types/database';
 import Link from 'next/link';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
+import { plSectionFromGroup, type PlSection } from '@/lib/accounting/pl-sections';
 
 export default function NewAccountPage() {
   const router = useRouter();
@@ -40,6 +42,7 @@ export default function NewAccountPage() {
     opening_balance_type: 'debit',
     description: '',
     sort_order: '0',
+    pl_section: '' as PlSection | '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -132,6 +135,7 @@ export default function NewAccountPage() {
           opening_balance: parseFloat(formData.opening_balance) || 0,
           sort_order: parseInt(formData.sort_order) || 0,
           parent_account_id: formData.parent_account_id || null,
+          pl_section: formData.pl_section || null,
         }),
       });
 
@@ -157,6 +161,11 @@ export default function NewAccountPage() {
   const filteredParentAccounts = formData.account_type
     ? accounts.filter(acc => acc.account_type === formData.account_type)
     : [];
+
+  const selectedGroup = groups.find((g) => g.id === formData.account_group_id);
+  const defaultPlSection = selectedGroup
+    ? plSectionFromGroup(formData.account_type, selectedGroup.group_code, selectedGroup.group_type)
+    : null;
 
   if (!canCreate) {
     return (
@@ -219,7 +228,7 @@ export default function NewAccountPage() {
                 </label>
                 <select
                   value={formData.account_type}
-                  onChange={(e) => setFormData({ ...formData, account_type: e.target.value, account_group_id: '' })}
+                  onChange={(e) => setFormData({ ...formData, account_type: e.target.value, account_group_id: '', pl_section: '' })}
                   className="input w-full"
                   required
                 >
@@ -241,7 +250,7 @@ export default function NewAccountPage() {
                 </label>
                 <select
                   value={formData.account_group_id}
-                  onChange={(e) => setFormData({ ...formData, account_group_id: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, account_group_id: e.target.value, pl_section: '' })}
                   className="input w-full"
                   required
                   disabled={!formData.account_type}
@@ -307,6 +316,18 @@ export default function NewAccountPage() {
                 </p>
               </div>
             </div>
+
+            {(formData.account_type === 'income' || formData.account_type === 'expense') && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
+                <PlSectionSelect
+                  accountType={formData.account_type}
+                  value={formData.pl_section}
+                  defaultSection={defaultPlSection}
+                  onChange={(pl_section) => setFormData({ ...formData, pl_section })}
+                  disabled={!formData.account_group_id}
+                />
+              </div>
+            )}
             </FormSection>
 
             <FormSection title="Opening balance" description="Starting amount and whether it is debit or credit.">

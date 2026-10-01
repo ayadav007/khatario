@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { releaseDocumentAdvances } from '@/lib/accounting/advance-service';
+import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 
 /**
  * Accounting side of cancelling a final invoice, on the caller's transaction:
@@ -32,6 +33,9 @@ export async function reverseInvoiceAccountingOnCancel(
     reason,
     actorId: userId,
   });
+  if (reversedLines > 0) {
+    await recostAfterStockChange(client, inv.business_id, await stockItemsForDocument(client, 'invoice', inv.id));
+  }
   const { released } = await releaseDocumentAdvances(client, {
     businessId: inv.business_id,
     userId,

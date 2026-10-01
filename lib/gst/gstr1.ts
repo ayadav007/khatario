@@ -1,6 +1,8 @@
 import { getPool } from '@/lib/db';
 import { resolveItemUqc, toGstUqc } from '@/lib/gst/uqc';
 import { loadAdvanceTables, type AdvanceTableRow } from '@/lib/gst/gstr1-advances';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { checkGstin } from '@/lib/tax/gstin';
 
 export type { AdvanceTableRow };
 
@@ -212,20 +214,37 @@ function buildDocSeries(
     bySeries.get(prefix)!.push(d);
   }
   const rows: GSTR1DocIssueRow[] = [];
+  const pushRun = (run: Array<{ number: string; cancelled: boolean }>) => {
+    const cancel = run.filter((d) => d.cancelled).length;
+    rows.push({
+      doc_num: docNum,
+      nature: DOC_NATURE[docNum],
+      from: run[0].number,
+      to: run[run.length - 1].number,
+      totnum: run.length,
+      cancel,
+      net_issue: run.length - cancel,
+    });
+  };
   for (const [, list] of bySeries) {
     const unique = [...new Map(list.map((d) => [d.number, d])).values()].sort((a, b) =>
       a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' })
     );
-    const cancel = unique.filter((d) => d.cancelled).length;
-    rows.push({
-      doc_num: docNum,
-      nature: DOC_NATURE[docNum],
-      from: unique[0].number,
-      to: unique[unique.length - 1].number,
-      totnum: unique.length,
-      cancel,
-      net_issue: unique.length - cancel,
-    });
+    // A number held by a draft (or skipped) is not issued in the period; a from–to range spanning it
+    // would claim more documents than totnum. Split the series at every gap.
+    let run: typeof unique = [];
+    let prev: number | null = null;
+    for (const d of unique) {
+      const m = d.number.match(/(\d+)$/);
+      const n = m ? parseInt(m[1], 10) : null;
+      if (run.length > 0 && (n === null || prev === null || n !== prev + 1)) {
+        pushRun(run);
+        run = [];
+      }
+      run.push(d);
+      prev = n;
+    }
+    if (run.length > 0) pushRun(run);
   }
   return rows;
 }
@@ -334,7 +353,7 @@ export class GSTR1Generator {
         FROM invoices i
         JOIN invoice_items ii ON i.id = ii.invoice_id
         LEFT JOIN items it ON it.id = ii.item_id
-        LEFT JOIN customers c ON i.customer_id = c.id AND c.deleted_at IS NULL
+        LEFT JOIN customers c ON i.customer_id = c.id
         WHERE i.business_id = $1 
           AND i.deleted_at IS NULL
           AND i.status = 'final'
@@ -346,12 +365,10 @@ export class GSTR1Generator {
       const result = await client.query(invoicesQuery, params);
       const rows = result.rows;
 
-      const bizRes = await client.query<{ gstin: string | null }>(
-        'SELECT gstin FROM businesses WHERE id = $1',
-        [business_id]
-      );
-      const bizGstin = bizRes.rows[0]?.gstin ? String(bizRes.rows[0].gstin).trim() : '';
-      const bizState = /^\d{2}/.test(bizGstin) ? bizGstin.slice(0, 2) : null;
+      // Same registration lookup the invoice tax split uses (valid GSTIN, else state_code).
+      const bizReg = await resolveSupplierRegistration(client, business_id, null);
+      const bizGstin = bizReg.gstin ?? '';
+      const bizState = bizReg.stateCode;
       const branchStates = new Map<string, string>();
       const branchRes = await client.query<{ id: string; gstin: string | null }>(
         `SELECT id, gstin FROM branches WHERE business_id = $1 AND gstin IS NOT NULL AND TRIM(gstin) <> ''`,
@@ -359,7 +376,8 @@ export class GSTR1Generator {
       );
       for (const b of branchRes.rows) {
         const g = String(b.gstin).trim().toUpperCase();
-        if (/^\d{2}/.test(g) && g !== bizGstin.toUpperCase()) branchStates.set(b.id, g.slice(0, 2));
+        const chk = checkGstin(g);
+        if (chk.valid && g !== bizGstin.toUpperCase()) branchStates.set(b.id, chk.stateCode);
       }
       const selfStateFor = (branchId: string | null | undefined): string | null =>
         (branchId && branchStates.get(branchId)) || bizState;
@@ -723,7 +741,7 @@ export class GSTR1Generator {
           'credit_note'::text             AS document_type
         FROM credit_notes cn
         LEFT JOIN invoices i ON cn.invoice_id  = i.id AND i.deleted_at IS NULL
-        LEFT JOIN customers c ON cn.customer_id = c.id AND c.deleted_at IS NULL
+        LEFT JOIN customers c ON cn.customer_id = c.id
         WHERE cn.business_id = $1::uuid
           AND cn.status = 'active'
           ${cdnBranchCn}
@@ -766,7 +784,7 @@ export class GSTR1Generator {
           'debit_note'::text              AS document_type
         FROM debit_notes dn
         LEFT JOIN invoices i ON dn.invoice_id  = i.id AND i.deleted_at IS NULL
-        LEFT JOIN customers c ON dn.customer_id = c.id AND c.deleted_at IS NULL
+        LEFT JOIN customers c ON dn.customer_id = c.id
         WHERE dn.business_id = $1::uuid
           AND dn.status = 'active'
           ${cdnBranchDn}

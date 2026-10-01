@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
 import { resolveDeliveryProvider } from '@/lib/store/delivery';
-import { canBookShipment } from '@/lib/store/fulfillment-rules';
+import { isStoreOrderStatus } from '@/lib/store/fulfillment-rules';
+import { transitionStoreOrder } from '@/lib/store/order-lifecycle';
 import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
+import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
 import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_STATUSES = ['pending', 'confirmed', 'ready', 'delivered', 'cancelled'];
 const VALID_DISPATCH = ['pickup', 'self', 'shiprocket'];
 
 const ORDER_SELECT = `
@@ -168,6 +170,23 @@ export async function PATCH(request: NextRequest) {
   if (action === 'scan') {
     return handleScan(businessId, body);
   }
+  if (action === 'refund') {
+    if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
+    const actorUserId = getAuthenticatedUserId(request);
+    if (!actorUserId) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
+    }
+    try {
+      const result = await refundStoreOrder({ businessId, orderId, actorUserId });
+      return NextResponse.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof StoreRefundError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+      }
+      throw error;
+    }
+  }
+
   if (action === 'collect_cash') {
     if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
     const updated = await queryOne(
@@ -194,83 +213,45 @@ export async function PATCH(request: NextRequest) {
       ? (body.dispatch_mode as string)
       : null;
 
-  if (!VALID_STATUSES.includes(status)) {
+  if (!isStoreOrderStatus(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
   }
 
-  if (status === 'cancelled') {
-    const current = await queryOne<{ payment_status: string; shipment_id: string | null }>(
-      `SELECT payment_status, shipment_id FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [orderId, businessId],
+  const actorUserId = getAuthenticatedUserId(request);
+  let moved;
+  try {
+    moved = await transitionStoreOrder({
+      businessId,
+      orderId,
+      to: status,
+      cancelledReason: typeof cancelled_reason === 'string' ? cancelled_reason : null,
+      dispatchMode,
+      actorUserId,
+    });
+  } catch (error) {
+    if (error instanceof InvoiceCancelError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
+    }
+    throw error;
+  }
+  if (!moved.ok) {
+    return NextResponse.json(
+      { error: moved.error, code: moved.code, current_status: moved.from ?? null },
+      { status: moved.status },
     );
-    if (current?.shipment_id && current.shipment_id !== 'self') {
-      try {
-        const provider = await resolveDeliveryProvider(businessId);
-        await provider.cancelShipment?.(current.shipment_id);
-      } catch (err) {
-        console.error('[store cancel shipment]', err);
-      }
-    }
-    if (current && current.payment_status !== 'unpaid') {
-      const items = await queryRows<{
-        item_id: string;
-        variant_id: string | null;
-        quantity: string;
-      }>(
-        `SELECT soi.item_id, soi.variant_id, soi.quantity::text
-         FROM store_order_items soi
-         INNER JOIN store_orders so ON so.id = soi.order_id
-         WHERE soi.order_id = $1 AND so.business_id = $2 AND so.status != 'cancelled'`,
-        [orderId, businessId],
-      );
-
-      for (const item of items) {
-        const qty = parseFloat(item.quantity);
-        if (item.variant_id) {
-          await query(
-            `UPDATE item_variants SET current_stock = current_stock + $1 WHERE id = $2`,
-            [qty, item.variant_id],
-          );
-        } else {
-          await query(
-            `UPDATE items SET current_stock = current_stock + $1 WHERE id = $2 AND business_id = $3`,
-            [qty, item.item_id, businessId],
-          );
-        }
-      }
-    }
   }
 
-  if (status === 'ready') {
-    const payRow = await queryOne<{ payment_status: string }>(
-      `SELECT payment_status FROM store_orders WHERE id = $1 AND business_id = $2`,
-      [orderId, businessId],
-    );
-    if (payRow && !canBookShipment(payRow.payment_status)) {
-      return NextResponse.json(
-        { error: 'Cannot ship until payment is received' },
-        { status: 409 },
-      );
+  if (status === 'cancelled' && moved.shipmentId && moved.shipmentId !== 'self') {
+    try {
+      const provider = await resolveDeliveryProvider(businessId);
+      await provider.cancelShipment?.(moved.shipmentId);
+    } catch (err) {
+      console.error('[store cancel shipment]', err);
     }
-  }
-
-  const updated = await queryOne(
-    `UPDATE store_orders
-     SET status = $1,
-         cancelled_reason = $2,
-         dispatch_mode = COALESCE($3, dispatch_mode),
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $4 AND business_id = $5
-     RETURNING id, status`,
-    [status, cancelled_reason ?? null, dispatchMode, orderId, businessId],
-  );
-
-  if (!updated) {
-    return NextResponse.json({ error: 'Order not found' }, { status: 404 });
   }
 
   if (status === 'confirmed') {
-    await createInvoiceForStoreOrder(orderId, businessId).catch((err) => {
+    await createInvoiceForStoreOrder(orderId, businessId, getAuthenticatedUserId(request)).catch((err) => {
       console.error('[store invoice on confirm]', err);
     });
   }

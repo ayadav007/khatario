@@ -11,6 +11,10 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
 
+const ACTIVE_OR_POSTED = `(a.is_active = true OR EXISTS (
+  SELECT 1 FROM ledger_entry_lines l WHERE l.account_id = a.id AND l.business_id = a.business_id
+))`;
+
 /**
  * GET /api/reports/balance-sheet
  * Generate Balance Sheet
@@ -138,7 +142,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
       WHERE a.business_id = $1 
         AND a.account_type = 'asset'
-        AND a.is_active = true
+        AND ${ACTIVE_OR_POSTED}
       ORDER BY ag.group_code, a.account_code
     `, [businessId]);
 
@@ -155,7 +159,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
       WHERE a.business_id = $1 
         AND a.account_type = 'liability'
-        AND a.is_active = true
+        AND ${ACTIVE_OR_POSTED}
       ORDER BY ag.group_code, a.account_code
     `, [businessId]);
 
@@ -171,7 +175,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
       WHERE a.business_id = $1 
         AND a.account_type = 'capital'
-        AND a.is_active = true
+        AND ${ACTIVE_OR_POSTED}
       ORDER BY a.account_code
     `, [businessId]);
 
@@ -381,13 +385,27 @@ export async function GET(request: NextRequest) {
     // Current Assets: 1104 is always excluded from the sum and added once via
     // inventoryValue (closing stock from valuation, else ledger balance). Skipping
     // only when closingStockValue > 0 would double-count inventory when FY is unset.
+    // Totals use signed balances (assets debit-positive, liabilities credit-positive). Clamping a
+    // credit-balance asset (e.g. overdrawn cash) to zero leaves the sheet unbalanced; such balances
+    // are reported in abnormal_balances instead.
+    const assetSigned = (acc: any) => (acc.nature === 'credit' ? -acc.balance : acc.balance);
+    const liabilitySigned = (acc: any) => (acc.nature === 'debit' ? -acc.balance : acc.balance);
+    const abnormalBalances = [
+      ...assetDetails
+        .filter((a: any) => assetSigned(a) < -0.005 && a.account_code !== '1104')
+        .map((a: any) => ({ account_code: a.account_code, account_name: a.account_name, side: 'asset', amount: assetSigned(a) })),
+      ...liabilityDetails
+        .filter((l: any) => liabilitySigned(l) < -0.005)
+        .map((l: any) => ({ account_code: l.account_code, account_name: l.account_name, side: 'liability', amount: liabilitySigned(l) })),
+    ];
+
     let totalCurrentAssets = currentAssets.reduce((sum, acc) => {
       if (acc.account_code === '1104') {
         return sum;
       }
-      return sum + Math.max(0, acc.balance);
+      return sum + assetSigned(acc);
     }, 0);
-    totalCurrentAssets += Math.max(0, inventoryValue);
+    totalCurrentAssets += inventoryValue;
 
     // Fixed Assets: Use summary if available
     const grossBlock = fixedAssetsSummary?.grossBlock || 0;
@@ -395,7 +413,7 @@ export async function GET(request: NextRequest) {
     const netBlock = fixedAssetsSummary?.netBlock || 0;
     const totalFixedAssets = netBlock;
 
-    const totalInvestments = investments.reduce((sum, acc) => sum + Math.max(0, acc.balance), 0);
+    const totalInvestments = investments.reduce((sum, acc) => sum + assetSigned(acc), 0);
     const totalAssets = totalCurrentAssets + totalFixedAssets + totalInvestments;
 
     // Current Liabilities: Add provisions and tax
@@ -404,7 +422,7 @@ export async function GET(request: NextRequest) {
       if (acc.account_code === '2108' || acc.account_code === '2109' || acc.account_code === '2110') {
         return sum;
       }
-      return sum + Math.max(0, Math.abs(acc.balance));
+      return sum + liabilitySigned(acc);
     }, 0);
 
     // Add provisions
@@ -415,7 +433,7 @@ export async function GET(request: NextRequest) {
     const currentTaxPayable = taxData?.current_tax?.balance_amount || 0;
     totalCurrentLiabilities += currentTaxPayable;
 
-    const totalLongTermLiabilities = longTermLiabilities.reduce((sum, acc) => sum + Math.max(0, Math.abs(acc.balance)), 0);
+    const totalLongTermLiabilities = longTermLiabilities.reduce((sum, acc) => sum + liabilitySigned(acc), 0);
     const totalLiabilities = totalCurrentLiabilities + totalLongTermLiabilities;
 
     const totalCapital = capitalDetails.reduce((sum, acc) => sum + (Number(acc.balance) || 0), 0);
@@ -509,6 +527,7 @@ export async function GET(request: NextRequest) {
       },
       total_liabilities_and_equity: totalLiabilitiesAndEquity,
       is_balanced: Math.abs(rAssets - rLiabEquity) < balanceSheetEps,
+      abnormal_balances: abnormalBalances,
     });
   } catch (error: any) {
     console.error('Error generating balance sheet:', error);

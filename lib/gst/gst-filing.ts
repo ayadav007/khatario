@@ -44,7 +44,7 @@ export interface GstChargesSnapshotV1 {
   qrmp_due_day?: 22 | 24;
 }
 
-/** Persisted from segmented interest engine (ledger `gst_payment` + outstanding at due date). */
+/** Persisted from segmented interest engine (ledger `gst_payment` / `gst_cash_utilization` + outstanding at due date). */
 export interface GstChargesSnapshotV2 {
   version: 2;
   rule_source: GstDueDateRuleSource;

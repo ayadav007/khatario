@@ -5,11 +5,8 @@ import { purchaseOutstanding, recomputePurchaseBalance } from '@/lib/purchases/p
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
-import {
-  getBusinessIdFromRequest,
-  getSessionScopedBusinessId,
-  getUserIdFromRequest,
-} from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,26 +22,15 @@ export async function PATCH(
   try {
     const body = await request.json();
     const { amount, payment_mode = 'cash', reference, payment_date } = body;
-    const userId = getUserIdFromRequest(request, body) || body.user_id;
+    const userId = getAuthenticatedUserId(request);
+    const businessScope = getSessionScopedBusinessId(request);
 
     if (!amount || Number(amount) <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    const businessScope =
-      getSessionScopedBusinessId(request) ?? getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
+    if (!userId || !businessScope) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 });
     }
 
     const purchase = await queryOne(
@@ -58,6 +44,9 @@ export async function PATCH(
     
     if (purchase.status === 'cancelled') {
       return NextResponse.json({ error: 'Cannot pay a cancelled purchase' }, { status: 400 });
+    }
+    if (purchase.status !== 'final') {
+      return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
     }
 
     // AUTHORIZATION: Check update permission (recording payment is an update operation)
@@ -106,9 +95,14 @@ export async function PATCH(
            FROM purchases WHERE id = $1 AND business_id = $2 FOR UPDATE`,
         [purchase.id, purchase.business_id],
       );
-      if (lockedRes.rows[0]?.status === 'cancelled') {
+      const lockedStatus = lockedRes.rows[0]?.status;
+      if (lockedStatus === 'cancelled') {
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Cannot pay a cancelled purchase' }, { status: 400 });
+      }
+      if (lockedStatus !== 'final') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(draftDocumentPaymentError('purchase'), { status: 409 });
       }
       const outstanding = purchaseOutstanding(lockedRes.rows[0]);
       if (Number(amount) > outstanding + 0.01) {
@@ -126,8 +120,8 @@ export async function PATCH(
       const paymentRes = await client.query<{ id: string }>(
         `INSERT INTO payments (
           business_id, branch_id, type, supplier_id, reference_type, reference_id,
-          amount, payment_mode, payment_date, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          amount, payment_mode, payment_date, notes, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id`,
         [
           purchase.business_id,
@@ -140,6 +134,7 @@ export async function PATCH(
           payment_mode,
           payment_date || new Date(),
           reference ? String(reference) : null,
+          userId,
         ],
       );
       const paymentId = paymentRes.rows[0]?.id;

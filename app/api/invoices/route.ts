@@ -19,6 +19,8 @@ import {
 } from '@/lib/invoice-bundle-stock';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { draftDocumentPaymentError } from '@/lib/accounting/final-document-payment';
+import { historicalDraftPaymentBlock } from '@/lib/accounting/historical-draft-payment';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -411,6 +413,13 @@ export async function POST(request: NextRequest) {
         { error: 'created_by must match the signed-in user', code: 'ACTOR_MISMATCH' },
         { status: 403 }
       );
+    }
+
+    const paymentRequested =
+      (Array.isArray(payments) && payments.some((p: { amount?: unknown }) => Number(p?.amount) > 0)) ||
+      (payment && Number((payment as { amount?: unknown }).amount) > 0);
+    if (status !== 'final' && document_type !== 'proforma_invoice' && paymentRequested) {
+      return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
     }
 
     if (!business_id || !items || items.length === 0) {
@@ -898,6 +907,22 @@ export async function POST(request: NextRequest) {
         );
       }
       
+      if (
+        prev &&
+        status === 'final' &&
+        prev.status !== 'final' &&
+        prev.status !== 'cancelled'
+      ) {
+        const historicalPayment = await historicalDraftPaymentBlock(client, {
+          businessId: business_id,
+          referenceType: 'invoice',
+          documentId: invoiceId,
+        });
+        if (historicalPayment) {
+          return NextResponse.json(historicalPayment, { status: 409 });
+        }
+      }
+
       if (existingInvoice.rows.length > 0 && existingInvoice.rows[0].is_editable === false) {
         // Get GSTR-1 filing info for better error message (scoped to this business)
         const filingInfo = await client.query(
@@ -1043,6 +1068,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
       }
       existingInvoiceRow = row;
+      const lockedStatus = (row as { status?: string }).status;
+      if (status === 'final' && lockedStatus && lockedStatus !== 'final' && lockedStatus !== 'cancelled') {
+        const historicalPayment = await historicalDraftPaymentBlock(client, {
+          businessId: business_id,
+          referenceType: 'invoice',
+          documentId: invoiceId,
+        });
+        if (historicalPayment) {
+          await client.query('ROLLBACK').catch(() => {});
+          return NextResponse.json(historicalPayment, { status: 409 });
+        }
+      }
       if (row.is_editable === false) {
         await client.query('ROLLBACK').catch(() => {});
         return NextResponse.json(
@@ -1384,11 +1421,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (status === 'cancelled' && paymentEntries.length > 0) {
+      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Cannot add payment to cancelled invoice' }, { status: 400 });
     }
+    if (status !== 'final' && document_type !== 'proforma_invoice' && paymentEntries.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
+    }
 
-    // Allow payments on draft or final (changed from only final)
-    // Calculate total paid amount (existing draft saves may omit payments[] to avoid duplicate rows)
+    // Existing draft saves may omit payments[] so a previously stored amount is kept as-is.
     if (paymentEntries.length > 0) {
       paidAmount = paymentEntries.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     } else if (invoiceId && (body as any).paid_amount != null) {
@@ -2212,9 +2253,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // NOTE: Ledger entries are now created AFTER transaction commit to avoid connection pool issues
-    // See code after COMMIT statement below
-
     // Handle Payments (multiple payment entries)
     // Proforma invoices don't accept payments - they are estimates/quotes
     // Payments should only be recorded after converting to tax invoice
@@ -2222,7 +2260,7 @@ export async function POST(request: NextRequest) {
     // When an edit supplies payment entries, the old payment rows are replaced: their
     // receipt vouchers are reversed (not deleted) so Cash and AR are not double-counted.
     // Without payment entries the existing payments and their vouchers stay as they are.
-    if (invoiceId && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
+    if (status === 'final' && invoiceId && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
       await reverseReplacedInvoicePayments(client, { businessId: business_id, invoiceId, userId: actorUserId });
       await client.query(
         `UPDATE invoices SET tds_received = 0 WHERE id = $1 AND business_id = $2`,
@@ -2235,7 +2273,8 @@ export async function POST(request: NextRequest) {
            WHERE reference_type = 'invoice'
              AND reference_id = $1
              AND business_id = $2
-             AND deleted_at IS NULL`,
+             AND deleted_at IS NULL
+             AND status = 'active'`,
           [invoiceId, business_id]
         );
       } else {
@@ -2243,7 +2282,8 @@ export async function POST(request: NextRequest) {
           `DELETE FROM payments
            WHERE reference_type = 'invoice'
              AND reference_id = $1
-             AND business_id = $2`,
+             AND business_id = $2
+             AND status = 'active'`,
           [invoiceId, business_id]
         );
       }
@@ -2258,7 +2298,7 @@ export async function POST(request: NextRequest) {
       date: string | Date;
       reference?: string;
     }> = [];
-    if (paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
+    if (status === 'final' && paymentEntries.length > 0 && document_type !== 'proforma_invoice') {
       try {
         for (const p of paymentEntries) {
           const pAmount = Number(p.amount) || 0;

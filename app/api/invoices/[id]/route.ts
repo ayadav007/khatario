@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getBusinessIdFromRequest, getSessionScopedBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
@@ -271,20 +271,13 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const userId = getUserIdFromRequest(request, body);
+    const userId = getAuthenticatedUserId(request);
 
-    const businessScope = getBusinessIdFromRequest(request, body);
-    if (!businessScope) {
+    const businessScope = getSessionScopedBusinessId(request);
+    if (!businessScope || !userId) {
       return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
       );
     }
 
@@ -341,8 +334,18 @@ export async function PATCH(
       throw error;
     }
 
+    if (estimate_status === 'converted') {
+      return NextResponse.json(
+        {
+          error: 'Convert this estimate to a tax invoice. A converted flag cannot be set on its own.',
+          code: 'ESTIMATE_CONVERSION_REQUIRED',
+        },
+        { status: 409 }
+      );
+    }
+
     // Validate estimate_status
-    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'converted'];
+    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
     if (estimate_status && !validStatuses.includes(estimate_status)) {
       return NextResponse.json(
         { error: `Invalid estimate_status. Must be one of: ${validStatuses.join(', ')}` },

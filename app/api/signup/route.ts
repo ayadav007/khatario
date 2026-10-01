@@ -343,6 +343,10 @@ export async function POST(request: NextRequest) {
           if (fn.rows[0]?.ok) {
             await client.query(`SELECT ensure_standard_account_heads($1)`, [businessId]);
           }
+          const ecl = await client.query(`SELECT to_regproc('ensure_gst_electronic_cash_ledger') IS NOT NULL AS ok`);
+          if (ecl.rows[0]?.ok) {
+            await client.query(`SELECT ensure_gst_electronic_cash_ledger($1)`, [businessId]);
+          }
         });
         if (!heads.ok) softFailures.push(`standard_account_heads: ${errorMessage(heads.error)}`);
       }

@@ -140,6 +140,19 @@ export async function resolveRcmLedgerNets(
 }
 
 /**
+ * Settlement and carry-forward vouchers move GST balances without being a supply or an ITC
+ * event of the period; counting them would understate 3.1/4A after a set-off or payment.
+ */
+export const GSTR3B_NON_SUPPLY_VOUCHER_TYPES = [
+  'gst_setoff',
+  'gst_payment',
+  'gst_cash_deposit',
+  'gst_cash_utilization',
+  'opening_balance',
+  'year_close',
+] as const;
+
+/**
  * Generic ledger net for liability-style interpretation: SUM(credit) − SUM(debit).
  * Uses `ledger_entry_lines` (debit/credit columns; no invoice-derived tax).
  */
@@ -154,10 +167,16 @@ export async function getLedgerNetCreditMinusDebit(
   if (!acc) return 0;
 
   const pool = getPool();
-  const params: string[] = [businessId, acc.id, fromDate, toDate];
+  const params: (string | readonly string[])[] = [
+    businessId,
+    acc.id,
+    fromDate,
+    toDate,
+    GSTR3B_NON_SUPPLY_VOUCHER_TYPES,
+  ];
   let branchClause = '';
   if (branchId) {
-    branchClause = ' AND (branch_id IS NULL OR branch_id = $5::uuid)';
+    branchClause = ' AND (branch_id IS NULL OR branch_id = $6::uuid)';
     params.push(branchId);
   }
 
@@ -171,6 +190,7 @@ export async function getLedgerNetCreditMinusDebit(
       AND account_id = $2::uuid
       AND entry_date >= $3::date
       AND entry_date <= $4::date
+      AND voucher_type <> ALL($5::text[])
       ${branchClause}
     `,
     params

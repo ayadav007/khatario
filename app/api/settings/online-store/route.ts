@@ -3,6 +3,7 @@ import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
+import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
            store_privacy_md, store_refund_md, store_terms_md,
            store_shiprocket_email,
            (store_shiprocket_password_enc IS NOT NULL) AS shiprocket_configured,
+           (store_shiprocket_webhook_token_hash IS NOT NULL) AS shiprocket_webhook_configured,
            COALESCE(store_hide_khatario_badge, false) AS store_hide_khatario_badge,
            store_promo_sheet
          FROM business_settings
@@ -76,6 +78,8 @@ export async function GET(request: NextRequest) {
       store_terms_md: (row as { store_terms_md?: string | null })?.store_terms_md ?? null,
       store_shiprocket_email: (row as { store_shiprocket_email?: string | null })?.store_shiprocket_email ?? null,
       shiprocket_configured: !!(row as { shiprocket_configured?: boolean })?.shiprocket_configured,
+      shiprocket_webhook_configured: !!(row as { shiprocket_webhook_configured?: boolean })
+        ?.shiprocket_webhook_configured,
       store_hide_khatario_badge: !!(row as { store_hide_khatario_badge?: boolean })?.store_hide_khatario_badge,
       store_promo_sheet: sanitizeStorePromoSheet(
         (row as { store_promo_sheet?: unknown })?.store_promo_sheet,
@@ -102,8 +106,19 @@ export async function PATCH(request: NextRequest) {
     store_allow_cod, store_delivery_provider, store_theme, store_about_md, store_contact_md,
     store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
-    store_promo_sheet,
+    store_promo_sheet, store_shiprocket_webhook_token,
   } = body;
+
+  if (
+    store_shiprocket_webhook_token !== undefined &&
+    store_shiprocket_webhook_token !== null &&
+    !isValidShiprocketWebhookToken(store_shiprocket_webhook_token)
+  ) {
+    return NextResponse.json(
+      { error: 'Shiprocket webhook token must be 24–128 letters or digits' },
+      { status: 400 },
+    );
+  }
 
   // Validate subdomain format
   if (store_subdomain !== undefined && store_subdomain !== null) {
@@ -225,6 +240,15 @@ export async function PATCH(request: NextRequest) {
     sets.push(`store_shiprocket_password_enc = $${idx}`);
     params.push(encryptPaymentSecret(String(store_shiprocket_password)));
   }
+  if (store_shiprocket_webhook_token !== undefined) {
+    idx++;
+    sets.push(`store_shiprocket_webhook_token_hash = $${idx}`);
+    params.push(
+      store_shiprocket_webhook_token === null
+        ? null
+        : hashStoreWebhookToken(store_shiprocket_webhook_token),
+    );
+  }
   if (store_hide_khatario_badge !== undefined) {
     idx++;
     sets.push(`store_hide_khatario_badge = $${idx}`);
@@ -244,13 +268,22 @@ export async function PATCH(request: NextRequest) {
   idx++;
   params.push(businessId);
 
-  const updated = await queryOne(
-    `INSERT INTO business_settings (business_id) VALUES ($${idx})
-     ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
-     RETURNING store_subdomain, store_enabled, store_tagline,
-       store_hero_image_url, store_min_order_amount::text`,
-    params,
-  );
+  let updated;
+  try {
+    updated = await queryOne(
+      `INSERT INTO business_settings (business_id) VALUES ($${idx})
+       ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
+       RETURNING store_subdomain, store_enabled, store_tagline,
+         store_hero_image_url, store_min_order_amount::text`,
+      params,
+    );
+  } catch (error: unknown) {
+    const pg = error as { code?: string; constraint?: string };
+    if (pg.code === '23505' && pg.constraint === 'uq_business_settings_shiprocket_webhook_token') {
+      return NextResponse.json({ error: 'Generate a new Shiprocket webhook token' }, { status: 409 });
+    }
+    throw error;
+  }
 
   return NextResponse.json({
     store_subdomain: (updated as any)?.store_subdomain ?? null,

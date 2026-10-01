@@ -4,6 +4,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { movePurchaseReturnStock } from '@/lib/purchases/purchase-return-stock';
+import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         RETURNING *`,
       [pr.id, userId, reason]
     );
+    await recostAfterStockChange(client, businessId, await stockItemsForDocument(client, 'purchase_return', pr.id));
     await client.query('COMMIT');
 
     const { logActivity, getClientIP, getUserAgent } = await import('@/lib/activity-logger');

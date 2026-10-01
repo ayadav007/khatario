@@ -58,6 +58,10 @@ export const POST = withPremiumSubscriptionApi(
         if (headsFn.rows[0]?.ok) {
           await client.query(`SELECT ensure_standard_account_heads($1)`, [business_id]);
         }
+        const eclFn = await client.query(`SELECT to_regproc('ensure_gst_electronic_cash_ledger') IS NOT NULL AS ok`);
+        if (eclFn.rows[0]?.ok) {
+          await client.query(`SELECT ensure_gst_electronic_cash_ledger($1)`, [business_id]);
+        }
       } catch (error: any) {
         await client.query('ROLLBACK');
 

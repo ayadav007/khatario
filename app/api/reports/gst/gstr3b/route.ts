@@ -3,6 +3,9 @@ import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusines
 import { GSTR3BGenerator, GSTR3BFilters } from '@/lib/gst/gstr3b';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { getPool } from '@/lib/db';
+import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { checkGstin } from '@/lib/tax/gstin';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,8 +100,21 @@ export async function GET(request: NextRequest) {
     const data = await generator.generate(filters);
 
     if (exportFormat === 'json') {
+      const registration = await resolveSupplierRegistration(getPool(), business_id, finalBranchId);
+      const gstinCheck = registration.gstin ? checkGstin(registration.gstin) : null;
+      if (!gstinCheck || !gstinCheck.valid) {
+        return NextResponse.json(
+          {
+            error: gstinCheck
+              ? `GSTIN ${gstinCheck.gstin} is not valid: ${gstinCheck.error}`
+              : 'GSTIN is required for GSTR-3B export',
+            code: registration.gstin ? 'GSTIN_INVALID' : 'GSTIN_MISSING',
+          },
+          { status: 400 }
+        );
+      }
       const jsonOutput = {
-        gstin: "URP",
+        gstin: gstinCheck.gstin,
         ret_period: `${month.padStart(2, '0')}${year}`,
         sup_details: {
           osup_det: {

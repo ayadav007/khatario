@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative, sep } from 'path';
-import { AUDIENCES, type Audience, type KbSourceInput, type Locale } from '../types';
+import { KB_AUDIENCES, type KbAudience, type KbSourceInput, type Locale } from '../types';
 import { asString, asStringArray, parseFrontmatter } from './frontmatter';
 
 export const KNOWLEDGE_DIR = 'knowledge';
@@ -41,8 +41,9 @@ function firstHeading(body: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-function defaultAudience(locator: string): Audience[] {
+function defaultAudience(locator: string): KbAudience[] {
   if (locator.startsWith('how-to/')) return ['tenant_user'];
+  if (locator.startsWith('gst-law/')) return ['gst_law'];
   if (locator.startsWith('internal/')) return ['internal'];
   return ['prospect'];
 }
@@ -54,11 +55,14 @@ export function loadMarkdownSource(file: string, cwd = process.cwd()): KbSourceI
   const { data, body } = parseFrontmatter(readFileSync(file, 'utf8'));
 
   const declared = asStringArray(data.audience);
-  const invalid = declared.filter((a) => !(AUDIENCES as readonly string[]).includes(a));
+  const invalid = declared.filter((a) => !(KB_AUDIENCES as readonly string[]).includes(a));
   if (invalid.length) {
     throw new KnowledgeFileError(`${locator}: unknown audience ${invalid.join(', ')}`);
   }
-  const audiences = (declared.length ? declared : defaultAudience(locator)) as Audience[];
+  const audiences = (declared.length ? declared : defaultAudience(locator)) as KbAudience[];
+  if (audiences.includes('gst_law') && audiences.length > 1) {
+    throw new KnowledgeFileError(`${locator}: gst_law content must not be shared with other audiences`);
+  }
   if (audiences.includes('tenant_customer')) {
     throw new KnowledgeFileError(`${locator}: tenant_customer content must come from tenant sources`);
   }
