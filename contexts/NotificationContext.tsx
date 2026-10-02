@@ -3,605 +3,216 @@
 import { useRenderLoopProbe } from '@/lib/debug/render-loop-detector';
 import React, {
   createContext,
-  useContext,
-  useState,
-  useEffect,
-  useRef,
   useCallback,
+  useContext,
+  useEffect,
   useMemo,
+  useRef,
+  useSyncExternalStore,
 } from 'react';
 import { useAuth } from './AuthContext';
 import { TodoReminderPopup } from '@/components/notifications/TodoReminderPopup';
-import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
-import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { MissedRemindersSummary } from '@/components/notifications/MissedRemindersSummary';
 import {
-  fetchWithDedup,
-  getCacheKey,
-  invalidateCacheKey,
-  isCacheValid,
-  readCacheEntry,
-  setCacheEntry,
-} from '@/lib/layout-data/fetch-cache';
+  NotificationStore,
+  presentPopups,
+  type ClientNotification,
+} from '@/lib/notifications/client/notification-store';
+import { getNotificationStreamClient } from '@/lib/notifications/client/stream-client';
+import { isSeq } from '@/lib/notifications/client/primitives';
 import {
   isNotificationSseDisabled,
   recordEventSourceMessage,
   recordFetchNotifications,
 } from '@/lib/debug/runtime-isolation';
 
-/** Server upserts re-fire `created_at`; fetch-only fallback is gated (first list paint skipped) + `shownReminderIds`. */
-const TODO_REMINDER_RECENT_AGE_MS = 10 * 60 * 1000;
-/** Coalesce SSE notification bursts before forcing a list refresh. */
-const SSE_NOTIFICATION_DEBOUNCE_MS = 750;
+const DISMISS_BATCH = 50;
 
-export interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-  [key: string]: unknown;
-}
+export type Notification = ClientNotification;
 
-function notificationsPayloadUnchanged(
-  prevList: Notification[],
-  nextList: Notification[],
-  prevUnread: number,
-  nextUnread: number
-): boolean {
-  if (prevUnread !== nextUnread || prevList.length !== nextList.length) return false;
-  for (let i = 0; i < prevList.length; i++) {
-    const a = prevList[i];
-    const b = nextList[i];
-    if (a.id !== b.id || !!a.is_read !== !!b.is_read) return false;
-  }
-  return true;
-}
-
-interface NotificationState {
+interface NotificationContextType {
   notifications: Notification[];
   unreadNotificationCount: number;
-}
-
-interface NotificationContextType extends NotificationState {
   refreshNotifications: () => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
 }
 
-const defaultState: NotificationState = {
+const NotificationContext = createContext<NotificationContextType>({
   notifications: [],
   unreadNotificationCount: 0,
-};
-
-const NotificationContext = createContext<NotificationContextType>({
-  ...defaultState,
   refreshNotifications: async () => {},
   markNotificationAsRead: async () => {},
   markAllNotificationsAsRead: async () => {},
 });
 
+/**
+ * Notification list, unread count and reminder popups for the signed-in session.
+ * Live updates come from the tab's shared stream client (lib/notifications/client); every GET
+ * (bootstrap, resync, wake, fallback poll, panel refresh) and every stream event goes through
+ * the same NotificationStore, which de-duplicates by notification id and seq.
+ */
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   useRenderLoopProbe('NotificationProvider');
-  const { business, user, loading: authLoading } = useAuth();
-  const { isOnline, lastChangedAt } = useNetworkStatus();
-  const prevOnlineRef = useRef(isOnline);
+  const { business, user, loading: authLoading, refresh: refreshAuth } = useAuth();
+  const businessId = business?.id;
+  const userId = user?.id;
 
-  const [state, setState] = useState<NotificationState>(defaultState);
-  const [activeTodoReminders, setActiveTodoReminders] = useState<
-    Array<{
-      id: string;
-      notificationId: string;
-      title: string;
-      message: string;
-      todoId: string;
-      createdAt: string;
-    }>
-  >([]);
-  const shownReminderIds = useRef<Set<string>>(new Set());
-  const initialNotificationListCommittedRef = useRef(false);
-  const lastNotificationSessionKeyRef = useRef('');
-  const notificationsApplySeqRef = useRef(0);
-  const sseErrorLogCountRef = useRef(0);
+  const storeRef = useRef<NotificationStore | null>(null);
+  if (!storeRef.current) storeRef.current = new NotificationStore();
+  const store = storeRef.current;
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
-  const fetchNotificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastFetchTimeRef = useRef<number>(0);
-  const MIN_FETCH_INTERVAL = 10000;
-  const notificationsSkipCacheInFlightRef = useRef<Promise<void> | null>(null);
+  const sessionKeyRef = useRef('');
+  const inFlightRef = useRef<Promise<string | null> | null>(null);
+  const refreshAuthRef = useRef(refreshAuth);
+  refreshAuthRef.current = refreshAuth;
 
-  const fetchNotifications = useCallback(async (skipCache: boolean = false) => {
-    if (authLoading || !business?.id || !user?.id) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  /**
+   * GET /api/notifications into the store; resolves with the server's stream_cursor (used only
+   * to start a session that has no stored cursor), or null when the server has none. `fresh`
+   * waits out an in-flight request instead of joining it, for callers that need a snapshot
+   * taken after now (bootstrap, resync).
+   */
+  const fetchList = useCallback(
+    (fresh = false): Promise<string | null> => {
+      if (!businessId || !userId) return Promise.resolve(null);
+      const key = `${businessId}:${userId}`;
+      if (inFlightRef.current && !fresh) return inFlightRef.current;
 
-    const sessionKey = `${business.id}:${user.id}`;
-    if (lastNotificationSessionKeyRef.current !== sessionKey) {
-      lastNotificationSessionKeyRef.current = sessionKey;
-      initialNotificationListCommittedRef.current = false;
-      shownReminderIds.current = new Set();
-      notificationsApplySeqRef.current = 0;
-    }
-
-    const applyNotificationResult = (normalizedNotifications: Notification[], unreadCount: number) => {
-      const wasCommitted = initialNotificationListCommittedRef.current;
-      if (!initialNotificationListCommittedRef.current) {
-        initialNotificationListCommittedRef.current = true;
-      }
-
-      const rowById = new Map(
-        normalizedNotifications
-          .filter((n) => n?.id && n?.type === 'todo_reminder')
-          .map((n) => [n.id, n] as const)
-      );
-
-      setActiveTodoReminders((prev) => {
-        if (prev.length === 0 && !wasCommitted) {
-          return prev;
-        }
-
-        let next = prev.map((r) => {
-          const row = rowById.get(r.notificationId);
-          if (!row) return r;
-          return {
-            ...r,
-            title: row.title || r.title,
-            message: row.message || r.message,
-            todoId: (row.reference_id as string) || r.todoId,
-            createdAt: row.created_at || r.createdAt,
-          };
+      const run = async () => {
+        recordFetchNotifications('skip-cache');
+        const params = new URLSearchParams({ business_id: businessId, limit: '20', _: String(Date.now()) });
+        const res = await fetch(`/api/notifications?${params.toString()}`, {
+          credentials: 'include',
+          cache: 'no-store',
         });
-
-        if (wasCommitted) {
-          const nowMs = Date.now();
-          const fromFetch = normalizedNotifications.filter((n) => {
-            if (
-              n?.type !== 'todo_reminder' ||
-              n.is_read ||
-              shownReminderIds.current.has(n.id) ||
-              !n.created_at
-            ) {
-              return false;
-            }
-            const age = nowMs - new Date(n.created_at).getTime();
-            return age < TODO_REMINDER_RECENT_AGE_MS && age > -120_000;
-          });
-          for (const n of fromFetch) {
-            shownReminderIds.current.add(n.id);
-          }
-          const have = new Set(next.map((p) => p.notificationId));
-          const toAdd = fromFetch.filter((n) => !have.has(n.id));
-          if (toAdd.length > 0) {
-            next = [
-              ...next,
-              ...toAdd.map((n) => ({
-                id: `reminder-${n.id}`,
-                notificationId: n.id,
-                title: n.title || 'Reminder',
-                message: n.message || n.title || 'You have a task reminder',
-                todoId: (n.reference_id as string) || '',
-                createdAt: n.created_at,
-              })),
-            ];
-          }
-        }
-        return next;
-      });
-
-      const unreadTodoReminders = normalizedNotifications.filter(
-        (n) => n?.type === 'todo_reminder' && !n.is_read
-      );
-
-      reminderPipelineLog('client.apply_notification_result', {
-        path: 'fetch_sync_fallback',
-        wasCommitted,
-        totalCount: normalizedNotifications.length,
-        unreadTodoReminderCount: unreadTodoReminders.length,
-        shownTodoReminderCount: shownReminderIds.current.size,
-      });
-
-      setState((prev) => {
-        if (
-          notificationsPayloadUnchanged(
-            prev.notifications,
-            normalizedNotifications,
-            prev.unreadNotificationCount,
-            unreadCount
-          )
-        ) {
-          return prev;
-        }
-        return {
-          notifications: normalizedNotifications,
-          unreadNotificationCount: unreadCount,
+        if (!res.ok) throw new Error(`GET /api/notifications failed: ${res.status}`);
+        const body = (await res.json().catch(() => ({}))) as {
+          notifications?: ClientNotification[];
+          stream_cursor?: unknown;
         };
+        if (sessionKeyRef.current !== key) throw new Error('notification session changed');
+        store.applyList(body.notifications ?? []);
+        return isSeq(body.stream_cursor) ? body.stream_cursor : null;
+      };
+
+      const previous = inFlightRef.current;
+      const p = (previous ? previous.catch(() => null).then(run) : run()).finally(() => {
+        if (inFlightRef.current === p) inFlightRef.current = null;
       });
-    };
+      inFlightRef.current = p;
+      return p;
+    },
+    [businessId, userId, store]
+  );
 
-    if (fetchNotificationTimeoutRef.current) {
-      clearTimeout(fetchNotificationTimeoutRef.current);
-      fetchNotificationTimeoutRef.current = null;
+  useEffect(() => {
+    if (authLoading) return;
+    if (!businessId || !userId) {
+      sessionKeyRef.current = '';
+      store.reset();
+      return;
+    }
+    sessionKeyRef.current = `${businessId}:${userId}`;
+    store.reset();
+
+    if (isNotificationSseDisabled()) {
+      void fetchList(true).catch(() => {});
+      return;
     }
 
-    const now = Date.now();
-    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+    return getNotificationStreamClient().subscribe({
+      session: { businessId, userId },
+      onNotification: (payload, { seq }) => {
+        recordEventSourceMessage();
+        store.applyEvent(payload, seq);
+      },
+      reconcile: (reason) => fetchList(reason === 'bootstrap' || reason === 'resync'),
+      onRemoteDismiss: (keys) => {
+        store.dismiss(keys);
+      },
+      onUnauthorized: () => void refreshAuthRef.current(),
+      onForbidden: () => void refreshAuthRef.current(),
+    });
+  }, [authLoading, businessId, userId, fetchList, store]);
 
-    if (!skipCache && timeSinceLastFetch < MIN_FETCH_INTERVAL) {
-      return new Promise<void>((resolve) => {
-        fetchNotificationTimeoutRef.current = setTimeout(() => {
-          lastFetchTimeRef.current = Date.now();
-          fetchNotifications(skipCache).then(resolve);
-        }, MIN_FETCH_INTERVAL - timeSinceLastFetch);
-      });
-    }
-
-    if (skipCache && notificationsSkipCacheInFlightRef.current) {
-      return notificationsSkipCacheInFlightRef.current;
-    }
-
-    lastFetchTimeRef.current = Date.now();
-
-    const run = async () => {
-      recordFetchNotifications(skipCache ? 'skip-cache' : 'cache');
-      const applySeq = ++notificationsApplySeqRef.current;
-      try {
-        reminderPipelineLog('client.fetch_notifications.run', { skipCache, applySeq });
-        const cacheKey = getCacheKey('/api/notifications', {
-          business_id: business.id,
-          user_id: user.id,
-          limit: '20',
-        });
-
-        if (skipCache) {
-          invalidateCacheKey(cacheKey);
-        }
-
-        if (!skipCache && isCacheValid(cacheKey)) {
-          const cached = readCacheEntry<{
-            notifications: Notification[];
-            unreadCount?: number;
-            unread_count?: number;
-          }>(cacheKey)!;
-          const normalizedNotifications = (cached.notifications || []).map((n) => ({
-            ...n,
-            is_read: n.is_read !== undefined ? n.is_read : ((n as { read?: boolean }).read === true),
-          }));
-
-          reminderPipelineLog('client.fetch_notifications.cache_hit', {
-            notificationCount: normalizedNotifications.length,
-          });
-          if (applySeq !== notificationsApplySeqRef.current) {
-            reminderPipelineLog('client.fetch_notifications.stale_response_discarded', {
-              applySeq,
-              latest: notificationsApplySeqRef.current,
-              reason: 'cache_hit',
-            });
-            return;
-          }
-          applyNotificationResult(
-            normalizedNotifications,
-            cached.unreadCount || cached.unread_count || 0
-          );
-          return;
-        }
-
-        type NotificationsApiRes = {
-          notifications: Notification[];
-          unreadCount: number;
-          unread_count?: number;
-        };
-        let res: NotificationsApiRes;
-        if (skipCache) {
-          const params = new URLSearchParams({
-            business_id: business.id,
-            user_id: user.id,
-            limit: '20',
-          });
-          params.set('_', String(Date.now()));
-          const response = await fetch(`/api/notifications?${params.toString()}`, {
-            credentials: 'include',
-          });
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            throw new Error(`Failed to fetch /api/notifications: ${response.status} ${errorText}`);
-          }
-          const text = await response.text();
-          if (!text || text.trim() === '') {
-            res = { notifications: [], unreadCount: 0, unread_count: 0 };
-          } else {
-            res = JSON.parse(text) as NotificationsApiRes;
-          }
-        } else {
-          res = await fetchWithDedup<NotificationsApiRes>('/api/notifications', {
-            business_id: business.id,
-            user_id: user.id,
-            limit: '20',
-          });
-        }
-
-        const normalizedNotifications = (res.notifications || []).map((n) => ({
-          ...n,
-          is_read: n.is_read !== undefined ? n.is_read : ((n as { read?: boolean }).read === true),
-        }));
-
-        reminderPipelineLog('client.fetch_notifications.network_done', {
-          skipCache,
-          applySeq,
-          notificationCount: normalizedNotifications.length,
-        });
-        if (applySeq !== notificationsApplySeqRef.current) {
-          reminderPipelineLog('client.fetch_notifications.stale_response_discarded', {
-            applySeq,
-            latest: notificationsApplySeqRef.current,
-            reason: 'network',
-          });
-          invalidateCacheKey(cacheKey);
-          return;
-        }
-        if (skipCache) {
-          setCacheEntry(cacheKey, res);
-        }
-        applyNotificationResult(normalizedNotifications, res.unreadCount || res.unread_count || 0);
-      } catch (error) {
-        console.error('Failed to fetch notifications:', error);
-      }
-    };
-
-    const p = run();
-    if (skipCache) {
-      notificationsSkipCacheInFlightRef.current = p.finally(() => {
-        notificationsSkipCacheInFlightRef.current = null;
-      });
-      return notificationsSkipCacheInFlightRef.current;
-    }
-    await p;
-  }, [authLoading, business?.id, user?.id]);
-
-  const refreshNotifications = useCallback((): Promise<void> => {
-    return fetchNotifications(true);
-  }, [fetchNotifications]);
+  const refreshNotifications = useCallback(async () => {
+    await fetchList().catch((error) => console.error('Failed to fetch notifications:', error));
+  }, [fetchList]);
 
   const markNotificationAsRead = useCallback(
     async (id: string) => {
+      store.markRead(id);
       try {
-        setState((prev) => ({
-          notifications: prev.notifications.map((n) =>
-            n.id === id ? { ...n, is_read: true, read_at: new Date().toISOString() } : n
-          ),
-          unreadNotificationCount: Math.max(0, prev.unreadNotificationCount - 1),
-        }));
-
-        const response = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error('Failed to mark notification as read:', errorData);
-          await fetchNotifications(true);
-        }
-      } catch (error) {
-        console.error('Failed to mark notification as read:', error);
-        await fetchNotifications(true);
+        const response = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH', credentials: 'include' });
+        if (!response.ok) await refreshNotifications();
+      } catch {
+        await refreshNotifications();
       }
     },
-    [fetchNotifications]
+    [store, refreshNotifications]
   );
 
   const markAllNotificationsAsRead = useCallback(async () => {
-    if (!business?.id || !user?.id) return;
-
+    if (!businessId) return;
+    store.markAllRead();
     try {
-      setState((prev) => ({
-        notifications: prev.notifications.map((n) => ({
-          ...n,
-          is_read: true,
-          read_at: new Date().toISOString(),
-        })),
-        unreadNotificationCount: 0,
-      }));
-
       const response = await fetch('/api/notifications/read-all', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: business.id, user_id: user.id }),
+        body: JSON.stringify({ business_id: businessId }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Failed to mark all notifications as read:', errorData);
-        await fetchNotifications(true);
-      }
-    } catch (error) {
-      console.error('Failed to mark all notifications as read:', error);
-      await fetchNotifications(true);
+      if (!response.ok) await refreshNotifications();
+    } catch {
+      await refreshNotifications();
     }
-  }, [authLoading, business?.id, user?.id, fetchNotifications]);
+  }, [businessId, store, refreshNotifications]);
 
-  useEffect(() => {
-    if (authLoading || !business?.id || !user?.id) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-    void fetchNotifications();
-  }, [authLoading, business?.id, user?.id, fetchNotifications]);
-
-  useEffect(() => {
-    if (isNotificationSseDisabled()) return;
-    if (authLoading || !business?.id || !user?.id) return;
-
-    const wasOffline = !prevOnlineRef.current;
-    prevOnlineRef.current = isOnline;
-
-    if (!isOnline || !wasOffline) return;
-
-    void fetchNotifications(true);
-  }, [isOnline, lastChangedAt, business?.id, user?.id, fetchNotifications]);
-
-  const sseRefreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (isNotificationSseDisabled()) return;
-    if (authLoading || !business?.id || !user?.id) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-    console.log(`[SSE] Opening EventSource connection for business ${business.id}, user ${user.id}`);
-
-    const eventSource = new EventSource(
-      `/api/notifications/stream?business_id=${business.id}&user_id=${user.id}`
-    );
-
-    eventSource.onopen = () => {
-      console.log('[SSE] EventSource connection opened');
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        recordEventSourceMessage();
-        console.log('[SSE] Received notification event:', event.data);
-        try {
-          const parsed = JSON.parse(event.data) as {
-            notificationId?: string;
-            type?: string;
-            title?: string;
-            message?: string;
-            reference_id?: string;
-          };
-          reminderPipelineLog('client.sse.onmessage', {
-            notificationId: parsed?.notificationId,
-            type: parsed?.type,
-          });
-          const nid = parsed.notificationId;
-          if (
-            parsed.type === 'todo_reminder' &&
-            nid &&
-            typeof nid === 'string' &&
-            !shownReminderIds.current.has(nid)
-          ) {
-            shownReminderIds.current.add(nid);
-            setActiveTodoReminders((prev) => {
-              if (prev.some((r) => r.notificationId === nid)) {
-                return prev;
-              }
-              return [
-                ...prev,
-                {
-                  id: `reminder-${nid}`,
-                  notificationId: nid,
-                  title: parsed.title || 'Reminder',
-                  message: parsed.message || parsed.title || 'You have a task reminder',
-                  todoId: parsed.reference_id || '',
-                  createdAt: new Date().toISOString(),
-                },
-              ];
-            });
-            reminderPipelineLog('client.sse.todo_reminder_popup', {
-              notificationId: nid,
-            });
-          }
-        } catch {
-          // not JSON (ignore)
-        }
-        if (sseRefreshDebounceRef.current) {
-          clearTimeout(sseRefreshDebounceRef.current);
-        }
-        sseRefreshDebounceRef.current = setTimeout(() => {
-          sseRefreshDebounceRef.current = null;
-          if (typeof document !== 'undefined' && document.hidden) return;
-          void fetchNotifications(true);
-        }, SSE_NOTIFICATION_DEBOUNCE_MS);
-      } catch (error) {
-        console.error('[SSE] Error processing notification event:', error);
+  const dismissPopups = useCallback(
+    (keys: string[]) => {
+      const items = store.dismiss(keys);
+      getNotificationStreamClient().broadcastDismiss(keys);
+      for (let i = 0; i < items.length; i += DISMISS_BATCH) {
+        void fetch('/api/notifications/popups/dismiss', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: items.slice(i, i + DISMISS_BATCH) }),
+        }).catch((error) => console.error('Failed to save reminder dismissal:', error));
       }
-    };
-
-    eventSource.onerror = () => {
-      console.warn('[SSE] Notification stream error (will auto-reconnect), readyState:', eventSource.readyState);
-      sseErrorLogCountRef.current += 1;
-    };
-
-    return () => {
-      if (sseRefreshDebounceRef.current) {
-        clearTimeout(sseRefreshDebounceRef.current);
-        sseRefreshDebounceRef.current = null;
-      }
-      console.log('[SSE] Closing EventSource connection');
-      eventSource.close();
-    };
-  }, [authLoading, business?.id, user?.id, fetchNotifications]);
-
-  useEffect(() => {
-    if (isNotificationSseDisabled()) return;
-    if (authLoading || !business?.id || !user?.id) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const tick = () => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      void fetchNotifications(true);
-    };
-
-    const startPolling = () => {
-      if (interval || (typeof document !== 'undefined' && document.hidden)) return;
-      interval = setInterval(tick, 30000);
-    };
-
-    const stopPolling = () => {
-      if (!interval) return;
-      clearInterval(interval);
-      interval = null;
-    };
-
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        stopPolling();
-      } else {
-        tick();
-        startPolling();
-      }
-    };
-
-    startPolling();
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [authLoading, business?.id, user?.id, fetchNotifications]);
-
-  useEffect(() => {
-    if (business?.id || user) return;
-    initialNotificationListCommittedRef.current = false;
-    shownReminderIds.current = new Set();
-    lastNotificationSessionKeyRef.current = '';
-    notificationsApplySeqRef.current = 0;
-    setActiveTodoReminders([]);
-    setState(defaultState);
-  }, [business?.id, user]);
-
-  const handleCloseReminder = useCallback((reminderId: string) => {
-    setActiveTodoReminders((prev) => prev.filter((r) => r.id !== reminderId));
-  }, []);
+    },
+    [store]
+  );
 
   const contextValue = useMemo<NotificationContextType>(
     () => ({
-      ...state,
+      notifications: snapshot.notifications,
+      unreadNotificationCount: snapshot.unreadNotificationCount,
       refreshNotifications,
       markNotificationAsRead,
       markAllNotificationsAsRead,
     }),
-    [state, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead]
+    [snapshot.notifications, snapshot.unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead]
   );
+
+  const { mode, popups } = presentPopups(snapshot.popups);
 
   return (
     <NotificationContext.Provider value={contextValue}>
       {children}
-      {activeTodoReminders.length > 0 && (
-        <>
-          {activeTodoReminders.map((reminder) => (
-            <TodoReminderPopup
-              key={reminder.id}
-              reminder={reminder}
-              onClose={() => handleCloseReminder(reminder.id)}
-              onMarkAsRead={markNotificationAsRead}
-            />
-          ))}
-        </>
+      {mode === 'summary' ? (
+        <MissedRemindersSummary reminders={popups} onDismissAll={() => dismissPopups(popups.map((p) => p.key))} />
+      ) : (
+        popups.map((popup) => (
+          <TodoReminderPopup
+            key={popup.key}
+            reminder={{ ...popup, id: popup.key }}
+            onClose={() => dismissPopups([popup.key])}
+            onMarkAsRead={markNotificationAsRead}
+          />
+        ))
       )}
     </NotificationContext.Provider>
   );

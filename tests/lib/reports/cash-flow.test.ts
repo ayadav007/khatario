@@ -79,6 +79,19 @@ describe('buildCashFlow', () => {
     expect(cf.difference).toBe(0);
   });
 
+  it('puts investments and other non-current assets under investing, not working capital', () => {
+    const cf = buildCashFlow([
+      acc('1102', 'asset', 0, 34030, { isCash: true, opening: 50000 }),
+      acc('1301', 'asset', 25013, 0, { groupCode: '1300', bsClass: 'investment' }),
+      acc('1901', 'asset', 9017, 0, { groupCode: '1000', bsClass: 'other_asset' }),
+      acc('1105', 'asset', 0, 0, { groupCode: '1100', bsClass: 'current_asset' }),
+    ]);
+    expect(cf.investing.lines.find((l) => l.label === 'Investments (net)')?.amount).toBe(-25013);
+    expect(cf.investing.lines.find((l) => l.label === 'Other non-current assets')?.amount).toBe(-9017);
+    expect(cf.operating.workingCapital).toHaveLength(0);
+    expect(cf.difference).toBe(0);
+  });
+
   it('treats bank overdraft as negative cash', () => {
     const cf = buildCashFlow([
       acc('2112', 'liability', 0, 3000, { isCash: true }),

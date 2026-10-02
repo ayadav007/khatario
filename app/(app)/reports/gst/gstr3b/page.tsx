@@ -10,6 +10,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { ProfileRequiredPanel } from '@/components/profile/ProfileRequiredPanel';
 import { getProfileGaps, isProfileReady } from '@/lib/business-profile-requirements';
 import { useProfileRequiredGate } from '@/hooks/useProfileRequiredGate';
+import { Gstr3bFilingStatusBar } from '@/components/gst/MarkGstr3bFiled';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -190,6 +191,8 @@ export default function GSTR3BPage() {
             Refresh
           </button>
         </div>
+
+        <Gstr3bFilingStatusBar businessId={business.id} month={`${year}-${String(month).padStart(2, '0')}`} />
 
         {/* Summary Cards */}
         {data?.summary && (

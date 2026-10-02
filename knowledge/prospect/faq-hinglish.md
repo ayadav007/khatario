@@ -10,7 +10,7 @@ url: /#faq
 
 ## Khatario kya hai?
 
-Khatario Indian dukaan aur business ke liye billing software hai. Isme GST bill (invoice) banana, stock (maal) ka hisaab, grahak aur supplier, udhaar aur payment, GST report, WhatsApp par bill bhejna, online dukaan aur staff ki hazri (attendance) aur salary, sab ek hi app mein hai.
+Khatario Indian dukaan aur business ke liye billing software hai. Isme GST bill (invoice) banana, stock (maal) ka hisaab, grahak aur supplier, udhaar aur payment, GST report, WhatsApp par bill bhejna aur online dukaan, sab ek hi app mein hai. Staff ki hazri (attendance) aur salary ke liye Khatario HR jaldi aa raha hai (coming soon); abhi yeh available nahi hai.
 
 ## Kya Khatario free hai?
 

@@ -2,6 +2,9 @@
  * Receivable / payable ageing built from control-account (1103 / 2101) ledger lines, so the
  * report total always equals the GL balance as of the date. Settlements (receipts, notes, TDS)
  * are applied to the document they reference first, then oldest-first (FIFO).
+ *
+ * Open items are aged by days past the due date (document date when there is none). Items
+ * due on or after the as-of date are "not due" (Zoho's "Current" column).
  */
 
 export type AgeingDoc = {
@@ -19,7 +22,7 @@ export type AgeingDoc = {
   linkedVoucherId: string | null;
 };
 
-export type AgeingBucket = '0-30' | '31-60' | '61-90' | '90+';
+export type AgeingBucket = 'not_due' | '0-30' | '31-60' | '61-90' | '90+';
 
 export type AgeingRow = {
   party_id: string | null;
@@ -32,7 +35,10 @@ export type AgeingRow = {
   due_date: string | null;
   original_amount: number;
   outstanding: number;
+  /** Days past due, never negative. */
   days_old: number;
+  /** Days past due; negative = days until due. */
+  days_overdue: number;
   age_bucket: AgeingBucket;
 };
 
@@ -41,6 +47,7 @@ export type AgeingPartySummary = {
   party_name: string;
   party_phone: string | null;
   transactions: AgeingRow[];
+  not_due: number;
   age_0_30: number;
   age_30_60: number;
   age_60_90: number;
@@ -64,6 +71,7 @@ export function daysBetween(fromIso: string, toIso: string): number {
 }
 
 export function bucketFor(days: number): AgeingBucket {
+  if (days <= 0) return 'not_due';
   if (days <= 30) return '0-30';
   if (days <= 60) return '31-60';
   if (days <= 90) return '61-90';
@@ -98,7 +106,7 @@ export function allocateParty(docs: AgeingDoc[], asOfDate: string): AgeingRow[] 
   }
 
   const row = (doc: AgeingDoc, outstanding: number): AgeingRow => {
-    const days = Math.max(0, daysBetween(doc.dueDate || doc.docDate, asOfDate));
+    const overdue = daysBetween(doc.dueDate || doc.docDate, asOfDate);
     return {
       party_id: doc.partyId,
       party_name: doc.partyName || UNALLOCATED_PARTY,
@@ -110,8 +118,9 @@ export function allocateParty(docs: AgeingDoc[], asOfDate: string): AgeingRow[] 
       due_date: doc.dueDate,
       original_amount: r2(Math.abs(doc.amount)),
       outstanding: r2(outstanding),
-      days_old: days,
-      age_bucket: bucketFor(days),
+      days_old: Math.max(0, overdue),
+      days_overdue: overdue,
+      age_bucket: bucketFor(overdue),
     };
   };
 
@@ -131,7 +140,7 @@ export function buildAgeing(docs: AgeingDoc[], asOfDate: string): { summary: Age
   }
 
   const emptyTotals = (): AgeingTotals => ({
-    age_0_30: 0, age_30_60: 0, age_60_90: 0, age_90_plus: 0, age_60_plus: 0, on_account: 0, total: 0,
+    not_due: 0, age_0_30: 0, age_30_60: 0, age_60_90: 0, age_90_plus: 0, age_60_plus: 0, on_account: 0, total: 0,
   });
 
   const summary: AgeingPartySummary[] = [];
@@ -148,6 +157,7 @@ export function buildAgeing(docs: AgeingDoc[], asOfDate: string): { summary: Age
     for (const r of rows) {
       s.total += r.outstanding;
       if (r.outstanding < 0) s.on_account += r.outstanding;
+      else if (r.age_bucket === 'not_due') s.not_due += r.outstanding;
       else if (r.age_bucket === '0-30') s.age_0_30 += r.outstanding;
       else if (r.age_bucket === '31-60') s.age_30_60 += r.outstanding;
       else if (r.age_bucket === '61-90') s.age_60_90 += r.outstanding;

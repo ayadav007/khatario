@@ -42,28 +42,22 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
-    // CRITICAL: Resolve branch_id using helper (handles default branch fallback)
-    const { resolveBranchId } = await import('@/lib/branch-helpers');
-    let finalBranchId: string;
-    try {
-      finalBranchId = await resolveBranchId({
-        branchId: branchIdParam,
-        businessId: businessId,
-      });
-    } catch (error: any) {
-      if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
-        return NextResponse.json(
-          { error: error.message },
-          { status: 400 }
-        );
+    // Same scope as the screen: no branch_id (or ALL) is the consolidated sheet.
+    const isConsolidatedView = !branchIdParam || branchIdParam.toLowerCase() === 'all';
+    let finalBranchId: string | undefined;
+    if (!isConsolidatedView) {
+      const { resolveBranchId } = await import('@/lib/branch-helpers');
+      try {
+        finalBranchId = await resolveBranchId({ branchId: branchIdParam, businessId });
+      } catch (error: any) {
+        if (error.code === 'BRANCH_NOT_FOUND' || error.code === 'BRANCH_BUSINESS_MISMATCH' || error.code === 'BRANCH_INACTIVE') {
+          return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        if (error.code === 'NO_DEFAULT_BRANCH') {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        throw error;
       }
-      if (error.code === 'NO_DEFAULT_BRANCH') {
-        return NextResponse.json(
-          { error: error.message },
-          { status: 500 }
-        );
-      }
-      throw error;
     }
 
     // AUTHORIZATION: Check export permission for financial report
@@ -109,8 +103,8 @@ export async function GET(req: NextRequest) {
       business_id: businessId,
       user_id: userId,
       as_on_date: asOnDate,
-      branch_id: finalBranchId,
     });
+    if (finalBranchId) qs.set('branch_id', finalBranchId);
     if (financialYear) qs.set('financial_year', financialYear);
     const apiRes = await internalApiFetchFromRequest(
       req,
@@ -131,63 +125,50 @@ export async function GET(req: NextRequest) {
     }
     const data = await apiRes.json();
 
-    // 3. Format data for template
-    const formatCurr = (val: any) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    
-    // Process data for easier template usage
+    // 3. Format data for template (negative balances in brackets, zero rows dropped)
+    const formatCurr = (val: any) => {
+      const n = Number(val || 0);
+      const s = Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return n < -0.004 ? `(${s})` : s;
+    };
+    const fmtSection = (s: any, title: string) => ({
+      title,
+      total: formatCurr(s?.total),
+      has_rows: (s?.accounts || []).some((a: any) => Math.abs(Number(a.balance) || 0) >= 0.005) || Math.abs(Number(s?.total) || 0) >= 0.005,
+      accounts: (s?.accounts || [])
+        .filter((a: any) => Math.abs(Number(a.balance) || 0) >= 0.005)
+        .map((a: any) => ({ ...a, balance: formatCurr(a.balance) })),
+    });
+    const re = data.equity?.retained_earnings || {};
+    const invAdj = Number(data.assets?.current?.inventory_adjustment || 0);
+
     const templateData = {
       business,
       data: {
         ...data,
         as_on_date: format(new Date(data.as_on_date), 'dd MMM yyyy'),
-        assets: {
-          ...data.assets,
-          total: formatCurr(data.assets.total),
-          current: {
-            ...data.assets?.current,
-            inventory: data.assets?.current?.inventory ? formatCurr(data.assets.current.inventory) : null,
-            receivables: data.assets?.current?.receivables ? formatCurr(data.assets.current.receivables) : null,
-            total: formatCurr(data.assets?.current?.total),
-            accounts: (data.assets?.current?.accounts || []).map((a: any) => ({ ...a, balance: formatCurr(a.balance) }))
-          },
-          fixed: {
-            ...data.assets?.fixed,
-            gross_block: data.assets?.fixed?.gross_block ? formatCurr(data.assets.fixed.gross_block) : null,
-            accumulated_depreciation: data.assets?.fixed?.accumulated_depreciation ? formatCurr(data.assets.fixed.accumulated_depreciation) : null,
-            net_block: data.assets?.fixed?.net_block ? formatCurr(data.assets.fixed.net_block) : null,
-            total: formatCurr(data.assets?.fixed?.total),
-            accounts: (data.assets?.fixed?.accounts || []).map((a: any) => ({ ...a, balance: formatCurr(a.balance) })),
-            details: (data.assets?.fixed?.assets || []).map((a: any) => ({ ...a, net_block: formatCurr(a.net_block) }))
-          }
-        },
-        liabilities: {
-          ...data.liabilities,
-          total: formatCurr(data.liabilities?.total),
-          current: {
-            ...data.liabilities?.current,
-            payables: data.liabilities?.current?.payables ? formatCurr(data.liabilities.current.payables) : null,
-            total: formatCurr(data.liabilities?.current?.total),
-            accounts: (data.liabilities?.current?.accounts || []).map((a: any) => ({ ...a, balance: formatCurr(Math.abs(a.balance)) }))
-          },
-          long_term: {
-            ...data.liabilities?.long_term,
-            total: formatCurr(data.liabilities?.long_term?.total),
-            accounts: (data.liabilities?.long_term?.accounts || []).map((a: any) => ({ ...a, balance: formatCurr(Math.abs(a.balance)) }))
-          }
-        },
-        equity: {
-          ...data.equity,
-          total: formatCurr(data.equity?.total),
-          capital: {
-            ...data.equity?.capital,
-            accounts: (data.equity?.capital?.accounts || []).map((a: any) => ({ ...a, balance: formatCurr(Math.abs(a.balance)) }))
-          },
-          retained_earnings_amount: formatCurr(typeof data.equity?.retained_earnings === 'object' ? data.equity.retained_earnings.closing : (data.equity?.retained_earnings || 0))
-        },
+        asset_sections: [
+          fmtSection(data.assets?.current, 'Current Assets'),
+          fmtSection(data.assets?.fixed, 'Fixed Assets'),
+          fmtSection(data.assets?.investments, 'Investments'),
+          fmtSection(data.assets?.other, 'Other Assets'),
+        ].filter((s, i) => i === 0 || s.has_rows),
+        inventory_adjustment: Math.abs(invAdj) >= 0.005 ? formatCurr(invAdj) : null,
+        liability_sections: [
+          fmtSection(data.liabilities?.current, 'Current Liabilities'),
+          fmtSection(data.liabilities?.long_term, 'Long-term Liabilities'),
+          fmtSection(data.liabilities?.other, 'Other Liabilities'),
+        ].filter((s, i) => i === 0 || s.has_rows),
+        equity_accounts: fmtSection(data.equity?.capital, 'Equity').accounts,
+        previous_years_profit: Math.abs(Number(re.opening || 0)) >= 0.005 ? formatCurr(re.opening) : null,
+        current_year_earnings: formatCurr(re.current_year_profit),
+        assets_total: formatCurr(data.assets?.total),
+        liabilities_total: formatCurr(data.liabilities?.total),
+        equity_total: formatCurr(data.equity?.total),
         total_liabilities_and_equity: formatCurr(data.total_liabilities_and_equity),
-        difference: formatCurr(Math.abs((data.assets?.total || 0) - (data.total_liabilities_and_equity || 0)))
+        difference: formatCurr(Math.abs((data.assets?.total || 0) - (data.total_liabilities_and_equity || 0))),
       },
-      generated_at: format(new Date(), 'dd MMM yyyy HH:mm')
+      generated_at: format(new Date(), 'dd MMM yyyy HH:mm'),
     };
 
     const renderer = new InvoiceRenderer();

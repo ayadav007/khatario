@@ -119,7 +119,7 @@ export async function loadCostMovements(
   }>(
     client,
     `SELECT pi.item_id, pu.id AS doc_id, pi.id AS line_id,
-            COALESCE(pu.bill_number, pu.purchase_number) AS doc_number, s.name AS party,
+            COALESCE(pu.bill_number, pu.invoice_number) AS doc_number, s.name AS party,
             ${day('pu.bill_date')} AS d, ${seq('pu.created_at')} AS s,
             pi.quantity AS qty, COALESCE(pi.taxable_value, 0) AS value
        FROM purchase_items pi

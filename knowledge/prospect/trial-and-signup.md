@@ -10,7 +10,7 @@ url: /signup
 
 ## Is there a free trial?
 
-Yes. New Khatario Billing and Khatario HR accounts start with a 30-day free trial of the full product. No credit card is needed. The Billing trial includes everything in the top plan, so you can try GST reports, WhatsApp, the online store and multiple branches on your own data. Khatario Connect has no trial because the Connect platform itself is free.
+Yes. New Khatario Billing accounts start with a 30-day free trial of the full product. No credit card is needed. The Billing trial includes everything in the top plan, so you can try GST reports, WhatsApp, the online store and multiple branches on your own data. Khatario Connect has no trial because the Connect platform itself is free. Khatario HR is coming soon and has no trial yet.
 
 ## What happens when my trial ends?
 
@@ -22,7 +22,7 @@ Yes, once. You can extend the trial by 7 days yourself when it ends.
 
 ## How do I sign up?
 
-1. Go to khatario.com/signup (choose Billing, HR or Connect).
+1. Go to khatario.com/signup (choose Billing or Connect).
 2. Enter your business name, business type (retail, wholesaler, distributor, manufacturer, service or other), industry, your name, mobile number and a password.
 3. Verify your mobile number with the code sent to you on WhatsApp.
 4. Your account is created and you land on your dashboard.

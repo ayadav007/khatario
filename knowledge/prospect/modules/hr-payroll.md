@@ -1,40 +1,23 @@
 ---
-title: HR, attendance and payroll
+title: Khatario HR (coming soon)
 audience: [prospect, tenant_user]
 locale: en
-tags: [hr, attendance, payroll, salary, leave, employees]
-url: /?product=hr
+tags: [hr, attendance, payroll, salary, leave, employees, coming soon]
+url: /book-demo
 ---
 
-# Khatario HR: employees, attendance, payroll and leave
+# Khatario HR: coming soon
 
-## What does Khatario HR include?
+## Does Khatario have HR, attendance or payroll?
 
-Khatario HR manages your team without the billing suite:
+Not yet. Khatario HR is coming soon. It will cover employee records, attendance, leave and payroll. It is not available to sign up for today, and there are no HR plans or prices yet.
 
-- Employee records with departments, designations and an org chart
-- Daily attendance and shifts, with rosters and bulk shift assignment
-- Leave requests, leave types, holiday calendar and leave balances
-- Payroll: salary processing, payslips, salary advances and salary payments (HR Pro)
-- Commissions, employee expenses, tasks, targets and performance reviews
-- An employee self-service portal where staff see payslips, apply for leave and mark attendance
-- Recruitment: job openings, candidates and candidate onboarding with offer letters
-- Manager approvals and role-based access for HR admins and managers
+Today Khatario offers Khatario Billing (GST billing, stock, payments, GST reports and an online store) and Khatario Connect (WhatsApp tools).
 
-HR Starter covers employee records and attendance; HR Pro adds payroll, leave and the self-service portal. Prices and employee limits are in the plans document.
+## When will Khatario HR be available?
 
-## How do employees mark attendance?
+There is no launch date to share yet. If you are interested, leave your details or book a demo, and the Khatario team can let you know when HR launches.
 
-Employees can mark attendance from the mobile app or self-service portal, at an attendance kiosk device at your office or shop, or it can be marked by a manager. Geofencing can restrict mobile check-in to your work location.
+## Can I track staff salary or attendance in Khatario Billing today?
 
-## Does Khatario HR handle late marks, overtime and loss of pay?
-
-Yes. Attendance policies cover late marks, overtime and loss of pay, and leave can accrue automatically.
-
-## Is there a free trial for HR?
-
-Yes. HR accounts start with a 30-day trial with full HR Pro features. After the trial you can choose HR Starter or HR Pro.
-
-## Can I use HR and Billing together?
-
-Yes. Both run on the same Khatario account, so you can start with one and add the other later.
+No. Staff attendance and payroll are part of Khatario HR, which is coming soon. You can record salary payments as expenses in Khatario Billing.

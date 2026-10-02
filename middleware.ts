@@ -195,8 +195,14 @@ export async function middleware(request: NextRequest) {
   const storeSubdomain = extractStoreSubdomain(request.headers.get('host'));
   if (storeSubdomain) {
     const url = request.nextUrl.clone();
+    // Store hosts never carry a merchant session, and many handlers still fall back to
+    // client-supplied user_id/business_id when the session headers are absent.
     if (pathname.startsWith('/api/')) {
-      return nextWithoutSpoofedIdentity(request);
+      if (isPublicPath(pathname)) return nextWithoutSpoofedIdentity(request);
+      return NextResponse.json(
+        { error: 'Authentication required', code: 'UNAUTHENTICATED' },
+        { status: 401 }
+      );
     }
     // Merchant AuthContext used to bounce guests to /login on the store host.
     // There is no merchant login here — send them to the storefront (or the

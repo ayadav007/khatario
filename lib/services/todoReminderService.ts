@@ -27,6 +27,31 @@ export type TriggerTodoReminderResult = {
 
 const NOTIFICATIONS_CHANNEL = 'notifications';
 
+const DELIVERABLE_STATUSES = ['pending', 'in_progress', 'overdue'];
+
+/**
+ * Claims the reminder only if the row is still due right now, so a stale batch row or an old
+ * BullMQ job cannot deliver after a snooze, completion or reminder change.
+ */
+const CLAIM_SQL = `UPDATE todos
+   SET reminder_sent = true, last_reminder_sent_at = NOW()
+ WHERE id = $1
+   AND reminder_sent = false
+   AND status IN ('pending', 'in_progress', 'overdue')
+   AND reminder_type IS NOT NULL
+   AND reminder_type <> 'none'
+   AND reminder_time IS NOT NULL
+   AND reminder_time <= NOW()
+ RETURNING *`;
+
+/** notifications.user_id -> users(id): the recipient no longer exists. */
+const RECIPIENT_FK = { table: 'notifications', constraint: 'notifications_user_id_fkey' };
+
+function isDeletedRecipientError(err: unknown): boolean {
+  const e = err as { code?: string; table?: string; constraint?: string } | null;
+  return e?.code === '23503' && e.table === RECIPIENT_FK.table && e.constraint === RECIPIENT_FK.constraint;
+}
+
 /**
  * Deduplicate users (e.g. assignee === creator).
  */
@@ -95,32 +120,35 @@ function publishNotificationsChannel(
 
 /**
  * Deliver todo reminder: claim row (idempotent), notify assignee and creator, Redis SSE, optional WhatsApp.
+ * `snapshot` (a batch row or the worker's read) only pre-filters; the claimed row is re-checked
+ * and supplies everything that is delivered. The claim, every recipient row and the history
+ * entry commit together: an unexpected insert failure rolls all of it back and throws, leaving
+ * the reminder due for the next attempt. Only a recipient that no longer exists is skipped.
  * Redis and WhatsApp failures never throw from this function for operational paths.
  */
 export async function triggerTodoReminder(
-  todo: TodoForReminder
+  snapshot: TodoForReminder
 ): Promise<TriggerTodoReminderResult> {
   reminderPipelineLog('service.trigger.start', {
-    todoId: todo.id,
-    status: todo.status,
-    business_id: todo.business_id,
-    reminder_sent: (todo as { reminder_sent?: boolean }).reminder_sent,
+    todoId: snapshot.id,
+    status: snapshot.status,
+    business_id: snapshot.business_id,
+    reminder_sent: (snapshot as { reminder_sent?: boolean }).reminder_sent,
   });
 
-  if (!['pending', 'in_progress', 'overdue'].includes(todo.status)) {
-    reminderPipelineLog('service.trigger.invalid', { todoId: todo.id, reason: 'bad_status' });
+  if (!DELIVERABLE_STATUSES.includes(snapshot.status)) {
+    reminderPipelineLog('service.trigger.invalid', { todoId: snapshot.id, reason: 'bad_status' });
     return { status: 'invalid', reason: 'bad_status' };
   }
 
-  const inAppUsers = inAppRecipientUserIds(todo);
-  if (inAppUsers.length === 0) {
-    reminderPipelineLog('service.trigger.invalid', { todoId: todo.id, reason: 'no_user' });
+  if (inAppRecipientUserIds(snapshot).length === 0) {
+    reminderPipelineLog('service.trigger.invalid', { todoId: snapshot.id, reason: 'no_user' });
     return { status: 'invalid', reason: 'no_user' };
   }
 
-  const subscription = await getBusinessSubscription(todo.business_id);
+  const subscription = await getBusinessSubscription(snapshot.business_id);
   if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-    reminderPipelineLog('service.trigger.skipped', { todoId: todo.id, reason: 'subscription' });
+    reminderPipelineLog('service.trigger.skipped', { todoId: snapshot.id, reason: 'subscription' });
     return { status: 'skipped', reason: 'subscription' };
   }
 
@@ -130,44 +158,46 @@ export async function triggerTodoReminder(
     today.setHours(0, 0, 0, 0);
     if (endDate < today) {
       reminderPipelineLog('service.trigger.skipped', {
-        todoId: todo.id,
+        todoId: snapshot.id,
         reason: 'subscription_expired',
       });
       return { status: 'skipped', reason: 'subscription_expired' };
     }
   }
 
-  const title = `Reminder: ${todo.title}`;
-  const message =
-    todo.description || `Your task "${todo.title}" is due soon.`;
-
   const pool = getPool();
   const client: PoolClient = await pool.connect();
 
   const published: { userId: string; notificationId: string }[] = [];
-  let alreadyProcessed = false;
+  let todo: TodoForReminder;
+  let title: string;
+  let message: string;
 
   try {
     await client.query('BEGIN');
 
-    const claim = await client.query<{ id: string }>(
-      `UPDATE todos
-       SET reminder_sent = true, last_reminder_sent_at = NOW()
-       WHERE id = $1 AND reminder_sent = false
-       RETURNING id`,
-      [todo.id]
-    );
-
+    const claim = await client.query<TodoForReminder>(CLAIM_SQL, [snapshot.id]);
     if (!claim.rowCount) {
       await client.query('ROLLBACK');
       reminderPipelineLog('service.trigger.not_claimed', {
-        todoId: todo.id,
-        hint: 'reminder_sent already true or row missing',
+        todoId: snapshot.id,
+        hint: 'already sent, no longer due, or row missing',
       });
       return { status: 'skipped', reason: 'not_claimed' };
     }
+    todo = claim.rows[0];
+
+    const inAppUsers = inAppRecipientUserIds(todo);
+    if (inAppUsers.length === 0) {
+      await client.query('ROLLBACK');
+      reminderPipelineLog('service.trigger.invalid', { todoId: todo.id, reason: 'no_user' });
+      return { status: 'invalid', reason: 'no_user' };
+    }
 
     reminderPipelineLog('service.trigger.claimed', { todoId: todo.id });
+
+    title = `Reminder: ${todo.title}`;
+    message = todo.description || `Your task "${todo.title}" is due soon.`;
 
     for (let i = 0; i < inAppUsers.length; i++) {
       const userId = inAppUsers[i];
@@ -188,6 +218,7 @@ export async function triggerTodoReminder(
           RETURNING id`,
           [todo.business_id, userId, title, message, todo.id]
         );
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
         const nid = ins.rows[0]?.id;
         if (nid) {
           published.push({ userId, notificationId: nid });
@@ -196,42 +227,23 @@ export async function triggerTodoReminder(
             notificationId: nid,
             userId,
           });
-        } else {
-          reminderPipelineLog('service.notification.insert_empty_returning', {
-            todoId: todo.id,
-            userId,
-            hint: 'Unexpected empty RETURNING from notifications upsert',
-          });
         }
-        await client.query(`RELEASE SAVEPOINT ${sp}`);
       } catch (insertErr) {
-        try {
-          await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
-          await client.query(`RELEASE SAVEPOINT ${sp}`);
-        } catch (rollbackErr) {
-          console.error(
-            '[todoReminderService] savepoint rollback failed:',
-            rollbackErr
-          );
-          throw insertErr;
-        }
-        console.error(
-          '[todoReminderService] notification insert failed (row skipped, continuing):',
-          insertErr
-        );
+        if (!isDeletedRecipientError(insertErr)) throw insertErr;
+        await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
+        reminderPipelineLog('service.notification.recipient_deleted', { todoId: todo.id, userId });
       }
     }
 
-    if (published.length === 0) {
-      await client.query('COMMIT');
-      alreadyProcessed = true;
-    } else {
+    if (published.length > 0) {
       await client.query(
         `SELECT create_todo_history($1, 'reminder_sent', NULL, NULL, NULL)`,
         [todo.id]
       );
-      await client.query('COMMIT');
     }
+    // Every recipient is gone: keep the claim so the reminder is not retried forever.
+    await client.query('COMMIT');
   } catch (e) {
     try {
       await client.query('ROLLBACK');
@@ -243,9 +255,9 @@ export async function triggerTodoReminder(
     client.release();
   }
 
-  if (alreadyProcessed) {
-    reminderPipelineLog('service.trigger.already_processed', { todoId: todo.id });
-    return { status: 'skipped', reason: 'already_processed' };
+  if (published.length === 0) {
+    reminderPipelineLog('service.trigger.recipients_deleted', { todoId: todo.id });
+    return { status: 'skipped', reason: 'recipients_deleted' };
   }
 
   reminderPipelineLog('service.trigger.publishing_sse', {

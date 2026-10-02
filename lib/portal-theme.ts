@@ -111,7 +111,7 @@ function brandHexToCssVars(
     } else if (t >= 1) {
       out[key] = rgbToHex(W.r, W.g, W.b);
     } else {
-      const m = mixRgb(W, base, t);
+      const m = mixRgb(base, W, t);
       out[key] = rgbToHex(m.r, m.g, m.b);
     }
   }

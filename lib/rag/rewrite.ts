@@ -49,7 +49,7 @@ function heuristicQuery(message: string): string {
 }
 
 const SYSTEM = `You rewrite chat messages for a search engine over Khatario's help and sales knowledge base.
-Khatario is an Indian GST billing, inventory, WhatsApp and HR software for small businesses.
+Khatario is an Indian GST billing, inventory and WhatsApp software for small businesses (an HR product is coming soon).
 Users write in English, Hindi, or Hinglish (Hindi in Roman letters).
 
 Return JSON only: {"search_query": string, "intent": string, "language": "en"|"hinglish"|"hi"}

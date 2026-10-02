@@ -102,6 +102,7 @@ function PurchaseDetailContent() {
               {purchase.supplier_name || 'Cash Purchase'}
               {' • '}
               {purchase.bill_date ? new Date(purchase.bill_date).toLocaleDateString() : 'No date'}
+              {purchase.due_date ? ` • Due ${new Date(purchase.due_date).toLocaleDateString()}` : ''}
             </>
           }
           trailing={

@@ -129,7 +129,7 @@ function notSureReply(lang: Lang, sales: boolean): string {
 function extractiveAnswer(chunks: RetrievedChunk[], lang: Lang): string {
   const top = chunks[0];
   const body = top.content.replace(/\s+\n/g, '\n').trim();
-  const excerpt = body.length > 700 ? `${body.slice(0, 700).replace(/\s+\S*$/, '')}…` : body;
+  const excerpt = body.length > 1400 ? `${body.slice(0, 1400).replace(/\s+\S*$/, '')}…` : body;
   if (top.corpus === 'law') {
     const provision = top.headingPath.split(' > ').pop() || top.title;
     const lead = t(lang, `Here's what the GST law says (${provision}):`, `GST law mein yeh likha hai (${provision}):`);
@@ -141,7 +141,32 @@ function extractiveAnswer(chunks: RetrievedChunk[], lang: Lang): string {
     return `${lead}\n\n${excerpt} [1]\n\n${note}`;
   }
   const lead = t(lang, "Here's what our guide says:", 'Hamari guide mein yeh likha hai:');
-  return `${lead}\n\n${excerpt} [1]`;
+  const related = relatedGuideIndexes(chunks, lang);
+  if (!related.length) return `${lead}\n\n${excerpt} [1]`;
+  const seeAlso = related
+    .map((i) => `- ${chunks[i - 1].headingPath.split(' > ').pop() || chunks[i - 1].title} [${i}]`)
+    .join('\n');
+  return `${lead}\n\n${excerpt} [1]\n\n${t(lang, 'Also see:', 'Yeh bhi dekhein:')}\n${seeAlso}`;
+}
+
+/** Without a chat model only one chunk is shown; point at the next guide sections so multi-step answers aren't cut off. */
+function relatedGuideIndexes(chunks: RetrievedChunk[], lang: Lang): number[] {
+  const top = chunks[0];
+  const seen = new Set([top.headingPath]);
+  const out: number[] = [];
+  for (let i = 1; i < chunks.length && out.length < 2; i++) {
+    const c = chunks[i];
+    if (c.corpus === 'law' || seen.has(c.headingPath) || c.score < top.score * 0.6) continue;
+    const heading = c.headingPath.split(' > ').pop() || '';
+    if ((detectLanguageHeuristic(heading) === 'en') !== (lang === 'en')) continue;
+    seen.add(c.headingPath);
+    out.push(i + 1);
+  }
+  return out;
+}
+
+function extractiveCitationIndexes(chunks: RetrievedChunk[], lang: Lang): number[] {
+  return chunks[0].corpus === 'law' ? [1] : [1, ...relatedGuideIndexes(chunks, lang)];
 }
 
 function toCitations(chunks: RetrievedChunk[], indexes: number[]): Citation[] {
@@ -310,13 +335,14 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
   const chunks = result.chunks;
   if (!chatModelConfigured() || !budgetOk) {
     const text = extractiveAnswer(chunks, rw.language);
+    const indexes = extractiveCitationIndexes(chunks, rw.language);
     yield { type: 'delta', text };
     yield* finish({
       text,
       answered: true,
       action: extra,
-      citations: toCitations(chunks, [1]),
-      citedChunkIds: [chunks[0].id],
+      citations: toCitations(chunks, indexes),
+      citedChunkIds: indexes.map((i) => chunks[i - 1].id),
       retrieval: result,
       model: 'extractive',
     });

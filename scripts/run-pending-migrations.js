@@ -79,6 +79,11 @@ function unwrapExplicitTransaction(sql) {
   return s.trim();
 }
 
+/** Files with a concurrent index build cannot run inside a transaction. */
+function needsAutocommit(sql) {
+  return /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(String(sql || ''));
+}
+
 function splitSqlStatements(sql) {
   const withoutComments = String(sql || '').replace(/--[^\n]*/g, '');
   return withoutComments
@@ -296,15 +301,15 @@ async function main() {
       }
 
       process.stdout.write(`📝 ${file} ... `);
-      const needsAutocommit = /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(sql);
-      const sqlToRun = needsAutocommit ? String(sql) : unwrapExplicitTransaction(sql);
+      const autocommit = needsAutocommit(sql);
+      const sqlToRun = autocommit ? String(sql) : unwrapExplicitTransaction(sql);
       try {
         if (sqlToRun == null) {
           throw new Error(
             'File contains a statement-level BEGIN/COMMIT/ROLLBACK beyond one outer pair; refusing to run it partially outside a transaction'
           );
         }
-        if (needsAutocommit) {
+        if (autocommit) {
           for (const stmt of splitSqlStatements(sqlToRun)) {
             await client.query(stmt);
           }
@@ -319,7 +324,7 @@ async function main() {
         console.log('✅');
         ok++;
       } catch (error) {
-        if (!needsAutocommit) {
+        if (!autocommit) {
           try {
             await client.query('ROLLBACK');
           } catch {
@@ -330,7 +335,7 @@ async function main() {
         // Legacy escape hatch for bootstrapping an old database whose objects
         // pre-date schema_migrations. Nothing in the file was committed, so the
         // row says so explicitly instead of looking like a normal success.
-        if (args.acceptExisting && !needsAutocommit && isIdempotentError(error.message)) {
+        if (args.acceptExisting && !autocommit && isIdempotentError(error.message)) {
           await client.query(
             `INSERT INTO schema_migrations (migration_name, success, error_message)
              VALUES ($1, true, $2)
@@ -417,4 +422,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { unwrapExplicitTransaction, isIdempotentError, parseArgs };
+module.exports = { unwrapExplicitTransaction, splitSqlStatements, needsAutocommit, isIdempotentError, parseArgs };

@@ -18,7 +18,7 @@ Spreadsheets need manual formulas for GST, break when several people edit them, 
 
 ## How does Khatario compare with other billing software?
 
-Khatario focuses on the full daily flow for Indian shops in one app: GST billing, stock, credit and WhatsApp collections, GST reports, an online store and HR, working on phone and computer and offline at the counter. It has a free plan and a free trial with no card needed, so the best comparison is to try it on your own data or book a demo. Be aware of what Khatario does not do yet (for example e-invoicing and Tally export), listed in "What Khatario does not do yet".
+Khatario focuses on the full daily flow for Indian shops in one app: GST billing, stock, credit and WhatsApp collections, GST reports, and an online store, working on phone and computer and offline at the counter. It has a free plan and a free trial with no card needed, so the best comparison is to try it on your own data or book a demo. Be aware of what Khatario does not do yet (for example e-invoicing and Tally export), listed in "What Khatario does not do yet".
 
 ## What problems does Khatario solve?
 

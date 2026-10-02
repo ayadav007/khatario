@@ -3,6 +3,7 @@ import { queryOne, queryRows } from '@/lib/db';
 import { captureLead, LeadInputSchema, LeadValidationError, linkBookingToLead } from './actions/leads';
 import { recommendPlan, RecommendInputSchema } from './actions/recommend';
 import { findOwnedConversation, insertMessage, type ConversationOwner } from './conversations';
+import { HR_COMING_SOON, HR_LAUNCHED } from './product-availability';
 
 async function json(request: NextRequest): Promise<Record<string, unknown> | null> {
   try {
@@ -47,6 +48,7 @@ export async function handleAction(request: NextRequest, owner: ConversationOwne
       case 'recommend_plan': {
         const parsed = RecommendInputSchema.safeParse(body.answers ?? {});
         if (!parsed.success) return bad('Please answer the questions again.');
+        if (parsed.data.product === 'hr' && !HR_LAUNCHED) return bad(HR_COMING_SOON, 404);
         const rec = await recommendPlan(parsed.data);
         if (!rec) return bad('No plan found for that product right now.', 404);
         if (conversation) {

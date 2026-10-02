@@ -44,6 +44,7 @@ import { getPool, closePool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserAccessibleBranchIds } from '@/lib/branch-access';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
+import { createInvoiceLedgerEntries } from '@/lib/ledger-utils';
 import * as invoiceBalance from '@/lib/invoices/invoice-balance';
 import { cancelPostedInvoiceInTransaction } from '@/lib/invoices/cancel-final-invoice';
 import { cancelFinalPurchase } from '@/lib/purchases/cancel-purchase';
@@ -787,6 +788,20 @@ d('Phase 4.4 payment reversal (real DB)', () => {
   test('reports exclude reversed payments from active totals and show the reversal in the party ledger', async () => {
     const inv = await makeInvoice(500, CUST_REPORT);
     await pool.query(`UPDATE customers SET current_balance = current_balance + 500 WHERE id = $1`, [CUST_REPORT]);
+    await tx((c) =>
+      createInvoiceLedgerEntries({
+        businessId: B,
+        invoiceId: inv,
+        invoiceNumber: `INV-${tag}-${inv.slice(0, 6)}`,
+        invoiceDate: PAY_DATE,
+        grandTotal: 500,
+        customerId: CUST_REPORT,
+        isCashSale: false,
+        branchId: BR,
+        taxableValue: 500,
+        poolClient: c,
+      })
+    );
     const pay = await receipt(200, { reference_type: 'invoice', reference_id: inv, customer_id: undefined });
 
     const reportReq = (p: string) =>

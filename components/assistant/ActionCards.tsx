@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { addDays, format } from 'date-fns';
 import { ArrowRight, CalendarDays, CheckCircle2, Loader2, Sparkles, UserRound } from 'lucide-react';
 import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
+import { HR_LAUNCHED } from '@/lib/rag/product-availability';
 import type { AssistantAction, AssistantChannel } from './useAssistantChat';
 
 interface CardContext {
@@ -300,8 +301,8 @@ export function RecommendPlanCard(ctx: CardContext) {
   return (
     <Card icon={<Sparkles className="h-4 w-4 text-primary-600" />} title="Find your plan">
       <div className="space-y-2 text-sm">
-        <div className="grid grid-cols-3 gap-1.5">
-          {(['billing', 'hr', 'whatsapp'] as const).map((p) => (
+        <div className={`grid gap-1.5 ${HR_LAUNCHED ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {(HR_LAUNCHED ? (['billing', 'hr', 'whatsapp'] as const) : (['billing', 'whatsapp'] as const)).map((p) => (
             <button
               key={p}
               type="button"

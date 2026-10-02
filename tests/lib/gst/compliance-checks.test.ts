@@ -5,12 +5,23 @@ import {
   currentFyDeadline,
   daysLeftStage,
   gstr3bFindings,
+  einvoiceFinding,
+  ewayBillFinding,
   itcDeadlineFinding,
+  periodFilingOpensOn,
+  previousFyRange,
+  rcmSelfInvoiceFinding,
+  type EwayCandidate,
+  type RcmUnregisteredBill,
   recentReturnPeriods,
+  returnPeriodForMonth,
   rule37Findings,
   shouldNotify,
+  trackingSince,
   type Rule37BillInput,
 } from '@/lib/gst/compliance/checks';
+import { ReturnMarkInputError, validateReturnMarkInput } from '@/lib/gst/compliance/return-marks';
+import { buildComplianceEmail } from '@/lib/gst/compliance/email';
 
 const zero = { igst: 0, cgst: 0, sgst: 0, cess: 0 };
 
@@ -142,7 +153,8 @@ describe('GSTR-3B due dates', () => {
     expect(f.key).toBe('gstr3b:2026-09');
     expect(f.stage).toBe('due_5d');
     expect(f.dueDate).toBe('2026-10-20');
-    expect(f.message).toMatch(/dismiss this alert/);
+    expect(f.message).toMatch(/Mark it as filed/);
+    expect(f.details).toMatchObject({ period: '2026-09', label: 'Sep 2026', can_mark_filed: true });
     expect(gstr3bFindings('2026-10-14', monthly, periods, false)).toEqual([]);
     expect(gstr3bFindings('2026-10-19', monthly, periods, false)[0].stage).toBe('due_1d');
   });
@@ -162,6 +174,132 @@ describe('GSTR-3B due dates', () => {
     expect(aug.severity).toBe('critical');
     expect(aug.stage).toBe('overdue');
     expect(aug.amount).toBe(15 * 50);
+  });
+});
+
+describe('e-way bill', () => {
+  const inv = (p: Partial<EwayCandidate>): EwayCandidate => ({
+    invoice_id: 'i1',
+    invoice_number: 'INV-1',
+    invoice_date: '2026-10-08',
+    customer_name: 'Gupta Stores',
+    grand_total: 60_000,
+    has_goods: true,
+    eway_bill_number: null,
+    ...p,
+  });
+
+  it('lists recent goods invoices over the limit without a number, and never notifies', () => {
+    const f = ewayBillFinding('2026-10-10', [
+      inv({}),
+      inv({ invoice_id: 'i2', grand_total: 50_000 }),
+      inv({ invoice_id: 'i3', has_goods: false }),
+      inv({ invoice_id: 'i4', eway_bill_number: '1812 3456 7890' }),
+      inv({ invoice_id: 'i5', invoice_date: '2026-09-30' }),
+    ])!;
+    expect(f.quiet).toBe(true);
+    expect(f.amount).toBe(60_000);
+    expect((f.details.sales as unknown[]).length).toBe(1);
+    expect(f.legalRef).toMatch(/Rule 138/);
+  });
+
+  it('is silent when nothing is missing', () => {
+    expect(ewayBillFinding('2026-10-10', [inv({ eway_bill_number: 'EWB1' })])).toBeNull();
+  });
+});
+
+describe('e-invoicing', () => {
+  it('applies when last FY sales cross 5 crore, once per FY', () => {
+    expect(previousFyRange('2026-10-10')).toEqual({ from: '2025-04-01', to: '2026-03-31', label: 'FY 2025-26' });
+    expect(previousFyRange('2027-02-10').label).toBe('FY 2025-26');
+    expect(einvoiceFinding('2026-10-10', { declaredAbove5cr: false, previousFyTurnover: 4_99_00_000 })).toBeNull();
+    const f = einvoiceFinding('2026-10-10', { declaredAbove5cr: false, previousFyTurnover: 6_00_00_000 })!;
+    expect(f.stage).toBe('FY 2026-27');
+    expect(f.message).not.toMatch(/30 days/);
+    expect(f.legalRef).toMatch(/Rule 48\(4\)/);
+  });
+
+  it('uses the profile flag and adds the 30-day rule at 10 crore', () => {
+    const declared = einvoiceFinding('2026-10-10', { declaredAbove5cr: true, previousFyTurnover: 0 })!;
+    expect(declared.message).toMatch(/business profile/);
+    expect(declared.amount).toBeNull();
+    expect(einvoiceFinding('2026-10-10', { declaredAbove5cr: false, previousFyTurnover: 12_00_00_000 })!.message).toMatch(/within 30 days/);
+  });
+});
+
+describe('RCM self-invoice', () => {
+  const bill = (bill_date: string, id = bill_date): RcmUnregisteredBill => ({
+    purchase_id: id,
+    bill_number: `RC-${id}`,
+    bill_date,
+    supplier_name: 'Local transporter',
+    tax: 900,
+  });
+
+  it('reminds within 30 days of the purchase, more urgently in the last 5', () => {
+    const f = rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20'), bill('2026-10-05'), bill('2026-09-01')])!;
+    expect(f.dueDate).toBe('2026-10-20');
+    expect(f.severity).toBe('info');
+    expect(f.amount).toBe(1800);
+    expect((f.details.rcm_bills as unknown[]).length).toBe(2);
+    const urgent = rcmSelfInvoiceFinding('2026-10-17', [bill('2026-09-20')])!;
+    expect(urgent.severity).toBe('warning');
+    expect(urgent.stage).toBe('5d');
+  });
+
+  it('drops bills past their 30 days', () => {
+    expect(rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-01')])).toBeNull();
+  });
+});
+
+describe('return periods for marking GSTR-3B filed', () => {
+  it('maps a month to its own period, or its quarter for QRMP', () => {
+    expect(returnPeriodForMonth('2026-08', { filingFrequency: 'monthly' })).toMatchObject({ period: '2026-08', label: 'Aug 2026' });
+    const qrmp = { filingFrequency: 'qrmp' as const, qrmpDueDay: 22 as const };
+    expect(returnPeriodForMonth('2026-01', qrmp).period).toBe('2026-03');
+    expect(returnPeriodForMonth('2026-03', qrmp).period).toBe('2026-03');
+    expect(returnPeriodForMonth('2026-04', qrmp).period).toBe('2026-06');
+    expect(returnPeriodForMonth('2026-11', qrmp)).toMatchObject({ period: '2026-12', months: ['2026-10', '2026-11', '2026-12'] });
+  });
+
+  it('opens filing the day after the period and tracks six months back', () => {
+    expect(periodFilingOpensOn('2026-12')).toBe('2027-01-01');
+    expect(trackingSince('2026-03-15')).toBe('2025-09');
+  });
+
+  it('validates the mark input', () => {
+    const today = '2026-10-10';
+    expect(validateReturnMarkInput({ period: '2026-09', today })).toEqual({
+      returnType: 'GSTR3B',
+      period: '2026-09',
+      filedOn: today,
+      arn: null,
+    });
+    expect(validateReturnMarkInput({ period: '2026-09', filed_on: '2026-10-01', arn: ' aa2709260012345 ', today }).arn).toBe(
+      'AA2709260012345',
+    );
+    expect(() => validateReturnMarkInput({ period: '2026-10', today })).toThrow(/after its period ends/);
+    expect(() => validateReturnMarkInput({ period: '2026-09', filed_on: '2026-10-11', today })).toThrow(/future/);
+    expect(() => validateReturnMarkInput({ period: '2026-13', today })).toThrow(ReturnMarkInputError);
+    expect(() => validateReturnMarkInput({ period: '2026-09', arn: 'bad-arn', today })).toThrow(/ARN/);
+    expect(() => validateReturnMarkInput({ return_type: 'GSTR1', period: '2026-09', today })).toThrow(/GSTR3B/);
+  });
+});
+
+describe('critical alert email', () => {
+  it('escapes content and links to the alerts page', () => {
+    const mail = buildComplianceEmail(
+      'Sharma & Sons <Pvt>',
+      [{ title: 'Reverse ₹1,800 ITC', message: 'Bills unpaid > 180 days', legalRef: 'CGST Rules, Rule 37' }],
+      'https://staging.khatario.com/',
+    );
+    expect(mail.subject).toBe('[Khatario] GST action needed: Reverse ₹1,800 ITC');
+    expect(mail.html).toContain('Sharma &amp; Sons &lt;Pvt&gt;');
+    expect(mail.html).toContain('Bills unpaid &gt; 180 days');
+    expect(mail.html).toContain('https://staging.khatario.com/reports/gst/compliance');
+    expect(mail.text).toContain('(CGST Rules, Rule 37)');
+    const item = { title: 'T', message: 'M', legalRef: 'L' };
+    expect(buildComplianceEmail('X', [item, item], 'https://a.b').subject).toBe('[Khatario] 2 GST items need action');
   });
 });
 

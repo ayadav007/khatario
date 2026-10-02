@@ -68,6 +68,8 @@ import ActionsBar from '@/components/invoices/ActionsBar';
 import CustomerSection from '@/components/invoices/CustomerSection';
 import ItemsTable from '@/components/invoices/ItemsTable';
 import { MobileItemPickerPanel } from '@/components/invoices/MobileItemPickerPanel';
+import { DesktopInvoiceComposer } from '@/components/invoices/composer/DesktopInvoiceComposer';
+import type { ComposerExportState, ComposerMoreDetails, ComposerRow } from '@/components/invoices/composer/types';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics, calculateProjectedCreditMetrics, calculateCreditMetrics } from '@/lib/credit-utils';
@@ -101,6 +103,8 @@ const getStateCode = (stateName: string): string => {
   };
   return stateCodeMap[name] || '';
 };
+
+const CLASSIC_DESKTOP_FORM_KEY = 'invoiceClassicDesktop';
 
 /** A registered buyer's place of supply defaults to the state in their GSTIN, not the typed address. */
 const stateFromGstin = (gstin: string | null | undefined): string | undefined => {
@@ -427,6 +431,15 @@ function NewInvoiceContent() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [showNavigationWarning, setShowNavigationWarning] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [composerScannerSuspended, setComposerScannerSuspended] = useState(false);
+  const [classicDesktopForm, setClassicDesktopForm] = useState(false);
+  useEffect(() => {
+    try {
+      setClassicDesktopForm(localStorage.getItem(CLASSIC_DESKTOP_FORM_KEY) === '1');
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
   const prevPathnameRef = useRef(pathname);
   /** Set to true during "Leave page" confirm so the mobile-back interceptor passes through. */
   const confirmingLeaveRef = useRef(false);
@@ -832,6 +845,17 @@ function NewInvoiceContent() {
 
   const isFutureInvoiceDate = !!invoiceDate && invoiceDate > format(new Date(), 'yyyy-MM-dd');
 
+  // Handlers that change export / place of supply call setRows with the previous calculateRow closure,
+  // so re-derive row tax once the new context is in place.
+  const taxContextKey = `${isExport}|${exportType}|${placeOfSupply}|${documentType}`;
+  const taxContextKeyRef = useRef(taxContextKey);
+  useEffect(() => {
+    if (taxContextKeyRef.current === taxContextKey) return;
+    taxContextKeyRef.current = taxContextKey;
+    if (isFinal || isInvoiceLocked) return;
+    setRows((prev) => (prev.length ? prev.map((r) => calculateRow(r, true)) : prev));
+  }, [taxContextKey, calculateRow, isFinal, isInvoiceLocked]);
+
   const pricesIncludeGstRef = useRef(pricesIncludeGst);
   useEffect(() => {
     if (pricesIncludeGstRef.current === pricesIncludeGst) return;
@@ -1156,7 +1180,7 @@ function NewInvoiceContent() {
     if (ref?.current) { ref.current.focus(); ref.current.select(); }
   }, [rows]);
 
-  useBarcodeScanner({ onScan: handleGlobalBarcodeScan, onScanStart: focusFirstEmptyItemField, enabled: !loading && !showContinuousScanner, minLength: 3 });
+  useBarcodeScanner({ onScan: handleGlobalBarcodeScan, onScanStart: focusFirstEmptyItemField, enabled: !loading && !showContinuousScanner && !composerScannerSuspended, minLength: 3 });
 
   const performDocumentTypeChange = useCallback((newDocType: DocumentType) => {
     setDocumentType(newDocType);
@@ -2834,6 +2858,17 @@ function NewInvoiceContent() {
 
   const renderDesktopForm = () => (
     <div className="space-y-4">
+      {!posMode && classicDesktopForm && (
+        <div className="hidden justify-end lg:flex">
+          <button
+            type="button"
+            onClick={() => setClassicDesktopPreference(false)}
+            className="text-xs font-semibold text-primary-700 hover:underline dark:text-primary-300"
+          >
+            Switch to the new invoice form
+          </button>
+        </div>
+      )}
       {isInvoiceLocked && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5"><svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg></div>
@@ -3100,6 +3135,269 @@ function NewInvoiceContent() {
 
     </div>
   );
+
+  const pageTitle = (() => {
+    const urlType = searchParams.get('type') as DocumentType | null;
+    const docType = urlType && allowedDocTypes.includes(urlType) ? urlType : documentType || initialDocType;
+    if (docType === 'proforma_invoice') return isEditMode ? 'Edit Estimate' : 'New Estimate';
+    return `${isEditMode ? 'Edit' : 'New'} ${DOCUMENT_TYPE_NAMES[docType]}`;
+  })();
+
+  const useNewDesktopComposer = !showMobileInvoiceUi && !posMode && !classicDesktopForm;
+
+  const setClassicDesktopPreference = (classic: boolean) => {
+    try {
+      if (classic) localStorage.setItem(CLASSIC_DESKTOP_FORM_KEY, '1');
+      else localStorage.removeItem(CLASSIC_DESKTOP_FORM_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    setClassicDesktopForm(classic);
+  };
+
+  const patchComposerRow = (index: number, patch: Partial<ComposerRow>, skipDiscountRecalc = false) => {
+    setRows((prev) => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      next[index] = calculateRow({ ...prev[index], ...patch } as InvoiceItemRow, skipDiscountRecalc);
+      return next;
+    });
+  };
+
+  const exportState: ComposerExportState = {
+    exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate,
+    countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode,
+    awbNumber, blNumber, buyerTaxId,
+  };
+  const exportSetters: { [K in keyof ComposerExportState]: (v: ComposerExportState[K]) => void } = {
+    exportType: setExportType, portCode: setPortCode, shippingBillNumber: setShippingBillNumber,
+    shippingBillDate: setShippingBillDate, invoiceCurrency: setInvoiceCurrency, exchangeRate: setExchangeRate,
+    countryOfOrigin: setCountryOfOrigin, portOfLoading: setPortOfLoading, portOfDischarge: setPortOfDischarge,
+    placeOfDelivery: setPlaceOfDelivery, incoterms: setIncoterms, transportMode: setTransportMode,
+    awbNumber: setAwbNumber, blNumber: setBlNumber, buyerTaxId: setBuyerTaxId,
+  };
+  const patchExport = (patch: Partial<ComposerExportState>) => {
+    (Object.keys(patch) as Array<keyof ComposerExportState>).forEach((k) => {
+      (exportSetters[k] as (v: unknown) => void)(patch[k]);
+    });
+  };
+
+  const moreDetails: ComposerMoreDetails = {
+    purchaseOrderNumber, purchaseOrderDate, ewayBillNumber, ewayBillDate, referenceNumber, deliveryNote,
+    paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery,
+  };
+  const moreDetailSetters: { [K in keyof ComposerMoreDetails]: (v: string) => void } = {
+    purchaseOrderNumber: setPurchaseOrderNumber, purchaseOrderDate: setPurchaseOrderDate,
+    ewayBillNumber: setEwayBillNumber, ewayBillDate: setEwayBillDate, referenceNumber: setReferenceNumber,
+    deliveryNote: setDeliveryNote, paymentTerms: setPaymentTerms, otherReferences: setOtherReferences,
+    dispatchedThrough: setDispatchedThrough, destination: setDestination, termsOfDelivery: setTermsOfDelivery,
+  };
+  const patchMoreDetails = (patch: Partial<ComposerMoreDetails>) => {
+    (Object.keys(patch) as Array<keyof ComposerMoreDetails>).forEach((k) => moreDetailSetters[k](patch[k] ?? ''));
+  };
+
+  const uploadInvoiceAttachments = async (files: File[]) => {
+    if (!files.length) return;
+    setUploadingFiles(true);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      fd.append('business_id', business?.id || '');
+      fd.append('document_type', 'invoice');
+      const res = await fetch('/api/upload/attachments', { method: 'POST', body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments((prev) => [
+          ...prev,
+          ...data.files.map((f: any) => ({ id: f.id || Math.random().toString(), name: f.file_name, url: f.file_path, size: f.file_size })),
+        ]);
+      } else toastCtx.error('Upload failed');
+    } catch (err) {
+      console.error(err);
+      toastCtx.error('Upload failed');
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const savedInvoicePdfUrl = savedInvoiceId ? `/api/invoices/${savedInvoiceId}/pdf?user_id=${user?.id}` : '';
+
+  const renderDesktopComposer = () => {
+    const readOnly = isFinal || isInvoiceLocked;
+    const statusLabel =
+      documentType === 'proforma_invoice'
+        ? estimateStatus !== 'draft' || savedInvoiceId
+          ? estimateStatus.charAt(0).toUpperCase() + estimateStatus.slice(1)
+          : null
+        : offlineSyncPending
+          ? 'Saved offline, sync pending'
+          : savedStatus === 'final'
+            ? 'Final'
+            : savedStatus === 'draft'
+              ? 'Draft'
+              : null;
+
+    const banners = (
+      <>
+        {isInvoiceLocked && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="font-semibold text-amber-900 dark:text-amber-200">Invoice locked</p>
+            <p className="text-amber-700 dark:text-amber-300">{lockReason || 'This invoice is locked and cannot be edited because it was included in a GSTR-1 filing.'}</p>
+          </div>
+        )}
+        {(business as any)?.gst_registration_type === 'composition' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+            <p className="font-semibold text-amber-900 dark:text-amber-200">Composition taxable person: not eligible to collect tax on supplies</p>
+            <p className="text-xs text-amber-700 dark:text-amber-300">As per Section 10 of the CGST Act, all documents are issued as Bill of Supply without GST.</p>
+          </div>
+        )}
+        {customerId && selectedCustomer && creditMetrics?.current && (
+          <CreditWarningBanner
+            metrics={creditMetrics.current}
+            projectedMetrics={creditMetrics.projected}
+            partyType="customer"
+            partyName={selectedCustomer.name}
+          />
+        )}
+        {currentBranchId && warehousesEnabled && warehouses.length === 0 && !warehousesLoading && (
+          <div className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm dark:border-yellow-900 dark:bg-yellow-950/30">
+            <p className="font-medium text-yellow-800 dark:text-yellow-200">No warehouses linked to this branch</p>
+            <p className="text-xs text-yellow-700 dark:text-yellow-300">Link warehouses in Settings → Warehouses, or stock tracking won&apos;t apply to these items.</p>
+          </div>
+        )}
+      </>
+    );
+
+    return (
+      <DesktopInvoiceComposer
+        title={pageTitle}
+        documentType={documentType as 'tax_invoice' | 'proforma_invoice' | 'bill_of_supply'}
+        statusLabel={statusLabel}
+        onBack={handleComposerBack}
+        onUseClassicForm={() => setClassicDesktopPreference(true)}
+        readOnly={readOnly}
+        isFinal={isFinal}
+        keyboardBlocked={
+          createCustomerModalOpen || createItemModalOpen || paymentModalOpen || previewModalOpen ||
+          shareModalOpen || showNavigationWarning || showResetConfirm || showUpgradePrompt || showContinuousScanner
+        }
+        banners={banners}
+        businessId={business.id}
+        userId={user?.id}
+        branchId={currentBranchId && currentBranchId !== 'ALL' ? currentBranchId : undefined}
+        customers={customers}
+        customer={selectedCustomer}
+        onSelectCustomer={applyInvoiceCustomer}
+        onClearCustomer={() => {
+          setCustomerId('');
+          setSelectedCustomer(null);
+          setCustomerPhone('');
+        }}
+        onCreateCustomer={openCreateCustomer}
+        billingAddress={billingAddress}
+        setBillingAddress={setBillingAddress}
+        shippingAddress={shippingAddress}
+        setShippingAddress={setShippingAddress}
+        credit={
+          creditMetrics?.current
+            ? { available: creditMetrics.current.available_credit, limit: creditMetrics.current.credit_limit }
+            : null
+        }
+        invoicePrefix={invoicePrefix}
+        invoiceNumber={invoiceNumber}
+        offlineNumber={offlineDisplayNumber}
+        seriesLoading={seriesLoading}
+        seriesError={seriesError}
+        invoiceDate={invoiceDate}
+        setInvoiceDate={setInvoiceDate}
+        isFutureDate={isFutureInvoiceDate}
+        dueDate={dueDate}
+        setDueDate={(v) => {
+          dueDateUserEditedRef.current = true;
+          setDueDate(v);
+        }}
+        placeOfSupply={placeOfSupply}
+        setPlaceOfSupply={setPlaceOfSupply}
+        states={INDIAN_STATES}
+        sellerState={business?.state || ''}
+        sellerStateCode={bStateCode || ''}
+        posStateCode={pStateCode || ''}
+        isIntraState={isIntraState}
+        warehouses={warehouses}
+        warehousesLoading={warehousesLoading}
+        selectedWarehouseId={selectedWarehouseId}
+        setSelectedWarehouseId={setSelectedWarehouseId}
+        isExport={isExport}
+        setIsExport={(v) => {
+          setIsExport(v);
+          if (!v) {
+            setPortCode('');
+            setShippingBillNumber('');
+            setShippingBillDate('');
+          }
+        }}
+        exportState={exportState}
+        patchExport={patchExport}
+        moreDetails={moreDetails}
+        patchMoreDetails={patchMoreDetails}
+        customFields={
+          invoiceCustomFieldDefs.length > 0 ? (
+            <CustomFieldValuesForm
+              definitions={invoiceCustomFieldDefs}
+              values={invoiceCustomFieldValues}
+              onChange={setInvoiceCustomFieldValues}
+              disabled={readOnly}
+            />
+          ) : null
+        }
+        customFieldsRequired={invoiceCustomFieldDefs.some((d) => d.is_required)}
+        rows={rows}
+        patchRow={patchComposerRow}
+        removeRow={(idx) => setRows((prev) => prev.filter((_, i) => i !== idx))}
+        onApplyPicked={handleMobilePickerApply}
+        onBarcode={handleGlobalBarcodeScan}
+        onCreateItem={() => setCreateItemModalOpen(true)}
+        onScannerSuspendChange={setComposerScannerSuspended}
+        pricesIncludeGst={pricesIncludeGst}
+        setPricesIncludeGst={setPricesIncludeGst}
+        notes={notes}
+        setNotes={setNotes}
+        attachments={attachments}
+        onUploadAttachments={uploadInvoiceAttachments}
+        onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((x) => x.id !== id))}
+        uploadingAttachments={uploadingFiles}
+        totals={{ itemSubtotal, totalDiscount, taxableAmount, totalCGST, totalSGST, totalIGST, totalTax, totalExtraCharges, roundOff, grandTotal }}
+        amountInWords={engineNumberToWords(grandTotal)}
+        extraCharges={extraCharges}
+        setExtraCharges={setExtraCharges}
+        enableRoundOff={enableRoundOff}
+        setEnableRoundOff={setEnableRoundOff}
+        payments={payments}
+        setPayments={setPayments}
+        onOpenPaymentDetails={() => setPaymentModalOpen(true)}
+        totalPaid={totalPaid}
+        balance={balance}
+        saving={loading}
+        previewLoading={previewLoading}
+        savedInvoiceId={savedInvoiceId}
+        onPreview={handlePreview}
+        onSaveDraft={() => handleSave('draft')}
+        onSaveFinal={() => handleSave('final')}
+        onShare={() => setShareModalOpen(true)}
+        onPrint={() => savedInvoicePdfUrl && window.open(savedInvoicePdfUrl, '_blank')}
+        onDownload={() => {
+          if (!savedInvoicePdfUrl) return;
+          const link = document.createElement('a');
+          link.href = savedInvoicePdfUrl;
+          link.download = `${invoicePrefix}-${invoiceNumber}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }}
+        onStartNew={resetFormForNewInvoice}
+      />
+    );
+  };
 
   const renderMobileComposer = () => {
     const money = (n: number) =>
@@ -3709,28 +4007,19 @@ function NewInvoiceContent() {
           key={`${documentType}-${formKey}`}
           className={`max-w-[1600px] mx-auto ${showMobileInvoiceUi ? 'space-y-1.5 -mt-1' : 'space-y-3 md:space-y-4 -mt-2 md:-mt-1'}`}
         >
-          {!posMode && (
+          {!posMode && !useNewDesktopComposer && (
             <MobileDuplicatePageChrome
               className="mb-0 mt-0"
               onBack={handleComposerBack}
-              title={(() => {
-                const urlType = searchParams.get('type') as DocumentType | null;
-                const docType =
-                  urlType && allowedDocTypes.includes(urlType)
-                    ? urlType
-                    : documentType || initialDocType;
-                return isEditMode
-                  ? docType === 'proforma_invoice'
-                    ? 'Edit Estimate'
-                    : `Edit ${DOCUMENT_TYPE_NAMES[docType]}`
-                  : docType === 'proforma_invoice'
-                    ? 'New Estimate'
-                    : `New ${DOCUMENT_TYPE_NAMES[docType]}`;
-              })()}
+              title={pageTitle}
               trailing={savedStatus ? <StatusBadge status={savedStatus} /> : undefined}
             />
           )}
-          {showMobileInvoiceUi ? renderMobileComposer() : renderDesktopForm()}
+          {showMobileInvoiceUi
+            ? renderMobileComposer()
+            : useNewDesktopComposer
+              ? renderDesktopComposer()
+              : renderDesktopForm()}
         </div>
       </POSLayout>
       {previewModalOpen && (

@@ -1,4 +1,4 @@
-import { gstLawSignal, hasLawSources, mergeWithLaw } from '@/lib/rag/gst-law';
+import { gstLawSignal, hasLawSources, LAW_TOPIC_BOOST, lawTopicBoost, mergeWithLaw } from '@/lib/rag/gst-law';
 import { buildAnswerMessages, formatSources } from '@/lib/rag/prompt';
 import type { RetrievedChunk } from '@/lib/rag/types';
 import { htmlToLawText } from '../../scripts/kb/fetch-gst-law';
@@ -49,6 +49,26 @@ describe('gstLawSignal', () => {
 
   it('uses the rewritten query as well as the message', () => {
     expect(gstLawSignal('iska rule kya hai', 'CGST Act section 31 tax invoice')).toBe('strong');
+  });
+});
+
+describe('lawTopicBoost', () => {
+  const s122 = 'CGST Act > CGST Act, Chapter XIX: Offences and Penalties > CGST Act, Section 122: Penalty for certain offences';
+  const rule89 = 'CGST Rules > CGST Rules, Chapter X: Refund > CGST Rules, Rule 89: Application for refund of tax, interest, penalty, fees';
+  const s50 = 'CGST Act > CGST Act, Chapter X: Payment of Tax > CGST Act, Section 50: Interest on delayed payment of tax';
+
+  it('boosts the provision a penalty or interest question is about', () => {
+    expect(lawTopicBoost('Penalty for not issuing an invoice', s122)).toBe(LAW_TOPIC_BOOST);
+    expect(lawTopicBoost('GST late payment par byaj kitna hai', s50)).toBe(LAW_TOPIC_BOOST);
+  });
+
+  it('ignores headings that only list the topic in passing', () => {
+    expect(lawTopicBoost('Penalty for not issuing an invoice', rule89)).toBe(0);
+    expect(lawTopicBoost('Interest on late GST payment', rule89)).toBe(0);
+  });
+
+  it('does nothing for unrelated questions', () => {
+    expect(lawTopicBoost('What details must a tax invoice contain?', s122)).toBe(0);
   });
 });
 

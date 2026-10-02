@@ -18,7 +18,8 @@ export type PlatformEmailTemplateKey =
   | 'admin_new_signup'
   | 'admin_subscription_change'
   | 'admin_payment_failure'
-  | 'subscription_lifecycle';
+  | 'subscription_lifecycle'
+  | 'gst_compliance';
 
 export interface PlatformNotificationSettings {
   notify_new_signup: boolean;

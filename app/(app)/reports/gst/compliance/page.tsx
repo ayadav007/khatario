@@ -8,6 +8,7 @@ import { AlertTriangle, BellOff, CheckCircle2, Info, MessageCircle, RefreshCw, S
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { askAssistant } from '@/components/assistant/events';
+import { MarkGstr3bFiledDialog } from '@/components/gst/MarkGstr3bFiled';
 
 type Severity = 'info' | 'warning' | 'critical';
 
@@ -28,6 +29,11 @@ interface Alert {
   details: {
     bills?: Array<{ purchase_id: string; bill_number: string | null; bill_date: string; supplier_name: string | null; unpaid: number; itc_at_stake: number; to_reverse?: number; days_outstanding: number }>;
     invoices?: Array<{ supplier_gstin: string; supplier_name: string | null; invoice_number: string; invoice_date: string; itc: number }>;
+    sales?: Array<{ invoice_id: string; invoice_number: string; invoice_date: string; customer_name: string | null; grand_total: number }>;
+    rcm_bills?: Array<{ purchase_id: string; bill_number: string | null; bill_date: string; supplier_name: string | null; self_invoice_by: string; tax: number }>;
+    period?: string;
+    label?: string;
+    can_mark_filed?: boolean;
   };
   dismissed: boolean;
 }
@@ -56,6 +62,7 @@ export default function GstCompliancePage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [assistantOn, setAssistantOn] = useState(false);
+  const [marking, setMarking] = useState<{ period: string; label: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!business?.id) return;
@@ -142,8 +149,9 @@ export default function GstCompliancePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">GST alerts</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Khatario checks your books every day against GST deadlines: supplier bills nearing 180 days unpaid (Rule 37),
-            the 30 November last date for last year&apos;s ITC and credit notes, and GSTR-3B due dates.
+            Khatario checks your books every day against GST rules: supplier bills nearing 180 days unpaid (Rule 37), the
+            30 November last date for last year&apos;s ITC and credit notes, GSTR-3B due dates, e-way bills, e-invoicing and
+            reverse charge self-invoices.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -170,8 +178,8 @@ export default function GstCompliancePage() {
 
       {skipped && (
         <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-          These checks apply to businesses with a regular GST registration (a GSTIN, not the composition scheme). If that is
-          wrong, update GST details in{' '}
+          These checks apply to businesses registered under GST, and your business profile has no GSTIN. If that is wrong,
+          update GST details in{' '}
           <Link href="/settings/business#bp-gst" className="text-primary-700 hover:underline">
             Business profile
           </Link>
@@ -192,6 +200,8 @@ export default function GstCompliancePage() {
           const s = STYLE[a.severity];
           const rows = a.details.bills ?? [];
           const invoices = a.details.invoices ?? [];
+          const sales = a.details.sales ?? [];
+          const rcmBills = a.details.rcm_bills ?? [];
           return (
             <div key={a.id} className={`border rounded-xl p-5 shadow-sm ${s.box} ${a.dismissed ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-3">
@@ -265,6 +275,66 @@ export default function GstCompliancePage() {
                     </div>
                   )}
 
+                  {sales.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-gray-500">
+                            <th className="py-1 pr-4 font-medium">Invoice</th>
+                            <th className="py-1 pr-4 font-medium">Customer</th>
+                            <th className="py-1 font-medium text-right">Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sales.slice(0, 8).map((d) => (
+                            <tr key={d.invoice_id} className="border-t border-gray-200/70">
+                              <td className="py-1 pr-4">
+                                <Link href={`/invoices/${d.invoice_id}`} className="text-primary-700 hover:underline">
+                                  {d.invoice_number}
+                                </Link>{' '}
+                                <span className="text-gray-500">{dateLabel(d.invoice_date)}</span>
+                              </td>
+                              <td className="py-1 pr-4 text-gray-700">{d.customer_name || '—'}</td>
+                              <td className="py-1 text-right text-gray-900">{inr(d.grand_total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {sales.length > 8 && <p className="text-xs text-gray-500 mt-1">and {sales.length - 8} more</p>}
+                    </div>
+                  )}
+
+                  {rcmBills.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-gray-500">
+                            <th className="py-1 pr-4 font-medium">Bill</th>
+                            <th className="py-1 pr-4 font-medium">Supplier</th>
+                            <th className="py-1 pr-4 font-medium">Self-invoice by</th>
+                            <th className="py-1 font-medium text-right">Tax</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rcmBills.slice(0, 8).map((b) => (
+                            <tr key={b.purchase_id} className="border-t border-gray-200/70">
+                              <td className="py-1 pr-4">
+                                <Link href={`/purchases/${b.purchase_id}`} className="text-primary-700 hover:underline">
+                                  {b.bill_number || 'Bill'}
+                                </Link>{' '}
+                                <span className="text-gray-500">{dateLabel(b.bill_date)}</span>
+                              </td>
+                              <td className="py-1 pr-4 text-gray-700">{b.supplier_name || '—'}</td>
+                              <td className="py-1 pr-4 text-gray-700">{dateLabel(b.self_invoice_by)}</td>
+                              <td className="py-1 text-right text-gray-900">{inr(b.tax)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {rcmBills.length > 8 && <p className="text-xs text-gray-500 mt-1">and {rcmBills.length - 8} more</p>}
+                    </div>
+                  )}
+
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     {a.alert_key === 'rule37:reversal_pending' ? (
                       <button
@@ -284,6 +354,16 @@ export default function GstCompliancePage() {
                           {a.action_label || 'Open'}
                         </Link>
                       )
+                    )}
+                    {a.details.can_mark_filed && a.details.period && (
+                      <button
+                        type="button"
+                        onClick={() => setMarking({ period: a.details.period!, label: a.details.label || a.details.period! })}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-700 bg-white hover:bg-primary-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        Mark as filed
+                      </button>
                     )}
                     {assistantOn && a.ask_question && (
                       <button
@@ -314,6 +394,19 @@ export default function GstCompliancePage() {
           );
         })}
       </div>
+
+      {marking && business?.id && (
+        <MarkGstr3bFiledDialog
+          businessId={business.id}
+          period={marking.period}
+          label={marking.label}
+          onClose={() => setMarking(null)}
+          onSaved={() => {
+            setMarking(null);
+            load();
+          }}
+        />
+      )}
 
       <p className="text-xs text-gray-500">
         Alerts are general information from the GST law applied to your books, not tax advice. Due dates and fees can change by

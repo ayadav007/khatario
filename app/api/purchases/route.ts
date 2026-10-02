@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
     let sql = `
       SELECT 
         p.id, p.business_id, p.supplier_id, p.bill_number,
-        p.bill_date, p.status, p.subtotal, p.tax_total,
+        p.bill_date, p.due_date, p.status, p.subtotal, p.tax_total,
         p.cgst_total, p.sgst_total, p.igst_total,
         p.grand_total, p.paid_amount, p.balance_amount, p.payment_status, 
         p.notes, p.created_at,
@@ -142,8 +142,8 @@ export async function GET(request: NextRequest) {
         p.document_type, p.itc_eligible, p.itc_availed,
         s.name as supplier_name,
         CASE 
-          WHEN p.status <> 'cancelled' AND p.bill_date < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
-            THEN CURRENT_DATE - p.bill_date
+          WHEN p.status <> 'cancelled' AND COALESCE(p.due_date, p.bill_date) < CURRENT_DATE AND (p.grand_total - COALESCE(p.paid_amount, 0)) > 0 
+            THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
           ELSE 0
         END as days_overdue
       FROM purchases p
@@ -219,14 +219,14 @@ export async function GET(request: NextRequest) {
       if (!isNaN(minDays) && !isNaN(maxDays)) {
         sql += ` AND p.status <> 'cancelled' AND (
           CASE 
-            WHEN p.bill_date < CURRENT_DATE 
-              THEN CURRENT_DATE - p.bill_date
+            WHEN COALESCE(p.due_date, p.bill_date) < CURRENT_DATE 
+              THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
             ELSE 0
           END
         ) >= $${paramIndex} AND (
           CASE 
-            WHEN p.bill_date < CURRENT_DATE 
-              THEN CURRENT_DATE - p.bill_date
+            WHEN COALESCE(p.due_date, p.bill_date) < CURRENT_DATE 
+              THEN CURRENT_DATE - COALESCE(p.due_date, p.bill_date)
             ELSE 0
           END
         ) <= $${paramIndex + 1}`;
@@ -286,6 +286,7 @@ export async function POST(request: NextRequest) {
       supplier_id,
       bill_number,
       bill_date,
+      due_date: due_date_input,
       status = 'draft',
       items,
       subtotal,
@@ -319,6 +320,16 @@ export async function POST(request: NextRequest) {
     if (!bill_date || !items || items.length === 0) {
       return NextResponse.json(
         { error: 'bill_date and items are required' },
+        { status: 400 }
+      );
+    }
+    const dueDate =
+      due_date_input === undefined || due_date_input === null || due_date_input === ''
+        ? null
+        : String(due_date_input).slice(0, 10);
+    if (dueDate !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < String(bill_date).slice(0, 10))) {
+      return NextResponse.json(
+        { error: 'due_date must be a YYYY-MM-DD date on or after the bill date', code: 'INVALID_DUE_DATE' },
         { status: 400 }
       );
     }
@@ -667,9 +678,9 @@ export async function POST(request: NextRequest) {
         round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
         place_of_supply_state_code, is_reverse_charge, supplier_gstin,
         document_type, port_code, itc_eligible,
-        price_mode, supplier_state_code, invoice_number, cess_total
+        price_mode, supplier_state_code, invoice_number, cess_total, due_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
       RETURNING *
     `,
       [
@@ -702,6 +713,7 @@ export async function POST(request: NextRequest) {
           : supplierStateForGst) || null,
         invoiceNumberStored,
         cessTotal,
+        dueDate,
       ]
     );
 

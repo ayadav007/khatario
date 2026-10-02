@@ -29,6 +29,30 @@ export function gstLawSignal(...texts: Array<string | null | undefined>): LawSig
 }
 
 /**
+ * Question topics whose answer sits in a provision named for that topic. Keyword ranking alone lets
+ * a common word win ("penalty for not issuing an invoice" pulls the invoice rules, not Section 122).
+ */
+const LAW_TOPICS: Array<{ question: RegExp; heading: RegExp }> = [
+  // Headings must be *about* the topic: "Refund of tax, interest, penalty…" lists it in passing.
+  {
+    question: /\b(penalt(y|ies)|fine[ds]?|jurmana|punish(ment|able)?|prosecution|offen[cs]es?)\b/i,
+    heading: /offences and penalties|:\s*(general\s+)?penalt|penalty for|:\s*(punishment|prosecution)/i,
+  },
+  { question: /\blate fees?\b/i, heading: /late fee/i },
+  { question: /\binterest\b|\bbyaj\b/i, heading: /:\s*interest\b|interest on delayed/i },
+  { question: /\brefunds?\b/i, heading: /\brefunds?\b/i },
+  { question: /\be-?way ?bills?\b/i, heading: /e-way bill/i },
+  { question: /\b(register|registration)\b/i, heading: /\bregistration\b/i },
+];
+
+export const LAW_TOPIC_BOOST = 0.02;
+
+/** Extra rank for a law chunk whose heading names the topic the question is about. */
+export function lawTopicBoost(question: string, headingPath: string): number {
+  return LAW_TOPICS.some((t) => t.question.test(question) && t.heading.test(headingPath)) ? LAW_TOPIC_BOOST : 0;
+}
+
+/**
  * Merge Khatario guide chunks with GST law chunks. Explicit law questions lead with the law;
  * otherwise the product guide leads and the law only adds context.
  */

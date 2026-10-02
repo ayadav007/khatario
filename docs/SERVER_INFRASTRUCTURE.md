@@ -188,7 +188,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 5 9 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron.log 2>&1
 ```
 
-`/api/cron/gst-compliance-alerts` runs the GST checks in `lib/gst/compliance` (Rule 37, the 30 November ITC and credit-note deadline, GSTR-3B due dates) and raises in-app notifications. It notifies only when an alert is new or reaches a new stage, so an extra run the same day is harmless. `?as_on=YYYY-MM-DD` replays a date for testing.
+`/api/cron/gst-compliance-alerts` runs the GST checks in `lib/gst/compliance`: Rule 37, the 30 November ITC and credit-note deadline, GSTR-3B due dates, e-way bill numbers, e-invoicing applicability and RCM self-invoices. It raises in-app notifications and emails critical alerts (via SMTP, counted against the plan's email limit) only when an alert is new or reaches a new stage, so an extra run the same day is harmless. `?as_on=YYYY-MM-DD` replays a date for testing and is silent (no bell, no email) unless `&notify=true` is added.
 
 `/api/cron/recurring-invoices` raises recurring invoices due on the current IST date (00:45 server time assumes the server runs in IST; adjust if it is UTC). Each run date is claimed in `recurring_invoice_history`, so re-running the job the same day does not duplicate invoices.
 

@@ -186,6 +186,7 @@ export default function NewPurchasePage() {
     supplier_id: '',
     bill_number: '',
     bill_date: format(new Date(), 'yyyy-MM-dd'),
+    due_date: '',
     status: 'draft',
     place_of_supply_state_code: '',
     is_reverse_charge: false,
@@ -1163,6 +1164,7 @@ export default function NewPurchasePage() {
         branch_id:
           (currentBranchId && currentBranchId !== 'ALL' ? currentBranchId : userBranchId) || undefined,
         invoice_number: formData.bill_number?.trim() || null,
+        due_date: formData.due_date || null,
         supplier_gstin: formData.supplier_gstin?.trim() || null,
         supplier_state_code: formData.supplier_state_code?.trim() || null,
         price_mode: formData.price_mode,
@@ -1510,6 +1512,16 @@ export default function NewPurchasePage() {
             value={formData.bill_date}
             onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
             required
+          />
+
+          <Input
+            label="Due Date"
+            type="date"
+            value={formData.due_date}
+            min={formData.bill_date}
+            onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+            helperText="Leave blank if due on the bill date"
+            data-testid="purchase-due-date"
           />
 
           <div>

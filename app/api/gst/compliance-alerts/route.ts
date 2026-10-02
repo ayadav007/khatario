@@ -1,26 +1,14 @@
 import { NextResponse } from 'next/server';
-import { authorize, AuthorizationError } from '@/lib/authorization';
 import {
   dismissComplianceAlert,
   evaluateBusinessCompliance,
   listActiveComplianceAlerts,
   syncComplianceAlerts,
 } from '@/lib/gst/compliance/engine';
+import { gstComplianceGuard as guard } from '@/lib/gst/compliance/route-guard';
 import { withPremiumSubscriptionApi } from '@/lib/security/premium-module-api';
-import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
-
-async function guard(userId: string, businessId: string): Promise<NextResponse | null> {
-  try {
-    await authorize(userId, 'reports', 'read', { businessId });
-    await assertReportAccess(businessId, 'gst');
-    return null;
-  } catch (error) {
-    if (error instanceof AuthorizationError || error instanceof FeatureAccessDeniedError) return error.toNextResponse();
-    throw error;
-  }
-}
 
 /**
  * GET /api/gst/compliance-alerts

@@ -15,8 +15,9 @@ Yes. Khatario Billing has a Free plan that is free forever, meant for trying Kha
 ## Which plans are available?
 
 - Billing: Free / Starter, Professional, Business and Enterprise
-- HR: HR Starter and HR Pro
 - Connect: free platform with WhatsApp Bot and Send Message add-ons
+
+Khatario HR is coming soon, so there are no HR plans or prices yet.
 
 The exact price, limits and features of each plan are listed in the "Khatario plans and pricing" document, which is taken live from Khatario's plan settings.
 

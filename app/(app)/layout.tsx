@@ -26,6 +26,7 @@ import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
 import { PortalThemeSync } from '@/components/portal/PortalThemeSync';
+import { PortalThemeBootScript } from '@/components/portal/PortalThemeBootScript';
 import { MobileBackNavigation } from '@/components/layout/MobileBackNavigation';
 import { PullToRefresh } from '@/components/layout/PullToRefresh';
 import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
@@ -172,6 +173,8 @@ export default function AppRouteLayout({
 }) {
   return (
     <FeatureUpgradeModalProvider>
+      {/* Tenant theme is scoped to the app shell; marketing and public pages keep Khatario defaults. */}
+      <PortalThemeBootScript />
       <ProfileRequiredModalProvider>
         <AppRouteLayoutInner>{children}</AppRouteLayoutInner>
       </ProfileRequiredModalProvider>

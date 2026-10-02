@@ -26,11 +26,17 @@ const spoof = {
 };
 
 describe('middleware strips spoofed identity headers', () => {
-  it('store subdomain /api/* passthrough', async () => {
-    const req = new NextRequest('https://shop.khatario.test/api/invoices', { headers: { host: 'shop.khatario.test', ...spoof } });
+  it('store subdomain public /api/* passthrough', async () => {
+    const req = new NextRequest('https://shop.khatario.test/api/public/store/shop/items', { headers: { host: 'shop.khatario.test', ...spoof } });
     const res = await middleware(req);
     expect(forwardedHeader(res, 'x-authenticated-user-id')).toBeNull();
     expect(forwardedHeader(res, 'x-authenticated-business-id')).toBeNull();
+  });
+
+  it('store subdomain non-public /api/* is rejected even with spoofed headers', async () => {
+    const req = new NextRequest('https://shop.khatario.test/api/invoices', { headers: { host: 'shop.khatario.test', ...spoof } });
+    const res = await middleware(req);
+    expect(res.status).toBe(401);
   });
 
   it('public API passthrough', async () => {

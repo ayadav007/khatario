@@ -86,6 +86,7 @@ d('Trial balance, balance sheet and P&L agree (real DB)', () => {
         [B, BR, voucher, dr, cr, date, amount]
       );
     };
+    await post('2025-12-01', acc.cash, acc.sales, 400);
     await post('2026-04-05', acc.cash, acc.capital, 10000);
     await post('2026-05-10', acc.cash, acc.sales, 2500);
     await post('2026-06-10', acc.rent, acc.cash, 700);
@@ -137,5 +138,8 @@ d('Trial balance, balance sheet and P&L agree (real DB)', () => {
     const { status, json } = await get(balanceSheet, '/api/reports/balance-sheet', { as_on_date: AS_ON });
     expect(status).toBe(200);
     expect(json.equity.retained_earnings.current_year_profit).toBeCloseTo(pl.net_profit, 2);
+    expect(json.equity.retained_earnings.opening).toBeCloseTo(400, 2);
+    expect(json.is_balanced).toBe(true);
+    expect(json.assets.total).toBeCloseTo(10000 + 400 + 2500 - 700 - 300, 2);
   });
 });

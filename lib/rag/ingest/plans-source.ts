@@ -5,6 +5,7 @@ import { WHATSAPP_ADDON_LABELS, WHATSAPP_ADDON_PRICING } from '@/lib/platform-ad
 import type { WhatsAppAddonType } from '@/lib/subscription';
 import { getPublicSupportConfig } from '@/lib/marketing-public-config';
 import type { KbSourceInput } from '../types';
+import { HR_COMING_SOON, HR_LAUNCHED } from '../product-availability';
 
 export const PLANS_LOCATOR = 'subscription_plans';
 
@@ -84,7 +85,9 @@ function limitValue(value: number): string {
 
 /** Live plan facts rendered as markdown; the assistant must only quote prices from this document. */
 export async function buildPlansMarkdown(): Promise<string> {
-  const plans = (await listActiveSubscriptionPlans()) as unknown as PlanRow[];
+  const plans = ((await listActiveSubscriptionPlans()) as unknown as PlanRow[]).filter(
+    (p) => HR_LAUNCHED || normalizeProductLine(p.product_line) !== 'hr',
+  );
   const featureRows = await queryRows<{ id: string; label: string; category: string }>(
     `SELECT id, label, category FROM platform_features WHERE is_active = true`,
   ).catch(() => [] as Array<{ id: string; label: string; category: string }>);
@@ -104,6 +107,7 @@ export async function buildPlansMarkdown(): Promise<string> {
     const line = PRODUCT_LINE_LABELS[normalizeProductLine(plan.product_line)];
     lines.push(`- ${plan.display_name} (${line}): ${priceLine(plan).replace(/^Price: /, '')}`);
   }
+  if (!HR_LAUNCHED) lines.push(`- Khatario HR: coming soon, no plans or prices yet. ${HR_COMING_SOON}`);
   lines.push('');
 
   for (const plan of plans) {

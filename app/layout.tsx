@@ -35,7 +35,6 @@ import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
 import { OfflineBannerProvider } from "@/contexts/OfflineBannerContext";
 import { ListenerLeakProbeBoot } from "@/components/debug/ListenerLeakProbeBoot";
 import { RuntimeProbeBoot } from "@/components/debug/RuntimeProbeBoot";
-import { PortalThemeBootScript } from "@/components/portal/PortalThemeBootScript";
 
 // Force all routes to be dynamic to prevent static generation issues with useSearchParams
 export const dynamic = "force-dynamic";
@@ -86,7 +85,6 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-sans antialiased">
-        <PortalThemeBootScript />
         <ListenerLeakProbeBoot />
         <NetworkStatusProvider>
         <OfflineBannerProvider>

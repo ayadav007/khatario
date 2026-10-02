@@ -47,6 +47,14 @@
   expect: [prospect/modules/online-store.md]
 - q: Does Khatario do payroll and attendance?
   expect: [prospect/modules/hr-payroll.md]
+- q: how to create a custom user with particular access
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: staff ko sirf billing ka access kaise de
+  audience: tenant_user
+  expect: [how-to/settings-users.md]
+- q: How much does Khatario HR cost?
+  expect: [prospect/modules/hr-payroll.md, plans]
 - q: Can I track stock in multiple godowns?
   expect: [prospect/modules/inventory-warehouses.md, prospect/faq-hinglish.md]
 - q: Does it support batch and expiry?
@@ -229,6 +237,12 @@
 - q: When is an e-way bill required?
   audience: gst_law
   expect: [gst-law/cgst-rules.md]
+- q: Interest on late payment of GST
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
+- q: Late fee for delay in filing a return
+  audience: gst_law
+  expect: [gst-law/cgst-act.md]
 - q: What does section 16 of the CGST Act say?
   audience: prospect
   forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md, gst-law/igst-act.md]

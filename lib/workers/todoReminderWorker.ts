@@ -9,14 +9,10 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import { Worker } from 'bullmq';
 import { getRedisConnection } from '../queue/redis';
-import { queryOne } from '../db';
-import {
-  triggerTodoReminder,
-  type TodoForReminder,
-} from '../services/todoReminderService';
 import { reminderPipelineLog } from '@/lib/reminder-pipeline-log';
 import { logTodoReminder } from '../todo-reminders/reminderLog';
 import { sweepDueTodoReminders } from '../todo-reminders/sweepDueTodoReminders';
+import { processTodoReminderJob } from '../todo-reminders/processReminderJob';
 
 /**
  * Delayed BullMQ jobs are lost if Redis is flushed, restarts, or was down when the todo was
@@ -125,93 +121,7 @@ async function startWorker() {
 
   const worker = new Worker(
     'todo-reminders',
-    async (job) => {
-      reminderPipelineLog('worker.job_received', {
-        jobId: job.id,
-        todoId: (job.data as { todoId?: string })?.todoId,
-      });
-      const { todoId } = job.data as { todoId?: string };
-      if (!todoId) {
-        const err = new Error('todo-reminders job missing todoId');
-        logTodoReminder('worker', 'failed', {
-          jobId: job.id,
-          reason: 'missing_todoId',
-          error: err.message,
-        });
-        throw err;
-      }
-
-      const todo = await queryOne<TodoForReminder>(
-        `SELECT * FROM todos WHERE id = $1`,
-        [todoId]
-      );
-
-      if (!todo) {
-        reminderPipelineLog('worker.todo_missing', { todoId, jobId: job.id });
-        logTodoReminder('worker', 'skipped', {
-          todoId,
-          jobId: job.id,
-          reason: 'todo_not_found',
-        });
-        return;
-      }
-
-      reminderPipelineLog('worker.todo_loaded', {
-        todoId,
-        status: todo.status,
-        reminder_sent: (todo as { reminder_sent?: boolean }).reminder_sent,
-        business_id: todo.business_id,
-      });
-
-      try {
-        const result = await triggerTodoReminder(todo);
-
-        reminderPipelineLog('worker.trigger_result', {
-          todoId,
-          status: result.status,
-          reason: result.reason,
-          publishedCount: result.published?.length ?? 0,
-          published: result.published,
-        });
-
-        if (result.status === 'delivered') {
-          logTodoReminder('worker', 'processed', {
-            todoId,
-            jobId: job.id,
-            businessId: todo.business_id,
-            notificationCount: result.published?.length ?? 0,
-          });
-          return;
-        }
-
-        if (result.status === 'invalid') {
-          logTodoReminder('worker', 'skipped', {
-            todoId,
-            jobId: job.id,
-            businessId: todo.business_id,
-            reason: result.reason,
-            outcome: 'invalid',
-          });
-          return;
-        }
-
-        logTodoReminder('worker', 'skipped', {
-          todoId,
-          jobId: job.id,
-          businessId: todo.business_id,
-          reason: result.reason,
-        });
-      } catch (e: any) {
-        logTodoReminder('worker', 'failed', {
-          todoId,
-          jobId: job.id,
-          businessId: todo.business_id,
-          error: e?.message ?? String(e),
-          attempt: job.attemptsMade,
-        });
-        throw e;
-      }
-    },
+    (job) => processTodoReminderJob(job),
     {
       connection: redisConnection as any,
       concurrency: 5,

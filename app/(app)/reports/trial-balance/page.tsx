@@ -34,6 +34,14 @@ interface TrialBalanceData {
   is_balanced: boolean;
 }
 
+const TB_TYPE_ORDER: Array<[string, string]> = [
+  ['asset', 'Assets'],
+  ['liability', 'Liabilities'],
+  ['capital', 'Equity'],
+  ['income', 'Income'],
+  ['expense', 'Expenses'],
+];
+
 export default function TrialBalancePage() {
   const { business, user } = useAuth();
   const [data, setData] = useState<TrialBalanceData | null>(null);
@@ -41,6 +49,7 @@ export default function TrialBalancePage() {
   const [downloading, setDownloading] = useState(false);
   const [asOnDate, setAsOnDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [financialYear, setFinancialYear] = useState<string>('');
+  const [showZero, setShowZero] = useState(false);
 
   const getTrialBalancePdfUrl = (forPrint: boolean) => {
     if (!business?.id) return null;
@@ -247,7 +256,18 @@ export default function TrialBalancePage() {
 
             {/* Detailed Trial Balance */}
             <Card>
-              <h2 className="text-lg font-semibold text-text-primary mb-4">Detailed Trial Balance</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-text-primary">Detailed Trial Balance</h2>
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={showZero}
+                    onChange={(e) => setShowZero(e.target.checked)}
+                    data-testid="tb-show-zero"
+                  />
+                  Show zero balances
+                </label>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -261,7 +281,24 @@ export default function TrialBalancePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.accounts.map((account) => (
+                    {[
+                      ...TB_TYPE_ORDER,
+                      ...Array.from(new Set(data.accounts.map((a) => a.account_type)))
+                        .filter((t) => !TB_TYPE_ORDER.some(([k]) => k === t))
+                        .map((t) => [t, t] as [string, string]),
+                    ].map(([type, label]) => {
+                      const rows = data.accounts.filter(
+                        (a) => a.account_type === type && (showZero || a.debit > 0.004 || a.credit > 0.004)
+                      );
+                      if (rows.length === 0) return null;
+                      const dr = rows.reduce((s, a) => s + a.debit, 0);
+                      const cr = rows.reduce((s, a) => s + a.credit, 0);
+                      return (
+                        <React.Fragment key={type}>
+                          <tr className="bg-slate-50" data-testid={`tb-type-${type}`}>
+                            <td colSpan={6} className="py-2 px-4 font-semibold text-text-primary">{label}</td>
+                          </tr>
+                          {rows.map((account) => (
                       <tr key={account.account_id} className="border-b border-border hover:bg-gray-50">
                         <td className="py-4 px-4 font-mono text-sm">{account.account_code}</td>
                         <td className="py-4 px-4 font-medium">{account.account_name}</td>
@@ -286,7 +323,19 @@ export default function TrialBalancePage() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                          ))}
+                          <tr className="border-b border-border font-semibold" data-testid={`tb-type-total-${type}`}>
+                            <td colSpan={4} className="py-2 px-4">Total for {label}</td>
+                            <td className="py-2 px-4 text-right text-primary-600">
+                              {dr > 0.004 && `₹${dr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                            </td>
+                            <td className="py-2 px-4 text-right text-green-600">
+                              {cr > 0.004 && `₹${cr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })}
                     <tr className="border-t-2 border-border font-bold bg-gray-50">
                       <td colSpan={4} className="py-4 px-4">Total</td>
                       <td className="py-4 px-4 text-right text-primary-600">

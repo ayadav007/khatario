@@ -2,6 +2,7 @@ import { queryRows } from '@/lib/db';
 import { ragConfig } from './config';
 import { embedQuery, embeddingsConfigured, toVectorLiteral } from './embed';
 import { expandQuery, type TermGroup } from './glossary';
+import { lawTopicBoost } from './gst-law';
 import { normalizeText, tsToken } from './text';
 import { hasVectorColumn } from './vector-support';
 import { KB_AUDIENCES, type RetrievalScope, type RetrievedChunk } from './types';
@@ -190,7 +191,8 @@ export async function retrieve(input: RetrieveInput): Promise<RetrieveResult> {
       score:
         f.score +
         COVERAGE_BOOST * termCoverage(coverageGroups, `${f.row.title} ${f.row.heading_path} ${f.row.content}`) +
-        HEADING_BOOST * termCoverage(coverageGroups, f.row.heading_path.split(' > ').pop() ?? ''),
+        HEADING_BOOST * termCoverage(coverageGroups, f.row.heading_path.split(' > ').pop() ?? '') +
+        (input.scope.audience === 'gst_law' ? lawTopicBoost(keywordSource, f.row.heading_path) : 0),
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);

@@ -5,6 +5,8 @@ import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { buildCashFlow, type CfAccount, type CfLine } from '@/lib/reports/cash-flow';
 import { buildProfitAndLoss, type BranchScope } from '@/lib/reports/profit-loss';
+import { classifyBsAccount } from '@/lib/reports/balance-sheet';
+import { loadGroupMap } from '@/lib/reports/account-groups';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +110,7 @@ export async function GET(request: NextRequest) {
       account_code: string;
       account_name: string;
       account_type: string;
+      account_group_id: string | null;
       group_code: string | null;
       is_cash: boolean;
       opening: string;
@@ -128,6 +131,7 @@ export async function GET(request: NextRequest) {
         a.account_code,
         a.account_name,
         a.account_type,
+        a.account_group_id,
         ag.group_code,
         (
           a.account_code LIKE '1101%' OR a.account_code LIKE '1102%' OR a.account_code LIKE '2112%'
@@ -142,16 +146,18 @@ export async function GET(request: NextRequest) {
       FROM lines l
       JOIN accounts a ON a.id = l.account_id
       LEFT JOIN account_groups ag ON ag.id = a.account_group_id
-      GROUP BY a.id, a.account_code, a.account_name, a.account_type, ag.group_code
+      GROUP BY a.id, a.account_code, a.account_name, a.account_type, a.account_group_id, ag.group_code
       `,
       params
     );
 
+    const groups = await loadGroupMap(businessId);
     const accounts: CfAccount[] = rows.map((r) => ({
       code: r.account_code,
       name: r.account_name,
       type: r.account_type,
       groupCode: r.group_code,
+      bsClass: classifyBsAccount(r.account_type, r.account_group_id, groups),
       isCash: r.is_cash,
       opening: Number(r.opening) || 0,
       periodDebit: Number(r.period_debit) || 0,

@@ -15,15 +15,16 @@ const CUSTOMER_SQL = `
     HAVING ABS(SUM(lel.debit - lel.credit)) >= 0.005
   ), d AS (
     SELECT v.voucher_type, v.voucher_id, v.net,
-      COALESCE(i.customer_id, dn.customer_id, cn.customer_id, p.customer_id, pi.customer_id,
+      COALESCE(i.customer_id, dn.customer_id, cn.customer_id, p.customer_id, pi.customer_id, ap.customer_id,
                CASE WHEN v.voucher_type = 'opening_balance' THEN v.voucher_id END) AS party_id,
       COALESCE(i.invoice_number, dn.debit_note_number, cn.credit_note_number,
                CASE WHEN p.id IS NOT NULL THEN 'PAY-' || substring(p.id::text, 1, 8) END,
                CASE WHEN pi.id IS NOT NULL THEN 'Receipt ' || pi.invoice_number END,
+               aa.voucher_number,
                CASE WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' END) AS reference,
-      COALESCE(i.invoice_date, dn.debit_note_date, cn.credit_note_date, p.payment_date, v.first_date)::text AS doc_date,
+      COALESCE(i.invoice_date, dn.debit_note_date, cn.credit_note_date, p.payment_date, aa.adjustment_date, v.first_date)::text AS doc_date,
       i.due_date::text AS due_date,
-      COALESCE(cn.invoice_id, CASE WHEN p.reference_type = 'invoice' THEN p.reference_id END, pi.id) AS linked_id,
+      COALESCE(cn.invoice_id, CASE WHEN p.reference_type = 'invoice' THEN p.reference_id END, pi.id, aa.invoice_id) AS linked_id,
       CASE
         WHEN v.voucher_type = 'payment' AND COALESCE(p.tds_amount, 0) > 0
           THEN 'Receipt - ' || COALESCE(p.payment_mode, '') || ' (incl. TDS ' || p.tds_amount || ')'
@@ -31,6 +32,7 @@ const CUSTOMER_SQL = `
         WHEN v.voucher_type = 'invoice' THEN 'Sale'
         WHEN v.voucher_type = 'credit_note' THEN 'Credit note' || COALESCE(' - ' || cn.reason, '')
         WHEN v.voucher_type = 'debit_note' THEN 'Debit note' || COALESCE(' - ' || dn.reason, '')
+        WHEN v.voucher_type = 'advance_adjustment' THEN 'Advance ' || COALESCE(ap.voucher_number, '') || ' adjusted'
         WHEN v.voucher_type = 'opening_balance' THEN 'Opening balance'
         ELSE initcap(replace(v.voucher_type, '_', ' '))
       END AS description
@@ -40,6 +42,8 @@ const CUSTOMER_SQL = `
     LEFT JOIN credit_notes cn ON v.voucher_type = 'credit_note' AND cn.id = v.voucher_id
     LEFT JOIN payments p ON v.voucher_type = 'payment' AND p.id = v.voucher_id
     LEFT JOIN invoices pi ON v.voucher_type = 'payment' AND p.id IS NULL AND pi.id = v.voucher_id
+    LEFT JOIN advance_adjustments aa ON v.voucher_type = 'advance_adjustment' AND aa.voucher_id = v.voucher_id AND aa.business_id = $1
+    LEFT JOIN advance_payments ap ON ap.id = aa.advance_id
   )
   SELECT d.*, c.name AS party_name, c.phone AS party_phone
     FROM d LEFT JOIN customers c ON c.id = d.party_id AND c.business_id = $1
@@ -57,21 +61,23 @@ const SUPPLIER_SQL = `
     HAVING ABS(SUM(lel.credit - lel.debit)) >= 0.005
   ), d AS (
     SELECT v.voucher_type, v.voucher_id, v.net,
-      COALESCE(pu.supplier_id, pr.supplier_id, p.supplier_id, t.supplier_id,
+      COALESCE(pu.supplier_id, pr.supplier_id, p.supplier_id, t.supplier_id, ap.supplier_id,
                CASE WHEN v.voucher_type = 'opening_balance' THEN v.voucher_id END) AS party_id,
       COALESCE(pu.bill_number, pr.return_number,
                CASE WHEN p.id IS NOT NULL THEN 'PAY-' || substring(p.id::text, 1, 8) END,
                CASE WHEN t.id IS NOT NULL THEN 'TDS ' || t.section_code END,
+               aa.voucher_number,
                CASE WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' END) AS reference,
-      COALESCE(pu.bill_date, pr.return_date, p.payment_date, t.transaction_date, v.first_date)::text AS doc_date,
-      NULL::text AS due_date,
-      COALESCE(pr.purchase_id, CASE WHEN p.reference_type = 'purchase' THEN p.reference_id END, t.purchase_id) AS linked_id,
+      COALESCE(pu.bill_date, pr.return_date, p.payment_date, t.transaction_date, aa.adjustment_date, v.first_date)::text AS doc_date,
+      pu.due_date::text AS due_date,
+      COALESCE(pr.purchase_id, CASE WHEN p.reference_type = 'purchase' THEN p.reference_id END, t.purchase_id, aa.purchase_id) AS linked_id,
       CASE
         WHEN v.voucher_type = 'purchase' THEN 'Purchase'
         WHEN v.voucher_type = 'payment' THEN 'Payment - ' || COALESCE(p.payment_mode, '')
         WHEN v.voucher_type = 'purchase_return' THEN 'Purchase return (debit note)'
         WHEN v.voucher_type = 'tds' THEN 'TDS deducted u/s ' || COALESCE(t.section_code, '')
              || CASE WHEN t.status = 'cancelled' THEN ' (cancelled)' ELSE '' END
+        WHEN v.voucher_type = 'advance_adjustment' THEN 'Advance ' || COALESCE(ap.voucher_number, '') || ' adjusted'
         WHEN v.voucher_type = 'opening_balance' THEN 'Opening balance'
         ELSE initcap(replace(v.voucher_type, '_', ' '))
       END AS description
@@ -80,6 +86,8 @@ const SUPPLIER_SQL = `
     LEFT JOIN purchase_returns pr ON v.voucher_type = 'purchase_return' AND pr.id = v.voucher_id
     LEFT JOIN payments p ON v.voucher_type = 'payment' AND p.id = v.voucher_id
     LEFT JOIN tds_transactions t ON v.voucher_type = 'tds' AND t.id = v.voucher_id
+    LEFT JOIN advance_adjustments aa ON v.voucher_type = 'advance_adjustment' AND aa.voucher_id = v.voucher_id AND aa.business_id = $1
+    LEFT JOIN advance_payments ap ON ap.id = aa.advance_id
   )
   SELECT d.*, s.name AS party_name, s.phone AS party_phone
     FROM d LEFT JOIN suppliers s ON s.id = d.party_id AND s.business_id = $1

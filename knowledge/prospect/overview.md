@@ -10,7 +10,7 @@ url: /
 
 ## What does Khatario do?
 
-Khatario is cloud software for Indian small and medium businesses. It brings GST billing, stock, customers and suppliers, payments, accounting reports, WhatsApp messaging, an online store and HR into one app with one login and one set of numbers.
+Khatario is cloud software for Indian small and medium businesses. It brings GST billing, stock, customers and suppliers, payments, accounting reports, WhatsApp messaging and an online store into one app with one login and one set of numbers.
 
 A typical day in Khatario looks like this: make a GST bill in under a minute, share it on WhatsApp with a PDF or payment link, track who has paid and who still owes you, and open GST reports (GSTR-1, GSTR-3B) when it is time to file.
 
@@ -20,13 +20,12 @@ Khatario is built for India: amounts are in rupees, bills carry HSN/SAC codes, a
 
 ## What are the Khatario products?
 
-Khatario has three product lines that share one account:
+Khatario has two products available today that share one account:
 
 - **Khatario Billing**: GST invoicing, inventory, purchases, payments, accounting and reports for Indian shops and businesses.
-- **Khatario HR**: employees, attendance, payroll and leave, without the billing suite.
 - **Khatario Connect**: WhatsApp CRM, WhatsApp bot and bulk messaging. The Connect platform has no monthly fee; you pay only for the WhatsApp add-ons you switch on.
 
-You can start with one product and add another later from the same account.
+You can start with one product and add the other later from the same account. **Khatario HR** (employees, attendance, payroll and leave) is coming soon and is not available to sign up for yet.
 
 ## Where can I use Khatario?
 
@@ -34,4 +33,4 @@ Khatario runs in the web browser on a computer, laptop, tablet or phone, and can
 
 ## How do I get started?
 
-Sign up at khatario.com with your mobile number (verified with a WhatsApp code). Billing and HR accounts start with a free trial of the full product, and no credit card is needed. You can also book a free live demo and see Khatario on a call with the team.
+Sign up at khatario.com with your mobile number (verified with a WhatsApp code). Billing accounts start with a free trial of the full product, and no credit card is needed. You can also book a free live demo and see Khatario on a call with the team.

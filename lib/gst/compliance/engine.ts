@@ -4,17 +4,30 @@ import { loadGstFilingOrgDefaults, mergeGstDueDateOptions } from '@/lib/gst/gst-
 import { listRule37Exposure } from '@/lib/gst/rule37';
 import { effectiveGstScheme } from '@/lib/gst/scheme-policy';
 import { todayIst } from '@/lib/gst/time-limits';
+import { sendComplianceEmail } from './email';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import {
+  ALL_CHECKS,
+  COMPOSITION_CHECKS,
   creditNoteDeadlineFinding,
   currentFyDeadline,
+  einvoiceFinding,
+  EWAY_BILL_THRESHOLD_INR,
+  EWAY_LOOKBACK_DAYS,
+  ewayBillFinding,
   gstr3bFindings,
+  previousFyRange,
+  rcmSelfInvoiceFinding,
+  SELF_INVOICE_DAYS,
+  type EwayCandidate,
+  type RcmUnregisteredBill,
   itcDeadlineFinding,
   recentReturnPeriods,
   rule37Findings,
   SEVERITY_RANK,
   shouldNotify,
+  trackingSince,
   type ComplianceCheckId,
   type ComplianceFinding,
   type Gstr3bPeriodState,
@@ -112,11 +125,21 @@ async function countSalesInvoices(businessId: string, from: string, to: string):
   return Number(row?.n ?? 0);
 }
 
+/** A GSTR-3B is "filed" if the ledger filing flow recorded it or the user marked it filed on the portal. */
+const FILED_3B = (periodsParam: string) => `(
+  EXISTS (SELECT 1 FROM gst_filings WHERE business_id = $1::uuid AND gst_period = ANY(${periodsParam}) AND status IN ${FILED})
+  OR EXISTS (SELECT 1 FROM gst_return_marks WHERE business_id = $1::uuid AND return_type = 'GSTR3B' AND period = ANY(${periodsParam}))
+)`;
+
 async function loadGstr3bState(businessId: string, asOn: string) {
   const opts = mergeGstDueDateOptions(await loadGstFilingOrgDefaults(businessId));
+  // Recent filings recorded in Khatario make "not filed" trustworthy; an old habit that stopped does not.
   const tracks = await queryOne<{ ok: boolean }>(
-    `SELECT EXISTS (SELECT 1 FROM gst_filings WHERE business_id = $1::uuid AND status IN ${FILED}) AS ok`,
-    [businessId],
+    `SELECT (
+       EXISTS (SELECT 1 FROM gst_filings WHERE business_id = $1::uuid AND status IN ${FILED} AND gst_period >= $2)
+       OR EXISTS (SELECT 1 FROM gst_return_marks WHERE business_id = $1::uuid AND return_type = 'GSTR3B' AND period >= $2)
+     ) AS ok`,
+    [businessId, trackingSince(asOn)],
   );
   const periods: Gstr3bPeriodState[] = [];
   for (const period of recentReturnPeriods(asOn, opts)) {
@@ -124,7 +147,7 @@ async function loadGstr3bState(businessId: string, asOn: string) {
     const last = period.months[period.months.length - 1];
     const state = await queryOne<{ filed: boolean; activity: boolean }>(
       `SELECT
-         EXISTS (SELECT 1 FROM gst_filings WHERE business_id = $1::uuid AND gst_period = ANY($2::text[]) AND status IN ${FILED}) AS filed,
+         ${FILED_3B('$2::text[]')} AS filed,
          (EXISTS (SELECT 1 FROM invoices WHERE business_id = $1::uuid AND deleted_at IS NULL AND status = 'final'
                    AND invoice_date >= $3::date AND invoice_date < ($4::date + INTERVAL '1 month'))
           OR EXISTS (SELECT 1 FROM purchases WHERE business_id = $1::uuid AND deleted_at IS NULL
@@ -135,6 +158,61 @@ async function loadGstr3bState(businessId: string, asOn: string) {
     periods.push({ period, filed: !!state?.filed, hasActivity: !!state?.activity });
   }
   return { opts, periods, tracksFiling: !!tracks?.ok };
+}
+
+/** Recent final invoices over the e-way bill limit; "goods" means a goods item or a non-SAC (99xx) HSN. */
+async function loadEwayCandidates(businessId: string, asOn: string): Promise<EwayCandidate[]> {
+  const rows = await queryRows<Omit<EwayCandidate, 'grand_total'> & { grand_total: string }>(
+    `SELECT i.id AS invoice_id, i.invoice_number, to_char(i.invoice_date, 'YYYY-MM-DD') AS invoice_date,
+            c.name AS customer_name, i.grand_total, i.eway_bill_number,
+            EXISTS (
+              SELECT 1 FROM invoice_items ii
+                LEFT JOIN items it ON it.id = ii.item_id
+               WHERE ii.invoice_id = i.id
+                 AND (it.item_type = 'goods'
+                      OR (it.id IS NULL AND COALESCE(NULLIF(TRIM(ii.hsn_sac), ''), '00') NOT LIKE '99%'))
+            ) AS has_goods
+       FROM invoices i
+       LEFT JOIN customers c ON c.id = i.customer_id
+      WHERE i.business_id = $1::uuid AND i.deleted_at IS NULL AND i.status = 'final'
+        AND (i.document_type IS NULL OR i.document_type <> 'proforma_invoice')
+        AND i.grand_total > $3
+        AND COALESCE(TRIM(i.eway_bill_number), '') = ''
+        AND i.invoice_date BETWEEN ($2::date - $4::int) AND $2::date
+      ORDER BY i.invoice_date DESC
+      LIMIT 200`,
+    [businessId, asOn, EWAY_BILL_THRESHOLD_INR, EWAY_LOOKBACK_DAYS],
+  );
+  return rows.map((r) => ({ ...r, grand_total: Number(r.grand_total) }));
+}
+
+async function sumTaxableSales(businessId: string, from: string, to: string): Promise<number> {
+  const row = await queryOne<{ total: string }>(
+    `SELECT COALESCE(SUM(subtotal), 0)::text AS total FROM invoices
+      WHERE business_id = $1::uuid AND deleted_at IS NULL AND status = 'final'
+        AND (document_type IS NULL OR document_type <> 'proforma_invoice')
+        AND invoice_date BETWEEN $2::date AND $3::date`,
+    [businessId, from, to],
+  );
+  return Number(row?.total ?? 0);
+}
+
+async function loadRcmUnregisteredBills(businessId: string, asOn: string): Promise<RcmUnregisteredBill[]> {
+  const rows = await queryRows<Omit<RcmUnregisteredBill, 'tax'> & { tax: string }>(
+    `SELECT p.id AS purchase_id, p.bill_number, to_char(p.bill_date, 'YYYY-MM-DD') AS bill_date, s.name AS supplier_name,
+            (COALESCE(p.igst_total, 0) + COALESCE(p.cgst_total, 0) + COALESCE(p.sgst_total, 0))::text AS tax
+       FROM purchases p
+       LEFT JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.business_id = $1::uuid AND p.deleted_at IS NULL
+        AND COALESCE(p.status, '') NOT IN ('draft', 'cancelled')
+        AND p.is_reverse_charge = true
+        AND COALESCE(TRIM(p.supplier_gstin), '') = ''
+        AND p.bill_date BETWEEN ($2::date - $3::int) AND $2::date
+      ORDER BY p.bill_date
+      LIMIT 200`,
+    [businessId, asOn, SELF_INVOICE_DAYS],
+  );
+  return rows.map((r) => ({ ...r, tax: Number(r.tax) }));
 }
 
 export interface Evaluation {
@@ -150,14 +228,15 @@ export async function evaluateBusinessCompliance(businessId: string, asOn: strin
     [businessId],
   );
   if (!biz) return { findings: [], ran: [], skipped: 'business not found' };
-  // Composition and unregistered businesses take no ITC and file no GSTR-3B.
-  if (effectiveGstScheme(biz.gst_registration_type, biz.gstin) !== 'regular') {
-    return { findings: [], ran: ['rule37', 'itc_deadline', 'credit_note_deadline', 'gstr3b_due'], skipped: 'not a regular GST registration' };
-  }
+  const scheme = effectiveGstScheme(biz.gst_registration_type, biz.gstin);
+  // Unregistered businesses have no GST obligations here; resolving every check clears old alerts.
+  if (scheme === 'unregistered') return { findings: [], ran: [...ALL_CHECKS], skipped: 'not registered under GST' };
+  const applies = new Set<ComplianceCheckId>(scheme === 'composition' ? COMPOSITION_CHECKS : ALL_CHECKS);
 
   const findings: ComplianceFinding[] = [];
-  const ran: ComplianceCheckId[] = [];
+  const ran: ComplianceCheckId[] = ALL_CHECKS.filter((id) => !applies.has(id));
   const attempt = async (ids: ComplianceCheckId[], fn: () => Promise<ComplianceFinding[]>) => {
+    if (!ids.some((id) => applies.has(id))) return;
     try {
       findings.push(...(await fn()));
       ran.push(...ids);
@@ -181,6 +260,26 @@ export async function evaluateBusinessCompliance(businessId: string, asOn: strin
     const s = await loadGstr3bState(businessId, asOn);
     return gstr3bFindings(asOn, s.opts, s.periods, s.tracksFiling);
   });
+  await attempt(['eway_bill'], async () => {
+    const f = ewayBillFinding(asOn, await loadEwayCandidates(businessId, asOn));
+    return f ? [f] : [];
+  });
+  await attempt(['einvoice'], async () => {
+    const fy = previousFyRange(asOn);
+    const flag = await queryOne<{ above: boolean | null }>(
+      `SELECT aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1::uuid`,
+      [businessId],
+    );
+    const f = einvoiceFinding(asOn, {
+      declaredAbove5cr: !!flag?.above,
+      previousFyTurnover: await sumTaxableSales(businessId, fy.from, fy.to),
+    });
+    return f ? [f] : [];
+  });
+  await attempt(['rcm_self_invoice'], async () => {
+    const f = rcmSelfInvoiceFinding(asOn, await loadRcmUnregisteredBills(businessId, asOn));
+    return f ? [f] : [];
+  });
 
   return { findings, ran };
 }
@@ -195,7 +294,7 @@ export interface SyncResult {
 export async function syncComplianceAlerts(
   businessId: string,
   evaluation: Evaluation,
-  opts: { notify: boolean },
+  opts: { notify: boolean; email?: boolean },
 ): Promise<SyncResult> {
   const previous = new Map(
     (
@@ -207,6 +306,7 @@ export async function syncComplianceAlerts(
   );
 
   let notified = 0;
+  const emailNow: ComplianceFinding[] = [];
   for (const f of evaluation.findings) {
     const saved = await queryOne<{ id: string }>(
       `INSERT INTO gst_compliance_alerts
@@ -230,7 +330,7 @@ export async function syncComplianceAlerts(
     );
     const prev = previous.get(f.key) ?? null;
     const dismissedThisStage = !!prev && !prev.resolved_at && prev.dismissed_stage === f.stage;
-    if (!opts.notify || !saved || dismissedThisStage || !shouldNotify(prev, f)) continue;
+    if (!opts.notify || f.quiet || !saved || dismissedThisStage || !shouldNotify(prev, f)) continue;
     await query(
       `INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
        VALUES ($1::uuid, 'gst_compliance', $2, $3, 'gst_compliance', $4::uuid, CURRENT_TIMESTAMP)`,
@@ -241,6 +341,15 @@ export async function syncComplianceAlerts(
       f.stage,
     ]);
     notified++;
+    if (f.severity === 'critical') emailNow.push(f);
+  }
+
+  if (opts.email && emailNow.length) {
+    try {
+      await sendComplianceEmail(businessId, emailNow);
+    } catch (err) {
+      console.error(`[gst-compliance] email failed for ${businessId}:`, err instanceof Error ? err.message : err);
+    }
   }
 
   const resolved = evaluation.ran.length
@@ -305,7 +414,8 @@ export async function runGstComplianceAlerts(opts: { asOn?: string; notify?: boo
         continue;
       }
       const evaluation = await evaluateBusinessCompliance(id, asOn);
-      const r = await syncComplianceAlerts(id, evaluation, { notify: opts.notify ?? true });
+      const notify = opts.notify ?? true;
+      const r = await syncComplianceAlerts(id, evaluation, { notify, email: notify });
       summary.evaluated++;
       summary.notified += r.notified;
       summary.resolved += r.resolved;

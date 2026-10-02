@@ -28,7 +28,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
   const { notifications, unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useNotifications();
 
   // TopBar mounts two NotificationCenter instances (mobile + desktop, CSS-hidden). Do not refresh on mount
-  // or visibility — that doubled force-refreshes. Bootstrap + SSE + 30s poll in NotificationProvider load the list;
+  // or visibility — that doubled force-refreshes. NotificationProvider's stream client keeps the list current;
   // refresh when the user opens the panel (same pattern as NotificationPanel).
   useEffect(() => {
     if (isOpen) {

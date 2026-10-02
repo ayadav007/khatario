@@ -36,9 +36,9 @@ Settings > Organization > Suppliers directory lets other Khatario businesses fin
 3. Publish up to 20 items for buyers to see (prices show as "on request").
 4. Tap Save Changes. When a buyer sends a connection request, it appears under Incoming connection requests; tap Accept to link your business as their supplier, or Decline.
 
-## How do I add another Khatario product like HR or Connect?
+## How do I add another Khatario product like Connect?
 
-Settings > Plan & billing > Your products shows Billing, HR and Connect. Tap Add next to a product to choose its plan or start a trial. If you use more than one, Set as primary decides which home screen opens after login. Each product has its own plan; admin logins are shared.
+Settings > Plan & billing > Your products shows your Khatario products. Tap Add next to a product to choose its plan or start a trial. Khatario HR is coming soon and cannot be added yet. If you use more than one, Set as primary decides which home screen opens after login. Each product has its own plan; admin logins are shared.
 
 ## Where can I find help, guides or the product tour?
 

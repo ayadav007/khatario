@@ -1,21 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows } from '@/lib/db';
-import { triggerTodoReminder, type TodoForReminder } from '@/lib/todo-reminders/triggerTodoReminder';
+import { sweepDueTodoReminders } from '@/lib/todo-reminders/sweepDueTodoReminders';
 import { logTodoReminder } from '@/lib/todo-reminders/reminderLog';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
-
-const DUE_BATCH_SQL = `SELECT t.*
-       FROM todos t
-       WHERE t.status IN ('pending', 'in_progress', 'overdue')
-         AND t.reminder_sent = false
-         AND t.reminder_type IS NOT NULL
-         AND t.reminder_type != 'none'
-         AND t.reminder_time IS NOT NULL
-         AND t.reminder_time <= NOW()
-       ORDER BY t.reminder_time ASC
-       LIMIT 100`;
 
 /** Vercel / platform safety: do not run unbounded. */
 const CRON_MAX_WALL_MS = 25_000;
@@ -39,73 +27,31 @@ async function processTodoReminders() {
     logTodoReminder('cron', 'summary', { phase: 'start' });
 
     const cronStartedAt = Date.now();
-    let processed = 0;
-    let skipped = 0;
-    let failed = 0;
-    let batchIndex = 0;
-    let totalSeen = 0;
-    let stoppedReason: 'complete' | 'time_limit' | 'batch_limit' = 'complete';
-
-    while (true) {
-      if (Date.now() - cronStartedAt > CRON_MAX_WALL_MS) {
-        stoppedReason = 'time_limit';
-        break;
-      }
-      if (batchIndex >= CRON_MAX_BATCHES) {
-        stoppedReason = 'batch_limit';
-        break;
-      }
-
-      const batch = await queryRows<TodoForReminder>(DUE_BATCH_SQL);
-      if (batch.length === 0) {
-        break;
-      }
-      batchIndex += 1;
-      totalSeen += batch.length;
-
-      for (const todo of batch) {
-        try {
-          const result = await triggerTodoReminder(todo);
-          if (result.status === 'delivered') {
-            processed += 1;
-          } else {
-            skipped += 1;
-          }
-        } catch (err: any) {
-          failed += 1;
-          logTodoReminder('cron', 'failed', {
-            todoId: todo.id,
-            businessId: todo.business_id,
-            error: err?.message ?? String(err),
-            batch: batchIndex,
-          });
-        }
-      }
-
-      if (batch.length < 100) {
-        break;
-      }
-    }
+    const r = await sweepDueTodoReminders({
+      maxWallMs: CRON_MAX_WALL_MS,
+      maxBatches: CRON_MAX_BATCHES,
+      source: 'cron',
+    });
 
     logTodoReminder('cron', 'summary', {
       phase: 'complete',
-      stoppedReason,
+      stoppedReason: r.stoppedReason,
       durationMs: Date.now() - cronStartedAt,
-      batches: batchIndex,
-      totalSeen,
-      processed,
-      skipped,
-      failed,
+      batches: r.batches,
+      totalSeen: r.total,
+      processed: r.processed,
+      skipped: r.skipped,
+      failed: r.failed,
     });
 
     return NextResponse.json({
       success: true,
-      stoppedReason,
-      batches: batchIndex,
-      totalSeen,
-      processed,
-      skipped,
-      failed,
+      stoppedReason: r.stoppedReason,
+      batches: r.batches,
+      totalSeen: r.total,
+      processed: r.processed,
+      skipped: r.skipped,
+      failed: r.failed,
     });
   } catch (error: any) {
     logTodoReminder('cron', 'failed', {

@@ -11,11 +11,8 @@ These are the plans currently offered on Khatario, taken directly from the live 
 - Business (Billing): ₹999 per month, or ₹9,999 per year (about 17% less than paying monthly).
 - Enterprise (Billing): ₹2,999 per month, or ₹29,999 per year (about 17% less than paying monthly).
 - Trial (Billing): Free during the trial period.
-- HR Starter (HR): ₹199 per month, or ₹1,990 per year (about 17% less than paying monthly).
-- HR Pro (HR): ₹499 per month, or ₹4,990 per year (about 17% less than paying monthly).
-- HR Trial (HR): Free during the trial period.
-- HR Free (HR): Free (₹0).
 - Connect (Connect): Free (₹0).
+- Khatario HR: coming soon, no plans or prices yet. Khatario HR (employees, attendance, payroll and leave) is coming soon. It is not available to sign up for yet; Khatario Billing and Khatario Connect are available today.
 
 ## Free / Starter plan (Billing)
 
@@ -172,73 +169,6 @@ Price: Free during the trial period.
 - Reports: Advanced Analytics, Advanced Reports, Basic Reports, GST Reports
 - Sales: Credit Notes, Debit Notes, Delivery Challans, Estimates & Quotations, Invoices, Recurring Invoices, Work Orders
 - Settings: Backup & Restore, Locations & Branches, Template Customization, Users & Roles, WhatsApp Integration
-
-## HR Starter plan (HR)
-
-Employee records and attendance tracking for growing teams.
-
-Price: ₹199 per month, or ₹1,990 per year (about 17% less than paying monthly).
-
-### HR Starter plan limits
-
-- Employees: 50
-- Team users: 5
-- WhatsApp messages per day: 10
-
-### HR Starter plan features
-
-- HR: Attendance, Employees
-- Settings: Users & Roles, WhatsApp Integration
-
-## HR Pro plan (HR)
-
-Full HR: payroll, leave management, and employee self-service portal.
-
-Price: ₹499 per month, or ₹4,990 per year (about 17% less than paying monthly).
-
-### HR Pro plan limits
-
-- Employees: 200
-- Team users: 15
-- WhatsApp messages per day: 50
-
-### HR Pro plan features
-
-- HR: Attendance, Employee Self-Service Portal, Employees, Leave Management, Payroll
-- Settings: Users & Roles, WhatsApp Integration
-
-## HR Trial plan (HR)
-
-30-day trial with full HR Pro features.
-
-Price: Free during the trial period.
-
-### HR Trial plan limits
-
-- Employees: 200
-- Team users: 15
-- WhatsApp messages per day: 50
-
-### HR Trial plan features
-
-- HR: Attendance, Employee Self-Service Portal, Employees, Leave Management, Payroll
-- Settings: Users & Roles, WhatsApp Integration
-
-## HR Free plan (HR)
-
-Limited access after HR trial — upgrade to Starter or Pro to continue.
-
-Price: Free (₹0).
-
-### HR Free plan limits
-
-- Employees: Not included
-- Team users: 1
-- WhatsApp messages per day: 5
-
-### HR Free plan features
-
-- Settings: WhatsApp Integration
 
 ## Connect plan (Connect)
 

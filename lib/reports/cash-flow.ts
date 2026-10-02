@@ -4,11 +4,15 @@
  * cash and bank ledgers (a balanced ledger nets to zero).
  */
 
+import type { BsClass } from '@/lib/reports/balance-sheet';
+
 export type CfAccount = {
   code: string;
   name: string;
   type: 'asset' | 'liability' | 'capital' | 'income' | 'expense' | string;
   groupCode: string | null;
+  /** Balance-sheet class from the account's group chain; code ranges are the fallback. */
+  bsClass?: BsClass | null;
   isCash: boolean;
   /** Dr - Cr before the period. */
   opening: number;
@@ -52,10 +56,16 @@ const WC_LABELS: Array<[RegExp, string, 'asset' | 'liability']> = [
 ];
 
 function isFixedAsset(a: CfAccount) {
-  return a.type === 'asset' && (a.groupCode === '1200' || a.code.startsWith('12')) && a.code !== ACCUM_DEP;
+  if (a.type !== 'asset' || a.code === ACCUM_DEP) return false;
+  return a.bsClass ? a.bsClass === 'fixed_asset' : a.groupCode === '1200' || a.code.startsWith('12');
+}
+function isInvestment(a: CfAccount) {
+  if (a.type !== 'asset') return false;
+  return a.bsClass ? a.bsClass === 'investment' : a.groupCode === '1300' || a.code.startsWith('13');
 }
 function isLongTermLiability(a: CfAccount) {
-  return a.type === 'liability' && (a.groupCode === '2200' || a.code.startsWith('22'));
+  if (a.type !== 'liability') return false;
+  return a.bsClass ? a.bsClass === 'long_term_liability' : a.groupCode === '2200' || a.code.startsWith('22');
 }
 
 function add(map: Map<string, CfLine>, label: string, amount: number, code: string) {
@@ -119,8 +129,16 @@ export function buildCashFlow(accounts: CfAccount[], opts: CashFlowOptions = {})
       add(investing, 'Sale of fixed assets', a.periodCredit, a.code);
       continue;
     }
+    if (isInvestment(a)) {
+      add(investing, 'Investments (net)', -drCr, a.code);
+      continue;
+    }
     if (a.type === 'asset' && a.code.startsWith('1108')) {
       add(investing, 'Loans and advances given', -drCr, a.code);
+      continue;
+    }
+    if (a.bsClass === 'other_asset') {
+      add(investing, 'Other non-current assets', -drCr, a.code);
       continue;
     }
     if (isLongTermLiability(a)) {

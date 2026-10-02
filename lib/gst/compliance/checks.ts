@@ -14,7 +14,27 @@ import {
 } from '@/lib/gst/gst-interest';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
-export type ComplianceCheckId = 'rule37' | 'itc_deadline' | 'credit_note_deadline' | 'gstr3b_due';
+export type ComplianceCheckId =
+  | 'rule37'
+  | 'itc_deadline'
+  | 'credit_note_deadline'
+  | 'gstr3b_due'
+  | 'eway_bill'
+  | 'einvoice'
+  | 'rcm_self_invoice';
+
+export const ALL_CHECKS: ComplianceCheckId[] = [
+  'rule37',
+  'itc_deadline',
+  'credit_note_deadline',
+  'gstr3b_due',
+  'eway_bill',
+  'einvoice',
+  'rcm_self_invoice',
+];
+
+/** Composition dealers take no ITC and file CMP-08, not GSTR-3B, but e-way bills and RCM still apply. */
+export const COMPOSITION_CHECKS: ComplianceCheckId[] = ['eway_bill', 'rcm_self_invoice'];
 
 export interface ComplianceFinding {
   checkId: ComplianceCheckId;
@@ -32,6 +52,8 @@ export interface ComplianceFinding {
   dueDate: string | null;
   amount: number | null;
   details: Record<string, unknown>;
+  /** Shown on the alerts page but never sent to the bell: for heuristics that may not apply. */
+  quiet?: boolean;
 }
 
 export const SEVERITY_RANK: Record<AlertSeverity, number> = { info: 0, warning: 1, critical: 2 };
@@ -248,6 +270,13 @@ function shiftMonth(period: string, delta: number): string {
   return `${yy}-${String(mm + 1).padStart(2, '0')}`;
 }
 
+export const FILING_TRACKING_MONTHS = 6;
+
+/** Earliest period (YYYY-MM) whose recorded filing shows the business keeps filings up to date in Khatario. */
+export function trackingSince(asOn: string): string {
+  return shiftMonth(asOn.slice(0, 7), -FILING_TRACKING_MONTHS);
+}
+
 export interface ReturnPeriod {
   /** Month the filing row is keyed on (the quarter's last month for QRMP). */
   period: string;
@@ -256,18 +285,35 @@ export interface ReturnPeriod {
   label: string;
 }
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (p: string) => `${MONTH_NAMES[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+
+function quarterPeriod(end: string): ReturnPeriod {
+  const months = [shiftMonth(end, -2), shiftMonth(end, -1), end];
+  return { period: end, months, label: `${monthLabel(months[0])} – ${monthLabel(end)} quarter` };
+}
+
+/** The return period a calendar month (YYYY-MM) belongs to: itself, or its quarter for QRMP filers. */
+export function returnPeriodForMonth(month: string, opts: Gstr3BDueDateOptions): ReturnPeriod {
+  if (opts.filingFrequency === 'qrmp') {
+    const m = Number(month.slice(5, 7));
+    return quarterPeriod(shiftMonth(month, (3 - (m % 3)) % 3));
+  }
+  return { period: month, months: [month], label: monthLabel(month) };
+}
+
+/** First day after the return period ends: the earliest date it can be filed. */
+export function periodFilingOpensOn(period: string): string {
+  return `${shiftMonth(period, 1)}-01`;
+}
+
 /** The two most recent return periods that have ended by `asOn`. */
 export function recentReturnPeriods(asOn: string, opts: Gstr3BDueDateOptions): ReturnPeriod[] {
   const current = asOn.slice(0, 7);
-  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthLabel = (p: string) => `${names[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
   if (opts.filingFrequency === 'qrmp') {
     const m = Number(current.slice(5, 7));
     const lastEnded = shiftMonth(current, -(((m - 1) % 3) + 1));
-    return [lastEnded, shiftMonth(lastEnded, -3)].map((end) => {
-      const months = [shiftMonth(end, -2), shiftMonth(end, -1), end];
-      return { period: end, months, label: `${monthLabel(months[0])} – ${monthLabel(end)} quarter` };
-    });
+    return [lastEnded, shiftMonth(lastEnded, -3)].map(quarterPeriod);
   }
   return [shiftMonth(current, -1), shiftMonth(current, -2)].map((p) => ({ period: p, months: [p], label: monthLabel(p) }));
 }
@@ -284,8 +330,8 @@ export function gstr3bFindings(
   opts: Gstr3BDueDateOptions,
   periods: Gstr3bPeriodState[],
   /**
-   * The business records GSTR-3B filings in Khatario (gst_filings), so "not filed" is meaningful.
-   * Without that, only upcoming reminders are sent: an "overdue" claim could be false.
+   * The business recently recorded a GSTR-3B in Khatario (filing flow or "mark as filed"), so
+   * "not filed" is meaningful. Without that, only upcoming reminders are sent: "late" could be false.
    */
   tracksFiling: boolean,
 ): ComplianceFinding[] {
@@ -301,9 +347,16 @@ export function gstr3bFindings(
       actionUrl: `/reports/gst/gstr3b?period=${period.period}`,
       actionLabel: 'Open GSTR-3B',
       dueDate: due,
-      details: { period: period.period, months: period.months, due_date: due, days_left: daysLeft },
+      details: {
+        period: period.period,
+        label: period.label,
+        months: period.months,
+        due_date: due,
+        days_left: daysLeft,
+        can_mark_filed: true,
+      },
     };
-    const markHint = tracksFiling ? '' : ' If you have already filed it, dismiss this alert.';
+    const markHint = ' Already filed it? Mark it as filed so Khatario stops reminding you.';
 
     if (daysLeft >= 0 && daysLeft <= GSTR3B_REMIND_DAYS) {
       if (!hasActivity && !tracksFiling) continue;
@@ -328,13 +381,183 @@ export function gstr3bFindings(
         title: `GSTR-3B for ${period.label} is ${plural(daysLate, 'day')} late`,
         message:
           `It was due on ${formatDate(due)}. The late fee so far is about ${inr(fee)} (${inr(LATE_FEE_PER_DAY_NORMAL_INR)} per day, ` +
-          `up to ${inr(LATE_FEE_CAP_NORMAL_INR)}), plus 18% yearly interest on tax paid late. File it as soon as you can.`,
+          `up to ${inr(LATE_FEE_CAP_NORMAL_INR)}), plus 18% yearly interest on tax paid late. File it as soon as you can.${markHint}`,
         askQuestion: 'What is the late fee and interest if I file GSTR-3B late?',
         amount: fee,
       });
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// E-way bill: goods invoices over ₹50,000 with no e-way bill number
+// ---------------------------------------------------------------------------------------------
+
+export const EWAY_BILL_THRESHOLD_INR = 50_000;
+export const EWAY_LOOKBACK_DAYS = 7;
+
+export interface EwayCandidate {
+  invoice_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  customer_name: string | null;
+  grand_total: number;
+  has_goods: boolean;
+  eway_bill_number: string | null;
+}
+
+export function ewayBillFinding(asOn: string, invoices: EwayCandidate[]): ComplianceFinding | null {
+  const from = addDays(asOn, -EWAY_LOOKBACK_DAYS);
+  const missing = invoices.filter(
+    (i) =>
+      i.has_goods &&
+      i.grand_total > EWAY_BILL_THRESHOLD_INR &&
+      !(i.eway_bill_number ?? '').trim() &&
+      i.invoice_date >= from &&
+      i.invoice_date <= asOn,
+  );
+  if (!missing.length) return null;
+  const total = round2(missing.reduce((s, i) => s + i.grand_total, 0));
+  return {
+    checkId: 'eway_bill',
+    key: 'eway_bill:missing',
+    severity: 'info',
+    stage: 'open',
+    quiet: true,
+    title: `${plural(missing.length, 'invoice')} over ${inr(EWAY_BILL_THRESHOLD_INR)} without an e-way bill number`,
+    message:
+      `If goods were moved for ${missing.length === 1 ? 'this invoice' : 'these invoices'}, an e-way bill is needed before the goods leave ` +
+      `(some states set a different limit within the state). Goods moved without one can be detained, with a penalty of up to 200% of the tax. ` +
+      `If you, the transporter or the buyer generated one, add its number to the invoice so it prints.`,
+    legalRef: 'CGST Rules, Rule 138; CGST Act, Section 129',
+    actionUrl: null,
+    actionLabel: null,
+    askQuestion: 'When is an e-way bill required and what is the penalty for moving goods without one? (Rule 138)',
+    dueDate: null,
+    amount: total,
+    details: {
+      sales: [...missing]
+        .sort((a, b) => b.invoice_date.localeCompare(a.invoice_date))
+        .slice(0, 20)
+        .map(({ invoice_id, invoice_number, invoice_date, customer_name, grand_total }) => ({
+          invoice_id,
+          invoice_number,
+          invoice_date,
+          customer_name,
+          grand_total: round2(grand_total),
+        })),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// E-invoicing (IRN) applies above ₹5 crore aggregate turnover
+// ---------------------------------------------------------------------------------------------
+
+export const EINVOICE_THRESHOLD_INR = 5_00_00_000;
+export const EINVOICE_30_DAY_THRESHOLD_INR = 10_00_00_000;
+
+function fyOf(asOn: string): { label: string; prevStart: string; prevEnd: string; prevLabel: string } {
+  const y = Number(asOn.slice(0, 4));
+  const start = Number(asOn.slice(5, 7)) >= 4 ? y : y - 1;
+  return {
+    label: `FY ${start}-${String(start + 1).slice(2)}`,
+    prevStart: `${start - 1}-04-01`,
+    prevEnd: `${start}-03-31`,
+    prevLabel: `FY ${start - 1}-${String(start).slice(2)}`,
+  };
+}
+
+export function previousFyRange(asOn: string): { from: string; to: string; label: string } {
+  const f = fyOf(asOn);
+  return { from: f.prevStart, to: f.prevEnd, label: f.prevLabel };
+}
+
+export function einvoiceFinding(
+  asOn: string,
+  input: { declaredAbove5cr: boolean; previousFyTurnover: number },
+): ComplianceFinding | null {
+  const f = fyOf(asOn);
+  const over = input.previousFyTurnover > EINVOICE_THRESHOLD_INR;
+  if (!over && !input.declaredAbove5cr) return null;
+  const thirtyDay = input.previousFyTurnover >= EINVOICE_30_DAY_THRESHOLD_INR;
+  const basis = over
+    ? `Your ${f.prevLabel} sales recorded in Khatario are ${inr(input.previousFyTurnover)}, above ${inr(EINVOICE_THRESHOLD_INR)}.`
+    : `Your business profile says aggregate turnover is above ${inr(EINVOICE_THRESHOLD_INR)}.`;
+  return {
+    checkId: 'einvoice',
+    key: 'einvoice:applicable',
+    severity: 'warning',
+    stage: f.label,
+    title: 'E-invoicing (IRN) applies to your B2B invoices',
+    message:
+      `${basis} Businesses whose aggregate turnover crossed ${inr(EINVOICE_THRESHOLD_INR)} in any year must report B2B invoices, ` +
+      `credit notes and debit notes to the Invoice Registration Portal and print the IRN and QR code; an invoice without an IRN is not a valid tax invoice ` +
+      `and your customer cannot claim ITC on it. ` +
+      (thirtyDay ? `Because turnover is ${inr(EINVOICE_30_DAY_THRESHOLD_INR)} or more, each invoice must be reported within 30 days of its date. ` : '') +
+      `Khatario does not generate IRNs yet, so generate them on the e-invoice portal. Aggregate turnover counts every GSTIN on your PAN; if this does not apply to you, dismiss this alert.`,
+    legalRef: 'CGST Rules, Rule 48(4); Notification 10/2023-Central Tax',
+    actionUrl: null,
+    actionLabel: null,
+    askQuestion: 'Who has to issue e-invoices with an IRN under GST? (Rule 48(4))',
+    dueDate: null,
+    amount: over ? round2(input.previousFyTurnover) : null,
+    details: { fy: f.prevLabel, turnover: round2(input.previousFyTurnover), declared_above_5cr: input.declaredAbove5cr, thirty_day_rule: thirtyDay },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// RCM: self-invoice for reverse charge purchases from unregistered suppliers
+// ---------------------------------------------------------------------------------------------
+
+export const SELF_INVOICE_DAYS = 30;
+
+export interface RcmUnregisteredBill {
+  purchase_id: string;
+  bill_number: string | null;
+  bill_date: string;
+  supplier_name: string | null;
+  tax: number;
+}
+
+export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]): ComplianceFinding | null {
+  const open = bills
+    .map((b) => ({ ...b, due: addDays(b.bill_date, SELF_INVOICE_DAYS) }))
+    .filter((b) => b.bill_date <= asOn && b.due >= asOn);
+  if (!open.length) return null;
+  open.sort((a, b) => a.due.localeCompare(b.due));
+  const firstDue = open[0].due;
+  const daysLeft = daysBetween(asOn, firstDue);
+  const tax = round2(open.reduce((s, b) => s + b.tax, 0));
+  return {
+    checkId: 'rcm_self_invoice',
+    key: 'rcm_self_invoice:open',
+    severity: daysLeft <= 5 ? 'warning' : 'info',
+    stage: daysLeftStage(daysLeft, [5, 30]) ?? '30d',
+    title: `Issue a self-invoice for ${plural(open.length, 'reverse charge purchase')}`,
+    message:
+      `${plural(open.length, 'purchase')} under reverse charge ${open.length === 1 ? 'is' : 'are'} from a supplier without a GSTIN. ` +
+      `You must issue a self-invoice within 30 days of receiving the goods or services, the first by ${formatDate(firstDue)}, ` +
+      `and a payment voucher when you pay the supplier. Pay the reverse charge tax in cash through GSTR-3B; ITC can then be claimed. ` +
+      `Khatario does not create self-invoices yet, so keep one in your records.`,
+    legalRef: 'CGST Act, Section 31(3)(f) and (g); CGST Rules, Rule 47A',
+    actionUrl: null,
+    actionLabel: null,
+    askQuestion: 'When do I need to issue a self-invoice under reverse charge? (Section 31(3)(f), Rule 47A)',
+    dueDate: firstDue,
+    amount: tax > 0 ? tax : null,
+    details: {
+      rcm_bills: open.slice(0, 20).map((b) => ({
+        purchase_id: b.purchase_id,
+        bill_number: b.bill_number,
+        bill_date: b.bill_date,
+        supplier_name: b.supplier_name,
+        self_invoice_by: b.due,
+        tax: round2(b.tax),
+      })),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
