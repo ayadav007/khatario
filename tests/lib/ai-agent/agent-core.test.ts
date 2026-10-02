@@ -27,7 +27,7 @@ import {
   type AgentSettings,
 } from '@/lib/ai-agent/types';
 import { loadProviderSummary } from '@/lib/ai-agent/settings';
-import { geminiThinks, groqRequestBody, resolveAgentProvider } from '@/lib/services/ai-provider-factory';
+import { currentModelId, geminiThinks, groqRequestBody, resolveAgentProvider } from '@/lib/services/ai-provider-factory';
 
 const mQueryOne = queryOne as jest.Mock;
 const mQuery = query as jest.Mock;
@@ -290,6 +290,14 @@ describe('model request bodies', () => {
     const body = groqRequestBody('llama-3.3-70b-versatile', msgs, 0.5, 600);
     expect(body).toMatchObject({ max_completion_tokens: 600 });
     expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('maps shut-down model IDs to their replacements', () => {
+    expect(currentModelId('llama-3.1-8b-instant')).toBe('openai/gpt-oss-20b');
+    expect(currentModelId('llama-3.3-70b-versatile')).toBe('openai/gpt-oss-120b');
+    expect(currentModelId('gemini-2.0-flash')).toBe('gemini-3.5-flash');
+    expect(currentModelId('gpt-4o-mini')).toBe('gpt-4o-mini');
+    expect(currentModelId(undefined)).toBeUndefined();
   });
 
   it('treats Gemini 2.5 and later as thinking models', () => {

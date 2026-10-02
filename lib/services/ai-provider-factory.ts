@@ -160,7 +160,7 @@ class GeminiProvider implements AIProviderInterface {
       }
     });
 
-    const model = this.config.model || 'gemini-pro';
+    const model = this.config.model || 'gemini-3.5-flash';
     const maxTokens = this.config.maxTokens || 500;
     const requestBody: any = {
       contents: contents,
@@ -227,7 +227,7 @@ class GeminiProvider implements AIProviderInterface {
 
   async analyzeImage(imageUrl: string, prompt: string): Promise<string> {
     // Determine model (flash is better/cheaper for simple vision)
-    const model = this.config.model || 'gemini-1.5-flash';
+    const model = this.config.model || 'gemini-3.5-flash';
     
     // For Gemini, we need to handle the image. 
     // If it's a URL, we need to fetch it and convert to base64 for inline_data
@@ -312,7 +312,7 @@ class GroqProvider implements AIProviderInterface {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(
-        groqRequestBody(this.config.model || 'llama-3.1-8b-instant', messages, this.config.temperature || 0.7, this.config.maxTokens || 500),
+        groqRequestBody(this.config.model || 'openai/gpt-oss-20b', messages, this.config.temperature || 0.7, this.config.maxTokens || 500),
       ),
       signal: AbortSignal.timeout(30_000),
     });
@@ -341,7 +341,7 @@ class GroqProvider implements AIProviderInterface {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(
-        groqRequestBody(this.config.model || 'llama-3.1-8b-instant', messages, this.config.temperature || 0.3, this.config.maxTokens || 1000, {
+        groqRequestBody(this.config.model || 'openai/gpt-oss-20b', messages, this.config.temperature || 0.3, this.config.maxTokens || 1000, {
           response_format: { type: 'json_object' },
         }),
       ),
@@ -450,7 +450,22 @@ class CustomProvider implements AIProviderInterface {
 }
 
 
-export function getAIProviderFromConfig(config: AIProviderConfig): AIProviderInterface | null {
+/** Model IDs the providers have shut down, mapped to their recommended replacements. */
+const RETIRED_MODELS: Record<string, string> = {
+  'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+  'gemini-pro': 'gemini-3.5-flash',
+  'gemini-1.5-flash': 'gemini-3.5-flash',
+  'gemini-1.5-pro': 'gemini-3.5-flash',
+  'gemini-2.0-flash': 'gemini-3.5-flash',
+};
+
+export function currentModelId(model: string | undefined): string | undefined {
+  return model ? RETIRED_MODELS[model] ?? model : model;
+}
+
+export function getAIProviderFromConfig(rawConfig: AIProviderConfig): AIProviderInterface | null {
+  const config = { ...rawConfig, model: currentModelId(rawConfig.model) };
   switch (config.provider) {
     case 'openai':
       return new OpenAIProvider(config);
@@ -507,7 +522,7 @@ export function getPlatformAIProvider(opts: { temperature?: number; maxTokens?: 
     providers.push(new GroqProvider({
       provider: 'groq',
       apiKey: groq,
-      model: process.env.GROQ_AGENT_MODEL || process.env.GROQ_RAG_MODEL || 'llama-3.3-70b-versatile',
+      model: currentModelId(process.env.GROQ_AGENT_MODEL || process.env.GROQ_RAG_MODEL) || 'openai/gpt-oss-120b',
       temperature: opts.temperature ?? 0.5,
       maxTokens: opts.maxTokens ?? 600,
     }));

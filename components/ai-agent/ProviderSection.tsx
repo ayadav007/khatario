@@ -11,9 +11,9 @@ import { agentFetch, agentJson } from './api';
 import { FieldLabel, SectionCard } from './SectionCard';
 
 export const PROVIDERS: Array<{ value: string; label: string; keyUrl?: string; models: string[] }> = [
-  { value: 'groq', label: 'Groq', keyUrl: 'https://console.groq.com/keys', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
+  { value: 'groq', label: 'Groq', keyUrl: 'https://console.groq.com/keys', models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'] },
   { value: 'openai', label: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys', models: ['gpt-4o-mini', 'gpt-4o'] },
-  { value: 'gemini', label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/app/apikey', models: ['gemini-2.0-flash', 'gemini-1.5-pro'] },
+  { value: 'gemini', label: 'Google Gemini', keyUrl: 'https://aistudio.google.com/app/apikey', models: ['gemini-3.5-flash'] },
   { value: 'custom', label: 'Other (OpenAI-compatible)', models: [] },
 ];
 
