@@ -6,7 +6,7 @@ import { loadAgentSettings } from '@/lib/ai-agent/settings';
 import { matchesTriggerPhrase, isOutsideBusinessHours } from '@/lib/ai-agent/gate';
 import { parseAgentReply } from '@/lib/ai-agent/prompt';
 import { DEFAULT_FALLBACK_MESSAGE, DEFAULT_HANDOFF_MESSAGE, normalizeAgentSettings } from '@/lib/ai-agent/types';
-import { SalesAgentChatbot } from '@/lib/services/sales-agent-chatbot';
+import { SalesAgentChatbot, type SalesAgentResult } from '@/lib/services/sales-agent-chatbot';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +22,22 @@ const FAILURE_MESSAGE: Record<string, string> = {
 };
 
 type Chip = { kind: 'order' | 'payment' | 'handoff' | 'lead' | 'greeting' | 'after_hours' | 'fallback'; label: string };
+
+const FALLBACK_SUFFIX = 'so your fallback message would be sent';
+
+/** Owner-facing reason. Upstream error text is shown only for the shop's own key, never Khatario's. */
+function fallbackReason(result: Pick<SalesAgentResult, 'failure' | 'via' | 'errorMessage'>): string {
+  if (result.failure === 'empty') return `The AI returned an empty reply, ${FALLBACK_SUFFIX}`;
+  if (result.failure === 'error') {
+    const status = /\b(\d{3})\b/.exec(result.errorMessage ?? '')?.[1];
+    if (result.via === 'own') {
+      const detail = (result.errorMessage ?? '').replace(/\s+/g, ' ').slice(0, 160);
+      return `Your AI provider returned an error${detail ? ` (${detail})` : ''}, ${FALLBACK_SUFFIX}`;
+    }
+    return `Khatario AI is unavailable right now${status ? ` (error ${status})` : ''}, ${FALLBACK_SUFFIX}`;
+  }
+  return `The AI gave no answer, ${FALLBACK_SUFFIX}`;
+}
 
 /**
  * POST /api/ai-agent/test — `{ message, history, draftSettings? }`. Runs the same prompt, knowledge
@@ -89,7 +105,7 @@ export const POST = withWhatsAppPremiumApi(
     if (!result.content?.trim()) {
       const known = result.failure ? FAILURE_MESSAGE[result.failure] : undefined;
       if (known) return NextResponse.json({ error: known, code: result.failure }, { status: 402 });
-      chips.push({ kind: 'fallback', label: 'The AI gave no answer, so your fallback message would be sent' });
+      chips.push({ kind: 'fallback', label: fallbackReason(result) });
       return NextResponse.json({ reply: settings.fallbackMessage.trim() || DEFAULT_FALLBACK_MESSAGE, chips, sources: result.sources });
     }
 

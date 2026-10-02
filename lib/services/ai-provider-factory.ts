@@ -136,6 +136,11 @@ class OpenAIProvider implements AIProviderInterface {
 }
 
 // Google Gemini Provider
+export function geminiThinks(model: string): boolean {
+  const m = /gemini-(\d+(?:\.\d+)?)/.exec(model);
+  return !!m && Number(m[1]) >= 2.5;
+}
+
 class GeminiProvider implements AIProviderInterface {
   constructor(private config: AIProviderConfig) {}
 
@@ -155,11 +160,14 @@ class GeminiProvider implements AIProviderInterface {
       }
     });
 
+    const model = this.config.model || 'gemini-pro';
+    const maxTokens = this.config.maxTokens || 500;
     const requestBody: any = {
       contents: contents,
       generationConfig: {
         temperature: this.config.temperature || 0.7,
-        maxOutputTokens: this.config.maxTokens || 500,
+        // Gemini 2.5+ thinks before answering and the thinking counts against maxOutputTokens.
+        maxOutputTokens: geminiThinks(model) ? maxTokens + 1024 : maxTokens,
       },
     };
 
@@ -170,24 +178,27 @@ class GeminiProvider implements AIProviderInterface {
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.config.model || 'gemini-pro'}:generateContent?key=${this.config.apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': this.config.apiKey,
         },
         body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(30_000),
       }
     );
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+      throw new Error(`Gemini API error: ${response.status} - ${error.slice(0, 300)}`);
     }
 
     const data = await response.json();
+    const parts: Array<{ text?: string; thought?: boolean }> = data.candidates?.[0]?.content?.parts ?? [];
     return {
-      content: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
+      content: parts.filter((p) => !p.thought).map((p) => p.text ?? '').join(''),
     };
   }
 
@@ -267,6 +278,28 @@ class GeminiProvider implements AIProviderInterface {
   }
 }
 
+/**
+ * gpt-oss models reason before answering and the reasoning counts against the token limit, so a
+ * plain `max_tokens: 600` can come back with empty content. Keep reasoning low and leave room for it.
+ */
+export function groqRequestBody(
+  model: string,
+  messages: ChatMessage[],
+  temperature: number,
+  maxTokens: number,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const reasoning = model.startsWith('openai/gpt-oss');
+  return {
+    model,
+    messages,
+    temperature,
+    max_completion_tokens: reasoning ? maxTokens + 1024 : maxTokens,
+    ...(reasoning ? { reasoning_effort: 'low', include_reasoning: false } : {}),
+    ...extra,
+  };
+}
+
 // Groq Provider
 class GroqProvider implements AIProviderInterface {
   constructor(private config: AIProviderConfig) {}
@@ -278,12 +311,10 @@ class GroqProvider implements AIProviderInterface {
         'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: this.config.model || 'llama-3.1-8b-instant',
-        messages: messages,
-        temperature: this.config.temperature || 0.7,
-        max_tokens: this.config.maxTokens || 500,
-      }),
+      body: JSON.stringify(
+        groqRequestBody(this.config.model || 'llama-3.1-8b-instant', messages, this.config.temperature || 0.7, this.config.maxTokens || 500),
+      ),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {
@@ -309,13 +340,12 @@ class GroqProvider implements AIProviderInterface {
         'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: this.config.model || 'llama-3.1-8b-instant',
-        messages: messages,
-        temperature: this.config.temperature || 0.3,
-        max_tokens: this.config.maxTokens || 1000,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(
+        groqRequestBody(this.config.model || 'llama-3.1-8b-instant', messages, this.config.temperature || 0.3, this.config.maxTokens || 1000, {
+          response_format: { type: 'json_object' },
+        }),
+      ),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {
@@ -486,7 +516,7 @@ export function getPlatformAIProvider(opts: { temperature?: number; maxTokens?: 
     providers.push(new GeminiProvider({
       provider: 'gemini',
       apiKey: gemini,
-      model: process.env.ASSISTANT_GEMINI_MODEL || 'gemini-2.0-flash',
+      model: process.env.ASSISTANT_GEMINI_MODEL || 'gemini-3.5-flash',
       temperature: opts.temperature ?? 0.5,
       maxTokens: opts.maxTokens ?? 600,
     }));

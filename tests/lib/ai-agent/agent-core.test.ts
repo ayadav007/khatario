@@ -27,7 +27,7 @@ import {
   type AgentSettings,
 } from '@/lib/ai-agent/types';
 import { loadProviderSummary } from '@/lib/ai-agent/settings';
-import { resolveAgentProvider } from '@/lib/services/ai-provider-factory';
+import { geminiThinks, groqRequestBody, resolveAgentProvider } from '@/lib/services/ai-provider-factory';
 
 const mQueryOne = queryOne as jest.Mock;
 const mQuery = query as jest.Mock;
@@ -272,6 +272,31 @@ describe('resolveAgentProvider', () => {
 
     mockKhatarioAccess.mockResolvedValue({ ok: false, reason: 'live_needs_addon' });
     await expect(resolveAgentProvider(BIZ, { live: true })).resolves.toEqual({ provider: null, reason: 'live_needs_addon' });
+  });
+});
+
+describe('model request bodies', () => {
+  const msgs = [{ role: 'user' as const, content: 'hi' }];
+
+  it('gives gpt-oss low reasoning and room beyond the reply budget', () => {
+    expect(groqRequestBody('openai/gpt-oss-120b', msgs, 0.5, 600)).toMatchObject({
+      max_completion_tokens: 1624,
+      reasoning_effort: 'low',
+      include_reasoning: false,
+    });
+  });
+
+  it('leaves non-reasoning Groq models at the plain budget', () => {
+    const body = groqRequestBody('llama-3.3-70b-versatile', msgs, 0.5, 600);
+    expect(body).toMatchObject({ max_completion_tokens: 600 });
+    expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('treats Gemini 2.5 and later as thinking models', () => {
+    expect(geminiThinks('gemini-3.5-flash')).toBe(true);
+    expect(geminiThinks('gemini-2.5-flash')).toBe(true);
+    expect(geminiThinks('gemini-2.0-flash')).toBe(false);
+    expect(geminiThinks('gemini-pro')).toBe(false);
   });
 });
 

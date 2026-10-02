@@ -62,6 +62,8 @@ export interface SalesAgentResult {
   via?: 'own' | 'khatario_addon' | 'khatario_trial';
   /** Titles of the shop knowledge used (test chat shows them as source chips). */
   sources: string[];
+  /** Provider error text on `failure: 'error'`; may name the upstream service, never shown to customers. */
+  errorMessage?: string;
 }
 
 export class SalesAgentChatbot {
@@ -163,7 +165,13 @@ export class SalesAgentChatbot {
         message: error instanceof Error ? error.message : String(error),
         businessId,
       });
-      return { content: null, failure: 'error', via: resolved.via, sources: [] };
+      return {
+        content: null,
+        failure: 'error',
+        via: resolved.via,
+        sources: [],
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
