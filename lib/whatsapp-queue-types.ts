@@ -85,8 +85,55 @@ export type WebhookQueueJob = WhatsAppQueueJobBase & {
   body: Record<string, unknown>;
 };
 
+/** A message from the business owner (or a LINK code) on the business's own number. */
+export type OwnerCommandQueueJob = WhatsAppQueueJobBase & {
+  type: 'owner-command';
+  kind: 'owner' | 'link';
+  provider: 'cloud' | 'baileys';
+  businessId: string;
+  messageId: string;
+  /** Sender digits; also the ordering key. */
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  text: string;
+  /** QR "Message yourself" chat: the owner's number is the business number. */
+  selfChat: boolean;
+};
+
+/** A customer message that reached the business's Cloud API number. */
+export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
+  type: 'cloud-incoming';
+  businessId: string;
+  messageId: string;
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  profileName: string | null;
+  text: string;
+  messageType: string;
+  businessPhone: string;
+  sourceTimestampSec: number | null;
+};
+
+/** A message to Khatario's own WhatsApp number (prospects and existing users). */
+export type PlatformIncomingQueueJob = WhatsAppQueueJobBase & {
+  type: 'platform-incoming';
+  /** Always 'platform'; kept so job ids and order keys work like the business jobs. */
+  businessId: string;
+  messageId: string;
+  conversationId: string;
+  timestamp: number;
+  from: string;
+  profileName: string | null;
+  text: string;
+};
+
 export type WhatsAppMessageJob =
   | BaileysIncomingQueueJob
   | BaileysOutgoingQueueJob
   | OutgoingAfterSendQueueJob
-  | WebhookQueueJob;
+  | WebhookQueueJob
+  | OwnerCommandQueueJob
+  | CloudIncomingQueueJob
+  | PlatformIncomingQueueJob;

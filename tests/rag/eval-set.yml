@@ -252,3 +252,48 @@
 - q: How do I create a credit note?
   audience: tenant_user
   forbid: [gst-law/cgst-act.md, gst-law/cgst-rules.md]
+
+# Owner questions in the app. `route: insights` = answered from the books, never the knowledge search.
+- q: How was sale today?
+  audience: tenant_user
+  route: insights
+- q: aaj kitna sale hua
+  audience: tenant_user
+  route: insights
+- q: Which customer has the highest pending amount?
+  audience: tenant_user
+  route: insights
+- q: udhaar kitna baaki hai
+  audience: tenant_user
+  route: insights
+- q: overdue invoices
+  audience: tenant_user
+  route: insights
+- q: top products this month
+  audience: tenant_user
+  route: insights
+- q: payments received yesterday
+  audience: tenant_user
+  route: insights
+- q: low stock
+  audience: tenant_user
+  route: insights
+- q: pichle mahine ki sales
+  audience: tenant_user
+  route: insights
+- q: summary
+  audience: tenant_user
+  route: insights
+- q: How do I create a sales invoice?
+  audience: tenant_user
+  route: guides
+  expect: [how-to/invoices.md, how-to/getting-started.md]
+- q: How do I record a payment received?
+  audience: tenant_user
+  route: guides
+- q: What is a sales return?
+  audience: tenant_user
+  route: guides
+- q: stock kaise add kare
+  audience: tenant_user
+  route: guides

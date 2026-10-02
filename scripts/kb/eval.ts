@@ -10,6 +10,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { closePool, queryRows } from '@/lib/db';
+import { matchCommand } from '@/lib/insights/commands';
 import { retrieve } from '@/lib/rag/retrieve';
 import { rewriteQuery } from '@/lib/rag/rewrite';
 import type { KbAudience } from '@/lib/rag/types';
@@ -20,6 +21,14 @@ interface EvalCase {
   expect: string[];
   forbid: string[];
   confident?: boolean;
+  /** Owner questions: `insights` must skip the knowledge search, `guides` must not be sent to insights. */
+  route?: 'insights' | 'guides';
+}
+
+/** Keyword routing for an owner's in-app question (the model can only add matches, not remove them). */
+export function routeFor(q: string): 'insights' | 'guides' {
+  const m = matchCommand(q);
+  return m && !m.howTo ? 'insights' : 'guides';
 }
 
 function parseList(raw: string): string[] {
@@ -42,12 +51,13 @@ export function parseEvalSet(source: string): EvalCase[] {
       cases.push(current);
       continue;
     }
-    const kv = /^\s+(expect|forbid|audience|confident):\s*(.+)$/.exec(line);
+    const kv = /^\s+(expect|forbid|audience|confident|route):\s*(.+)$/.exec(line);
     if (!kv || !current) continue;
     const [, key, value] = kv;
     if (key === 'expect') current.expect = parseList(value);
     else if (key === 'forbid') current.forbid = parseList(value);
     else if (key === 'audience') current.audience = value.trim() as KbAudience;
+    else if (key === 'route') current.route = value.trim() === 'insights' ? 'insights' : 'guides';
     else current.confident = value.trim() === 'true';
   }
   return cases;
@@ -73,6 +83,12 @@ async function main() {
   const failures: string[] = [];
 
   for (const c of cases) {
+    if (c.route) {
+      const got = routeFor(c.q);
+      if (got !== c.route) failures.push(`  ✗ [route] ${c.q}\n      should not route: expected ${c.route}, got ${got}`);
+      if (verbose) console.log(`${got === c.route ? '✓' : '✗'} [route] ${c.q} -> ${got}`);
+      if (c.route === 'insights') continue;
+    }
     const rewritten = useRewrite ? await rewriteQuery(c.q) : null;
     const result = await retrieve({
       scope: { audience: c.audience },

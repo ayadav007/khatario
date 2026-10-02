@@ -21,8 +21,8 @@ const CHANNEL_LABELS: Record<string, string> = {
   web: 'Website (landing, pricing, book demo)',
   signup: 'Signup page',
   trial_app: 'Trial users in the app',
-  in_app: 'All tenant staff in the app (phase 2)',
-  whatsapp: 'Khatario WhatsApp number (phase 2)',
+  in_app: 'Paid-plan users in the app (help, and figures for the owner)',
+  whatsapp: "Khatario's WhatsApp number (prospects, and how-to help for users)",
 };
 const LEAD_STATUSES = ['new', 'contacted', 'demo_booked', 'trial_started', 'converted', 'lost'];
 

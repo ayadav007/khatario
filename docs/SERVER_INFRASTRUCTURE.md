@@ -182,11 +182,15 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 15 3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron-staging.log 2>&1
 45 0 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron-staging.log 2>&1
 0 9 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron-staging.log 2>&1
+*/15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
 5 9 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron.log 2>&1
+*/15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron.log 2>&1
 ```
+
+`/api/cron/owner-daily-summary` sends the owner's evening summary (Settings > WhatsApp > Owner updates) from the business's own WhatsApp number once the owner's chosen time has passed in Indian time, whatever the server time zone. Each business gets at most one per day (`owner_whatsapp_links.last_summary_sent_on`), so the 15-minute schedule is safe to repeat.
 
 `/api/cron/gst-compliance-alerts` runs the GST checks in `lib/gst/compliance`: Rule 37, the 30 November ITC and credit-note deadline, GSTR-3B due dates, e-way bill numbers, e-invoicing applicability and RCM self-invoices. It raises in-app notifications and emails critical alerts (via SMTP, counted against the plan's email limit) only when an alert is new or reaches a new stage, so an extra run the same day is harmless. `?as_on=YYYY-MM-DD` replays a date for testing and is silent (no bell, no email) unless `&notify=true` is added.
 

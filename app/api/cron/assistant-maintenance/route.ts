@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertCronAuthorized } from '@/lib/cron-auth';
-import { reindex, summarizeReport } from '@/lib/rag/ingest/run';
+import { indexedTenantBusinessIds, reindex, summarizeReport } from '@/lib/rag/ingest/run';
 import { purgeOldConversations } from '@/lib/rag/retention';
 
 export const dynamic = 'force-dynamic';
@@ -18,9 +18,16 @@ export async function POST(request: NextRequest) {
   try {
     const report = await reindex({ target: 'all' });
     const purged = await purgeOldConversations();
+    const tenants = await indexedTenantBusinessIds();
+    let tenantErrors = 0;
+    for (const businessId of tenants) {
+      const r = await reindex({ target: 'tenant', businessId }).catch((err) => ({ errors: [String(err)] }));
+      tenantErrors += r.errors.length;
+    }
     return NextResponse.json({
       ok: report.errors.length === 0,
       summary: summarizeReport(report),
+      shops: { refreshed: tenants.length, errors: tenantErrors },
       purgedConversations: purged,
     });
   } catch (err) {

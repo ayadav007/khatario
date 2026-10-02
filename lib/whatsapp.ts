@@ -715,6 +715,25 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
       }
 
       const businessPhone = sessionRecord.phoneNumber || '';
+
+      // Owner updates: the linked owner phone, QR self-chat and LINK codes go to the assistant, never the CRM or bot.
+      if (!isGroup && messageText) {
+        try {
+          const { routeBaileysInbound } = await import('@/lib/whatsapp/inbound-router');
+          const consumed = await routeBaileysInbound({
+            businessId,
+            businessPhone,
+            from: fromNumber,
+            isFromMe: !!isFromMe,
+            isGroup: false,
+            messageId,
+            text: messageText,
+          });
+          if (consumed) continue;
+        } catch (err) {
+          console.error('[WA] owner routing failed (continuing as a normal message):', err);
+        }
+      }
       
       // Handle STOP/START unsubscribe detection (for incoming messages only)
       if (!isFromMe && messageText) {

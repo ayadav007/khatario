@@ -5,6 +5,7 @@ import { encryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
 import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -285,6 +286,7 @@ export async function PATCH(request: NextRequest) {
     throw error;
   }
 
+  noteShopChanged(businessId, 'store settings saved');
   return NextResponse.json({
     store_subdomain: (updated as any)?.store_subdomain ?? null,
     store_enabled: (updated as any)?.store_enabled ?? false,

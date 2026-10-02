@@ -6,6 +6,7 @@ import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpe
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
 import { normalizePan } from '@/lib/tax/pan';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -267,6 +268,7 @@ export async function PATCH(
       console.warn('[PATCH /api/business] Single-branch sync skipped or failed:', syncErr);
     }
 
+    noteShopChanged(businessId, 'business profile saved');
     return NextResponse.json({
       success: true,
       business: updatedBusiness,

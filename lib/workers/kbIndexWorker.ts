@@ -12,7 +12,7 @@ import { config as loadEnv } from 'dotenv';
 import { Queue, Worker, type Job } from 'bullmq';
 import { getRedisConnection, waitForRedisReady } from '@/lib/queue/redis';
 import { closePool } from '@/lib/db';
-import { reindex, summarizeReport } from '@/lib/rag/ingest/run';
+import { indexedTenantBusinessIds, reindex, summarizeReport } from '@/lib/rag/ingest/run';
 import { purgeOldConversations } from '@/lib/rag/retention';
 import { KB_INDEX_QUEUE, KB_NIGHTLY_SCHEDULER, type KbIndexJob, type KbNightlyJob } from '@/lib/rag/queue';
 
@@ -22,15 +22,22 @@ async function processJob(job: Job<KbIndexJob | KbNightlyJob>): Promise<string> 
   if ('nightly' in job.data) {
     const report = await reindex({ target: 'all' });
     const purged = await purgeOldConversations();
-    const summary = `${summarizeReport(report).replace(/\n/g, ' | ')} | purged conversations: ${purged}`;
+    // Safety net for shops: keyword-only, so it costs no embedding quota. Errors are logged, not fatal.
+    let tenantErrors = 0;
+    const tenants = await indexedTenantBusinessIds();
+    for (const businessId of tenants) {
+      const r = await reindex({ target: 'tenant', businessId }).catch((err) => ({ errors: [String(err)] }));
+      tenantErrors += r.errors.length;
+    }
+    const summary = `${summarizeReport(report).replace(/\n/g, ' | ')} | shops: ${tenants.length} (errors ${tenantErrors}) | purged conversations: ${purged}`;
     console.log(`${LOG} nightly: ${summary}`);
     if (report.errors.length) throw new Error(summary);
     return summary;
   }
-  const { target, locator, force, reason } = job.data;
-  const report = await reindex({ target, locator, force });
+  const { target, locator, businessId, force, reason } = job.data;
+  const report = await reindex({ target, locator, businessId, force });
   const summary = summarizeReport(report).replace(/\n/g, ' | ');
-  console.log(`${LOG} ${reason} (${target}${locator ? `:${locator}` : ''}): ${summary}`);
+  console.log(`${LOG} ${reason} (${target}${businessId ? `:${businessId}` : locator ? `:${locator}` : ''}): ${summary}`);
   if (report.errors.length) throw new Error(summary);
   return summary;
 }

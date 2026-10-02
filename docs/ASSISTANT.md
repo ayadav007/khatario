@@ -1,6 +1,6 @@
 # Khatario AI assistant
 
-Answers questions from Khatario's own guides, in English and Hinglish, on the website, the signup page and inside the app for trial users. It books demos, recommends a plan, captures leads and hands off to the team. Phase 2 (all tenant staff, Khatario's WhatsApp number) and phase 3 (tenant customer bots) reuse the same pipeline.
+Answers questions from Khatario's own guides, in English and Hinglish, on the website, the signup page, Khatario's WhatsApp number and inside the app for every plan. It books demos, recommends a plan, captures leads and hands off to the team. The business owner also gets their own figures (in the app and on their business WhatsApp number), and each shop's WhatsApp bot answers shoppers from that shop's catalog and policies.
 
 ## How it works
 
@@ -31,9 +31,45 @@ The text omits amendment footnotes and doesn't include notifications, circulars 
 |---|---|---|---|
 | Landing, pricing, `/book-demo` | `web` | prospect | `/api/public/assistant/*` |
 | `/signup` | `signup` | prospect | `/api/public/assistant/*?channel=signup` |
-| App, trial subscriptions only | `trial_app` | tenant_user | `/api/assistant/*` (JWT) |
+| App, trial subscriptions | `trial_app` | tenant_user | `/api/assistant/*` (JWT) |
+| App, paid plans | `in_app` | tenant_user | `/api/assistant/*` (JWT) |
+| Khatario's WhatsApp number | `whatsapp` | prospect, or tenant_user (how-to only) when the number belongs to an active user | `platform-incoming` queue job |
+| Owner's phone, business's own WhatsApp number | `whatsapp` | tenant_owner | `owner-command` queue job |
+| Shoppers, business's own WhatsApp number (QR or Cloud API) | — | tenant_customer knowledge | the shop's AI sales agent (`lib/services/sales-agent-chatbot.ts`) |
 
 Channels are switched on and off in **/admin/assistant → Overview** (admin role).
+
+## Business figures for the owner
+
+The primary admin (`users.is_primary_admin`) can ask about their own business in the app or on WhatsApp: "sales today", "who owes me the most", "top products this month", "overdue invoices", "low stock", "GST alerts". Staff asking the same thing are pointed to the Dashboard and reports; they still get how-to help.
+
+The model only picks which figures to fetch (`chooseTools` in `lib/rag/llm.ts`, Groq tool calling with the rewrite model). Every number comes from SQL in `lib/insights/tools.ts`, which reuses the report and ageing queries, and is formatted by code. Short commands ("sales today") and any model failure use keyword matching (`lib/insights/commands.ts`), so figures still work without a model key. Each tool checks the plan (`reports_basic`, `reports_advanced`, `reports_gst`) and says "Not on your plan" rather than failing. In the app the answer shows as cards linking to the full report.
+
+### Owner updates on WhatsApp
+
+Set up in **Settings → WhatsApp → Owner updates** (primary admin only). Messages go through the business's own number, never Khatario's:
+
+1. **Link my phone** shows a 4-digit code valid for 15 minutes. The owner sends `LINK 1234` to the business number from their phone. On a QR-connected number where the owner's phone *is* the business number, they send it in the "Message yourself" chat.
+2. After linking, any message from that phone (or that self-chat) goes to the owner assistant instead of the CRM inbox or the shop's bot. Every other sender is unaffected. 20 questions an hour.
+3. **Evening summary** (default on, 21:00 Indian time) is sent by `/api/cron/owner-daily-summary` (every 15 minutes, see `docs/SERVER_INFRASTRUCTURE.md`). On QR it is a normal message. On Meta Cloud API, Meta only allows free text within 24 hours of the owner's last message; outside that the summary uses the `khatario_daily_summary` UTILITY template, created on the business's own WhatsApp Business Account with **Create summary template** and approved by Meta.
+
+For Cloud API businesses, subscribe the tenant's Meta app webhook (`/api/webhooks/meta-whatsapp?business_id=<id>`) to the **messages** field as well as template status, and save the app secret in the Meta Cloud API form: tenant webhooks are only accepted with the tenant's own signature.
+
+Our replies start with an invisible marker (U+2063) and their message ids are recorded in `whatsapp_inbound_events`, so in QR self-chat the assistant never answers itself. A QR self-chat that WhatsApp reports only by its LID (no phone number) isn't recognised as self-chat; link from a separate phone in that case.
+
+## Khatario's WhatsApp number
+
+Messages to the platform number (Meta webhook without `business_id`) are de-duplicated and answered by `answerTurn` on the `whatsapp` channel: prospects get the sales assistant, and a number that belongs to an active Khatario user gets how-to help. Business figures are never sent from this number; a user asking for them is pointed to Owner updates. Replies are plain WhatsApp text of about 1,000 characters with the first source link, and buttons become links (`/book-demo`, `/signup?src=whatsapp`, `/pricing`). 30 messages an hour per phone. Switch it off with the `whatsapp` channel in /admin/assistant. Setup: subscribe the platform Meta app's webhook to the **messages** field.
+
+## Shop customer bot
+
+Each business's own catalog and policies are indexed as `tenant_customer` knowledge with the `business_id` set (`lib/rag/ingest/tenant-sources.ts`): items listed in the online store (or every active item if the shop lists none) with price, MRP, a stock band and description, plus about, contact, refund, terms and delivery settings. Shop knowledge is **keyword-only** (no embeddings), so it never uses the shared Gemini quota.
+
+- Built on the shop's first customer message, then re-indexed about a minute after item, store-settings or business-profile saves (debounced per business), and nightly. `npm run kb:reindex -- --source=tenant --business=<id>` rebuilds one shop.
+- The sales agent answers from the retrieved chunks with the shop's own AI key, keeps the `CREATE_ORDER:` flow, and adds online-store order status, looked up only for the sender's own WhatsApp number (`SO-…` numbers must also match that phone).
+- Cloud API shops: replies go back from the same number and appear in the WhatsApp inbox.
+- Daily cap on AI replies per business: `assistant_settings` scope `business:<id>`, `{"customerBotDailyLimit": 500}` (`0` turns it off; default `CUSTOMER_BOT_DAILY_LIMIT` or 500).
+- Retrieval always filters `tenant_customer` chunks by `business_id` in SQL; `tests/lib/whatsapp/customer-bot.test.ts` covers isolation.
 
 ## Keeping knowledge current
 

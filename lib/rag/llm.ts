@@ -138,6 +138,80 @@ export async function completeJson(
   return { data: null, usage: null };
 }
 
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface ChosenCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+function parseArgs(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw !== 'string') return {};
+  const parsed = parseJsonLoose(raw);
+  return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+}
+
+function keepKnown(calls: ChosenCall[], tools: ToolSpec[], max: number): ChosenCall[] {
+  const names = new Set(tools.map((t) => t.name));
+  return calls.filter((c) => names.has(c.name)).slice(0, max);
+}
+
+async function groqTools(messages: LlmMessage[], tools: ToolSpec[], timeoutMs: number) {
+  const cfg = ragConfig();
+  const model = cfg.rewriteModel;
+  const res = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${cfg.groqKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(
+      groqBody(model, messages, 400, {
+        temperature: 0,
+        tools: tools.map((t) => ({ type: 'function', function: t })),
+        tool_choice: 'auto',
+        parallel_tool_calls: true,
+      }),
+    ),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ function?: { name?: string; arguments?: unknown } }> } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  const message = data.choices?.[0]?.message;
+  return {
+    calls: (message?.tool_calls ?? []).map((c) => ({ name: c.function?.name ?? '', args: parseArgs(c.function?.arguments) })),
+    text: message?.content ?? '',
+    usage: { model, tokensIn: data.usage?.prompt_tokens ?? 0, tokensOut: data.usage?.completion_tokens ?? 0 },
+  };
+}
+
+/**
+ * Picks read-only tools for a question with Groq native tool calling. Returns available=false when
+ * Groq is not configured or fails; the caller then falls back to keyword matching.
+ */
+export async function chooseTools(
+  messages: LlmMessage[],
+  tools: ToolSpec[],
+  opts: { maxCalls?: number; timeoutMs?: number } = {},
+): Promise<{ available: boolean; calls: ChosenCall[]; text: string; usage: LlmUsage | null }> {
+  const cfg = ragConfig();
+  const maxCalls = opts.maxCalls ?? 3;
+  if (cfg.groqKey) {
+    try {
+      const r = await groqTools(messages, tools, opts.timeoutMs ?? 8000);
+      return { available: true, calls: keepKnown(r.calls, tools, maxCalls), text: r.text, usage: r.usage };
+    } catch (err) {
+      console.warn('[rag/llm] Groq tool call failed:', err instanceof Error ? err.message : err);
+    }
+  }
+  return { available: false, calls: [], text: '', usage: null };
+}
+
 async function* readSse(res: Response): AsyncGenerator<string> {
   if (!res.body) return;
   const reader = res.body.getReader();

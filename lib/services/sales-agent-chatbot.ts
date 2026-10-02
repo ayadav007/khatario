@@ -3,6 +3,12 @@
 
 import { getAIProvider, ChatMessage } from './ai-provider-factory';
 import { ProductDataService, ProductInfo } from './product-data-service';
+import {
+  customerBotAllowed,
+  orderStatusContext,
+  recordCustomerBotReply,
+  shopKnowledgeContext,
+} from '@/lib/whatsapp/customer-bot';
 
 interface SalesAgentRequest {
   message: string;
@@ -33,6 +39,8 @@ interface SalesAgentRequest {
   };
   /** Second attempt after provider returned empty content — prompts model to answer non-empty */
   retryAfterEmpty?: boolean;
+  /** Sender's WhatsApp number: online-store order status is looked up only for this number. */
+  customerPhone?: string;
 }
 
 export class SalesAgentChatbot {
@@ -47,6 +55,10 @@ export class SalesAgentChatbot {
     request: SalesAgentRequest
   ): Promise<string | null> {
     console.log('[Sales Agent] 🚀 Starting AI response generation for business:', businessId);
+    if (!(await customerBotAllowed(businessId))) {
+      console.warn('[Sales Agent] Daily AI reply limit reached for business:', businessId);
+      return null;
+    }
     const provider = await getAIProvider(businessId);
     if (!provider) {
       console.error('[Sales Agent] ❌ AI provider not configured or failed to initialize for business:', businessId);
@@ -55,15 +67,14 @@ export class SalesAgentChatbot {
     console.log('[Sales Agent] ✅ AI provider initialized successfully');
 
     try {
-      // Detect if message is asking about products
-      const productQuery = this.detectProductQuery(request.message);
-      console.log('[Sales Agent] Product query detection:', {
-        originalMessage: request.message,
-        detectedQuery: productQuery
-      });
-      
       let productContext = '';
-      if (productQuery) {
+      // The shop's indexed catalog and policies (this business only). Until the first index is
+      // built, fall back to the keyword product search below.
+      const shopContext = await shopKnowledgeContext(businessId, request.message);
+      const productQuery = shopContext ? null : this.detectProductQuery(request.message);
+      if (shopContext) {
+        productContext = `\n\nShop information relevant to this message (products, prices, availability, policies). Answer from this; if it isn't covered, say you'll check with the shop:\n${shopContext}`;
+      } else if (productQuery) {
         // Search for products
         console.log('[Sales Agent] Searching products with query:', productQuery);
         const products = await this.productService.searchProducts(businessId, productQuery, 5);
@@ -79,6 +90,13 @@ export class SalesAgentChatbot {
         console.log('[Sales Agent] Using top products:', topProducts.length);
         if (topProducts.length > 0) {
           productContext = `\n\nOur Products/Services:\n${this.productService.formatProductsForAI(topProducts)}`;
+        }
+      }
+
+      if (request.customerPhone) {
+        const orders = await orderStatusContext(businessId, request.customerPhone, request.message);
+        if (orders) {
+          productContext += `\n\nThis customer's online-store orders (looked up by their WhatsApp number; share only these):\n${orders}`;
         }
       }
 
@@ -103,6 +121,9 @@ export class SalesAgentChatbot {
       });
       
       const response = await provider.chat(messages);
+      if (response?.content?.trim()) {
+        await recordCustomerBotReply(businessId, request.customerPhone ?? '');
+      }
       
       console.log('[Sales Agent] ✅ AI provider responded:', {
         hasResponse: !!response,

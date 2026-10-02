@@ -1,3 +1,6 @@
+import { matchCommand } from '@/lib/insights/commands';
+import type { InsightCard, TextFormat } from '@/lib/insights/format';
+import { canSeeBusinessData, NOT_OWNER_TEXT, runInsights } from '@/lib/insights/turn';
 import { chatModelConfigured, ragConfig } from './config';
 import {
   createConversation,
@@ -12,19 +15,21 @@ import { buildAnswerMessages, citedIndexes } from './prompt';
 import { retrieve, type RetrieveResult } from './retrieve';
 import { detectIntentHeuristic, detectLanguageHeuristic, rewriteQuery, type RewriteResult } from './rewrite';
 import { withinDailyBudget } from './settings';
-import type { AssistantIntent, Citation, RetrievedChunk } from './types';
+import type { AssistantIntent, Citation, KbAudience, RetrievedChunk } from './types';
 
 export type AssistantAction =
   | { type: 'book_demo' }
   | { type: 'start_trial'; url: string }
   | { type: 'recommend_plan' }
   | { type: 'talk_to_human' }
-  | { type: 'upgrade'; url: string };
+  | { type: 'upgrade'; url: string }
+  | { type: 'insight'; cards: InsightCard[] };
 
 export type AnswerEvent =
   | { type: 'meta'; conversationId: string }
   | { type: 'delta'; text: string }
   | { type: 'action'; action: AssistantAction }
+  | { type: 'insight'; cards: InsightCard[] }
   | { type: 'citations'; citations: Citation[] }
   | { type: 'quick_replies'; replies: string[] }
   | { type: 'done'; messageId: string; answered: boolean }
@@ -35,6 +40,8 @@ export interface AnswerInput extends ConversationOwner {
   conversationId?: string | null;
   pagePath?: string | null;
   signal?: AbortSignal;
+  /** Format for business-figure replies. WhatsApp callers still pass guide answers through toWhatsAppText. */
+  textFormat?: TextFormat;
 }
 
 type Lang = RewriteResult['language'];
@@ -236,8 +243,9 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
   await insertMessage({ conversationId: conversation.id, role: 'user', content: message });
 
   const sales = SALES_CHANNELS.has(input.channel) && input.audience === 'prospect';
+  const businessUser = (input.audience === 'tenant_user' || input.audience === 'tenant_owner') && !!input.businessId && !!input.userId;
   const budgetOk = await withinDailyBudget().catch(() => true);
-  const rewrite = budgetOk ? await rewriteQuery(message, history).catch(() => null) : null;
+  const rewrite = budgetOk ? await rewriteQuery(message, history, { businessData: businessUser }).catch(() => null) : null;
   const rw: RewriteResult = rewrite ?? {
     searchQuery: message,
     intent: detectIntentHeuristic(message),
@@ -256,8 +264,10 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
     citedChunkIds?: string[];
     retrieval: RetrieveResult | null;
     model?: string | null;
+    toolCalls?: unknown[];
   }): AsyncGenerator<AnswerEvent> {
-    if (args.action) yield { type: 'action', action: args.action };
+    if (args.action?.type === 'insight') yield { type: 'insight', cards: args.action.cards };
+    else if (args.action) yield { type: 'action', action: args.action };
     if (args.citations?.length) yield { type: 'citations', citations: args.citations };
     if (history.length === 0) {
       const replies = quickRepliesFor(sales, rw.language);
@@ -270,7 +280,9 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
       role: 'assistant',
       content: args.text,
       citedChunkIds: args.citedChunkIds,
-      retrieval: retrievalLog(rw, args.retrieval, lawLog),
+      retrieval: args.toolCalls
+        ? { ...retrievalLog(rw, null), toolCalls: args.toolCalls }
+        : retrievalLog(rw, args.retrieval, lawLog),
       intent: rw.intent,
       action: args.action ?? null,
       model: args.model ?? usages[usages.length - 1]?.model ?? null,
@@ -282,6 +294,36 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
     yield { type: 'done', messageId, answered: args.answered };
   };
 
+  if (businessUser) {
+    const command = matchCommand(message);
+    const wantsData =
+      rw.intent === 'business_data' ||
+      (command !== null && !command.howTo && rw.intent !== 'talk_to_human' && rw.intent !== 'book_demo');
+    if (wantsData) {
+      if (!(await canSeeBusinessData(input.userId, input.businessId))) {
+        yield { type: 'delta', text: NOT_OWNER_TEXT };
+        yield* finish({ text: NOT_OWNER_TEXT, answered: true, retrieval: null, model: 'insights_denied', toolCalls: [] });
+        return;
+      }
+      const result = await runInsights({ businessId: input.businessId!, userId: input.userId! }, message, {
+        history,
+        format: input.textFormat ?? 'chat',
+        useModel: budgetOk,
+      });
+      if (result.usage) usages.push(result.usage);
+      yield { type: 'delta', text: result.text };
+      yield* finish({
+        text: result.text,
+        answered: result.kind === 'data',
+        action: result.cards.length ? { type: 'insight', cards: result.cards } : null,
+        retrieval: null,
+        model: result.usage?.model ?? 'insights',
+        toolCalls: result.calls,
+      });
+      return;
+    }
+  }
+
   const canned = cannedReply(rw.intent, rw.language, sales);
   if (canned) {
     yield { type: 'delta', text: canned.text };
@@ -289,7 +331,7 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
     return;
   }
 
-  const scopeAudience = input.audience;
+  const scopeAudience: KbAudience = input.audience === 'tenant_owner' ? 'tenant_user' : input.audience;
   const guideResult = await retrieve({
     scope: { audience: scopeAudience, businessId: scopeAudience === 'tenant_customer' ? input.businessId : null },
     searchQuery: rw.searchQuery,
@@ -297,8 +339,8 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
   });
 
   // GST law is a reference corpus for signed-in business users only; prospects and shoppers never see it.
-  const lawSignal: LawSignal = input.audience === 'tenant_user' ? gstLawSignal(message, rw.searchQuery) : 'none';
-  const tryLaw = input.audience === 'tenant_user' && (lawSignal !== 'none' || !guideResult.confident);
+  const lawSignal: LawSignal = scopeAudience === 'tenant_user' ? gstLawSignal(message, rw.searchQuery) : 'none';
+  const tryLaw = scopeAudience === 'tenant_user' && (lawSignal !== 'none' || !guideResult.confident);
   const lawResult = tryLaw
     ? await retrieve({ scope: { audience: 'gst_law', businessId: null }, searchQuery: rw.searchQuery, originalQuery: message }).catch(
         (err) => {
@@ -353,7 +395,7 @@ export async function* answerTurn(input: AnswerInput): AsyncGenerator<AnswerEven
   let model: string | null = null;
   try {
     for await (const ev of streamChat(
-      buildAnswerMessages({ audience: scopeAudience, chunks, history, message, language: rw.language }),
+      buildAnswerMessages({ audience: input.audience, chunks, history, message, language: rw.language }),
       { signal: input.signal },
     )) {
       if (ev.type === 'delta') {

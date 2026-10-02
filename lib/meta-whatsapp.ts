@@ -1,6 +1,6 @@
 /**
- * WhatsApp Cloud API (Graph) for the platform WABA.
- * Never logs access tokens.
+ * WhatsApp Cloud API (Graph): the platform WABA by default, or a business's own WABA when a
+ * `businessId` is passed. Never logs access tokens.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -60,14 +60,21 @@ async function graphFetch(
 
 export type GraphComponent = Record<string, unknown>;
 
+/** Platform WABA by default; pass `businessId` to use that business's own Cloud API credentials. */
+async function requireConfig(businessId?: string | null) {
+  const cfg = await getMetaWaConfig(businessId);
+  if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  return cfg;
+}
+
 export async function createMessageTemplate(input: {
+  businessId?: string | null;
   name: string;
   language: string;
   category: string;
   components: GraphComponent[];
 }): Promise<{ id: string; status: string; category?: string }> {
-  const cfg = await getMetaWaConfig();
-  if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  const cfg = await requireConfig(input.businessId);
   const json = (await graphFetch(`/${cfg.wabaId}/message_templates`, {
     token: cfg.accessToken,
     method: 'POST',
@@ -82,11 +89,10 @@ export async function createMessageTemplate(input: {
   return { id: json.id, status: json.status || 'PENDING', category: json.category };
 }
 
-export async function listMessageTemplates(): Promise<
+export async function listMessageTemplates(businessId?: string | null): Promise<
   Array<{ id: string; name: string; status: string; language?: string; category?: string }>
 > {
-  const cfg = await getMetaWaConfig();
-  if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  const cfg = await requireConfig(businessId);
   const json = (await graphFetch(
     `/${cfg.wabaId}/message_templates?fields=id,name,status,language,category&limit=100`,
     { token: cfg.accessToken, method: 'GET' },
@@ -106,13 +112,13 @@ export async function deleteMessageTemplate(name: string): Promise<void> {
 }
 
 export async function sendTemplateMessage(input: {
+  businessId?: string | null;
   to: string;
   name: string;
   language: string;
   components?: GraphComponent[];
 }): Promise<{ messageId: string }> {
-  const cfg = await getMetaWaConfig();
-  if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+  const cfg = await requireConfig(input.businessId);
   const to = input.to.replace(/\D/g, '');
   const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
     token: cfg.accessToken,
@@ -132,6 +138,117 @@ export async function sendTemplateMessage(input: {
   const messageId = json.messages?.[0]?.id;
   if (!messageId) throw new MetaWhatsAppError('Send returned no message id', 502);
   return { messageId };
+}
+
+/** WhatsApp's limit for a text message body. */
+export const WA_TEXT_MAX = 4096;
+
+/**
+ * Free-form text. Meta only delivers it inside the 24-hour window after the recipient last
+ * messaged this number; outside it, use an approved template.
+ */
+export async function sendTextMessage(input: {
+  businessId?: string | null;
+  to: string;
+  body: string;
+  previewUrl?: boolean;
+}): Promise<{ messageId: string }> {
+  const cfg = await requireConfig(input.businessId);
+  const to = input.to.replace(/\D/g, '');
+  const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
+    token: cfg.accessToken,
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { body: input.body.slice(0, WA_TEXT_MAX), preview_url: input.previewUrl ?? false },
+    }),
+  })) as { messages?: Array<{ id?: string }> };
+  const messageId = json.messages?.[0]?.id;
+  if (!messageId) throw new MetaWhatsAppError('Send returned no message id', 502);
+  return { messageId };
+}
+
+export type InboundMessage = {
+  /** Meta's message id (wamid…), unique per message; used to drop repeated deliveries. */
+  messageId: string;
+  /** Sender's number, digits only with country code. */
+  from: string;
+  profileName: string | null;
+  /** The business number that received it. */
+  phoneNumberId: string | null;
+  displayPhoneNumber: string | null;
+  type: string;
+  /** Text, button title or list choice; null for media and other types. */
+  text: string | null;
+  timestamp: number | null;
+};
+
+type RawInbound = {
+  id?: string;
+  from?: string;
+  timestamp?: string;
+  type?: string;
+  text?: { body?: string };
+  button?: { text?: string; payload?: string };
+  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  image?: { caption?: string };
+  document?: { caption?: string };
+};
+
+function inboundText(m: RawInbound): string | null {
+  const t =
+    m.text?.body ??
+    m.button?.text ??
+    m.interactive?.button_reply?.title ??
+    m.interactive?.list_reply?.title ??
+    m.image?.caption ??
+    m.document?.caption ??
+    null;
+  return t && t.trim() ? t.trim() : null;
+}
+
+/** Customer messages from a `messages` webhook (status receipts and echoes are ignored). */
+export function extractInboundMessages(body: unknown): InboundMessage[] {
+  const out: InboundMessage[] = [];
+  const root = body as {
+    object?: string;
+    entry?: Array<{
+      changes?: Array<{
+        field?: string;
+        value?: {
+          metadata?: { phone_number_id?: string; display_phone_number?: string };
+          contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
+          messages?: RawInbound[];
+        };
+      }>;
+    }>;
+  };
+  for (const entry of root?.entry || []) {
+    for (const change of entry.changes || []) {
+      if (change.field !== 'messages' || !change.value?.messages?.length) continue;
+      const v = change.value;
+      for (const m of v.messages || []) {
+        const from = String(m.from || '').replace(/\D/g, '');
+        if (!m.id || !from) continue;
+        const contact = (v.contacts || []).find((c) => String(c.wa_id || '').replace(/\D/g, '') === from);
+        const ts = Number(m.timestamp);
+        out.push({
+          messageId: m.id,
+          from,
+          profileName: contact?.profile?.name?.trim() || null,
+          phoneNumberId: v.metadata?.phone_number_id || null,
+          displayPhoneNumber: v.metadata?.display_phone_number || null,
+          type: m.type || 'unknown',
+          text: inboundText(m),
+          timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export function countBodyPlaceholders(body: string): number {

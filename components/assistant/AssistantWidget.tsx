@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Loader2, MessageCircle, RotateCcw, Send, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { ActionCard } from './ActionCards';
 import { ASSISTANT_ASK_EVENT } from './events';
+import { InsightCards } from './InsightCards';
 import { MessageContent } from './MessageContent';
 import {
   assistantApiBase,
@@ -26,16 +27,22 @@ interface Props {
   mobileBottomOffset?: number;
 }
 
+const APP_STARTERS = ['How do I create an invoice?', 'How do I connect WhatsApp?', 'How do I prepare GSTR-1?', 'How do I add staff users?'];
+const OWNER_STARTERS = ['How was sales today?', 'Who owes me the most?', 'Top products this month', 'How do I create an invoice?'];
+
 const STARTERS: Record<AssistantChannel, string[]> = {
   web: ['How much does Khatario cost?', 'Can I file GSTR-1 from it?', 'Does it work offline?', 'Kitne ka hai?'],
   signup: ['Is there a free trial?', 'Do I need a credit card?', 'What happens after the trial?'],
-  trial_app: ['How do I create an invoice?', 'How do I connect WhatsApp?', 'How do I prepare GSTR-1?', 'How do I add staff users?'],
+  trial_app: APP_STARTERS,
+  in_app: APP_STARTERS,
 };
 
+const APP_TITLE = { title: 'Khatario help', subtitle: 'How-to answers from our guides' };
 const TITLES: Record<AssistantChannel, { title: string; subtitle: string }> = {
   web: { title: 'Khatario assistant', subtitle: 'Ask in English or Hinglish' },
   signup: { title: 'Questions before you start?', subtitle: 'Ask in English or Hinglish' },
-  trial_app: { title: 'Khatario help', subtitle: 'How-to answers from our guides' },
+  trial_app: APP_TITLE,
+  in_app: APP_TITLE,
 };
 
 export function AssistantWidget({
@@ -46,9 +53,12 @@ export function AssistantWidget({
   mobileBottomOffset = 0,
 }: Props) {
   const [enabled, setEnabled] = useState(false);
+  const [owner, setOwner] = useState(false);
+  // In the app the server picks the channel from the subscription (trial_app or in_app).
+  const [activeChannel, setActiveChannel] = useState<AssistantChannel>(channel);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const chat = useAssistantChat(mode, channel);
+  const chat = useAssistantChat(mode, activeChannel);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const base = assistantApiBase(mode);
@@ -57,12 +67,17 @@ export function AssistantWidget({
     let cancelled = false;
     fetch(`${base}/chat?channel=${channel}`, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : { enabled: false }))
-      .then((d: { enabled?: boolean }) => !cancelled && setEnabled(Boolean(d.enabled)))
+      .then((d: { enabled?: boolean; channel?: AssistantChannel; owner?: boolean }) => {
+        if (cancelled) return;
+        if (mode === 'app' && (d.channel === 'trial_app' || d.channel === 'in_app')) setActiveChannel(d.channel);
+        setOwner(mode === 'app' && d.owner === true);
+        setEnabled(Boolean(d.enabled));
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [base, channel]);
+  }, [base, channel, mode]);
 
   useEffect(() => {
     if (!enabled || !autoOpenDelayMs) return;
@@ -125,7 +140,7 @@ export function AssistantWidget({
     <ActionCard
       action={action}
       base={base}
-      channel={channel}
+      channel={activeChannel}
       conversationId={chat.conversationId}
       onDone={(note) => {
         chat.clearAction(m.key);
@@ -138,7 +153,10 @@ export function AssistantWidget({
     />
   );
 
-  const { title, subtitle } = TITLES[channel];
+  const { title, subtitle } = owner
+    ? { title: 'Khatario assistant', subtitle: 'Your business figures and how-to help' }
+    : TITLES[activeChannel];
+  const starters = owner ? OWNER_STARTERS : STARTERS[activeChannel];
   const bottom = 20 + bottomOffset;
 
   return (
@@ -191,12 +209,14 @@ export function AssistantWidget({
             {chat.messages.length === 0 ? (
               <div className="space-y-3">
                 <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-3 py-2 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
-                  {mode === 'app'
-                    ? 'Hi! Ask me how to do anything in Khatario — invoices, stock, GST returns, WhatsApp and more.'
-                    : 'Namaste! I can answer questions about Khatario — GST billing, stock, WhatsApp reminders, pricing and the free trial. Hinglish chalega!'}
+                  {owner
+                    ? 'Hi! Ask me how your business is doing — sales, money received, who owes you, stock — or how to do anything in Khatario.'
+                    : mode === 'app'
+                      ? 'Hi! Ask me how to do anything in Khatario — invoices, stock, GST returns, WhatsApp and more.'
+                      : 'Namaste! I can answer questions about Khatario — GST billing, stock, WhatsApp reminders, pricing and the free trial. Hinglish chalega!'}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {STARTERS[channel].map((s) => (
+                  {starters.map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -216,7 +236,10 @@ export function AssistantWidget({
                   <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-primary-600 px-3 py-2 text-sm text-white">{m.content}</div>
                 </div>
               ) : (
-                <div key={m.key} className="max-w-[92%]">
+                <div key={m.key} className={m.insight?.length ? 'w-full' : 'max-w-[92%]'}>
+                  {m.insight?.length ? (
+                    <InsightCards cards={m.insight} />
+                  ) : (
                   <div
                     className={`rounded-2xl rounded-tl-sm px-3 py-2 ${
                       m.error ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300' : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'
@@ -230,6 +253,7 @@ export function AssistantWidget({
                       </span>
                     )}
                   </div>
+                  )}
                   {m.citations?.length ? (
                     <div className="mt-1 flex flex-wrap gap-1 pl-1">
                       {m.citations.map((c, i) =>
@@ -314,7 +338,9 @@ export function AssistantWidget({
               </button>
             </div>
             <p className="mt-1.5 text-center text-[10px] text-slate-400">
-              AI answers from Khatario&apos;s guides. Please don&apos;t share passwords or OTPs here.
+              {owner
+                ? 'Figures come straight from your books. Please don\u2019t share passwords or OTPs here.'
+                : <>AI answers from Khatario&apos;s guides. Please don&apos;t share passwords or OTPs here.</>}
             </p>
           </form>
         </section>

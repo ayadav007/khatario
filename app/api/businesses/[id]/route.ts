@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -153,6 +154,7 @@ export async function PATCH(
       );
     }
 
+    noteShopChanged(tenant.businessId, 'business profile saved');
     return NextResponse.json({ business });
   } catch (error: any) {
     console.error('Error updating business:', error);

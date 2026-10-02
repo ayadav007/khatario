@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { getPool, query, queryOne, queryRows } from '@/lib/db';
-import { embedTexts, embeddingModelName, embeddingsConfigured, toVectorLiteral } from '../embed';
+import { EmbeddingError, embedTexts, embeddingModelName, embeddingsConfigured, toVectorLiteral } from '../embed';
 import { hasVectorColumn } from '../vector-support';
 import type { ChunkDraft, KbDocumentInput, KbSourceInput, SourceKind } from '../types';
 import { chunkMarkdown } from './chunk';
@@ -9,6 +9,8 @@ import { combineHashes, contentHash } from './hash';
 export interface IndexOptions {
   force?: boolean;
   dryRun?: boolean;
+  /** Keyword search only (no embedding calls), e.g. tenant shop sources to protect the shared quota. */
+  keywordOnly?: boolean;
 }
 
 export interface SourceIndexResult {
@@ -124,7 +126,7 @@ export async function indexSource(input: KbSourceInput, options: IndexOptions = 
   const prepared = input.documents.map(prepareDocument);
   base.chunks = prepared.reduce((n, d) => n + d.chunks.length, 0);
 
-  const withVector = (await hasVectorColumn()) && embeddingsConfigured();
+  const withVector = !options.keywordOnly && (await hasVectorColumn()) && embeddingsConfigured();
   const model = withVector ? embeddingModelName() : null;
   const sourceHash = combineHashes([...prepared.map((d) => d.hash), model ?? 'no-vector']);
 
@@ -137,6 +139,7 @@ export async function indexSource(input: KbSourceInput, options: IndexOptions = 
 
   try {
     const vectors = new Map<string, string>();
+    let embedFailure: string | null = null;
     if (withVector && model) {
       const allHashes = Array.from(new Set(prepared.flatMap((d) => d.chunks.map((c) => c.hash))));
       const reused = await existingEmbeddings(allHashes, model);
@@ -151,13 +154,23 @@ export async function indexSource(input: KbSourceInput, options: IndexOptions = 
       }
       if (missing.size) {
         const entries = Array.from(missing.entries());
-        const embeddings = await embedTexts(
-          entries.map(([, v]) => v.text),
-          'RETRIEVAL_DOCUMENT',
-          entries.map(([, v]) => v.title),
-        );
-        entries.forEach(([hash], i) => vectors.set(hash, toVectorLiteral(embeddings[i])));
-        base.embedded = entries.length;
+        let embeddings: number[][];
+        try {
+          embeddings = await embedTexts(
+            entries.map(([, v]) => v.text),
+            'RETRIEVAL_DOCUMENT',
+            entries.map(([, v]) => v.title),
+          );
+        } catch (err) {
+          if (!(err instanceof EmbeddingError)) throw err;
+          // Publish the new text for keyword search and keep finished vectors; the next run embeds only the rest.
+          embeddings = err.partial;
+          embedFailure =
+            `${err.message} (saved ${err.partial.length} of ${entries.length} new embeddings; ` +
+            'text is live for keyword search, run the re-index again to finish)';
+        }
+        embeddings.forEach((v, i) => vectors.set(entries[i][0], toVectorLiteral(v)));
+        base.embedded = embeddings.length;
       }
     }
 
@@ -171,11 +184,12 @@ export async function indexSource(input: KbSourceInput, options: IndexOptions = 
         `DELETE FROM kb_documents WHERE source_id = $1 AND NOT (doc_key = ANY($2::text[]))`,
         [source.id, prepared.map((d) => d.input.docKey)],
       );
+      // A null content_hash keeps an incomplete source out of the "unchanged" skip on the next run.
       await client.query(
-        `UPDATE kb_sources SET status = 'ok', error = NULL, content_hash = $2, chunk_count = $3,
+        `UPDATE kb_sources SET status = $4, error = $5, content_hash = $2, chunk_count = $3,
                 last_indexed_at = NOW(), updated_at = NOW()
           WHERE id = $1`,
-        [source.id, sourceHash, base.chunks],
+        [source.id, embedFailure ? null : sourceHash, base.chunks, embedFailure ? 'error' : 'ok', embedFailure?.slice(0, 2000) ?? null],
       );
       await client.query('COMMIT');
     } catch (err) {
@@ -184,7 +198,7 @@ export async function indexSource(input: KbSourceInput, options: IndexOptions = 
     } finally {
       client.release();
     }
-    return { ...base, status: 'indexed' };
+    return embedFailure ? { ...base, status: 'error', error: embedFailure } : { ...base, status: 'indexed' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await query(
@@ -206,4 +220,22 @@ export async function removeStaleSources(kind: SourceKind, liveLocators: string[
     await query(`DELETE FROM kb_sources WHERE id = ANY($1::uuid[])`, [stale.map((s) => s.id)]);
   }
   return stale.map((s) => s.locator);
+}
+
+/** Per-business variant: only ever touches this business's sources of the given kinds. */
+export async function removeStaleTenantSources(
+  businessId: string,
+  kinds: SourceKind[],
+  liveLocators: string[],
+  dryRun = false,
+): Promise<string[]> {
+  const stale = await queryRows<{ id: string; kind: string; locator: string }>(
+    `SELECT id, kind, locator FROM kb_sources
+      WHERE business_id = $1 AND kind = ANY($2::text[]) AND NOT ((kind || ':' || locator) = ANY($3::text[]))`,
+    [businessId, kinds, liveLocators],
+  );
+  if (!dryRun && stale.length) {
+    await query(`DELETE FROM kb_sources WHERE business_id = $1 AND id = ANY($2::uuid[])`, [businessId, stale.map((s) => s.id)]);
+  }
+  return stale.map((s) => `${s.kind}:${s.locator}`);
 }

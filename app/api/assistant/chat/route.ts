@@ -2,29 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { getBusinessSubscription } from '@/lib/subscription';
 import { isTrialPlanId } from '@/lib/subscription/trial-plan';
+import { canSeeBusinessData } from '@/lib/insights/turn';
 import { rateLimited, readChatBody, streamAnswer } from '@/lib/rag/http';
 import { isChannelEnabled } from '@/lib/rag/settings';
 
 export const dynamic = 'force-dynamic';
 
-/** Phase 1: the in-app help assistant is offered to businesses on a trial plan. */
-async function inAppAllowed(businessId: string): Promise<boolean> {
-  if (!(await isChannelEnabled('trial_app'))) return false;
+/** Trial businesses use the `trial_app` channel, everyone else `in_app`; each has its own on/off switch. */
+async function inAppChannel(businessId: string): Promise<'trial_app' | 'in_app' | null> {
   const sub = await getBusinessSubscription(businessId).catch(() => null);
-  return Boolean(sub && (sub.status === 'trial' || isTrialPlanId(sub.plan_id)));
+  const channel = sub && (sub.status === 'trial' || isTrialPlanId(sub.plan_id)) ? 'trial_app' : 'in_app';
+  return (await isChannelEnabled(channel)) ? channel : null;
 }
 
 export async function GET(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return NextResponse.json({ enabled: false });
-  return NextResponse.json({ enabled: await inAppAllowed(auth.businessId), channel: 'trial_app' });
+  const channel = await inAppChannel(auth.businessId);
+  if (!channel) return NextResponse.json({ enabled: false });
+  const owner = await canSeeBusinessData(auth.userId, auth.businessId).catch(() => false);
+  return NextResponse.json({ enabled: true, channel, owner });
 }
 
 export async function POST(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
-  if (!(await inAppAllowed(auth.businessId))) {
-    return NextResponse.json({ error: 'The assistant is not available on your plan yet.' }, { status: 403 });
+  const channel = await inAppChannel(auth.businessId);
+  if (!channel) {
+    return NextResponse.json({ error: 'The assistant is switched off right now.' }, { status: 403 });
   }
   const limited = rateLimited([
     [`assistant:user:min:${auth.userId}`, 15, 60_000],
@@ -39,7 +44,7 @@ export async function POST(request: NextRequest) {
     message: body.message,
     conversationId: body.conversationId,
     pagePath: body.pagePath,
-    channel: 'trial_app',
+    channel,
     audience: 'tenant_user',
     userId: auth.userId,
     businessId: auth.businessId,

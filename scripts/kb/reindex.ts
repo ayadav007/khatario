@@ -5,6 +5,7 @@
  *   npm run kb:reindex -- --source=markdown    # only knowledge/*.md (used by deploy)
  *   npm run kb:reindex -- --source=plans
  *   npm run kb:reindex -- --source=marketing --locator=home
+ *   npm run kb:reindex -- --source=tenant --business=<id>   # one shop's catalog + policies (keyword-only)
  *   npm run kb:reindex -- --force              # re-embed even when hashes match
  *   npm run kb:reindex -- --dry-run
  */
@@ -19,13 +20,18 @@ function arg(name: string): string | undefined {
 
 async function main() {
   const source = (arg('source') ?? 'all') as ReindexTarget;
-  if (!['markdown', 'plans', 'marketing', 'all'].includes(source)) {
+  if (!['markdown', 'plans', 'marketing', 'tenant', 'all'].includes(source)) {
     console.error(`Unknown --source=${source}`);
+    process.exit(2);
+  }
+  if (source === 'tenant' && !arg('business')) {
+    console.error('--source=tenant needs --business=<business id>');
     process.exit(2);
   }
   const report = await reindex({
     target: source,
     locator: arg('locator'),
+    businessId: arg('business'),
     force: process.argv.includes('--force'),
     dryRun: process.argv.includes('--dry-run'),
   });

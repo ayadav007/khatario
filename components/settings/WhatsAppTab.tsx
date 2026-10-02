@@ -15,6 +15,7 @@ import { Toast, ToastType } from '@/components/ui/Toast';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { MetaCloudCredentialsForm, type MetaCloudPublic } from '@/components/whatsapp/MetaCloudCredentialsForm';
+import { OwnerUpdatesCard } from '@/components/whatsapp/OwnerUpdatesCard';
 import { Lock } from 'lucide-react';
 
 type ConnectionStatus = 'disconnected' | 'pending_qr' | 'connected' | 'error';
@@ -717,6 +718,7 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
             </Card>
 
           </div>
+          {!connectOnly ? <OwnerUpdatesCard onToast={(message, type) => setToast({ message, type })} /> : null}
           </div>
         )}
 

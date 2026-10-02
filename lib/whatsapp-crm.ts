@@ -2745,7 +2745,8 @@ export async function processIncomingMessage(
               state: convState,
               context: convContext
             },
-            pendingOrder: pendingOrderInfo
+            pendingOrder: pendingOrderInfo,
+            customerPhone: normalizedFrom
           };
 
           let aiResponse = await chatbot.generateResponse(

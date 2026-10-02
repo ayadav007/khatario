@@ -1,11 +1,15 @@
-export const AUDIENCES = ['prospect', 'tenant_user', 'tenant_customer', 'internal'] as const;
+/**
+ * Who a conversation is with. `tenant_owner` is a business's primary admin talking from their
+ * linked WhatsApp number; for help articles they read the same guides as `tenant_user`.
+ */
+export const AUDIENCES = ['prospect', 'tenant_user', 'tenant_owner', 'tenant_customer', 'internal'] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 /**
  * Labels a knowledge chunk can carry. `gst_law` is a reference corpus (the GST Acts and Rules),
  * never a conversation audience: it is only searched as a second pass for tenant users.
  */
-export const KB_AUDIENCES = [...AUDIENCES, 'gst_law'] as const;
+export const KB_AUDIENCES = ['prospect', 'tenant_user', 'tenant_customer', 'internal', 'gst_law'] as const;
 export type KbAudience = (typeof KB_AUDIENCES)[number];
 
 export const CHANNELS = ['web', 'signup', 'trial_app', 'in_app', 'whatsapp'] as const;
@@ -76,6 +80,7 @@ export type AssistantIntent =
   | 'start_trial'
   | 'talk_to_human'
   | 'greeting'
+  | 'business_data'
   | 'other';
 
 export interface Citation {

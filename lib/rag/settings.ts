@@ -6,7 +6,7 @@ export interface PlatformAssistantSettings {
   channels: Partial<Record<Channel, boolean>>;
 }
 
-const DEFAULTS: PlatformAssistantSettings = { channels: { web: true, signup: true, trial_app: true } };
+const DEFAULTS: PlatformAssistantSettings = { channels: { web: true, signup: true, trial_app: true, in_app: true, whatsapp: true } };
 
 let cache: { value: PlatformAssistantSettings; at: number } | null = null;
 const CACHE_MS = 30_000;

@@ -1,14 +1,18 @@
-import { indexSource, removeStaleSources, type IndexOptions, type SourceIndexResult } from './indexer';
+import { queryRows } from '@/lib/db';
+import { indexSource, removeStaleSources, removeStaleTenantSources, type IndexOptions, type SourceIndexResult } from './indexer';
 import { KnowledgeFileError, listKnowledgeFiles, loadMarkdownSource } from './markdown-source';
 import { loadPlansSource, PLANS_LOCATOR } from './plans-source';
 import { loadMarketingSources } from './marketing-source';
+import { loadTenantCatalogSource, loadTenantPolicySource } from './tenant-sources';
 
-export type ReindexTarget = 'markdown' | 'plans' | 'marketing' | 'all';
+/** `tenant` needs `businessId`; `all` covers Khatario's own knowledge only. */
+export type ReindexTarget = 'markdown' | 'plans' | 'marketing' | 'tenant' | 'all';
 
 export interface ReindexRequest extends IndexOptions {
   target: ReindexTarget;
   /** Limit to one markdown file (relative to knowledge/) or one marketing page slug. */
   locator?: string;
+  businessId?: string;
 }
 
 export interface ReindexReport {
@@ -62,11 +66,50 @@ async function reindexMarketing(req: ReindexRequest, report: ReindexReport) {
   }
 }
 
+/** A shop's catalog and policies for its WhatsApp customer bot. Keyword-only in v1 (no embedding quota). */
+async function reindexTenant(req: ReindexRequest, report: ReindexReport) {
+  const businessId = req.businessId;
+  if (!businessId) {
+    report.errors.push('tenant: businessId is required');
+    return;
+  }
+  const opts = { ...req, keywordOnly: true };
+  const live: string[] = [];
+  let loadFailed = false;
+  for (const [label, load] of [
+    ['catalog', loadTenantCatalogSource],
+    ['policies', loadTenantPolicySource],
+  ] as const) {
+    try {
+      const source = await load(businessId);
+      if (!source.documents.length) continue;
+      live.push(`${source.kind}:${source.locator}`);
+      report.results.push(await indexSource(source, opts));
+    } catch (err) {
+      loadFailed = true;
+      report.errors.push(`tenant ${label}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  // An empty catalog (all items hidden from the store) removes the old chunks; a load error keeps them.
+  if (!loadFailed) {
+    report.removed.push(...(await removeStaleTenantSources(businessId, ['tenant_catalog', 'tenant_policy'], live, req.dryRun)));
+  }
+}
+
+/** Businesses whose shop knowledge is already indexed: the nightly safety net refreshes only these. */
+export async function indexedTenantBusinessIds(): Promise<string[]> {
+  const rows = await queryRows<{ business_id: string }>(
+    `SELECT DISTINCT business_id FROM kb_sources WHERE business_id IS NOT NULL AND kind IN ('tenant_catalog', 'tenant_policy')`,
+  ).catch(() => []);
+  return rows.map((r) => r.business_id);
+}
+
 export async function reindex(req: ReindexRequest): Promise<ReindexReport> {
   const report: ReindexReport = { results: [], removed: [], errors: [] };
   if (req.target === 'markdown' || req.target === 'all') await reindexMarkdown(req, report);
   if (req.target === 'plans' || req.target === 'all') await reindexPlans(req, report);
   if (req.target === 'marketing' || req.target === 'all') await reindexMarketing(req, report);
+  if (req.target === 'tenant') await reindexTenant(req, report);
   for (const r of report.results) {
     if (r.status === 'error' && r.error) report.errors.push(`${r.kind}:${r.locator}: ${r.error}`);
   }

@@ -124,9 +124,13 @@ if command -v pm2 >/dev/null 2>&1; then
     echo ">> pm2 start npm --name $PM2_APP_NAME -- run $PM2_START_SCRIPT"
     pm2 start npm --name "$PM2_APP_NAME" -- run "$PM2_START_SCRIPT"
   fi
+  # Without this worker no todo reminder (and so no reminder popup) is ever delivered.
   if pm2 describe "$PM2_WORKER_NAME" >/dev/null 2>&1; then
     echo ">> pm2 restart $PM2_WORKER_NAME --update-env"
     pm2 restart "$PM2_WORKER_NAME" --update-env
+  else
+    echo ">> pm2 start npm --name $PM2_WORKER_NAME -- run worker:todo"
+    pm2 start npm --name "$PM2_WORKER_NAME" -- run worker:todo
   fi
   if pm2 describe "$PM2_KB_WORKER_NAME" >/dev/null 2>&1; then
     echo ">> pm2 restart $PM2_KB_WORKER_NAME --update-env"

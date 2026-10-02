@@ -10,6 +10,7 @@ import {
   requirePlatformModule,
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -585,6 +586,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    noteShopChanged(business_id, 'item created');
     return NextResponse.json({ item }, { status: 201 });
   } catch (error: any) {
     console.error(error);

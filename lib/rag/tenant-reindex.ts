@@ -1,0 +1,36 @@
+import { queryOne } from '@/lib/db';
+import { scheduleTenantReindex } from './queue';
+
+const CACHE_MS = 5 * 60_000;
+const indexedCache = new Map<string, { at: number; indexed: boolean }>();
+
+export async function tenantKnowledgeIndexed(businessId: string): Promise<boolean> {
+  const hit = indexedCache.get(businessId);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.indexed;
+  const row = await queryOne<{ ok: number }>(
+    `SELECT 1 AS ok FROM kb_sources WHERE business_id = $1 AND kind IN ('tenant_catalog', 'tenant_policy') LIMIT 1`,
+    [businessId],
+  ).catch(() => null);
+  const indexed = Boolean(row);
+  indexedCache.set(businessId, { at: Date.now(), indexed });
+  return indexed;
+}
+
+/** First customer message on WhatsApp: build the shop's knowledge (debounced, background). */
+export function bootstrapTenantKnowledge(businessId: string): void {
+  indexedCache.set(businessId, { at: Date.now(), indexed: true });
+  scheduleTenantReindex(businessId, 'customer bot first use');
+}
+
+/**
+ * Call after an item or store-settings save. Only shops whose customer bot has been used (their
+ * knowledge exists) are re-indexed; others are built on the first customer message. Never throws.
+ */
+export function noteShopChanged(businessId: string | null | undefined, reason: string): void {
+  if (!businessId) return;
+  void tenantKnowledgeIndexed(businessId)
+    .then((indexed) => {
+      if (indexed) scheduleTenantReindex(businessId, reason);
+    })
+    .catch(() => undefined);
+}

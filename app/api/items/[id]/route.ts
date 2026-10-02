@@ -5,6 +5,7 @@ import { Item } from '@/types/database';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { noteShopChanged } from '@/lib/rag/tenant-reindex';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,7 @@ export async function PATCH(
       if (!flagged.ok) {
         return NextResponse.json({ error: flagged.error, code: flagged.code }, { status: flagged.status });
       }
+      noteShopChanged(businessId, 'item store listing changed');
       return NextResponse.json({ item: flagged.item });
     }
 
@@ -596,6 +598,7 @@ export async function PATCH(
       [itemId, businessId]
     );
 
+    noteShopChanged(businessId, 'item updated');
     return NextResponse.json({ item: refreshed || item });
   } catch (error: any) {
     console.error('Error updating item', error);
@@ -663,6 +666,7 @@ export async function DELETE(
       [itemId, businessId]
     );
 
+    noteShopChanged(businessId, 'item deleted');
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error deleting item', error);

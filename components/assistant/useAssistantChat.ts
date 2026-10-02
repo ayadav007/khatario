@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type AssistantMode = 'public' | 'app';
-export type AssistantChannel = 'web' | 'signup' | 'trial_app';
+export type AssistantChannel = 'web' | 'signup' | 'trial_app' | 'in_app';
 
 export type AssistantAction =
   | { type: 'book_demo' }
@@ -11,6 +11,14 @@ export type AssistantAction =
   | { type: 'recommend_plan' }
   | { type: 'talk_to_human' }
   | { type: 'upgrade'; url: string };
+
+export interface InsightCardData {
+  title: string;
+  subtitle?: string;
+  rows: Array<{ label: string; value: string; hint?: string }>;
+  empty?: string;
+  link?: { label: string; url: string };
+}
 
 export interface AssistantCitation {
   title: string;
@@ -25,6 +33,8 @@ export interface ChatMessage {
   messageId?: string;
   citations?: AssistantCitation[];
   action?: AssistantAction | null;
+  /** Business figures for the owner; shown instead of the plain-text version in `content`. */
+  insight?: InsightCardData[];
   quickReplies?: string[];
   answered?: boolean;
   streaming?: boolean;
@@ -63,7 +73,12 @@ export function useAssistantChat(mode: AssistantMode, channel: AssistantChannel)
       }
       const data = (await res.json()) as {
         conversationId: string;
-        messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; action: { type?: string } | null }>;
+        messages: Array<{
+          id: string;
+          role: 'user' | 'assistant';
+          content: string;
+          action: { type?: string; cards?: InsightCardData[] } | null;
+        }>;
       };
       setConversationId(data.conversationId);
       setMessages(
@@ -73,6 +88,7 @@ export function useAssistantChat(mode: AssistantMode, channel: AssistantChannel)
           content: m.content,
           messageId: m.role === 'assistant' ? m.id : undefined,
           action: m.action?.type && ACTION_TYPES.has(m.action.type) ? (m.action as AssistantAction) : null,
+          insight: m.action?.type === 'insight' && Array.isArray(m.action.cards) ? m.action.cards : undefined,
         })),
       );
     } catch {
@@ -151,6 +167,9 @@ export function useAssistantChat(mode: AssistantMode, channel: AssistantChannel)
                 break;
               case 'action':
                 patchLast((m) => ({ ...m, action: ev.action as AssistantAction }));
+                break;
+              case 'insight':
+                patchLast((m) => ({ ...m, insight: ev.cards as InsightCardData[] }));
                 break;
               case 'citations':
                 patchLast((m) => ({ ...m, citations: ev.citations as AssistantCitation[] }));

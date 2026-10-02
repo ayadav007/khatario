@@ -26,6 +26,21 @@ export async function processWhatsAppMessageJob(data: WhatsAppMessageJob): Promi
     case 'webhook':
       await processWebhook(data);
       return;
+    case 'owner-command': {
+      const { processOwnerCommand } = await import('./whatsapp/owner-command');
+      await processOwnerCommand(data);
+      return;
+    }
+    case 'cloud-incoming': {
+      const { processCloudIncoming } = await import('./whatsapp/cloud-incoming');
+      await processCloudIncoming(data);
+      return;
+    }
+    case 'platform-incoming': {
+      const { processPlatformIncoming } = await import('./whatsapp/platform-incoming');
+      await processPlatformIncoming(data);
+      return;
+    }
     default:
       console.error('[BullMQ] unknown job shape', data);
   }
