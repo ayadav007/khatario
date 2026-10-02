@@ -153,7 +153,7 @@ async function loadRow(): Promise<Row | null> {
        FROM platform_settings WHERE id = 'default'`,
     );
   } catch {
-    // Columns missing until migration 347 runs; env vars keep billing working.
+    // Columns missing until migration 350 runs; env vars keep billing working.
     return null;
   }
 }
@@ -238,7 +238,7 @@ export async function savePlatformPaymentSettings(
        WHERE table_name = 'platform_settings' AND column_name = 'platform_payment_provider'`,
     );
     if (!exists) {
-      throw new PlatformPaymentSettingsError('Run migration 347_platform_payment_settings.sql first.');
+      throw new PlatformPaymentSettingsError('Run migration 350_platform_payment_settings.sql first.');
     }
   }
 
