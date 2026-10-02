@@ -21,8 +21,9 @@ interface WorkOrder {
   priority: string;
   work_description: string;
   assigned_to: string | null;
-  total_cost: number;
+  total_cost: number | string;
   converted_invoice_id: string | null;
+  converted_invoice_number: string | null;
 }
 
 export default function WorkOrdersPage() {
@@ -236,7 +237,7 @@ export default function WorkOrdersPage() {
                       <td className="py-4 px-4">{getPriorityBadge(wo.priority)}</td>
                       <td className="py-4 px-4">
                         <span className="text-sm font-semibold text-gray-900">
-                          ₹{wo.total_cost.toFixed(2)}
+                          ₹{Number(wo.total_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
                       <td className="py-4 px-4">{getStatusBadge(wo.status)}</td>
@@ -247,7 +248,15 @@ export default function WorkOrdersPage() {
                               onClick={() => router.push(`/invoices/${wo.converted_invoice_id}`)}
                               className="text-sm text-green-600 hover:underline"
                             >
-                              Invoice
+                              {wo.converted_invoice_number || 'Invoice'}
+                            </button>
+                          )}
+                          {['draft', 'scheduled', 'in_progress'].includes(wo.status) && (
+                            <button
+                              onClick={() => router.push(`/work-orders/edit/${wo.id}`)}
+                              className="text-sm text-gray-600 hover:underline"
+                            >
+                              Edit
                             </button>
                           )}
                           <button

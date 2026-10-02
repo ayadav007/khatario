@@ -13,6 +13,40 @@ function placeOfSupplyName(code: unknown): string {
   return getStateName(padded) || raw;
 }
 
+const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  scheduled: 'Scheduled',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+/** Job-card fields for the work order template, formatted for print. */
+function workOrderFields(wo: any, formatDate: (d: any) => string) {
+  const money = (v: unknown) => Number(v || 0).toFixed(2);
+  const hours = (v: unknown) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
+  const priority = String(wo.priority || 'medium');
+  return {
+    description: wo.work_description || '',
+    location: wo.work_location || '',
+    assigned_to: wo.assigned_to || '',
+    priority: priority.charAt(0).toUpperCase() + priority.slice(1),
+    status: WORK_ORDER_STATUS_LABELS[wo.status] || wo.status || '',
+    scheduled_start: formatDate(wo.scheduled_start_date),
+    scheduled_end: formatDate(wo.scheduled_end_date),
+    actual_start: formatDate(wo.actual_start_date),
+    actual_end: formatDate(wo.actual_end_date),
+    estimated_hours: hours(wo.estimated_hours),
+    actual_hours: hours(wo.actual_hours),
+    labor_cost: money(wo.labor_cost),
+    material_cost: money(wo.material_cost),
+    other_cost: money(wo.other_cost),
+    total_cost: money(wo.total_cost),
+    has_labor: Number(wo.labor_cost || 0) > 0,
+    has_other: Number(wo.other_cost || 0) > 0,
+  };
+}
+
 interface RenderData {
   invoice: any;
   business: any;
@@ -337,6 +371,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       round_off: Number(invoice.round_off || 0).toFixed(2),
       total_quantity: totalQuantity,
       items_have_prices: processedItems.some((i: any) => Number(i.unit_price) > 0),
+      has_tax: Number(invoice.tax_total || 0) > 0,
       total_unit: primaryUnit,
       opening_balance: openingBalance.toFixed(2),
       balance_due: balanceDue.toFixed(2),
@@ -353,7 +388,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       terms_of_delivery: invoice.terms_of_delivery || ''
       ,
       // Tax breakdown grouped by HSN/SAC (for templates like Tally Style)
-      tax_breakdown: taxBreakdown
+      tax_breakdown: taxBreakdown,
+      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate) : null
     },
     business: {
       ...business,

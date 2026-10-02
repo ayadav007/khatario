@@ -172,8 +172,13 @@
         {{#ifSetting 'show_hsn'}}<th class="col-hsn">HSN/SAC</th>{{/ifSetting}}
         {{#ifSetting 'show_quantity'}}<th class="col-qty text-center">Quantity</th>{{/ifSetting}}
         {{#if invoice.items_have_prices}}
-        {{#ifSetting 'show_rate'}}<th class="col-rate text-right">Rate</th>{{/ifSetting}}
-        {{#ifSetting 'show_line_total'}}<th class="col-taxable text-right">Taxable Value</th>{{/ifSetting}}
+        <th class="col-rate text-right">Rate</th>
+        <th class="col-taxable text-right">Taxable Value</th>
+        {{#if invoice.has_tax}}
+        <th class="col-qty text-right">GST %</th>
+        <th class="col-rate text-right">Tax</th>
+        <th class="col-taxable text-right">Total</th>
+        {{/if}}
         {{/if}}
       </tr>
     </thead>
@@ -193,13 +198,36 @@
         {{#ifSetting 'show_hsn'}}<td>{{this.hsn_sac}}</td>{{/ifSetting}}
         {{#ifSetting 'show_quantity'}}<td class="text-center">{{this.quantity}}{{#ifSetting 'show_unit'}} {{this.unit}}{{/ifSetting}}</td>{{/ifSetting}}
         {{#if @root.invoice.items_have_prices}}
-        {{#ifSetting 'show_rate'}}<td class="text-right">₹{{this.unit_price}}</td>{{/ifSetting}}
-        {{#ifSetting 'show_line_total'}}<td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>{{/ifSetting}}
+        <td class="text-right">₹{{this.unit_price}}</td>
+        <td class="text-right"><strong>₹{{this.taxable_value}}</strong></td>
+        {{#if @root.invoice.has_tax}}
+        <td class="text-right">{{this.tax_rate}}%</td>
+        <td class="text-right">₹{{this.tax_amount}}</td>
+        <td class="text-right"><strong>₹{{this.line_total}}</strong></td>
+        {{/if}}
         {{/if}}
       </tr>
       {{/each}}
     </tbody>
   </table>
+
+  {{#if invoice.items_have_prices}}
+  <table style="width: 320px; margin: 0 0 20px auto;">
+    <tbody>
+      <tr><td>Taxable Value</td><td class="text-right">₹{{invoice.subtotal}}</td></tr>
+      {{#if invoice.has_tax}}
+      {{#if invoice.is_igst}}
+      <tr><td>IGST</td><td class="text-right">₹{{invoice.igst_total}}</td></tr>
+      {{else}}
+      <tr><td>CGST</td><td class="text-right">₹{{invoice.cgst_total}}</td></tr>
+      <tr><td>SGST</td><td class="text-right">₹{{invoice.sgst_total}}</td></tr>
+      {{/if}}
+      {{/if}}
+      <tr style="border-top: 2px solid var(--primary-color);"><td><strong>Value of Goods</strong></td><td class="text-right"><strong>₹{{invoice.grand_total}}</strong></td></tr>
+    </tbody>
+  </table>
+  <div style="font-size: 11px; color: #4b5563; text-align: right; margin-bottom: 15px;">{{invoice.amount_in_words}}</div>
+  {{/if}}
   
   <div class="summary-note">
     <strong>Important:</strong> This is a Delivery Challan, not an invoice. 

@@ -263,7 +263,7 @@ export class InvoiceRenderer {
     // Document-type defaults reference these IDs in template-registry; physical folders use shared GST layout until dedicated templates ship.
     'sales_order/professional': 'gst_standard',
     'purchase_order/professional': 'gst_standard',
-    'work_order/job_card': 'gst_standard',
+    'work_order/job_card': 'work_order/job_card',
     // Financial report PDFs (see templates/reports/*)
     balance_sheet: 'reports/balance_sheet',
     trial_balance: 'reports/trial_balance',

@@ -31,6 +31,10 @@ interface UnifiedDocumentDetailProps {
   pdfUrlPrefix?: string;
   /** Renders below the header toolbar (e.g. sales order payment summary). */
   topContent?: ReactNode;
+  /** Hide the Edit button for documents that can no longer change. */
+  canEdit?: (document: any) => boolean;
+  /** Extra toolbar buttons; `reload` refetches the document and preview. */
+  headerActions?: (document: any, reload: () => void) => ReactNode;
 }
 
 export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
@@ -41,6 +45,8 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
   editUrlPrefix,
   pdfUrlPrefix = '/api/documents',
   topContent,
+  canEdit,
+  headerActions,
 }) => {
   const router = useRouter();
   const { business, user } = useAuth();
@@ -63,6 +69,21 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
     'work_orders',
   ];
   const canEmail = emailableTables.includes(table as DocumentTable);
+
+  const docNumber: string | undefined =
+    documentData?.invoice_number ||
+    documentData?.order_number ||
+    documentData?.challan_number ||
+    documentData?.work_order_number ||
+    documentData?.credit_note_number ||
+    documentData?.debit_note_number;
+  const docDate: string | undefined =
+    documentData?.invoice_date ||
+    documentData?.order_date ||
+    documentData?.challan_date ||
+    documentData?.work_order_date ||
+    documentData?.credit_note_date ||
+    documentData?.debit_note_date;
 
   useEffect(() => {
     if (documentId && business?.id) {
@@ -125,7 +146,7 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${documentData?.invoice_number || documentData?.order_number || documentData?.challan_number || 'document'}.pdf`;
+      a.download = `${docNumber || 'document'}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -167,7 +188,7 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
         <div className="no-print">
           <Breadcrumbs items={[
             { label: title + 's', href: backUrl },
-            { label: documentData.invoice_number || documentData.order_number || documentData.challan_number || 'Detail' }
+            { label: docNumber || 'Detail' }
           ]} />
         </div>
 
@@ -178,10 +199,12 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
             </Button>
             <div>
               <h1 className="text-xl font-bold text-gray-900">
-                {title} {documentData.invoice_number || documentData.order_number || documentData.challan_number}
+                {title} {docNumber}
               </h1>
               <p className="text-sm text-gray-500">
-                {documentData.party_name} • {new Date(documentData.invoice_date || documentData.order_date || documentData.challan_date).toLocaleDateString()}
+                {[documentData.party_name, docDate ? new Date(docDate).toLocaleDateString() : null]
+                  .filter(Boolean)
+                  .join(' • ')}
               </p>
             </div>
           </div>
@@ -195,10 +218,13 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
               <Download className="w-4 h-4 mr-2" />
               PDF
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => router.push(`${editUrlPrefix}/${documentId}?edit=true`)}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit
-            </Button>
+            {(!canEdit || canEdit(documentData)) && (
+              <Button variant="secondary" size="sm" onClick={() => router.push(`${editUrlPrefix}/${documentId}?edit=true`)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
+            )}
+            {headerActions?.(documentData, fetchData)}
             {canEmail && (
               <Button variant="secondary" size="sm" onClick={() => setEmailModalOpen(true)}>
                 <Mail className="w-4 h-4 mr-2" />
@@ -234,16 +260,9 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
             documentId={documentId}
             partyName={documentData.party_name || 'Recipient'}
             partyEmail={documentData.party_email}
-            documentNumber={
-              documentData.invoice_number ||
-              documentData.order_number ||
-              documentData.challan_number ||
-              documentId
-            }
-            documentDate={
-              documentData.invoice_date || documentData.order_date || documentData.challan_date
-            }
-            amount={documentData.grand_total}
+            documentNumber={docNumber || documentId}
+            documentDate={docDate}
+            amount={documentData.grand_total ?? documentData.total_cost}
             businessName={business?.name || 'Your business'}
             fromEmail={business?.email || user?.email || ''}
             fromName={business?.name}

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Work Order</title>
+  <style>
+    :root {
+      --primary-color: {{settings.primary_color}};
+      --text-color: {{settings.text_color}};
+      --font-family: {{settings.font_family}};
+      --font-size: {{settings.font_size}}px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font-family), 'Segoe UI', sans-serif; font-size: var(--font-size); color: var(--text-color); padding: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .document-title { text-align: center; font-size: 26px; font-weight: bold; color: var(--primary-color); margin: 10px 0 18px; letter-spacing: 1px; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 2px solid var(--primary-color); }
+    .business-name { font-size: 20px; font-weight: bold; color: var(--primary-color); margin-bottom: 5px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; padding: 12px; background: #f1f5f9; background: color-mix(in srgb, var(--primary-color) 6%, white); border-radius: 6px; }
+    .meta-item { text-align: center; }
+    .label { font-size: 10px; text-transform: uppercase; color: var(--primary-color); font-weight: 600; }
+    .meta-value { font-size: 14px; font-weight: bold; color: #1e293b; margin-top: 3px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+    .box { padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+    .box .label { margin-bottom: 6px; }
+    .box .body { font-size: 12px; color: #374151; white-space: pre-line; }
+    .job { border: 1px solid #cbd5e1; border: 1px solid color-mix(in srgb, var(--primary-color) 30%, white); border-radius: 6px; padding: 14px; margin: 16px 0; }
+    .job .description { font-size: 13px; white-space: pre-line; margin: 6px 0 12px; }
+    .job-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .job-grid .value { font-size: 12px; font-weight: 600; color: #1e293b; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    thead { background: var(--primary-color); color: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    th { padding: 9px 8px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    th.text-right, td.text-right { text-align: right; }
+    th.text-center, td.text-center { text-align: center; }
+    tbody tr { border-bottom: 1px solid #e5e7eb; }
+    td { padding: 8px; font-size: 12px; word-wrap: break-word; overflow-wrap: break-word; }
+    .section-title { font-size: 12px; font-weight: 700; color: var(--primary-color); text-transform: uppercase; margin-top: 18px; }
+    .summary { width: 320px; margin: 4px 0 6px auto; }
+    .summary td { padding: 6px 8px; }
+    .muted { font-size: 11px; color: #6b7280; }
+    .note { margin: 14px 0; padding: 10px 12px; background: #f9fafb; border-left: 3px solid #9ca3af; border-radius: 4px; font-size: 12px; white-space: pre-line; }
+    .completion { margin-top: 22px; border: 1px dashed #9ca3af; border-radius: 6px; padding: 12px 14px; }
+    .completion-lines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 10px; font-size: 11px; color: #4b5563; }
+    .signature-section { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 50px; }
+    .signature-box { width: 200px; text-align: center; border-top: 1px solid #9ca3af; padding-top: 8px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      {{#ifSetting 'show_business_name'}}<div class="business-name">{{business.name}}</div>{{/ifSetting}}
+      <div style="font-size: 11px; color: #4b5563;">
+        {{#ifSetting 'show_business_address'}}{{business.address}}{{#if business.city}}, {{business.city}}{{/if}}{{#if business.state}}, {{business.state}}{{/if}}{{#if business.pincode}} - {{business.pincode}}{{/if}}<br>{{/ifSetting}}
+        {{#ifSetting 'show_business_phone'}}{{#if business.phone}}Phone: {{business.phone}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_email'}}{{#if business.email}}Email: {{business.email}}<br>{{/if}}{{/ifSetting}}
+        {{#ifSetting 'show_business_gstin'}}{{#if business.gstin}}<strong>GSTIN:</strong> {{business.gstin}}{{/if}}{{/ifSetting}}
+      </div>
+    </div>
+    {{#ifSetting 'show_logo'}}{{#if business.logo_url}}<img src="{{business.logo_url}}" alt="Logo" style="max-height: 70px; max-width: 160px; object-fit: contain;">{{/if}}{{/ifSetting}}
+  </div>
+
+  <div class="document-title">{{invoice.invoice_title}}</div>
+
+  <div class="meta-grid">
+    <div class="meta-item">
+      <div class="label">Work Order No.</div>
+      <div class="meta-value">{{invoice.invoice_number}}</div>
+    </div>
+    <div class="meta-item">
+      <div class="label">Date</div>
+      <div class="meta-value">{{invoice.invoice_date}}</div>
+    </div>
+    <div class="meta-item">
+      <div class="label">Priority</div>
+      <div class="meta-value">{{invoice.work_order.priority}}</div>
+    </div>
+    <div class="meta-item">
+      <div class="label">Status</div>
+      <div class="meta-value">{{invoice.work_order.status}}</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="box">
+      <div class="label">Customer</div>
+      {{#if customer.name}}
+      <div style="font-size: 14px; font-weight: bold;">{{customer.name}}</div>
+      <div class="body">
+        {{#if customer.billing_address}}{{customer.billing_address}}<br>{{/if}}
+        {{#if customer.phone}}Phone: {{customer.phone}}<br>{{/if}}
+        {{#if customer.email}}Email: {{customer.email}}<br>{{/if}}
+        {{#if customer.gstin}}<strong>GSTIN:</strong> {{customer.gstin}}{{/if}}
+      </div>
+      {{else}}
+      <div class="body">Internal job (no customer)</div>
+      {{/if}}
+    </div>
+    <div class="box">
+      <div class="label">Work Site</div>
+      <div class="body">{{#if invoice.work_order.location}}{{invoice.work_order.location}}{{else}}{{#if customer.shipping_address}}{{customer.shipping_address}}{{else}}-{{/if}}{{/if}}</div>
+    </div>
+  </div>
+
+  <div class="job">
+    <div class="label">Work to be Performed</div>
+    <div class="description">{{invoice.work_order.description}}</div>
+    <div class="job-grid">
+      <div>
+        <div class="label">Assigned To</div>
+        <div class="value">{{#if invoice.work_order.assigned_to}}{{invoice.work_order.assigned_to}}{{else}}-{{/if}}</div>
+      </div>
+      <div>
+        <div class="label">Scheduled</div>
+        <div class="value">
+          {{#if invoice.work_order.scheduled_start}}{{invoice.work_order.scheduled_start}}{{#if invoice.work_order.scheduled_end}} to {{invoice.work_order.scheduled_end}}{{/if}}{{else}}Not scheduled{{/if}}
+        </div>
+      </div>
+      <div>
+        <div class="label">Estimated Hours</div>
+        <div class="value">{{#if invoice.work_order.estimated_hours}}{{invoice.work_order.estimated_hours}}{{else}}-{{/if}}</div>
+      </div>
+      {{#if invoice.work_order.actual_start}}
+      <div>
+        <div class="label">Started</div>
+        <div class="value">{{invoice.work_order.actual_start}}</div>
+      </div>
+      <div>
+        <div class="label">Completed</div>
+        <div class="value">{{#if invoice.work_order.actual_end}}{{invoice.work_order.actual_end}}{{else}}In progress{{/if}}</div>
+      </div>
+      <div>
+        <div class="label">Actual Hours</div>
+        <div class="value">{{#if invoice.work_order.actual_hours}}{{invoice.work_order.actual_hours}}{{else}}-{{/if}}</div>
+      </div>
+      {{/if}}
+    </div>
+  </div>
+
+  {{#if items.length}}
+  <div class="section-title">Materials</div>
+  <table>
+    <thead>
+      <tr>
+        <th class="text-center" style="width: 5%;">#</th>
+        <th>Item</th>
+        <th style="width: 12%;">HSN/SAC</th>
+        <th class="text-center" style="width: 12%;">Qty</th>
+        <th class="text-right" style="width: 14%;">Rate</th>
+        <th class="text-right" style="width: 16%;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td class="text-center">{{this.index}}</td>
+        <td>
+          <strong>{{this.item_name}}</strong>
+          {{#if this.description}}{{#unless (eqStr this.description this.item_name)}}
+          <br><span class="muted">{{this.description}}</span>
+          {{/unless}}{{/if}}
+        </td>
+        <td>{{this.hsn_sac}}</td>
+        <td class="text-center">{{this.quantity}} {{this.unit}}</td>
+        <td class="text-right">₹{{this.unit_price}}</td>
+        <td class="text-right"><strong>₹{{this.line_total}}</strong></td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  <table class="summary">
+    <tbody>
+      <tr><td>Materials</td><td class="text-right">₹{{invoice.work_order.material_cost}}</td></tr>
+      <tr><td>Labour</td><td class="text-right">₹{{invoice.work_order.labor_cost}}</td></tr>
+      {{#if invoice.work_order.has_other}}
+      <tr><td>Other charges</td><td class="text-right">₹{{invoice.work_order.other_cost}}</td></tr>
+      {{/if}}
+      <tr style="border-top: 2px solid var(--primary-color);"><td><strong>Estimated Total</strong></td><td class="text-right"><strong>₹{{invoice.work_order.total_cost}}</strong></td></tr>
+    </tbody>
+  </table>
+  <div class="muted" style="text-align: right;">{{invoice.amount_in_words}}</div>
+  <div class="muted" style="text-align: right; margin-bottom: 8px;">Before GST. Applicable tax is charged on the invoice.</div>
+
+  {{#if invoice.notes}}
+  <div class="note"><strong>Instructions:</strong><br>{{invoice.notes}}</div>
+  {{/if}}
+  {{#if invoice.terms}}
+  <div class="note"><strong>Terms &amp; Conditions:</strong><br>{{invoice.terms}}</div>
+  {{/if}}
+
+  <div class="completion">
+    <div class="label">Completion Record</div>
+    <div class="completion-lines">
+      <div>Work completed on: ____________</div>
+      <div>Time in / out: ____________</div>
+      <div>Hours spent: ____________</div>
+    </div>
+  </div>
+
+  <div class="signature-section">
+    <div class="signature-box">Customer Signature<br><small>Work received to satisfaction</small></div>
+    <div class="signature-box">Technician Signature</div>
+    <div class="signature-box">
+      {{#ifSetting 'show_signature'}}{{#if business.signature_url}}<img src="{{business.signature_url}}" alt="Signature" style="max-height: 50px; max-width: 160px; display: block; margin: -60px auto 6px;">{{/if}}{{/ifSetting}}
+      For {{business.name}}<br><small>Authorized Signatory</small>
+    </div>
+  </div>
+
+  {{#if settings.footer_text}}
+  <div style="margin-top: 24px; text-align: center; font-size: 10px; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 10px;">
+    {{settings.footer_text}}
+  </div>
+  {{/if}}
+</body>
+</html>

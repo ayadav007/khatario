@@ -10,6 +10,7 @@ import { compressThermalContent } from '@/lib/content-compressor';
 import { optimizeForThermal } from '@/lib/thermal-transformer';
 import { hasTableColumn } from '@/lib/schema-columns';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { findTemplateAssignment } from '@/lib/template-assignment';
 
 export type DocumentTable = 
   | 'invoices' 
@@ -205,7 +206,12 @@ export async function generateDocumentHtml(
       'delivery_challans': 'delivery_challan',
       'purchase_orders': 'purchase_order',
       'sales_orders': 'sales_order',
-      'work_orders': 'sales_order'
+      'work_orders': 'work_order'
+    };
+
+    // Used when the business has not assigned a template; most documents share the GST layout.
+    const defaultTemplateByTable: Partial<Record<DocumentTable, string>> = {
+      'work_orders': 'work_order/job_card',
     };
 
     // The invoices table holds multiple document types (tax invoice, proforma,
@@ -245,20 +251,11 @@ export async function generateDocumentHtml(
     if (isDev) {
       console.log('[PDF Generator] Step 2: Querying business_template_assignments for document_type:', documentType);
     }
-    let savedSettingsResult = await db.queryOne(
-      `SELECT template_id, settings 
-       FROM business_template_assignments 
-       WHERE business_id = $1 AND document_type = $2
-       LIMIT 1`,
-      [doc.business_id, documentType]
-    );
+    const savedSettingsResult = await findTemplateAssignment(doc.business_id, documentType);
     
     if (savedSettingsResult) {
       assignedTemplateId = savedSettingsResult.template_id;
-      const settings = savedSettingsResult.settings;
-      if (settings) {
-        savedSettings = typeof settings === 'string' ? JSON.parse(settings) : settings;
-      }
+      savedSettings = savedSettingsResult.settings;
       if (isDev) {
         console.log('[PDF Generator] ✅ Step 2 Result: Assignment FOUND');
         console.log('[PDF Generator]   - Assigned Template ID:', assignedTemplateId);
@@ -280,7 +277,7 @@ export async function generateDocumentHtml(
            FROM business_template_assignments 
            WHERE business_id = $1 AND document_type = $2 AND template_id = $3
            LIMIT 1`,
-          [doc.business_id, documentType, providedTemplateId]
+          [doc.business_id, savedSettingsResult.document_type, providedTemplateId]
         );
         
         if (specificAssignment && specificAssignment.settings) {
@@ -352,7 +349,7 @@ export async function generateDocumentHtml(
         console.log('[PDF Generator]   - Final Template ID:', finalTemplateId);
       }
     } else {
-      finalTemplateId = 'gst_standard';
+      finalTemplateId = defaultTemplateByTable[table] || 'gst_standard';
       if (isDev) {
         console.log('[PDF Generator] ⚠️ Step 4 Result: Using DEFAULT template (fallback)');
         console.log('[PDF Generator]   - Final Template ID:', finalTemplateId);
