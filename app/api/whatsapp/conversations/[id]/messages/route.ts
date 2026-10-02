@@ -10,6 +10,7 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { onStaffReply } from '@/lib/ai-agent/conversation';
 
 export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
   try {
@@ -57,7 +58,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
           m.from_number as sender_number`
               : 'NULL as sender_name, NULL as sender_number'
           }
-          , m.source_timestamp`;
+          , m.source_timestamp, m.sent_by`;
 
     const fromJoin = `FROM whatsapp_conversation_messages m
          ${
@@ -137,9 +138,11 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
       let sender_type: 'customer' | 'agent' | 'bot' | 'campaign' = 'customer';
       
       if (msg.direction === 'outgoing') {
-        // Outgoing messages are from agent/bot/campaign
-        // Check if message has buttons (likely bot/campaign) or check other metadata
-        if (msg.buttons && Array.isArray(msg.buttons) && msg.buttons.length > 0) {
+        if (msg.sent_by === 'bot') {
+          sender_type = 'bot';
+        } else if (msg.sent_by === 'staff') {
+          sender_type = 'agent';
+        } else if (msg.buttons && Array.isArray(msg.buttons) && msg.buttons.length > 0) {
           sender_type = 'bot'; // Assume bot if buttons present (could be campaign too)
         } else {
           sender_type = 'agent'; // Default to agent for outgoing without buttons
@@ -303,12 +306,14 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
       media_url,
       buttons ? JSON.stringify(buttons) : undefined,
       apiSendTs,
-      null
+      null,
+      { sentBy: 'staff', sentByUserId: userId ?? null }
     );
+    if (!conv.is_group) await onStaffReply(businessId, conversationId).catch(() => undefined);
 
     // storeOutgoingMessage already updates conversation and emits WebSocket events
     const row = await queryOne<Record<string, unknown>>(
-      `SELECT id, message_id, message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp
+      `SELECT id, message_id, message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp, sent_by
        FROM whatsapp_conversation_messages
        WHERE business_id = $1 AND conversation_id = $2 AND message_id = $3
        LIMIT 1`,

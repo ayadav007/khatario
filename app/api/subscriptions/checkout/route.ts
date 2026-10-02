@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isPlatformPaymentConfigured()) {
+    if (!(await isPlatformPaymentConfigured())) {
       return NextResponse.json(
         {
           error:

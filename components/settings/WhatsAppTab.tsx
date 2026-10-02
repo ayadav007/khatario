@@ -19,9 +19,9 @@ import { OwnerUpdatesCard } from '@/components/whatsapp/OwnerUpdatesCard';
 import { Lock } from 'lucide-react';
 
 type ConnectionStatus = 'disconnected' | 'pending_qr' | 'connected' | 'error';
-type Tab = 'connection' | 'bot-settings' | 'auto-reminders' | 'send-reminders' | 'logs';
+type Tab = 'connection' | 'auto-reminders' | 'send-reminders' | 'logs';
 
-const PREMIUM_TABS: Tab[] = ['bot-settings', 'auto-reminders', 'send-reminders', 'logs'];
+const PREMIUM_TABS: Tab[] = ['auto-reminders', 'send-reminders', 'logs'];
 
 export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) {
   const { business } = useAuth();
@@ -44,11 +44,6 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
   // Confirmation dialog state
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
-  // Bot Settings state
-  const [botTypingEnabled, setBotTypingEnabled] = useState(false);
-  const [botTypingDelay, setBotTypingDelay] = useState(3);
-  const [loadingBotSettings, setLoadingBotSettings] = useState(false);
-  const [savingBotSettings, setSavingBotSettings] = useState(false);
   const [cloudCreds, setCloudCreds] = useState<MetaCloudPublic | null>(null);
   const [cloudWebhook, setCloudWebhook] = useState('');
   const [savingCloud, setSavingCloud] = useState(false);
@@ -359,7 +354,6 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
 
   const tabs = [
     { id: 'connection' as Tab, label: 'Connection', premium: false },
-    { id: 'bot-settings' as Tab, label: 'Bot Settings', premium: true },
     { id: 'auto-reminders' as Tab, label: 'Auto Reminders', premium: true },
     { id: 'send-reminders' as Tab, label: 'Send Reminders', premium: true },
     { id: 'logs' as Tab, label: 'Logs', premium: true },
@@ -385,52 +379,6 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
       </Card>
     );
   }
-
-  // Load bot settings
-  const loadBotSettings = useCallback(async () => {
-    if (!business?.id) return;
-    setLoadingBotSettings(true);
-    try {
-      const res = await fetch(`/api/settings/whatsapp-bot?business_id=${business.id}`);
-      const data = await res.json();
-      if (res.ok) {
-        setBotTypingEnabled(data.whatsapp_bot_typing_enabled || false);
-        setBotTypingDelay(data.whatsapp_bot_typing_delay_seconds || 3);
-      }
-    } catch (err: any) {
-      console.error('Error loading bot settings:', err);
-    } finally {
-      setLoadingBotSettings(false);
-    }
-  }, [business?.id]);
-
-  // Save bot settings
-  const saveBotSettings = useCallback(async () => {
-    if (!business?.id) return;
-    setSavingBotSettings(true);
-    try {
-      const res = await fetch('/api/settings/whatsapp-bot', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          whatsapp_bot_typing_enabled: botTypingEnabled,
-          whatsapp_bot_typing_delay_seconds: botTypingDelay
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setToast({ message: 'Bot settings saved successfully', type: 'success' });
-      } else {
-        setToast({ message: data.error || 'Failed to save bot settings', type: 'error' });
-      }
-    } catch (err: any) {
-      console.error('Error saving bot settings:', err);
-      setToast({ message: 'Failed to save bot settings', type: 'error' });
-    } finally {
-      setSavingBotSettings(false);
-    }
-  }, [business?.id, botTypingEnabled, botTypingDelay]);
 
   const loadCloudCredentials = useCallback(async () => {
     if (!business?.id) return;
@@ -482,13 +430,6 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
       void loadCloudCredentials();
     }
   }, [connectOnly, activeTab, business?.id, loadCloudCredentials]);
-
-  // Load bot settings when bot-settings tab is selected
-  useEffect(() => {
-    if (activeTab === 'bot-settings' && business?.id) {
-      loadBotSettings();
-    }
-  }, [activeTab, business?.id, loadBotSettings]);
 
   return (
     <div className="space-y-6">
@@ -720,97 +661,6 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
           </div>
           {!connectOnly ? <OwnerUpdatesCard onToast={(message, type) => setToast({ message, type })} /> : null}
           </div>
-        )}
-
-        {activeTab === 'bot-settings' && (
-          hasBotAddon ? (
-          <Card padding="lg" className="w-full max-w-4xl">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary mb-2">Bot Response Settings</h3>
-                <p className="text-sm text-text-secondary">
-                  Configure typing indicator and response delay for all bot replies
-                </p>
-              </div>
-
-              {loadingBotSettings ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        id="bot-typing-enabled"
-                        checked={botTypingEnabled}
-                        onChange={(e) => {
-                          setBotTypingEnabled(e.target.checked);
-                          if (!e.target.checked) {
-                            setBotTypingDelay(3); // Reset to default when disabled
-                          }
-                        }}
-                        className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <div className="flex-1">
-                        <label htmlFor="bot-typing-enabled" className="block text-sm font-medium text-text-primary cursor-pointer">
-                          Enable Typing Animation
-                        </label>
-                        <p className="text-sm text-text-muted mt-1">
-                          Show animated typing indicator (three dots) before bot sends a response
-                        </p>
-                      </div>
-                    </div>
-
-                    {botTypingEnabled && (
-                      <div className="pl-7 space-y-2">
-                        <label className="block text-sm font-medium text-text-secondary">
-                          Response Delay: {botTypingDelay} seconds
-                          <span className="text-xs text-text-muted ml-2">Time before sending response</span>
-                        </label>
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          value={botTypingDelay}
-                          onChange={(e) => setBotTypingDelay(parseInt(e.target.value))}
-                          className="w-full h-2 bg-gray-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-600"
-                        />
-                        <div className="flex justify-between text-xs text-text-muted">
-                          <span>1s (Fast)</span>
-                          <span>10s (Slow)</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end pt-4 border-t">
-                    <Button
-                      onClick={saveBotSettings}
-                      disabled={savingBotSettings}
-                      className="flex items-center gap-2"
-                    >
-                      {savingBotSettings ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        'Save Settings'
-                      )}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
-          ) : (
-            renderPremiumGate(
-              'Bot settings require WhatsApp Bot',
-              'Automation, typing indicators, and reminder tools are part of the WhatsApp Bot addon.',
-            )
-          )
         )}
 
         {activeTab === 'auto-reminders' && (

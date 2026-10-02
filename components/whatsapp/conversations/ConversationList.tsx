@@ -33,6 +33,9 @@ export interface Conversation {
   lead_status?: string;
   conversation_status?: string;
   profile_picture_url?: string | null;
+  bot_paused_until?: string | null;
+  bot_paused_reason?: string | null;
+  handoff_requested_at?: string | null;
 }
 
 export interface FilterState {
@@ -445,6 +448,14 @@ export function ConversationList({
                       <p className={waChat.listPreview}>
                         {formatLastMessage(conv.last_message_text, conv.last_message_direction)}
                       </p>
+                      {conv.handoff_requested_at && conv.conversation_status !== 'closed' && (
+                        <span
+                          className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                          title="The AI handed this chat to your team"
+                        >
+                          Needs human
+                        </span>
+                      )}
                       {conv.unread_count > 0 && (
                         <span className="bg-[#25d366] text-white text-xs font-medium rounded-full px-1.5 py-0.5 min-w-[20px] text-center flex-shrink-0">
                           {conv.unread_count > 9 ? '9+' : conv.unread_count}

@@ -3,7 +3,14 @@ import { indexSource, removeStaleSources, removeStaleTenantSources, type IndexOp
 import { KnowledgeFileError, listKnowledgeFiles, loadMarkdownSource } from './markdown-source';
 import { loadPlansSource, PLANS_LOCATOR } from './plans-source';
 import { loadMarketingSources } from './marketing-source';
-import { loadTenantCatalogSource, loadTenantPolicySource } from './tenant-sources';
+import {
+  loadTenantCatalogSource,
+  loadTenantFaqSource,
+  loadTenantFileSource,
+  loadTenantPolicySource,
+  loadTenantTextSource,
+} from './tenant-sources';
+import { TENANT_SOURCE_KINDS } from '../types';
 
 /** `tenant` needs `businessId`; `all` covers Khatario's own knowledge only. */
 export type ReindexTarget = 'markdown' | 'plans' | 'marketing' | 'tenant' | 'all';
@@ -79,6 +86,9 @@ async function reindexTenant(req: ReindexRequest, report: ReindexReport) {
   for (const [label, load] of [
     ['catalog', loadTenantCatalogSource],
     ['policies', loadTenantPolicySource],
+    ['faqs', loadTenantFaqSource],
+    ['notes', loadTenantTextSource],
+    ['files', loadTenantFileSource],
   ] as const) {
     try {
       const source = await load(businessId);
@@ -92,14 +102,15 @@ async function reindexTenant(req: ReindexRequest, report: ReindexReport) {
   }
   // An empty catalog (all items hidden from the store) removes the old chunks; a load error keeps them.
   if (!loadFailed) {
-    report.removed.push(...(await removeStaleTenantSources(businessId, ['tenant_catalog', 'tenant_policy'], live, req.dryRun)));
+    report.removed.push(...(await removeStaleTenantSources(businessId, [...TENANT_SOURCE_KINDS], live, req.dryRun)));
   }
 }
 
 /** Businesses whose shop knowledge is already indexed: the nightly safety net refreshes only these. */
 export async function indexedTenantBusinessIds(): Promise<string[]> {
   const rows = await queryRows<{ business_id: string }>(
-    `SELECT DISTINCT business_id FROM kb_sources WHERE business_id IS NOT NULL AND kind IN ('tenant_catalog', 'tenant_policy')`,
+    `SELECT DISTINCT business_id FROM kb_sources WHERE business_id IS NOT NULL AND kind = ANY($1::text[])`,
+    [[...TENANT_SOURCE_KINDS]],
   ).catch(() => []);
   return rows.map((r) => r.business_id);
 }

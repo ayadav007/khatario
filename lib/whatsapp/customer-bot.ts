@@ -104,7 +104,7 @@ export async function orderStatusContext(businessId: string, senderPhone: string
   return rows.map(formatOrderStatus).join('\n\n');
 }
 
-async function dailyLimit(businessId: string): Promise<number> {
+export async function dailyLimit(businessId: string): Promise<number> {
   const row = await queryOne<{ settings: { customerBotDailyLimit?: number } }>(
     `SELECT settings FROM assistant_settings WHERE scope = $1`,
     [`business:${businessId}`],
@@ -115,14 +115,22 @@ async function dailyLimit(businessId: string): Promise<number> {
   return Number.isFinite(env) && env > 0 ? env : DEFAULT_CUSTOMER_BOT_DAILY_LIMIT;
 }
 
-async function repliesToday(businessId: string): Promise<number> {
+async function repliesSince(businessId: string, unit: 'day' | 'month'): Promise<number> {
   const row = await queryOne<{ n: string }>(
     `SELECT COUNT(*) AS n FROM whatsapp_inbound_events
       WHERE business_id = $1 AND direction = 'out' AND handled_as = 'customer_bot'
-        AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`,
-    [businessId],
+        AND created_at >= date_trunc($2, NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`,
+    [businessId, unit],
   ).catch(() => null);
   return Number(row?.n ?? 0);
+}
+
+export function repliesToday(businessId: string): Promise<number> {
+  return repliesSince(businessId, 'day');
+}
+
+export function repliesThisMonth(businessId: string): Promise<number> {
+  return repliesSince(businessId, 'month');
 }
 
 /** Per-business daily cap on AI replies (assistant_settings scope `business:<id>`, `customerBotDailyLimit`). */

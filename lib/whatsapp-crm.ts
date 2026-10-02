@@ -9,6 +9,12 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
 import { LeadAnalyzer } from './services/lead-analyzer';
 import { generatePaymentLinkForBusiness } from './services/payment-service';
+import { loadAgentSettings, loadSavedAgentSettings } from './ai-agent/settings';
+import { runAgentGate } from './ai-agent/gate';
+import { parseAgentReply } from './ai-agent/prompt';
+import { performHandoff } from './ai-agent/conversation';
+import { applyLeadAnswers } from './ai-agent/leads';
+import { DEFAULT_HANDOFF_MESSAGE } from './ai-agent/types';
 import {
   evaluatePaymentOcrWithRules,
   verifyPaymentScreenshot
@@ -53,7 +59,7 @@ function logTimestampDriftFromDbRow(
  * newly created conversation to the next agent in the pool and advances the
  * pointer atomically. Skips assignment for group chats.
  */
-async function autoAssignConversation(
+export async function autoAssignConversation(
   businessId: string,
   conversationId: string,
   isGroup: boolean
@@ -620,7 +626,8 @@ export async function storeOutgoingMessage(
   mediaUrl?: string,
   buttons?: string, // JSON string of buttons array
   sourceTimestampSec?: number | null,
-  originalWaTimestampSec?: number | null
+  originalWaTimestampSec?: number | null,
+  sender?: { sentBy?: 'bot' | 'staff' | 'system' | null; sentByUserId?: string | null }
 ) {
   const normalizedTo = extractPhoneFromJid(toNumber);
 
@@ -658,15 +665,19 @@ export async function storeOutgoingMessage(
     const result = await queryOne<{ id: string }>(
       `INSERT INTO whatsapp_conversation_messages 
        (business_id, conversation_id, message_id, from_number, to_number, 
-        message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp)
+        message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp,
+        sent_by, sent_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'outgoing', 'sent', $9, to_timestamp($10::double precision),
          CASE WHEN $11::double precision IS NOT NULL AND $11::double precision > 0
-           THEN to_timestamp($11::double precision) ELSE NULL END)
+           THEN to_timestamp($11::double precision) ELSE NULL END,
+         $12, $13)
          ON CONFLICT (message_id) DO UPDATE SET
          message_text = EXCLUDED.message_text,
          message_type = EXCLUDED.message_type,
          media_url = EXCLUDED.media_url,
          buttons = EXCLUDED.buttons,
+         sent_by = COALESCE(EXCLUDED.sent_by, whatsapp_conversation_messages.sent_by),
+         sent_by_user_id = COALESCE(EXCLUDED.sent_by_user_id, whatsapp_conversation_messages.sent_by_user_id),
          status = 'sent'
        RETURNING id`,
       [
@@ -680,7 +691,9 @@ export async function storeOutgoingMessage(
         mediaUrl || null,
         btn,
         normSec,
-        origSec
+        origSec,
+        sender?.sentBy ?? null,
+        sender?.sentByUserId ?? null
       ]
     );
 
@@ -958,8 +971,14 @@ async function formatDraftOrderConfirmationLines(orderId: string): Promise<strin
     .join('\n');
 }
 
-function whatsAppOrderConfirmedMessage(itemsList: string, grandTotal: number): string {
-  return `✅ Payment received! Your order has been confirmed.\n\n📦 *Order Details:*\n${itemsList}\n\n💰 *Total: ₹${grandTotal}*\n\nThank you for your order! We'll process it shortly.`;
+async function whatsAppOrderConfirmedMessage(
+  businessId: string,
+  itemsList: string,
+  grandTotal: number
+): Promise<string> {
+  const saved = await loadSavedAgentSettings(businessId).catch(() => null);
+  const closing = saved?.postPaymentMessage.trim() || "Thank you for your order! We'll process it shortly.";
+  return `✅ Payment received! Your order has been confirmed.\n\n📦 *Order Details:*\n${itemsList}\n\n💰 *Total: ₹${grandTotal}*\n\n${closing}`;
 }
 
 /**
@@ -1105,7 +1124,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
   const grandTotal = parseFloat(order.grand_total);
   await clearConversationState(businessId, normalizedFrom);
   return {
-    response: whatsAppOrderConfirmedMessage(itemsList, grandTotal),
+    response: await whatsAppOrderConfirmedMessage(businessId, itemsList, grandTotal),
     shouldStore: true
   };
 }
@@ -2061,6 +2080,11 @@ export async function processIncomingMessage(
       }
     }
 
+    // Throttled internally (every 3rd message or on strong signals) and gated by lead_analyzer_enabled.
+    if (!isGroup && conversationId && messageText.trim()) {
+      void analyzeAndUpdateLeadProfile(businessId, conversationId, normalizedFrom, customerId ?? undefined, messageText);
+    }
+
     // Get current conversation state (individual chats only)
     const currentState = await getConversationState(businessId, normalizedFrom);
     const convState: ConversationState = (currentState?.state as ConversationState) || 'idle';
@@ -2483,7 +2507,7 @@ export async function processIncomingMessage(
             await clearConversationState(businessId, normalizedFrom);
 
             return {
-              response: whatsAppOrderConfirmedMessage(itemsList, expectedAmount),
+              response: await whatsAppOrderConfirmedMessage(businessId, itemsList, expectedAmount),
               shouldStore: true
             };
           }
@@ -2638,28 +2662,52 @@ export async function processIncomingMessage(
           return { shouldStore: true };
         }
 
-        console.log('[CRM] ✅ Business info fetched, fetching conversation history...');
-        
+        const agentSettings = await loadAgentSettings(businessId);
+        const replyDelay = botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0;
+        const fallbackReply = (): string => {
+          const custom = agentSettings.fallbackMessage.trim();
+          if (custom) return custom;
+          const phone = String(businessInfo?.phone || '').trim();
+          const callLine = phone
+            ? `Please call us at ${phone} and we’ll help you right away.`
+            : 'Please call us and we’ll help you right away.';
+          return `Sorry — we’re having trouble replying automatically right now.\n\n${callLine}`;
+        };
+
+        const gate = await runAgentGate({
+          businessId,
+          conversationId,
+          message: messageText,
+          settings: agentSettings,
+          customerLabel: whatsappDisplayName || normalizedFrom,
+        });
+        if (gate.action === 'stop') {
+          console.log('[CRM] 🤖 AI paused for this conversation — stored only');
+          return { shouldStore: true };
+        }
+        if (gate.action === 'reply') {
+          return { response: gate.response, shouldStore: true, delaySeconds: replyDelay };
+        }
+        const greetingPrefix = gate.greeting ? `${gate.greeting}\n\n` : '';
+
         // Get recent conversation history (last 10 messages)
         // conversationId here is the UUID from whatsapp_conversations.id
         const conversationHistory = await queryRows<any>(
-          `SELECT direction, message_text, created_at, message_id
+          `SELECT direction, message_text, created_at, message_id, sent_by
            FROM whatsapp_conversation_messages
            WHERE business_id = $1 AND conversation_id = $2
            ORDER BY created_at DESC, message_id DESC
            LIMIT 10`,
           [businessId, conversationId]
         );
-        
-        console.log('[CRM] 📜 Conversation history fetched:', {
-          historyCount: conversationHistory.length,
-          conversationId
-        });
 
-        // Format history for AI (DB returns newest first, so we reverse it to be chronological)
+        // Chronological; staff replies are context, not the agent's own words.
         const history = conversationHistory.reverse().map((msg: any) => ({
           role: msg.direction === 'outgoing' ? 'assistant' : 'user' as 'user' | 'assistant',
-          content: msg.message_text || ''
+          content:
+            msg.direction === 'outgoing' && msg.sent_by === 'staff'
+              ? `[A staff member replied]: ${msg.message_text || ''}`
+              : msg.message_text || ''
         }));
 
           // Get customer info if available
@@ -2746,44 +2794,49 @@ export async function processIncomingMessage(
               context: convContext
             },
             pendingOrder: pendingOrderInfo,
-            customerPhone: normalizedFrom
+            customerPhone: normalizedFrom,
+            live: aiConfig?.mode !== 'dev',
+            settingsOverride: agentSettings
           };
 
-          let aiResponse = await chatbot.generateResponse(
-            businessId,
-            salesAgentRequest
-          );
+          let aiResult = await chatbot.generate(businessId, salesAgentRequest);
 
-          let aiTrimmed =
-            typeof aiResponse === 'string' ? aiResponse.trim() : '';
-
-          if (!aiTrimmed) {
-            console.warn(
-              '[CRM] ⚠️ AI Sales Agent returned empty — retrying once with stricter prompt'
-            );
-            aiResponse = await chatbot.generateResponse(businessId, {
-              ...salesAgentRequest,
-              retryAfterEmpty: true
-            });
-            aiTrimmed =
-              typeof aiResponse === 'string' ? aiResponse.trim() : '';
+          if (!aiResult.content?.trim() && (aiResult.failure === 'empty' || aiResult.failure === 'error')) {
+            console.warn('[CRM] ⚠️ AI Sales Agent returned empty — retrying once with stricter prompt');
+            aiResult = await chatbot.generate(businessId, { ...salesAgentRequest, retryAfterEmpty: true });
           }
 
+          const aiRaw = aiResult.content?.trim() || '';
+          if (!aiRaw) {
+            if (aiResult.failure === 'daily_limit' || aiResult.failure === 'disabled' || aiResult.failure === 'not_configured') {
+              return { shouldStore: true };
+            }
+            console.warn('[CRM] ⚠️ AI Sales Agent produced no reply — sending fallback:', aiResult.failure);
+            return { response: fallbackReply(), shouldStore: true, delaySeconds: replyDelay };
+          }
+
+          const parsedReply = parseAgentReply(aiRaw);
+          if (parsedReply.handoff && agentSettings.handoff.enabled) {
+            await performHandoff(businessId, conversationId, agentSettings, {
+              customerLabel: whatsappDisplayName || normalizedFrom,
+            });
+          }
+          if (Object.keys(parsedReply.leadData).length) {
+            await applyLeadAnswers(businessId, conversationId, agentSettings, parsedReply.leadData, {
+              customerLabel: whatsappDisplayName || normalizedFrom,
+            });
+          }
+          const quickReplyButtons = (agentSettings.quickRepliesEnabled ? parsedReply.quickReplies : []).map((title, i) => ({
+            id: `qr_${i + 1}`,
+            title,
+            type: 'quick_reply' as const,
+          }));
+          const aiTrimmed = parsedReply.text || (parsedReply.handoff
+            ? agentSettings.handoff.message.trim() || DEFAULT_HANDOFF_MESSAGE
+            : '');
+
           if (!aiTrimmed) {
-            console.warn(
-              '[CRM] ⚠️ AI Sales Agent still empty after retry — sending fallback'
-            );
-            const phone = String(businessInfo?.phone || '').trim();
-            const callLine = phone
-              ? `Please call us at ${phone} and we’ll help you right away.`
-              : 'Please call us and we’ll help you right away.';
-            return {
-              response: `Sorry — we’re having trouble replying automatically right now.\n\n${callLine}`,
-              shouldStore: true,
-              delaySeconds: botTypingSettings.typingEnabled
-                ? botTypingSettings.delaySeconds
-                : 0
-            };
+            return { response: fallbackReply(), shouldStore: true, delaySeconds: replyDelay };
           }
 
           if (aiTrimmed) {
@@ -3208,7 +3261,9 @@ export async function processIncomingMessage(
                 aiLower.includes('transfer')
               ));
 
-            if (isRequestingPaymentLink) {
+            if (isRequestingPaymentLink && !agentSettings.skills.paymentLinks) {
+              finalAiResponse = finalAiResponse.replace(/\[insert payment link\]|\[payment link\]/g, '').trim();
+            } else if (isRequestingPaymentLink) {
               // Fetch latest draft order if we don't have it in context
               let orderAmount = convContext.total_amount;
               let orderId = convContext.order_id;
@@ -3383,19 +3438,29 @@ export async function processIncomingMessage(
             // Clean up any double newlines
             finalAiResponse = finalAiResponse.replace(/\n{3,}/g, '\n\n');
             
-            // Note: Lead analysis already triggered after storing incoming message above
-            // No need to call again here to avoid duplicate analysis
-            
+            const replyText = `${greetingPrefix}${finalAiResponse.trim()}`;
+            if (quickReplyButtons.length) {
+              return {
+                response: replyText,
+                shouldStore: true,
+                responseType: 'button',
+                buttons: quickReplyButtons,
+                delaySeconds: replyDelay
+              };
+            }
             return {
-              response: finalAiResponse.trim(),
+              response: replyText,
               shouldStore: true,
-              delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
+              delaySeconds: replyDelay
             };
           }
       } catch (error) {
         console.error('[CRM] ❌ AI Sales Agent error:', error);
         console.error('[CRM] AI Error Stack:', error instanceof Error ? error.stack : 'No stack trace');
-        // Requirement: if anything breaks, apologize and ask to call us (do not silently fail).
+        // Requirement: if anything breaks, apologize (owner's fallback message, else ask to call).
+        const saved = await loadAgentSettings(businessId).catch(() => null);
+        const custom = saved?.fallbackMessage.trim();
+        if (custom) return { response: custom, shouldStore: true };
         const bizPhone = await queryOne<{ phone?: string }>(
           `SELECT phone FROM businesses WHERE id = $1`,
           [businessId]

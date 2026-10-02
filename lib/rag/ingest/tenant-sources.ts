@@ -3,6 +3,9 @@ import type { KbDocumentInput, KbSourceInput } from '../types';
 
 export const TENANT_CATALOG_LOCATOR = 'catalog';
 export const TENANT_POLICY_LOCATOR = 'policies';
+export const TENANT_FAQ_LOCATOR = 'faqs';
+export const TENANT_TEXT_LOCATOR = 'notes';
+export const TENANT_FILE_LOCATOR = 'files';
 /** Large catalogs: index the items most likely to be asked about, keep the indexing run bounded. */
 export const TENANT_CATALOG_MAX_ITEMS = 2000;
 const LOW_STOCK = 5;
@@ -167,6 +170,79 @@ export function buildPolicyDocuments(policy: PolicyRow, zones: DeliveryRow[]): K
     policyDoc('delivery', 'Delivery and payment', deliveryMarkdown(policy, zones), ['delivery', 'shipping', 'cod']),
   ].filter((d): d is KbDocumentInput => d !== null);
 }
+
+export interface AgentKnowledgeRow {
+  id: string;
+  kind: 'faq' | 'text' | 'file';
+  title: string | null;
+  question: string | null;
+  answer: string | null;
+  content: string | null;
+  file_name: string | null;
+}
+
+/** Owner-written knowledge is capped per document so one huge paste can't crowd out the catalogue. */
+const AGENT_DOC_MAX_CHARS = 60_000;
+
+export function agentKnowledgeDocument(row: AgentKnowledgeRow): KbDocumentInput | null {
+  if (row.kind === 'faq') {
+    const q = row.question?.trim();
+    const a = row.answer?.trim();
+    if (!q || !a) return null;
+    return {
+      docKey: `faq:${row.id}`,
+      title: q.slice(0, 200),
+      url: null,
+      audiences: ['tenant_customer'],
+      locale: 'en',
+      tags: ['faq'],
+      requiredFeature: null,
+      body: `# ${q}\n\n${a.slice(0, 4000)}`,
+    };
+  }
+  const text = row.content?.trim();
+  if (!text) return null;
+  const title = (row.title?.trim() || row.file_name?.trim() || (row.kind === 'file' ? 'Uploaded file' : 'Note')).slice(0, 200);
+  return {
+    docKey: `${row.kind}:${row.id}`,
+    title,
+    url: null,
+    audiences: ['tenant_customer'],
+    locale: 'en',
+    tags: [row.kind === 'file' ? 'file' : 'note'],
+    requiredFeature: null,
+    body: `# ${title}\n\n${text.slice(0, AGENT_DOC_MAX_CHARS)}`,
+  };
+}
+
+async function loadAgentKnowledgeSource(
+  businessId: string,
+  kind: AgentKnowledgeRow['kind'],
+  sourceKind: 'tenant_faq' | 'tenant_text' | 'tenant_file',
+  locator: string,
+): Promise<KbSourceInput> {
+  const rows = await queryRows<AgentKnowledgeRow>(
+    `SELECT id, kind, title, question, answer, content, file_name
+       FROM ai_agent_knowledge
+      WHERE business_id = $1 AND kind = $2 AND status = 'active'
+      ORDER BY created_at`,
+    [businessId, kind],
+  );
+  return {
+    kind: sourceKind,
+    locator,
+    audiences: ['tenant_customer'],
+    businessId,
+    documents: rows.map(agentKnowledgeDocument).filter((d): d is KbDocumentInput => d !== null),
+  };
+}
+
+export const loadTenantFaqSource = (businessId: string) =>
+  loadAgentKnowledgeSource(businessId, 'faq', 'tenant_faq', TENANT_FAQ_LOCATOR);
+export const loadTenantTextSource = (businessId: string) =>
+  loadAgentKnowledgeSource(businessId, 'text', 'tenant_text', TENANT_TEXT_LOCATOR);
+export const loadTenantFileSource = (businessId: string) =>
+  loadAgentKnowledgeSource(businessId, 'file', 'tenant_file', TENANT_FILE_LOCATOR);
 
 export async function loadTenantPolicySource(businessId: string): Promise<KbSourceInput> {
   const [policy, zones] = await Promise.all([

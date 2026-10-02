@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     const amount = computePlanAmount(plan, cycle);
 
     if (amount > 0) {
-      if (isPlatformPaymentConfigured()) {
+      if (await isPlatformPaymentConfigured()) {
         return NextResponse.json(
           {
             error: 'This plan requires payment. Start checkout to continue.',

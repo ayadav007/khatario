@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Send, Loader2, MoreVertical, Archive, Bell, BellOff, Ban, Trash2, ChevronDown, Phone, Video, Search, X, BookOpen } from 'lucide-react';
+import { Send, Loader2, MoreVertical, Archive, Bell, BellOff, Ban, Trash2, ChevronDown, Phone, Video, Search, X, BookOpen, Bot, Pause, Play } from 'lucide-react';
 import { useVirtualizer, VirtualItem } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
@@ -25,7 +25,18 @@ export interface Conversation {
   conversation_status?: string;
   lead_status?: string;
   profile_picture_url?: string | null;
+  bot_paused_until?: string | null;
+  bot_paused_reason?: string | null;
+  handoff_requested_at?: string | null;
 }
+
+export type ConversationBotState = Pick<Conversation, 'bot_paused_until' | 'bot_paused_reason' | 'handoff_requested_at'>;
+
+const BOT_PAUSE_REASON: Record<string, string> = {
+  staff_reply: 'a team member replied',
+  handoff: 'the customer asked for a person',
+  manual: 'paused by your team',
+};
 
 export interface Message {
   id: string;
@@ -40,6 +51,7 @@ export interface Message {
   /** WhatsApp proto time when stored (optional; display uses created_at) */
   source_timestamp?: string | null;
   sender_type?: 'customer' | 'agent' | 'bot' | 'campaign';
+  sent_by?: 'bot' | 'staff' | 'campaign' | null;
   sender_name?: string;
   sender_number?: string;
   reactions?: Array<{ reaction: string; sender_jid: string }>;
@@ -60,6 +72,7 @@ interface ChatWindowProps {
   messages: Message[];
   onSendMessage: (text: string, type?: string, buttons?: any[], media?: File) => Promise<void>;
   onUpdateConversation?: (updates: { assigned_to?: string | null; conversation_status?: string }) => Promise<void>;
+  onBotStateChange?: (conversationId: string, state: ConversationBotState) => void;
   loading?: boolean;
   businessId: string;
   error?: string | null;
@@ -98,6 +111,7 @@ export function ChatWindow({
   messages,
   onSendMessage,
   onUpdateConversation,
+  onBotStateChange,
   loading = false,
   businessId,
   error,
@@ -126,6 +140,41 @@ export function ChatWindow({
   const [showSavedReplies, setShowSavedReplies] = useState(false);
   // Quick-search popup triggered by "/" at start of input
   const [savedRepliesQuickSearch, setSavedRepliesQuickSearch] = useState(false);
+  const [botBusy, setBotBusy] = useState(false);
+
+  const pausedUntil = conversation?.bot_paused_until ? new Date(conversation.bot_paused_until) : null;
+  const botPaused = !!pausedUntil && pausedUntil.getTime() > Date.now();
+
+  const setConversationBot = useCallback(
+    async (action: 'pause' | 'resume') => {
+      if (!conversation?.id || conversation.is_group) return;
+      setBotBusy(true);
+      try {
+        const res = await fetch(
+          `/api/whatsapp/conversations/${encodeURIComponent(conversation.id)}/bot?business_id=${encodeURIComponent(businessId)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ action }),
+          },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Failed to update AI');
+        onBotStateChange?.(conversation.id, {
+          bot_paused_until: data.bot_paused_until ?? null,
+          bot_paused_reason: data.bot_paused_reason ?? null,
+          handoff_requested_at: data.handoff_requested_at ?? null,
+        });
+        setToast({ message: action === 'pause' ? 'AI paused for this chat' : 'AI resumed for this chat', type: 'success' });
+      } catch (e) {
+        setToast({ message: e instanceof Error ? e.message : 'Failed to update AI', type: 'error' });
+      } finally {
+        setBotBusy(false);
+      }
+    },
+    [conversation?.id, conversation?.is_group, businessId, onBotStateChange],
+  );
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -479,6 +528,19 @@ export function ChatWindow({
                     <Search className="w-4 h-4" />
                     Search in this chat
                   </button>
+                  {!conversation.is_group && (
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        void setConversationBot(botPaused ? 'resume' : 'pause');
+                      }}
+                      disabled={botBusy}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      {botPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                      {botPaused ? 'Resume AI for this chat' : 'Pause AI for this chat'}
+                    </button>
+                  )}
                   {conversation?.id && (
                     <div className="px-4 py-2 border-t border-gray-100">
                       <ExportButton
@@ -534,6 +596,27 @@ export function ChatWindow({
           </div>
         </div>
       </div>
+
+      {botPaused && !conversation.is_group && (
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <Bot className="h-4 w-4 flex-shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            AI paused
+            {conversation.bot_paused_reason && BOT_PAUSE_REASON[conversation.bot_paused_reason]
+              ? ` because ${BOT_PAUSE_REASON[conversation.bot_paused_reason]}`
+              : ''}
+            {pausedUntil ? ` · until ${format(pausedUntil, isToday(pausedUntil) ? 'h:mm a' : 'd MMM, h:mm a')}` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => void setConversationBot('resume')}
+            disabled={botBusy}
+            className="flex-shrink-0 rounded-md bg-white px-2.5 py-1 text-xs font-medium text-amber-900 shadow-sm hover:bg-amber-100 disabled:opacity-60"
+          >
+            {botBusy ? 'Resuming…' : 'Resume AI'}
+          </button>
+        </div>
+      )}
 
       {/* Messages Area - Virtualized */}
       <div 

@@ -56,8 +56,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/connect/whatsapp': 'Send invoices on WhatsApp',
   '/settings/whatsapp': 'WhatsApp settings',
   '/settings/help': 'Help & Support',
-  '/settings/ai-config': 'AI Sales Agent',
-  '/settings/ai-assistant': 'AI Assistant Settings',
+  '/settings/ai-agent': 'AI Agent',
   '/settings/email': 'Email settings',
 };
 

@@ -152,33 +152,11 @@ export const INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
 
     shortDescription:
 
-      'Configure an AI chatbot with your own API keys to assist on sales conversations and routine replies.',
+      'A WhatsApp AI agent that answers customers from your catalogue and FAQs, takes orders and hands over to your team.',
 
     icon: 'Zap',
 
-    configureHref: '/settings/ai-config',
-
-    featureKeys: [],
-
-    ctaVariant: 'try',
-
-  },
-
-  {
-
-    id: 'ai-assistant',
-
-    category: 'ai',
-
-    title: 'AI Assistant',
-
-    shortDescription:
-
-      'Tune in-app AI assistant behavior, prompts, and defaults for your team.',
-
-    icon: 'Bot',
-
-    configureHref: '/settings/ai-assistant',
+    configureHref: '/settings/ai-agent',
 
     featureKeys: [],
 

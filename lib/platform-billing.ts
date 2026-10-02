@@ -498,7 +498,7 @@ export async function processPlatformRazorpayWebhook(
   rawBody: string,
   headers: Record<string, string | string[] | undefined>,
 ): Promise<{ ok: boolean; duplicate?: boolean; error?: string }> {
-  const provider = getPlatformRazorpayProvider();
+  const provider = await getPlatformRazorpayProvider();
   if (!provider) {
     return { ok: false, error: 'Platform Razorpay not configured' };
   }
@@ -646,7 +646,7 @@ export type PlatformEasebuzzOutcome = {
  * from the pending billing_transactions row matched by txnid, never from the callback body.
  */
 export async function processPlatformEasebuzzCallback(rawBody: string): Promise<PlatformEasebuzzOutcome> {
-  const provider = getPlatformEasebuzzProvider();
+  const provider = await getPlatformEasebuzzProvider();
   if (!provider) {
     return { ok: false, error: 'Platform Easebuzz not configured', httpStatus: 400 };
   }

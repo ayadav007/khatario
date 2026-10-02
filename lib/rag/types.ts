@@ -21,7 +21,13 @@ export type SourceKind =
   | 'marketing_page'
   | 'tenant_policy'
   | 'tenant_catalog'
+  | 'tenant_faq'
+  | 'tenant_text'
+  | 'tenant_file'
   | 'tenant_url';
+
+/** Per-shop knowledge built for the WhatsApp customer bot. */
+export const TENANT_SOURCE_KINDS = ['tenant_catalog', 'tenant_policy', 'tenant_faq', 'tenant_text', 'tenant_file'] as const;
 
 export type Locale = 'en' | 'hinglish' | 'hi';
 

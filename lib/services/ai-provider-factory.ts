@@ -2,6 +2,7 @@
 // Supports: OpenAI, Google Gemini, Groq, Custom APIs
 
 import { queryOne } from '@/lib/db';
+import { decryptSecret } from '@/lib/secret-encryption';
 
 // Supported AI providers
 export type AIProvider = 'openai' | 'gemini' | 'groq' | 'anthropic' | 'custom';
@@ -419,67 +420,188 @@ class CustomProvider implements AIProviderInterface {
 }
 
 
-// Factory function to get provider instance
+export function getAIProviderFromConfig(config: AIProviderConfig): AIProviderInterface | null {
+  switch (config.provider) {
+    case 'openai':
+      return new OpenAIProvider(config);
+    case 'gemini':
+      return new GeminiProvider(config);
+    case 'groq':
+      return new GroqProvider(config);
+    case 'custom':
+      return new CustomProvider(config);
+    default:
+      console.warn(`Unsupported AI provider: ${config.provider}`);
+      return null;
+  }
+}
+
+/** Tries each provider in turn; used for Khatario's own key (Groq first, Gemini as fallback). */
+class FallbackProvider implements AIProviderInterface {
+  constructor(private providers: AIProviderInterface[]) {}
+
+  private async first<T>(run: (p: AIProviderInterface) => Promise<T>, ok: (v: T) => boolean): Promise<T> {
+    let lastError: unknown = null;
+    for (const p of this.providers) {
+      try {
+        const v = await run(p);
+        if (ok(v)) return v;
+      } catch (error) {
+        lastError = error;
+        console.warn('[AI Provider Factory] platform provider failed, trying next:', error instanceof Error ? error.message : error);
+      }
+    }
+    if (lastError) throw lastError;
+    throw new Error('All platform AI providers returned empty responses');
+  }
+
+  chat(messages: ChatMessage[]): Promise<AIResponse> {
+    return this.first((p) => p.chat(messages), (r) => !!r?.content?.trim());
+  }
+
+  chatJSON(messages: ChatMessage[]): Promise<any> {
+    return this.first((p) => p.chatJSON(messages), (r) => r != null);
+  }
+
+  analyzeImage(imageUrl: string, prompt: string): Promise<string> {
+    return this.first((p) => p.analyzeImage(imageUrl, prompt), (r) => !!r?.trim());
+  }
+}
+
+/** Khatario's model key (Khatario AI add-on / trial). Null when the server has no platform key. */
+export function getPlatformAIProvider(opts: { temperature?: number; maxTokens?: number } = {}): AIProviderInterface | null {
+  const providers: AIProviderInterface[] = [];
+  const groq = process.env.GROQ_API_KEY?.trim();
+  const gemini = process.env.GEMINI_API_KEY?.trim();
+  if (groq) {
+    providers.push(new GroqProvider({
+      provider: 'groq',
+      apiKey: groq,
+      model: process.env.GROQ_AGENT_MODEL || process.env.GROQ_RAG_MODEL || 'llama-3.3-70b-versatile',
+      temperature: opts.temperature ?? 0.5,
+      maxTokens: opts.maxTokens ?? 600,
+    }));
+  }
+  if (gemini) {
+    providers.push(new GeminiProvider({
+      provider: 'gemini',
+      apiKey: gemini,
+      model: process.env.ASSISTANT_GEMINI_MODEL || 'gemini-2.0-flash',
+      temperature: opts.temperature ?? 0.5,
+      maxTokens: opts.maxTokens ?? 600,
+    }));
+  }
+  if (!providers.length) return null;
+  return providers.length === 1 ? providers[0] : new FallbackProvider(providers);
+}
+
+interface ProviderConfigRow {
+  provider: string;
+  api_key: string | null;
+  api_key_encrypted?: string | null;
+  key_source?: 'own' | 'khatario' | null;
+  api_base_url?: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  chatbot_enabled?: boolean;
+}
+
+async function loadConfigRow(businessId: string): Promise<ProviderConfigRow | null> {
+  try {
+    return await queryOne<ProviderConfigRow>(
+      `SELECT provider, api_key, api_key_encrypted, key_source, api_base_url, model, temperature, max_tokens, chatbot_enabled
+         FROM ai_provider_config WHERE business_id = $1`,
+      [businessId],
+    );
+  } catch {
+    return queryOne<ProviderConfigRow>(
+      `SELECT provider, api_key, api_base_url, model, temperature, max_tokens, chatbot_enabled
+         FROM ai_provider_config WHERE business_id = $1`,
+      [businessId],
+    );
+  }
+}
+
+function shopKey(row: ProviderConfigRow): string | null {
+  if (row.api_key_encrypted) {
+    try {
+      return decryptSecret(row.api_key_encrypted);
+    } catch (error) {
+      console.error('[AI Provider Factory] could not decrypt shop key:', error instanceof Error ? error.message : error);
+    }
+  }
+  return row.api_key?.trim() ? row.api_key : null;
+}
+
+/** Provider built from the shop's own saved key, ignoring the key source. */
+export function shopProviderFromRow(row: ProviderConfigRow): AIProviderInterface | null {
+  const apiKey = shopKey(row);
+  if (!apiKey) return null;
+  return getAIProviderFromConfig({
+    provider: row.provider as AIProvider,
+    apiKey,
+    apiBaseUrl: row.api_base_url || undefined,
+    model: row.model || undefined,
+    temperature: row.temperature ? parseFloat(row.temperature.toString()) : undefined,
+    maxTokens: row.max_tokens || undefined,
+  });
+}
+
+/**
+ * Business AI provider for lead analysis, payment OCR and similar helpers. Uses the shop's own
+ * key, or Khatario's key when the shop runs on an active Khatario AI add-on.
+ */
 export async function getAIProvider(businessId: string): Promise<AIProviderInterface | null> {
   try {
-    const config = await queryOne<{
-      provider: string;
-      api_key: string;
-      api_base_url?: string;
-      model?: string;
-      temperature?: number;
-      max_tokens?: number;
-      chatbot_enabled?: boolean;
-    }>(
-      `SELECT provider, api_key, api_base_url, model, temperature, max_tokens, chatbot_enabled
-       FROM ai_provider_config 
-       WHERE business_id = $1`,
-      [businessId]
-    );
-
-    if (!config) {
-      console.log('[AI Provider Factory] ⚠️ No AI config found for business:', businessId);
-      return null;
-    }
-    
+    const config = await loadConfigRow(businessId);
+    if (!config) return null;
     // chatbot_enabled defaults to true, so only block if explicitly false
-    if (config.chatbot_enabled === false) {
-      console.log('[AI Provider Factory] ⚠️ AI chatbot is disabled for business:', businessId);
-      return null;
-    }
-    
-    console.log('[AI Provider Factory] ✅ AI config found:', {
-      businessId,
-      provider: config.provider,
-      hasApiKey: !!config.api_key,
-      chatbot_enabled: config.chatbot_enabled,
-      model: config.model
-    });
+    if (config.chatbot_enabled === false) return null;
 
-    const providerConfig: AIProviderConfig = {
-      provider: config.provider as AIProvider,
-      apiKey: config.api_key,
-      apiBaseUrl: config.api_base_url || undefined,
-      model: config.model || undefined,
-      temperature: config.temperature ? parseFloat(config.temperature.toString()) : undefined,
-      maxTokens: config.max_tokens || undefined,
-    };
-
-    switch (config.provider) {
-      case 'openai':
-        return new OpenAIProvider(providerConfig);
-      case 'gemini':
-        return new GeminiProvider(providerConfig);
-      case 'groq':
-        return new GroqProvider(providerConfig);
-      case 'custom':
-        return new CustomProvider(providerConfig);
-      default:
-        console.warn(`Unsupported AI provider: ${config.provider}`);
-        return null;
+    if (config.key_source === 'khatario') {
+      const { hasKhatarioAiAddon } = await import('@/lib/ai-agent/billing');
+      return (await hasKhatarioAiAddon(businessId)) ? getPlatformAIProvider() : null;
     }
+    return shopProviderFromRow(config);
   } catch (error) {
     console.error('Error getting AI provider:', error);
     return null;
   }
+}
+
+export type AgentProviderResult =
+  | { provider: AIProviderInterface; via: 'own' | 'khatario_addon' | 'khatario_trial' }
+  | { provider: null; reason: 'not_configured' | 'disabled' | 'no_key' | 'quota_exhausted' | 'trial_exhausted' | 'live_needs_addon' };
+
+/**
+ * Provider for the shop's WhatsApp AI agent. `live` is true for real customers in Live mode
+ * (the Khatario AI trial only covers Test mode and the test chat). `ignoreDisabled` lets the
+ * editor's test chat run while the agent is switched off.
+ */
+export async function resolveAgentProvider(
+  businessId: string,
+  opts: { live: boolean; ignoreDisabled?: boolean },
+): Promise<AgentProviderResult> {
+  const config = await loadConfigRow(businessId).catch(() => null);
+  if (!config) {
+    if (!opts.ignoreDisabled) return { provider: null, reason: 'not_configured' };
+  } else if (config.chatbot_enabled === false && !opts.ignoreDisabled) {
+    return { provider: null, reason: 'disabled' };
+  }
+
+  const keySource = config?.key_source === 'khatario' || (!config && opts.ignoreDisabled) ? 'khatario' : 'own';
+  if (keySource === 'own' && config) {
+    const provider = shopProviderFromRow(config);
+    return provider ? { provider, via: 'own' } : { provider: null, reason: 'no_key' };
+  }
+
+  const { khatarioAccess } = await import('@/lib/ai-agent/billing');
+  const access = await khatarioAccess(businessId, { live: opts.live });
+  if (!access.ok) return { provider: null, reason: access.reason };
+  const provider = getPlatformAIProvider({
+    temperature: config?.temperature ? parseFloat(config.temperature.toString()) : undefined,
+  });
+  if (!provider) return { provider: null, reason: 'not_configured' };
+  return { provider, via: access.via === 'addon' ? 'khatario_addon' : 'khatario_trial' };
 }

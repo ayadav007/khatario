@@ -13,6 +13,14 @@ import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payme
 import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
 
 import {
+  isEasebuzzReady,
+  isRazorpayReady,
+  loadPlatformPaymentSecrets,
+  type PlatformPaymentProviderId,
+  type PlatformPaymentSecrets,
+} from '@/lib/platform-payment-settings';
+
+import {
 
   getBusinessPlatformRecipient,
 
@@ -53,84 +61,61 @@ import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 
 
 
-export function getPlatformRazorpayProvider(): RazorpayPaymentProvider | null {
-
-  const keyId = process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID;
-
-  const keySecret =
-
-    process.env.PLATFORM_RAZORPAY_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET;
-
-  const webhookSecret =
-
-    process.env.PLATFORM_RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_WEBHOOK_SECRET;
-
-
-
-  if (!keyId || !keySecret || !webhookSecret) {
-
-    return null;
-
-  }
-
-
-
+function razorpayFrom(s: PlatformPaymentSecrets): RazorpayPaymentProvider | null {
+  if (!isRazorpayReady(s)) return null;
   return new RazorpayPaymentProvider({
-
-    clientId: keyId,
-
-    clientSecret: keySecret,
-
-    webhookSecret,
-
+    clientId: s.razorpay.keyId,
+    clientSecret: s.razorpay.keySecret,
+    webhookSecret: s.razorpay.webhookSecret,
   });
-
 }
 
-
-
-export function isPlatformRazorpayConfigured(): boolean {
-
-  return getPlatformRazorpayProvider() !== null;
-
-}
-
-/** Khatario's own Easebuzz account (env only; never a business's credentials). */
-export function getPlatformEasebuzzProvider(): EasebuzzPaymentProvider | null {
-  const key = process.env.PLATFORM_EASEBUZZ_KEY?.trim();
-  const salt = process.env.PLATFORM_EASEBUZZ_SALT?.trim();
-  if (!key || !salt) return null;
+function easebuzzFrom(s: PlatformPaymentSecrets): EasebuzzPaymentProvider | null {
+  if (!isEasebuzzReady(s)) return null;
   return new EasebuzzPaymentProvider({
-    clientId: key,
-    clientSecret: salt,
-    environment: process.env.PLATFORM_EASEBUZZ_ENV === 'production' ? 'production' : 'sandbox',
+    clientId: s.easebuzz.key,
+    clientSecret: s.easebuzz.salt,
+    environment: s.easebuzz.environment,
   });
 }
 
-export type PlatformPaymentProviderId = 'razorpay' | 'easebuzz';
-
-/** `PLATFORM_PAYMENT_PROVIDER=easebuzz` switches checkout once Easebuzz env is set; default Razorpay. */
-export function getPlatformPaymentProviderId(): PlatformPaymentProviderId {
-  return process.env.PLATFORM_PAYMENT_PROVIDER?.trim().toLowerCase() === 'easebuzz' &&
-    getPlatformEasebuzzProvider()
-    ? 'easebuzz'
-    : 'razorpay';
+/** Khatario's own Razorpay account. Still used for webhooks after switching away, so old links settle. */
+export async function getPlatformRazorpayProvider(): Promise<RazorpayPaymentProvider | null> {
+  return razorpayFrom(await loadPlatformPaymentSecrets());
 }
 
-export function getPlatformCheckoutProvider():
-  | { id: 'razorpay'; provider: RazorpayPaymentProvider }
+export async function isPlatformRazorpayConfigured(): Promise<boolean> {
+  return (await getPlatformRazorpayProvider()) !== null;
+}
+
+/** Khatario's own Easebuzz account (never a business's credentials). */
+export async function getPlatformEasebuzzProvider(): Promise<EasebuzzPaymentProvider | null> {
+  return easebuzzFrom(await loadPlatformPaymentSecrets());
+}
+
+export type { PlatformPaymentProviderId };
+
+/** Admin > Settings > Payments choice; falls back to PLATFORM_PAYMENT_PROVIDER env, then Razorpay. */
+export async function getPlatformPaymentProviderId(): Promise<PlatformPaymentProviderId> {
+  return (await loadPlatformPaymentSecrets()).activeProvider;
+}
+
+export async function getPlatformCheckoutProvider(): Promise<
+  | { id: 'razorpay'; provider: RazorpayPaymentProvider; keyId: string }
   | { id: 'easebuzz'; provider: EasebuzzPaymentProvider }
-  | null {
-  if (getPlatformPaymentProviderId() === 'easebuzz') {
-    const provider = getPlatformEasebuzzProvider();
+  | null
+> {
+  const secrets = await loadPlatformPaymentSecrets();
+  if (secrets.activeProvider === 'easebuzz') {
+    const provider = easebuzzFrom(secrets);
     return provider ? { id: 'easebuzz', provider } : null;
   }
-  const provider = getPlatformRazorpayProvider();
-  return provider ? { id: 'razorpay', provider } : null;
+  const provider = razorpayFrom(secrets);
+  return provider ? { id: 'razorpay', provider, keyId: secrets.razorpay.keyId } : null;
 }
 
-export function isPlatformPaymentConfigured(): boolean {
-  return getPlatformCheckoutProvider() !== null;
+export async function isPlatformPaymentConfigured(): Promise<boolean> {
+  return (await getPlatformCheckoutProvider()) !== null;
 }
 
 
@@ -263,7 +248,7 @@ export async function createSubscriptionCheckout(
 
 
 
-  const checkout = getPlatformCheckoutProvider();
+  const checkout = await getPlatformCheckoutProvider();
 
   if (!checkout) {
 
@@ -401,10 +386,7 @@ export async function createSubscriptionCheckout(
 
 
 
-  const keyId =
-    checkout.id === 'razorpay'
-      ? process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || ''
-      : '';
+  const keyId = checkout.id === 'razorpay' ? checkout.keyId : '';
 
 
 

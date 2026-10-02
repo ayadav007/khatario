@@ -25,6 +25,7 @@ export interface MessageBubbleProps {
     status?: string;
     created_at: string;
     sender_type?: 'customer' | 'agent' | 'bot' | 'campaign';
+    sent_by?: 'bot' | 'staff' | 'campaign' | null;
     sender_name?: string; // For group messages - name of the sender
     sender_number?: string; // For group messages - phone number of the sender
     reactions?: MessageReaction[];
@@ -389,6 +390,17 @@ export function MessageBubble({
           'flex items-center gap-1 mt-0.5 justify-end',
           isOutgoing ? 'flex-row' : 'flex-row-reverse'
         )}>
+          {isOutgoing && !isGroup && (message.sent_by === 'bot' || message.sent_by === 'staff') && (
+            <span
+              className={clsx(
+                'rounded px-1 text-[10px] font-semibold leading-4',
+                message.sent_by === 'bot' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-700',
+              )}
+              title={message.sent_by === 'bot' ? 'Sent by the AI agent' : 'Sent by your team'}
+            >
+              {message.sent_by === 'bot' ? 'AI' : 'Team'}
+            </span>
+          )}
           <span className={waChat.msgTime}>{timeStr}</span>
           {isOutgoing && renderStatusIcon()}
         </div>

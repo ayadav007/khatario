@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { clsx } from 'clsx';
 import { PublicWhatsAppOtp } from '@/components/auth/PublicWhatsAppOtp';
 import { AssistantWidget } from '@/components/assistant/AssistantWidget';
+import { trackSignupComplete } from '@/components/marketing/SignupMetaPixel';
 import {
   normalizeProductLine,
   PRODUCT_LINE_LABELS,
@@ -149,6 +150,7 @@ function SignupPageContent() {
       }
 
       // Full reload so httpOnly session cookies from /api/signup are sent on /dashboard.
+      await trackSignupComplete();
       window.location.assign('/dashboard');
     } catch (err: unknown) {
       completingRef.current = false;

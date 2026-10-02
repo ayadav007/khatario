@@ -1,26 +1,23 @@
 // Sales Agent Chatbot - AI-powered sales agent for WhatsApp conversations
 // Acts as a professional sales representative with product knowledge
 
-import { getAIProvider, ChatMessage } from './ai-provider-factory';
-import { ProductDataService, ProductInfo } from './product-data-service';
+import { resolveAgentProvider, ChatMessage } from './ai-provider-factory';
+import { ProductDataService } from './product-data-service';
 import {
   customerBotAllowed,
   orderStatusContext,
   recordCustomerBotReply,
   shopKnowledgeContext,
 } from '@/lib/whatsapp/customer-bot';
+import { buildAgentPrompt, type AgentCompanyInfo } from '@/lib/ai-agent/prompt';
+import { matchFaqs } from '@/lib/ai-agent/knowledge';
+import { loadAgentSettings } from '@/lib/ai-agent/settings';
+import { notifyQuotaExhaustedOnce, recordTrialReply } from '@/lib/ai-agent/billing';
+import type { AgentSettings } from '@/lib/ai-agent/types';
 
-interface SalesAgentRequest {
+export interface SalesAgentRequest {
   message: string;
-  companyInfo: {
-    name: string;
-    introduction?: string;
-    industry?: string;
-    businessType?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
-  };
+  companyInfo: AgentCompanyInfo;
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   customerInfo?: {
     name?: string;
@@ -41,6 +38,30 @@ interface SalesAgentRequest {
   retryAfterEmpty?: boolean;
   /** Sender's WhatsApp number: online-store order status is looked up only for this number. */
   customerPhone?: string;
+  /** Real customers in Live mode (the Khatario AI trial covers Test mode only). */
+  live?: boolean;
+  /** Editor test chat: unsaved settings, no daily cap, nothing recorded as a customer reply. */
+  test?: boolean;
+  settingsOverride?: AgentSettings;
+}
+
+export type SalesAgentFailure =
+  | 'daily_limit'
+  | 'not_configured'
+  | 'disabled'
+  | 'no_key'
+  | 'quota_exhausted'
+  | 'trial_exhausted'
+  | 'live_needs_addon'
+  | 'empty'
+  | 'error';
+
+export interface SalesAgentResult {
+  content: string | null;
+  failure?: SalesAgentFailure;
+  via?: 'own' | 'khatario_addon' | 'khatario_trial';
+  /** Titles of the shop knowledge used (test chat shows them as source chips). */
+  sources: string[];
 }
 
 export class SalesAgentChatbot {
@@ -50,96 +71,99 @@ export class SalesAgentChatbot {
     this.productService = new ProductDataService();
   }
 
-  async generateResponse(
-    businessId: string,
-    request: SalesAgentRequest
-  ): Promise<string | null> {
-    console.log('[Sales Agent] 🚀 Starting AI response generation for business:', businessId);
-    if (!(await customerBotAllowed(businessId))) {
+  /** Kept for existing callers: the reply text, or null on any failure. */
+  async generateResponse(businessId: string, request: SalesAgentRequest): Promise<string | null> {
+    return (await this.generate(businessId, request)).content;
+  }
+
+  async generate(businessId: string, request: SalesAgentRequest): Promise<SalesAgentResult> {
+    if (!request.test && !(await customerBotAllowed(businessId))) {
       console.warn('[Sales Agent] Daily AI reply limit reached for business:', businessId);
-      return null;
+      return { content: null, failure: 'daily_limit', sources: [] };
     }
-    const provider = await getAIProvider(businessId);
-    if (!provider) {
-      console.error('[Sales Agent] ❌ AI provider not configured or failed to initialize for business:', businessId);
-      return null;
+
+    const resolved = await resolveAgentProvider(businessId, {
+      live: !!request.live && !request.test,
+      ignoreDisabled: !!request.test,
+    });
+    if (!resolved.provider) {
+      console.warn('[Sales Agent] No AI provider for business:', businessId, resolved.reason);
+      if (resolved.reason === 'quota_exhausted') await notifyQuotaExhaustedOnce(businessId);
+      return { content: null, failure: resolved.reason, sources: [] };
     }
-    console.log('[Sales Agent] ✅ AI provider initialized successfully');
 
     try {
+      const settings = request.settingsOverride ?? (await loadAgentSettings(businessId));
+      const sources: string[] = [];
       let productContext = '';
-      // The shop's indexed catalog and policies (this business only). Until the first index is
-      // built, fall back to the keyword product search below.
+      // The shop's indexed catalog, policies and FAQs (this business only). Until the first
+      // index is built, fall back to the keyword product search below.
       const shopContext = await shopKnowledgeContext(businessId, request.message);
-      const productQuery = shopContext ? null : this.detectProductQuery(request.message);
       if (shopContext) {
-        productContext = `\n\nShop information relevant to this message (products, prices, availability, policies). Answer from this; if it isn't covered, say you'll check with the shop:\n${shopContext}`;
-      } else if (productQuery) {
-        // Search for products
-        console.log('[Sales Agent] Searching products with query:', productQuery);
-        const products = await this.productService.searchProducts(businessId, productQuery, 5);
-        console.log('[Sales Agent] Products found:', products.length);
-        if (products.length > 0) {
-          productContext = `\n\nAvailable Products Matching "${productQuery}":\n${this.productService.formatProductsForAI(products)}`;
-        } else {
-          productContext = `\n\nNo products found matching "${productQuery}". You can suggest the customer to browse our catalog or ask for more details.`;
-        }
+        productContext = `Shop information relevant to this message (products, prices, availability, policies, FAQs). Answer from this; if it isn't covered, say you'll check with the shop:\n${shopContext}`;
+        for (const m of shopContext.matchAll(/^### (.+)$/gm)) sources.push(m[1].trim());
       } else {
-        // Include top products in context for general inquiries
-        const topProducts = await this.productService.getTopProducts(businessId, 10);
-        console.log('[Sales Agent] Using top products:', topProducts.length);
-        if (topProducts.length > 0) {
-          productContext = `\n\nOur Products/Services:\n${this.productService.formatProductsForAI(topProducts)}`;
+        const productQuery = this.detectProductQuery(request.message);
+        const showOut = settings.behavior.productInfo.showOutOfStock;
+        if (productQuery) {
+          let products = await this.productService.searchProducts(businessId, productQuery, 5);
+          if (!showOut) products = products.filter((p) => Number(p.currentStock) > 0);
+          productContext = products.length
+            ? `Available Products Matching "${productQuery}":\n${this.productService.formatProductsForAI(products)}`
+            : `No products found matching "${productQuery}". You can suggest the customer browse the catalog or share more details.`;
+          if (products.length) sources.push('Product catalogue');
+        } else {
+          const topProducts = await this.productService.getTopProducts(businessId, 10);
+          if (topProducts.length > 0) {
+            productContext = `Our Products/Services:\n${this.productService.formatProductsForAI(topProducts)}`;
+            sources.push('Product catalogue');
+          }
         }
       }
 
-      if (request.customerPhone) {
+      const faqs = await matchFaqs(businessId, request.message);
+      if (faqs.length) {
+        const block = faqs.map((f) => `Q: ${f.question}\nA: ${f.answer}`).join('\n\n');
+        productContext = `The shop owner's FAQ answers for this question. If one matches, reply with that answer word for word (you may add a short greeting):\n${block}\n\n${productContext}`;
+        sources.unshift(...faqs.map((f) => `FAQ: ${f.question.slice(0, 60)}`));
+      }
+
+      if (request.customerPhone && settings.skills.orderStatus) {
         const orders = await orderStatusContext(businessId, request.customerPhone, request.message);
         if (orders) {
           productContext += `\n\nThis customer's online-store orders (looked up by their WhatsApp number; share only these):\n${orders}`;
+          sources.push('Online store orders');
         }
       }
 
-      let systemPrompt = this.buildSalesAgentPrompt(request.companyInfo, productContext);
+      let systemPrompt = buildAgentPrompt(settings, request.companyInfo, productContext);
       if (request.retryAfterEmpty) {
         systemPrompt += `\n\nIMPORTANT: Your previous attempt produced no text. You MUST reply with at least one complete, helpful sentence addressing the customer's message. Never return an empty response.`;
       }
       const messages = this.buildMessages(
-        systemPrompt, 
-        request.message, 
-        request.conversationHistory, 
-        request.customerInfo,
+        systemPrompt,
+        request.message,
+        request.conversationHistory,
+        settings.behavior.communicationStyle.useCustomerName || settings.behavior.customerExperience.personalizeForReturningCustomers
+          ? request.customerInfo
+          : undefined,
         request.conversationState,
-        request.pendingOrder
+        request.pendingOrder,
       );
-      
-      console.log('[Sales Agent] 📤 Sending request to AI provider:', {
-        provider: provider.constructor.name,
-        messageLength: request.message.length,
-        historyLength: request.conversationHistory?.length || 0,
-        hasProductContext: !!productContext
-      });
-      
-      const response = await provider.chat(messages);
-      if (response?.content?.trim()) {
-        await recordCustomerBotReply(businessId, request.customerPhone ?? '');
+
+      const response = await resolved.provider.chat(messages);
+      const content = response?.content?.trim() ? response.content : null;
+      if (content) {
+        if (resolved.via === 'khatario_trial') await recordTrialReply(businessId);
+        if (!request.test) await recordCustomerBotReply(businessId, request.customerPhone ?? '');
       }
-      
-      console.log('[Sales Agent] ✅ AI provider responded:', {
-        hasResponse: !!response,
-        responseLength: response?.content?.length || 0,
-        responsePreview: response?.content?.substring(0, 100) || 'NO RESPONSE'
-      });
-      
-      return response.content;
+      return { content, failure: content ? undefined : 'empty', via: resolved.via, sources: [...new Set(sources)] };
     } catch (error) {
-      console.error('[Sales Agent] ❌ Sales Agent Chatbot Error:', error);
-      console.error('[Sales Agent] Error details:', {
+      console.error('[Sales Agent] Sales Agent Chatbot Error:', {
         message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        businessId
+        businessId,
       });
-      return null;
+      return { content: null, failure: 'error', via: resolved.via, sources: [] };
     }
   }
 
@@ -148,119 +172,26 @@ export class SalesAgentChatbot {
    */
   private detectProductQuery(message: string): string | null {
     const lowerMessage = message.toLowerCase();
-    
-    // Keywords that indicate product inquiry
+
     const productKeywords = [
       'price of', 'cost of', 'how much', 'price for',
       'do you have', 'do you sell', 'available', 'stock',
       'product', 'item', 'service', 'catalog', 'menu'
     ];
 
-    // Check if message contains product keywords
-    const hasProductKeyword = productKeywords.some(keyword => lowerMessage.includes(keyword));
-    
-    if (!hasProductKeyword) {
-      console.log('[Sales Agent] No product keyword found in:', message);
+    if (!productKeywords.some(keyword => lowerMessage.includes(keyword))) {
       return null;
     }
 
-    // Try to extract product name
-    // Remove common words and extract potential product name
     const words = message.split(/\s+/);
     const stopWords = ['the', 'a', 'an', 'is', 'are', 'do', 'you', 'have', 'sell', 'price', 'of', 'for', 'how', 'much', 'what', 'is', 'cost'];
     const productWords = words.filter(w => !stopWords.includes(w.toLowerCase()));
-    
+
     if (productWords.length > 0) {
-      // Return last 2-3 words as potential product name
-      // Remove punctuation from the query for better matching
-      const rawQuery = productWords.slice(-3).join(' ');
-      const cleanedQuery = rawQuery.replace(/[?!.,;:()]/g, '').trim();
-      
-      console.log('[Sales Agent] Query extraction:', {
-        originalWords: words,
-        afterFilteringStopWords: productWords,
-        rawQuery: rawQuery,
-        cleanedQuery: cleanedQuery
-      });
-      
-      return cleanedQuery;
+      // Last 2-3 words are usually the product name
+      return productWords.slice(-3).join(' ').replace(/[?!.,;:()]/g, '').trim();
     }
-
-    console.log('[Sales Agent] Query extraction: No product words found');
     return null;
-  }
-
-  private buildSalesAgentPrompt(companyInfo: any, productContext: string): string {
-    let prompt = `You are a professional sales agent and customer service representative for ${companyInfo.name || 'the company'}. Your role is to:
-- Help customers with their inquiries
-- Provide product/service information including prices and availability
-- Answer questions about pricing, delivery, and features
-- Qualify leads and understand customer needs
-- Guide customers through the sales process
-- Be friendly, professional, and helpful
-- Close sales when appropriate
-
-About the company:
-${companyInfo.introduction || 'No company introduction provided.'}
-
-${companyInfo.industry ? `Industry: ${companyInfo.industry}\n` : ''}
-${companyInfo.businessType ? `Business Type: ${companyInfo.businessType}\n` : ''}
-
-${productContext}
-
-FINANCIAL & PAYMENT CAPABILITIES:
-- You HAVE a built-in automated UPI payment system.
-- You can generate secure payment links for any amount.
-- To send a link, you MUST use the placeholder: [insert payment link].
-- You MUST NOT tell customers to pay via manual bank transfer or that you don't have a link.
-- You are authorized to take payments and confirm orders.
-
-Contact Information:
-${companyInfo.phone ? `- Phone: ${companyInfo.phone}\n` : ''}
-${companyInfo.email ? `- Email: ${companyInfo.email}\n` : ''}
-${companyInfo.address ? `- Address: ${companyInfo.address}\n` : ''}
-
-Guidelines:
-- Keep responses concise (2-3 sentences max for WhatsApp)
-- Be conversational and natural
-- When customers ask about products, provide the exact prices and stock availability from the product list above
-- **IMPORTANT: When describing products to customers, ALWAYS use the product description field if available. The description contains detailed information about features, benefits, specifications, and usage that will help customers make informed decisions.**
-- **When a customer asks "What is this product?", "Tell me about [product]", or "What are the features?", provide a comprehensive answer using the description field along with price and availability.**
-- If asked about pricing, provide the exact selling price from the product information
-- Use the customer's name if available
-- Be proactive in understanding their requirements
-- NEVER say you don't have a payment link or that you need to process manually.
-- You ALWAYS have a UPI payment link available via the "[insert payment link]" placeholder.
-- If a customer says "Yes", "Ok", "Online", or confirms they want to pay, you MUST provide the link.
-
-ORDERING & PAYMENT PROCESS:
-1. If a customer expresses interest in buying (e.g., "I want to buy 5 bottles", "Place an order for..."):
-   - FIRST, ask for customer information BEFORE creating the order:
-     * Name: "May I please have your name for the order?"
-     * Phone: "Could you confirm your phone number for the order?"
-     * Delivery Address: "Please provide your delivery address (full address with city, state, and pincode)"
-   - DO NOT include the CREATE_ORDER tag until you have asked for and received customer information.
-   - Summarize the items, quantities, and individual prices.
-   - Calculate the total amount.
-   - Only after collecting name, phone, and address, ask for confirmation: "Should I proceed with this order for a total of ₹X?"
-2. When the customer confirms AFTER providing all details (e.g., "Yes", "Ok", "Online", "Send link"):
-   - You MUST include the "CREATE_ORDER" tag at the end of your message.
-   - You MUST include the exact placeholder "[insert payment link]" in your message.
-   - Example: "Perfect! I've created your order. Total: ₹300. Please pay here: [insert payment link]. Share the screenshot once done! CREATE_ORDER: [{"name":"Hair Oil", "qty":1, "price":300}]"
-3. The "CREATE_ORDER" tag is MANDATORY for the system to work, but ONLY use it:
-   - AFTER collecting customer name, phone, and address
-   - AFTER customer confirms they want to proceed
-   - ONLY ONCE per order - never create duplicate orders
-4. If you've already created an order in this conversation:
-   - DO NOT include the CREATE_ORDER tag again
-   - DO NOT create another order
-   - Simply say "Your order has already been created. Here's the payment link: [insert payment link]"
-   - Just use the placeholder "[insert payment link]" without the CREATE_ORDER tag
-5. ALWAYS instruct them to send a screenshot after payment.
-6. IMPORTANT: Check the conversation history - if you already mentioned creating an order, do NOT create another one. Just provide the payment link.
-`;
-
-    return prompt;
   }
 
   private buildMessages(
@@ -278,14 +209,12 @@ ORDERING & PAYMENT PROCESS:
       }
     ];
 
-    // Add conversation state and context awareness
     let stateContext = '';
     if (conversationState?.state) {
       stateContext += `\nCURRENT CONVERSATION STATE: ${conversationState.state}\n`;
-      
-      // Add context-specific information based on state
+
       const context = conversationState.context || {};
-      
+
       if (conversationState.state === 'waiting_customer_name') {
         stateContext += `You are currently collecting customer information:\n`;
         stateContext += `- Status: Waiting for customer name\n`;
@@ -325,7 +254,6 @@ ORDERING & PAYMENT PROCESS:
       }
     }
 
-    // Add pending order information (if any)
     if (pendingOrder) {
       stateContext += `\n⚠️ PENDING ORDER EXISTS:\n`;
       stateContext += `- Order Number: ${pendingOrder.orderNumber || 'N/A'}\n`;
@@ -353,7 +281,6 @@ ORDERING & PAYMENT PROCESS:
       });
     }
 
-    // Add customer context if available
     if (customerInfo) {
       messages.push({
         role: 'system',
@@ -361,10 +288,8 @@ ORDERING & PAYMENT PROCESS:
       });
     }
 
-    // Add conversation history (last 10 messages)
     if (history && history.length > 0) {
-      const recentHistory = history.slice(-10);
-      recentHistory.forEach(msg => {
+      history.slice(-10).forEach(msg => {
         messages.push({
           role: msg.role === 'user' ? 'user' : 'assistant',
           content: msg.content
@@ -372,7 +297,6 @@ ORDERING & PAYMENT PROCESS:
       });
     }
 
-    // Add current user message
     messages.push({
       role: 'user',
       content: userMessage

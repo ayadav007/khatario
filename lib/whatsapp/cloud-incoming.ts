@@ -65,6 +65,7 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
         undefined,
         Math.floor(Date.now() / 1000),
         null,
+        { sentBy: 'bot' },
       );
     }
   } catch (err) {

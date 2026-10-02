@@ -540,7 +540,7 @@ export async function getUsageSummary(businessId: string) {
 /**
  * WhatsApp Add-on Types
  */
-export type WhatsAppAddonType = 'whatsapp_bot' | 'whatsapp_send_message';
+export type WhatsAppAddonType = 'whatsapp_bot' | 'whatsapp_send_message' | 'khatario_ai';
 
 export interface WhatsAppAddon {
   id: string;

@@ -22,6 +22,7 @@ import {
   X,
   LayoutTemplate,
   Bot,
+  Megaphone,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AdminPwaChrome } from '@/components/admin/AdminPwaChrome';
@@ -39,6 +40,7 @@ const FULL_SCREEN_PATHS = ['/admin/site-builder'];
 const navigation: AdminNavItem[] = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
   { name: 'Site Builder', href: '/admin/site-builder', icon: LayoutTemplate, requiresAdmin: true },
+  { name: 'Marketing', href: '/admin/social', icon: Megaphone, requiresAdmin: true },
   { name: 'Businesses', href: '/admin/businesses', icon: Building2 },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
   { name: 'Billing', href: '/admin/billing', icon: CircleDollarSign },

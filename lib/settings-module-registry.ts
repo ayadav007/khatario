@@ -220,11 +220,10 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
           },
           smsLink,
           {
-            href: '/settings/ai-config',
-            label: 'AI sales agent',
-            searchKeywords: ['ai', 'chatbot', 'whatsapp'],
+            href: '/settings/ai-agent',
+            label: 'AI agent',
+            searchKeywords: ['ai', 'chatbot', 'whatsapp', 'sales agent', 'assistant', 'faq', 'knowledge'],
           },
-          { href: '/settings/ai-assistant', label: 'AI assistant' },
         ],
       },
       {
@@ -425,8 +424,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         links: [
           emailLink,
           smsLink,
-          { href: '/settings/ai-config', label: 'AI sales agent' },
-          { href: '/settings/ai-assistant', label: 'AI assistant' },
+          { href: '/settings/ai-agent', label: 'AI agent' },
         ],
       },
       {

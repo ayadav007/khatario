@@ -101,7 +101,7 @@ export async function createAddonCheckout(
     throw new Error('Invalid addon type');
   }
 
-  const checkout = getPlatformCheckoutProvider();
+  const checkout = await getPlatformCheckoutProvider();
   if (!checkout) {
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }

@@ -596,6 +596,9 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
         conversation_status: conv.conversation_status,
         lead_status: conv.lead_status,
         profile_picture_url: conv.profile_picture_url,
+        bot_paused_until: conv.bot_paused_until ?? null,
+        bot_paused_reason: conv.bot_paused_reason ?? null,
+        handoff_requested_at: conv.handoff_requested_at ?? null,
       });
 
       // Fetch messages immediately
@@ -1333,6 +1336,10 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
           messages={messages}
           onSendMessage={handleSendMessage}
           onUpdateConversation={handleUpdateConversation}
+          onBotStateChange={(id, state) => {
+            setConversations(prev => prev.map(c => (c.id === id ? { ...c, ...state } : c)));
+            setSelectedConversation(prev => (prev && prev.id === id ? { ...prev, ...state } : prev));
+          }}
           loading={loadingMessages}
           businessId={business.id}
           error={messageError}

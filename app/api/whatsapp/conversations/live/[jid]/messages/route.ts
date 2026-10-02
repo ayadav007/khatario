@@ -10,6 +10,7 @@ import { getWhatsAppSocket } from '@/lib/whatsapp';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
+import { onStaffReply } from '@/lib/ai-agent/conversation';
 import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { extractWebMessageInfoTimestampSec, orderResolveMessageTimestamps, normalizeMessage } from '@/lib/baileys-store-helpers';
 
@@ -435,7 +436,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
                    m.source_timestamp,
                    m.from_number,
                    m.to_number,
-                   m.sender_name,
+                   m.sender_name, m.sent_by,
                    ${isGroup ? 'm.from_number as sender_number' : 'NULL as sender_number'}
                  FROM whatsapp_conversation_messages m
                  WHERE m.conversation_id = $1 AND m.business_id = $2
@@ -469,7 +470,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
                  m.source_timestamp,
                  m.from_number,
                  m.to_number,
-                 m.sender_name,
+                 m.sender_name, m.sent_by,
                  ${isGroup ? 'm.from_number as sender_number' : 'NULL as sender_number'}
                FROM whatsapp_conversation_messages m
                WHERE m.conversation_id = $1 AND m.business_id = $2
@@ -516,6 +517,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
             to_number: row.to_number,
             sender_name: row.sender_name || null,
             sender_number: row.sender_number || null,
+              sent_by: row.sent_by ?? null,
             source: 'database'
           }));
           
@@ -724,7 +726,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
                 m.source_timestamp,
                 m.from_number,
                 m.to_number,
-                m.sender_name,
+                m.sender_name, m.sent_by,
                 ${isGroup ? 'm.from_number as sender_number' : 'NULL as sender_number'}
               FROM whatsapp_conversation_messages m
               WHERE m.conversation_id = $1 AND m.business_id = $2
@@ -755,6 +757,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
               to_number: row.to_number,
               sender_name: row.sender_name || null,
               sender_number: row.sender_number || null,
+              sent_by: row.sent_by ?? null,
               source: 'database'
             }));
             
@@ -934,8 +937,10 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
             media_url || undefined,
             undefined,
             liveNormSec,
-            null
+            null,
+            { sentBy: 'staff', sentByUserId: userId ?? null }
           );
+          if (!jid.endsWith('@g.us')) await onStaffReply(businessId, conversationDbId).catch(() => undefined);
           console.log('[Live Messages] ✅ Outgoing message persisted + SSE emit (CRM path)');
         }
       } catch (dbError) {

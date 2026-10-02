@@ -174,18 +174,20 @@ describe('platform provider switch', () => {
     process.env = { ...env };
   });
 
-  it('stays on Razorpay unless PLATFORM_PAYMENT_PROVIDER=easebuzz and Easebuzz env is set', () => {
+  it('with nothing saved in admin, stays on Razorpay unless PLATFORM_PAYMENT_PROVIDER=easebuzz and Easebuzz env is set', async () => {
     const real = jest.requireActual('@/lib/platform-subscription-checkout') as typeof import('@/lib/platform-subscription-checkout');
+    queryOne.mockReset();
+    queryOne.mockResolvedValue(null);
     delete process.env.PLATFORM_PAYMENT_PROVIDER;
     process.env.PLATFORM_EASEBUZZ_KEY = KEY;
     process.env.PLATFORM_EASEBUZZ_SALT = SALT;
-    expect(real.getPlatformPaymentProviderId()).toBe('razorpay');
+    expect(await real.getPlatformPaymentProviderId()).toBe('razorpay');
 
     process.env.PLATFORM_PAYMENT_PROVIDER = 'easebuzz';
-    expect(real.getPlatformPaymentProviderId()).toBe('easebuzz');
-    expect(real.getPlatformCheckoutProvider()?.provider).toBeInstanceOf(EasebuzzPaymentProvider);
+    expect(await real.getPlatformPaymentProviderId()).toBe('easebuzz');
+    expect((await real.getPlatformCheckoutProvider())?.provider).toBeInstanceOf(EasebuzzPaymentProvider);
 
     delete process.env.PLATFORM_EASEBUZZ_SALT;
-    expect(real.getPlatformPaymentProviderId()).toBe('razorpay');
+    expect(await real.getPlatformPaymentProviderId()).toBe('razorpay');
   });
 });
