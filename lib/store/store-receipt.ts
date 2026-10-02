@@ -5,6 +5,30 @@ import { assertPeriodNotLocked } from '@/lib/period-lock-utils';
 
 export const STORE_RECEIPT_ACTOR = 'razorpay_webhook' as const;
 
+export function storeReceiptActor(provider: string | null | undefined): string {
+  return provider === 'easebuzz' ? 'easebuzz_webhook' : STORE_RECEIPT_ACTOR;
+}
+
+/** Easebuzz `mode`: UPI, CC, DC, NB, MW (wallet), EMI, … */
+function easebuzzPaymentMode(mode: string): string {
+  switch (mode.toUpperCase()) {
+    case 'CC':
+    case 'DC':
+    case 'EMI':
+    case 'PL':
+      return 'credit_card';
+    case 'NB':
+      return 'bank';
+    case 'UPI':
+      return 'upi';
+    case 'MW':
+    case 'OM':
+      return 'wallet';
+    default:
+      return 'cash';
+  }
+}
+
 /** Raised when a verified payment is saved but the invoice or receipt is not posted yet. */
 export class StoreReceiptPendingError extends Error {
   readonly code = 'STORE_RECEIPT_PENDING';
@@ -31,6 +55,10 @@ export function storeReceiptPaymentMode(payload: unknown): string {
   }
   const entity = (body as { payload?: { payment?: { entity?: { method?: unknown } } } } | null)?.payload
     ?.payment?.entity;
+  const ebMode = (body as { easepayid?: unknown; mode?: unknown } | null);
+  if (!entity && typeof ebMode?.easepayid === 'string' && typeof ebMode.mode === 'string') {
+    return easebuzzPaymentMode(ebMode.mode);
+  }
   const method = typeof entity?.method === 'string' ? entity.method.toLowerCase() : '';
   if (method === 'card' || method === 'emi' || method === 'cardless_emi' || method === 'paylater') {
     return 'credit_card';
@@ -67,9 +95,10 @@ export async function settleStoreOrderReceipt(
       receipt_payment_id: string | null;
       grand_total: string;
       order_number: string;
+      payment_provider: string | null;
     }>(
       `SELECT payment_status, invoice_id, provider_payment_id, receipt_payment_id,
-              grand_total::text, order_number
+              grand_total::text, order_number, payment_provider
          FROM store_orders
         WHERE id = $1 AND business_id = $2
         FOR UPDATE`,
@@ -134,6 +163,7 @@ export async function settleStoreOrderReceipt(
       [orderId, businessId],
     );
     const paymentMode = storeReceiptPaymentMode(event.rows[0]?.payload ?? null);
+    const providerName = row.payment_provider === 'easebuzz' ? 'Easebuzz' : 'Razorpay';
     const paymentDate = new Date();
     await assertPeriodNotLocked(businessId, invoice.branch_id, paymentDate, 'record a store receipt');
     const paymentAccount = await getAccountForPaymentMode(businessId, paymentMode);
@@ -154,7 +184,7 @@ export async function settleStoreOrderReceipt(
         invoice.id,
         expected,
         paymentDate,
-        `Razorpay store receipt ${row.order_number}`,
+        `${providerName} store receipt ${row.order_number}`,
         paymentMode,
       ],
     );
@@ -168,7 +198,7 @@ export async function settleStoreOrderReceipt(
       customerId: invoice.customer_id,
       paymentMode,
       referenceNumber: invoice.invoice_number,
-      description: `Razorpay receipt for invoice ${invoice.invoice_number}`,
+      description: `${providerName} receipt for invoice ${invoice.invoice_number}`,
       branchId: invoice.branch_id ?? undefined,
       poolClient: client,
     });
@@ -191,7 +221,7 @@ export async function settleStoreOrderReceipt(
               updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND business_id = $2 AND receipt_payment_id IS NULL
         RETURNING id`,
-      [orderId, businessId, paymentId, STORE_RECEIPT_ACTOR],
+      [orderId, businessId, paymentId, storeReceiptActor(row.payment_provider)],
     );
     if (linked.rows.length === 0) {
       throw new Error('Store receipt was already posted');

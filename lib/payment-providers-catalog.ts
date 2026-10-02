@@ -253,6 +253,51 @@ export const PAYMENT_PROVIDER_CATALOG: PaymentProviderCatalogEntry[] = [
     saveButtonLabel: 'Save Instamojo configuration',
     saveButtonVariant: 'secondary',
   },
+  {
+    id: 'easebuzz',
+    supported: true,
+    displayName: 'Easebuzz',
+    description:
+      'Easebuzz hosted checkout for payment links and your online store. Merchant Key and Salt stored encrypted per business.',
+    summary: {
+      clientIdCaption: 'Saved Merchant Key:',
+      secretCaption: 'Salt:',
+    },
+    webhookUrl: {
+      pathSegment: 'easebuzz',
+      title: 'Webhook URL (Easebuzz Dashboard)',
+      hint:
+        'Paste this under Easebuzz Dashboard > Settings > Webhook for transaction notifications. It covers both payment links and store orders. Customers return to your app through …/api/payments/return/easebuzz automatically.',
+    },
+    fields: [
+      {
+        key: 'client_id',
+        label: 'Merchant Key',
+        type: 'text',
+        placeholderNew: 'Easebuzz Merchant Key',
+        placeholderConfigured: 'Leave blank to keep existing Merchant Key',
+      },
+      {
+        key: 'client_secret',
+        label: 'Salt',
+        type: 'password',
+        placeholderNew: 'Easebuzz Salt',
+        placeholderConfigured: 'Leave blank to keep existing Salt',
+        hint: 'Stored encrypted. Never shown after save.',
+      },
+      {
+        key: 'environment',
+        label: 'Environment',
+        type: 'select',
+        options: [
+          { value: 'sandbox', label: 'Sandbox (testpay.easebuzz.in)' },
+          { value: 'production', label: 'Production (live)' },
+        ],
+      },
+    ],
+    saveButtonLabel: 'Save Easebuzz configuration',
+    saveButtonVariant: 'secondary',
+  },
 ];
 
 /** Catalog entries eligible for in-app configuration (excludes `supported: false`). */

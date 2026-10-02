@@ -564,7 +564,7 @@ export function UpgradeModal({
 
           {selectedPlan && listPrice(selectedPlan) > 0 && (
             <p className="text-xs text-gray-500 text-center mt-4">
-              You&apos;ll be redirected to Razorpay for secure payment. Your plan activates after payment
+              You&apos;ll be redirected to our payment partner for secure payment. Your plan activates after payment
               is confirmed.
             </p>
           )}

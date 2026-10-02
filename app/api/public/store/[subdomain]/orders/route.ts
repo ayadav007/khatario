@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { buildStoreQuote } from '@/lib/store/quote';
-import { getBusinessPaymentProviderConfig } from '@/lib/payments/business-provider-config';
+import {
+  getBusinessPaymentProviderConfig,
+  getPreferredConfiguredProvider,
+} from '@/lib/payments/business-provider-config';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+import type { StoreOnlinePaymentProvider } from '@/lib/store/fulfill-paid-order';
+
+const STORE_ONLINE_PROVIDERS: readonly StoreOnlinePaymentProvider[] = ['razorpay', 'easebuzz'];
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
 import { storePhonesMatch, storePhoneDigits } from '@/lib/store/store-phone';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
@@ -31,9 +38,10 @@ export async function POST(
     }
 
     const body = await request.json();
-    const paymentMethod = body.payment_method === 'razorpay' ? 'razorpay' : 'cod';
+    const paymentMethod =
+      body.payment_method === 'online' || body.payment_method === 'razorpay' ? 'online' : 'cod';
 
-    if (paymentMethod === 'razorpay') {
+    if (paymentMethod === 'online') {
       const payOk = await hasFeatureAccess(store.business_id, FeatureKeys.PAYMENT_GATEWAY);
       if (!payOk) {
         return NextResponse.json(
@@ -215,9 +223,15 @@ export async function POST(
     }
 
     let paymentUrl: string | undefined;
-    if (paymentMethod === 'razorpay') {
-      const cfg = await getBusinessPaymentProviderConfig(store.business_id, 'razorpay');
-      if (!cfg?.clientId || !cfg.clientSecret) {
+    if (paymentMethod === 'online') {
+      const providerId = (await getPreferredConfiguredProvider(
+        store.business_id,
+        STORE_ONLINE_PROVIDERS,
+      )) as StoreOnlinePaymentProvider | null;
+      const cfg = providerId
+        ? await getBusinessPaymentProviderConfig(store.business_id, providerId)
+        : null;
+      if (!providerId || !cfg?.clientId || !cfg.clientSecret) {
         return NextResponse.json(
           {
             order_id: orderId,
@@ -229,9 +243,10 @@ export async function POST(
           { status: 201 },
         );
       }
-      const rzp = new RazorpayPaymentProvider(cfg);
+      const psp =
+        providerId === 'easebuzz' ? new EasebuzzPaymentProvider(cfg) : new RazorpayPaymentProvider(cfg);
       const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://staging.khatario.com';
-      const link = await rzp.createHostedPaymentLink({
+      const link = await psp.createHostedPaymentLink({
         businessId: store.business_id,
         orderId,
         amount: quote.grand_total,
@@ -244,13 +259,14 @@ export async function POST(
           description: `Store order ${orderNum}`,
           store_order_id: orderId,
           store_subdomain: store.store_subdomain,
+          ...(providerId === 'easebuzz' ? { easebuzz_context: 'ST' } : {}),
         },
       });
       paymentUrl = link.paymentUrl;
       if (link.providerPaymentId) {
         await queryOne(
-          `UPDATE store_orders SET payment_provider = 'razorpay', payment_ref = $1 WHERE id = $2`,
-          [link.providerPaymentId, orderId],
+          `UPDATE store_orders SET payment_provider = $3, payment_ref = $1 WHERE id = $2`,
+          [link.providerPaymentId, orderId, providerId],
         );
       }
     }

@@ -105,6 +105,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/webhooks/platform-billing/',
   /** Razorpay / PayU / etc. POST here; must not require business user session */
   '/api/payments/webhook',
+  /** Easebuzz posts the customer's browser back here (surl / furl) */
+  '/api/payments/return/',
   '/api/health',
   '/api/public/',
 ];

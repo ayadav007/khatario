@@ -32,6 +32,7 @@ import {
 import {
   completeSubscriptionCheckoutPayment,
   extractCheckoutMetaFromWebhookNotes,
+  getPlatformEasebuzzProvider,
   getPlatformRazorpayProvider,
 } from '@/lib/platform-subscription-checkout';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
@@ -628,6 +629,123 @@ export async function processPlatformRazorpayWebhook(
   );
 
   return { ok: true };
+}
+
+export type PlatformEasebuzzOutcome = {
+  ok: boolean;
+  outcome?: 'paid' | 'failed' | 'pending' | 'duplicate' | 'ignored';
+  checkoutType?: 'subscription' | 'whatsapp_addon';
+  addonType?: string;
+  planId?: string | null;
+  error?: string;
+  httpStatus?: number;
+};
+
+/**
+ * Easebuzz return / webhook for Khatario's own billing. The business, plan and add-on come
+ * from the pending billing_transactions row matched by txnid, never from the callback body.
+ */
+export async function processPlatformEasebuzzCallback(rawBody: string): Promise<PlatformEasebuzzOutcome> {
+  const provider = getPlatformEasebuzzProvider();
+  if (!provider) {
+    return { ok: false, error: 'Platform Easebuzz not configured', httpStatus: 400 };
+  }
+  const verified = await provider.verifyWebhook({ rawBody, headers: {} });
+  if (!verified.verified || !verified.providerOrderId) {
+    return { ok: false, error: verified.reason || 'Verification failed', httpStatus: 401 };
+  }
+  const txnid = verified.providerOrderId;
+
+  const tx = await queryOne<{
+    id: string;
+    business_id: string;
+    plan_id: string | null;
+    billing_cycle: string | null;
+    status: string;
+    total_amount: string;
+    gateway_response: Record<string, unknown> | null;
+  }>(
+    `SELECT id, business_id, plan_id, billing_cycle, status, total_amount::text, gateway_response
+       FROM billing_transactions
+      WHERE payment_method = 'easebuzz' AND payment_reference = $1
+      LIMIT 1`,
+    [txnid],
+  );
+  if (!tx) {
+    return { ok: true, outcome: 'ignored', error: 'No matching billing transaction' };
+  }
+  const gw = tx.gateway_response ?? {};
+  const checkoutType = gw.checkout_type === 'whatsapp_addon' ? 'whatsapp_addon' : 'subscription';
+  const addonType = typeof gw.addon_type === 'string' ? gw.addon_type : undefined;
+  const base = { checkoutType, addonType, planId: tx.plan_id } as const;
+
+  const idemKey = createHash('sha256')
+    .update(`platform|easebuzz|${txnid}|${verified.status}`)
+    .digest('hex');
+  const isNew = await logPlatformWebhookEvent({
+    provider: 'easebuzz',
+    idempotencyKey: idemKey,
+    eventType: verified.eventType || 'easebuzz_transaction',
+    businessId: tx.business_id,
+    billingTransactionId: tx.id,
+    status: 'received',
+    payload: verified.rawPayload ?? {},
+  });
+  const settledOutcome =
+    tx.status === 'completed' ? 'paid' : tx.status === 'failed' ? 'failed' : null;
+  if (!isNew || settledOutcome) {
+    return { ok: true, outcome: settledOutcome ?? 'duplicate', ...base };
+  }
+
+  const markEvent = (status: string, notes: string) =>
+    query(
+      `UPDATE platform_billing_webhook_events SET status = $2, processing_notes = $3
+        WHERE provider = 'easebuzz' AND idempotency_key = $1`,
+      [idemKey, status, notes],
+    );
+
+  if (verified.status === 'success') {
+    const expected = Math.round((parseFloat(tx.total_amount) || 0) * 100);
+    const paid = Math.round((verified.amount ?? -1) * 100);
+    if (expected !== paid) {
+      await markEvent('ignored', `Amount mismatch: expected ${expected} paise, got ${paid}`);
+      return { ok: false, error: 'Amount mismatch', httpStatus: 422, ...base };
+    }
+    if (checkoutType === 'whatsapp_addon' && isWhatsAppAddonType(addonType)) {
+      await completeAddonCheckoutPayment({
+        businessId: tx.business_id,
+        addonType,
+        billingTransactionId: tx.id,
+        providerPaymentId: verified.providerPaymentId,
+        amount: verified.amount ?? 0,
+        gatewayResponse: { ...gw, ...verified.rawPayload },
+        paymentMethod: 'easebuzz',
+      });
+      await markEvent('processed', 'WhatsApp addon checkout completed');
+    } else {
+      await completeSubscriptionCheckoutPayment({
+        businessId: tx.business_id,
+        planId: tx.plan_id || 'free',
+        billingCycle: tx.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+        billingTransactionId: tx.id,
+        providerPaymentId: verified.providerPaymentId,
+        amount: verified.amount ?? 0,
+        gatewayResponse: { ...gw, ...verified.rawPayload },
+        paymentMethod: 'easebuzz',
+      });
+      await markEvent('processed', 'Subscription checkout completed');
+    }
+    return { ok: true, outcome: 'paid', ...base };
+  }
+
+  if (verified.status === 'failed') {
+    await updateBillingTransactionStatus(tx.id, 'failed', { ...gw, ...verified.rawPayload });
+    await markEvent('failed', 'Payment failed');
+    return { ok: true, outcome: 'failed', ...base };
+  }
+
+  await markEvent('pending', 'Pending — no billing email sent');
+  return { ok: true, outcome: 'pending', ...base };
 }
 
 export async function listPlatformBillingEvents(limit = 50, offset = 0) {

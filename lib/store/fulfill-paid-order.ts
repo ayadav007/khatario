@@ -4,14 +4,20 @@ import { createInvoiceInTransaction } from '@/lib/invoices/invoice-create-servic
 import { roundMoney } from '@/lib/store/pricing';
 import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
 
+export type StoreOnlinePaymentProvider = 'razorpay' | 'easebuzz';
+
 export interface StorePaymentEvent {
-  provider: 'razorpay';
+  provider: StoreOnlinePaymentProvider;
   idempotencyKey: string;
   amount: number | null | undefined;
   currency?: string | null;
   payload: string;
   providerPaymentId?: string | null;
   providerOrderId?: string | null;
+}
+
+export function storeProviderLabel(provider: string | null | undefined): string {
+  return provider === 'easebuzz' ? 'Easebuzz' : 'Razorpay';
 }
 
 export type StorePaymentRejection = 'ORDER_NOT_FOUND' | 'ALREADY_PAID' | 'ORDER_CANCELLED' | 'AMOUNT_MISMATCH';
@@ -90,12 +96,12 @@ export async function fulfillStoreOrderPayment(
       `UPDATE store_orders
        SET payment_status = 'paid',
            status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
-           payment_provider = 'razorpay',
+           payment_provider = $5,
            provider_payment_id = COALESCE($3, provider_payment_id),
            payment_ref = COALESCE(payment_ref, $4),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND business_id = $2`,
-      [orderId, businessId, event.providerPaymentId ?? null, event.providerOrderId ?? null],
+      [orderId, businessId, event.providerPaymentId ?? null, event.providerOrderId ?? null, event.provider],
     );
     await client.query('COMMIT');
     notify = {
@@ -301,6 +307,7 @@ export async function createInvoiceForStoreOrder(
           discount_amount: string;
           order_number: string;
           payment_status: string;
+          payment_provider: string | null;
           status: string;
           customer_name: string;
           customer_phone: string;
@@ -404,7 +411,11 @@ export async function createInvoiceForStoreOrder(
 
     const invoiceDate = new Date(o.created_at).toISOString().slice(0, 10);
     const payLabel =
-      o.payment_status === 'cod' ? 'COD' : o.payment_status === 'paid' ? 'Razorpay' : 'Unpaid';
+      o.payment_status === 'cod'
+        ? 'COD'
+        : o.payment_status === 'paid'
+          ? storeProviderLabel(o.payment_provider)
+          : 'Unpaid';
     const result = await createInvoiceInTransaction(
       client,
       {

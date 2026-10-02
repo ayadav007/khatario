@@ -34,7 +34,7 @@ export function StoreCheckout({
   const [deliveryMode, setDeliveryMode] = useState<'delivery' | 'pickup'>('delivery');
   const [notes, setNotes] = useState('');
   const [coupon, setCoupon] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'razorpay'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<{
@@ -59,7 +59,7 @@ export function StoreCheckout({
   }, [customer]);
 
   useEffect(() => {
-    if (store?.store_allow_cod === false) setPaymentMethod('razorpay');
+    if (store?.store_allow_cod === false) setPaymentMethod('online');
   }, [store?.store_allow_cod]);
 
   useEffect(() => {
@@ -399,10 +399,10 @@ export function StoreCheckout({
                   {store.online_pay_enabled !== false ? (
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod('razorpay')}
+                      onClick={() => setPaymentMethod('online')}
                       className={clsx(
                         'rounded-lg border px-3 py-2 text-sm',
-                        paymentMethod === 'razorpay' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
+                        paymentMethod === 'online' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
                       )}
                     >
                       UPI / card

@@ -3,7 +3,6 @@
  */
 
 import { query, queryOne } from '@/lib/db';
-import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
 import {
   recordBillingTransaction,
@@ -15,11 +14,13 @@ import {
 } from '@/lib/subscription';
 import { CONNECT_PLAN_ID } from '@/lib/product-lines';
 import {
-  getPlatformRazorpayProvider,
+  getPlatformCheckoutProvider,
+  isPlatformPaymentConfigured,
   isPlatformRazorpayConfigured,
+  type PlatformPaymentProviderId,
 } from '@/lib/platform-subscription-checkout';
 
-export { isPlatformRazorpayConfigured };
+export { isPlatformPaymentConfigured, isPlatformRazorpayConfigured };
 
 export const WHATSAPP_ADDON_PRICING: Record<WhatsAppAddonType, number> = {
   whatsapp_bot: 499,
@@ -100,10 +101,11 @@ export async function createAddonCheckout(
     throw new Error('Invalid addon type');
   }
 
-  const provider = getPlatformRazorpayProvider();
-  if (!provider) {
+  const checkout = getPlatformCheckoutProvider();
+  if (!checkout) {
     throw new Error('PAYMENT_NOT_CONFIGURED');
   }
+  const provider = checkout.provider;
 
   const label = WHATSAPP_ADDON_LABELS[input.addonType];
   const recipient = await getBusinessPlatformRecipient(input.businessId);
@@ -114,7 +116,7 @@ export async function createAddonCheckout(
     moduleKey: 'connect',
     amount: price,
     billingCycle: 'monthly',
-    paymentMethod: 'razorpay',
+    paymentMethod: checkout.id,
     status: 'pending',
     description: `${label} add-on — monthly`,
     skipEmails: true,
@@ -140,6 +142,7 @@ export async function createAddonCheckout(
       module_key: 'connect',
       billing_transaction_id: pending.id,
       cancel_url: cancelUrl,
+      ...(checkout.id === 'easebuzz' ? { easebuzz_context: 'PB' } : {}),
     },
   });
 
@@ -156,6 +159,7 @@ export async function createAddonCheckout(
         JSON.stringify({
           payment_link_id: link.providerPaymentId,
           short_url: link.paymentUrl,
+          provider: checkout.id,
           checkout_type: 'whatsapp_addon',
           addon_type: input.addonType,
         }),
@@ -164,7 +168,7 @@ export async function createAddonCheckout(
   }
 
   if (!link.paymentUrl) {
-    throw new Error('Razorpay did not return a checkout URL');
+    throw new Error('Payment provider did not return a checkout URL');
   }
 
   return {
@@ -183,6 +187,7 @@ export async function completeAddonCheckoutPayment(params: {
   providerPaymentId?: string | null;
   amount: number;
   gatewayResponse?: unknown;
+  paymentMethod?: PlatformPaymentProviderId;
 }): Promise<void> {
   const price = WHATSAPP_ADDON_PRICING[params.addonType] ?? params.amount;
 
@@ -208,7 +213,7 @@ export async function completeAddonCheckoutPayment(params: {
       moduleKey: 'connect',
       amount: params.amount,
       billingCycle: 'monthly',
-      paymentMethod: 'razorpay',
+      paymentMethod: params.paymentMethod ?? 'razorpay',
       paymentReference: params.providerPaymentId,
       status: 'completed',
       description: `${WHATSAPP_ADDON_LABELS[params.addonType]} add-on — monthly`,

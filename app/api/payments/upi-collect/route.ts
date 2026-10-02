@@ -9,6 +9,7 @@ import {
   getSessionScopedBusinessId,
 } from '@/lib/auth-helpers';
 import { createPaymentProviderForBusiness } from '@/lib/payments';
+import { getPreferredConfiguredProvider } from '@/lib/payments/business-provider-config';
 import type { CreateUpiCollectResult } from '@/lib/payments/types';
 import {
   createPaymentTransaction,
@@ -164,7 +165,8 @@ function collectResponseFromStoredRow(row: PaymentTransactionRow) {
  * Body:
  * - order_id (required) — sales_orders.id
  * - business_id (optional if session sets tenant)
- * - provider (optional) — default `mock`; e.g. `cashfree`
+ * - provider (optional) — defaults to the business's default provider when it has saved
+ *   credentials (Settings → Payments), otherwise `mock`; e.g. `cashfree`, `easebuzz`
  * - Credentials: payment_provider_configs + PAYMENT_ENCRYPTION_KEY, or ENV fallback (never accept secrets in body)
  * - customer_name, customer_phone, customer_email — forwarded to PSP
  * - return_url, notify_url — forwarded to PSP where supported
@@ -184,7 +186,7 @@ export async function POST(request: NextRequest) {
 
     const {
       order_id: orderId,
-      provider: providerId = 'mock',
+      provider: requestedProvider,
       customer_name,
       customer_phone,
       customer_email,
@@ -297,6 +299,11 @@ export async function POST(request: NextRequest) {
           'An active UPI collect session already exists for this order; returning it instead of creating a duplicate.'
       });
     }
+
+    const providerId =
+      typeof requestedProvider === 'string' && requestedProvider.trim()
+        ? requestedProvider.trim()
+        : (await getPreferredConfiguredProvider(businessId)) ?? 'mock';
 
     let psp;
     try {

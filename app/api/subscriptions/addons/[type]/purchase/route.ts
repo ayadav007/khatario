@@ -6,7 +6,7 @@ import { WhatsAppAddonType } from '@/lib/subscription';
 import {
   WHATSAPP_ADDON_PRICING,
   createAddonCheckout,
-  isPlatformRazorpayConfigured,
+  isPlatformPaymentConfigured,
 } from '@/lib/platform-addon-checkout';
 
 export const dynamic = 'force-dynamic';
@@ -68,7 +68,7 @@ export async function POST(
       );
     }
 
-    if (!isPlatformRazorpayConfigured()) {
+    if (!isPlatformPaymentConfigured()) {
       return NextResponse.json(
         {
           error:

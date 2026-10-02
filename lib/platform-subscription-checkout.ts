@@ -10,6 +10,8 @@ import { query, queryOne } from '@/lib/db';
 
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
 
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+
 import {
 
   getBusinessPlatformRecipient,
@@ -91,6 +93,44 @@ export function isPlatformRazorpayConfigured(): boolean {
 
   return getPlatformRazorpayProvider() !== null;
 
+}
+
+/** Khatario's own Easebuzz account (env only; never a business's credentials). */
+export function getPlatformEasebuzzProvider(): EasebuzzPaymentProvider | null {
+  const key = process.env.PLATFORM_EASEBUZZ_KEY?.trim();
+  const salt = process.env.PLATFORM_EASEBUZZ_SALT?.trim();
+  if (!key || !salt) return null;
+  return new EasebuzzPaymentProvider({
+    clientId: key,
+    clientSecret: salt,
+    environment: process.env.PLATFORM_EASEBUZZ_ENV === 'production' ? 'production' : 'sandbox',
+  });
+}
+
+export type PlatformPaymentProviderId = 'razorpay' | 'easebuzz';
+
+/** `PLATFORM_PAYMENT_PROVIDER=easebuzz` switches checkout once Easebuzz env is set; default Razorpay. */
+export function getPlatformPaymentProviderId(): PlatformPaymentProviderId {
+  return process.env.PLATFORM_PAYMENT_PROVIDER?.trim().toLowerCase() === 'easebuzz' &&
+    getPlatformEasebuzzProvider()
+    ? 'easebuzz'
+    : 'razorpay';
+}
+
+export function getPlatformCheckoutProvider():
+  | { id: 'razorpay'; provider: RazorpayPaymentProvider }
+  | { id: 'easebuzz'; provider: EasebuzzPaymentProvider }
+  | null {
+  if (getPlatformPaymentProviderId() === 'easebuzz') {
+    const provider = getPlatformEasebuzzProvider();
+    return provider ? { id: 'easebuzz', provider } : null;
+  }
+  const provider = getPlatformRazorpayProvider();
+  return provider ? { id: 'razorpay', provider } : null;
+}
+
+export function isPlatformPaymentConfigured(): boolean {
+  return getPlatformCheckoutProvider() !== null;
 }
 
 
@@ -223,13 +263,15 @@ export async function createSubscriptionCheckout(
 
 
 
-  const provider = getPlatformRazorpayProvider();
+  const checkout = getPlatformCheckoutProvider();
 
-  if (!provider) {
+  if (!checkout) {
 
     throw new Error('PAYMENT_NOT_CONFIGURED');
 
   }
+
+  const provider = checkout.provider;
 
 
 
@@ -254,7 +296,7 @@ export async function createSubscriptionCheckout(
 
     billingCycle: input.billingCycle,
 
-    paymentMethod: 'razorpay',
+    paymentMethod: checkout.id,
 
     status: 'pending',
 
@@ -308,6 +350,8 @@ export async function createSubscriptionCheckout(
 
       cancel_url: cancelUrl,
 
+      ...(checkout.id === 'easebuzz' ? { easebuzz_context: 'PB' } : {}),
+
     },
 
   });
@@ -334,7 +378,12 @@ export async function createSubscriptionCheckout(
 
         link.providerPaymentId,
 
-        JSON.stringify({ payment_link_id: link.providerPaymentId, short_url: link.paymentUrl }),
+        JSON.stringify({
+          payment_link_id: link.providerPaymentId,
+          short_url: link.paymentUrl,
+          provider: checkout.id,
+          checkout_type: 'subscription',
+        }),
 
       ],
 
@@ -346,13 +395,16 @@ export async function createSubscriptionCheckout(
 
   if (!link.paymentUrl) {
 
-    throw new Error('Razorpay did not return a checkout URL');
+    throw new Error('Payment provider did not return a checkout URL');
 
   }
 
 
 
-  const keyId = process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || '';
+  const keyId =
+    checkout.id === 'razorpay'
+      ? process.env.PLATFORM_RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID || ''
+      : '';
 
 
 
@@ -398,7 +450,11 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   gatewayResponse?: unknown;
 
+  paymentMethod?: PlatformPaymentProviderId;
+
 }): Promise<void> {
+
+  const paymentMethod = params.paymentMethod ?? 'razorpay';
 
   const plan = await queryOne<{ display_name: string }>(
 
@@ -464,7 +520,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
       billingCycle: params.billingCycle,
 
-      paymentMethod: 'razorpay',
+      paymentMethod,
 
       paymentReference: params.providerPaymentId,
 
@@ -480,7 +536,7 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
       billingCycle: params.billingCycle,
 
-      paymentMethod: 'razorpay',
+      paymentMethod,
 
       paymentReference: params.providerPaymentId,
 

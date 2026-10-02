@@ -177,6 +177,35 @@ export async function listBusinessPaymentProviderIds(
   );
 }
 
+/**
+ * The business's chosen online provider, if it has saved credentials for it.
+ * With `allowed`, falls back to the first configured provider in that order.
+ */
+export async function getPreferredConfiguredProvider(
+  businessId: string,
+  allowed?: readonly string[]
+): Promise<string | null> {
+  const configured = (await listBusinessPaymentProviderIds(businessId)).map((r) =>
+    r.provider.toLowerCase()
+  );
+  let preferred = '';
+  try {
+    const row = await queryOne<{ default_payment_provider: string | null }>(
+      `SELECT default_payment_provider FROM business_settings WHERE business_id = $1`,
+      [businessId]
+    );
+    preferred = row?.default_payment_provider?.trim().toLowerCase() || '';
+  } catch {
+    preferred = '';
+  }
+  const isAllowed = (p: string) => !allowed || allowed.includes(p);
+  if (preferred && configured.includes(preferred) && isAllowed(preferred)) {
+    return preferred;
+  }
+  if (!allowed) return null;
+  return allowed.find((p) => configured.includes(p)) ?? null;
+}
+
 export type UpsertBusinessPaymentProviderInput = {
   businessId: string;
   provider: string;

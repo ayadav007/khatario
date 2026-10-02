@@ -3,7 +3,7 @@ import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import {
   createSubscriptionCheckout,
-  isPlatformRazorpayConfigured,
+  isPlatformPaymentConfigured,
 } from '@/lib/platform-subscription-checkout';
 import { applyInstantPlanUpgradeWithCoupon } from '@/lib/subscription/apply-coupon-upgrade';
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!isPlatformRazorpayConfigured()) {
+    if (!isPlatformPaymentConfigured()) {
       return NextResponse.json(
         {
           error:

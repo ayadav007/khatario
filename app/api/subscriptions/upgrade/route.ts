@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
-import { isPlatformRazorpayConfigured } from '@/lib/platform-subscription-checkout';
+import { isPlatformPaymentConfigured } from '@/lib/platform-subscription-checkout';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     const amount = computePlanAmount(plan, cycle);
 
     if (amount > 0) {
-      if (isPlatformRazorpayConfigured()) {
+      if (isPlatformPaymentConfigured()) {
         return NextResponse.json(
           {
             error: 'This plan requires payment. Start checkout to continue.',

@@ -4,8 +4,26 @@ import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { getBusinessPaymentProviderConfig } from '@/lib/payments/business-provider-config';
 import { RazorpayPaymentProvider } from '@/lib/payments/providers/razorpay-payment-provider';
+import { EasebuzzPaymentProvider } from '@/lib/payments/providers/easebuzz-payment-provider';
+import type { StoreOnlinePaymentProvider } from '@/lib/store/fulfill-paid-order';
 
 export const STORE_REFUND_WEBHOOK_ACTOR = 'razorpay_webhook' as const;
+export const STORE_REFUND_EASEBUZZ_ACTOR = 'easebuzz_webhook' as const;
+export type StoreRefundProviderActor =
+  | typeof STORE_REFUND_WEBHOOK_ACTOR
+  | typeof STORE_REFUND_EASEBUZZ_ACTOR;
+
+function storeRefundProvider(value: string | null | undefined): StoreOnlinePaymentProvider {
+  return value === 'easebuzz' ? 'easebuzz' : 'razorpay';
+}
+
+function providerActor(provider: StoreOnlinePaymentProvider): StoreRefundProviderActor {
+  return provider === 'easebuzz' ? STORE_REFUND_EASEBUZZ_ACTOR : STORE_REFUND_WEBHOOK_ACTOR;
+}
+
+function providerLabel(provider: StoreOnlinePaymentProvider): string {
+  return provider === 'easebuzz' ? 'Easebuzz' : 'Razorpay';
+}
 
 export class StoreRefundError extends Error {
   constructor(
@@ -24,6 +42,7 @@ export type StoreRefundSubmit = {
   idempotencyKey: string;
   providerPaymentId: string;
   amountPaise: number;
+  provider: StoreOnlinePaymentProvider;
 };
 
 export type StoreRefundPrepare =
@@ -32,7 +51,7 @@ export type StoreRefundPrepare =
 
 type RefundCaller =
   | { actorType: 'user'; actorUserId: string }
-  | { actorType: typeof STORE_REFUND_WEBHOOK_ACTOR; actorUserId: null };
+  | { actorType: StoreRefundProviderActor; actorUserId: null };
 
 /**
  * Records a refund request and commits it before any provider call.
@@ -69,14 +88,14 @@ export async function prepareStoreRefund(input: {
 
 /**
  * Applies a provider refund result. Posts the payment reversal once, and only
- * when Razorpay reports the refund processed. Does not reverse the sales invoice.
+ * when the provider reports the refund processed. Does not reverse the sales invoice.
  */
 export async function applyStoreRefundResult(input: {
   businessId: string;
   refundId: string;
   providerRefundId: string;
   providerStatus: 'processed' | 'pending';
-  actorType: 'user' | typeof STORE_REFUND_WEBHOOK_ACTOR;
+  actorType: 'user' | StoreRefundProviderActor;
 }): Promise<{ status: 'pending' | 'refunded'; paymentReversals: number }> {
   const client = await getPool().connect();
   try {
@@ -90,9 +109,10 @@ export async function applyStoreRefundResult(input: {
       provider_refund_id: string | null;
       actor_type: string;
       actor_user_id: string | null;
+      provider: string;
     }>(
       `SELECT id, order_id, payment_id, amount::text, status, provider_refund_id,
-              actor_type, actor_user_id
+              actor_type, actor_user_id, provider
          FROM store_payment_refunds
         WHERE id = $1 AND business_id = $2
         FOR UPDATE`,
@@ -132,7 +152,7 @@ export async function applyStoreRefundResult(input: {
       businessId: input.businessId,
       voucherType: 'payment',
       voucherId: refund.payment_id,
-      reason: `Razorpay refund ${input.providerRefundId}`,
+      reason: `${providerLabel(storeRefundProvider(refund.provider))} refund ${input.providerRefundId}`,
       actorId: refund.actor_type === 'user' ? refund.actor_user_id : null,
     });
     if (paymentReversals > 0) {
@@ -191,18 +211,21 @@ export async function confirmStoreRefundFromProvider(input: {
   providerRefundId: string;
   amountInr: number | null;
   providerStatus: 'processed' | 'pending';
+  provider?: StoreOnlinePaymentProvider;
 }): Promise<{ status: 'pending' | 'refunded' | 'ignored'; businessId?: string }> {
+  const provider = input.provider ?? 'razorpay';
   const found = await getPool().query<{ id: string; business_id: string; amount: string }>(
     `SELECT r.id, r.business_id, r.amount::text
        FROM store_payment_refunds r
        JOIN store_orders o ON o.id = r.order_id AND o.business_id = r.business_id
       WHERE o.provider_payment_id = $1
+        AND COALESCE(o.payment_provider, 'razorpay') = $2
       LIMIT 1`,
-    [input.providerPaymentId],
+    [input.providerPaymentId, provider],
   );
   let refund = found.rows[0];
   if (!refund) {
-    const opened = await openWebhookRefund(input);
+    const opened = await openWebhookRefund({ ...input, provider });
     if (!opened) return { status: 'ignored' };
     refund = opened;
   }
@@ -214,7 +237,7 @@ export async function confirmStoreRefundFromProvider(input: {
     refundId: refund.id,
     providerRefundId: input.providerRefundId,
     providerStatus: input.providerStatus,
-    actorType: STORE_REFUND_WEBHOOK_ACTOR,
+    actorType: providerActor(provider),
   });
   return { status: applied.status, businessId: refund.business_id };
 }
@@ -233,7 +256,11 @@ export async function refundStoreOrder(input: {
   if (prepared.action === 'complete') {
     return { status: 'refunded', providerRefundId: prepared.providerRefundId };
   }
-  const requestRefund = input.requestRefund ?? (await razorpayRefundRequester(input.businessId));
+  const requestRefund =
+    input.requestRefund ??
+    (prepared.provider === 'easebuzz'
+      ? await easebuzzRefundRequester(input.businessId)
+      : await razorpayRefundRequester(input.businessId));
   const result = await requestRefund({
     providerPaymentId: prepared.providerPaymentId,
     amountPaise: prepared.amountPaise,
@@ -257,6 +284,33 @@ async function razorpayRefundRequester(businessId: string) {
     provider.refundCapturedPayment(args);
 }
 
+/**
+ * Easebuzz has no idempotency header, so a retry first asks Refund Status for our
+ * merchant_refund_id and only raises a new refund when Easebuzz has none.
+ */
+async function easebuzzRefundRequester(businessId: string) {
+  const cfg = await getBusinessPaymentProviderConfig(businessId, 'easebuzz');
+  if (!cfg) throw new StoreRefundError('Online payment is not configured', 409, 'PAYMENT_NOT_CONFIGURED');
+  const provider = new EasebuzzPaymentProvider(cfg);
+  return async (args: { providerPaymentId: string; amountPaise: number; idempotencyKey: string }) => {
+    const existing = await provider.fetchRefundStatus(args.providerPaymentId, args.idempotencyKey);
+    if (existing?.status === 'failed') {
+      throw new StoreRefundError('Easebuzz declined this refund', 502, 'REFUND_FAILED');
+    }
+    if (existing) {
+      return {
+        providerRefundId: existing.providerRefundId,
+        status: existing.status === 'processed' ? ('processed' as const) : ('pending' as const),
+      };
+    }
+    return provider.refundPayment({
+      easebuzzId: args.providerPaymentId,
+      amountPaise: args.amountPaise,
+      merchantRefundId: args.idempotencyKey,
+    });
+  };
+}
+
 async function claimRefund(
   client: import('pg').PoolClient,
   businessId: string,
@@ -269,8 +323,10 @@ async function claimRefund(
     payment_ref: string | null;
     receipt_payment_id: string | null;
     grand_total: string;
+    payment_provider: string | null;
   }>(
-    `SELECT payment_status, provider_payment_id, payment_ref, receipt_payment_id, grand_total::text
+    `SELECT payment_status, provider_payment_id, payment_ref, receipt_payment_id, grand_total::text,
+            payment_provider
        FROM store_orders
       WHERE id = $1 AND business_id = $2
       FOR UPDATE`,
@@ -278,6 +334,7 @@ async function claimRefund(
   );
   const row = order.rows[0];
   if (!row) throw new StoreRefundError('Order not found', 404, 'ORDER_NOT_FOUND');
+  const provider = storeRefundProvider(row.payment_provider);
   if (row.payment_status === 'refunded') {
     const done = await client.query<{ provider_refund_id: string | null }>(
       `SELECT provider_refund_id FROM store_payment_refunds WHERE order_id = $1 AND business_id = $2`,
@@ -289,7 +346,7 @@ async function claimRefund(
     throw new StoreRefundError('Only a paid store order can be refunded', 409, 'NOT_PAID');
   }
   if (!row.provider_payment_id) {
-    throw new StoreRefundError('This order has no captured Razorpay payment', 409, 'NO_PROVIDER_PAYMENT');
+    throw new StoreRefundError('This order has no captured online payment', 409, 'NO_PROVIDER_PAYMENT');
   }
   if (!row.receipt_payment_id) {
     throw new StoreRefundError('This order has no posted receipt to reverse', 409, 'NO_RECEIPT');
@@ -319,6 +376,7 @@ async function claimRefund(
       idempotencyKey: current.idempotency_key,
       providerPaymentId: row.provider_payment_id,
       amountPaise: Math.round(parseFloat(current.amount) * 100),
+      provider,
     };
   }
 
@@ -328,7 +386,7 @@ async function claimRefund(
     `INSERT INTO store_payment_refunds (
        id, business_id, order_id, payment_id, provider, provider_payment_id, provider_order_id,
        idempotency_key, amount, currency, status, actor_type, actor_user_id
-     ) VALUES ($1,$2,$3,$4,'razorpay',$5,$6,$7,$8,'INR','pending',$9,$10)`,
+     ) VALUES ($1,$2,$3,$4,$11,$5,$6,$7,$8,'INR','pending',$9,$10)`,
     [
       refundId,
       businessId,
@@ -340,6 +398,7 @@ async function claimRefund(
       amount,
       actor.actorType,
       actor.actorUserId,
+      provider,
     ],
   );
   await client.query(
@@ -353,6 +412,7 @@ async function claimRefund(
     idempotencyKey: refundId,
     providerPaymentId: row.provider_payment_id,
     amountPaise: Math.round(amount * 100),
+    provider,
   };
 }
 
@@ -360,6 +420,7 @@ async function openWebhookRefund(input: {
   providerPaymentId: string;
   providerRefundId: string;
   amountInr: number | null;
+  provider: StoreOnlinePaymentProvider;
 }): Promise<{ id: string; business_id: string; amount: string } | null> {
   const client = await getPool().connect();
   try {
@@ -375,8 +436,9 @@ async function openWebhookRefund(input: {
       `SELECT id, business_id, payment_status, receipt_payment_id, payment_ref, grand_total::text
          FROM store_orders
         WHERE provider_payment_id = $1
+          AND COALESCE(payment_provider, 'razorpay') = $2
         FOR UPDATE`,
-      [input.providerPaymentId],
+      [input.providerPaymentId, input.provider],
     );
     const row = order.rows[0];
     if (!row || !row.receipt_payment_id) {
@@ -398,9 +460,20 @@ async function openWebhookRefund(input: {
       `INSERT INTO store_payment_refunds (
          id, business_id, order_id, payment_id, provider, provider_payment_id, provider_order_id,
          idempotency_key, amount, currency, status, actor_type, actor_user_id
-       ) VALUES ($1,$2,$3,$4,'razorpay',$5,$6,$7,$8,'INR','pending','razorpay_webhook',NULL)
+       ) VALUES ($1,$2,$3,$4,$9,$5,$6,$7,$8,'INR','pending',$10,NULL)
        ON CONFLICT (order_id) DO NOTHING`,
-      [refundId, row.business_id, row.id, row.receipt_payment_id, input.providerPaymentId, row.payment_ref, idempotencyKey, amount],
+      [
+        refundId,
+        row.business_id,
+        row.id,
+        row.receipt_payment_id,
+        input.providerPaymentId,
+        row.payment_ref,
+        idempotencyKey,
+        amount,
+        input.provider,
+        providerActor(input.provider),
+      ],
     );
     const saved = await client.query<{ id: string; business_id: string; amount: string }>(
       `SELECT id, business_id, amount::text FROM store_payment_refunds WHERE order_id = $1`,

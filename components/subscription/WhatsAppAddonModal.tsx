@@ -205,7 +205,7 @@ export function WhatsAppAddonModal({
         {/* Footer */}
         <div className="p-6 border-t bg-gray-50">
           <p className="text-sm text-gray-600 text-center">
-            Add-ons are billed monthly. You&apos;ll be redirected to Razorpay for secure payment.
+            Add-ons are billed monthly. You&apos;ll be redirected to our payment partner for secure payment.
           </p>
         </div>
       </div>

@@ -6,7 +6,7 @@ export function canBookShipment(paymentStatus: string): boolean {
  * Checkout does not deduct stock. COD and Razorpay both wait for the final invoice,
  * which is the only actual deduction. There is no reservation hold.
  */
-export function shouldDecrementStockOnPlace(_paymentMethod: 'cod' | 'razorpay'): boolean {
+export function shouldDecrementStockOnPlace(_paymentMethod: 'cod' | 'online' | 'razorpay'): boolean {
   return false;
 }
 
