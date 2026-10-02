@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { loadAgentSettings } from '@/lib/ai-agent/settings';
 import { matchesTriggerPhrase, isOutsideBusinessHours } from '@/lib/ai-agent/gate';
 import { parseAgentReply } from '@/lib/ai-agent/prompt';
+import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, resolveOrderItems } from '@/lib/ai-agent/order-items';
 import { DEFAULT_FALLBACK_MESSAGE, DEFAULT_HANDOFF_MESSAGE, normalizeAgentSettings } from '@/lib/ai-agent/types';
 import { SalesAgentChatbot, type SalesAgentResult } from '@/lib/services/sales-agent-chatbot';
 
@@ -113,8 +114,18 @@ export const POST = withWhatsAppPremiumApi(
     let reply = parsed.text;
 
     if (/CREATE_ORDER:/.test(reply)) {
-      chips.push({ kind: 'order', label: 'Would create a draft order' });
+      const lines = parseCreateOrderTag(reply);
+      const resolved = lines ? await resolveOrderItems(businessId, lines).catch(() => null) : null;
       reply = reply.replace(/CREATE_ORDER:\s*\{[\s\S]*?\}\s*/g, '').replace(/CREATE_ORDER:[^\n]*/g, '').trim();
+      if (resolved?.items.length) {
+        const summary = resolved.items.map((i) => `${i.name} ×${i.quantity}`).join(', ');
+        const missing = resolved.unmatched.length ? ` (skipped, not in catalogue: ${resolved.unmatched.join(', ')})` : '';
+        chips.push({ kind: 'order', label: `Test only, nothing saved. On WhatsApp this creates a draft sales order: ${summary}${missing}` });
+      } else {
+        const missing = resolved?.unmatched.length ? `: ${resolved.unmatched.join(', ')} not in your catalogue` : '';
+        chips.push({ kind: 'fallback', label: `On WhatsApp no order would be created${missing}, so the customer gets a holding reply` });
+        reply = ORDER_NOT_CREATED_REPLY;
+      }
     }
     if (/\[(insert )?payment link\]/i.test(reply)) {
       if (settings.skills.paymentLinks) {

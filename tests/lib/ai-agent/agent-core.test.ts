@@ -16,7 +16,7 @@ jest.mock('@/lib/ai-agent/billing', () => ({
 jest.mock('@/lib/whatsapp/customer-bot', () => ({ dailyLimit: jest.fn().mockResolvedValue(200) }));
 
 import { query, queryOne } from '@/lib/db';
-import { buildAgentPrompt, parseAgentReply } from '@/lib/ai-agent/prompt';
+import { buildAgentPrompt, parseAgentReply, timeOfDayGreeting } from '@/lib/ai-agent/prompt';
 import { isOutsideBusinessHours, matchesTriggerPhrase, runAgentGate } from '@/lib/ai-agent/gate';
 import {
   DEFAULT_AGENT_SETTINGS,
@@ -272,6 +272,28 @@ describe('resolveAgentProvider', () => {
 
     mockKhatarioAccess.mockResolvedValue({ ok: false, reason: 'live_needs_addon' });
     await expect(resolveAgentProvider(BIZ, { live: true })).resolves.toEqual({ provider: null, reason: 'live_needs_addon' });
+  });
+});
+
+describe('time-based greeting', () => {
+  it('uses Indian time, and evening for late night', () => {
+    expect(timeOfDayGreeting(new Date('2026-10-02T03:30:00Z')).greeting).toBe('Good morning'); // 09:00 IST
+    expect(timeOfDayGreeting(new Date('2026-10-02T09:30:00Z')).greeting).toBe('Good afternoon'); // 15:00 IST
+    expect(timeOfDayGreeting(new Date('2026-10-02T18:30:00Z')).greeting).toBe('Good evening'); // 00:00 IST
+    expect(timeOfDayGreeting(new Date('2026-10-02T21:00:00Z')).greeting).toBe('Good evening'); // 02:30 IST
+  });
+
+  it('tells the model the exact greeting when enabled', () => {
+    const s = normalizeAgentSettings({
+      ...DEFAULT_AGENT_SETTINGS,
+      behavior: {
+        ...DEFAULT_AGENT_SETTINGS.behavior,
+        customerExperience: { ...DEFAULT_AGENT_SETTINGS.behavior.customerExperience, enableTimeBasedGreetings: true },
+      },
+    });
+    const prompt = buildAgentPrompt(s, { name: 'Shop' }, '', new Date('2026-10-02T18:30:00Z'));
+    expect(prompt).toContain('greet with "Good evening"');
+    expect(prompt).not.toContain('"Good morning"');
   });
 });
 

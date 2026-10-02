@@ -67,6 +67,10 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
   const [goLiveOpen, setGoLiveOpen] = useState(false);
   const [active, setActive] = useState('profile');
   const pendingScroll = useRef<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const centerRef = useRef<HTMLDivElement>(null);
+  /** Desktop: the three columns fill the window below the header and only the centre column scrolls. */
+  const [paneHeight, setPaneHeight] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -99,18 +103,43 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
   }, [dirty]);
 
   const inWizard = !!snap && !snap.settings.setupCompletedAt && !showEditor;
+  const loaded = !!snap && !!draft;
 
   useEffect(() => {
-    if (!snap || inWizard) return;
+    if (!loaded || inWizard) return;
+    const desktop = window.matchMedia('(min-width: 1280px)');
+    const measure = () => {
+      const grid = gridRef.current;
+      if (!grid || !desktop.matches) {
+        setPaneHeight(null);
+        return;
+      }
+      const main = grid.closest('main');
+      const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
+      const top = grid.getBoundingClientRect().top + window.scrollY;
+      setPaneHeight(Math.max(420, Math.floor(window.innerHeight - top - Math.max(bottomPad, 16))));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    desktop.addEventListener('change', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      desktop.removeEventListener('change', measure);
+    };
+  }, [loaded, inWizard]);
+
+  useEffect(() => {
+    if (!loaded || inWizard) return;
     const els = Array.from(document.querySelectorAll<HTMLElement>('[data-agent-section]'));
     if (!els.length) return;
+    const inner = paneHeight != null ? centerRef.current : null;
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         const id = visible[0]?.target.getAttribute('data-agent-section');
         if (id) setActive(id);
       },
-      { rootMargin: '-120px 0px -55% 0px' },
+      inner ? { root: inner, rootMargin: '0px 0px -55% 0px' } : { rootMargin: '-120px 0px -55% 0px' },
     );
     els.forEach((el) => observer.observe(el));
     if (pendingScroll.current) {
@@ -119,12 +148,19 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
       requestAnimationFrame(() => scrollTo(target));
     }
     return () => observer.disconnect();
-  }, [snap, inWizard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, inWizard, paneHeight]);
 
   const scrollTo = (id: string) => {
     const el = document.querySelector<HTMLElement>(`[data-agent-section="${id}"]`);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const inner = centerRef.current;
+    if (paneHeight != null && inner?.contains(el)) {
+      const top = el.getBoundingClientRect().top - inner.getBoundingClientRect().top + inner.scrollTop;
+      inner.scrollTo({ top: Math.max(0, top - 4), behavior: 'smooth' });
+    } else {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     setActive(id);
   };
 
@@ -278,13 +314,15 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
       </nav>
 
       <div
+        ref={gridRef}
+        style={paneHeight != null ? { height: paneHeight } : undefined}
         className={clsx(
           'grid gap-6',
           testHidden ? 'xl:grid-cols-[220px_minmax(0,1fr)]' : 'xl:grid-cols-[220px_minmax(0,1fr)_380px]',
         )}
       >
-        <aside className="hidden xl:block">
-          <nav className="sticky top-28 space-y-0.5" aria-label="AI agent sections">
+        <aside className="hidden min-h-0 xl:block xl:overflow-y-auto">
+          <nav className="sticky top-28 space-y-0.5 xl:static" aria-label="AI agent sections">
             {NAV.map((n) => {
               const Icon = n.icon;
               return (
@@ -316,7 +354,14 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
           </nav>
         </aside>
 
-        <div className="min-w-0 space-y-6">
+        <div
+          ref={centerRef}
+          className={clsx(
+            'min-w-0 space-y-6',
+            paneHeight != null && 'min-h-0 overflow-y-auto overscroll-contain pr-1',
+            paneHeight != null && dirty && 'pb-24',
+          )}
+        >
           <ProfileSection settings={draft} onChange={patch} companyIntroduction={snap.companyIntroduction} />
           <ToneSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} />
           <KnowledgeSection businessId={businessId} />
@@ -345,8 +390,8 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
         </div>
 
         {!testHidden && (
-          <aside className="hidden xl:block">
-            <div className="sticky top-28 h-[calc(100vh-9rem)]">
+          <aside className="hidden min-h-0 xl:block">
+            <div className={paneHeight != null ? 'h-full' : 'sticky top-28 h-[calc(100vh-9rem)]'}>
               <TestChatPanel
                 businessId={businessId}
                 draftSettings={draft}

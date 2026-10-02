@@ -107,17 +107,17 @@ export class SalesAgentChatbot {
       } else {
         const productQuery = this.detectProductQuery(request.message);
         const showOut = settings.behavior.productInfo.showOutOfStock;
-        if (productQuery) {
-          let products = await this.productService.searchProducts(businessId, productQuery, 5);
-          if (!showOut) products = products.filter((p) => Number(p.currentStock) > 0);
-          productContext = products.length
-            ? `Available Products Matching "${productQuery}":\n${this.productService.formatProductsForAI(products)}`
-            : `No products found matching "${productQuery}". You can suggest the customer browse the catalog or share more details.`;
-          if (products.length) sources.push('Product catalogue');
+        let products = productQuery ? await this.productService.searchProducts(businessId, productQuery, 5) : [];
+        if (!showOut) products = products.filter((p) => Number(p.currentStock) > 0);
+        if (products.length) {
+          productContext = `Available Products Matching "${productQuery}":\n${this.productService.formatProductsForAI(products)}`;
+          sources.push('Product catalogue');
         } else {
-          const topProducts = await this.productService.getTopProducts(businessId, 10);
+          // Questions about a kind of product ("non-food items", "what do you sell") name no product,
+          // so give the catalogue list rather than a "nothing matched" note the model fills in by guessing.
+          const topProducts = await this.productService.getTopProducts(businessId, 30);
           if (topProducts.length > 0) {
-            productContext = `Our Products/Services:\n${this.productService.formatProductsForAI(topProducts)}`;
+            productContext = `Our Products/Services (the full list the shop has given you; use only the category and description shown, never guess what an item is):\n${this.productService.formatProductsForAI(topProducts)}`;
             sources.push('Product catalogue');
           }
         }

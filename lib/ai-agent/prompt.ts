@@ -53,7 +53,15 @@ function lines(...parts: Array<string | false | null | undefined>): string {
   return parts.filter((p): p is string => typeof p === 'string' && p.trim().length > 0).join('\n');
 }
 
-function businessRules(b: WhatsAppBotUIConfig): string {
+/** Greeting for the shop's local time (India). Late night still gets "Good evening"; "Good night" is a goodbye. */
+export function timeOfDayGreeting(now: Date = new Date()): { greeting: string; clock: string } {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Kolkata' }).format(now));
+  const clock = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(now);
+  const greeting = hour >= 4 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
+  return { greeting, clock };
+}
+
+function businessRules(b: WhatsAppBotUIConfig, now: Date): string {
   const out: string[] = [];
   const industry = b.advanced?.industryTemplate;
   if (industry && industry !== 'custom') out.push(`- The business is a ${INDUSTRY_LABEL[industry]}.`);
@@ -91,7 +99,12 @@ function businessRules(b: WhatsAppBotUIConfig): string {
   if (b.customerExperience.personalizeForReturningCustomers) {
     out.push('- If the customer has ordered before, acknowledge it warmly.');
   }
-  if (b.customerExperience.enableTimeBasedGreetings) out.push('- Greet with good morning / afternoon / evening when you open a conversation.');
+  if (b.customerExperience.enableTimeBasedGreetings) {
+    const { greeting, clock } = timeOfDayGreeting(now);
+    out.push(
+      `- It is now ${clock} in India. When you open a conversation, greet with "${greeting}" (never a different time of day); don't repeat the greeting later in the chat.`,
+    );
+  }
 
   const p = b.policies;
   if (p?.returnPolicy) out.push(`- Return policy: ${p.returnPolicy}`);
@@ -145,6 +158,7 @@ function orderingBlock(s: AgentSettings): string {
     pay
       ? '   - Example: "Perfect! I\'ve created your order. Total: ₹300. Please pay here: [insert payment link]. Share the screenshot once done! CREATE_ORDER: [{"name":"Hair Oil", "qty":1, "price":300}]"'
       : '   - Example: "Perfect! Your order is placed. Total: ₹300. Our team will share payment details shortly. CREATE_ORDER: [{"name":"Hair Oil", "qty":1, "price":300}]"',
+    '   - In CREATE_ORDER list only products from the shop information, with "name" spelled exactly as listed there (no pack size, price or code added). Never put delivery charges, fees, taxes or discounts in CREATE_ORDER; mention them in the message only.',
     '3. Use CREATE_ORDER only ONCE per order, never for an order that already exists.',
     pay
       ? '4. If an order already exists in this conversation, just say "Your order has already been created. Here\'s the payment link: [insert payment link]" without the CREATE_ORDER tag.'
@@ -175,6 +189,7 @@ export function buildAgentPrompt(
   settings: AgentSettings,
   company: AgentCompanyInfo,
   knowledgeContext: string,
+  now: Date = new Date(),
 ): string {
   const s = settings;
   const style = s.behavior.communicationStyle;
@@ -196,7 +211,7 @@ export function buildAgentPrompt(
     '- Reply in the language the customer writes in (English, Hindi or Hinglish).',
     '',
     'BUSINESS RULES:',
-    businessRules(s.behavior),
+    businessRules(s.behavior, now),
     s.instructions.trim()
       ? lines('', "OWNER'S INSTRUCTIONS (always follow these, they override the rules above):", s.instructions.trim())
       : null,
@@ -205,6 +220,9 @@ export function buildAgentPrompt(
     'ACCURACY:',
     '- Answer only from the shop information above and this conversation. Use exact prices from the shop information.',
     "- If the answer isn't there, say you'll check with the team instead of guessing. Never invent products, prices, offers or policies.",
+    "- Describe an item only with its name, category and description from the shop information. Never make up what an item is, what it is used for or which group it belongs to.",
+    '- When asked for a kind of item (food, non-food, for hair, for kids…), group items by their listed category. If no category is listed, go by what the name plainly is in everyday knowledge (Parle-G is a biscuit, so it is food); if you are unsure, say you will check with the team.',
+    "- If the customer corrects you, don't argue: thank them, accept it unless the shop information clearly says otherwise, and give the corrected answer.",
     s.skills.orderStatus
       ? "- For order status, use only the customer's own orders listed above."
       : "- You can't look up order status; offer to connect the customer to the team.",
@@ -221,6 +239,7 @@ export function buildAgentPrompt(
           '',
           'HANDOFF:',
           `- If the customer asks for a person, is upset, or you cannot help after one attempt, reply briefly that you're connecting them to the team and put ${HANDOFF_MARKER} on its own last line.`,
+          '- Never hand off for a greeting, thanks or small talk; just reply normally and ask how you can help.',
         )
       : null,
     s.quickRepliesEnabled

@@ -15,6 +15,7 @@ import { parseAgentReply } from './ai-agent/prompt';
 import { performHandoff } from './ai-agent/conversation';
 import { applyLeadAnswers } from './ai-agent/leads';
 import { DEFAULT_HANDOFF_MESSAGE } from './ai-agent/types';
+import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, resolveOrderItems } from './ai-agent/order-items';
 import {
   evaluatePaymentOcrWithRules,
   verifyPaymentScreenshot
@@ -2846,6 +2847,8 @@ export async function processIncomingMessage(
 
             // 1. Check for order creation tag
             if (finalAiResponse.includes('CREATE_ORDER:')) {
+              // The model already told the customer the order is placed; if it isn't, that must not go out.
+              let orderSaved = false;
               try {
                 // Check if there's already a draft order for this conversation (prevent duplicates)
                 const existingOrder = await queryOne<any>(
@@ -2858,37 +2861,13 @@ export async function processIncomingMessage(
 
                 if (existingOrder) {
                   console.log('[CRM] ⚠️ Draft order already exists:', existingOrder.order_number);
+                  orderSaved = true;
                   // A+B: Update existing draft to match AI intent (items/qty), using DB prices.
-                  const orderPart = finalAiResponse.split('CREATE_ORDER:')[1].trim();
-                  const jsonMatch = orderPart.match(/\[.*\]/);
-                  if (jsonMatch) {
-                    const items = JSON.parse(jsonMatch[0]);
-                    console.log('[CRM] 📦 Extracting items for draft update:', items);
-
-                    const itemsWithIds = await Promise.all(
-                      items.map(async (item: any) => {
-                        const name = String(item?.name || '').trim();
-                        const quantity = Number(item?.qty || item?.quantity || 1) || 1;
-                        const dbItem = await queryOne<{ id: string; name: string; selling_price: number }>(
-                          `SELECT id, name, selling_price
-                           FROM items
-                           WHERE business_id = $1 AND name ILIKE $2
-                           ORDER BY selling_price ASC, created_at DESC
-                           LIMIT 1`,
-                          [businessId, name]
-                        );
-                        if (!dbItem) {
-                          throw new Error(`Item not found in catalog: ${name}`);
-                        }
-                        return {
-                          item_id: dbItem.id,
-                          name: dbItem.name,
-                          quantity,
-                          price: Number(dbItem.selling_price) || 0
-                        };
-                      })
-                    );
-
+                  const lines = parseCreateOrderTag(finalAiResponse);
+                  const resolved = lines ? await resolveOrderItems(businessId, lines) : null;
+                  if (resolved?.unmatched.length) console.warn('[CRM] Order lines not in catalogue:', resolved.unmatched);
+                  if (resolved?.items.length) {
+                    const itemsWithIds = resolved.items;
                     const updated = await updateDraftSalesOrderFromWhatsApp({
                       businessId,
                       orderId: existingOrder.id,
@@ -3025,36 +3004,12 @@ export async function processIncomingMessage(
                     }
                   }
 
-                  const orderPart = finalAiResponse.split('CREATE_ORDER:')[1].trim();
-                  const jsonMatch = orderPart.match(/\[.*\]/);
-                  if (jsonMatch) {
-                    const items = JSON.parse(jsonMatch[0]);
-                    console.log('[CRM] 📦 Extracting items for order creation:', items);
-                    
-                    // Fetch item IDs and ALWAYS use DB price (do not trust AI price).
-                    const itemsWithIds = await Promise.all(
-                      items.map(async (item: any) => {
-                        const name = String(item?.name || '').trim();
-                        const quantity = Number(item?.qty || item?.quantity || 1) || 1;
-                        const dbItem = await queryOne<{ id: string; name: string; selling_price: number }>(
-                          `SELECT id, name, selling_price
-                           FROM items
-                           WHERE business_id = $1 AND name ILIKE $2
-                           ORDER BY selling_price ASC, created_at DESC
-                           LIMIT 1`,
-                          [businessId, name]
-                        );
-                        if (!dbItem) {
-                          throw new Error(`Item not found in catalog: ${name}`);
-                        }
-                        return {
-                          item_id: dbItem.id,
-                          name: dbItem.name,
-                          quantity,
-                          price: Number(dbItem.selling_price) || 0
-                        };
-                      })
-                    );
+                  const lines = parseCreateOrderTag(finalAiResponse);
+                  // Always the catalogue price, never the AI's.
+                  const resolved = lines ? await resolveOrderItems(businessId, lines) : null;
+                  if (resolved?.unmatched.length) console.warn('[CRM] Order lines not in catalogue:', resolved.unmatched);
+                  if (resolved?.items.length) {
+                    const itemsWithIds = resolved.items;
 
                     // Get customer address if available
                     const customerData = finalCustomerId ? await queryOne<any>(
@@ -3093,6 +3048,7 @@ export async function processIncomingMessage(
                     );
 
                     console.log('[CRM] ✅ Created sales order:', orderResult.order_number);
+                    orderSaved = true;
 
                     // Update context for this message processing
                     convContext.total_amount = orderResult.total_amount;
@@ -3126,6 +3082,10 @@ export async function processIncomingMessage(
                 }
               } catch (e) {
                 console.error('[CRM] Failed to parse order items from AI response:', e);
+              }
+              if (!orderSaved) {
+                console.warn('[CRM] AI order not created; sending a holding reply instead of a false confirmation');
+                finalAiResponse = ORDER_NOT_CREATED_REPLY;
               }
             }
 

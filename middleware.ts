@@ -116,6 +116,7 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === '/') return true;
   if (pathname === '/store' || pathname.startsWith('/store/')) return true;
   if (pathname.startsWith('/solution/')) return true;
+  if (pathname.startsWith('/pay/upi/')) return true;
   if (pathname.startsWith('/media/marketing/')) return true;
   if (pathname.startsWith('/media/marketing-creatives/')) return true;
   if (isCustomerSurfacePath(pathname)) return true;
