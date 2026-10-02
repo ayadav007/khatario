@@ -64,7 +64,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -135,7 +138,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -206,7 +212,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -277,7 +286,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -348,7 +360,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -419,7 +434,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -489,7 +507,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -559,7 +580,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -630,7 +654,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -701,7 +728,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "TAX INVOICE",
     "titleOk": true,
@@ -788,7 +818,9 @@
     ],
     "toggleIgnored": [
       "show_customer_state (customer.state)",
-      "show_tax_total (tax_total)"
+      "show_tax_total (tax_total)",
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
     ],
     "badItemSql": [],
     "title": "EXPORT INVOICE",
@@ -854,7 +886,10 @@
       "balance_amount",
       "item.line_total (= taxable value)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "Bill of Supply",
     "titleOk": true,
@@ -919,7 +954,10 @@
       "balance_amount",
       "item.line_total (= taxable value)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "Bill of Supply",
     "titleOk": true,
@@ -984,7 +1022,10 @@
       "balance_amount",
       "item.line_total (= taxable value)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "Bill of Supply",
     "titleOk": true,
@@ -1055,7 +1096,10 @@
       "notes (invoice)",
       "footer_text"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_terms (terms (invoice))",
+      "show_notes (notes (invoice))"
+    ],
     "badItemSql": [],
     "title": "PROFORMA INVOICE PROFORMA INVOICE Details No",
     "titleOk": true,
@@ -1091,7 +1135,9 @@
       "grand_total",
       "document.number (this note)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_notes (note.notes)"
+    ],
     "badItemSql": [],
     "title": "Credit Note",
     "titleOk": true
@@ -1126,7 +1172,9 @@
       "grand_total",
       "document.number (this note)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_notes (note.notes)"
+    ],
     "badItemSql": [],
     "title": "Debit Note",
     "titleOk": true
@@ -1164,7 +1212,9 @@
       "item.qty",
       "item.unit"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_notes (notes)"
+    ],
     "badItemSql": [],
     "title": "Delivery Challan",
     "titleOk": true
@@ -1220,7 +1270,9 @@
       "notes (order)",
       "item.qty (qty column)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_notes (notes (order))"
+    ],
     "badItemSql": [],
     "title": "SALES ORDER",
     "titleOk": true,
@@ -1277,7 +1329,9 @@
       "notes (order)",
       "item.qty (qty column)"
     ],
-    "toggleIgnored": [],
+    "toggleIgnored": [
+      "show_notes (notes (order))"
+    ],
     "badItemSql": [],
     "title": "PURCHASE ORDER",
     "titleOk": true,
