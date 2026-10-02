@@ -35,6 +35,7 @@ import {
   ClosingStockPeriodLockedError,
 } from '@/lib/closing-stock-period-lock';
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
+import { findTemplateAssignment } from '@/lib/template-assignment';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 import { reverseInvoicePostingForRepost, reverseReplacedInvoicePayments } from '@/lib/invoices/invoice-edit-postings';
 import {
@@ -870,14 +871,12 @@ export async function POST(request: NextRequest) {
     } else if (!finalTemplateId) {
       // For non-export invoices, fetch from default settings
       try {
-        const settingsRes = await client.query(
-          `SELECT template_id FROM business_template_assignments 
-           WHERE business_id = $1 AND document_type = 'tax_invoice'
-           LIMIT 1`,
-          [business_id]
+        const assignment = await findTemplateAssignment(
+          business_id,
+          document_type === 'regular' ? 'tax_invoice' : document_type
         );
-        if (settingsRes.rows.length > 0) {
-          finalTemplateId = settingsRes.rows[0].template_id;
+        if (assignment) {
+          finalTemplateId = assignment.template_id;
         }
       } catch (err) {
         console.error('Error fetching template assignment:', err);
