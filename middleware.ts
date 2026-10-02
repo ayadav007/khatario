@@ -311,6 +311,7 @@ export async function middleware(request: NextRequest) {
   if (rotate) {
     const refreshUrl = new URL('/api/auth/refresh', request.url);
     let refreshRes: Response;
+    let refreshUnreachable = false;
     try {
       refreshRes = await fetch(refreshUrl, {
         method: 'POST',
@@ -318,6 +319,7 @@ export async function middleware(request: NextRequest) {
         cache: 'no-store',
       });
     } catch {
+      refreshUnreachable = true;
       refreshRes = { ok: false, headers: new Headers() } as Response;
     }
 
@@ -328,10 +330,17 @@ export async function middleware(request: NextRequest) {
           forwardSetCookies(refreshRes, portalPassthrough);
           return portalPassthrough;
         }
-        const res = NextResponse.json(
-          { error: 'Authentication required', code: 'UNAUTHENTICATED' },
-          { status: 401 }
-        );
+        // Clients hard-logout on SESSION_REVOKED; a refresh endpoint we could not reach is
+        // transient and must not cost the user their session.
+        const res = refreshUnreachable
+          ? NextResponse.json(
+              { error: 'Session refresh unavailable', code: 'SESSION_REFRESH_UNAVAILABLE' },
+              { status: 503 }
+            )
+          : NextResponse.json(
+              { error: 'Session revoked or expired', code: 'SESSION_REVOKED' },
+              { status: 401 }
+            );
         forwardSetCookies(refreshRes, res);
         return res;
       }

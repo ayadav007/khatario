@@ -459,10 +459,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           let hardLogout = false;
           try {
             const body = await res.clone().json();
+            // UNAUTHENTICATED while online means middleware found no valid tokens; keeping the
+            // cached user would leave a shell where every API call fails.
             hardLogout =
               body?.code === 'BUSINESS_NOT_FOUND' ||
               body?.code === 'USER_NOT_FOUND' ||
-              body?.code === 'SESSION_REVOKED';
+              body?.code === 'SESSION_REVOKED' ||
+              body?.code === 'UNAUTHENTICATED';
           } catch {
             if (onPublicSurface) {
               clearLocalState();
