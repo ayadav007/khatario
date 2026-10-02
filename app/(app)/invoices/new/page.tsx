@@ -1215,7 +1215,7 @@ function NewInvoiceContent() {
     // PHASE 2: Fetch series from API
     fetchDocumentSeries(documentType);
     
-    setShareModalOpen(false); setPaymentModalOpen(false); setToastMessage({ message: 'Ready to create a new invoice', type: 'success' });
+    setShareModalOpen(false); setPaymentModalOpen(false);
   }, [business?.id, business?.state, documentType, currentBranchId, fetchDocumentSeries]);
 
   // POS Mode: Start New Bill (clears items, customer, payments, focuses item search)

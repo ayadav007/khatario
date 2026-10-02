@@ -145,39 +145,41 @@ export function DetailsPanel(p: Props) {
                   : `Due ${fmtDate(p.dueDate)}`}
             </span>
           </div>
-          <div className="flex gap-1.5">
-            <div className="grid flex-1 grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
-              {PAYMENT_TERMS.map((t) => {
-                const active = t.days === 0 ? !p.dueDate : termDays === t.days;
-                return (
-                  <button
-                    key={t.days}
-                    type="button"
-                    disabled={p.readOnly}
-                    onClick={() => p.setDueDate(t.days === 0 ? '' : addDaysIso(p.invoiceDate, t.days))}
-                    className={clsx(
-                      'h-7 rounded-md text-xs font-semibold transition disabled:cursor-not-allowed',
-                      active
-                        ? 'bg-surface text-primary-700 shadow-sm dark:text-primary-300'
-                        : 'text-text-secondary hover:text-text-primary'
-                    )}
-                  >
-                    {t.days === 0 ? 'None' : t.label}
-                  </button>
-                );
-              })}
-            </div>
-            <input
-              type="date"
-              value={p.dueDate}
-              min={p.invoiceDate}
-              onChange={(e) => p.setDueDate(e.target.value)}
-              disabled={p.readOnly}
-              aria-label="Due date"
-              className={clsx(inputCls, 'w-[8.5rem] shrink-0 px-2 text-xs')}
-            />
+          <div className="grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+            {PAYMENT_TERMS.map((t) => {
+              const active = t.days === 0 ? !p.dueDate : termDays === t.days;
+              return (
+                <button
+                  key={t.days}
+                  type="button"
+                  disabled={p.readOnly}
+                  onClick={() => p.setDueDate(t.days === 0 ? '' : addDaysIso(p.invoiceDate, t.days))}
+                  title={t.days === 0 ? 'No credit period: payment due on the invoice date' : `Payment due ${t.label} after the invoice date`}
+                  className={clsx(
+                    'h-7 truncate whitespace-nowrap rounded-md px-1 text-xs font-semibold transition disabled:cursor-not-allowed',
+                    active
+                      ? 'bg-surface text-primary-700 shadow-sm dark:text-primary-300'
+                      : 'text-text-secondary hover:text-text-primary'
+                  )}
+                >
+                  {t.days === 0 ? 'No credit' : t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        <Field label="Due date" className="col-span-2">
+          <input
+            type="date"
+            value={p.dueDate}
+            min={p.invoiceDate}
+            onChange={(e) => p.setDueDate(e.target.value)}
+            disabled={p.readOnly}
+            aria-label="Due date"
+            className={inputCls}
+          />
+        </Field>
 
         <div className="col-span-2 rounded-lg border border-border bg-slate-50/60 px-2.5 py-2 dark:bg-slate-800/40">
           <div className="flex items-center gap-2">

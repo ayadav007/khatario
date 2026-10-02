@@ -107,12 +107,15 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   
   // Apply document rules to settings
   const effectiveSettings = { ...settings };
-  // Notes/terms typed on the document win over the template's default text.
+  // Notes/terms typed on the document win over the template's default text, and
+  // always print: the template's show_notes/show_terms switch only governs its default text.
   if (typeof rawInvoice.notes === 'string' && rawInvoice.notes.trim()) {
     effectiveSettings.notes = rawInvoice.notes;
+    effectiveSettings.show_notes = true;
   }
   if (typeof rawInvoice.terms === 'string' && rawInvoice.terms.trim()) {
     effectiveSettings.terms = rawInvoice.terms;
+    effectiveSettings.show_terms = true;
   }
   // Bill of supply / challan carry no tax, but subtotal, discount and total are still real.
   if (!rule.isTaxable) {
