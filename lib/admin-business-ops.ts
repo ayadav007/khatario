@@ -4,6 +4,7 @@
 
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import type { PoolClient } from 'pg';
 import { getPool, query, queryOne, queryRows } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { clearSubscriptionCache } from '@/lib/subscription';
@@ -37,8 +38,92 @@ export async function isBusinessPlatformSuspended(businessId: string): Promise<b
   return Boolean(row?.platform_suspended_at);
 }
 
+type Queryable = Pick<PoolClient, 'query'>;
+
+interface PurgeTarget {
+  /** Table name as returned by `regclass::text` (already quoted when needed). */
+  table: string;
+  /** Row filter; `$1` is the business id. */
+  where: string;
+}
+
+interface BlockingFk {
+  child: string;
+  child_col: string;
+  parent: string;
+  parent_col: string;
+  ncols: number;
+  parent_has_bid: boolean;
+  child_has_bid: boolean;
+}
+
+const MAX_PURGE_ATTEMPTS = 200;
+
 /**
- * Hard-delete a tenant business. Relies on ON DELETE CASCADE FKs.
+ * Delete `target` rows, clearing ON DELETE RESTRICT blockers along the way. Postgres checks RESTRICT
+ * immediately, so it can fire mid-cascade (e.g. items before stock_transfers reaches
+ * stock_transfer_items) even though the blocking rows belong to the same tenant and are about to go.
+ * Children are only deleted when they reference this tenant's rows (and carry this business_id when
+ * they have one), so another tenant's data is never touched.
+ */
+export async function purgeTenantRows(
+  client: Queryable,
+  businessId: string,
+  target: PurgeTarget,
+  budget = { attempts: 0 },
+): Promise<void> {
+  const seen = new Set<string>();
+  for (;;) {
+    if (++budget.attempts > MAX_PURGE_ATTEMPTS) {
+      throw new Error('Tenant purge gave up after too many blocking references');
+    }
+    await client.query('SAVEPOINT tenant_purge');
+    try {
+      await client.query(`DELETE FROM ${target.table} WHERE ${target.where}`, [businessId]);
+      await client.query('RELEASE SAVEPOINT tenant_purge');
+      return;
+    } catch (error: unknown) {
+      await client.query('ROLLBACK TO SAVEPOINT tenant_purge');
+      await client.query('RELEASE SAVEPOINT tenant_purge');
+      const e = error as { code?: string; constraint?: string; table?: string };
+      if (e.code !== '23503' || !e.constraint) throw error;
+      if (seen.has(e.constraint)) throw error;
+      seen.add(e.constraint);
+
+      const fk = (
+        await client.query(
+          `SELECT con.conrelid::regclass::text AS child,
+                  con.confrelid::regclass::text AS parent,
+                  (SELECT quote_ident(attname) FROM pg_attribute WHERE attrelid = con.conrelid AND attnum = con.conkey[1]) AS child_col,
+                  (SELECT quote_ident(attname) FROM pg_attribute WHERE attrelid = con.confrelid AND attnum = con.confkey[1]) AS parent_col,
+                  array_length(con.conkey, 1) AS ncols,
+                  EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = con.confrelid AND attname = 'business_id' AND NOT attisdropped) AS parent_has_bid,
+                  EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = con.conrelid AND attname = 'business_id' AND NOT attisdropped) AS child_has_bid
+             FROM pg_constraint con
+            WHERE con.contype = 'f' AND con.conname = $1
+            ORDER BY (con.conrelid::regclass::text = $2) DESC
+            LIMIT 1`,
+          [e.constraint, e.table ?? ''],
+        )
+      ).rows[0] as BlockingFk | undefined;
+      if (!fk || fk.ncols !== 1) throw error;
+
+      const parentWhere = fk.parent_has_bid
+        ? 'business_id = $1'
+        : fk.parent === target.table
+          ? target.where
+          : null;
+      if (!parentWhere) throw error;
+
+      let childWhere = `${fk.child_col} IN (SELECT ${fk.parent_col} FROM ${fk.parent} WHERE ${parentWhere})`;
+      if (fk.child_has_bid) childWhere += ' AND business_id = $1';
+      await purgeTenantRows(client, businessId, { table: fk.child, where: childWhere }, budget);
+    }
+  }
+}
+
+/**
+ * Hard-delete a tenant business via ON DELETE CASCADE, clearing RESTRICT blockers as needed.
  * Clears subscription caches and writes an admin audit log.
  */
 export async function deleteBusinessCompletely(
@@ -58,7 +143,7 @@ export async function deleteBusinessCompletely(
     await client.query('BEGIN');
     await withLedgerDelete(client, 'tenant_purge', null, async () => {
       await client.query(`DELETE FROM ledger_entry_deletions WHERE business_id = $1`, [businessId]);
-      await client.query(`DELETE FROM businesses WHERE id = $1`, [businessId]);
+      await purgeTenantRows(client, businessId, { table: 'businesses', where: 'id = $1' });
     });
     await client.query('COMMIT');
   } catch (error: unknown) {
@@ -69,7 +154,7 @@ export async function deleteBusinessCompletely(
       || 'Unknown database error';
     if (code === '23503') {
       throw new Error(
-        `Cannot delete tenant: a related table is missing ON DELETE CASCADE (${detail}).`,
+        `Cannot delete tenant: data outside this business still references it (${detail}).`,
       );
     }
     throw new Error(`Failed to delete tenant: ${detail}`);
