@@ -429,6 +429,80 @@ export function normalizeAction(action: string): PermissionAction {
 }
 
 // ============================================================================
+// RBAC MODULE RESOLUTION
+// ============================================================================
+
+/**
+ * Resource keys that authorize() maps to a different role_permissions module_key.
+ * Mirrors permissionModuleMap in lib/authorization.ts.
+ */
+const SERVER_PERMISSION_MODULE_MAP: Record<string, string> = {
+  inventory_adjustment: 'items',
+  inventory_adjustments: 'items',
+  warehouse: 'warehouses',
+  warehouse_transfers: 'warehouse_transfer',
+  stock_transfer: 'warehouse_transfer',
+  stock_transfers: 'warehouse_transfer',
+  report: 'reports',
+  'report.financial': 'reports',
+  'report.inventory': 'reports',
+  'report.gst': 'reports',
+  hr: 'employees',
+};
+
+/** Mirrors RBAC_MODULE_ALIASES in lib/permissions.ts. */
+const SERVER_RBAC_ALIASES: Record<string, string[]> = {
+  leave_requests: ['leaves'],
+  leaves: ['leave_requests'],
+  hr: ['employees'],
+  employees: ['hr'],
+  payroll: ['employees'],
+};
+
+/** role_permissions module keys that are not in PERMISSION_MODULES. */
+const EXTRA_RBAC_MODULE_KEYS = [
+  'tools',
+  'payment_reversals',
+  'warehouse_transfer',
+  'inventory_adjustment',
+  'journal',
+  'accounting_period',
+  'leave_requests',
+  'payroll',
+  'recruitment',
+  'hr',
+  'whatsapp',
+];
+
+/**
+ * True when the resource is checked against role_permissions (not a plan-only feature key).
+ */
+export function isPermissionModule(resource: string): boolean {
+  return (
+    PERMISSION_MODULES.includes(resource as PermissionModule) ||
+    EXTRA_RBAC_MODULE_KEYS.includes(resource) ||
+    Object.prototype.hasOwnProperty.call(MODULE_ALIAS_MAP, resource) ||
+    Object.prototype.hasOwnProperty.call(SERVER_PERMISSION_MODULE_MAP, resource)
+  );
+}
+
+/**
+ * role_permissions module keys that may grant the resource, in lookup order.
+ * Empty when the resource is a plan-only feature key.
+ */
+export function resolvePermissionModuleKeys(resource: string): string[] {
+  if (!isPermissionModule(resource)) return [];
+  const serverKey = SERVER_PERMISSION_MODULE_MAP[resource] ?? resource;
+  const keys = [
+    resource,
+    serverKey,
+    ...(SERVER_RBAC_ALIASES[serverKey] ?? []),
+    Object.prototype.hasOwnProperty.call(MODULE_ALIAS_MAP, resource) ? MODULE_ALIAS_MAP[resource] : undefined,
+  ].filter((k): k is string => typeof k === 'string' && k.length > 0);
+  return [...new Set(keys)];
+}
+
+// ============================================================================
 // VALIDATION HELPERS
 // ============================================================================
 

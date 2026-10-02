@@ -95,7 +95,13 @@ export const Sidebar = React.memo(function Sidebar() {
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const { warehousesEnabled, snapshotLoaded, warehousesSettingLoaded } = useShellLayoutSettings();
-  const { hasCapability } = useCapabilityCheck();
+  const { hasCapability, checkCapability } = useCapabilityCheck();
+
+  // Role grants the action; a plan-only denial still counts so the item can render as locked.
+  const roleAllowsModule = (module: string, action: string): boolean => {
+    const result = checkCapability(module, action);
+    return result.allowed || result.denialReason === 'FEATURE_NOT_IN_PLAN';
+  };
 
   const [showAddonModal, setShowAddonModal] = useState(false);
   const [selectedAddonType, setSelectedAddonType] = useState<'whatsapp_bot' | 'all'>('all');
@@ -112,9 +118,10 @@ export const Sidebar = React.memo(function Sidebar() {
   // Settings hub (`/settings`) uses main app nav; drill-in pages use this settings tree.
   const isSettingsPage = pathname !== '/settings' && Boolean(pathname?.startsWith('/settings/'));
 
-  // Map sidebar items to their "create new" routes
-  const getCreateRoute = (href: string, label: string): string | null => {
-    if (!href) return null;
+  // Map sidebar items to their "create new" routes; hidden unless the role may create in that module.
+  const getCreateRoute = (item: { href?: string; module?: string }): string | null => {
+    const href = item.href;
+    if (!href || !item.module || !hasCapability(item.module, 'create')) return null;
     
     // Map list pages to their create routes
     const routeMap: Record<string, string> = {
@@ -187,6 +194,7 @@ export const Sidebar = React.memo(function Sidebar() {
     '/reports/purchase/summary': 'reports_basic',
     '/reports/purchase/invoice-wise': 'reports_basic',
     '/reports/purchase/supplier-wise': 'reports_basic',
+    '/reports/purchase/item-wise': 'reports_basic',
     '/reports/purchase/returns': 'reports_basic',
     '/reports/purchase/credit': 'reports_basic',
     '/reports/purchase/tax-wise': 'reports_basic',
@@ -441,20 +449,10 @@ export const Sidebar = React.memo(function Sidebar() {
     };
   }, [business?.id]);
 
-  // RBAC Visibility Check: A sidebar item is visible if and only if hasCapability(module) is true
-  // Items without module are always visible (Dashboard, etc.)
-  // Locked items are always visible (to show upgrade/enable prompt)
-  const isItemVisible = (item: any): boolean => {
-    if (!item.module) return true;
-
-    if (item.module === 'warehouses' && warehousesEnabled) return true;
-
-    if (item.isLocked || (item.featureKey && !hasFeature(item.featureKey))) {
-      return true;
-    }
-    
-    return hasCapability(item.module, 'view');
-  };
+  // Items without a module are always visible (Dashboard, etc.). Otherwise the role must allow view;
+  // a plan-locked item is then still shown so the user sees the upgrade prompt.
+  const isItemVisible = (item: any): boolean =>
+    !item.module || roleAllowsModule(item.module, 'view');
 
   // Recursive filtering: Parent appears only if it has at least one visible child
   const filterNavItems = (items: any[]): any[] => {
@@ -649,6 +647,7 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/purchase/summary', label: 'Summary', module: 'reports' },
             { href: '/reports/purchase/invoice-wise', label: 'Invoice-wise', module: 'reports' },
             { href: '/reports/purchase/supplier-wise', label: 'Supplier-wise', module: 'reports' },
+            { href: '/reports/purchase/item-wise', label: 'Item-wise', module: 'reports' },
             { href: '/reports/purchase/returns', label: 'Purchase Returns', module: 'reports' },
             { href: '/reports/purchase/credit', label: 'Credit Purchases', module: 'reports' },
             { href: '/reports/purchase/tax-wise', label: 'Tax-wise', module: 'reports' },
@@ -1283,7 +1282,7 @@ export const Sidebar = React.memo(function Sidebar() {
                       }
                       
                       // Normal unlocked item
-                      const createRoute = getCreateRoute(item.href!, item.label);
+                      const createRoute = getCreateRoute(item);
                       return (
                         <div 
                       className={clsx(

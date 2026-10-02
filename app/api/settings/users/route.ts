@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows, getPool } from '@/lib/db';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { authorize, AuthorizationError } from '@/lib/authorization';
@@ -10,33 +10,22 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/settings/users
- * List all users for a business
+ * List users of the session business. Actor and business come from the session;
+ * `user_id` / `business_id` query params are ignored.
  */
 export async function GET(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId, businessId } = session;
+
   try {
     const { searchParams } = new URL(request.url);
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request); // REQUIRED for authorization
-
-    if (!businessId) {
-      return NextResponse.json(
-        { error: 'business_id is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
 
     // AUTHORIZATION: Check read permission (users are part of settings)
     // BUT: Users can always see their own user information
     let hasSettingsRead = false;
     try {
-      await authorize(userId, 'settings', 'read');
+      await authorize(userId, 'settings', 'read', { businessId });
       hasSettingsRead = true;
     } catch (error) {
       if (error instanceof AuthorizationError) {
@@ -109,13 +98,17 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/settings/users
- * Create a new user
+ * Create a user in the session business (settings:create). Body `business_id`,
+ * `created_by_user_id` and `created_by` are ignored; actor and business come from the session.
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId: createdByUserId, businessId: business_id } = session;
+
   try {
     const body = await request.json();
     const {
-      business_id,
       name,
       email,
       phone,
@@ -124,19 +117,10 @@ export async function POST(request: NextRequest) {
       branch_id, // Optional: branch to assign user to
       allow_multidevice_sync,
     } = body;
-    const createdByUserId = resolveCreatedByUserId(request, body);
 
-    // Validation
-    if (!business_id || !name || !phone || !password || !role_id) {
+    if (!name || !phone || !password || !role_id) {
       return NextResponse.json(
-        { error: 'business_id, name, phone, password, and role_id are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!createdByUserId) {
-      return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
+        { error: 'name, phone, password, and role_id are required' },
         { status: 400 }
       );
     }
@@ -151,7 +135,7 @@ export async function POST(request: NextRequest) {
 
     // AUTHORIZATION: Check create permission (users are part of settings)
     try {
-      await authorize(createdByUserId, 'settings', 'create');
+      await authorize(createdByUserId, 'settings', 'create', { businessId: business_id });
     } catch (error) {
       if (error instanceof AuthorizationError) {
         return error.toNextResponse();
@@ -195,6 +179,19 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid role_id for this business' },
         { status: 400 }
       );
+    }
+
+    if (role.role_key === 'primary_admin') {
+      const actor = await queryOne<{ is_primary_admin: boolean }>(
+        'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2',
+        [createdByUserId, business_id]
+      );
+      if (!actor?.is_primary_admin) {
+        return NextResponse.json(
+          { error: 'Only the primary admin can assign the Primary Admin role', code: 'PRIMARY_ADMIN_ROLE_PROTECTED' },
+          { status: 403 }
+        );
+      }
     }
 
     const settings = await queryOne(

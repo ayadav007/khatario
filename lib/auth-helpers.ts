@@ -207,6 +207,37 @@ export async function assertSessionValidForCookieAuth(userId: string): Promise<v
   }
 }
 
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export type StrictSessionResult =
+  | { ok: true; userId: string; businessId: string }
+  | { ok: false; response: NextResponse };
+
+/**
+ * Actor and tenant from the middleware-verified session only, with the session generation
+ * checked against the database. Fails closed when either header is absent, so requests that
+ * middleware passes through without a session (store subdomains, public paths) are refused.
+ * No body, query or `x-user-id` fallback.
+ */
+export async function requireStrictSession(request: NextRequest): Promise<StrictSessionResult> {
+  const userId = getAuthenticatedUserId(request);
+  const businessId = getSessionScopedBusinessId(request);
+  if (!userId || !businessId || !SESSION_UUID.test(userId) || !SESSION_UUID.test(businessId)) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Authentication required', code: 'UNAUTHENTICATED' }, { status: 401 }),
+    };
+  }
+  const version = await assertUserSessionVersionMatches(request, userId);
+  if (!version.ok) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Session revoked', code: 'SESSION_REVOKED' }, { status: 401 }),
+    };
+  }
+  return { ok: true, userId, businessId };
+}
+
 /**
  * For API routes that do not call {@link authorize} / {@link enforceAccess}.
  * Validates session generation when middleware set `x-authenticated-user-id`.

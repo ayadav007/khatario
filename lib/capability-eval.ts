@@ -5,10 +5,30 @@
 
 import { loadCapabilitySnapshot } from '@/lib/capability-snapshot';
 import {
-  normalizeModule,
+  FEATURE_ALIAS_MAP,
+  FEATURE_REGISTRY_IDS,
   normalizeFeature,
   normalizeAction,
+  resolvePermissionModuleKeys,
+  type PermissionAction,
 } from '@/lib/capability-normalizer';
+
+/** Stored role flag for each canonical action, plus legacy key names. */
+const ACTION_FLAGS: Record<PermissionAction, string[]> = {
+  read: ['can_view', 'can_read'],
+  create: ['can_add', 'can_create'],
+  update: ['can_modify', 'can_update'],
+  delete: ['can_delete'],
+  export: ['can_share', 'can_export'],
+};
+
+function planFeatureForModule(resource: string): string | null {
+  if (Object.prototype.hasOwnProperty.call(FEATURE_ALIAS_MAP, resource)) {
+    return FEATURE_ALIAS_MAP[resource];
+  }
+  if ((FEATURE_REGISTRY_IDS as readonly string[]).includes(resource)) return resource;
+  return null;
+}
 import { getHrPlanFeatureForCapabilityCheck } from '@/lib/hr-plan-features';
 
 function hasAddonFeature(
@@ -76,8 +96,25 @@ export function evaluateCapabilityAccess(
     return { allowed: false, indeterminate: true };
   }
 
-  const canonicalModule = normalizeModule(res);
   const canonicalAction = normalizeAction(action || 'view');
+  const moduleKeys = resolvePermissionModuleKeys(res);
+
+  // Role-permission module: the role must hold the flag; the plan can only take access away.
+  if (moduleKeys.length > 0) {
+    const flags = ACTION_FLAGS[canonicalAction];
+    const granted = moduleKeys.some((key) => {
+      const perms = mergedPermissions[key];
+      return !!perms && flags.some((flag) => perms[flag] === true);
+    });
+    if (!granted) return { allowed: false, denialReason: 'PERMISSION_DENIED' };
+    const planFeature = planFeatureForModule(res);
+    const enabledFeatures = snapshot?.enabledFeatures;
+    if (planFeature && Array.isArray(enabledFeatures) && !enabledFeatures.includes(planFeature)) {
+      return { allowed: false, denialReason: 'FEATURE_NOT_IN_PLAN' };
+    }
+    return { allowed: true };
+  }
+
   const featureRegistryId = normalizeFeature(res);
 
   if (
@@ -88,12 +125,6 @@ export function evaluateCapabilityAccess(
     if (hasAddonFeature(snapshot?.addons || [], 'whatsapp_bot')) {
       return { allowed: true };
     }
-  }
-
-  const modulePerms = mergedPermissions[canonicalModule];
-  if (modulePerms) {
-    const permKey = `can_${canonicalAction}` as keyof typeof modulePerms;
-    if (modulePerms[permKey]) return { allowed: true };
   }
 
   if (snapshot?.enabledFeatures?.includes(featureRegistryId)) {

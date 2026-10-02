@@ -1,21 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { requireStrictSession } from '@/lib/auth-helpers';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
 
+async function isPrimaryAdminActor(actorId: string, businessId: string): Promise<boolean> {
+  const actor = await queryOne<{ is_primary_admin: boolean }>(
+    'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2',
+    [actorId, businessId]
+  );
+  return actor?.is_primary_admin === true;
+}
+
 /**
  * GET /api/settings/users/[id]
- * Get a single user
+ * Get a user in the session business. Users may read themselves; anyone else needs settings:read.
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId: actorId, businessId } = session;
+
   try {
     const userId = params.id;
+
+    if (userId !== actorId) {
+      try {
+        await authorize(actorId, 'settings', 'read', { businessId, resourceId: userId });
+      } catch (error) {
+        if (error instanceof AuthorizationError) return error.toNextResponse();
+        throw error;
+      }
+    }
 
     const user = await queryOne(`
       SELECT 
@@ -35,8 +57,8 @@ export async function GET(
         ur.role_key
       FROM users u
       LEFT JOIN user_roles ur ON u.role_id = ur.id
-      WHERE u.id = $1
-    `, [userId]);
+      WHERE u.id = $1 AND u.business_id = $2
+    `, [userId, businessId]);
 
     if (!user) {
       return NextResponse.json(
@@ -57,12 +79,16 @@ export async function GET(
 
 /**
  * PATCH /api/settings/users/[id]
- * Update a user
+ * Update a user in the session business (settings:update). Body `updated_by_user_id` is ignored.
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId: updated_by_user_id, businessId } = session;
+
   try {
     const userId = params.id;
     const body = await request.json();
@@ -74,10 +100,8 @@ export async function PATCH(
       role_id,
       is_active,
       allow_multidevice_sync,
-      updated_by_user_id
     } = body;
 
-    // Get existing user
     const existingUser = await queryOne<{
       id: string;
       business_id: string;
@@ -86,8 +110,8 @@ export async function PATCH(
       email: string | null;
       allow_multidevice_sync: boolean | null;
     }>(
-      'SELECT id, business_id, is_primary_admin, phone, email, allow_multidevice_sync FROM users WHERE id = $1',
-      [userId]
+      'SELECT id, business_id, is_primary_admin, phone, email, allow_multidevice_sync FROM users WHERE id = $1 AND business_id = $2',
+      [userId, businessId]
     );
 
     if (!existingUser) {
@@ -97,17 +121,9 @@ export async function PATCH(
       );
     }
 
-    if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
-
-    // AUTHORIZATION: Check update permission (users are part of settings)
     try {
-      await authorize(updated_by_user_id, 'settings', 'update', { 
-        businessId: existingUser.business_id,
+      await authorize(updated_by_user_id, 'settings', 'update', {
+        businessId,
         resourceId: userId
       });
     } catch (error) {
@@ -117,12 +133,42 @@ export async function PATCH(
       throw error;
     }
 
+    const actorIsPrimaryAdmin = await isPrimaryAdminActor(updated_by_user_id, businessId);
+
+    if (existingUser.is_primary_admin && !actorIsPrimaryAdmin) {
+      return NextResponse.json(
+        { error: 'Only the primary admin can change the primary admin account', code: 'PRIMARY_ADMIN_PROTECTED' },
+        { status: 403 }
+      );
+    }
+
     // Prevent changing primary admin status
     if (existingUser.is_primary_admin && is_active === false) {
       return NextResponse.json(
         { error: 'Cannot deactivate primary admin' },
         { status: 403 }
       );
+    }
+
+    if (role_id !== undefined) {
+      const role = role_id
+        ? await queryOne<{ role_key: string }>(
+            'SELECT role_key FROM user_roles WHERE id = $1 AND business_id = $2 AND is_active = true',
+            [role_id, businessId]
+          )
+        : null;
+      if (!role) {
+        return NextResponse.json(
+          { error: 'Invalid role_id for this business' },
+          { status: 400 }
+        );
+      }
+      if (role.role_key === 'primary_admin' && !actorIsPrimaryAdmin) {
+        return NextResponse.json(
+          { error: 'Only the primary admin can assign the Primary Admin role', code: 'PRIMARY_ADMIN_ROLE_PROTECTED' },
+          { status: 403 }
+        );
+      }
     }
 
     let phoneToSave: string | undefined;
@@ -221,35 +267,32 @@ export async function PATCH(
       );
     }
 
-    values.push(userId);
+    values.push(userId, businessId);
 
     const updatedUser = await queryOne(`
       UPDATE users
       SET ${updates.join(', ')}
-      WHERE id = $${paramIndex}
+      WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
       RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
                 is_active, allow_multidevice_sync, updated_at
     `, values);
 
-    // Log activity
-    if (updated_by_user_id) {
-      const updater = await queryOne('SELECT name FROM users WHERE id = $1', [updated_by_user_id]);
-      await query(`
-        INSERT INTO user_activity_logs (
-          business_id, user_id, user_name, action, module, entity_type, entity_id, details
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      `, [
-        existingUser.business_id,
-        updated_by_user_id,
-        updater?.name || 'Unknown',
-        'update_user',
-        'settings',
-        'user',
-        userId,
-        JSON.stringify({ user_name: name ?? email ?? existingUser.phone })
-      ]);
-    }
+    const updater = await queryOne('SELECT name FROM users WHERE id = $1', [updated_by_user_id]);
+    await query(`
+      INSERT INTO user_activity_logs (
+        business_id, user_id, user_name, action, module, entity_type, entity_id, details
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [
+      businessId,
+      updated_by_user_id,
+      updater?.name || 'Unknown',
+      'update_user',
+      'settings',
+      'user',
+      userId,
+      JSON.stringify({ user_name: name ?? email ?? existingUser.phone })
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -267,21 +310,22 @@ export async function PATCH(
 
 /**
  * DELETE /api/settings/users/[id]
- * Delete a user
+ * Delete a user in the session business (settings:delete). `deleted_by_user_id` is ignored.
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+  const { userId: deletedByUserId, businessId } = session;
+
   try {
     const userId = params.id;
-    const { searchParams } = new URL(request.url);
-    const deletedByUserId = searchParams.get('deleted_by_user_id');
 
-    // Get user to delete
-    const user = await queryOne(
-      'SELECT id, business_id, name, is_primary_admin FROM users WHERE id = $1',
-      [userId]
+    const user = await queryOne<{ id: string; business_id: string; name: string; is_primary_admin: boolean }>(
+      'SELECT id, business_id, name, is_primary_admin FROM users WHERE id = $1 AND business_id = $2',
+      [userId, businessId]
     );
 
     if (!user) {
@@ -291,7 +335,20 @@ export async function DELETE(
       );
     }
 
-    // Prevent deleting primary admin
+    try {
+      await authorize(deletedByUserId, 'settings', 'delete', { businessId, resourceId: userId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
+    if (userId === deletedByUserId) {
+      return NextResponse.json(
+        { error: 'You cannot delete your own account', code: 'SELF_DELETE_FORBIDDEN' },
+        { status: 403 }
+      );
+    }
+
     if (user.is_primary_admin) {
       return NextResponse.json(
         { error: 'Cannot delete primary admin' },
@@ -299,28 +356,24 @@ export async function DELETE(
       );
     }
 
-    // Delete user
-    await query('DELETE FROM users WHERE id = $1', [userId]);
+    await query('DELETE FROM users WHERE id = $1 AND business_id = $2', [userId, businessId]);
 
-    // Log activity
-    if (deletedByUserId) {
-      const deleter = await queryOne('SELECT name FROM users WHERE id = $1', [deletedByUserId]);
-      await query(`
-        INSERT INTO user_activity_logs (
-          business_id, user_id, user_name, action, module, entity_type, entity_id, details
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      `, [
-        user.business_id,
-        deletedByUserId,
-        deleter?.name || 'Unknown',
-        'delete_user',
-        'settings',
-        'user',
-        userId,
-        JSON.stringify({ user_name: user.name })
-      ]);
-    }
+    const deleter = await queryOne('SELECT name FROM users WHERE id = $1', [deletedByUserId]);
+    await query(`
+      INSERT INTO user_activity_logs (
+        business_id, user_id, user_name, action, module, entity_type, entity_id, details
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [
+      businessId,
+      deletedByUserId,
+      deleter?.name || 'Unknown',
+      'delete_user',
+      'settings',
+      'user',
+      userId,
+      JSON.stringify({ user_name: user.name })
+    ]);
 
     return NextResponse.json({
       success: true,
