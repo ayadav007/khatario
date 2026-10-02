@@ -75,6 +75,8 @@ export function UpgradeModal({
     showTrialOption && moduleKey
       ? MODULE_ADD_CONFIG[moduleKey as Exclude<PlatformModule, 'crm'>]
       : null;
+  /** Free products (e.g. Connect) activate on their own ₹0 plan and have no paid tiers to list. */
+  const isFreeModule = !!trialConfig && !trialConfig.trialDays;
 
   async function handleStartTrial() {
     if (!trialConfig || !business?.id || !moduleKey) return;
@@ -88,7 +90,11 @@ export function UpgradeModal({
         amountInr: 0,
       });
       if (result.mode === 'instant') {
-        toast.success(`${trialConfig.label} ${trialConfig.trialDays}-day trial started!`);
+        toast.success(
+          trialConfig.trialDays
+            ? `${trialConfig.label} ${trialConfig.trialDays}-day trial started!`
+            : `${trialConfig.label} added.`,
+        );
         onUpgradeSuccess?.();
         onClose();
         window.location.reload();
@@ -323,6 +329,36 @@ export function UpgradeModal({
           )}
         </div>
 
+        {isFreeModule && trialConfig ? (
+          <div className="p-6">
+            <div className="rounded-xl border-2 border-green-200 bg-green-50 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900">Add {trialConfig.label} free</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {trialConfig.description} No payment needed.
+                  </p>
+                </div>
+                <button
+                  onClick={handleStartTrial}
+                  disabled={startingTrial}
+                  className="flex-shrink-0 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  {startingTrial ? 'Adding...' : `Add ${trialConfig.label}`}
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="mt-4 w-full px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium text-gray-700"
+              disabled={startingTrial}
+            >
+              Maybe Later
+            </button>
+          </div>
+        ) : null}
+
         {/* Free Trial Option */}
         {trialConfig && trialConfig.trialDays ? (
           <div className="p-6 border-b border-gray-200">
@@ -361,6 +397,8 @@ export function UpgradeModal({
           </div>
         ) : null}
 
+        {!isFreeModule && (
+        <>
         {/* Billing Cycle Toggle */}
         <div className="p-6 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center justify-center gap-4">
@@ -531,6 +569,8 @@ export function UpgradeModal({
             </p>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
