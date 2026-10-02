@@ -13,6 +13,7 @@ import {
   type WhatsAppAddonType,
 } from '@/lib/subscription';
 import { CONNECT_PLAN_ID } from '@/lib/product-lines';
+import { KHATARIO_AI_PRICE_MONTHLY } from '@/lib/ai-agent/billing-constants';
 import {
   getPlatformCheckoutProvider,
   isPlatformPaymentConfigured,
@@ -25,11 +26,13 @@ export { isPlatformPaymentConfigured, isPlatformRazorpayConfigured };
 export const WHATSAPP_ADDON_PRICING: Record<WhatsAppAddonType, number> = {
   whatsapp_bot: 499,
   whatsapp_send_message: 299,
+  khatario_ai: KHATARIO_AI_PRICE_MONTHLY,
 };
 
 export const WHATSAPP_ADDON_LABELS: Record<WhatsAppAddonType, string> = {
   whatsapp_bot: 'WhatsApp Bot',
   whatsapp_send_message: 'Send Message',
+  khatario_ai: 'Khatario AI',
 };
 
 function appBaseUrl(): string {
@@ -225,5 +228,5 @@ export async function completeAddonCheckoutPayment(params: {
 }
 
 export function isWhatsAppAddonType(value: unknown): value is WhatsAppAddonType {
-  return value === 'whatsapp_bot' || value === 'whatsapp_send_message';
+  return value === 'whatsapp_bot' || value === 'whatsapp_send_message' || value === 'khatario_ai';
 }

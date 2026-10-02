@@ -33,6 +33,7 @@ export async function POST(
     const validAddonTypes: WhatsAppAddonType[] = [
       'whatsapp_bot',
       'whatsapp_send_message',
+      'khatario_ai',
     ];
     if (!validAddonTypes.includes(addonType)) {
       return NextResponse.json(
