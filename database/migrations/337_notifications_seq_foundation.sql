@@ -22,6 +22,14 @@ CREATE SEQUENCE IF NOT EXISTS notifications_seq AS bigint START WITH 10000000000
 
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS seq bigint;
 ALTER TABLE notifications ALTER COLUMN seq SET DEFAULT nextval('notifications_seq');
+-- OWNED BY needs the sequence and the table to share an owner. The runner may connect as a
+-- different role (e.g. postgres) than the one that owns notifications (e.g. the app user).
+DO $$
+BEGIN
+  EXECUTE format('ALTER SEQUENCE notifications_seq OWNER TO %I',
+    (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'public.notifications'::regclass));
+END
+$$;
 ALTER SEQUENCE notifications_seq OWNED BY notifications.seq;
 
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS popup_dismissed_at timestamptz;
