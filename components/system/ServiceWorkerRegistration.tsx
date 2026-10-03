@@ -125,7 +125,7 @@ export function ServiceWorkerRegistration() {
       className="fixed inset-x-0 bottom-20 z-[80] flex justify-center px-4 md:bottom-4"
     >
       <div className="flex items-center gap-3 rounded-lg bg-gray-900 px-4 py-2.5 text-sm text-white shadow-lg">
-        <span>A new version of Khatario is available.</span>
+        <span>A new version is available.</span>
         <button
           type="button"
           onClick={() => window.location.reload()}
