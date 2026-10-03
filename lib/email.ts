@@ -74,12 +74,17 @@ function createTransporter(config: EmailConfig) {
  * Send email
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  return (await sendEmailWithResult(options)).ok;
+}
+
+/** Like `sendEmail`, but reports why a send failed (missing config, SMTP auth/connection error). */
+export async function sendEmailWithResult(options: EmailOptions): Promise<{ ok: boolean; error?: string }> {
   try {
     const config = getEmailConfig();
 
     if (!config.smtp_user || !config.smtp_password) {
       console.error('Email configuration missing. Please set SMTP credentials in .env');
-      return false;
+      return { ok: false, error: 'SMTP_USER / SMTP_PASSWORD not set in the server environment' };
     }
 
     const transporter = createTransporter(config);
@@ -96,10 +101,10 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     });
 
     console.log('Email sent successfully:', info.messageId);
-    return true;
+    return { ok: true };
   } catch (error) {
     console.error('Error sending email:', error);
-    return false;
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

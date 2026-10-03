@@ -494,15 +494,13 @@ export async function POST(request: NextRequest) {
 
     void (async () => {
       try {
-        if (businessEmail?.trim()) {
-          await sendWelcomeEmail({
-            businessId,
-            businessName,
-            recipientEmail: businessEmail.trim(),
-            userName,
-            trialDays: signupPlan.trialDays ?? undefined,
-          });
-        }
+        await sendWelcomeEmail({
+          businessId,
+          businessName,
+          recipientEmail: businessEmail?.trim() || '',
+          userName,
+          trialDays: signupPlan.trialDays ?? undefined,
+        });
         await notifyAdminsNewSignup({
           businessId,
           businessName,

@@ -1,10 +1,12 @@
 /**
  * Platform-level email (Khatario → tenant or platform admin).
  * Uses global SMTP from .env via lib/email.ts and logs every attempt.
+ * These are system emails (welcome, OTP, billing, admin alerts), so the tenant's plan and
+ * email quota never block them.
  */
 
 import { query, queryOne, queryRows } from '@/lib/db';
-import { sendEmail } from '@/lib/email';
+import { sendEmailWithResult } from '@/lib/email';
 import {
   getPlatformEmailTemplates,
   resolveTemplate,
@@ -185,37 +187,20 @@ export async function sendPlatformEmail(params: {
     return false;
   }
 
-  if (params.businessId) {
-    const { checkLimit } = await import('@/lib/subscription');
-    const emailLimit = await checkLimit(params.businessId, 'email');
-    if (!emailLimit.allowed) {
-      await logPlatformEmail({
-        recipientEmail: to,
-        subject: params.subject,
-        templateKey: params.templateKey,
-        businessId: params.businessId,
-        status: 'skipped',
-        errorMessage: emailLimit.message ?? 'Daily email limit reached',
-        metadata: params.metadata,
-      });
-      return false;
-    }
-  }
-
   let status: 'sent' | 'failed' = 'failed';
   let errorMessage: string | null = null;
 
   try {
-    const ok = await sendEmail({
+    const result = await sendEmailWithResult({
       to,
       subject: params.subject,
       html: params.html,
       text: params.text,
     });
-    if (ok) {
+    if (result.ok) {
       status = 'sent';
     } else {
-      errorMessage = 'SMTP not configured or send returned false';
+      errorMessage = result.error || 'SMTP send failed';
     }
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err);
