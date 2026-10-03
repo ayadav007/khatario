@@ -11,6 +11,7 @@ import {
   Package,
   Phone,
   Settings2,
+  ShoppingBag,
   Store,
   Wand2,
   type LucideIcon,
@@ -38,12 +39,14 @@ import { SkillsSection } from './SkillsSection';
 import { TestChatPanel } from './TestChatPanel';
 import { TestNumbersSection } from './TestNumbersSection';
 import { ToneSection } from './ToneSection';
+import { WhatsAppShopSection } from './WhatsAppShopSection';
 
 const NAV: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'profile', label: 'Profile', icon: Store },
   { id: 'tone', label: 'Tone', icon: MessageCircle },
   { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
   { id: 'products', label: 'Products', icon: Package },
+  { id: 'shop', label: 'WhatsApp shop', icon: ShoppingBag },
   { id: 'skills', label: 'Skills', icon: Wand2 },
   { id: 'payments', label: 'Payments', icon: CreditCard },
   { id: 'handoff', label: 'Hours & handoff', icon: Hand },
@@ -366,6 +369,7 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
           <ToneSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} />
           <KnowledgeSection businessId={businessId} />
           <ProductsSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} catalogItems={snap.catalogItems} />
+          <WhatsAppShopSection businessId={businessId} />
           <SkillsSection businessId={businessId} settings={draft} onChange={patch} staff={staff} />
           <PaymentsSection settings={draft} onChange={patch} paymentsConfigured={snap.paymentsConfigured} />
           <HandoffSection settings={draft} onChange={patch} staff={staff} />

@@ -191,7 +191,7 @@ export type ConversationState =
   | 'waiting_customer_address'
   | 'waiting_payment';
 
-interface ConversationContext {
+export interface ConversationContext {
   items?: Array<{ name: string; quantity: number; price?: number; item_id?: string }>;
   current_item?: string;
   invoice_id?: string;
@@ -899,7 +899,7 @@ async function getConversationState(
 /**
  * Update conversation state
  */
-async function updateConversationState(
+export async function updateConversationState(
   businessId: string,
   conversationId: string,
   state: ConversationState,
@@ -1229,7 +1229,7 @@ async function createCashSaleInvoice(
  * Create sales order from WhatsApp bot
  * This is used for pending orders that require manual payment verification
  */
-async function createSalesOrderFromWhatsApp(
+export async function createSalesOrderFromWhatsApp(
   businessId: string,
   items: Array<{ item_id?: string; quantity: number; price: number; name: string }>,
   conversationId: string,
@@ -2110,6 +2110,25 @@ export async function processIncomingMessage(
         normalizedFrom
       });
       if (paidImmediate) return paidImmediate;
+    }
+
+    if (!isGroup && messageType === 'text' && conversationId) {
+      const { isShopRequest, respondToShopRequest } = await import('./whatsapp-shop/intent');
+      if (isShopRequest(messageText)) {
+        const { isConversationBotPaused } = await import('./ai-agent/conversation');
+        const shopReply = (await isConversationBotPaused(businessId, conversationId))
+          ? null
+          : await respondToShopRequest({ businessId, phone: normalizedFrom, conversationUuid: conversationId, text: messageText })
+              .catch((e) => {
+                console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
+                return null;
+              });
+        if (shopReply) {
+          return shopReply.response
+            ? { response: shopReply.response, shouldStore: true, delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0 }
+            : { shouldStore: true };
+        }
+      }
     }
 
     // Check if we're in a chained conversation flow

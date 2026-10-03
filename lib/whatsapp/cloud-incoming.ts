@@ -1,7 +1,38 @@
 import { queryOne } from '@/lib/db';
-import { processIncomingMessage, storeOutgoingMessage } from '@/lib/whatsapp-crm';
+import { processIncomingMessage, storeIncomingMessage, storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import type { CloudIncomingQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
+
+/** A cart sent from the business's Meta catalog: stored in the inbox, then ordered and billed. */
+async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullable<CloudIncomingQueueJob['order']> }) {
+  const units = job.order.items.reduce((n, i) => n + i.quantity, 0);
+  const summary = `🛒 Sent a cart (${units} item${units === 1 ? '' : 's'})${job.order.note ? `\n${job.order.note}` : ''}`;
+  const { conversationId } = await storeIncomingMessage(
+    job.businessId,
+    `${job.from}@s.whatsapp.net`,
+    job.businessPhone,
+    summary,
+    job.messageId,
+    'text',
+    undefined,
+    false,
+    undefined,
+    undefined,
+    job.profileName ?? undefined,
+    job.sourceTimestampSec,
+    null,
+  );
+  const { placeShopOrder, sendShopOrderReply } = await import('@/lib/whatsapp-shop/order');
+  const outcome = await placeShopOrder({
+    businessId: job.businessId,
+    phone: job.from,
+    conversationUuid: conversationId ?? null,
+    customerName: job.profileName,
+    note: job.order.note,
+    lines: job.order.items.map((i) => ({ itemId: i.retailerId, quantity: i.quantity })),
+  });
+  await sendShopOrderReply(job.businessId, job.from, outcome);
+}
 
 type BotButton = { title: string; type?: string; phone?: string; url?: string };
 
@@ -26,6 +57,11 @@ export function cloudReplyText(response: string, buttons?: BotButton[], footer?:
  */
 export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<void> {
   try {
+    if (job.order?.items.length) {
+      await processCloudCart({ ...job, order: job.order });
+      return;
+    }
+    if (!job.text.trim()) return;
     const result = await processIncomingMessage(
       job.businessId,
       `${job.from}@s.whatsapp.net`,

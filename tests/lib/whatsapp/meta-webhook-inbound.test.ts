@@ -92,6 +92,43 @@ describe('extractInboundMessages', () => {
     expect(out[0].displayPhoneNumber).toContain('98000');
   });
 
+  it('parses a catalog cart, dropping empty or zero-quantity lines', () => {
+    const [m] = extractInboundMessages(
+      payload([
+        {
+          id: 'w9',
+          from: '919811111111',
+          type: 'order',
+          order: {
+            catalog_id: '194836987003835',
+            text: 'Love these!',
+            product_items: [
+              { product_retailer_id: 'aaaa', quantity: 2, item_price: 30, currency: 'INR' },
+              { product_retailer_id: 'bbbb', quantity: '1', item_price: '25', currency: 'INR' },
+              { product_retailer_id: '', quantity: 3 },
+              { product_retailer_id: 'cccc', quantity: 0 },
+            ],
+          },
+        },
+      ]),
+    );
+    expect(m.type).toBe('order');
+    expect(m.text).toBeNull();
+    expect(m.order).toEqual({
+      catalogId: '194836987003835',
+      note: 'Love these!',
+      items: [
+        { retailerId: 'aaaa', quantity: 2, itemPrice: 30, currency: 'INR' },
+        { retailerId: 'bbbb', quantity: 1, itemPrice: 25, currency: 'INR' },
+      ],
+    });
+  });
+
+  it('has no order for ordinary messages', () => {
+    const [m] = extractInboundMessages(payload([textMsg('w1', '919811111111', 'hi')]));
+    expect(m.order).toBeNull();
+  });
+
   it('ignores status-only and other fields', () => {
     expect(extractInboundMessages(payload([textMsg('w1', '91981', 'x')], 'message_template_status_update'))).toEqual([]);
     expect(extractInboundMessages({ entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: 'x' }] } }] }] })).toEqual([]);
@@ -139,6 +176,32 @@ describe('tenant webhook routing', () => {
     expect(mockRouteCloud).toHaveBeenCalledTimes(2);
     expect(mockAddJob).toHaveBeenCalledTimes(1);
     expect(mockAddJob).toHaveBeenCalledWith(expect.objectContaining({ type: 'cloud-incoming', businessId: BIZ, from: '919822222222', text: 'is the shop open?' }));
+  });
+
+  it('queues a customer cart even though it has no text', async () => {
+    mockRouteCloud.mockResolvedValueOnce('other');
+    const cart = {
+      id: 'w5',
+      from: '919822222222',
+      type: 'order',
+      order: { catalog_id: '123456', product_items: [{ product_retailer_id: 'item-1', quantity: 3, item_price: 10, currency: 'INR' }] },
+    };
+    const res = await POST(post(payload([cart]), { businessId: BIZ }));
+    expect(res.status).toBe(200);
+    expect(mockAddJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'cloud-incoming',
+        messageType: 'order',
+        text: '',
+        order: { catalogId: '123456', note: null, items: [{ retailerId: 'item-1', quantity: 3 }] },
+      }),
+    );
+  });
+
+  it('still skips customer media without text or cart', async () => {
+    mockRouteCloud.mockResolvedValueOnce('other');
+    await POST(post(payload([{ id: 'w6', from: '919822222222', type: 'sticker' }]), { businessId: BIZ }));
+    expect(mockAddJob).not.toHaveBeenCalled();
   });
 
   it('acknowledges with 200 even when processing fails, so Meta stops retrying', async () => {

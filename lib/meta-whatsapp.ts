@@ -321,6 +321,149 @@ export async function sendInteractiveList(input: {
   return sendGraphMessage(input.businessId, input.to, buildInteractiveListPayload(input));
 }
 
+/**
+ * "View catalog" card for the catalog connected to the business's WABA. The thumbnail is that
+ * product's image; without it WhatsApp uses the first product in the catalog.
+ */
+export function buildCatalogMessagePayload(input: {
+  body: string;
+  footer?: string;
+  thumbnailRetailerId?: string | null;
+}): Record<string, unknown> {
+  return {
+    type: 'interactive',
+    interactive: {
+      type: 'catalog_message',
+      body: { text: clip(input.body, WA_LIMITS.interactiveBody) },
+      ...(input.footer?.trim() ? { footer: { text: clip(input.footer, WA_LIMITS.interactiveFooter) } } : {}),
+      action: {
+        name: 'catalog_message',
+        ...(input.thumbnailRetailerId ? { parameters: { thumbnail_product_retailer_id: input.thumbnailRetailerId } } : {}),
+      },
+    },
+  };
+}
+
+export async function sendCatalogMessage(input: {
+  businessId: string;
+  to: string;
+  body: string;
+  footer?: string;
+  thumbnailRetailerId?: string | null;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, buildCatalogMessagePayload(input));
+}
+
+/** One button that opens a URL; the button label is at most 20 characters. */
+export function buildCtaUrlPayload(input: {
+  body: string;
+  buttonText: string;
+  url: string;
+  footer?: string;
+}): Record<string, unknown> {
+  return {
+    type: 'interactive',
+    interactive: {
+      type: 'cta_url',
+      body: { text: clip(input.body, WA_LIMITS.interactiveBody) },
+      ...(input.footer?.trim() ? { footer: { text: clip(input.footer, WA_LIMITS.interactiveFooter) } } : {}),
+      action: {
+        name: 'cta_url',
+        parameters: { display_text: clip(input.buttonText, WA_LIMITS.buttonTitle), url: input.url },
+      },
+    },
+  };
+}
+
+export async function sendCtaUrlMessage(input: {
+  businessId: string;
+  to: string;
+  body: string;
+  buttonText: string;
+  url: string;
+  footer?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, buildCtaUrlPayload(input));
+}
+
+export type CatalogBatchRequest =
+  | { method: 'UPDATE'; data: Record<string, unknown> & { id: string } }
+  | { method: 'DELETE'; data: { id: string } };
+
+export type CatalogBatchResult = {
+  handles: string[];
+  /** Per-product problems Meta found up front; those products were not applied. */
+  errors: Array<{ retailerId: string; message: string }>;
+};
+
+/** Upserts or deletes products (by content id) in a Meta catalog; Meta applies the batch asynchronously. */
+export async function catalogItemsBatch(input: {
+  businessId: string;
+  catalogId: string;
+  requests: CatalogBatchRequest[];
+}): Promise<CatalogBatchResult> {
+  const cfg = await requireConfig(input.businessId);
+  const json = (await graphFetch(`/${encodeURIComponent(input.catalogId)}/items_batch`, {
+    token: cfg.accessToken,
+    method: 'POST',
+    body: JSON.stringify({ item_type: 'PRODUCT_ITEM', allow_upsert: true, requests: input.requests }),
+  })) as {
+    handles?: string[];
+    validation_status?: Array<{ retailer_id?: string; errors?: Array<{ message?: string }> }>;
+  };
+  const errors = (json.validation_status ?? [])
+    .filter((v) => v.retailer_id && v.errors?.length)
+    .map((v) => ({
+      retailerId: String(v.retailer_id),
+      message: v.errors!.map((e) => e.message).filter(Boolean).join('; ') || 'Rejected by Meta',
+    }));
+  return { handles: json.handles ?? [], errors };
+}
+
+/** Confirms the business's token can read the catalog; throws MetaWhatsAppError otherwise. */
+export async function getCatalogInfo(input: {
+  businessId: string;
+  catalogId: string;
+}): Promise<{ id: string; name: string | null; productCount: number | null }> {
+  const cfg = await requireConfig(input.businessId);
+  const json = (await graphFetch(`/${encodeURIComponent(input.catalogId)}?fields=id,name,product_count`, {
+    token: cfg.accessToken,
+    method: 'GET',
+  })) as { id?: string; name?: string; product_count?: number };
+  if (!json.id) throw new MetaWhatsAppError('Catalog not found', 404);
+  return { id: json.id, name: json.name ?? null, productCount: json.product_count ?? null };
+}
+
+/**
+ * Connects the catalog to the business's WABA and turns on the catalog and cart for its number.
+ * Either step can already be done in WhatsApp Manager, so failures are returned, not thrown.
+ */
+export async function enableWhatsAppCommerce(input: {
+  businessId: string;
+  catalogId: string;
+}): Promise<{ warnings: string[] }> {
+  const cfg = await requireConfig(input.businessId);
+  const warnings: string[] = [];
+  try {
+    await graphFetch(`/${cfg.wabaId}/product_catalogs`, {
+      token: cfg.accessToken,
+      method: 'POST',
+      body: JSON.stringify({ catalog_id: input.catalogId }),
+    });
+  } catch (e) {
+    warnings.push(`Could not connect the catalog to your WhatsApp account: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  try {
+    await graphFetch(`/${cfg.phoneNumberId}/whatsapp_commerce_settings?is_catalog_visible=true&is_cart_enabled=true`, {
+      token: cfg.accessToken,
+      method: 'POST',
+    });
+  } catch (e) {
+    warnings.push(`Could not turn on the cart for your number: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return { warnings };
+}
+
 export async function sendImageMessage(input: {
   businessId?: string | null;
   to: string;
@@ -536,7 +679,17 @@ export type InboundMessage = {
   replyId: string | null;
   /** Click-to-WhatsApp ad (or post) that opened this chat; only on the first message. */
   referral: InboundReferral | null;
+  /** Cart the customer sent from the business's catalog (`type: 'order'`). */
+  order: InboundOrder | null;
   timestamp: number | null;
+};
+
+export type InboundOrder = {
+  catalogId: string | null;
+  /** Optional note the customer typed with the cart. */
+  note: string | null;
+  /** Prices are what WhatsApp showed the customer; never charge from them. */
+  items: Array<{ retailerId: string; quantity: number; itemPrice: number | null; currency: string | null }>;
 };
 
 export type InboundReferral = {
@@ -561,6 +714,16 @@ type RawInbound = {
   };
   image?: { caption?: string };
   document?: { caption?: string };
+  order?: {
+    catalog_id?: string;
+    text?: string;
+    product_items?: Array<{
+      product_retailer_id?: string;
+      quantity?: number | string;
+      item_price?: number | string;
+      currency?: string;
+    }>;
+  };
   referral?: {
     source_id?: string;
     source_type?: string;
@@ -589,6 +752,27 @@ function inboundReferral(m: RawInbound): InboundReferral | null {
     ctwaClid: s(r.ctwa_clid),
   };
   return Object.values(out).some(Boolean) ? out : null;
+}
+
+function inboundOrder(m: RawInbound): InboundOrder | null {
+  if (m.type !== 'order' || !m.order) return null;
+  const items = (m.order.product_items ?? [])
+    .map((p) => {
+      const price = Number(p.item_price);
+      return {
+        retailerId: String(p.product_retailer_id ?? '').trim(),
+        quantity: Math.floor(Number(p.quantity) || 0),
+        itemPrice: Number.isFinite(price) ? price : null,
+        currency: p.currency?.trim() || null,
+      };
+    })
+    .filter((p) => p.retailerId && p.quantity > 0);
+  if (items.length === 0) return null;
+  return {
+    catalogId: m.order.catalog_id?.trim() || null,
+    note: m.order.text?.trim() || null,
+    items,
+  };
 }
 
 function inboundText(m: RawInbound): string | null {
@@ -638,6 +822,7 @@ export function extractInboundMessages(body: unknown): InboundMessage[] {
           text: inboundText(m),
           replyId: inboundReplyId(m),
           referral: inboundReferral(m),
+          order: inboundOrder(m),
           timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
         });
       }

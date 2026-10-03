@@ -114,6 +114,12 @@ export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
   messageType: string;
   businessPhone: string;
   sourceTimestampSec: number | null;
+  /** Cart sent from the business's catalog (`messageType: 'order'`). */
+  order?: {
+    catalogId: string | null;
+    note: string | null;
+    items: Array<{ retailerId: string; quantity: number }>;
+  } | null;
 };
 
 /** A message to Khatario's own WhatsApp number (prospects and existing users). */

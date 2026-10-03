@@ -47,7 +47,7 @@ async function handleTenant(businessId: string, body: unknown) {
       from: m.from,
       text: m.text,
     });
-    if (route !== 'other' || !m.text) continue;
+    if (route !== 'other' || (!m.text && !m.order)) continue;
     await addWhatsAppMessageJob({
       type: 'cloud-incoming',
       businessId,
@@ -56,10 +56,17 @@ async function handleTenant(businessId: string, body: unknown) {
       timestamp: Date.now(),
       from: m.from,
       profileName: m.profileName,
-      text: m.text,
+      text: m.text ?? '',
       messageType: m.type,
       businessPhone: (m.displayPhoneNumber || '').replace(/\D/g, ''),
       sourceTimestampSec: m.timestamp,
+      order: m.order
+        ? {
+            catalogId: m.order.catalogId,
+            note: m.order.note,
+            items: m.order.items.map((i) => ({ retailerId: i.retailerId, quantity: i.quantity })),
+          }
+        : null,
     });
   }
   return messages.length;

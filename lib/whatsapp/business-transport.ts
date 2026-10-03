@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import {
   getMetaWaConfig,
+  sendCtaUrlMessage,
   sendDocumentMessage,
   sendTemplateMessage,
   sendTextMessage,
@@ -58,6 +59,33 @@ export async function sendBusinessText(
   const messageId = typeof result === 'string' ? result : null;
   await recordOutbound('baileys', businessId, messageId, digits);
   return { transport, messageId };
+}
+
+/**
+ * Text with one link. Cloud API shows a tappable button for https links; QR numbers (and
+ * non-https links) get the link on its own line under the text. Returns the text as stored.
+ */
+export async function sendBusinessLink(
+  businessId: string,
+  to: string,
+  message: { body: string; buttonText: string; url: string },
+): Promise<{ transport: BusinessTransport; messageId: string | null; text: string }> {
+  const digits = to.replace(/\D/g, '');
+  const inline = `${message.body}\n\n${message.url}`;
+  const transport = await businessTransport(businessId);
+  if (transport === 'cloud' && /^https:\/\//i.test(message.url)) {
+    const { messageId } = await sendCtaUrlMessage({
+      businessId,
+      to: digits,
+      body: `${ASSISTANT_MARKER}${message.body}`,
+      buttonText: message.buttonText,
+      url: message.url,
+    });
+    await recordOutbound('cloud', businessId, messageId, digits);
+    return { transport, messageId, text: inline };
+  }
+  const sent = await sendBusinessText(businessId, digits, inline);
+  return { ...sent, text: inline };
 }
 
 /** A PDF from the business's own number; same 24-hour window rule as free-form text on Cloud API. */
