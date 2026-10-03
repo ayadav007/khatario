@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Card } from '@/components/ui/Card';
-import { FormSection } from '@/components/ui/FormSection';
 import { Input } from '@/components/ui/Input';
+import { Switch } from '@/components/ui/Switch';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
 import { Button } from '@/components/ui/Button';
 import { HSNLookup } from '@/components/ui/HSNLookup';
 import { GST_RATE_SLABS, isAllowedGstRate } from '@/lib/gst/rates';
@@ -17,7 +17,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
-import { Tag, Camera, Plus, Trash2, ChevronDown, ChevronUp, Layers, Check, X, Printer, RefreshCw, Package, Loader2 } from 'lucide-react';
+import { Tag, Camera, Plus, Trash2, ChevronDown, ChevronUp, Layers, Check, X, Printer, RefreshCw, Package, Loader2, ImagePlus, Upload } from 'lucide-react';
 import { validateBarcode, normalizeBarcode, detectBarcodeType, generateRandomBarcode as generateBarcode } from '@/lib/barcode-validator';
 import { BarcodeScanner } from '@/components/ui/BarcodeScanner';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -42,6 +42,27 @@ interface Supplier {
 interface ItemCategory {
   id: string;
   name: string;
+}
+
+const ITEM_TYPES = [
+  { value: 'goods', label: 'Goods', hint: 'Physical products. Stock is tracked.' },
+  { value: 'service', label: 'Service', hint: 'Work or time you bill for. No stock.' },
+] as const;
+
+function ItemSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
 }
 
 export default function NewItemPage() {
@@ -988,66 +1009,61 @@ export default function NewItemPage() {
 
   return (
     <>
-    <div className="w-full min-w-0 max-w-none">
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
         <MobileDuplicatePageChrome
-          className="mb-0 md:mb-6"
           title={isEditMode ? 'Edit item' : 'Create item'}
+          description="Name, price, tax and stock details used on invoices, labels and your online store."
         />
 
-        <Card className="p-6 sm:p-8 lg:p-10">
           {loadingItem ? (
-            <div className="flex items-center justify-center py-10 text-text-secondary">
+            <div className="card flex items-center justify-center py-10 text-text-secondary">
               Loading item...
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-            <div className="form-page-shell">
-              <FormSection
+            <div className="space-y-6">
+              <ItemSection
                 title="Item type"
-                description="Goods are stock-tracked; services are typically non-stock."
-                collapsible
+                description="Goods are stock-tracked. Services have no stock."
               >
-                <div className="flex flex-wrap gap-6">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="item_type"
-                      value="goods"
-                      checked={formData.item_type === 'goods'}
-                      onChange={() =>
-                        setFormData({ ...formData, item_type: 'goods' })
-                      }
-                      className="w-4 h-4 text-primary-600 focus:ring-primary-500"
-                    />
-                    <span className="text-sm text-text-primary">Goods (Track Stock)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="item_type"
-                      value="service"
-                      checked={formData.item_type === 'service'}
-                      onChange={() => {
-                        setFormData({ ...formData, item_type: 'service', is_bundle: false });
-                        setBundleComponents([]);
-                      }}
-                      className="w-4 h-4 text-primary-600 focus:ring-primary-500"
-                    />
-                    <span className="text-sm text-text-primary">Service (No Stock)</span>
-                  </label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {ITEM_TYPES.map((t) => {
+                    const active = formData.item_type === t.value;
+                    return (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => {
+                          if (t.value === 'service') {
+                            setFormData({ ...formData, item_type: 'service', is_bundle: false });
+                            setBundleComponents([]);
+                          } else {
+                            setFormData({ ...formData, item_type: 'goods' });
+                          }
+                        }}
+                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          active
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                            : 'border-border hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800/50'
+                        }`}
+                        aria-pressed={active}
+                      >
+                        <span className={`block text-sm font-medium ${active ? 'text-primary-700 dark:text-primary-300' : 'text-text-primary'}`}>
+                          {t.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-text-secondary">{t.hint}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </FormSection>
+              </ItemSection>
 
-              {/* Name, code, barcode + image — Zoho-style first band */}
-              <FormSection
+              <ItemSection
                 title="Basic details"
-                description="Display name, identifiers, and an image for catalogues and labels."
+                description="Name and identifiers shown on invoices, labels and the catalogue."
               >
-              <div>
-                <div className="flex flex-col lg:flex-row lg:items-start gap-6 lg:gap-8 xl:gap-10">
-                  <div className="min-w-0 flex-1 space-y-4 w-full max-w-full sm:max-w-xl md:max-w-2xl lg:max-w-[42rem] xl:max-w-[48rem] 2xl:max-w-[52rem]">
                     <Input
-                      label="Item Name"
+                      label="Item name *"
                       name="name"
                       value={formData.name}
                       onChange={handleChange}
@@ -1055,14 +1071,14 @@ export default function NewItemPage() {
                       placeholder="e.g. Parle-G Biscuit"
                     />
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-1">
-                        Category (optional)
+                      <label className="type-label mb-1.5 block">
+                        Category
                       </label>
                       <select
                         name="category_id"
                         value={formData.category_id}
                         onChange={handleChange}
-                        className="input w-full max-w-md"
+                        className="input w-full"
                       >
                         <option value="">No category</option>
                         {categories.map((c) => (
@@ -1077,22 +1093,22 @@ export default function NewItemPage() {
                         </Link>
                       </p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-                      <div className="lg:col-span-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div>
                         <Input
-                          label="Item Code (Optional)"
+                          label="Item code"
                           name="code"
                           value={formData.code}
                           onChange={handleChange}
                           placeholder="P001"
                         />
                       </div>
-                      <div className="sm:col-span-2 lg:col-span-8 min-w-0">
-                        <label className="block text-sm font-medium text-text-secondary mb-1">
-                          Barcode (Optional)
+                      <div className="min-w-0 md:col-span-2">
+                        <label className="type-label mb-1.5 block">
+                          Barcode
                         </label>
                         <div className="relative flex flex-wrap items-center gap-2">
-                          <div className="relative min-w-[12rem] flex-1 max-w-xl">
+                          <div className="relative min-w-[12rem] flex-1">
                             <Input
                               name="barcode"
                               value={formData.barcode}
@@ -1116,7 +1132,7 @@ export default function NewItemPage() {
                             <button
                               type="button"
                               onClick={() => setShowBarcodeScanner(true)}
-                              className="p-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-primary-500 transition-colors text-gray-600 hover:text-primary-600"
+                              className="rounded-lg border border-border p-2.5 text-text-secondary transition-colors hover:border-primary-500 hover:bg-gray-50 hover:text-primary-600 dark:border-border-dark dark:hover:bg-slate-800/50"
                               title="Scan barcode with camera"
                             >
                               <Camera className="w-5 h-5" />
@@ -1124,7 +1140,7 @@ export default function NewItemPage() {
                             <button
                               type="button"
                               onClick={handleGenerateBarcode}
-                              className="p-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-primary-500 transition-colors text-gray-600 hover:text-primary-600"
+                              className="rounded-lg border border-border p-2.5 text-text-secondary transition-colors hover:border-primary-500 hover:bg-gray-50 hover:text-primary-600 dark:border-border-dark dark:hover:bg-slate-800/50"
                               title="Generate unique barcode"
                             >
                               <RefreshCw className="w-5 h-5" />
@@ -1135,7 +1151,7 @@ export default function NewItemPage() {
                                 onClick={() =>
                                   handlePrintBarcode(formData.barcode, formData.name, formData.selling_price, { itemId: editId || undefined })
                                 }
-                                className="p-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-primary-500 transition-colors text-gray-600 hover:text-primary-600"
+                                className="rounded-lg border border-border p-2.5 text-text-secondary transition-colors hover:border-primary-500 hover:bg-gray-50 hover:text-primary-600 dark:border-border-dark dark:hover:bg-slate-800/50"
                                 title="Print barcode label"
                               >
                                 <Printer className="w-5 h-5" />
@@ -1149,80 +1165,85 @@ export default function NewItemPage() {
                         )}
                       </div>
                     </div>
-                  </div>
+              </ItemSection>
 
-                  <div className="shrink-0 w-full sm:max-w-xs lg:w-56 lg:max-w-none xl:w-64 lg:sticky lg:top-24 self-start rounded-xl border border-border bg-surface p-4 shadow-sm">
-                    <label className="block text-sm font-medium text-text-secondary mb-3">Item Image</label>
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-full max-w-[11rem] aspect-square border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center overflow-hidden bg-gray-50 relative group mx-auto">
-                        {formData.image_url ? (
-                          <>
-                            <img src={formData.image_url} alt="Item" className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => setFormData((prev) => ({ ...prev, image_url: '' }))}
-                              className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </>
-                        ) : (
-                          <Camera className="w-8 h-8 text-gray-400" />
-                        )}
-                      </div>
-                      <div className="w-full text-center">
-                        <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="item-image-upload" />
-                        <label
-                          htmlFor="item-image-upload"
-                          className="inline-flex items-center justify-center gap-2 w-full px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer text-sm font-medium transition-colors"
+              <ItemSection
+                title="Images"
+                description="Main image for catalogues and labels. Extra photos show on your online store."
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-white dark:border-border-dark">
+                    {formData.image_url ? (
+                      <img src={formData.image_url} alt="Item" className="h-full w-full object-cover" />
+                    ) : (
+                      <ImagePlus className="h-6 w-6 text-text-muted" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-text-primary">Main image</p>
+                    <p className="mt-0.5 text-xs text-text-secondary">Square works best. Up to 2 MB, JPG, PNG or WebP.</p>
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="item-image-upload" />
+                      <label
+                        htmlFor="item-image-upload"
+                        className="inline-flex cursor-pointer items-center rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800/50"
+                      >
+                        <Upload className="mr-1.5 h-3.5 w-3.5" />
+                        {formData.image_url ? 'Replace' : 'Upload'}
+                      </label>
+                      {formData.image_url && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setFormData((prev) => ({ ...prev, image_url: '' }))}
                         >
-                          <Plus className="w-4 h-4" />
-                          {formData.image_url ? 'Change Image' : 'Upload Image'}
-                        </label>
-                        <p className="text-xs text-text-secondary mt-2">Max 2MB. JPG, PNG or WebP.</p>
-                      </div>
-                      <div className="w-full border-t border-border pt-3">
-                        <p className="mb-2 text-xs font-medium text-text-secondary">More photos (store)</p>
-                        <div className="flex flex-wrap gap-2">
-                          {formData.gallery_urls.map((url) => (
-                            <div key={url.slice(0, 48)} className="relative h-14 w-14 overflow-hidden rounded-lg border">
-                              <img src={url} alt="" className="h-full w-full object-cover" />
-                              <button
-                                type="button"
-                                className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 hover:opacity-100"
-                                aria-label="Remove photo"
-                                onClick={() =>
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    gallery_urls: prev.gallery_urls.filter((u) => u !== url),
-                                  }))
-                                }
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          {formData.gallery_urls.length < 7 ? (
-                            <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-lg border border-dashed text-gray-400">
-                              <Plus className="h-4 w-4" />
-                              <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} />
-                            </label>
-                          ) : null}
-                        </div>
-                      </div>
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-              </FormSection>
+                <div className="border-t border-border pt-4 dark:border-border-dark">
+                  <p className="text-sm font-semibold text-text-primary">More photos</p>
+                  <p className="mt-0.5 text-xs text-text-secondary">Up to 7 extra photos for the product page in your store.</p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    {formData.gallery_urls.map((url) => (
+                      <div key={url.slice(0, 48)} className="group relative h-16 w-16 overflow-hidden rounded-lg border border-border dark:border-border-dark">
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                          aria-label="Remove photo"
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              gallery_urls: prev.gallery_urls.filter((u) => u !== url),
+                            }))
+                          }
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {formData.gallery_urls.length < 7 ? (
+                      <label className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-lg border border-dashed border-border text-text-muted hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800/50">
+                        <Plus className="h-4 w-4" />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} />
+                      </label>
+                    ) : null}
+                  </div>
+                </div>
+              </ItemSection>
 
-              <FormSection
+              <ItemSection
                 title="Pricing"
                 description="Default unit and rates when this item has no variants."
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 gap-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Unit</label>
+                <label className="type-label mb-1.5 block">Unit</label>
                 <select 
                   name="unit" 
                   className="input" 
@@ -1241,7 +1262,7 @@ export default function NewItemPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">GST UQC</label>
+                <label className="type-label mb-1.5 block">GST UQC</label>
                 <select
                   name="uqc"
                   className="input"
@@ -1258,7 +1279,7 @@ export default function NewItemPage() {
               {!formData.has_variants && (
                 <>
                   <Input 
-                    label={formData.item_type === 'service' ? "Selling Price (Optional)" : "Selling Price"} 
+                    label={formData.item_type === 'service' ? 'Selling price' : 'Selling price *'}
                     name="selling_price" 
                     type="number" 
                     inputMode="decimal"
@@ -1267,30 +1288,29 @@ export default function NewItemPage() {
                     required={formData.item_type === 'goods'} 
                     placeholder="0.00" 
                   />
-                  <Input label="Purchase Price" name="purchase_price" type="number" inputMode="decimal" value={formData.purchase_price} onChange={handleChange} placeholder="0.00" />
+                  <Input label="Purchase price" name="purchase_price" type="number" inputMode="decimal" value={formData.purchase_price} onChange={handleChange} placeholder="0.00" />
                 </>
               )}
                 </div>
               {formData.item_type === 'service' && (
-                <div className="text-sm text-primary-600 bg-slate-50 p-3 rounded-md max-w-3xl">
-                  Note: For services you buy but don't sell, you can leave the selling price empty.
-                </div>
+                <p className="text-xs text-text-secondary">
+                  For services you buy but don&apos;t sell, you can leave the selling price empty.
+                </p>
               )}
-              </FormSection>
+              </ItemSection>
               
-              <FormSection
-                title="Supplier & HSN/SAC"
-                description="Default vendor for purchases and tax classification for GST."
+              <ItemSection
+                title="Supplier and HSN/SAC"
+                description="Default vendor for purchases, and the tax classification printed on GST invoices."
               >
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-start">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  Default Supplier (Optional)
+                <label className="type-label mb-1.5 block">
+                  Default supplier
                 </label>
-                <div className="relative supplier-dropdown-container max-w-xl">
+                <div className="relative supplier-dropdown-container">
                   <input
                     type="text"
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="input w-full"
                     placeholder="Search supplier..."
                     value={supplierSearch}
                     onChange={(e) => {
@@ -1300,7 +1320,7 @@ export default function NewItemPage() {
                     onFocus={() => setShowSupplierDropdown(true)}
                   />
                   {showSupplierDropdown && filteredSuppliers.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-surface shadow-lg dark:border-border-dark dark:bg-surface-dark">
                       {filteredSuppliers.map((supplier) => (
                         <div
                           key={supplier.id}
@@ -1337,10 +1357,10 @@ export default function NewItemPage() {
               </div>
 
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-text-secondary mb-1.5">
-                  HSN/SAC Code
-                  <span className="text-xs text-text-secondary ml-2">
-                    (Search by product name or code)
+                <label className="type-label mb-1.5 block">
+                  HSN/SAC code
+                  <span className="ml-2 text-xs font-normal text-text-secondary">
+                    Search by product name or code
                   </span>
                 </label>
                 <HSNLookup
@@ -1360,16 +1380,15 @@ export default function NewItemPage() {
                   placeholder="Type product name or HSN/SAC code (e.g. 'biscuit', 'software', '19053100')"
                 />
               </div>
-                </div>
-              </FormSection>
+              </ItemSection>
 
-              <FormSection
-                title="Tax & GST"
-                description="Default tax treatment when this item has no variants."
+              <ItemSection
+                title="Tax and GST"
+                description="GST rate and MRP used when this item is billed. Applies when the item has no variants."
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 gap-y-6 items-start">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">GST Rate (%)</label>
+                <label className="type-label mb-1.5 block">GST rate (%)</label>
                 <select
                   name="tax_rate"
                   className="input"
@@ -1388,56 +1407,46 @@ export default function NewItemPage() {
                 <p className="mt-1 text-xs text-text-secondary">Auto-filled when HSN/SAC code is selected</p>
               </div>
               
-              <div className="space-y-2">
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
-                <input
-                  type="checkbox"
-                  id="gst_included"
-                  name="gst_included"
-                  checked={formData.gst_included}
-                  onChange={(e) => setFormData({ ...formData, gst_included: e.target.checked })}
-                  className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                />
-                <label htmlFor="gst_included" className="text-sm font-medium text-text-secondary cursor-pointer">
-                  GST Included in Selling Price
-                </label>
-              </div>
-              {formData.gst_included && (
-                <p className="text-xs text-primary-600">
-                  If checked, the selling price already includes GST. GST will be calculated backwards from the selling price.
-                </p>
-              )}
-              </div>
-              
               {!formData.has_variants && (
                 <Input 
-                  label="MRP (Max Retail Price) (Optional)" 
+                  label="MRP" 
                   name="mrp" 
                   type="number" 
                   inputMode="decimal"
                   value={formData.mrp} 
                   onChange={handleChange} 
                   placeholder="0.00"
-                  helperText="Maximum retail price. Final invoice price (including GST) should not exceed this."
+                  helperText="Final invoice price including GST should not exceed this."
                 />
               )}
                 </div>
-              </FormSection>
+                <div className="border-t border-border pt-4 dark:border-border-dark">
+                  <Switch
+                    id="gst_included"
+                    label="Selling price includes GST"
+                    description="GST is worked out backwards from the selling price instead of added on top."
+                    checked={formData.gst_included}
+                    onChange={(checked) => setFormData({ ...formData, gst_included: checked })}
+                  />
+                </div>
+              </ItemSection>
 
               {formData.item_type === 'goods' && (
-                <FormSection
+                <ItemSection
                   title="Bundle (combo)"
-                  description="Sell this SKU as one line on invoices; stock is reduced from each component when you sell a bundle."
+                  description="Sell several items as one invoice line. Stock is reduced from each component when the bundle sells."
                 >
-                  <div className="flex items-start gap-3">
-                    <Package className="w-5 h-5 text-text-secondary shrink-0 mt-0.5" aria-hidden />
-                    <div className="flex-1 space-y-4 min-w-0">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
+                    <div className="space-y-4 min-w-0">
+                        <Switch
+                          label="This item is a bundle"
+                          description={
+                            formData.has_variants
+                              ? 'Turn off variants below to set up a bundle.'
+                              : 'Pick the component items and how many of each go into one bundle.'
+                          }
                           checked={formData.is_bundle}
-                          onChange={(e) => {
-                            const on = e.target.checked;
+                          disabled={!!formData.has_variants}
+                          onChange={(on) => {
                             setFormData((prev) => ({
                               ...prev,
                               is_bundle: on,
@@ -1459,18 +1468,9 @@ export default function NewItemPage() {
                               setBundleComponents([]);
                             }
                           }}
-                          disabled={!!formData.has_variants}
-                          className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
                         />
-                        <span className="text-sm font-medium text-text-primary">This item is a bundle</span>
-                      </label>
-                      {formData.has_variants && (
-                        <p className="text-xs text-text-secondary">
-                          Turn off <span className="font-medium">variants</span> below to configure a bundle.
-                        </p>
-                      )}
                       {formData.is_bundle && (
-                        <div className="space-y-3 border border-border rounded-lg p-4 bg-surface">
+                        <div className="space-y-3 border-t border-border pt-4 dark:border-border-dark">
                           <p className="text-xs text-text-secondary">
                             Choose goods items that are not bundles or variant-parents. Each row is one component per{' '}
                             <span className="font-medium">1</span> unit of this bundle.
@@ -1623,31 +1623,30 @@ export default function NewItemPage() {
                         </div>
                       )}
                     </div>
-                  </div>
-                </FormSection>
+                </ItemSection>
               )}
 
               {itemCustomFieldDefs.length > 0 && (
-                <FormSection
+                <ItemSection
                   title="Custom fields"
-                  description="Extra details for this item. Configure fields in Settings → Custom fields."
+                  description="Extra details for this item. Set up fields in Settings → Custom fields."
                 >
                   <CustomFieldValuesForm
                     definitions={itemCustomFieldDefs}
                     values={itemCustomFieldValues}
                     onChange={setItemCustomFieldValues}
                   />
-                </FormSection>
+                </ItemSection>
               )}
 
               {/* Retail / Legal Metrology compliance fields (shown on labels) */}
               {formData.item_type === 'goods' && (
-                <FormSection
-                  title="Retail label information"
-                  description="Optional fields printed on barcode labels for Indian Legal Metrology / FSSAI compliance."
+                <ItemSection
+                  title="Retail label"
+                  description="Optional. Printed on barcode labels for Legal Metrology and FSSAI rules."
                 >
                   <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Input
                       label="Brand / Manufacturer"
                       name="brand"
@@ -1674,14 +1673,14 @@ export default function NewItemPage() {
                       helperText="Required for food products."
                     />
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                      <label className="type-label mb-1.5 block">
                         Country of Origin
                       </label>
                       <select
                         name="country_of_origin"
                         value={formData.country_of_origin}
                         onChange={handleChange}
-                        className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="input w-full"
                       >
                         <option value="IN">India (IN)</option>
                         <option value="CN">China (CN)</option>
@@ -1703,33 +1702,21 @@ export default function NewItemPage() {
                     </div>
                   </div>
 
-                  {/* Weighed / PLU item toggle */}
-                  <div className="rounded-lg border border-border bg-surface-hover p-4 space-y-3">
-                    <label className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.is_weighed}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            is_weighed: e.target.checked,
-                          }))
-                        }
-                        className="mt-1"
-                      />
-                      <div>
-                        <div className="text-sm font-medium text-text-primary">
-                          Sold by weight / variable price
-                        </div>
-                        <div className="text-xs text-text-secondary">
-                          Enable this for items a weighing scale prices at the counter (loose rice, produce, deli etc.).
-                          The label will use a variable-measure EAN-13 (prefix <code>2</code>).
-                        </div>
-                      </div>
-                    </label>
+                  <div className="space-y-4 border-t border-border pt-4 dark:border-border-dark">
+                    <Switch
+                      label="Sold by weight or variable price"
+                      description={
+                        <>
+                          For items a weighing scale prices at the counter, like loose rice or produce. The label uses a
+                          variable-measure EAN-13 (prefix <code>2</code>).
+                        </>
+                      }
+                      checked={formData.is_weighed}
+                      onChange={(checked) => setFormData((prev) => ({ ...prev, is_weighed: checked }))}
+                    />
 
                     {formData.is_weighed && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-6">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <Input
                           label="PLU code"
                           name="plu_code"
@@ -1747,7 +1734,7 @@ export default function NewItemPage() {
                           maxLength={5}
                         />
                         <div>
-                          <label className="block text-sm font-medium text-text-secondary mb-1">
+                          <label className="type-label mb-1.5 block">
                             Barcode encodes
                           </label>
                           <select
@@ -1761,7 +1748,7 @@ export default function NewItemPage() {
                                   | 'price',
                               }))
                             }
-                            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            className="input w-full"
                           >
                             <option value="weight">
                               Weight in grams (scale-side pricing)
@@ -1778,41 +1765,41 @@ export default function NewItemPage() {
                     )}
                   </div>
                   </div>
-                </FormSection>
+                </ItemSection>
               )}
 
               {formData.item_type === 'goods' && !formData.has_variants && !formData.is_bundle && (
-                <FormSection
+                <ItemSection
                   title="Stock"
-                  description="Opening balance and low-stock alerts when this item has no variants."
+                  description="Opening balance and the low-stock alert level. Applies when the item has no variants."
                 >
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 gap-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {!isEditMode && (
-                    <Input label="Opening Stock" name="opening_stock" type="number" inputMode="decimal" value={formData.opening_stock} onChange={handleChange} placeholder="0" />
+                    <Input label="Opening stock" name="opening_stock" type="number" inputMode="decimal" value={formData.opening_stock} onChange={handleChange} placeholder="0" />
                   )}
                   {isEditMode && (
                     <div>
-                      <div className="text-sm font-medium text-text-secondary mb-1">Current Stock</div>
+                      <div className="type-label mb-1.5">Current stock</div>
                       <div className="text-text-primary">
                         {formData.opening_stock} {formData.unit}
                       </div>
                       <div className="text-xs text-text-secondary mt-1">
-                        (Stock can be adjusted via stock movements)
+                        Adjust stock through stock movements.
                       </div>
                     </div>
                   )}
-                  <Input label="Low Stock Alert (Qty)" name="min_stock" type="number" inputMode="decimal" value={formData.min_stock} onChange={handleChange} placeholder="5" />
+                  <Input label="Low stock alert (qty)" name="min_stock" type="number" inputMode="decimal" value={formData.min_stock} onChange={handleChange} placeholder="5" />
                 </div>
-                </FormSection>
+                </ItemSection>
               )}
 
               {formData.item_type === 'goods' && (
-                <FormSection
+                <ItemSection
                   title="Invoice stock policy"
-                  description="Whether final invoices can include this item when branch or warehouse quantity is below the line quantity. Applies to this item (including all variants if enabled)."
+                  description="Whether final invoices can include this item when there isn't enough stock. Applies to all variants too."
                 >
-                  <div className="max-w-xl">
-                    <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                  <div>
+                    <label className="type-label mb-1.5 block">
                       When stock is insufficient
                     </label>
                     <select
@@ -1836,50 +1823,37 @@ export default function NewItemPage() {
                       <option value="allow">Always allow sale (backorder / oversell)</option>
                     </select>
                     <p className="text-xs text-text-secondary mt-2">
-                      Change the default for new items in Settings → Business profile → Product Features.
+                      Change the default for new items in Settings → Business profile → Billing preferences.
                     </p>
                   </div>
-                </FormSection>
+                </ItemSection>
               )}
 
               {/* Advanced Inventory Settings */}
               {formData.item_type === 'goods' && !formData.is_bundle && (
-                <FormSection
+                <ItemSection
                   title="Advanced inventory"
-                  description="Batch, serial, and valuation options for stock-tracked goods."
+                  description="Batch, serial and valuation options for stock-tracked goods."
                 >
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="track_batch"
-                        checked={formData.track_batch}
-                        onChange={(e) => setFormData({ ...formData, track_batch: e.target.checked })}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm text-text-primary">Track Batch Numbers</span>
-                    </label>
-                    <p className="text-xs text-text-secondary ml-6">
-                      Enable batch tracking for expiry dates, manufacturing dates, and FIFO valuation
-                    </p>
+                  <div className="divide-y divide-border dark:divide-border-dark">
+                    <Switch
+                      className="pb-4"
+                      label="Track batch numbers"
+                      description="Expiry and manufacturing dates per batch, and FIFO valuation."
+                      checked={formData.track_batch}
+                      onChange={(checked) => setFormData({ ...formData, track_batch: checked })}
+                    />
+                    <Switch
+                      className="py-4"
+                      label="Track serial numbers"
+                      description="One serial per unit, for electronics, appliances and similar goods."
+                      checked={formData.track_serial}
+                      onChange={(checked) => setFormData({ ...formData, track_serial: checked })}
+                    />
 
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="track_serial"
-                        checked={formData.track_serial}
-                        onChange={(e) => setFormData({ ...formData, track_serial: e.target.checked })}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm text-text-primary">Track Serial Numbers</span>
-                    </label>
-                    <p className="text-xs text-text-secondary ml-6">
-                      Enable serial number tracking for individual item units (e.g., electronics, appliances)
-                    </p>
-
-                    <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-1">
-                        Stock Valuation Method
+                    <div className="pt-4">
+                      <label className="type-label mb-1.5 block">
+                        Stock valuation method
                       </label>
                       <select
                         name="valuation_method"
@@ -1898,45 +1872,35 @@ export default function NewItemPage() {
                       </p>
                     </div>
                   </div>
-                </FormSection>
+                </ItemSection>
               )}
 
               {/* Variants Section */}
               {formData.item_type === 'goods' && productVariantsEnabled && !formData.is_bundle && (
-                <FormSection
-                  title="Item variants"
-                  description="Sizes, colors, and other attributes when product variants are enabled for your business."
+                <ItemSection
+                  title="Variants"
+                  description="Sizes, colours and other options, each with its own SKU, barcode, stock and price."
                 >
-                  <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Layers className="w-5 h-5 text-primary-600 shrink-0" />
-                      <span className="text-sm text-text-secondary">Define attributes and variant-level pricing below.</span>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.has_variants}
-                        onChange={(e) => {
-                          const v = e.target.checked;
-                          setFormData((prev) => ({
-                            ...prev,
-                            has_variants: v,
-                            is_bundle: v ? false : prev.is_bundle,
-                          }));
-                          if (v) setBundleComponents([]);
-                        }}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm font-medium text-text-primary">Enable Variants</span>
-                    </label>
-                  </div>
+                  <Switch
+                    label="This item has variants"
+                    description="Add attributes like size or colour, then set pricing for each variant."
+                    checked={formData.has_variants}
+                    onChange={(v) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        has_variants: v,
+                        is_bundle: v ? false : prev.is_bundle,
+                      }));
+                      if (v) setBundleComponents([]);
+                    }}
+                  />
 
                   {formData.has_variants && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-top-2">
+                    <div className="space-y-6 border-t border-border pt-4 dark:border-border-dark animate-in fade-in slide-in-from-top-2">
                       {/* Attribute Management */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         {variantAttributes.map((attr, attrIdx) => (
-                          <div key={attrIdx} className="bg-gray-50 p-4 rounded-xl border border-gray-200 relative group/attr">
+                          <div key={attrIdx} className="group/attr relative rounded-lg border border-border bg-gray-50 p-4 dark:border-border-dark dark:bg-slate-800/50">
                             <div className="flex items-center gap-2 mb-2">
                               <input
                                 type="text"
@@ -1983,7 +1947,7 @@ export default function NewItemPage() {
                         <button
                           type="button"
                           onClick={addAttribute}
-                          className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 hover:text-primary-600 hover:border-primary-200 transition-all text-sm font-medium"
+                          className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-sm font-medium text-text-muted transition-colors hover:border-primary-300 hover:text-primary-600 dark:border-border-dark"
                         >
                           <Plus className="w-4 h-4" />
                           Add Attribute
@@ -2097,91 +2061,68 @@ export default function NewItemPage() {
                           </table>
                         </div>
                       ) : (
-                        <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                          <Tag className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <div className="rounded-lg border border-dashed border-border py-8 text-center dark:border-border-dark">
+                          <Tag className="mx-auto mb-2 h-8 w-8 text-text-muted" />
                           <p className="text-sm text-text-secondary">Add sizes or colors above to generate variants.</p>
                         </div>
                       )}
                     </div>
                   )}
-                </FormSection>
+                </ItemSection>
               )}
 
-              <FormSection
+              <ItemSection
                 title="Description"
-                description="Optional. Shown to customers via AI when they ask about this product (e.g. WhatsApp)."
+                description="Optional. The WhatsApp AI assistant uses it when customers ask about this product."
               >
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  className="input w-full max-w-5xl"
-                  rows={4}
-                  aria-label="Item description for AI and customers"
-                  placeholder="Add detailed product information, features, benefits, specifications, usage instructions, or any other details that will help customers understand the product better. This description will be used by the AI assistant when customers ask about products via WhatsApp."
-                />
-                <p className="text-xs text-gray-500 mt-1 max-w-5xl">
-                  💡 Tip: Include features, benefits, specifications, usage instructions, or any details that help customers make informed decisions.
-                </p>
-              </FormSection>
+                <div>
+                  <label htmlFor="item-description" className="type-label mb-1.5 block">Description</label>
+                  <textarea
+                    id="item-description"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    className="input min-h-[120px] w-full resize-y"
+                    rows={5}
+                    placeholder="Features, benefits, specifications, usage instructions, and anything a sales person should know."
+                  />
+                </div>
+              </ItemSection>
 
-              <FormSection
-                title="Online Store"
-                description="Show this item on your public store, optionally feature it, and set how it looks in Google and when the link is shared."
+              <ItemSection
+                title="Online store"
+                description="Show this item on your public store, feature it on the homepage, and set how it looks in Google and when shared."
               >
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={formData.show_in_store}
-                    onClick={() =>
+                <div className="divide-y divide-border dark:divide-border-dark">
+                  <Switch
+                    className="pb-4"
+                    label="Show in online store"
+                    description="Customers can find and order this item from your store."
+                    checked={formData.show_in_store}
+                    onChange={(on) =>
                       setFormData({
                         ...formData,
-                        show_in_store: !formData.show_in_store,
-                        featured_in_store: !formData.show_in_store ? formData.featured_in_store : false,
+                        show_in_store: on,
+                        featured_in_store: on ? formData.featured_in_store : false,
                       })
                     }
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      formData.show_in_store ? 'bg-green-500' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        formData.show_in_store ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                  <span className="text-sm text-text-primary">Show in online store</span>
-                </label>
-                <label className="mt-3 flex items-center gap-3 cursor-pointer">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={formData.featured_in_store}
-                    onClick={() =>
+                  />
+                  <Switch
+                    className="pt-4"
+                    label="Featured item"
+                    description="Shown in the Featured block on the store homepage, up to 6 items. Also turns on Show in online store."
+                    checked={formData.featured_in_store}
+                    onChange={(on) =>
                       setFormData({
                         ...formData,
-                        featured_in_store: !formData.featured_in_store,
-                        show_in_store: !formData.featured_in_store ? true : formData.show_in_store,
+                        featured_in_store: on,
+                        show_in_store: on ? true : formData.show_in_store,
                       })
                     }
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      formData.featured_in_store ? 'bg-green-500' : 'bg-gray-200'
-                    }`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        formData.featured_in_store ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                  <span className="text-sm text-text-primary">Featured item (online store)</span>
-                </label>
-                <p className="text-xs text-gray-500 mt-1">
-                  Featured items appear in the Featured block on the store homepage. Maximum 6. Featuring also shows the item in the store.
-                </p>
+                  />
+                </div>
                 {formData.show_in_store ? (
-                  <div className="mt-5 border-t border-gray-100 pt-4">
+                  <div className="border-t border-border pt-4 dark:border-border-dark">
                     <ItemSeoFields
                       businessId={business?.id}
                       itemId={editId}
@@ -2197,18 +2138,17 @@ export default function NewItemPage() {
                     />
                   </div>
                 ) : null}
-              </FormSection>
+              </ItemSection>
             </div>
 
-            <div className="flex justify-end gap-4 pt-4 border-t border-border">
-              <Button type="button" variant="ghost" onClick={() => router.back()}>Cancel</Button>
+            <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+              <Button type="button" variant="secondary" onClick={() => router.back()}>Cancel</Button>
               <Button type="submit" isLoading={loading}>
-                {isEditMode ? 'Update Item' : 'Save Item'}
+                {isEditMode ? 'Update item' : 'Save item'}
               </Button>
             </div>
           </form>
           )}
-        </Card>
       </div>
 
       {/* Upgrade Modal */}
