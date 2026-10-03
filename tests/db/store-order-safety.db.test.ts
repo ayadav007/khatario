@@ -266,7 +266,8 @@ d('store order safety (real DB)', () => {
         expect(r.json.payment_url).toBeUndefined();
         expect(r.json.upi.vpa).toBe('shop.test@okicici');
         expect(r.json.upi.links.any).toMatch(/^upi:\/\/pay\?pa=shop\.test%40okicici&/);
-        expect(r.json.upi.links.any).toContain(`tr=${r.json.order_number}`);
+        expect(r.json.upi.links.any).toContain(`tn=Order%20${r.json.order_number}`);
+        expect(r.json.upi.links.any).not.toContain('tr=');
         const row = (
           await pool.query(`SELECT payment_status, payment_provider FROM store_orders WHERE id = $1`, [r.json.order_id])
         ).rows[0];

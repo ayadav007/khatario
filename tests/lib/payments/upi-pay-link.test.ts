@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 describe('buildUpiUri', () => {
-  it('pays the shop, encodes values and adds a clean reference', () => {
+  it('pays the shop, encodes values and keeps the order number in the note, not tr', () => {
     const uri = buildUpiUri(params);
     const q = new URLSearchParams(uri.replace('upi://pay?', ''));
     expect(uri.startsWith('upi://pay?')).toBe(true);
@@ -27,9 +27,14 @@ describe('buildUpiUri', () => {
     expect(q.get('pn')).toBe('Shalini Traders');
     expect(q.get('am')).toBe('250.00');
     expect(q.get('cu')).toBe('INR');
-    expect(q.get('tn')).toBe('Order SO-0012');
-    expect(q.get('tr')).toBe('SO0012');
+    expect(q.get('tn')).toBe('Order SO-0012 SO/0012');
+    expect(q.has('tr')).toBe(false);
     expect(uri).not.toContain('+');
+  });
+
+  it('puts the reference in the note when there is no note', () => {
+    const q = new URLSearchParams(buildUpiUri({ ...params, note: undefined, reference: 'SO-7' }).replace('upi://pay?', ''));
+    expect(q.get('tn')).toBe('Order SO-7');
   });
 
   it('builds Android intents per app and iOS app schemes', () => {

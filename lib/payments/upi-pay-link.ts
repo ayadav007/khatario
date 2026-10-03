@@ -12,20 +12,25 @@ export interface UpiUriParams {
   payeeName: string;
   amount: number;
   note?: string;
-  /** Transaction reference (order number) so the shop can match the credit. UPI allows up to 35 chars. */
+  /** Order number; goes into the note so the shop can match the credit. */
   reference?: string;
 }
 
-/** Standard UPI intent query (`pa`, `pn`, `am`, `cu`, `tn`, `tr`), every value encoded. */
+/**
+ * Standard UPI intent query (`pa`, `pn`, `am`, `cu`, `tn`), every value encoded. No `tr`: an unsigned
+ * link carrying a merchant transaction reference is declined by many business UPI IDs (BharatPe, Paytm
+ * for Business) as a security risk.
+ */
 export function upiQuery(p: UpiUriParams): string {
   const qs = new URLSearchParams();
   qs.set('pa', p.vpa.trim());
   qs.set('pn', p.payeeName.trim().slice(0, 50) || 'Merchant');
   qs.set('am', p.amount.toFixed(2));
   qs.set('cu', 'INR');
-  if (p.note?.trim()) qs.set('tn', p.note.trim().slice(0, 80));
-  const ref = p.reference?.replace(/[^A-Za-z0-9-]/g, '').slice(0, 35);
-  if (ref) qs.set('tr', ref);
+  const ref = p.reference?.trim();
+  const note = p.note?.trim() || (ref ? `Order ${ref}` : '');
+  const withRef = ref && note && !note.includes(ref) ? `${note} ${ref}` : note;
+  if (withRef) qs.set('tn', withRef.slice(0, 80));
   return qs.toString().replace(/\+/g, '%20');
 }
 
