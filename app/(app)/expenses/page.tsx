@@ -95,6 +95,22 @@ export default function ExpensesPage() {
     }
   }, [business, selectedCategory, currentBranchId, branchLoading]);
 
+  // /expenses/new redirects here with ?new=1 so the sidebar create link opens the form.
+  useEffect(() => {
+    if (!business?.id || !user?.id || branchLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') !== '1') return;
+    setShowAddModal(true);
+  }, [business?.id, user?.id, branchLoading]);
+
+  function closeExpenseForm() {
+    setShowAddModal(false);
+    setEditing(null);
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      router.replace('/expenses', { scroll: false });
+    }
+  }
+
   async function fetchExpenses() {
     try {
       let url = `/api/expenses?business_id=${business!.id}`;
@@ -313,14 +329,10 @@ export default function ExpensesPage() {
             branchId={currentBranchId || undefined}
             categories={categories}
             expense={editing}
-            onClose={() => {
-              setShowAddModal(false);
-              setEditing(null);
-            }}
+            onClose={closeExpenseForm}
             onSuccess={() => {
               fetchExpenses();
-              setShowAddModal(false);
-              setEditing(null);
+              closeExpenseForm();
             }}
           />
         )}
