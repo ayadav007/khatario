@@ -297,6 +297,33 @@ describe('time-based greeting', () => {
   });
 });
 
+describe("asking the customer's name", () => {
+  const withStyle = (patch: Partial<typeof DEFAULT_AGENT_SETTINGS.behavior.communicationStyle>) =>
+    normalizeAgentSettings({
+      ...DEFAULT_AGENT_SETTINGS,
+      behavior: {
+        ...DEFAULT_AGENT_SETTINGS.behavior,
+        communicationStyle: { ...DEFAULT_AGENT_SETTINGS.behavior.communicationStyle, ...patch },
+      },
+    });
+
+  it('asks new customers once, in the first reply, by default', () => {
+    const p = buildAgentPrompt(normalizeAgentSettings({}), { name: 'Shop' }, '');
+    expect(p).toContain('in that same first reply, politely ask their name');
+    expect(p).toContain('CUSTOMER: {"name":"..."}');
+  });
+
+  it('settings saved before the option existed get it switched on', () => {
+    const p = buildAgentPrompt(withStyle({ askNameEarly: undefined }), { name: 'Shop' }, '');
+    expect(p).toContain('politely ask their name');
+  });
+
+  it('does not ask early when the owner turns it off or names are not used', () => {
+    expect(buildAgentPrompt(withStyle({ askNameEarly: false }), { name: 'Shop' }, '')).not.toContain('politely ask their name');
+    expect(buildAgentPrompt(withStyle({ useCustomerName: false }), { name: 'Shop' }, '')).not.toContain('politely ask their name');
+  });
+});
+
 describe('model request bodies', () => {
   const msgs = [{ role: 'user' as const, content: 'hi' }];
 

@@ -5,7 +5,7 @@ import { checkRateLimit } from '@/lib/rate-limit';
 import { loadAgentSettings } from '@/lib/ai-agent/settings';
 import { matchesTriggerPhrase, isOutsideBusinessHours } from '@/lib/ai-agent/gate';
 import { parseAgentReply } from '@/lib/ai-agent/prompt';
-import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, resolveOrderItems } from '@/lib/ai-agent/order-items';
+import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, parseCustomerTag, resolveOrderItems, stripOrderTags } from '@/lib/ai-agent/order-items';
 import { DEFAULT_FALLBACK_MESSAGE, DEFAULT_HANDOFF_MESSAGE, normalizeAgentSettings } from '@/lib/ai-agent/types';
 import { SalesAgentChatbot, type SalesAgentResult } from '@/lib/services/sales-agent-chatbot';
 
@@ -112,15 +112,18 @@ export const POST = withWhatsAppPremiumApi(
 
     const parsed = parseAgentReply(result.content);
     let reply = parsed.text;
+    const collectedCustomer = parseCustomerTag(reply);
+    reply = reply.replace(/CUSTOMER:\s*\{[\s\S]*?\}\s*/g, '');
 
     if (/CREATE_ORDER:/.test(reply)) {
       const lines = parseCreateOrderTag(reply);
       const resolved = lines ? await resolveOrderItems(businessId, lines).catch(() => null) : null;
-      reply = reply.replace(/CREATE_ORDER:\s*\{[\s\S]*?\}\s*/g, '').replace(/CREATE_ORDER:[^\n]*/g, '').trim();
+      reply = stripOrderTags(reply.replace(/CREATE_ORDER:\s*\{[\s\S]*?\}\s*/g, ''));
       if (resolved?.items.length) {
         const summary = resolved.items.map((i) => `${i.name} ×${i.quantity}`).join(', ');
         const missing = resolved.unmatched.length ? ` (skipped, not in catalogue: ${resolved.unmatched.join(', ')})` : '';
-        chips.push({ kind: 'order', label: `Test only, nothing saved. On WhatsApp this creates a draft sales order: ${summary}${missing}` });
+        const forWhom = collectedCustomer?.name ? ` for ${collectedCustomer.name}` : '';
+        chips.push({ kind: 'order', label: `Test only, nothing saved. On WhatsApp this creates a draft sales order${forWhom}: ${summary}${missing}` });
       } else {
         const missing = resolved?.unmatched.length ? `: ${resolved.unmatched.join(', ')} not in your catalogue` : '';
         chips.push({ kind: 'fallback', label: `On WhatsApp no order would be created${missing}, so the customer gets a holding reply` });
@@ -138,6 +141,9 @@ export const POST = withWhatsAppPremiumApi(
     if (parsed.handoff && settings.handoff.enabled) {
       chips.push({ kind: 'handoff', label: 'Would hand off to your team and pause the AI' });
       if (!reply) reply = settings.handoff.message.trim() || DEFAULT_HANDOFF_MESSAGE;
+    }
+    if (collectedCustomer?.name) {
+      chips.push({ kind: 'lead', label: `Would remember the customer's name: ${collectedCustomer.name}` });
     }
     const lead = Object.entries(parsed.leadData);
     if (lead.length) {

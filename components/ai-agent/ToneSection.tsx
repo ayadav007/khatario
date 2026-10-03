@@ -122,6 +122,14 @@ export function ToneSection({
             label="Use the customer's name"
             description="Address customers by their WhatsApp or saved name."
           />
+          {style.useCustomerName && (
+            <Switch
+              checked={style.askNameEarly !== false}
+              onChange={(v) => setStyle({ askNameEarly: v })}
+              label="Ask the customer's name early"
+              description="New customers are asked their name in the first reply, along with the answer. Known customers are never asked."
+            />
+          )}
           <Switch
             checked={behavior.customerExperience.enableTimeBasedGreetings}
             onChange={(v) =>

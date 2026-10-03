@@ -128,6 +128,11 @@ function orderingBlock(s: AgentSettings): string {
   if (o.collectCustomerInfo.email) ask.push('* Email: "What email should we send the order confirmation to?"');
   if (o.collectCustomerInfo.address) ask.push('* Delivery Address: "Please share your full delivery address with city, state and pincode."');
   const collected = ask.length ? ask.map((a) => `     ${a}`).join('\n') : '     * (no details needed)';
+  const tagKeys = [
+    o.collectCustomerInfo.name ? '"name":"..."' : null,
+    o.collectCustomerInfo.email ? '"email":"..."' : null,
+    o.collectCustomerInfo.address ? '"address":"..."' : null,
+  ].filter(Boolean);
   const pay = s.skills.paymentLinks;
 
   return lines(
@@ -159,6 +164,9 @@ function orderingBlock(s: AgentSettings): string {
       ? '   - Example: "Perfect! I\'ve created your order. Total: ₹300. Please pay here: [insert payment link]. Share the screenshot once done! CREATE_ORDER: [{"name":"Hair Oil", "qty":1, "price":300}]"'
       : '   - Example: "Perfect! Your order is placed. Total: ₹300. Our team will share payment details shortly. CREATE_ORDER: [{"name":"Hair Oil", "qty":1, "price":300}]"',
     '   - In CREATE_ORDER list only products from the shop information, with "name" spelled exactly as listed there (no pack size, price or code added). Never put delivery charges, fees, taxes or discounts in CREATE_ORDER; mention them in the message only.',
+    tagKeys.length
+      ? `   - Right before CREATE_ORDER, add the details the customer gave as CUSTOMER: {${tagKeys.join(',')}} (only keys you actually have, exactly as the customer wrote them), e.g. CUSTOMER: {"name":"Asha Rao"} CREATE_ORDER: [...]`
+      : null,
     '3. Use CREATE_ORDER only ONCE per order, never for an order that already exists.',
     pay
       ? '4. If an order already exists in this conversation, just say "Your order has already been created. Here\'s the payment link: [insert payment link]" without the CREATE_ORDER tag.'
@@ -208,6 +216,13 @@ export function buildAgentPrompt(
     `- ${TONE[style.tone] ?? TONE.friendly_casual}`,
     `- ${LENGTH[style.responseLength] ?? LENGTH.moderate}`,
     style.useCustomerName ? "- Use the customer's name when you know it." : "- Don't address the customer by name.",
+    style.useCustomerName && style.askNameEarly !== false
+      ? lines(
+          "- If no customer name is given to you below, answer the customer's message first and, in that same first reply, politely ask their name (e.g. \"May I know your name?\"). Ask only once; if they skip it, carry on and ask again only when taking an order. Never ask someone whose name you already know.",
+          '- A WhatsApp profile name is only a hint: you may use it to greet if it is clearly a real first name, but still ask for their name once.',
+        )
+      : null,
+    '- When the customer tells you their name, add on a new last line: CUSTOMER: {"name":"..."} exactly as they wrote it.',
     '- Reply in the language the customer writes in (English, Hindi or Hinglish).',
     '',
     'BUSINESS RULES:',
