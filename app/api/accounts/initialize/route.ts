@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { queryOne, getPool } from '@/lib/db';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import { applyIndustryCoa } from '@/lib/accounting/apply-industry-coa';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,7 @@ export const POST = withPremiumSubscriptionApi(
         if (eclFn.rows[0]?.ok) {
           await client.query(`SELECT ensure_gst_electronic_cash_ledger($1)`, [business_id]);
         }
+        await applyIndustryCoa(client, business_id);
       } catch (error: any) {
         await client.query('ROLLBACK');
 

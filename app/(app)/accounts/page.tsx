@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Plus, Search, ChevronRight, ChevronDown, Loader2, FileText, Edit, Settings, RefreshCw } from 'lucide-react';
+import { Plus, Search, ChevronRight, ChevronDown, Loader2, FileText, Edit, Settings, RefreshCw, Layers } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Account, AccountGroup } from '@/types/database';
 import Link from 'next/link';
@@ -38,6 +38,7 @@ export default function AccountsPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterSection, setFilterSection] = useState<PlSection | 'all'>('all');
   const [initializing, setInitializing] = useState(false);
+  const [addingIndustry, setAddingIndustry] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
 
   useEffect(() => {
@@ -146,6 +147,48 @@ export default function AccountsPage() {
       toast.error('Failed to initialize accounts. Please check the console for details.');
     } finally {
       setInitializing(false);
+    }
+  };
+
+  const handleAddIndustryLedgers = async () => {
+    setAddingIndustry(true);
+    try {
+      const previewRes = await fetch('/api/accounts/industry-pack');
+      const preview = await previewRes.json();
+      if (!previewRes.ok) {
+        toast.error(preview.error || 'Failed to load industry ledgers');
+        return;
+      }
+      const labels = (preview.packs as Array<{ label: string }>).map((p) => p.label).join(', ');
+      if (!labels) {
+        toast.info('No industry ledgers for this business. Set the industry and business type in Business Profile.');
+        return;
+      }
+      const ledgers = preview.missing_ledgers.length;
+      const categories = preview.missing_categories.length;
+      if (ledgers === 0 && categories === 0) {
+        toast.info(`Your chart already has the ledgers for ${labels}.`);
+        return;
+      }
+      if (!confirm(`Add ${ledgers} ledgers and ${categories} expense categories for ${labels}? Existing accounts are not changed.`)) {
+        return;
+      }
+      const res = await fetch('/api/accounts/industry-pack', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to add industry ledgers');
+        return;
+      }
+      toast.success(`Added ${data.accounts_created} ledgers and ${data.categories_created} expense categories.`);
+      if (data.conflicting_codes?.length) {
+        toast.warning(`Codes ${data.conflicting_codes.join(', ')} are already used by other accounts, so those ledgers were skipped.`);
+      }
+      fetchAccounts();
+    } catch (error) {
+      console.error('Error adding industry ledgers:', error);
+      toast.error('Failed to add industry ledgers');
+    } finally {
+      setAddingIndustry(false);
     }
   };
 
@@ -414,6 +457,21 @@ export default function AccountsPage() {
                   <RefreshCw className="w-4 h-4 mr-2" />
                 )}
                 Initialize Default Accounts
+              </Button>
+            )}
+            {accounts.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={handleAddIndustryLedgers}
+                disabled={addingIndustry}
+                data-testid="accounts-add-industry-ledgers"
+              >
+                {addingIndustry ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Layers className="w-4 h-4 mr-2" />
+                )}
+                Add Industry Ledgers
               </Button>
             )}
             <Link href="/accounts/new">

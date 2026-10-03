@@ -12,6 +12,7 @@ import { productLineToModule } from '@/lib/platform-modules';
 import { seedInitialBusinessModules } from '@/lib/business-modules';
 import { seedInitialModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { applyIndustryCoa } from '@/lib/accounting/apply-industry-coa';
 
 export const dynamic = 'force-dynamic';
 
@@ -349,6 +350,10 @@ export async function POST(request: NextRequest) {
           }
         });
         if (!heads.ok) softFailures.push(`standard_account_heads: ${errorMessage(heads.error)}`);
+        const industryCoa = await withSignupSavepoint(client, 'sp_coa_industry', async () => {
+          await applyIndustryCoa(client, businessId);
+        });
+        if (!industryCoa.ok) softFailures.push(`industry_chart_of_accounts: ${errorMessage(industryCoa.error)}`);
       }
     }
     
