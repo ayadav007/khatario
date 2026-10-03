@@ -194,6 +194,33 @@ describe('assemblePl — other views', () => {
   });
 });
 
+describe('assemblePl — earnings (PBT, EBIT, EBITDA)', () => {
+  it('works back from net profit using tax, finance cost, interest income and depreciation', () => {
+    const { earnings } = assemblePl(QA_PL_0930, { consolidated: true });
+    expect(earnings).toEqual({
+      tax: 4006 + 4007,
+      finance_cost: 3009 + 4001,
+      interest_income: 1004,
+      depreciation_amortisation: 3010,
+      profit_before_tax: LEDGER_NET + 8013,
+      ebit: LEDGER_NET + 8013 + 7010 - 1004,
+      ebitda: LEDGER_NET + 8013 + 7010 - 1004 + 3010,
+    });
+  });
+
+  it('counts sub-accounts under a seeded head and ignores where the section places them', () => {
+    const rows = [
+      ...QA_PL_0930,
+      row('5950', 'expense', '5200', 'dr', 500, { parent_account_id: 'acc-5205' }),
+    ].map((r) => (r.account_code === '5204' ? { ...r, pl_section: 'other_expense' } : r));
+    const { earnings, net_profit } = assemblePl(rows, { consolidated: true });
+    expect(net_profit).toBe(LEDGER_NET - 500);
+    expect(earnings.finance_cost).toBe(3009 + 4001 + 500);
+    expect(earnings.ebit).toBe(LEDGER_NET + 8013 + 7010 - 1004);
+    expect(earnings.ebitda).toBe(LEDGER_NET + 8013 + 7010 - 1004 + 3010);
+  });
+});
+
 describe('previousFinancialYear', () => {
   it('steps back one Indian financial year', () => {
     expect(previousFinancialYear('2026-27')).toBe('2025-26');

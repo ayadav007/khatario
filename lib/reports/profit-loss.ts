@@ -63,11 +63,26 @@ export interface PeriodicCogsSchedule {
   cost_of_goods_sold: number;
 }
 
+/**
+ * Earnings measures derived back from net profit, so they hold wherever the accounts sit in the
+ * sections. EBIT = PBT + finance cost − interest income; EBITDA = EBIT + depreciation & amortisation.
+ */
+export interface PlEarnings {
+  tax: number;
+  finance_cost: number;
+  interest_income: number;
+  depreciation_amortisation: number;
+  profit_before_tax: number;
+  ebit: number;
+  ebitda: number;
+}
+
 export interface ProfitAndLoss {
   sections: Record<ReportSection, PlSectionBlock>;
   gross_profit: number;
   operating_profit: number;
   net_profit: number;
+  earnings: PlEarnings;
   /** Inter-branch accounts removed in the consolidated view; `net` stays in net profit when the two sides differ. */
   elimination: { applied: boolean; net: number; accounts: PlAccountNode[] };
   inventory_model: 'periodic' | 'perpetual';
@@ -93,6 +108,56 @@ export interface BuildPlOptions {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const PERIODIC_PURCHASE_CODES = new Set(['5101', '5102']);
+
+type EarningsRole = 'tax' | 'finance_cost' | 'interest_income' | 'depreciation_amortisation';
+
+/** Seeded accounts behind each earnings add-back; sub-accounts created under them follow their parent. */
+const EARNINGS_ROLE_CODES: Record<string, EarningsRole> = {
+  '5210': 'tax',
+  '5211': 'tax',
+  '5203': 'finance_cost',
+  '5205': 'finance_cost',
+  '4202': 'interest_income',
+  '5204': 'depreciation_amortisation',
+};
+
+function earningsRoleOf(row: PlAccountRow, byId: Map<string, PlAccountRow>): EarningsRole | null {
+  const seen = new Set<string>();
+  let cur: PlAccountRow | undefined = row;
+  while (cur && !seen.has(cur.id)) {
+    const role = EARNINGS_ROLE_CODES[cur.account_code];
+    if (role) return role;
+    seen.add(cur.id);
+    cur = cur.parent_account_id ? byId.get(cur.parent_account_id) : undefined;
+  }
+  return null;
+}
+
+export function computeEarnings(rows: PlAccountRow[], netProfit: number): PlEarnings {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const sums: Record<EarningsRole, number> = {
+    tax: 0,
+    finance_cost: 0,
+    interest_income: 0,
+    depreciation_amortisation: 0,
+  };
+  for (const r of rows) {
+    const role = earningsRoleOf(r, byId);
+    if (!role) continue;
+    sums[role] += role === 'interest_income' ? r.credit - r.debit : r.debit - r.credit;
+  }
+  const profitBeforeTax = r2(netProfit + sums.tax);
+  const ebit = r2(profitBeforeTax + sums.finance_cost - sums.interest_income);
+  return {
+    tax: r2(sums.tax),
+    finance_cost: r2(sums.finance_cost),
+    interest_income: r2(sums.interest_income),
+    depreciation_amortisation: r2(sums.depreciation_amortisation),
+    profit_before_tax: profitBeforeTax,
+    ebit,
+    ebitda: r2(ebit + sums.depreciation_amortisation),
+  };
+}
 
 export async function loadPlAccounts(opts: BuildPlOptions): Promise<PlAccountRow[]> {
   const params: unknown[] = [opts.businessId, opts.fromDate, opts.toDate];
@@ -232,6 +297,7 @@ export function assemblePl(
     gross_profit: grossProfit,
     operating_profit: operatingProfit,
     net_profit: netProfit,
+    earnings: computeEarnings(rows, netProfit),
     elimination,
     periodic_cogs: schedule,
     ledger_check: {

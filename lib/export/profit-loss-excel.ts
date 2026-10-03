@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { PlAccountNode, PlSectionBlock, PeriodicCogsSchedule } from '@/lib/reports/profit-loss';
+import type { PlAccountNode, PlEarnings, PlSectionBlock, PeriodicCogsSchedule } from '@/lib/reports/profit-loss';
 
 /** The subset of the /api/reports/profit-loss response the workbook needs. */
 export interface PlExcelData {
@@ -9,6 +9,7 @@ export interface PlExcelData {
   gross_profit: number;
   operating_profit: number;
   net_profit: number;
+  earnings?: PlEarnings | null;
   periodic_cogs: PeriodicCogsSchedule | null;
   elimination?: { applied: boolean; net: number } | null;
 }
@@ -70,6 +71,16 @@ export function buildPlExcelRows(data: PlExcelData): PlExcelRow[] {
     rows.push({ kind: 'account', label: 'Inter-branch difference (not eliminated)', amount: data.elimination.net, indent: 0 });
   }
   rows.push({ kind: 'profit', label: 'Net Profit/Loss', amount: data.net_profit });
+  if (data.earnings) {
+    const e = data.earnings;
+    rows.push(
+      { kind: 'blank', label: '' },
+      { kind: 'section', label: 'Key figures' },
+      { kind: 'profit', label: 'Profit Before Tax', amount: e.profit_before_tax },
+      { kind: 'profit', label: 'EBIT', amount: e.ebit },
+      { kind: 'profit', label: 'EBITDA', amount: e.ebitda },
+    );
+  }
   return rows;
 }
 

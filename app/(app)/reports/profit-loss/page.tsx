@@ -39,6 +39,7 @@ interface PnLData {
   gross_profit: number;
   operating_profit: number;
   net_profit: number;
+  earnings?: ProfitAndLoss['earnings'];
   elimination: ProfitAndLoss['elimination'];
   inventory_model: 'periodic' | 'perpetual';
   periodic_cogs: PeriodicCogsSchedule | null;
@@ -402,6 +403,21 @@ function ProfitLossPage() {
       : []),
   ]);
 
+  const e = data.earnings;
+  const pbtTarget = e && profitTarget('Profit Before Tax', e.profit_before_tax, [
+    { label: 'Net Profit/Loss', amount: data.net_profit, sign: 1, target: netTarget },
+    { label: 'Add: Tax expense (current + deferred)', amount: e.tax, sign: 1 },
+  ]);
+  const ebitTarget = e && pbtTarget && profitTarget('EBIT', e.ebit, [
+    { label: 'Profit Before Tax', amount: e.profit_before_tax, sign: 1, target: pbtTarget },
+    { label: 'Add: Finance costs (interest, financial expenses)', amount: e.finance_cost, sign: 1 },
+    { label: 'Less: Interest income', amount: e.interest_income, sign: -1 },
+  ]);
+  const ebitdaTarget = e && ebitTarget && profitTarget('EBITDA', e.ebitda, [
+    { label: 'EBIT', amount: e.ebit, sign: 1, target: ebitTarget },
+    { label: 'Add: Depreciation & amortisation', amount: e.depreciation_amortisation, sign: 1 },
+  ]);
+
   const agrees = Math.abs(data.ledger_check.difference) < 0.01;
 
   return (
@@ -503,6 +519,21 @@ function ProfitLossPage() {
         {section('other_income')}
         {section('other_expense')}
         <ProfitRow label="Net Profit/Loss" value={data.net_profit} onClick={() => setDrill(netTarget)} final />
+
+        {e && pbtTarget && ebitTarget && ebitdaTarget && (
+          <div className="mt-6" data-testid="pl-earnings">
+            <div className="border-b-2 border-border pb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+              Key figures
+            </div>
+            <ProfitRow label="Profit Before Tax" value={e.profit_before_tax} onClick={() => setDrill(pbtTarget)} />
+            <ProfitRow label="EBIT" value={e.ebit} onClick={() => setDrill(ebitTarget)} />
+            <ProfitRow label="EBITDA" value={e.ebitda} onClick={() => setDrill(ebitdaTarget)} />
+            <p className="mt-2 text-xs text-text-secondary">
+              Worked back from net profit: tax (5210, 5211), finance costs (5203, 5205), interest income (4202) and
+              depreciation (5204), including sub-accounts created under them.
+            </p>
+          </div>
+        )}
 
         {data.elimination.applied && (
           <p className="mt-4 text-sm text-text-secondary">

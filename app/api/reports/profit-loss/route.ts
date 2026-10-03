@@ -238,6 +238,7 @@ export async function GET(request: NextRequest) {
       gross_profit: pl.gross_profit,
       operating_profit: pl.operating_profit,
       net_profit: pl.net_profit,
+      earnings: pl.earnings,
       elimination: pl.elimination,
       inventory_model: pl.inventory_model,
       periodic_cogs: pl.periodic_cogs,
@@ -286,7 +287,7 @@ export async function GET(request: NextRequest) {
         },
         total: r2(s.cost_of_goods_sold.total + s.operating_expense.total + s.other_expense.total),
       },
-      profit_before_tax: r2(pl.net_profit + totalTax),
+      profit_before_tax: pl.earnings.profit_before_tax,
       tax: {
         current_tax: currentTax,
         deferred_tax: deferredTax,

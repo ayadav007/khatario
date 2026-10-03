@@ -227,6 +227,13 @@ function buildPdfBlocks(data: any) {
     section('other_income'),
     section('other_expense'),
     profit('Net Profit/Loss', data.net_profit, true),
+    ...(data.earnings
+      ? [
+          profit('Profit Before Tax', data.earnings.profit_before_tax),
+          profit('EBIT', data.earnings.ebit),
+          profit('EBITDA', data.earnings.ebitda),
+        ]
+      : []),
   ].filter(Boolean);
 }
 
