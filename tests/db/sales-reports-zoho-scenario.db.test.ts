@@ -281,6 +281,15 @@ d('Sales reports vs Zoho scenario (real DB)', () => {
     const drafts = await report(invoiceWise, `/api/reports/sales/invoice-wise?${SEP}&branch_id=${BR}&status=draft`);
     expect(drafts.json.invoices.map((i: any) => i.reference_number)).toEqual(['QA-SR-S3-DRAFT']);
     expect((await report(invoiceWise, `/api/reports/sales/invoice-wise?${SEP}&status=paid`)).status).toBe(400);
+
+    expect(res.json.invoices.every((i: any) => typeof i.channel === 'string')).toBe(true);
+    expect(res.json.unbilled_orders).toEqual({ count: 0, amount: 0 });
+    const s1 = res.json.invoices.find((i: any) => i.reference_number === 'QA-SR-S1');
+    await pool.query(`UPDATE invoices SET channel = 'whatsapp' WHERE id = $1`, [s1.id]);
+    const wa = await report(invoiceWise, `/api/reports/sales/invoice-wise?${SEP}&branch_id=${BR}&channel=whatsapp`);
+    expect(wa.json.invoices.map((i: any) => i.reference_number)).toEqual(['QA-SR-S1']);
+    expect(wa.json.by_channel.whatsapp.count).toBe(1);
+    expect((await report(invoiceWise, `/api/reports/sales/invoice-wise?${SEP}&channel=amazon`)).status).toBe(400);
   });
 
   test('no branch_id covers every branch; branch_id narrows to one', async () => {

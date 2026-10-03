@@ -5,6 +5,9 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Calendar, Download, FileText } from 'lucide-react';
 import { format } from 'date-fns';
+import Link from 'next/link';
+import { ChannelBadge } from '@/components/orders/ChannelBadge';
+import { CHANNEL_LABEL, INVOICE_CHANNELS } from '@/lib/invoices/channel';
 import {
   inr,
   qty,
@@ -57,12 +60,13 @@ function SalesReportContent() {
   });
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day');
   const [invoiceStatus, setInvoiceStatus] = useState('all');
+  const [invoiceChannel, setInvoiceChannel] = useState('all');
 
   useEffect(() => {
     if (business?.id && user?.id && reportType) {
       fetchReport();
     }
-  }, [business, user, reportType, dateRange, period, invoiceStatus]);
+  }, [business, user, reportType, dateRange, period, invoiceStatus, invoiceChannel]);
 
   async function fetchReport() {
     if (!business?.id || !user?.id || !reportType) return;
@@ -74,7 +78,7 @@ function SalesReportContent() {
         url += `&period=${period}`;
       }
       if (reportType === 'invoice-wise') {
-        url += `&status=${invoiceStatus}`;
+        url += `&status=${invoiceStatus}&channel=${invoiceChannel}`;
       }
 
       const response = await fetch(url);
@@ -193,7 +197,7 @@ function SalesReportContent() {
             ]}
           />
         )}
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-gray-600">Status:</span>
           <select
             value={invoiceStatus}
@@ -206,7 +210,31 @@ function SalesReportContent() {
             <option value="draft">Draft</option>
             <option value="cancelled">Cancelled</option>
           </select>
+          <span className="ml-2 text-gray-600">Source:</span>
+          <select
+            value={invoiceChannel}
+            onChange={(e) => setInvoiceChannel(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+            data-testid="invoice-channel-filter"
+          >
+            <option value="all">All sources</option>
+            {INVOICE_CHANNELS.map((c) => (
+              <option key={c} value={c}>
+                {CHANNEL_LABEL[c]}
+                {data.by_channel?.[c] ? ` (${data.by_channel[c].count})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
+        {data.unbilled_orders?.count > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="unbilled-orders-note">
+            {data.unbilled_orders.count} online store / WhatsApp{' '}
+            {data.unbilled_orders.count === 1 ? 'order' : 'orders'} worth {inr(data.unbilled_orders.amount)} in this period{' '}
+            {data.unbilled_orders.count === 1 ? 'has' : 'have'} no bill yet, so {data.unbilled_orders.count === 1 ? 'it is' : 'they are'} not
+            counted as sales. Confirm or approve them in{' '}
+            <Link href="/orders" className="font-medium underline">Orders &amp; delivery</Link>.
+          </div>
+        )}
         {!data.invoices || data.invoices.length === 0 ? (
           <div>No data available</div>
         ) : (
@@ -216,6 +244,7 @@ function SalesReportContent() {
               { label: 'Invoice #' },
               { label: 'Date' },
               { label: 'Customer' },
+              { label: 'Source' },
               { label: 'Status' },
               { label: 'Sales', right: true },
               { label: 'Tax', right: true },
@@ -226,6 +255,7 @@ function SalesReportContent() {
               inv.invoice_number,
               format(new Date(inv.invoice_date), 'dd MMM yyyy'),
               inv.customer_name,
+              <ChannelBadge key="c" channel={inv.channel} />,
               <StatusBadge key="s" status={inv.status} paymentStatus={inv.payment_status} />,
               inr(inv.sales),
               inr(inv.tax_total),
@@ -233,7 +263,7 @@ function SalesReportContent() {
               inr(inv.balance_amount),
             ])}
             rowClass={(i) => (data.invoices[i].status === 'final' ? '' : 'text-gray-400')}
-            total={t ? ['Total (posted)', '', '', '', inr(t.total_sales), inr(t.total_tax), inr(t.total_sales_with_tax), inr(t.total_pending)] : undefined}
+            total={t ? ['Total (posted)', '', '', '', '', inr(t.total_sales), inr(t.total_tax), inr(t.total_sales_with_tax), inr(t.total_pending)] : undefined}
           />
         )}
       </div>

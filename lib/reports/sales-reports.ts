@@ -1,4 +1,6 @@
-import { queryRows } from '@/lib/db';
+import { NextResponse, type NextRequest } from 'next/server';
+import { queryOne, queryRows } from '@/lib/db';
+import { INVOICE_CHANNELS, type InvoiceChannel } from '@/lib/invoices/channel';
 import {
   type ReportContext,
   resolveReportContext,
@@ -21,7 +23,21 @@ import {
  */
 
 export type SalesReportContext = ReportContext;
-export const resolveSalesReportContext = resolveReportContext;
+
+/**
+ * Report context, after posting store orders that are paid or cash on delivery but not yet
+ * invoiced (the dashboard does the same), so a store sale never shows on the dashboard but not here.
+ */
+export async function resolveSalesReportContext(request: NextRequest): Promise<SalesReportContext | NextResponse> {
+  const ctx = await resolveReportContext(request);
+  if (ctx instanceof NextResponse) return ctx;
+  const { accountOutstandingStoreOrders } = await import('@/lib/store/fulfill-paid-order');
+  await accountOutstandingStoreOrders(ctx.businessId, ctx.userId).catch((err) => {
+    console.error('[store invoice]', err);
+  });
+  return ctx;
+}
+
 const params = reportParams;
 
 const POSTED_INVOICE = (a: string) => `
@@ -269,12 +285,23 @@ export async function salesSummary(ctx: SalesReportContext, period: SalesPeriod)
 export const INVOICE_STATUSES = ['draft', 'final', 'cancelled'] as const;
 export type InvoiceStatusFilter = (typeof INVOICE_STATUSES)[number] | 'all';
 
+export type InvoiceChannelFilter = InvoiceChannel | 'all';
+
+export function isInvoiceChannelFilter(v: string): v is InvoiceChannelFilter {
+  return v === 'all' || (INVOICE_CHANNELS as readonly string[]).includes(v);
+}
+
 /** Every invoice in the period (drafts and cancelled included, like Zoho); totals cover posted invoices only. */
-export async function invoiceDetails(ctx: SalesReportContext, status: InvoiceStatusFilter) {
+export async function invoiceDetails(
+  ctx: SalesReportContext,
+  status: InvoiceStatusFilter,
+  channel: InvoiceChannelFilter = 'all',
+) {
   const rows = await queryRows<any>(
     `SELECT i.id, i.invoice_number, to_char(i.invoice_date, 'YYYY-MM-DD') AS invoice_date,
             to_char(i.due_date, 'YYYY-MM-DD') AS due_date, i.status, i.payment_status, i.reference_number,
             i.customer_id, COALESCE(c.name, 'Walk-in / Cash Sale') AS customer_name, c.gstin AS customer_gstin,
+            COALESCE(i.channel, 'manual') AS channel,
             i.subtotal, i.discount_total, i.additional_charges, i.tax_total, i.cgst_total, i.sgst_total, i.igst_total,
             i.grand_total, i.paid_amount, i.balance_amount, i.supply_type
        FROM invoices i
@@ -285,8 +312,9 @@ export async function invoiceDetails(ctx: SalesReportContext, status: InvoiceSta
         AND ($3::date IS NULL OR i.invoice_date <= $3::date)
         AND ($4::uuid IS NULL OR i.branch_id = $4::uuid)
         AND ($5::text IS NULL OR i.status = $5::text)
+        AND ($6::text IS NULL OR COALESCE(i.channel, 'manual') = $6::text)
       ORDER BY i.invoice_date DESC, i.invoice_number DESC`,
-    [...params(ctx), status === 'all' ? null : status]
+    [...params(ctx), status === 'all' ? null : status, channel === 'all' ? null : channel]
   );
 
   const invoices = rows.map((r) => ({
@@ -316,5 +344,33 @@ export async function invoiceDetails(ctx: SalesReportContext, status: InvoiceSta
     total_collected: r2(posted.reduce((s, i) => s + i.paid_amount, 0)),
     total_pending: r2(posted.reduce((s, i) => s + i.balance_amount, 0)),
   };
-  return { invoices, totals };
+  const byChannel: Partial<Record<InvoiceChannel, { count: number; sales_with_tax: number }>> = {};
+  for (const i of posted) {
+    const key = i.channel as InvoiceChannel;
+    const bucket = (byChannel[key] ??= { count: 0, sales_with_tax: 0 });
+    bucket.count += 1;
+    bucket.sales_with_tax = r2(bucket.sales_with_tax + i.grand_total);
+  }
+  return { invoices, totals, by_channel: byChannel, unbilled_orders: await unbilledOrders(ctx) };
+}
+
+/**
+ * Store and WhatsApp orders placed in the period that have no bill yet (pending, unpaid or not
+ * approved). They are not sales until invoiced, so they are counted here rather than in the totals.
+ */
+async function unbilledOrders(ctx: SalesReportContext): Promise<{ count: number; amount: number }> {
+  const r = await queryOne<{ count: number; amount: string | null }>(
+    `SELECT COUNT(*)::int AS count, COALESCE(SUM(h.amount), 0)::text AS amount
+       FROM order_hub h
+      WHERE h.business_id = $1
+        AND h.channel IN ('online_store', 'whatsapp')
+        AND h.invoice_id IS NULL
+        AND COALESCE(h.delivery_status, '') NOT IN ('cancelled', 'returned')
+        AND h.order_status NOT IN ('cancelled', 'rejected', 'draft')
+        AND ($2::date IS NULL OR (h.created_at AT TIME ZONE 'Asia/Kolkata')::date >= $2::date)
+        AND ($3::date IS NULL OR (h.created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3::date)
+        AND ($4::uuid IS NULL OR h.branch_id IS NULL OR h.branch_id = $4::uuid)`,
+    params(ctx),
+  ).catch(() => null);
+  return { count: r?.count ?? 0, amount: r2(num(r?.amount)) };
 }

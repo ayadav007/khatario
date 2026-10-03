@@ -3,6 +3,7 @@ import {
   handleSalesReportError,
   invoiceDetails,
   INVOICE_STATUSES,
+  isInvoiceChannelFilter,
   resolveSalesReportContext,
   type InvoiceStatusFilter,
 } from '@/lib/reports/sales-reports';
@@ -10,7 +11,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/reports/sales/invoice-wise?from_date&to_date[&status=all|draft|final|cancelled][&branch_id]
+ * GET /api/reports/sales/invoice-wise?from_date&to_date[&status=all|draft|final|cancelled][&channel=all|online_store|…][&branch_id]
  * Invoice details: every invoice in the period with its status; totals cover posted invoices only.
  */
 export async function GET(request: NextRequest) {
@@ -21,8 +22,12 @@ export async function GET(request: NextRequest) {
     if (status !== 'all' && !(INVOICE_STATUSES as readonly string[]).includes(status)) {
       return NextResponse.json({ error: 'status must be all, draft, final or cancelled' }, { status: 400 });
     }
-    const { invoices, totals } = await invoiceDetails(ctx, status as InvoiceStatusFilter);
-    return NextResponse.json({ from_date: ctx.fromDate, to_date: ctx.toDate, branch_id: ctx.branchId, invoices, totals });
+    const channel = new URL(request.url).searchParams.get('channel') || 'all';
+    if (!isInvoiceChannelFilter(channel)) {
+      return NextResponse.json({ error: 'channel must be all, online_store, whatsapp, counter, manual or sales_order' }, { status: 400 });
+    }
+    const result = await invoiceDetails(ctx, status as InvoiceStatusFilter, channel);
+    return NextResponse.json({ from_date: ctx.fromDate, to_date: ctx.toDate, branch_id: ctx.branchId, ...result });
   } catch (error: any) {
     return handleSalesReportError('invoice-wise sales report', error);
   }
