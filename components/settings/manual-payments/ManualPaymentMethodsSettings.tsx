@@ -11,8 +11,10 @@ export function ManualPaymentMethodsSettings(props: {
   businessId?: string | null;
   userId?: string | null; // reserved for future API auth; not used yet
   className?: string;
+  /** Render as a compact card (Business Profile) instead of a standalone section. */
+  embedded?: boolean;
 }) {
-  const { businessId, className } = props;
+  const { businessId, className, embedded } = props;
 
   const {
     paymentMethods,
@@ -29,7 +31,21 @@ export function ManualPaymentMethodsSettings(props: {
   } = usePaymentMethods({ businessId });
 
   return (
-    <section className={className}>
+    <section
+      className={clsx(embedded && 'card overflow-hidden', className)}
+      data-tour={embedded ? 'bp-payments' : undefined}
+    >
+      {embedded ? (
+        <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-4 py-2.5 dark:border-border-dark md:px-5">
+          <h4 className="text-sm font-semibold text-text-primary">UPI and payment methods</h4>
+          {!showPaymentMethodForm && (
+            <Button type="button" size="sm" variant="ghost" onClick={startCreatePaymentMethod}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Add method
+            </Button>
+          )}
+        </div>
+      ) : (
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="settings-section-title mb-0">
@@ -45,6 +61,8 @@ export function ManualPaymentMethodsSettings(props: {
           Add Payment Method
         </Button>
       </div>
+      )}
+      <div className={clsx(embedded && 'px-4 py-4 md:px-5')}>
 
       {showPaymentMethodForm && (
         <div className="mb-6 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
@@ -192,6 +210,16 @@ export function ManualPaymentMethodsSettings(props: {
         <div className="flex justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin text-text-muted" />
         </div>
+      ) : paymentMethods.length === 0 && embedded ? (
+        <div className="flex items-center gap-3 py-2">
+          <QrCode className="h-8 w-8 shrink-0 text-text-muted" />
+          <div>
+            <p className="text-sm text-text-primary">No UPI ID yet</p>
+            <p className="text-xs text-text-secondary">
+              Add one to print a UPI QR on invoices and send payment links on WhatsApp.
+            </p>
+          </div>
+        </div>
       ) : paymentMethods.length === 0 ? (
         <div className="text-center py-8 text-text-muted">
           <QrCode className="w-12 h-12 mx-auto mb-2 text-text-muted" />
@@ -284,6 +312,7 @@ export function ManualPaymentMethodsSettings(props: {
           ))}
         </div>
       )}
+      </div>
     </section>
   );
 }

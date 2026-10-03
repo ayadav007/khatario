@@ -1,25 +1,160 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { AlertTriangle, Building2, CheckCircle2, ImagePlus, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
-import { Save, Upload, Loader2, Plus, Edit, Trash2, Building2, CreditCard, QrCode, Wallet, ArrowRight, CheckCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
 import { INDIAN_STATES } from '@/lib/gst-utils';
-import { clsx } from 'clsx';
 import { useToastContext } from '@/contexts/ToastContext';
-import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
-import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { ManualPaymentMethodsSettings } from '@/components/settings/manual-payments/ManualPaymentMethodsSettings';
-import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { EditableCard, ProfileSection, SummaryList } from '@/components/settings/business-profile/ProfileSection';
+import { BankAccountsCard } from '@/components/settings/business-profile/BankAccountsCard';
+import {
+  getProfileGaps,
+  type BusinessProfileLike,
+  type ProfileRequirementContext,
+} from '@/lib/business-profile-requirements';
+
+type ProfileForm = {
+  name: string;
+  email: string;
+  phone: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  gstin: string;
+  gst_registration_type: string;
+  aggregate_turnover_above_5cr: boolean;
+  pan: string;
+  logo_url: string;
+  signature_url: string;
+  business_type: string;
+  industry: string;
+  business_model: string;
+  company_introduction: string;
+  iec_code: string;
+  swift_code: string;
+};
+
+type SectionKey = 'basic' | 'address' | 'tax' | 'about' | 'export';
+
+const SECTION_FIELDS: Record<SectionKey, (keyof ProfileForm)[]> = {
+  basic: ['name', 'email', 'phone'],
+  address: ['address_line1', 'address_line2', 'city', 'state', 'pincode'],
+  tax: ['gst_registration_type', 'gstin', 'pan', 'aggregate_turnover_above_5cr'],
+  about: ['business_type', 'industry', 'business_model', 'company_introduction'],
+  export: ['iec_code', 'swift_code'],
+};
+
+/** Outlet-level fields; with several active branches these are saved on the branch row. */
+const BRANCH_FIELDS = new Set<keyof ProfileForm>([
+  'name', 'email', 'phone', 'address_line1', 'address_line2', 'city', 'state', 'pincode', 'gstin',
+]);
+
+const HIGHLIGHT_SECTION: Record<string, SectionKey> = {
+  name: 'basic',
+  email: 'basic',
+  phone: 'basic',
+  address_line1: 'address',
+  city: 'address',
+  state: 'address',
+  pincode: 'address',
+  gstin: 'tax',
+};
+
+const GST_TYPES = [
+  { value: 'regular', label: 'Regular', hint: 'Charge GST and issue tax invoices.' },
+  { value: 'composition', label: 'Composition scheme', hint: 'Issue bills of supply. No GST is charged.' },
+  { value: 'unregistered', label: 'Not registered', hint: 'Below the threshold, no GSTIN.' },
+];
+
+const BUSINESS_TYPES = [
+  ['retail', 'Retail'], ['wholesaler', 'Wholesaler'], ['distributor', 'Distributor'],
+  ['manufacturer', 'Manufacturer'], ['service', 'Service'], ['other', 'Other'],
+] as const;
+const INDUSTRIES = [
+  ['pharmaceuticals', 'Pharmaceuticals'], ['textiles', 'Textiles'], ['garments', 'Garments'],
+  ['electronics', 'Electronics'], ['food_beverages', 'Food & Beverages'], ['automotive', 'Automotive'],
+  ['construction', 'Construction'], ['services', 'Services'], ['other', 'Other'],
+] as const;
+const BUSINESS_MODELS = [
+  ['b2b', 'B2B'], ['b2c', 'B2C'], ['b2b2c', 'B2B2C'], ['export', 'Export'], ['mixed', 'Mixed'],
+] as const;
+
+const labelOf = (list: readonly (readonly [string, string])[], v: string) => list.find(([k]) => k === v)?.[1] ?? '';
+
+function profileFrom(business: any, branch: any, activeBranchCount: number): ProfileForm {
+  // Single outlet: company identity is the business row. Several outlets: prefer the assigned branch overlay.
+  const p = activeBranchCount <= 1 && business ? business : branch || business || {};
+  return {
+    name: p.name || business?.name || '',
+    email: p.email || business?.email || '',
+    phone: p.phone || business?.phone || '',
+    address_line1: p.address_line1 || business?.address_line1 || '',
+    address_line2: p.address_line2 || business?.address_line2 || '',
+    city: p.city || business?.city || '',
+    state: p.state || business?.state || '',
+    pincode: p.pincode || business?.pincode || '',
+    gstin: p.gstin || business?.gstin || '',
+    gst_registration_type: business?.gst_registration_type || 'unregistered',
+    aggregate_turnover_above_5cr: !!business?.aggregate_turnover_above_5cr,
+    pan: business?.pan || '',
+    logo_url: business?.logo_url || '',
+    signature_url: business?.signature_url || '',
+    business_type: business?.business_type || '',
+    industry: business?.industry || '',
+    business_model: business?.business_model || '',
+    company_introduction: business?.company_introduction || '',
+    iec_code: business?.iec_code || '',
+    swift_code: business?.swift_code || '',
+  };
+}
+
+function validate(section: SectionKey, f: ProfileForm, gstApplies: boolean): Record<string, string> {
+  const e: Record<string, string> = {};
+  if (section === 'basic' && !f.name.trim()) e.name = 'Business name is required';
+  if (section === 'address' && f.pincode.trim() && !/^\d{6}$/.test(f.pincode.trim())) {
+    e.pincode = 'Pincode must be 6 digits';
+  }
+  if (section === 'tax') {
+    const gstin = f.gstin.trim().toUpperCase();
+    if (gstApplies && f.gst_registration_type !== 'unregistered') {
+      if (!gstin) e.gstin = 'GSTIN is required for GST-registered businesses';
+      else if (!/^[0-9A-Z]{15}$/.test(gstin)) e.gstin = 'GSTIN has 15 characters, like 27ABCDE1234F1Z5';
+    }
+    if (f.pan.trim() && !/^[A-Z]{5}\d{4}[A-Z]$/.test(f.pan.trim().toUpperCase())) e.pan = 'PAN format is ABCDE1234F';
+  }
+  if (section === 'export') {
+    if (f.iec_code.trim() && !/^[0-9A-Z]{10}$/i.test(f.iec_code.trim())) e.iec_code = 'IEC has 10 characters';
+    if (f.swift_code.trim() && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/i.test(f.swift_code.trim())) {
+      e.swift_code = 'SWIFT has 8 or 11 characters';
+    }
+  }
+  return e;
+}
+
+function asProfileLike(f: ProfileForm): BusinessProfileLike {
+  return {
+    name: f.name,
+    address_line1: f.address_line1,
+    city: f.city,
+    state: f.state,
+    pincode: f.pincode,
+    gstin: f.gstin,
+  } as BusinessProfileLike;
+}
 
 export const BusinessProfileTab: React.FC = () => {
-  const { business, branch, user, activeBranchCount, hasPlatformModule } = useAuth();
+  const { business, branch, user, activeBranchCount, hasPlatformModule, refresh } = useAuth();
   const { refreshWarehouses } = useLayoutData();
   const featureRegistry = useFeatureRegistry();
   const searchParams = useSearchParams();
@@ -27,29 +162,18 @@ export const BusinessProfileTab: React.FC = () => {
   const hasBilling = hasPlatformModule('billing');
   const hasHr = hasPlatformModule('hr');
   const hasConnect = hasPlatformModule('connect');
-  const showSalesAiIntro = hasBilling || hasConnect;
-  const [loading, setLoading] = useState(false);
-  const [showWarehouseUpgradePrompt, setShowWarehouseUpgradePrompt] = useState(false);
+  const isBranchView = !!branch && activeBranchCount > 1;
+
+  const saved = useMemo(() => profileFrom(business, branch, activeBranchCount), [business, branch, activeBranchCount]);
+  const [form, setForm] = useState<ProfileForm>(saved);
+  const [editing, setEditing] = useState<SectionKey | null>(null);
   const [saving, setSaving] = useState(false);
-  const [highlightedField, setHighlightedField] = useState<string | null>(null);
-  const [nextFieldName, setNextFieldName] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploading, setUploading] = useState<'logo' | 'signature' | null>(null);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
-  
-  // Field labels mapping
-  const fieldLabels: Record<string, string> = {
-    name: 'Business Name',
-    email: 'Email',
-    phone: 'Phone',
-    address_line1: 'Address',
-    city: 'City',
-    state: 'State',
-    pincode: 'Pincode',
-    gstin: 'GSTIN',
-    pan: 'PAN',
-    logo_url: 'Logo URL',
-  };
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const highlightRef = useRef<string | null>(null);
+  const highlightHandled = useRef(false);
+
   const [productVariantsEnabled, setProductVariantsEnabled] = useState(false);
   const [loadingVariantsSetting, setLoadingVariantsSetting] = useState(false);
   const [defaultAllowSaleWhenOutOfStock, setDefaultAllowSaleWhenOutOfStock] = useState(false);
@@ -59,271 +183,240 @@ export const BusinessProfileTab: React.FC = () => {
   const [autoAssignBranchWarehouses, setAutoAssignBranchWarehouses] = useState(true);
   const [loadingAutoAssignSetting, setLoadingAutoAssignSetting] = useState(false);
   const [posModeEnabled, setPosModeEnabled] = useState(false);
-  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  const [loadingBankAccounts, setLoadingBankAccounts] = useState(false);
-  const [showBankAccountForm, setShowBankAccountForm] = useState(false);
-  const [editingBankAccount, setEditingBankAccount] = useState<any>(null);
-
-  const [bankAccountForm, setBankAccountForm] = useState({
-    account_name: '',
-    account_number: '',
-    bank_name: '',
-    ifsc_code: '',
-    branch_name: '',
-    account_type: 'current',
-    is_active: true,
-    notes: ''
-  });
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    address_line1: '',
-    address_line2: '',
-    city: '',
-    state: '',
-    pincode: '',
-    gstin: '',
-    gst_registration_type: 'unregistered',
-    aggregate_turnover_above_5cr: false,
-    pan: '',
-    logo_url: '',
-    signature_url: '',
-    business_type: '',
-    industry: '',
-    business_model: '',
-    company_introduction: '', // For AI chatbot
-    iec_code: '', // Import Export Code
-    swift_code: '' // SWIFT/BIC code for international payments
-  });
+  const [showWarehouseUpgradePrompt, setShowWarehouseUpgradePrompt] = useState(false);
 
   useEffect(() => {
-    // Single active outlet: treat company identity as business row. Multiple branches: prefer branch overlay when assigned.
-    const singleOutlet = activeBranchCount <= 1;
-    const profileData = singleOutlet && business ? business : (branch || business);
-    
-    if (profileData) {
-      setFormData({
-        name: profileData.name || business?.name || '',
-        email: profileData.email || business?.email || '',
-        phone: profileData.phone || business?.phone || '',
-        address_line1: profileData.address_line1 || business?.address_line1 || '',
-        address_line2: profileData.address_line2 || business?.address_line2 || '',
-        city: profileData.city || business?.city || '',
-        state: profileData.state || business?.state || '',
-        pincode: profileData.pincode || business?.pincode || '',
-        gstin: profileData.gstin || business?.gstin || '',
-        gst_registration_type: (business as any)?.gst_registration_type || 'unregistered',
-        aggregate_turnover_above_5cr: !!(business as any)?.aggregate_turnover_above_5cr,
-        pan: business?.pan || '', // PAN is business-level
-        logo_url: business?.logo_url || '', // Logo is business-level
-        signature_url: (business as any)?.signature_url || '', // Signature is business-level
-        business_type: business?.business_type || '',
-        industry: business?.industry || '',
-        business_model: business?.business_model || '',
-        company_introduction: (business as any)?.company_introduction || '',
-        iec_code: (business as any)?.iec_code || '',
-        swift_code: (business as any)?.swift_code || ''
-      });
-      
-      // Fetch product variants setting
-      fetchProductVariantsSetting();
-      fetchItemSalesStockDefault();
-      // Fetch warehouses setting
-      fetchWarehousesSetting();
-      // Fetch POS mode setting
-      if (typeof window !== 'undefined') {
-        setPosModeEnabled(localStorage.getItem('pos_mode_enabled') === 'true');
-      }
-      // Fetch bank accounts
-      fetchBankAccounts();
+    if (!editing) setForm(saved);
+  }, [saved, editing]);
+
+  const set = <K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
+  };
+
+  const readinessContext: ProfileRequirementContext =
+    saved.gst_registration_type === 'unregistered' ? 'print_or_finalize_invoice' : 'finalize_gst_invoice';
+  const gaps = getProfileGaps(asProfileLike(saved), readinessContext);
+
+  const focusField = useCallback((name: string) => {
+    window.setTimeout(() => {
+      const el = fieldRefs.current[name];
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const target = el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement
+        ? el
+        : el.querySelector<HTMLElement>('input,select,textarea');
+      target?.focus();
+      el.classList.add('ring-2', 'ring-amber-500', 'ring-offset-2', 'rounded-md');
+      window.setTimeout(() => el.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2', 'rounded-md'), 2500);
+    }, 150);
+  }, []);
+
+  const clearHighlightParam = () => {
+    highlightRef.current = null;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('highlight')) return;
+    url.searchParams.delete('highlight');
+    window.history.replaceState({}, '', url.toString());
+  };
+
+  const startEdit = (section: SectionKey, focus?: string, base: ProfileForm = saved) => {
+    setForm(base);
+    setErrors({});
+    setEditing(section);
+    if (focus) focusField(focus);
+  };
+
+  const cancelEdit = () => {
+    setForm(saved);
+    setErrors({});
+    setEditing(null);
+    clearHighlightParam();
+  };
+
+  // Deep link from the "complete your profile" prompts: /settings/business?highlight=pincode
+  useEffect(() => {
+    if (highlightHandled.current || !business?.id) return;
+    const h = searchParams.get('highlight');
+    if (!h) return;
+    highlightHandled.current = true;
+    const section = HIGHLIGHT_SECTION[h];
+    if (!section || (h === 'gstin' && (saved.gst_registration_type === 'unregistered' || !hasBilling))) {
+      clearHighlightParam();
+      return;
     }
-  }, [business, branch, activeBranchCount]);
+    highlightRef.current = h;
+    startEdit(section, h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, business?.id]);
 
-  // Handle URL parameter for field highlighting
   useEffect(() => {
-    const highlightParam = searchParams.get('highlight');
-    if (!highlightParam) return;
+    if (!business?.id) return;
+    const id = business.id;
+    const getJson = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    void getJson(`/api/settings/product-variants?business_id=${id}`).then((d) => {
+      if (d) setProductVariantsEnabled(!!d.product_variants_enabled);
+    });
+    void getJson(`/api/settings/item-sales-stock?business_id=${id}`).then((d) => {
+      if (d) setDefaultAllowSaleWhenOutOfStock(!!d.default_allow_sale_when_out_of_stock);
+    });
+    void getJson(`/api/settings/warehouses?business_id=${id}`).then((d) => {
+      if (!d) return;
+      setWarehousesEnabled(!!d.warehouses_enabled);
+      setAutoAssignBranchWarehouses(d.auto_assign_branch_warehouses ?? true);
+    });
+    setPosModeEnabled(localStorage.getItem('pos_mode_enabled') === 'true');
+  }, [business?.id]);
 
-    const skipGstin =
-      highlightParam === 'gstin' &&
-      ((business as { gst_registration_type?: string } | null)?.gst_registration_type === 'unregistered' ||
-        formData.gst_registration_type === 'unregistered');
+  const patchJson = async (url: string, body: Record<string, unknown>) => {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not save');
+    }
+  };
 
-    if (skipGstin || highlightParam === 'pan' || highlightParam === 'logo_url') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('highlight');
-      window.history.replaceState({}, '', url.toString());
-      setHighlightedField(null);
+  const persist = async (values: Partial<ProfileForm>) => {
+    if (!business?.id) throw new Error('Business not loaded. Refresh the page and try again.');
+    if (activeBranchCount <= 1 || !branch?.id) {
+      await patchJson(`/api/business/${business.id}`, values);
+      return;
+    }
+    const bizPart: Record<string, unknown> = {};
+    const branchPart: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(values)) {
+      (BRANCH_FIELDS.has(k as keyof ProfileForm) ? branchPart : bizPart)[k] = v;
+    }
+    if (Object.keys(branchPart).length) {
+      const multiBranch = featureRegistry.hasFeature('multi_branch');
+      const branchIsDefault = !!(branch as { is_primary?: boolean }).is_primary;
+      if (!multiBranch && !branchIsDefault) {
+        throw new Error('This outlet cannot be edited on your current plan. Switch to your default branch or upgrade for multi-branch.');
+      }
+    }
+    if (Object.keys(bizPart).length) await patchJson(`/api/business/${business.id}`, bizPart);
+    if (Object.keys(branchPart).length) {
+      await patchJson(`/api/branches/${branch.id}`, {
+        business_id: business.id,
+        updated_by_user_id: user?.id,
+        ...branchPart,
+      });
+    }
+  };
+
+  const saveSection = async (section: SectionKey) => {
+    const errs = validate(section, form, hasBilling);
+    setErrors(errs);
+    const firstError = Object.keys(errs)[0];
+    if (firstError) {
+      focusField(firstError);
       return;
     }
 
-    setHighlightedField(highlightParam);
-      // Scroll to field after a short delay to ensure DOM is ready
-      setTimeout(() => {
-        const fieldElement = fieldRefs.current[highlightParam];
-        if (fieldElement) {
-          fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Focus the input if it's an input/select element
-          if (fieldElement instanceof HTMLInputElement || fieldElement instanceof HTMLSelectElement || fieldElement instanceof HTMLTextAreaElement) {
-            fieldElement.focus();
-            // Add highlight class
-            fieldElement.classList.add('ring-4', 'ring-red-500', 'ring-offset-2');
-            // Remove highlight after 3 seconds
-            setTimeout(() => {
-              fieldElement.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2');
-            }, 3000);
-          }
-        }
-      }, 300);
-  }, [searchParams, business, formData.gst_registration_type]);
-
-  // Helper to check if a field is filled (optional GSTIN when unregistered)
-  const isFieldFilled = (fieldName: string): boolean => {
-    if (fieldName === 'gstin' && formData.gst_registration_type === 'unregistered') {
-      return true;
+    let fields = SECTION_FIELDS[section];
+    if (section === 'tax' && !hasBilling) fields = ['pan'];
+    if (section === 'about' && !hasBilling) fields = ['company_introduction'];
+    const values: Partial<ProfileForm> = {};
+    for (const k of fields) (values as Record<string, unknown>)[k] = form[k];
+    if (section === 'tax') {
+      values.gstin = form.gst_registration_type === 'unregistered' ? '' : form.gstin.trim().toUpperCase();
+      values.pan = form.pan.trim().toUpperCase();
     }
-    if (fieldName === 'pan' || fieldName === 'logo_url') {
-      return true;
+    if (section === 'export') {
+      values.iec_code = form.iec_code.trim().toUpperCase();
+      values.swift_code = form.swift_code.trim().toUpperCase();
     }
-    if (fieldName === 'address_line1') {
-      return !!formData.address_line1;
-    }
-    return !!(formData as any)[fieldName];
-  };
 
-  const wizardFieldOrder =
-    formData.gst_registration_type === 'unregistered'
-      ? ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode']
-      : ['name', 'email', 'phone', 'address_line1', 'city', 'state', 'pincode', 'gstin'];
-
-  // Get the next missing field
-  const getNextMissingField = (): string | null => {
-    const fieldOrder = wizardFieldOrder;
-    
-    if (highlightedField) {
-      const currentIndex = fieldOrder.indexOf(highlightedField);
-      // Find next missing field after current
-      for (let i = currentIndex + 1; i < fieldOrder.length; i++) {
-        const nextField = fieldOrder[i];
-        if (!isFieldFilled(nextField)) {
-          return nextField;
-        }
-      }
-    } else {
-      // Find first missing field
-      for (const field of fieldOrder) {
-        if (!isFieldFilled(field)) {
-          return field;
-        }
-      }
-    }
-    
-    return null; // All fields are filled
-  };
-
-  // Track field completion and move to next missing field
-  const checkAndMoveToNextField = () => {
-    if (!highlightedField) return;
-
-    // If current highlighted field is filled, move to next
-    if (isFieldFilled(highlightedField)) {
-      const nextField = getNextMissingField();
-      
-      if (nextField) {
-        // Show success message
-        toast.success(`${fieldLabels[highlightedField]} completed! Moving to ${fieldLabels[nextField]}...`);
-        
-        // Update URL to highlight next field
-        const url = new URL(window.location.href);
-        url.searchParams.set('highlight', nextField);
-        window.history.replaceState({}, '', url.toString());
-        setHighlightedField(nextField);
-        setNextFieldName(fieldLabels[nextField]);
-        
-        // Scroll to next field
-        setTimeout(() => {
-          const fieldElement = fieldRefs.current[nextField];
-          if (fieldElement) {
-            fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            if (fieldElement instanceof HTMLInputElement || fieldElement instanceof HTMLSelectElement || fieldElement instanceof HTMLTextAreaElement) {
-              fieldElement.focus();
-              fieldElement.classList.add('ring-4', 'ring-red-500', 'ring-offset-2');
-              setTimeout(() => {
-                fieldElement.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2');
-              }, 3000);
-            }
-          }
-        }, 300);
-      } else {
-        // All fields completed!
-        toast.success('All profile fields completed! Your profile is 100% complete.');
-        setHighlightedField(null);
-        setNextFieldName(null);
-        // Remove highlight from URL
-        const url = new URL(window.location.href);
-        url.searchParams.delete('highlight');
-        window.history.replaceState({}, '', url.toString());
-      }
-    } else {
-      // Update next field name even if current isn't filled yet
-      const nextField = getNextMissingField();
-      if (nextField) {
-        setNextFieldName(fieldLabels[nextField]);
-      }
-    }
-  };
-
-  // Update next field name when highlighted field or formData changes
-  useEffect(() => {
-    if (highlightedField) {
-      const fieldOrder = wizardFieldOrder;
-      const currentIndex = fieldOrder.indexOf(highlightedField);
-      
-      // Find next missing field after current
-      let nextField: string | null = null;
-      for (let i = currentIndex + 1; i < fieldOrder.length; i++) {
-        const field = fieldOrder[i];
-        if (!isFieldFilled(field)) {
-          nextField = field;
-          break;
-        }
-      }
-      
-      if (nextField) {
-        setNextFieldName(fieldLabels[nextField]);
-      } else {
-        setNextFieldName(null);
-      }
-    } else {
-      setNextFieldName(null);
-    }
-  }, [highlightedField, formData.name, formData.email, formData.phone, formData.address_line1, formData.city, formData.state, formData.pincode, formData.gstin, formData.gst_registration_type, formData.pan, formData.logo_url]);
-
-  const fetchProductVariantsSetting = async () => {
-    if (!business?.id) return;
-    
+    setSaving(true);
     try {
-      const res = await fetch(`/api/settings/product-variants?business_id=${business.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProductVariantsEnabled(data.product_variants_enabled || false);
+      await persist(values);
+      await refresh();
+      setEditing(null);
+
+      if (highlightRef.current) {
+        const merged = { ...saved, ...values };
+        const remaining = getProfileGaps(asProfileLike(merged), readinessContext);
+        const next = remaining[0];
+        const nextSection = next ? HIGHLIGHT_SECTION[next.highlightParam] : undefined;
+        if (next && nextSection) {
+          highlightRef.current = next.highlightParam;
+          toast.success(`Saved. Next, add ${next.label.toLowerCase()}.`);
+          startEdit(nextSection, next.highlightParam, merged);
+          return;
+        }
+        clearHighlightParam();
+        toast.success('Saved. Your profile has everything invoices need.');
+        return;
       }
+      toast.success('Saved');
     } catch (error) {
-      console.error('Failed to fetch product variants setting:', error);
+      toast.error(error instanceof Error ? error.message : 'Could not save');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const fetchItemSalesStockDefault = async () => {
-    if (!business?.id) return;
+  const uploadImage = async (file: File, kind: 'logo' | 'signature') => {
+    setUploading(kind);
     try {
-      const res = await fetch(`/api/settings/item-sales-stock?business_id=${business.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setDefaultAllowSaleWhenOutOfStock(!!data.default_allow_sale_when_out_of_stock);
-      }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('type', kind);
+      const res = await fetch('/api/upload/image', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Failed to upload ${kind}`);
+      await persist(kind === 'logo' ? { logo_url: data.url } : { signature_url: data.url });
+      await refresh();
+      toast.success(kind === 'logo' ? 'Logo updated' : 'Signature updated');
     } catch (error) {
-      console.error('Failed to fetch item sales stock default:', error);
+      toast.error(error instanceof Error ? error.message : `Failed to upload ${kind}`);
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const removeImage = async (kind: 'logo' | 'signature') => {
+    if (!confirm(kind === 'logo' ? 'Remove your logo from invoices?' : 'Remove your signature from invoices?')) return;
+    setUploading(kind);
+    try {
+      await persist(kind === 'logo' ? { logo_url: '' } : { signature_url: '' });
+      await refresh();
+      toast.success(kind === 'logo' ? 'Logo removed' : 'Signature removed');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not remove');
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const patchSetting = async (url: string, body: Record<string, unknown>) => {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ business_id: business?.id, ...body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.details || 'Failed to update setting');
+    return data;
+  };
+
+  const toggleProductVariants = async () => {
+    if (!business?.id) return;
+    setLoadingVariantsSetting(true);
+    try {
+      const next = !productVariantsEnabled;
+      const data = await patchSetting('/api/settings/product-variants', { product_variants_enabled: next });
+      setProductVariantsEnabled(!!data.product_variants_enabled);
+      if (data.warning) toast.warning(data.warning);
+      else toast.success(`Product variants ${next ? 'turned on' : 'turned off'}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update setting');
+    } finally {
+      setLoadingVariantsSetting(false);
     }
   };
 
@@ -331,253 +424,38 @@ export const BusinessProfileTab: React.FC = () => {
     if (!business?.id) return;
     setLoadingItemSalesStockSetting(true);
     try {
-      const newValue = !defaultAllowSaleWhenOutOfStock;
-      const res = await fetch('/api/settings/item-sales-stock', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          default_allow_sale_when_out_of_stock: newValue,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDefaultAllowSaleWhenOutOfStock(!!data.default_allow_sale_when_out_of_stock);
-        toast.success(
-          newValue
-            ? 'New items will default to allowing sales when out of stock (unless overridden per item).'
-            : 'New items will default to blocking sales when stock is insufficient (unless overridden per item).'
-        );
-      } else {
-        const err = await res.json();
-        toast.error(err.error || 'Failed to update setting');
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to update setting');
+      const next = !defaultAllowSaleWhenOutOfStock;
+      const data = await patchSetting('/api/settings/item-sales-stock', { default_allow_sale_when_out_of_stock: next });
+      setDefaultAllowSaleWhenOutOfStock(!!data.default_allow_sale_when_out_of_stock);
+      toast.success(
+        next
+          ? 'New items will allow sales when out of stock, unless set otherwise on the item.'
+          : 'New items will block sales when stock is short, unless set otherwise on the item.'
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update setting');
     } finally {
       setLoadingItemSalesStockSetting(false);
     }
   };
 
-  const fetchWarehousesSetting = async () => {
-    if (!business?.id) return;
-    
-    try {
-      const res = await fetch(`/api/settings/warehouses?business_id=${business.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setWarehousesEnabled(data.warehouses_enabled || false);
-        setAutoAssignBranchWarehouses(data.auto_assign_branch_warehouses ?? true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch warehouses setting:', error);
-    }
-  };
-
-  const fetchBankAccounts = async () => {
-    if (!business?.id) {
-      console.warn('[Bank Accounts] No business ID available');
-      return;
-    }
-    
-    setLoadingBankAccounts(true);
-    try {
-      console.log('[Bank Accounts] Fetching accounts for business:', business.id);
-      const res = await fetch(`/api/bank-accounts?business_id=${business.id}&user_id=${user?.id}`);
-      const data = await res.json();
-      console.log('[Bank Accounts] Fetched accounts:', data);
-      
-      if (res.ok) {
-        setBankAccounts(data.accounts || []);
-        console.log('[Bank Accounts] Updated state with', data.accounts?.length || 0, 'accounts');
-      } else {
-        console.error('[Bank Accounts] Failed to fetch:', data);
-      }
-    } catch (error) {
-      console.error('[Bank Accounts] Error fetching bank accounts:', error);
-    } finally {
-      setLoadingBankAccounts(false);
-    }
-  };
-
-  const handleBankAccountSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!business?.id) {
-      toast.error('Business ID is missing. Please refresh the page.');
-      return;
-    }
-
-    // Validate required fields
-    if (!bankAccountForm.account_name || !bankAccountForm.account_number || !bankAccountForm.bank_name) {
-      toast.warning('Please fill in all required fields: Account Name, Account Number, and Bank Name');
-      return;
-    }
-
-    try {
-      const url = '/api/bank-accounts';
-      const method = editingBankAccount ? 'PUT' : 'POST';
-      const body = editingBankAccount
-        ? { id: editingBankAccount.id, business_id: business.id, ...bankAccountForm }
-        : { business_id: business.id, ...bankAccountForm };
-
-      console.log('[Bank Account] Submitting:', { method, url, body });
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const responseData = await res.json();
-      console.log('[Bank Account] Response:', { status: res.status, data: responseData });
-      
-      if (res.ok) {
-        toast.success(`Bank account ${editingBankAccount ? 'updated' : 'added'} successfully!`);
-        setShowBankAccountForm(false);
-        setEditingBankAccount(null);
-        setBankAccountForm({
-          account_name: '',
-          account_number: '',
-          bank_name: '',
-          ifsc_code: '',
-          branch_name: '',
-          account_type: 'current',
-          is_active: true,
-          notes: ''
-        });
-        // Refresh the list
-        await fetchBankAccounts();
-      } else {
-        console.error('Bank account save failed:', responseData);
-        toast.error(`Failed to ${editingBankAccount ? 'update' : 'add'} bank account: ${responseData.error || 'Unknown error'}`);
-      }
-    } catch (error: any) {
-      console.error('Error saving bank account:', error);
-      toast.error(`Failed to save bank account: ${error.message || 'Network error'}. Please check the browser console for details.`);
-    }
-  };
-
-  const handleEditBankAccount = (account: any) => {
-    setEditingBankAccount(account);
-    setBankAccountForm({
-      account_name: account.account_name || '',
-      account_number: account.account_number || '',
-      bank_name: account.bank_name || '',
-      ifsc_code: account.ifsc_code || '',
-      branch_name: account.branch_name || '',
-      account_type: account.account_type || 'current',
-      is_active: account.is_active !== false,
-      notes: account.notes || ''
-    });
-    setShowBankAccountForm(true);
-  };
-
-  const handleDeleteBankAccount = async (id: string) => {
-    if (!business?.id) return;
-    if (!confirm('Are you sure you want to delete this bank account?')) return;
-
-    try {
-      const res = await fetch(`/api/bank-accounts?id=${id}&business_id=${business.id}`, {
-        method: 'DELETE',
-      });
-
-      if (res.ok) {
-        toast.success('Bank account deleted successfully!');
-        fetchBankAccounts();
-      } else {
-        const data = await res.json();
-        toast.error(`Failed to delete bank account: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('Error deleting bank account:', error);
-      toast.error('Failed to delete bank account');
-    }
-  };
-
-  const toggleProductVariants = async () => {
-    if (!business?.id) return;
-    
-    setLoadingVariantsSetting(true);
-    try {
-      const newValue = !productVariantsEnabled;
-      const res = await fetch('/api/settings/product-variants', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          product_variants_enabled: newValue
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setProductVariantsEnabled(data.product_variants_enabled);
-        if (data.warning) {
-          toast.warning(data.warning);
-        } else {
-          toast.success(`Product variants ${newValue ? 'enabled' : 'disabled'} successfully`);
-        }
-      } else {
-        const data = await res.json();
-        toast.error(`Failed to update setting: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('Failed to toggle product variants:', error);
-      toast.error('Failed to update setting');
-    } finally {
-      setLoadingVariantsSetting(false);
-    }
-  };
-
   const toggleWarehouses = async () => {
     if (!business?.id) return;
-    
-    const newValue = !warehousesEnabled;
-    
-    // If trying to enable, check if feature is in plan
-    if (newValue && !featureRegistry.hasFeature('multi_warehouse')) {
+    const next = !warehousesEnabled;
+    if (next && !featureRegistry.hasFeature('multi_warehouse')) {
       setShowWarehouseUpgradePrompt(true);
       return;
     }
-    
     setLoadingWarehousesSetting(true);
     try {
-      console.log(`[Warehouses Setting] Toggling to: ${newValue} (current: ${warehousesEnabled})`);
-      
-      const res = await fetch('/api/settings/warehouses', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          warehouses_enabled: newValue === true // Ensure it's a boolean
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const savedValue = data.warehouses_enabled === true;
-        setWarehousesEnabled(savedValue);
-        
-        // Verify the value was actually saved correctly
-        if (savedValue !== newValue) {
-          console.error(`[Warehouses Setting] Value mismatch: expected ${newValue}, got ${savedValue}`);
-          toast.warning(`Setting may not have been saved correctly. Expected ${newValue ? 'enabled' : 'disabled'}, but got ${savedValue ? 'enabled' : 'disabled'}`);
-        } else {
-          toast.success(`Warehouses ${newValue ? 'enabled' : 'disabled'} successfully`);
-        }
-        
-        // Refresh warehouses setting in LayoutDataContext to update sidebar without page reload
-        await refreshWarehouses();
-      } else {
-        const data = await res.json();
-        const errorMsg = data.error || data.details || 'Unknown error';
-        console.error('[Warehouses Setting] Update failed:', errorMsg);
-        toast.error(`Failed to update setting: ${errorMsg}`);
-      }
+      const data = await patchSetting('/api/settings/warehouses', { warehouses_enabled: next === true });
+      const savedValue = data.warehouses_enabled === true;
+      setWarehousesEnabled(savedValue);
+      if (savedValue !== next) toast.warning('The warehouse setting may not have saved. Refresh and check again.');
+      else toast.success(`Warehouses ${next ? 'turned on' : 'turned off'}`);
+      await refreshWarehouses();
     } catch (error) {
-      console.error('Failed to toggle warehouses:', error);
-      toast.error('Failed to update setting');
+      toast.error(error instanceof Error ? error.message : 'Failed to update setting');
     } finally {
       setLoadingWarehousesSetting(false);
     }
@@ -585,1223 +463,666 @@ export const BusinessProfileTab: React.FC = () => {
 
   const toggleAutoAssignBranchWarehouses = async () => {
     if (!business?.id) return;
-    
-    const newValue = !autoAssignBranchWarehouses;
     setLoadingAutoAssignSetting(true);
     try {
-      const res = await fetch('/api/settings/warehouses', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business_id: business.id,
-          auto_assign_branch_warehouses: newValue === true
-        }),
+      const data = await patchSetting('/api/settings/warehouses', {
+        auto_assign_branch_warehouses: !autoAssignBranchWarehouses,
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const savedValue = data.auto_assign_branch_warehouses ?? true;
-        setAutoAssignBranchWarehouses(savedValue);
-        
-        if (savedValue !== newValue) {
-          console.error(`[Auto-Assign Setting] Value mismatch: expected ${newValue}, got ${savedValue}`);
-        }
-      } else {
-        const data = await res.json();
-        const errorMsg = data.error || data.details || 'Unknown error';
-        console.error('[Auto-Assign Setting] Update failed:', errorMsg);
-        toast.error(`Failed to update setting: ${errorMsg}`);
-      }
+      setAutoAssignBranchWarehouses(data.auto_assign_branch_warehouses ?? true);
     } catch (error) {
-      console.error('Failed to toggle auto-assign setting:', error);
-      toast.error('Failed to update setting');
+      toast.error(error instanceof Error ? error.message : 'Failed to update setting');
     } finally {
       setLoadingAutoAssignSetting(false);
     }
   };
 
   const togglePosMode = () => {
-    if (typeof window !== 'undefined') {
-      const newValue = !posModeEnabled;
-      localStorage.setItem('pos_mode_enabled', newValue.toString());
-      setPosModeEnabled(newValue);
-      // Dispatch custom event so invoice page can update immediately
-      window.dispatchEvent(new Event('posModeChanged'));
-    }
+    const next = !posModeEnabled;
+    localStorage.setItem('pos_mode_enabled', String(next));
+    setPosModeEnabled(next);
+    window.dispatchEvent(new Event('posModeChanged'));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-      ...(name === 'gst_registration_type' && value === 'unregistered' ? { gstin: '' } : {}),
-    }));
-    if (name === 'gst_registration_type' && value === 'unregistered' && highlightedField === 'gstin') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('highlight');
-      window.history.replaceState({}, '', url.toString());
-      setHighlightedField(null);
-      setNextFieldName(null);
-    }
+  const cardProps = (section: SectionKey) => ({
+    isEditing: editing === section,
+    canEdit: editing === null,
+    onEdit: () => startEdit(section),
+    onCancel: cancelEdit,
+    onSave: () => void saveSection(section),
+    saving: saving && editing === section,
+  });
+
+  const ref = (name: string) => (el: HTMLElement | null) => {
+    fieldRefs.current[name] = el;
   };
 
-  const handleFieldBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>, fieldName: string) => {
-    // Check if this field is filled and move to next if it's the highlighted field
-    if (highlightedField === fieldName) {
-      const value = e.target.value.trim();
-      // If field has a value, check and move to next
-      if (value) {
-        // Small delay to ensure formData state is updated
-        setTimeout(() => {
-          checkAndMoveToNextField();
-        }, 200);
-      }
-    }
-  };
-
-  const handlePhoneFieldBlur = () => {
-    if (highlightedField !== 'phone') return;
-    setTimeout(() => {
-      checkAndMoveToNextField();
-    }, 200);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'signature') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Set uploading state
-    if (type === 'logo') {
-      setUploadingLogo(true);
-    } else {
-      setUploadingSignature(true);
-    }
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', type);
-
-      const res = await fetch('/api/upload/image', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        // Update form data with uploaded image URL
-        setFormData(prev => ({
-          ...prev,
-          [type === 'logo' ? 'logo_url' : 'signature_url']: data.url
-        }));
-        toast.success(`${type === 'logo' ? 'Logo' : 'Signature'} uploaded successfully!`);
-      } else {
-        toast.error(`Failed to upload ${type}: ${data.error}`);
-      }
-    } catch (error) {
-      console.error(`Error uploading ${type}:`, error);
-      toast.error(`Failed to upload ${type}`);
-    } finally {
-      if (type === 'logo') {
-        setUploadingLogo(false);
-      } else {
-        setUploadingSignature(false);
-      }
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!business?.id) return;
-
-    setSaving(true);
-    try {
-      const singleOutlet = activeBranchCount <= 1;
-      const multiBranch = featureRegistry.hasFeature('multi_branch');
-      const branchIsDefault = !!(branch as { is_primary?: boolean })?.is_primary;
-
-      if (singleOutlet) {
-        const res = await fetch(`/api/business/${business.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
-
-        if (res.ok) {
-          toast.success('Business profile updated successfully!');
-          if (formData.gst_registration_type === 'unregistered') {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('highlight');
-            window.history.replaceState({}, '', url.toString());
-            setHighlightedField(null);
-            setNextFieldName(null);
-            setTimeout(() => window.location.assign(`${url.pathname}${url.search}`), 800);
-          } else {
-            if (highlightedField) {
-              setTimeout(() => checkAndMoveToNextField(), 500);
-            }
-            setTimeout(() => window.location.reload(), 1000);
-          }
-        } else {
-          const data = await res.json();
-          toast.error(`Failed to update profile: ${data.error}`);
-        }
-        return;
-      }
-
-      const businessPayload: Record<string, unknown> = {
-        pan: formData.pan,
-        logo_url: formData.logo_url,
-        signature_url: formData.signature_url,
-        business_type: formData.business_type,
-        industry: formData.industry,
-        business_model: formData.business_model,
-        company_introduction: formData.company_introduction,
-        iec_code: formData.iec_code,
-        swift_code: formData.swift_code,
-        gst_registration_type: formData.gst_registration_type,
-        aggregate_turnover_above_5cr: formData.aggregate_turnover_above_5cr,
-      };
-
-      const resBusiness = await fetch(`/api/business/${business.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(businessPayload),
-      });
-
-      if (!resBusiness.ok) {
-        const data = await resBusiness.json();
-        toast.error(`Failed to update business profile: ${data.error}`);
-        return;
-      }
-
-      if (branch?.id && (multiBranch || branchIsDefault)) {
-        const branchPayload = {
-          business_id: business.id,
-          updated_by_user_id: user?.id,
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          address_line1: formData.address_line1,
-          address_line2: formData.address_line2,
-          city: formData.city,
-          state: formData.state,
-          pincode: formData.pincode,
-          gstin: formData.gstin,
-        };
-
-        const resBranch = await fetch(`/api/branches/${branch.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(branchPayload),
-        });
-
-        if (!resBranch.ok) {
-          const data = await resBranch.json();
-          toast.error(`Business saved, but branch profile failed: ${data.error}`);
-          return;
-        }
-      } else if (branch?.id && !multiBranch && !branchIsDefault) {
-        toast.error(
-          'This outlet cannot be edited on your current plan. Switch to your default branch or upgrade for multi-branch.'
-        );
-        return;
-      }
-
-      toast.success('Profile updated successfully!');
-      if (formData.gst_registration_type === 'unregistered') {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('highlight');
-        window.history.replaceState({}, '', url.toString());
-        setHighlightedField(null);
-        setNextFieldName(null);
-        setTimeout(() => window.location.assign(`${url.pathname}${url.search}`), 800);
-      } else {
-        if (highlightedField) {
-          setTimeout(() => checkAndMoveToNextField(), 500);
-        }
-        setTimeout(() => window.location.reload(), 1000);
-      }
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      toast.error('Failed to update profile');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-      </div>
-    );
-  }
+  const gstLabel = GST_TYPES.find((g) => g.value === saved.gst_registration_type)?.label ?? 'Not registered';
+  const showAbout = hasBilling || hasConnect;
+  const initials = (saved.name || 'B').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className={`${SETTINGS_CONTENT_WIDTH} ${STACK_PAGE_CLASS}`}>
-      {/* Guided Completion Banner — info semantics (blue) per color rules */}
-      {highlightedField && nextFieldName && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex-shrink-0">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                <ArrowRight className="w-5 h-5 text-white" />
-              </div>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-blue-900 mb-1">
-                Complete your profile: Fill in <strong>{nextFieldName}</strong>
-              </p>
-              <p className="text-xs text-blue-700">
-                {isFieldFilled(highlightedField) 
-                  ? `Great! ${fieldLabels[highlightedField]} is completed.` 
-                  : `Currently filling: ${fieldLabels[highlightedField]}`}
-              </p>
-            </div>
-            {isFieldFilled(highlightedField) && (
-              <div className="flex-shrink-0">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Branch Profile Notice — neutral block per color rules */}
-      {branch && activeBranchCount > 1 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6" data-tour="bp-branch-notice">
-          <div className="flex items-start gap-3">
-            <Building2 className="w-5 h-5 text-gray-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">
-                Branch Profile: {branch.name}
-              </p>
-              <p className="text-xs text-gray-700 mt-1">
-                You are viewing and editing the profile for your assigned branch. Some fields (like PAN, Logo) are business-level and cannot be changed here.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <form id="business-profile-form" onSubmit={handleSubmit} className={STACK_PAGE_CLASS}>
-      <div className="grid grid-cols-1 gap-stack-page xl:grid-cols-2 xl:items-start">
-        <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
-      {/* Basic Information */}
-      <section data-tour="bp-basic">
-        <h3 className="settings-section-title">
-          {branch && activeBranchCount > 1 ? 'Branch' : 'Business'} Information
-        </h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <div className="md:col-span-2 lg:col-span-3">
-            <Input
-              label={branch && activeBranchCount > 1 ? 'Branch Name *' : 'Business Name *'}
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              onBlur={(e) => handleFieldBlur(e, 'name')}
-              placeholder={branch && activeBranchCount > 1 ? 'Enter branch name' : 'Enter business name'}
-              required
-              inputRef={(el) => { fieldRefs.current['name'] = el; }}
-              className={highlightedField === 'name' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-            />
-          </div>
-
-          <Input
-            label="Email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleChange}
-            onBlur={(e) => handleFieldBlur(e, 'email')}
-            placeholder="business@example.com"
-            inputRef={(el) => { fieldRefs.current['email'] = el; }}
-            className={highlightedField === 'email' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-          />
-
-          <div
-            ref={(el) => {
-              fieldRefs.current['phone'] = el;
-            }}
-            className={highlightedField === 'phone' ? 'rounded-md ring-4 ring-red-500 ring-offset-2' : ''}
-          >
-            <IntlPhoneInput
-              label="Phone"
-              value={formData.phone}
-              onChange={(full) => setFormData((prev) => ({ ...prev, phone: full }))}
-              onBlur={handlePhoneFieldBlur}
-              nationalPlaceholder="Mobile number"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Business Type & Industry — billing */}
-      {hasBilling ? (
-      <section data-tour="bp-type">
-        <h3 className="settings-section-title">Business Type & Industry</h3>
-        <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <label className="type-label mb-1.5 block">Business Type</label>
-            <select
-              name="business_type"
-              value={formData.business_type}
-              onChange={handleChange}
-              className="input"
-            >
-              <option value="">Select Business Type</option>
-              <option value="retail">Retail</option>
-              <option value="wholesaler">Wholesaler</option>
-              <option value="distributor">Distributor</option>
-              <option value="manufacturer">Manufacturer</option>
-              <option value="service">Service</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="type-label mb-1.5 block">Industry</label>
-            <select
-              name="industry"
-              value={formData.industry}
-              onChange={handleChange}
-              className="input"
-            >
-              <option value="">Select Industry</option>
-              <option value="pharmaceuticals">Pharmaceuticals</option>
-              <option value="textiles">Textiles</option>
-              <option value="garments">Garments</option>
-              <option value="electronics">Electronics</option>
-              <option value="food_beverages">Food & Beverages</option>
-              <option value="automotive">Automotive</option>
-              <option value="construction">Construction</option>
-              <option value="services">Services</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="type-label mb-1.5 block">Business Model</label>
-            <select
-              name="business_model"
-              value={formData.business_model}
-              onChange={handleChange}
-              className="input"
-            >
-              <option value="">Select Business Model</option>
-              <option value="b2b">B2B (Business to Business)</option>
-              <option value="b2c">B2C (Business to Consumer)</option>
-              <option value="b2b2c">B2B2C (Business to Business to Consumer)</option>
-              <option value="export">Export</option>
-              <option value="mixed">Mixed</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Company Introduction for AI Chatbot */}
-        <div className="min-w-0">
-          <label className="type-label mb-1.5 block">
-            Company Introduction / About Us
-          </label>
-          <textarea
-            name="company_introduction"
-            value={formData.company_introduction}
-            onChange={handleChange}
-            rows={6}
-            placeholder="Describe your company, products, services, values, and unique selling points. This helps the AI chatbot answer customer questions accurately..."
-            className="input min-h-[140px] resize-y"
-          />
-          <p className="type-body-sm mt-1.5 text-text-muted">
-            This introduction will be used by the AI sales agent chatbot to answer customer questions on WhatsApp. 
-            Include details about your products, services, delivery, payment terms, and any other information that would help a sales representative.
-          </p>
-        </div>
-        </div>
-      </section>
-      ) : null}
-
-      {showSalesAiIntro && !hasBilling ? (
-      <section data-tour="bp-type">
-        <h3 className="settings-section-title">Company profile for AI</h3>
-        <div className="min-w-0">
-          <label className="type-label mb-1.5 block">Company introduction / About us</label>
-          <textarea
-            name="company_introduction"
-            value={formData.company_introduction}
-            onChange={handleChange}
-            rows={6}
-            placeholder="Describe your company, products, and services for the AI assistant..."
-            className="input min-h-[140px] resize-y"
-          />
-          <p className="type-body-sm mt-1.5 text-text-muted">
-            Used by the AI sales agent on WhatsApp to answer customer questions.
-          </p>
-        </div>
-      </section>
-      ) : null}
-
-      {hasBilling ? (
-      <section data-tour="bp-features">
-        <h3 className="settings-section-title">Product Features</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
-            <div className="flex-1">
-              <h4 className="font-medium text-text-primary mb-1">Enable Product Variants</h4>
-              <p className="text-sm text-text-secondary">
-                Enable this for businesses selling products with variants (color, size, etc.) like garments and textiles.
-                {business?.industry && business.industry !== 'textiles' && business.industry !== 'garments' && (
-                  <span className="block mt-1 text-amber-600">
-                    Note: Your industry is "{business.industry}". Product variants are typically used for textiles/garments.
-                  </span>
-                )}
-              </p>
-            </div>
-            <div className="ml-4">
-              <button
-                type="button"
-                onClick={toggleProductVariants}
-                disabled={loadingVariantsSetting}
-                className={`
-                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                  ${productVariantsEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-                  ${loadingVariantsSetting ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                <span
-                  className={`
-                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                    transition duration-200 ease-in-out
-                    ${productVariantsEnabled ? 'translate-x-5' : 'translate-x-0'}
-                  `}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
-            <div className="flex-1">
-              <h4 className="font-medium text-text-primary mb-1">Default: allow sales when out of stock</h4>
-              <p className="text-sm text-text-secondary">
-                Applies to <strong>new items</strong> that use “business default” on the item form. You can override
-                each item to always block or always allow insufficient stock for invoices.
-              </p>
-            </div>
-            <div className="ml-4">
-              <button
-                type="button"
-                onClick={toggleDefaultAllowSaleWhenOutOfStock}
-                disabled={loadingItemSalesStockSetting}
-                className={`
-                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                  ${defaultAllowSaleWhenOutOfStock ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-                  ${loadingItemSalesStockSetting ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                <span
-                  className={`
-                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                    transition duration-200 ease-in-out
-                    ${defaultAllowSaleWhenOutOfStock ? 'translate-x-5' : 'translate-x-0'}
-                  `}
-                />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
-            <div className="flex-1">
-              <h4 className="font-medium text-text-primary mb-1">Enable Warehouse</h4>
-              <p className="text-sm text-text-secondary">
-                Enable multi-warehouse/location management for inventory tracking across multiple locations.
-              </p>
-              {!featureRegistry.hasFeature('multi_warehouse') && !warehousesEnabled && (
-                <p className="text-sm text-amber-600 mt-2">
-                  This feature requires a plan upgrade. Please upgrade your plan to enable warehouses.
-                </p>
-              )}
-            </div>
-            <div className="ml-4">
-              <button
-                type="button"
-                onClick={toggleWarehouses}
-                disabled={loadingWarehousesSetting || (!featureRegistry.hasFeature('multi_warehouse') && !warehousesEnabled)}
-                className={`
-                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                  ${warehousesEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-                  ${loadingWarehousesSetting || (!featureRegistry.hasFeature('multi_warehouse') && !warehousesEnabled) ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                <span
-                  className={`
-                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                    transition duration-200 ease-in-out
-                    ${warehousesEnabled ? 'translate-x-5' : 'translate-x-0'}
-                  `}
-                />
-              </button>
-            </div>
-          </div>
-
-        {/* Auto-Assign Branch Warehouses */}
-        {warehousesEnabled && (
-          <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border md:col-span-2">
-            <div className="flex-1">
-              <h4 className="font-medium text-text-primary mb-1">Auto-Assign Branch Warehouses</h4>
-              <p className="text-sm text-text-secondary">
-                When enabled, users with branch access automatically get warehouse access for warehouses linked to that branch. 
-                When disabled, warehouse access must be explicitly assigned to each user.
-              </p>
-            </div>
-            <div className="ml-4">
-              <button
-                type="button"
-                onClick={toggleAutoAssignBranchWarehouses}
-                disabled={loadingAutoAssignSetting}
-                className={`
-                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                  ${autoAssignBranchWarehouses ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-                  ${loadingAutoAssignSetting ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                <span
-                  className={`
-                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                    transition duration-200 ease-in-out
-                    ${autoAssignBranchWarehouses ? 'translate-x-5' : 'translate-x-0'}
-                  `}
-                />
-              </button>
-            </div>
-          </div>
-        )}
-
-          <div
-            id="pos-mode"
-            data-tour="bp-pos"
-            className="scroll-mt-24 flex items-center justify-between rounded-lg border border-border bg-gray-50 p-4 dark:bg-slate-800/50 md:col-span-2"
-          >
-            <div className="flex-1">
-              <h4 className="type-label mb-1 text-text-primary">POS Mode</h4>
-              <p className="type-body-sm text-text-secondary">
-                Enable POS mode for a retail billing interface optimized for fast checkout with two-column layout and quick payment entry.
-              </p>
-            </div>
-            <div className="ml-4">
-              <button
-                type="button"
-                onClick={togglePosMode}
-                className={`
-                  relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
-                  transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-                  ${posModeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-600'}
-                `}
-              >
-                <span
-                  className={`
-                    pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
-                    transition duration-200 ease-in-out
-                    ${posModeEnabled ? 'translate-x-5' : 'translate-x-0'}
-                  `}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {showWarehouseUpgradePrompt && (
-          <UpgradePrompt
-            featureKey="settings_multi_warehouse"
-            featureName="Multi-Warehouse"
-            onClose={() => setShowWarehouseUpgradePrompt(false)}
-          />
-        )}
-      </section>
-      ) : null}
-
-        </div>
-        <div className={`min-w-0 ${STACK_PAGE_CLASS}`}>
-      {/* Address */}
-      <section data-tour="bp-address">
-        <h3 className="settings-section-title">Business Address</h3>
-        <div className={STACK_SECTION_CLASS}>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Input
-            label="Address Line 1"
-            name="address_line1"
-            value={formData.address_line1}
-            onChange={handleChange}
-            onBlur={(e) => handleFieldBlur(e, 'address_line1')}
-            placeholder="Street address, building name"
-            inputRef={(el) => { fieldRefs.current['address_line1'] = el; }}
-            className={highlightedField === 'address_line1' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-          />
-
-          <Input
-            label="Address Line 2"
-            name="address_line2"
-            value={formData.address_line2}
-            onChange={handleChange}
-            placeholder="Area, landmark"
-          />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Input
-              label="City"
-              name="city"
-              value={formData.city}
-              onChange={handleChange}
-              onBlur={(e) => handleFieldBlur(e, 'city')}
-              placeholder="City"
-              inputRef={(el) => { fieldRefs.current['city'] = el; }}
-              className={highlightedField === 'city' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-            />
-
-            <div>
-              <label className="type-label mb-1.5 block">State</label>
-              <select
-                name="state"
-                value={formData.state}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur(e, 'state')}
-                ref={(el) => { fieldRefs.current['state'] = el; }}
-                className={clsx(
-                  "input",
-                  highlightedField === 'state' ? 'ring-4 ring-red-500 ring-offset-2' : ''
-                )}
-              >
-                <option value="">Select state</option>
-                {INDIAN_STATES.map((state) => (
-                  <option key={state} value={state}>
-                    {state}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <Input
-              label="Pincode"
-              name="pincode"
-              value={formData.pincode}
-              onChange={handleChange}
-              onBlur={(e) => handleFieldBlur(e, 'pincode')}
-              placeholder="400001"
-              maxLength={6}
-              inputRef={(el) => { fieldRefs.current['pincode'] = el; }}
-              className={highlightedField === 'pincode' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* GST & Tax Details — billing */}
-      {hasBilling ? (
-      <section id="bp-gst" data-tour="bp-gst">
-        <h3 className="settings-section-title">GST & Tax Information</h3>
-        <div className={STACK_SECTION_CLASS}>
-          {/* GST Registration Type */}
-          <div>
-            <label className="type-label mb-1.5 block">
-              GST Registration Type <span className="text-error">*</span>
-            </label>
-            <select
-              name="gst_registration_type"
-              value={formData.gst_registration_type}
-              onChange={handleChange}
-              className="input"
-              required
-            >
-              <option value="regular">Regular (Normal GST)</option>
-              <option value="composition">Composition Scheme</option>
-              <option value="unregistered">Unregistered (No GSTIN)</option>
-            </select>
-            <p className="type-body-sm mt-1.5 text-text-muted">
-              <strong>Regular:</strong> Standard GST registration, can charge GST and issue Tax Invoices.<br />
-              <strong>Composition:</strong> Simplified scheme with lower tax rate, cannot charge GST, must issue Bill of Supply.<br />
-              <strong>Unregistered:</strong> No GST registration, for businesses below threshold limit.
+    <div className="w-full max-w-5xl space-y-6">
+      {hasBilling && (
+        gaps.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 dark:border-green-900/50 dark:bg-green-950/30">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600 dark:text-green-400" />
+            <p className="text-sm text-green-900 dark:text-green-200">
+              <span className="font-medium">
+                {readinessContext === 'finalize_gst_invoice' ? 'Ready for GST invoices.' : 'Ready to print bills.'}
+              </span>{' '}
+              Your name and address{readinessContext === 'finalize_gst_invoice' ? ' and GSTIN' : ''} will print on every invoice.
             </p>
-          </div>
-
-          {formData.gst_registration_type !== 'unregistered' && (
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={formData.aggregate_turnover_above_5cr}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, aggregate_turnover_above_5cr: e.target.checked }))
-                }
-              />
-              <span>
-                <span className="type-label block">Aggregate turnover above ₹5 crore (previous FY)</span>
-                <span className="type-body-sm text-text-muted">
-                  Invoices must then show 6-digit HSN codes; up to ₹5 crore, 4 digits are enough.
-                </span>
-              </span>
-            </label>
-          )}
-
-          {/* GSTIN and PAN */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {formData.gst_registration_type === 'unregistered' ? (
-              <p className="type-body-sm text-text-muted md:col-span-2">
-                GSTIN is not required for unregistered businesses. You can save without it.
-              </p>
-            ) : (
-            <Input
-              label="GSTIN"
-              name="gstin"
-              value={formData.gstin}
-              onChange={handleChange}
-              onBlur={(e) => handleFieldBlur(e, 'gstin')}
-              placeholder="27ABCDE1234F1Z5"
-              maxLength={15}
-              required={formData.gst_registration_type !== 'unregistered'}
-              inputRef={(el) => { fieldRefs.current['gstin'] = el; }}
-              className={highlightedField === 'gstin' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-            />
-            )}
-
-            <Input
-              label="PAN"
-              name="pan"
-              value={formData.pan}
-              onChange={handleChange}
-              onBlur={(e) => handleFieldBlur(e, 'pan')}
-              placeholder="ABCDE1234F"
-              maxLength={10}
-              inputRef={(el) => { fieldRefs.current['pan'] = el; }}
-              className={highlightedField === 'pan' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-            />
-          </div>
-
-          {/* Composition Scheme Warning */}
-          {formData.gst_registration_type === 'composition' && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-amber-800">
-                    ⚠️ Composition Scheme Notice
-                  </p>
-                  <p className="text-xs text-amber-700 mt-1">
-                    All your invoices will automatically be generated as <strong>Bill of Supply</strong>.
-                    You cannot charge GST or issue Tax Invoices under the Composition Scheme (Section 10 of CGST Act).
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-      ) : null}
-
-      {hasHr && !hasBilling ? (
-      <section id="bp-tax-hr" data-tour="bp-gst">
-        <h3 className="settings-section-title">Tax & compliance</h3>
-        <div className={STACK_SECTION_CLASS}>
-          <Input
-            label="PAN"
-            name="pan"
-            value={formData.pan}
-            onChange={handleChange}
-            onBlur={(e) => handleFieldBlur(e, 'pan')}
-            placeholder="ABCDE1234F"
-            maxLength={10}
-            inputRef={(el) => { fieldRefs.current['pan'] = el; }}
-            className={highlightedField === 'pan' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-          />
-          <p className="type-body-sm text-text-muted">
-            Used on payslips, Form 16, and other HR compliance documents.
-          </p>
-        </div>
-      </section>
-      ) : null}
-
-      {hasBilling ? (
-      <section data-tour="bp-export">
-        <h3 className="settings-section-title">Export & Banking Details</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="IEC Code (Import Export Code)"
-            name="iec_code"
-            value={formData.iec_code}
-            onChange={handleChange}
-            placeholder="10-digit IEC code"
-            maxLength={10}
-          />
-          <Input
-            label="SWIFT Code"
-            name="swift_code"
-            value={formData.swift_code}
-            onChange={handleChange}
-            placeholder="11-character SWIFT/BIC code"
-            maxLength={11}
-          />
-        </div>
-        <p className="text-xs text-text-muted mt-2">
-          IEC Code is mandatory for exporters. SWIFT Code is required for international wire transfers.
-        </p>
-      </section>
-      ) : null}
-
-
-      <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
-      {/* Logo */}
-      <section data-tour="bp-logo">
-        <h3 className="settings-section-title">Business Logo</h3>
-        <div className={STACK_SECTION_CLASS}>
-          {formData.logo_url && (
-            <div className="mb-4">
-              <img
-                src={formData.logo_url}
-                alt="Business Logo"
-                className="h-24 w-auto object-contain border border-border rounded-lg p-2 bg-surface"
-              />
-            </div>
-          )}
-
-          <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <Input
-                label="Logo URL"
-                name="logo_url"
-                type="url"
-                value={formData.logo_url}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur(e, 'logo_url')}
-                placeholder="https://example.com/logo.png"
-                inputRef={(el) => { fieldRefs.current['logo_url'] = el; }}
-                className={highlightedField === 'logo_url' ? 'ring-4 ring-red-500 ring-offset-2' : ''}
-              />
-            </div>
-            <div>
-              <input
-                type="file"
-                id="logo-upload"
-                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                onChange={(e) => handleFileUpload(e, 'logo')}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => document.getElementById('logo-upload')?.click()}
-                disabled={uploadingLogo}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
-              </Button>
-            </div>
-          </div>
-
-          <p className="text-xs text-text-muted">
-            Upload an image file (JPEG, PNG, GIF, WebP) up to 2MB. Logo appears on {hasBilling ? 'invoices and' : ''} HR documents.
-          </p>
-        </div>
-      </section>
-
-      {/* Signature */}
-      <section data-tour="bp-signature">
-        <h3 className="settings-section-title">Authorized Signature</h3>
-        <div className={STACK_SECTION_CLASS}>
-          {formData.signature_url && (
-            <div className="mb-4 p-4 bg-gray-50 dark:bg-slate-800/50 border border-border rounded-lg inline-block">
-              <img
-                src={formData.signature_url}
-                alt="Signature"
-                className="h-16 w-auto object-contain"
-              />
-            </div>
-          )}
-
-          <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <Input
-                label="Signature URL"
-                name="signature_url"
-                type="url"
-                value={formData.signature_url}
-                onChange={handleChange}
-                placeholder="https://example.com/signature.png"
-              />
-            </div>
-            <div>
-              <input
-                type="file"
-                id="signature-upload"
-                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                onChange={(e) => handleFileUpload(e, 'signature')}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => document.getElementById('signature-upload')?.click()}
-                disabled={uploadingSignature}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                {uploadingSignature ? 'Uploading...' : 'Upload Signature'}
-              </Button>
-            </div>
-          </div>
-
-          <p className="text-xs text-text-muted">
-            Upload your signature image. This will be displayed on invoices as authorized signatory.
-          </p>
-        </div>
-      </section>
-      </div>
-
-        </div>
-      </div>
-
-      </form>
-
-      {hasBilling ? (
-      <div className="grid grid-cols-1 gap-stack-page lg:grid-cols-2 lg:items-start">
-      {/* Bank Accounts Section - Outside main form to avoid nested forms */}
-      <section data-tour="bp-banks">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="settings-section-title mb-0">Bank Accounts</h3>
-            <p className="text-sm text-text-secondary mt-1">
-              Manage bank accounts that will appear on your invoices and documents
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setEditingBankAccount(null);
-              setBankAccountForm({
-                account_name: '',
-                account_number: '',
-                bank_name: '',
-                ifsc_code: '',
-                branch_name: '',
-                account_type: 'current',
-                is_active: true,
-                notes: ''
-              });
-              setShowBankAccountForm(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Bank Account
-          </Button>
-        </div>
-
-        {showBankAccountForm && (
-          <div className="mb-6 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-border">
-            <h4 className="font-medium text-text-primary mb-4">
-              {editingBankAccount ? 'Edit Bank Account' : 'Add New Bank Account'}
-            </h4>
-            <form 
-              onSubmit={(e) => {
-                console.log('[Bank Account] Form onSubmit triggered');
-                handleBankAccountSubmit(e);
-              }} 
-              className="space-y-4"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="Account Name *"
-                  name="account_name"
-                  value={bankAccountForm.account_name}
-                  onChange={(e) => setBankAccountForm({ ...bankAccountForm, account_name: e.target.value })}
-                  placeholder="e.g., Main Account, Salary Account"
-                  required
-                />
-                <Input
-                  label="Account Number *"
-                  name="account_number"
-                  value={bankAccountForm.account_number}
-                  onChange={(e) => setBankAccountForm({ ...bankAccountForm, account_number: e.target.value })}
-                  placeholder="Account number"
-                  required
-                />
-                <Input
-                  label="Bank Name *"
-                  name="bank_name"
-                  value={bankAccountForm.bank_name}
-                  onChange={(e) => setBankAccountForm({ ...bankAccountForm, bank_name: e.target.value })}
-                  placeholder="e.g., HDFC Bank, SBI"
-                  required
-                />
-                <Input
-                  label="IFSC Code"
-                  name="ifsc_code"
-                  value={bankAccountForm.ifsc_code}
-                  onChange={(e) => setBankAccountForm({ ...bankAccountForm, ifsc_code: e.target.value })}
-                  placeholder="11-character IFSC code"
-                  maxLength={11}
-                />
-                <Input
-                  label="Branch Name"
-                  name="branch_name"
-                  value={bankAccountForm.branch_name}
-                  onChange={(e) => setBankAccountForm({ ...bankAccountForm, branch_name: e.target.value })}
-                  placeholder="Branch location"
-                />
-                <div>
-                  <label className="type-label mb-1.5 block">Account Type</label>
-                  <select
-                    name="account_type"
-                    value={bankAccountForm.account_type}
-                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, account_type: e.target.value })}
-                    className="input"
-                  >
-                    <option value="current">Current</option>
-                    <option value="savings">Savings</option>
-                    <option value="cc">Cash Credit</option>
-                    <option value="od">Overdraft</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={bankAccountForm.is_active}
-                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, is_active: e.target.checked })}
-                    className="w-4 h-4 rounded border-border dark:border-slate-500 bg-surface text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-text-secondary">Active (will appear on invoices)</span>
-                </label>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setShowBankAccountForm(false);
-                    setEditingBankAccount(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit"
-                  onClick={(e) => {
-                    console.log('[Bank Account] Submit button clicked');
-                    // Don't prevent default - let form handle it
-                  }}
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {editingBankAccount ? 'Update' : 'Add'} Account
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {loadingBankAccounts ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
-          </div>
-        ) : bankAccounts.length === 0 ? (
-          <div className="text-center py-8 text-text-muted">
-            <Building2 className="w-12 h-12 mx-auto mb-2 text-text-muted" />
-            <p>No bank accounts added yet</p>
-            <p className="text-sm mt-1">Add a bank account to display it on your invoices</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {bankAccounts.map((account) => (
-              <div
-                key={account.id}
-                className={`p-4 rounded-lg border ${
-                  account.is_active
-                    ? 'bg-surface border-border'
-                    : 'bg-gray-50 dark:bg-slate-800/40 border-border opacity-75'
-                }`}
+          <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/30 sm:flex-row sm:items-center">
+            <AlertTriangle className="hidden h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 sm:block" />
+            <p className="flex-1 text-sm text-amber-900 dark:text-amber-200">
+              <span className="font-medium">Add {gaps.map((g) => g.label.toLowerCase()).join(', ')}</span>{' '}
+              before you print or finalize your next {readinessContext === 'finalize_gst_invoice' ? 'tax invoice' : 'bill'}.
+            </p>
+            {editing === null && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  const section = HIGHLIGHT_SECTION[gaps[0].highlightParam];
+                  if (section) startEdit(section, gaps[0].highlightParam);
+                }}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium text-text-primary">{account.account_name}</h4>
-                      {account.is_active && (
-                        <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
-                          Active
-                        </span>
-                      )}
-                      {!account.is_active && (
-                        <span className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-slate-700 text-text-secondary rounded-full">
-                          Inactive
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-text-secondary space-y-1">
-                      <p><span className="font-medium">Bank:</span> {account.bank_name}</p>
-                      <p><span className="font-medium">Account No:</span> {account.account_number}</p>
-                      {account.ifsc_code && (
-                        <p><span className="font-medium">IFSC:</span> {account.ifsc_code}</p>
-                      )}
-                      {account.branch_name && (
-                        <p><span className="font-medium">Branch:</span> {account.branch_name}</p>
-                      )}
-                      {account.account_type && (
-                        <p><span className="font-medium">Type:</span> {account.account_type}</p>
-                      )}
-                    </div>
+                Add now
+              </Button>
+            )}
+          </div>
+        )
+      )}
+
+      {isBranchView && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-gray-50 px-4 py-3 dark:border-border-dark dark:bg-slate-800/50" data-tour="bp-branch-notice">
+          <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-text-secondary" />
+          <p className="text-sm text-text-secondary">
+            <span className="font-medium text-text-primary">Editing branch: {branch?.name}.</span> Name, contact, address
+            and GSTIN apply to this branch. PAN, logo and signature apply to the whole company.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        <ProfileSection
+          id="bp-basic"
+          tour="bp-basic"
+          title={isBranchView ? 'Branch details' : 'Business details'}
+          description="Shown on invoices, quotes and messages you send to customers."
+        >
+          <EditableCard
+            title={isBranchView ? 'Branch' : 'Business'}
+            editTour="bp-save"
+            {...cardProps('basic')}
+            summary={
+              <div className="flex items-center gap-4">
+                {saved.logo_url ? (
+                  <img src={saved.logo_url} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-border object-contain p-1 dark:border-border-dark" />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-sm font-semibold text-white">
+                    {initials}
                   </div>
-                  <div className="flex gap-2 ml-4">
-                    <button
-                      type="button"
-                      onClick={() => handleEditBankAccount(account)}
-                      className="p-2 text-text-secondary hover:text-primary-600 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBankAccount(account.id)}
-                      className="p-2 text-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-text-primary">
+                    {saved.name || <span className="text-amber-700 dark:text-amber-400">Business name missing</span>}
+                  </p>
+                  <p className="truncate text-sm text-text-secondary">
+                    {[saved.email, saved.phone].filter(Boolean).join('  ·  ') || 'No email or phone yet'}
+                  </p>
                 </div>
               </div>
-            ))}
+            }
+          >
+            <Input
+              label={isBranchView ? 'Branch name *' : 'Business name *'}
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              error={errors.name}
+              inputRef={ref('name')}
+              autoComplete="organization"
+            />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Input
+                label="Email"
+                type="email"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                placeholder="accounts@yourbusiness.in"
+                inputRef={ref('email')}
+              />
+              <div ref={ref('phone')}>
+                <IntlPhoneInput
+                  label="Phone"
+                  value={form.phone}
+                  onChange={(full) => set('phone', full)}
+                  nationalPlaceholder="Mobile number"
+                />
+              </div>
+            </div>
+          </EditableCard>
+        </ProfileSection>
+
+        <ProfileSection
+          id="bp-address"
+          tour="bp-address"
+          title="Address"
+          description="Printed in the header of every invoice. GST rules require it on tax invoices."
+        >
+          <EditableCard
+            title="Registered address"
+            {...cardProps('address')}
+            summary={
+              <SummaryList
+                rows={[
+                  { label: 'Street', value: [saved.address_line1, saved.address_line2].filter(Boolean).join(', '), required: hasBilling },
+                  { label: 'City, state', value: [saved.city, saved.state].filter(Boolean).join(', '), required: hasBilling && (!saved.city || !saved.state) },
+                  { label: 'Pincode', value: saved.pincode, required: hasBilling },
+                ]}
+              />
+            }
+          >
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Input
+                label="Address line 1"
+                value={form.address_line1}
+                onChange={(e) => set('address_line1', e.target.value)}
+                placeholder="Shop / building, street"
+                inputRef={ref('address_line1')}
+                autoComplete="address-line1"
+              />
+              <Input
+                label="Address line 2"
+                value={form.address_line2}
+                onChange={(e) => set('address_line2', e.target.value)}
+                placeholder="Area, landmark"
+                autoComplete="address-line2"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Input
+                label="City"
+                value={form.city}
+                onChange={(e) => set('city', e.target.value)}
+                inputRef={ref('city')}
+                autoComplete="address-level2"
+              />
+              <div>
+                <label className="type-label mb-1.5 block">State</label>
+                <select
+                  value={form.state}
+                  onChange={(e) => set('state', e.target.value)}
+                  ref={ref('state')}
+                  className="input"
+                >
+                  <option value="">Select state</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <Input
+                label="Pincode"
+                value={form.pincode}
+                onChange={(e) => set('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="411001"
+                inputMode="numeric"
+                maxLength={6}
+                error={errors.pincode}
+                inputRef={ref('pincode')}
+                autoComplete="postal-code"
+              />
+            </div>
+          </EditableCard>
+        </ProfileSection>
+
+        {hasBilling ? (
+          <ProfileSection
+            id="bp-gst"
+            tour="bp-gst"
+            title="GST registration"
+            description="Decides whether you issue tax invoices or bills of supply, and what prints in the invoice header."
+          >
+            <EditableCard
+              title="Tax details"
+              {...cardProps('tax')}
+              summary={
+                <div className="space-y-3">
+                  <SummaryList
+                    rows={[
+                      { label: 'Registration', value: gstLabel },
+                      ...(saved.gst_registration_type !== 'unregistered'
+                        ? [{ label: 'GSTIN', value: saved.gstin, required: true }]
+                        : []),
+                      { label: 'PAN', value: saved.pan },
+                      ...(saved.gst_registration_type !== 'unregistered'
+                        ? [{ label: 'HSN digits', value: saved.aggregate_turnover_above_5cr ? '6 (turnover above ₹5 crore)' : '4 (turnover up to ₹5 crore)' }]
+                        : []),
+                    ]}
+                  />
+                  {saved.gst_registration_type === 'composition' && (
+                    <p className="text-xs text-text-secondary">
+                      Composition scheme: invoices are issued as Bill of Supply and no GST is charged.
+                    </p>
+                  )}
+                </div>
+              }
+            >
+              <div>
+                <span className="type-label mb-1.5 block">Registration type</span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {GST_TYPES.map((g) => {
+                    const active = form.gst_registration_type === g.value;
+                    return (
+                      <button
+                        key={g.value}
+                        type="button"
+                        onClick={() => {
+                          set('gst_registration_type', g.value);
+                          if (g.value === 'unregistered') setErrors((prev) => ({ ...prev, gstin: '' }));
+                        }}
+                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          active
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                            : 'border-border hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800/50'
+                        }`}
+                        aria-pressed={active}
+                      >
+                        <span className={`block text-sm font-medium ${active ? 'text-primary-700 dark:text-primary-300' : 'text-text-primary'}`}>
+                          {g.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-text-secondary">{g.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {form.gst_registration_type !== 'unregistered' && (
+                  <Input
+                    label="GSTIN *"
+                    value={form.gstin}
+                    onChange={(e) => {
+                      const v = e.target.value.toUpperCase().replace(/\s/g, '').slice(0, 15);
+                      set('gstin', v);
+                      if (v.length === 15 && !form.pan) set('pan', v.slice(2, 12));
+                    }}
+                    placeholder="27ABCDE1234F1Z5"
+                    maxLength={15}
+                    error={errors.gstin}
+                    helperText="State and PAN are read from the GSTIN."
+                    inputRef={ref('gstin')}
+                  />
+                )}
+                <Input
+                  label="PAN"
+                  value={form.pan}
+                  onChange={(e) => set('pan', e.target.value.toUpperCase().slice(0, 10))}
+                  placeholder="ABCDE1234F"
+                  maxLength={10}
+                  error={errors.pan}
+                  inputRef={ref('pan')}
+                />
+              </div>
+              {form.gst_registration_type !== 'unregistered' && (
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={form.aggregate_turnover_above_5cr}
+                    onChange={(e) => set('aggregate_turnover_above_5cr', e.target.checked)}
+                  />
+                  <span>
+                    <span className="type-label block">Turnover above ₹5 crore last financial year</span>
+                    <span className="type-body-sm text-text-muted">Invoices then need 6-digit HSN codes instead of 4.</span>
+                  </span>
+                </label>
+              )}
+            </EditableCard>
+          </ProfileSection>
+        ) : hasHr ? (
+          <ProfileSection
+            id="bp-tax-hr"
+            tour="bp-gst"
+            title="Tax details"
+            description="Used on payslips, Form 16 and other HR documents."
+          >
+            <EditableCard
+              title="PAN"
+              {...cardProps('tax')}
+              summary={<SummaryList rows={[{ label: 'PAN', value: saved.pan }]} />}
+            >
+              <Input
+                label="PAN"
+                value={form.pan}
+                onChange={(e) => set('pan', e.target.value.toUpperCase().slice(0, 10))}
+                placeholder="ABCDE1234F"
+                maxLength={10}
+                error={errors.pan}
+                inputRef={ref('pan')}
+              />
+            </EditableCard>
+          </ProfileSection>
+        ) : null}
+
+        <ProfileSection
+          id="bp-branding"
+          title="Logo and signature"
+          description={`Printed on ${hasBilling ? 'invoices and ' : ''}documents. Uploads save straight away.`}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <BrandTile
+              id="bp-logo"
+              tour="bp-logo"
+              label="Logo"
+              hint="Top of the invoice. Square PNG works best, up to 2 MB."
+              url={saved.logo_url}
+              busy={uploading === 'logo'}
+              disabled={uploading !== null}
+              onPick={(f) => void uploadImage(f, 'logo')}
+              onRemove={() => void removeImage('logo')}
+            />
+            <BrandTile
+              id="bp-signature"
+              tour="bp-signature"
+              label="Signature"
+              hint={'Above "Authorised signatory". Use a clear image on white.'}
+              url={saved.signature_url}
+              busy={uploading === 'signature'}
+              disabled={uploading !== null}
+              onPick={(f) => void uploadImage(f, 'signature')}
+              onRemove={() => void removeImage('signature')}
+            />
           </div>
+        </ProfileSection>
+
+        {hasBilling && (
+          <ProfileSection
+            id="bp-payments"
+            title="Bank and UPI"
+            description="Customers see these on invoices and payment links, so they know where to pay."
+          >
+            <BankAccountsCard businessId={business?.id} userId={user?.id} />
+            <ManualPaymentMethodsSettings businessId={business?.id ?? null} userId={user?.id ?? null} embedded />
+          </ProfileSection>
         )}
 
-        <p className="text-xs text-text-muted mt-4">
-          💡 The first active bank account will be automatically used on your invoices and documents.
-        </p>
-      </section>
+        {showAbout && (
+          <ProfileSection
+            id="bp-about"
+            tour="bp-type"
+            title="About your business"
+            description="Helps tailor reports, and gives the WhatsApp AI assistant context about what you sell."
+          >
+            <EditableCard
+              title="About"
+              {...cardProps('about')}
+              summary={
+                <div className="space-y-3">
+                  {hasBilling && (
+                    <SummaryList
+                      rows={[
+                        { label: 'Business type', value: labelOf(BUSINESS_TYPES, saved.business_type) },
+                        { label: 'Industry', value: labelOf(INDUSTRIES, saved.industry) },
+                        { label: 'Sells to', value: labelOf(BUSINESS_MODELS, saved.business_model) },
+                      ]}
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm text-text-secondary">Introduction for the AI assistant</p>
+                    <p className="mt-1 line-clamp-3 whitespace-pre-line text-sm text-text-primary">
+                      {saved.company_introduction || (
+                        <span className="text-text-muted">Not written yet. Without it, AI replies know less about your business.</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              }
+            >
+              {hasBilling && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <SelectField label="Business type" value={form.business_type} onChange={(v) => set('business_type', v)} options={BUSINESS_TYPES} />
+                  <SelectField label="Industry" value={form.industry} onChange={(v) => set('industry', v)} options={INDUSTRIES} />
+                  <SelectField label="Sells to" value={form.business_model} onChange={(v) => set('business_model', v)} options={BUSINESS_MODELS} />
+                </div>
+              )}
+              <div>
+                <label className="type-label mb-1.5 block">Introduction for the AI assistant</label>
+                <textarea
+                  value={form.company_introduction}
+                  onChange={(e) => set('company_introduction', e.target.value)}
+                  rows={5}
+                  placeholder="What you sell, delivery areas, payment terms, timings, and anything a sales person should know."
+                  className="input min-h-[120px] resize-y"
+                />
+              </div>
+            </EditableCard>
+          </ProfileSection>
+        )}
 
-      <ManualPaymentMethodsSettings
-        businessId={business?.id ?? null}
-        userId={user?.id ?? null}
-        className="w-full"
-      />
+        {hasBilling && (
+          <ProfileSection
+            id="bp-export"
+            tour="bp-export"
+            title="Exporter details"
+            description="Only needed if you sell outside India or receive international transfers."
+          >
+            <EditableCard
+              title="Export"
+              {...cardProps('export')}
+              summary={
+                saved.iec_code || saved.swift_code ? (
+                  <SummaryList
+                    rows={[
+                      { label: 'IEC', value: saved.iec_code },
+                      { label: 'SWIFT / BIC', value: saved.swift_code },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-sm text-text-muted">Not set. Leave empty if you don&apos;t export.</p>
+                )
+              }
+            >
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input
+                  label="IEC (Import Export Code)"
+                  value={form.iec_code}
+                  onChange={(e) => set('iec_code', e.target.value.toUpperCase())}
+                  placeholder="10 characters"
+                  maxLength={10}
+                  error={errors.iec_code}
+                />
+                <Input
+                  label="SWIFT / BIC"
+                  value={form.swift_code}
+                  onChange={(e) => set('swift_code', e.target.value.toUpperCase())}
+                  placeholder="HDFCINBBXXX"
+                  maxLength={11}
+                  error={errors.swift_code}
+                />
+              </div>
+            </EditableCard>
+          </ProfileSection>
+        )}
+
+        {hasBilling && (
+          <ProfileSection
+            id="bp-features"
+            tour="bp-features"
+            title="Billing preferences"
+            description="How items, stock and the invoice screen behave. Changes apply as soon as you switch them."
+          >
+            <div className="card divide-y divide-border px-4 dark:divide-border-dark md:px-5">
+              <PreferenceRow
+                label="Product variants"
+                description="Sizes, colours and other options on one item. Common for garments and textiles."
+                checked={productVariantsEnabled}
+                disabled={loadingVariantsSetting}
+                onChange={toggleProductVariants}
+              />
+              <PreferenceRow
+                label="Allow sales when out of stock"
+                description="Default for new items. You can override it on each item."
+                checked={defaultAllowSaleWhenOutOfStock}
+                disabled={loadingItemSalesStockSetting}
+                onChange={toggleDefaultAllowSaleWhenOutOfStock}
+              />
+              <PreferenceRow
+                label="Warehouses"
+                description={
+                  !featureRegistry.hasFeature('multi_warehouse') && !warehousesEnabled
+                    ? 'Track stock across several locations. Needs a plan upgrade.'
+                    : 'Track stock across several locations and move stock between them.'
+                }
+                checked={warehousesEnabled}
+                disabled={loadingWarehousesSetting}
+                onChange={toggleWarehouses}
+              />
+              {warehousesEnabled && (
+                <PreferenceRow
+                  label="Give branch staff their branch's warehouses"
+                  description="When off, assign warehouse access to each user yourself."
+                  checked={autoAssignBranchWarehouses}
+                  disabled={loadingAutoAssignSetting}
+                  onChange={toggleAutoAssignBranchWarehouses}
+                />
+              )}
+              <div id="pos-mode" data-tour="bp-pos" className="scroll-mt-24">
+                <PreferenceRow
+                  label="POS mode"
+                  description="A faster two-column invoice screen for counter billing. Applies on this device."
+                  checked={posModeEnabled}
+                  onChange={togglePosMode}
+                />
+              </div>
+            </div>
+            {showWarehouseUpgradePrompt && (
+              <UpgradePrompt
+                featureKey="settings_multi_warehouse"
+                featureName="Multi-Warehouse"
+                onClose={() => setShowWarehouseUpgradePrompt(false)}
+              />
+            )}
+          </ProfileSection>
+        )}
       </div>
-      ) : null}
-
-      <SettingsFloatingSaveBar tourAnchor="bp-save">
-        <Button type="submit" form="business-profile-form" disabled={saving} className="w-full sm:w-auto">
-          <Save className="w-4 h-4 mr-2" />
-          {saving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </SettingsFloatingSaveBar>
     </div>
   );
 };
 
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: readonly (readonly [string, string])[];
+}) {
+  return (
+    <div>
+      <label className="type-label mb-1.5 block">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="input">
+        <option value="">Select</option>
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>{l}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function PreferenceRow({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <div className="py-4">
+      <Switch label={label} description={description} checked={checked} disabled={disabled} onChange={() => onChange()} />
+    </div>
+  );
+}
+
+function BrandTile({
+  id,
+  tour,
+  label,
+  hint,
+  url,
+  busy,
+  disabled,
+  onPick,
+  onRemove,
+}: {
+  id: string;
+  tour: string;
+  label: string;
+  hint: string;
+  url: string;
+  busy: boolean;
+  disabled: boolean;
+  onPick: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div id={id} data-tour={tour} className="card scroll-mt-24 flex items-center gap-4 p-4">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-white dark:border-border-dark">
+        {url ? (
+          <img src={url} alt={label} className="max-h-[4.5rem] max-w-[4.5rem] object-contain" />
+        ) : (
+          <ImagePlus className="h-6 w-6 text-text-muted" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-text-primary">{label}</p>
+        <p className="mt-0.5 text-xs text-text-secondary">{hint}</p>
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) onPick(file);
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            isLoading={busy}
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+          >
+            {!busy && <Upload className="mr-1.5 h-3.5 w-3.5" />}
+            {url ? 'Replace' : 'Upload'}
+          </Button>
+          {url && (
+            <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onRemove}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
