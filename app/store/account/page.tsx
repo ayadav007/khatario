@@ -6,6 +6,8 @@ import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
 import { useStore } from '@/lib/store/store-context';
 import { storePhoneDigits } from '@/lib/store/store-phone';
 import { sanitizeStoreTheme } from '@/lib/store/store-theme';
+import { OrderTimeline, type TimelineEvent } from '@/components/orders/OrderTimeline';
+import { FULFILMENT_STATUS_LABEL, isFulfilmentStatus } from '@/lib/fulfilment/rules';
 
 type AccountOrder = {
   id: string;
@@ -13,7 +15,14 @@ type AccountOrder = {
   status: string;
   payment_status: string;
   grand_total: number;
+  delivery_mode?: string | null;
   tracking_url?: string | null;
+  awb?: string | null;
+  partner_name?: string | null;
+  delivery_status?: string | null;
+  pickup_code?: string | null;
+  track_url?: string | null;
+  timeline?: TimelineEvent[];
 };
 
 export default function StoreAccountPage() {
@@ -72,16 +81,40 @@ export default function StoreAccountPage() {
             <ul className="space-y-3">
               {orders.map((o) => (
                 <li key={o.id} className="rounded-xl border bg-white p-4">
-                  <p className="font-medium">{o.order_number}</p>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-medium">{o.order_number}</p>
+                    <p className="text-sm text-gray-700">₹{Number(o.grand_total).toLocaleString('en-IN')}</p>
+                  </div>
                   <p className="text-sm text-gray-500">
-                    {o.status} · {o.payment_status} · ₹
-                    {Number(o.grand_total).toLocaleString('en-IN')}
+                    {isFulfilmentStatus(o.delivery_status) ? FULFILMENT_STATUS_LABEL[o.delivery_status] : o.status} ·{' '}
+                    {o.payment_status.replace(/_/g, ' ')}
                   </p>
-                  {o.tracking_url ? (
-                    <a className="text-sm" style={{ color: accent }} href={o.tracking_url}>
-                      Track
-                    </a>
+                  {o.pickup_code ? (
+                    <p className="mt-2 text-sm">
+                      Pickup code: <span className="font-mono font-bold tracking-widest">{o.pickup_code}</span>
+                    </p>
                   ) : null}
+                  {o.timeline && o.timeline.length > 0 ? (
+                    <div className="mt-3">
+                      <OrderTimeline
+                        events={o.timeline}
+                        current={o.delivery_status ?? null}
+                        pickup={o.delivery_mode === 'pickup'}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                    {o.track_url ? (
+                      <a style={{ color: accent }} href={o.track_url}>
+                        Order status
+                      </a>
+                    ) : null}
+                    {o.tracking_url ? (
+                      <a style={{ color: accent }} href={o.tracking_url} target="_blank" rel="noopener noreferrer">
+                        Courier tracking{o.awb ? ` (${o.awb})` : ''}
+                      </a>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>

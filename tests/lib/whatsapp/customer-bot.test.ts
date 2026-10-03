@@ -140,8 +140,9 @@ describe('isolation', () => {
 
 describe('order status', () => {
   const order = {
-    order_number: 'SO-1042', status: 'ready', payment_status: 'paid', grand_total: '1250.00', delivery_mode: 'pickup',
-    tracking_url: null, created_at: '2026-10-01T06:00:00Z', items: 'Hair Oil x2',
+    order_number: 'SO-1042', payment_status: 'paid', amount: '1250.00', delivery_status: 'ready_for_pickup',
+    pickup_code: '4821', tracking_url: null, created_at: '2026-10-01T06:00:00Z', items: 'Hair Oil x2',
+    public_token: 'abcdefghijklmnopqrstuvwx',
   };
 
   it('recognises order questions but not product or price questions', () => {
@@ -153,23 +154,51 @@ describe('order status', () => {
   });
 
   it('formats a readable status line', () => {
-    expect(formatOrderStatus(order)).toBe('Order SO-1042 (1 Oct): ready for pickup. Total ₹1,250, paid.\nItems: Hair Oil x2');
+    expect(formatOrderStatus(order)).toBe(
+      'Order SO-1042 (1 Oct): ready for pickup. Total ₹1,250, paid.\nItems: Hair Oil x2\nPickup code: 4821',
+    );
   });
 
-  it("looks up only this business's orders for the sender's own phone", async () => {
+  it('shows the courier, rider and links only while the parcel is moving', () => {
+    const text = formatOrderStatus(
+      {
+        ...order, delivery_status: 'out_for_delivery', payment_status: 'unpaid', cod_amount: '1250', partner_name: 'Delhivery',
+        awb: 'AWB123', rider_name: 'Ramesh', rider_phone: '9876543210', tracking_url: 'https://www.delhivery.com/track/package/AWB123',
+      },
+      'https://khatario.com/track/abc',
+    );
+    expect(text).toContain('out for delivery. Total ₹1,250, cash on delivery.');
+    expect(text).toContain('Courier: Delhivery, tracking no. AWB123');
+    expect(text).toContain('Delivery partner: Ramesh 9876543210');
+    expect(text).toContain('Order status: https://khatario.com/track/abc');
+    expect(text).toContain('Courier tracking: https://www.delhivery.com/track/package/AWB123');
+    expect(text).not.toContain('Pickup code');
+  });
+
+  it("looks up only this business's orders, from every channel, for the sender's own phone", async () => {
     mockQueryRows.mockResolvedValueOnce([order]);
     const text = await orderStatusContext(BIZ_A, '919811111111', 'where is my order SO-1042');
     const [sql, params] = mockQueryRows.mock.calls[0];
-    expect(sql).toContain('o.business_id = $1');
-    expect(sql).toContain("right(regexp_replace(o.customer_phone");
+    expect(sql).toContain('FROM order_hub h');
+    expect(sql).toContain('h.business_id = $1');
+    expect(sql).toContain("right(regexp_replace(h.customer_phone");
     expect(params).toEqual([BIZ_A, '9811111111', 'SO-1042']);
     expect(text).toContain('SO-1042');
+    expect(text).toContain('/track/abcdefghijklmnopqrstuvwx');
+  });
+
+  it('accepts a typed bill or WhatsApp order number', async () => {
+    mockQueryRows.mockResolvedValue([]);
+    await orderStatusContext(BIZ_A, '919811111111', 'status of SO-INV-0007');
+    expect(mockQueryRows.mock.calls[0][1][2]).toBe('SO-INV-0007');
+    await orderStatusContext(BIZ_A, '919811111111', 'track my order INV/25-26/0012');
+    expect(mockQueryRows.mock.calls[1][1][2]).toBe('INV/25-26/0012');
   });
 
   it('does not reveal another number’s order when the typed number does not match', async () => {
     mockQueryRows.mockResolvedValueOnce([]);
     const text = await orderStatusContext(BIZ_A, '919822222222', 'track SO-1042');
-    expect(text).toContain('No online-store order SO-1042');
+    expect(text).toContain('No order SO-1042');
   });
 
   it('skips the lookup for non-order messages', async () => {

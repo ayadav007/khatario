@@ -28,6 +28,8 @@ import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { InvoiceDetailPanel } from '@/components/invoices/InvoiceDetailPanel';
 import { clsx } from 'clsx';
 import { SubscriptionUsageBanner } from '@/components/subscription/SubscriptionUsageBanner';
+import { ChannelBadge } from '@/components/orders/ChannelBadge';
+import { CHANNEL_LABEL, INVOICE_CHANNELS, isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 
 type InvoiceStatusFilter = 'all' | 'draft' | 'final' | 'paid' | 'unpaid' | 'cancelled';
 
@@ -68,6 +70,10 @@ function InvoicesPageContent() {
     }
     return 'all';
   });
+  const [channelFilter, setChannelFilter] = useState<InvoiceChannel | 'all'>(() => {
+    const c = searchParams.get('channel');
+    return isInvoiceChannel(c) ? c : 'all';
+  });
   const [page, setPage] = useState(1);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
@@ -94,8 +100,9 @@ function InvoicesPageContent() {
     ) {
       p.status = statusFilter;
     }
+    if (channelFilter !== 'all') p.channel = channelFilter;
     return p;
-  }, [searchParams, isPrimaryAdmin, statusFilter]);
+  }, [searchParams, isPrimaryAdmin, statusFilter, channelFilter]);
 
   const scopeAllBranches =
     isPrimaryAdmin &&
@@ -136,6 +143,9 @@ function InvoicesPageContent() {
         return true;
       });
     }
+    if (channelFilter !== 'all') {
+      list = list.filter((i) => (i.channel || 'manual') === channelFilter);
+    }
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const agingMin = urlParams.get('aging_days_min');
@@ -155,7 +165,7 @@ function InvoicesPageContent() {
       }
     }
     return list;
-  }, [allInvoices, search, statusFilter]);
+  }, [allInvoices, search, statusFilter, channelFilter]);
 
   const paginatedInvoices = useMemo(() => {
     const start = (page - 1) * 25;
@@ -166,7 +176,7 @@ function InvoicesPageContent() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, channelFilter]);
 
   useEffect(() => {
     if (selectedInvoiceId && !allInvoices.some((i) => i.id === selectedInvoiceId)) {
@@ -236,6 +246,19 @@ function InvoicesPageContent() {
               <option value="unpaid">Unpaid</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <select
+              className="input w-auto text-sm"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value as InvoiceChannel | 'all')}
+              aria-label="Source"
+            >
+              <option value="all">All sources</option>
+              {INVOICE_CHANNELS.map((c) => (
+                <option key={c} value={c}>
+                  {CHANNEL_LABEL[c]}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </Card>
@@ -249,6 +272,19 @@ function InvoicesPageContent() {
           className="input pl-10 w-full h-12 rounded-xl"
         />
       </div>
+      <select
+        className="input md:hidden mb-3 w-full h-11 rounded-xl text-sm"
+        value={channelFilter}
+        onChange={(e) => setChannelFilter(e.target.value as InvoiceChannel | 'all')}
+        aria-label="Source"
+      >
+        <option value="all">All sources</option>
+        {INVOICE_CHANNELS.map((c) => (
+          <option key={c} value={c}>
+            {CHANNEL_LABEL[c]}
+          </option>
+        ))}
+      </select>
     </>
   );
 
@@ -366,7 +402,10 @@ function InvoicesPageContent() {
                         className="cursor-pointer border-b border-border last:border-0 transition-colors duration-150 ease-out hover:bg-slate-50 hover:shadow-[inset_3px_0_0_0_rgb(191_219_254)] dark:hover:bg-slate-700/60 dark:hover:shadow-[inset_3px_0_0_0_rgba(56,189,248,0.45)]"
                         onClick={() => setSelectedInvoiceId(invoice.id)}
                       >
-                        <td className="table-cell text-left py-4 px-6 font-semibold text-text-primary">{invoice.invoice_number}</td>
+                        <td className="table-cell text-left py-4 px-6 font-semibold text-text-primary">
+                          <div>{invoice.invoice_number}</div>
+                          <ChannelBadge channel={invoice.channel} className="mt-1" />
+                        </td>
                         <td className="table-cell text-left py-4 px-6 text-text-secondary">{invoice.customer_name || 'Cash Sale'}</td>
                         <td className="table-cell text-left py-4 px-6 text-text-muted text-xs">
                           {invoice.invoice_date ? format(new Date(invoice.invoice_date), 'dd MMM yyyy') : '-'}
@@ -495,6 +534,7 @@ function InvoicesPageContent() {
                       <div className="flex min-w-0 flex-wrap items-center gap-1">
                         <StatusBadge status={invoice.status} className="px-2 py-0 text-2xs" />
                         <StatusBadge status={invoice.payment_status || 'unpaid'} className="px-2 py-0 text-2xs" />
+                        <ChannelBadge channel={invoice.channel} />
                       </div>
 
                       <div className="flex shrink-0 items-center gap-1">

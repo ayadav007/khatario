@@ -346,6 +346,24 @@ export async function sendVideoMessage(input: {
   });
 }
 
+/** PDF or other file; WhatsApp shows `filename` to the recipient. At most 100 MB. */
+export async function sendDocumentMessage(input: {
+  businessId?: string | null;
+  to: string;
+  media: MediaRef;
+  filename: string;
+  caption?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, {
+    type: 'document',
+    document: {
+      ...input.media,
+      filename: clip(input.filename, 240),
+      ...(input.caption?.trim() ? { caption: clip(input.caption, WA_LIMITS.caption) } : {}),
+    },
+  });
+}
+
 async function resolveAppId(token: string): Promise<string> {
   const fromEnv = process.env.META_WA_APP_ID?.trim();
   if (fromEnv) return fromEnv;

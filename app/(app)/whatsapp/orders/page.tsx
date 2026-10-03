@@ -186,6 +186,9 @@ export default function WhatsAppOrdersPage() {
             <p className="text-gray-600">
               Verify payments from the WhatsApp AI agent: online checkout updates automatically when your payment provider confirms; manual UPI can use a screenshot.
             </p>
+            <a href="/orders?channel=whatsapp" className="mt-1 inline-block text-sm text-primary hover:underline">
+              Paid orders, dispatch and delivery are in Orders &amp; delivery →
+            </a>
           </div>
           <Button onClick={fetchOrders} variant="secondary" disabled={loading}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

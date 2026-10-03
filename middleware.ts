@@ -83,6 +83,7 @@ const PUBLIC_PATHS = new Set([
 
 function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/i/')) return true;
+  if (pathname.startsWith('/track/')) return true;
   if (pathname.startsWith('/portal/')) return true;
   return false;
 }

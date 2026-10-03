@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { clientInvoiceChannel, isInvoiceChannel } from '@/lib/invoices/channel';
 import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/line-gst';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
@@ -163,6 +164,12 @@ export async function GET(request: NextRequest) {
       params.push(accessibleBranchIds);
     }
     // Admin users with no branchId filter: Show all branches (no additional WHERE clause)
+
+    const channelFilter = searchParams.get('channel');
+    if (isInvoiceChannel(channelFilter)) {
+      sql += ` AND i.channel = $${params.length + 1}`;
+      params.push(channelFilter);
+    }
 
     const customerFilter = searchParams.get('customer_id');
     if (customerFilter) {
@@ -1742,6 +1749,14 @@ export async function POST(request: NextRequest) {
         invoice.id,
       ]);
       invoice.prices_include_gst = pricesIncludeGst;
+    }
+
+    if (clientInvoiceChannel((body as { channel?: unknown }).channel) === 'counter') {
+      await client.query(`UPDATE invoices SET channel = 'counter' WHERE id = $1 AND business_id = $2`, [
+        invoice.id,
+        business_id,
+      ]);
+      invoice.channel = 'counter';
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'custom_fields')) {

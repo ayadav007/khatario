@@ -515,6 +515,7 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/customers', label: 'Customers', module: 'customers', tourId: 'nav-customers' },
         { href: '/invoices', label: 'All Invoices', module: 'invoices', tourId: 'nav-invoices' },
+        { href: '/orders', label: 'Orders & Delivery', module: 'invoices' },
         { href: '/estimates', label: 'Quotations', module: 'invoices' },
         { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
         { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices' },

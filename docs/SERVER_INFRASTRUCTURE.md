@@ -184,13 +184,17 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 0 9 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
+0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
 5 9 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
+0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
 ```
+
+`/api/cron/order-dispatch-alerts` WhatsApps the owner when paid orders have waited longer than the dispatch time set on the Orders page (only for businesses that switched the alert on). Each business gets at most one alert every 20 hours, so the hourly schedule is safe.
 
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
 

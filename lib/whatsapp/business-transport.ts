@@ -1,5 +1,12 @@
 import { query } from '@/lib/db';
-import { getMetaWaConfig, sendTemplateMessage, sendTextMessage, type GraphComponent } from '@/lib/meta-whatsapp';
+import {
+  getMetaWaConfig,
+  sendDocumentMessage,
+  sendTemplateMessage,
+  sendTextMessage,
+  uploadMedia,
+  type GraphComponent,
+} from '@/lib/meta-whatsapp';
 
 export type BusinessTransport = 'cloud' | 'baileys';
 
@@ -48,6 +55,45 @@ export async function sendBusinessText(
   }
   const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
   const result: unknown = await sendWhatsAppMessage(businessId, `${digits}@s.whatsapp.net`, body);
+  const messageId = typeof result === 'string' ? result : null;
+  await recordOutbound('baileys', businessId, messageId, digits);
+  return { transport, messageId };
+}
+
+/** A PDF from the business's own number; same 24-hour window rule as free-form text on Cloud API. */
+export async function sendBusinessPdf(
+  businessId: string,
+  to: string,
+  pdf: { buffer: Buffer; filename: string; caption?: string },
+): Promise<{ transport: BusinessTransport; messageId: string | null }> {
+  const digits = to.replace(/\D/g, '');
+  const caption = pdf.caption ? `${ASSISTANT_MARKER}${pdf.caption}` : undefined;
+  const transport = await businessTransport(businessId);
+  if (transport === 'cloud') {
+    const mediaId = await uploadMedia({
+      businessId,
+      buffer: pdf.buffer,
+      mimeType: 'application/pdf',
+      filename: pdf.filename,
+    });
+    const { messageId } = await sendDocumentMessage({
+      businessId,
+      to: digits,
+      media: { id: mediaId },
+      filename: pdf.filename,
+      caption,
+    });
+    await recordOutbound('cloud', businessId, messageId, digits);
+    return { transport, messageId };
+  }
+  const { sendWhatsAppMessage } = await import('@/lib/whatsapp');
+  const result: unknown = await sendWhatsAppMessage(
+    businessId,
+    `${digits}@s.whatsapp.net`,
+    caption ?? ASSISTANT_MARKER,
+    pdf.buffer,
+    'document',
+  );
   const messageId = typeof result === 'string' ? result : null;
   await recordOutbound('baileys', businessId, messageId, digits);
   return { transport, messageId };

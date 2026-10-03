@@ -11,6 +11,8 @@ import {
   type StoreOrderStatus,
 } from './fulfillment-rules';
 import { hashStoreWebhookToken, type StoreFulfillmentStatus } from './delivery/webhooks';
+import { syncStoreOrderFulfilment, type FulfilmentChange } from '@/lib/fulfilment/service';
+import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
 
 export type StoreOrderLifecycleResult =
   | {
@@ -19,6 +21,7 @@ export type StoreOrderLifecycleResult =
       to: StoreOrderStatus;
       stockRestored: boolean;
       shipmentId: string | null;
+      fulfilment: FulfilmentChange;
     }
   | {
       ok: false;
@@ -45,6 +48,8 @@ export interface StoreOrderTransitionInput {
   systemActor?: typeof SHIPROCKET_WEBHOOK_ACTOR;
   /** Kept so older callers compile. Shelf stock is no longer added back on cancel. */
   restoreStockOnCancel?: boolean;
+  /** The caller syncs the delivery record itself (with a finer courier status). */
+  skipFulfilmentSync?: boolean;
 }
 
 /** Per-business SO-0001 series. Must run inside the transaction that inserts the order. */
@@ -150,7 +155,42 @@ export async function transitionStoreOrderInTransaction(
     [input.to, input.cancelledReason ?? null, input.dispatchMode ?? null, input.orderId, input.businessId],
   );
 
-  return { ok: true, from: order.status, to: input.to, stockRestored, shipmentId: order.shipment_id };
+  const fulfilment = input.skipFulfilmentSync
+    ? null
+    : await syncStoreOrderFulfilment(client, {
+        businessId: input.businessId,
+        storeOrderId: input.orderId,
+        actorType: input.systemActor ? 'webhook' : 'staff',
+        actorUserId: input.systemActor ? null : input.actorUserId ?? null,
+        note: input.to === 'cancelled' ? input.cancelledReason ?? null : null,
+      });
+
+  return { ok: true, from: order.status, to: input.to, stockRestored, shipmentId: order.shipment_id, fulfilment };
+}
+
+/** Copies tracking details added after a transition (courier booking, AWB scan) onto the delivery record. */
+export async function syncStoreFulfilment(
+  businessId: string,
+  orderId: string,
+  actorUserId?: string | null,
+): Promise<FulfilmentChange> {
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const change = await syncStoreOrderFulfilment(client, {
+      businessId,
+      storeOrderId: orderId,
+      actorType: 'staff',
+      actorUserId: actorUserId ?? null,
+    });
+    await client.query('COMMIT');
+    return change;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function transitionStoreOrder(
@@ -181,7 +221,7 @@ export async function resolveBusinessIdForShiprocketToken(token: string): Promis
 
 export type ShiprocketTrackingOutcome =
   | { outcome: 'not_found' }
-  | { outcome: 'unchanged' | 'updated'; orderId: string }
+  | { outcome: 'unchanged' | 'updated'; orderId: string; fulfilment?: FulfilmentChange }
   | { outcome: 'rejected'; orderId: string; code: string };
 
 /** Applies a verified Shiprocket tracking event to one order of `businessId` only. */
@@ -190,6 +230,7 @@ export async function applyShiprocketTrackingUpdate(input: {
   awb: string;
   orderRef: string;
   status: StoreFulfillmentStatus;
+  fulfilmentStatus?: FulfilmentStatus | null;
 }): Promise<ShiprocketTrackingOutcome> {
   const client = await getPool().connect();
   try {
@@ -210,7 +251,7 @@ export async function applyShiprocketTrackingUpdate(input: {
       return { outcome: 'not_found' };
     }
 
-    let outcome: ShiprocketTrackingOutcome = { outcome: 'unchanged', orderId: order.id };
+    let outcome: { outcome: 'unchanged' | 'updated'; orderId: string } = { outcome: 'unchanged', orderId: order.id };
     if (order.status !== input.status) {
       const moved = await transitionStoreOrderInTransaction(client, {
         businessId: input.businessId,
@@ -218,6 +259,7 @@ export async function applyShiprocketTrackingUpdate(input: {
         to: input.status,
         restoreStockOnCancel: false,
         systemActor: input.status === 'cancelled' ? SHIPROCKET_WEBHOOK_ACTOR : undefined,
+        skipFulfilmentSync: true,
       });
       if (!moved.ok) {
         await client.query('ROLLBACK');
@@ -239,8 +281,16 @@ export async function applyShiprocketTrackingUpdate(input: {
         input.businessId,
       ],
     );
+    const fulfilment = await syncStoreOrderFulfilment(client, {
+      businessId: input.businessId,
+      storeOrderId: order.id,
+      actorType: 'webhook',
+      override: input.fulfilmentStatus ?? null,
+      note: 'Courier update',
+    });
     await client.query('COMMIT');
-    return outcome;
+    if (fulfilment && outcome.outcome === 'unchanged') outcome = { outcome: 'updated', orderId: order.id };
+    return { ...outcome, fulfilment };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;

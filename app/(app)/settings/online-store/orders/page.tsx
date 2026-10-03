@@ -256,6 +256,9 @@ export default function StoreOrdersPage() {
       description="Pack by scan, print the slip, then scan the courier AWB before handover."
       icon={ShoppingBag}
     >
+      <a href="/orders?channel=online_store" className="mb-3 inline-block text-sm text-primary hover:underline">
+        See store, WhatsApp and counter orders together, with delivery tracking, in Orders &amp; delivery →
+      </a>
       <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">

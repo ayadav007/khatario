@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
-import { resolveDeliveryProvider } from '@/lib/store/delivery';
 import { isStoreOrderStatus } from '@/lib/store/fulfillment-rules';
-import { transitionStoreOrder } from '@/lib/store/order-lifecycle';
+import {
+  applyStoreOrderStatus,
+  syncStoreFulfilmentQuietly,
+  type StoreDispatchMode,
+} from '@/lib/store/apply-store-status';
 import { accountOutstandingStoreOrders, createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
 import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
 import { collectStoreOrderCash, StoreCashCollectError } from '@/lib/store/store-receipt';
-import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
 
 export const dynamic = 'force-dynamic';
@@ -209,6 +211,7 @@ export async function PATCH(request: NextRequest) {
       }
       throw err;
     }
+    await syncStoreFulfilmentQuietly(businessId, orderId, actorUserId);
     const detail = await loadOrder(orderId, businessId);
     return NextResponse.json({ success: true, kind: 'cash', ...detail });
   }
@@ -228,14 +231,14 @@ export async function PATCH(request: NextRequest) {
   }
 
   const actorUserId = getAuthenticatedUserId(request);
-  let moved;
+  let applied;
   try {
-    moved = await transitionStoreOrder({
+    applied = await applyStoreOrderStatus({
       businessId,
       orderId,
       to: status,
       cancelledReason: typeof cancelled_reason === 'string' ? cancelled_reason : null,
-      dispatchMode,
+      dispatchMode: dispatchMode as StoreDispatchMode | null,
       actorUserId,
     });
   } catch (error) {
@@ -244,45 +247,12 @@ export async function PATCH(request: NextRequest) {
     }
     throw error;
   }
+  const { moved, invoiceError } = applied;
   if (!moved.ok) {
     return NextResponse.json(
       { error: moved.error, code: moved.code, current_status: moved.from ?? null },
       { status: moved.status },
     );
-  }
-
-  if (status === 'cancelled' && moved.shipmentId && moved.shipmentId !== 'self') {
-    try {
-      const provider = await resolveDeliveryProvider(businessId);
-      await provider.cancelShipment?.(moved.shipmentId);
-    } catch (err) {
-      console.error('[store cancel shipment]', err);
-    }
-  }
-
-  let invoiceError: string | null = null;
-  if (status === 'confirmed') {
-    try {
-      await createInvoiceForStoreOrder(orderId, businessId, getAuthenticatedUserId(request));
-    } catch (err) {
-      console.error('[store invoice on confirm]', err);
-      invoiceError = err instanceof Error ? err.message : 'The sale could not be posted to the accounts';
-    }
-  }
-
-  if (status === 'ready') {
-    if (dispatchMode === 'self' || dispatchMode === 'pickup') {
-      await markSelfDispatch(orderId, businessId);
-      if (dispatchMode === 'pickup') {
-        await query(
-          `UPDATE store_orders SET dispatch_mode = 'pickup', updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 AND business_id = $2`,
-          [orderId, businessId],
-        );
-      }
-    } else {
-      await bookStoreCourierIfNeeded(orderId, businessId);
-    }
   }
 
   const detail = await loadOrder(orderId, businessId);
@@ -400,6 +370,7 @@ async function handleScan(businessId: string, body: Record<string, unknown>) {
        WHERE id = $2 AND business_id = $3`,
       [code, awbTarget, businessId],
     );
+    await syncStoreFulfilmentQuietly(businessId, awbTarget, null);
     const detail = await loadOrder(awbTarget, businessId);
     return NextResponse.json({ success: true, kind: 'awb', ...detail });
   }

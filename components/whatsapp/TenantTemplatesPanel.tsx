@@ -126,7 +126,7 @@ export function TenantTemplatesPanel() {
   };
 
   const groups = useMemo(() => {
-    const out: Record<TenantWaEventGroup, TenantWaEvent[]> = { store: [], merchant: [], billing: [] };
+    const out: Record<TenantWaEventGroup, TenantWaEvent[]> = { store: [], delivery: [], merchant: [], billing: [] };
     for (const e of TENANT_WA_EVENTS) out[e.group].push(e);
     return out;
   }, []);

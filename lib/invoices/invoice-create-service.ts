@@ -17,6 +17,7 @@ import {
 import { deriveInvoicePaymentStatus } from '@/lib/invoice-payment-status';
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { reserveDocumentNumber } from '@/lib/invoices/document-counter';
+import { isInvoiceChannel, type InvoiceChannel } from '@/lib/invoices/channel';
 import { computeLineGst, isZeroRatedWithoutTax } from '@/lib/invoices/line-gst';
 import { checkInvoiceCompliance } from '@/lib/invoices/invoice-compliance';
 import { resolveSupplierRegistration, stateCodeFromName } from '@/lib/gst/registration';
@@ -87,6 +88,9 @@ export interface CreateInvoiceInput {
   /** Client TMP reference — never used as legal invoice number on replay */
   offline_reference_number?: string | null;
   invoice_number?: string | null;
+  /** Where the sale came from; defaults to 'manual'. Callers must not pass a browser value unchecked. */
+  channel?: InvoiceChannel;
+  sales_order_id?: string | null;
 }
 
 export interface CreateInvoiceOptions {
@@ -558,6 +562,16 @@ export async function createInvoiceInTransaction(
   if (body.prices_include_gst === true) {
     await client.query('UPDATE invoices SET prices_include_gst = true WHERE id = $1', [invoiceId]);
     invoice.prices_include_gst = true;
+  }
+  const channel: InvoiceChannel = isInvoiceChannel(body.channel) ? body.channel : 'manual';
+  if (channel !== 'manual' || body.sales_order_id) {
+    await client.query('UPDATE invoices SET channel = $2, sales_order_id = $3 WHERE id = $1', [
+      invoiceId,
+      channel,
+      body.sales_order_id || null,
+    ]);
+    invoice.channel = channel;
+    invoice.sales_order_id = body.sales_order_id || null;
   }
 
   for (let i = 0; i < items.length; i++) {

@@ -3,6 +3,7 @@ import { resolveBranchId } from '@/lib/branch-helpers';
 import { createInvoiceInTransaction } from '@/lib/invoices/invoice-create-service';
 import { roundMoney } from '@/lib/store/pricing';
 import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
+import { syncStoreOrderFulfilment } from '@/lib/fulfilment/service';
 
 export type StoreOnlinePaymentProvider = 'razorpay' | 'easebuzz';
 
@@ -116,6 +117,12 @@ export async function fulfillStoreOrderPayment(
        WHERE id = $1 AND business_id = $2`,
       [orderId, businessId, event.providerPaymentId ?? null, event.providerOrderId ?? null, event.provider],
     );
+    await syncStoreOrderFulfilment(client, {
+      businessId,
+      storeOrderId: orderId,
+      actorType: 'system',
+      note: 'Payment received',
+    });
     await client.query('COMMIT');
     notify = {
       couponCode: row.coupon_code,
@@ -560,6 +567,7 @@ export async function createInvoiceForStoreOrder(
         additional_charges: additional,
         billing_address: o.customer_address,
         notes: `Online store order ${o.order_number} (${payLabel})`,
+        channel: 'online_store',
         items: lines.map((line) => ({
           item_id: line.item_id,
           variant_id: line.variant_id,
@@ -598,6 +606,7 @@ export async function createInvoiceForStoreOrder(
     if (linked.rowCount !== 1) {
       throw new StoreInvoiceError('Store order was already invoiced', 'STORE_ORDER_ALREADY_INVOICED');
     }
+    await syncStoreOrderFulfilment(client, { businessId, storeOrderId: orderId, actorType: 'system' });
 
     await client.query('COMMIT');
     return result.invoiceId;

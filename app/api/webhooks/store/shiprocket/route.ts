@@ -7,6 +7,7 @@ import {
   applyShiprocketTrackingUpdate,
   resolveBusinessIdForShiprocketToken,
 } from '@/lib/store/order-lifecycle';
+import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,9 @@ export async function POST(request: NextRequest) {
     awb: parsed.awb,
     orderRef: parsed.orderRef,
     status: parsed.status,
+    fulfilmentStatus: parsed.fulfilmentStatus,
   });
+  if (result.outcome === 'updated') triggerFulfilmentNotification(businessId, result.fulfilment);
   // Shiprocket expects 200 for every delivered event; out-of-order statuses are acknowledged, not applied.
   return NextResponse.json({ ok: true, ...result });
 }

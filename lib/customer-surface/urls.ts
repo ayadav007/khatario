@@ -15,6 +15,10 @@ export function publicInvoiceUrl(publicToken: string): string {
   return `${getAppPublicOrigin()}/i/${encodeURIComponent(publicToken)}`;
 }
 
+export function orderTrackingUrl(publicToken: string): string {
+  return `${getAppPublicOrigin()}/track/${encodeURIComponent(publicToken)}`;
+}
+
 export function customerPortalUrl(portalSlug: string): string {
   return `${getAppPublicOrigin()}/portal/${encodeURIComponent(portalSlug)}`;
 }

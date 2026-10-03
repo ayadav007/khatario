@@ -198,7 +198,7 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
               cgst_total::float8 AS cgst_total, sgst_total::float8 AS sgst_total,
               igst_total::float8 AS igst_total, paid_amount::float8 AS paid_amount,
               balance_amount::float8 AS balance_amount, payment_status, created_by, customer_id,
-              store_order_id, branch_id
+              store_order_id, branch_id, channel
          FROM invoices WHERE id = $1`,
       [id],
     );
@@ -280,6 +280,7 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
     expect(link.rows[0].invoice_id).toBe(invoiceId);
     const inv = await invoiceRow(invoiceId!);
     expect(inv.store_order_id).toBe(id);
+    expect(inv.channel).toBe('online_store');
     expect(inv.customer_id).toBe(CUST);
     expect(inv.branch_id).toBe(BR);
   });

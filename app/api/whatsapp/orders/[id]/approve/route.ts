@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { InvoiceCreateServiceError, createInvoiceInTransaction } from '@/lib/invoices/invoice-create-service';
+import { ensureSalesOrderFulfilment } from '@/lib/fulfilment/service';
+import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
 import { todayIsoDate } from '@/lib/invoices/convert-to-invoice';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 
@@ -114,6 +116,8 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
       billing_address: order.billing_address,
       shipping_address: order.shipping_address,
       notes: `WhatsApp Order ${order.order_number}`,
+      channel: 'whatsapp',
+      sales_order_id: orderId,
       payments: [{ amount: Number(order.grand_total) || 0, mode: 'upi', date: today, reference: order.payment_reference || undefined }],
     });
 
@@ -129,8 +133,18 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>(
       `UPDATE sales_orders SET status = 'fulfilled', converted_invoice_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [draft.invoiceId, orderId]
     );
+    const fulfilment = await ensureSalesOrderFulfilment(client, {
+      businessId,
+      salesOrderId: orderId,
+      invoiceId: draft.invoiceId,
+      branchId: invoiceBranchId,
+      actorType: 'staff',
+      actorUserId: userId,
+      note: 'Payment approved',
+    });
 
     await client.query('COMMIT');
+    if (fulfilment) triggerFulfilmentNotification(businessId, { fulfilmentId: fulfilment.row.id, to: fulfilment.row.status });
     return NextResponse.json({ success: true, invoice_id: draft.invoiceId, invoice_number: draft.invoiceNumber });
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {});

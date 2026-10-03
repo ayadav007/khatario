@@ -9,13 +9,28 @@ import { queryRows, queryOne, query } from '@/lib/db';
 import { SalesAgentChatbot } from './services/sales-agent-chatbot';
 import { LeadAnalyzer } from './services/lead-analyzer';
 import { generatePaymentLinkForBusiness } from './services/payment-service';
-import { loadAgentSettings, loadSavedAgentSettings } from './ai-agent/settings';
+import { loadAgentSettings } from './ai-agent/settings';
 import { runAgentGate } from './ai-agent/gate';
 import { parseAgentReply } from './ai-agent/prompt';
 import { performHandoff } from './ai-agent/conversation';
 import { applyLeadAnswers } from './ai-agent/leads';
 import { DEFAULT_HANDOFF_MESSAGE } from './ai-agent/types';
-import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, resolveOrderItems } from './ai-agent/order-items';
+import {
+  ORDER_NOT_CREATED_REPLY,
+  parseCreateOrderTag,
+  isPlaceholderName,
+  loadChatCustomerName,
+  parseCustomerTag,
+  resolveOrderItems,
+  saveChatCustomerName,
+  saveCollectedCustomerDetails,
+  stripOrderTags,
+} from './ai-agent/order-items';
+import {
+  completePaidWhatsAppOrder,
+  formatOrderLines as formatDraftOrderConfirmationLines,
+  orderConfirmedMessage as whatsAppOrderConfirmedMessage,
+} from './whatsapp/paid-order';
 import {
   evaluatePaymentOcrWithRules,
   verifyPaymentScreenshot
@@ -952,34 +967,9 @@ function isWebhookGraceExceeded(
   return Date.now() - baseMs >= WHATSAPP_PAYMENT_WEBHOOK_GRACE_MS;
 }
 
-async function formatDraftOrderConfirmationLines(orderId: string): Promise<string> {
-  const orderItems = await queryRows<{
-    item_name: string;
-    qty: number | string;
-    line_total: string | number | null;
-  }>(
-    `SELECT item_name, qty, unit_price, line_total
-     FROM sales_order_items
-     WHERE sales_order_id = $1
-     ORDER BY id ASC`,
-    [orderId]
-  );
-  return orderItems
-    .map(
-      (item, idx) =>
-        `${idx + 1}. ${item.item_name} × ${item.qty} = ₹${parseFloat(String(item.line_total ?? 0))}`
-    )
-    .join('\n');
-}
-
-async function whatsAppOrderConfirmedMessage(
-  businessId: string,
-  itemsList: string,
-  grandTotal: number
-): Promise<string> {
-  const saved = await loadSavedAgentSettings(businessId).catch(() => null);
-  const closing = saved?.postPaymentMessage.trim() || "Thank you for your order! We'll process it shortly.";
-  return `✅ Payment received! Your order has been confirmed.\n\n📦 *Order Details:*\n${itemsList}\n\n💰 *Total: ₹${grandTotal}*\n\n${closing}`;
+/** Invoice + PDF bill for a gateway-paid order; the text confirmation is handled by the caller. */
+function followUpPaidOrder(businessId: string, orderId: string, confirmationSent: boolean): void {
+  void completePaidWhatsAppOrder(businessId, orderId, { confirmationSent });
 }
 
 /**
@@ -1079,6 +1069,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
   const od = order.ocr_data as Record<string, unknown> | undefined;
   if (od?.whatsapp_order_confirmed === true) {
     await clearConversationState(businessId, normalizedFrom);
+    followUpPaidOrder(businessId, order.id, true);
     return {
       response: 'Your payment is already confirmed. Thank you!',
       shouldStore: true
@@ -1115,6 +1106,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
 
   if (!confirmed) {
     await clearConversationState(businessId, normalizedFrom);
+    followUpPaidOrder(businessId, order.id, true);
     return {
       response: 'Your payment is already confirmed. Thank you!',
       shouldStore: true
@@ -1124,6 +1116,7 @@ async function maybeConfirmWhatsAppOrderIfPaidByWebhook(params: {
   const itemsList = await formatDraftOrderConfirmationLines(order.id);
   const grandTotal = parseFloat(order.grand_total);
   await clearConversationState(businessId, normalizedFrom);
+  followUpPaidOrder(businessId, order.id, true);
   return {
     response: await whatsAppOrderConfirmedMessage(businessId, itemsList, grandTotal),
     shouldStore: true
@@ -2711,12 +2704,15 @@ export async function processIncomingMessage(
               : msg.message_text || ''
         }));
 
-          // Get customer info if available
-          let customerInfo: any = undefined;
+          const chatName = await loadChatCustomerName(businessId, conversationId);
+          let customerInfo: any = {
+            name: chatName,
+            profileName: whatsappDisplayName && !isPlaceholderName(whatsappDisplayName) ? whatsappDisplayName : null,
+          };
           if (customerId) {
             const customer = await queryOne<any>(
-              `SELECT name FROM customers WHERE id = $1`,
-              [customerId]
+              `SELECT name FROM customers WHERE id = $1 AND business_id = $2`,
+              [customerId, businessId]
             );
             
             const orderStats = await queryOne<any>(
@@ -2730,7 +2726,8 @@ export async function processIncomingMessage(
 
             if (customer) {
               customerInfo = {
-                name: customer.name,
+                ...customerInfo,
+                name: chatName || (isPlaceholderName(customer.name, [whatsappDisplayName]) ? null : customer.name),
                 previousOrders: orderStats?.total_orders || 0,
                 totalSpent: orderStats?.total_spent || 0
               };
@@ -2843,7 +2840,19 @@ export async function processIncomingMessage(
           if (aiTrimmed) {
             console.log('[CRM] 🤖 AI Sales Agent generated response');
 
-            let finalAiResponse = aiTrimmed;
+            const collectedCustomer = parseCustomerTag(aiTrimmed);
+            let finalAiResponse = aiTrimmed.replace(/CUSTOMER:\s*\{[\s\S]*?\}\s*/g, '');
+            if (collectedCustomer?.name && collectedCustomer.name !== chatName) {
+              await saveChatCustomerName(businessId, conversationId, collectedCustomer.name).catch((err) =>
+                console.error('[CRM] Saving the customer name for this chat failed:', err)
+              );
+            }
+            if (collectedCustomer && customerId && !finalAiResponse.includes('CREATE_ORDER:')) {
+              await saveCollectedCustomerDetails(businessId, customerId, collectedCustomer, [
+                whatsappDisplayName,
+                normalizedFrom,
+              ]).catch((err) => console.error('[CRM] Saving collected customer details failed:', err));
+            }
 
             // 1. Check for order creation tag
             if (finalAiResponse.includes('CREATE_ORDER:')) {
@@ -2852,7 +2861,7 @@ export async function processIncomingMessage(
               try {
                 // Check if there's already a draft order for this conversation (prevent duplicates)
                 const existingOrder = await queryOne<any>(
-                  `SELECT id, order_number, grand_total, status 
+                  `SELECT id, order_number, grand_total, status, customer_id
                    FROM sales_orders 
                    WHERE business_id = $1 AND whatsapp_conversation_id = $2 AND status = 'draft'
                    ORDER BY created_at DESC LIMIT 1`,
@@ -2862,6 +2871,12 @@ export async function processIncomingMessage(
                 if (existingOrder) {
                   console.log('[CRM] ⚠️ Draft order already exists:', existingOrder.order_number);
                   orderSaved = true;
+                  if (collectedCustomer && existingOrder.customer_id) {
+                    await saveCollectedCustomerDetails(businessId, existingOrder.customer_id, collectedCustomer, [
+                      whatsappDisplayName,
+                      normalizedFrom,
+                    ]);
+                  }
                   // A+B: Update existing draft to match AI intent (items/qty), using DB prices.
                   const lines = parseCreateOrderTag(finalAiResponse);
                   const resolved = lines ? await resolveOrderItems(businessId, lines) : null;
@@ -2909,99 +2924,54 @@ export async function processIncomingMessage(
                 } else {
                   // No existing order, check if we have customer information
                   let finalCustomerId = customerId;
-                  let customerName = convContext.customer_name;
-                  let customerPhone = convContext.customer_phone || normalizedFrom;
-                  let customerAddress = convContext.customer_address || convContext.shipping_address;
+                  const customerName = collectedCustomer?.name || chatName || convContext.customer_name;
+                  const customerPhone = convContext.customer_phone || normalizedFrom;
+                  const customerAddress =
+                    collectedCustomer?.address || convContext.customer_address || convContext.shipping_address;
+                  const convData = await queryOne<{ whatsapp_display_name: string | null }>(
+                    `SELECT whatsapp_display_name FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
+                    [conversationId, businessId]
+                  );
+                  const placeholderNames = [whatsappDisplayName, convData?.whatsapp_display_name, normalizedFrom];
 
-                  // If no customer exists, create one from conversation data
                   if (!finalCustomerId) {
-                    // Get customer name from WhatsApp display name or conversation
-                    const convData = await queryOne<any>(
-                      `SELECT whatsapp_display_name, from_number 
-                       FROM whatsapp_conversations 
-                       WHERE id = $1 AND business_id = $2`,
-                      [conversationId, businessId]
-                    );
-
-                    // Try to find or create customer
-                    const existingCustomer = await queryOne<{ id: string }>(
-                      `SELECT id FROM customers WHERE business_id = $1 AND phone = $2 LIMIT 1`,
-                      [businessId, normalizedFrom]
-                    );
+                    const phoneDigits = normalizedFrom.replace(/\D/g, '');
+                    const existingCustomer = phoneDigits.length >= 10
+                      ? await queryOne<{ id: string }>(
+                          `SELECT id FROM customers
+                            WHERE business_id = $1 AND deleted_at IS NULL
+                              AND RIGHT(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = RIGHT($2, 10)
+                            ORDER BY created_at ASC LIMIT 1`,
+                          [businessId, phoneDigits]
+                        )
+                      : null;
 
                     if (existingCustomer) {
                       finalCustomerId = existingCustomer.id;
-                      console.log('[CRM] ✅ Found existing customer:', finalCustomerId);
-                      
-                      // Update customer with information collected by AI if available
-                      if (customerName || customerAddress) {
-                        const updateFields: string[] = [];
-                        const updateValues: any[] = [];
-                        let paramIndex = 1;
-                        
-                        if (customerName) {
-                          updateFields.push(`name = $${paramIndex++}`);
-                          updateValues.push(customerName);
-                        }
-                        
-                        if (customerAddress) {
-                          updateFields.push(`shipping_address = $${paramIndex++}`);
-                          updateValues.push(customerAddress);
-                        }
-                        
-                        if (updateFields.length > 0) {
-                          updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-                          updateValues.push(finalCustomerId);
-                          await query(
-                            `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
-                            updateValues
-                          );
-                          console.log('[CRM] ✅ Updated customer with collected information');
-                        }
-                      }
                     } else {
-                      // Create a new customer record with collected information
                       const newCustomer = await queryOne<{ id: string }>(
-                        `INSERT INTO customers (business_id, name, phone, shipping_address, created_at, updated_at)
-                         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        `INSERT INTO customers (business_id, name, phone, email, shipping_address, created_at, updated_at)
+                         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                          RETURNING id`,
                         [
                           businessId,
                           customerName || convData?.whatsapp_display_name || `Customer ${normalizedFrom.substring(normalizedFrom.length - 4)}`,
-                          customerPhone || normalizedFrom,
+                          customerPhone,
+                          collectedCustomer?.email || null,
                           customerAddress || null
                         ]
                       );
                       finalCustomerId = newCustomer?.id;
-                      console.log('[CRM] ✅ Created new customer with collected information:', finalCustomerId);
                     }
-                  } else {
-                    // Customer exists, update with collected information if available
-                    if (customerName || customerAddress) {
-                      const updateFields: string[] = [];
-                      const updateValues: any[] = [];
-                      let paramIndex = 1;
-                      
-                      if (customerName) {
-                        updateFields.push(`name = $${paramIndex++}`);
-                        updateValues.push(customerName);
-                      }
-                      
-                      if (customerAddress) {
-                        updateFields.push(`shipping_address = $${paramIndex++}`);
-                        updateValues.push(customerAddress);
-                      }
-                      
-                      if (updateFields.length > 0) {
-                        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-                        updateValues.push(finalCustomerId);
-                        await query(
-                          `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
-                          updateValues
-                        );
-                        console.log('[CRM] ✅ Updated existing customer with collected information');
-                      }
-                    }
+                  }
+
+                  if (finalCustomerId) {
+                    await saveCollectedCustomerDetails(
+                      businessId,
+                      finalCustomerId,
+                      { name: customerName, email: collectedCustomer?.email, address: customerAddress },
+                      placeholderNames
+                    );
                   }
 
                   const lines = parseCreateOrderTag(finalAiResponse);
@@ -3389,8 +3359,7 @@ export async function processIncomingMessage(
             }
             
             // Clean up any JSON or technical tags from AI response before sending to customer
-            // Remove CREATE_ORDER tags if not already removed
-            finalAiResponse = finalAiResponse.replace(/CREATE_ORDER:.*$/gm, '').trim();
+            finalAiResponse = stripOrderTags(finalAiResponse);
             
             // Remove any JSON arrays that might have leaked into the response
             finalAiResponse = finalAiResponse.replace(/\[\s*\{[^}]+\}\s*\]/g, '').trim();

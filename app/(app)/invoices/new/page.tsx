@@ -1610,6 +1610,7 @@ function NewInvoiceContent() {
           customer_id: customerId || null, 
           invoice_date: invoiceDate, 
           status: 'final', 
+          channel: posMode ? 'counter' : undefined,
           billing_address: billingAddress, 
           shipping_address: shippingAddress, 
           place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 
@@ -1977,7 +1978,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -2088,6 +2089,7 @@ function NewInvoiceContent() {
         invoice_date: invoiceDate,
         due_date: dueDate || null,
         status: finalInvoiceStatus, 
+        channel: posMode ? 'counter' : undefined,
         billing_address: billingAddress, 
         shipping_address: shippingAddress, 
         place_of_supply_state_code: isExport ? '96' : getStateCode(placeOfSupply), 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
 import { resolveStoreBySubdomain } from '@/lib/store/resolve-store';
 import { readStoreCustomer, STORE_CUSTOMER_COOKIE } from '@/lib/store/customer-session';
+import { orderTrackingUrl } from '@/lib/customer-surface/urls';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,15 +58,31 @@ export async function GET(
         [customer.id, store.business_id],
       );
 
-  const orders = await queryRows<Record<string, unknown>>(
-    `SELECT id, order_number, status, payment_status, grand_total::text,
-            delivery_mode, tracking_url, awb, created_at
-     FROM store_orders
-     WHERE business_id = $1 AND store_customer_id = $2
-     ORDER BY created_at DESC
+  const orders = await queryRows<Record<string, unknown> & { fulfilment_id: string | null; public_token: string | null }>(
+    `SELECT so.id, so.order_number, so.status, so.payment_status, so.grand_total::text,
+            so.delivery_mode, COALESCE(f.tracking_url, so.tracking_url) AS tracking_url,
+            COALESCE(f.awb, so.awb) AS awb, so.created_at,
+            f.id AS fulfilment_id, f.status AS delivery_status, f.partner_name, f.public_token,
+            CASE WHEN f.status = 'ready_for_pickup' THEN f.pickup_code END AS pickup_code
+     FROM store_orders so
+     LEFT JOIN LATERAL (
+       SELECT * FROM order_fulfilments x WHERE x.store_order_id = so.id ORDER BY x.seq LIMIT 1
+     ) f ON TRUE
+     WHERE so.business_id = $1 AND so.store_customer_id = $2
+     ORDER BY so.created_at DESC
      LIMIT 50`,
     [store.business_id, session.customerId],
   );
+  const fulfilmentIds = orders.map((o) => o.fulfilment_id).filter((id): id is string => Boolean(id));
+  const events = fulfilmentIds.length
+    ? await queryRows<{ fulfilment_id: string; status: string; note: string | null; created_at: string }>(
+        `SELECT fulfilment_id, status, CASE WHEN status = 'delivery_failed' THEN note END AS note, created_at
+           FROM order_fulfilment_events
+          WHERE business_id = $1 AND fulfilment_id = ANY($2::uuid[])
+          ORDER BY created_at, id`,
+        [store.business_id, fulfilmentIds],
+      )
+    : [];
 
   return NextResponse.json({
     customer: {
@@ -76,9 +93,13 @@ export async function GET(
       last_address: addr?.address ?? lastOrd?.customer_address ?? null,
       last_pincode: addr?.pincode ?? lastOrd?.customer_pincode ?? null,
     },
-    orders: orders.map((o) => ({
+    orders: orders.map(({ fulfilment_id, public_token, ...o }) => ({
       ...o,
       grand_total: parseFloat(o.grand_total as string) || 0,
+      track_url: public_token ? orderTrackingUrl(public_token) : null,
+      timeline: fulfilment_id
+        ? events.filter((e) => e.fulfilment_id === fulfilment_id).map(({ fulfilment_id: _f, ...e }) => e)
+        : [],
     })),
   });
 }

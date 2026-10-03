@@ -10,6 +10,7 @@ import { findMappingByOfflineRef } from '@/lib/offline-sync/invoice-number-map-r
 import { findReplayLog } from '@/lib/offline-sync/replay-log-repository';
 import type { IdempotentReplayContext, ReplayExecutorResult } from '@/lib/offline-sync/with-idempotent-replay';
 import { getStateCode } from '@/lib/invoices/validate-invoice-gst-payload';
+import { clientInvoiceChannel } from '@/lib/invoices/channel';
 
 /**
  * Offline replay: finalize sales invoice (create + stock + ledger) idempotently.
@@ -101,7 +102,7 @@ export async function executeSalesFinalizeReplay(
   const replayRow = await findReplayLog(ctx.businessId, ctx.idempotencyKey, client);
 
   try {
-    const result = await createInvoiceInTransaction(client, body, {
+    const result = await createInvoiceInTransaction(client, { ...body, channel: clientInvoiceChannel(body.channel), sales_order_id: null }, {
       forceServerInvoiceNumber: true,
       replayLogId: replayRow?.id ?? null,
       deviceId: ctx.deviceId ?? null,

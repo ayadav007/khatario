@@ -4,6 +4,8 @@ import { resolveBranchId } from '@/lib/branch-helpers';
 import { requireTenantBusinessId, getUserIdFromRequest } from '@/lib/auth-helpers';
 import { InvoiceCreateServiceError } from '@/lib/invoices/invoice-create-service';
 import { convertLinesToInvoice, todayIsoDate } from '@/lib/invoices/convert-to-invoice';
+import { ensureSalesOrderFulfilment } from '@/lib/fulfilment/service';
+import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 
 export const dynamic = 'force-dynamic';
@@ -117,6 +119,8 @@ export async function POST(
       shippingAddress: salesOrder.shipping_address,
       notes: salesOrder.notes,
       locationId: defaultWarehouseId,
+      channel: salesOrder.whatsapp_conversation_id ? 'whatsapp' : 'sales_order',
+      salesOrderId,
       lines: itemsRes.rows.map((r: any) => ({
         item_id: r.item_id,
         variant_id: r.variant_id,
@@ -137,8 +141,20 @@ export async function POST(
         WHERE id = $2`,
       [result.invoiceId, salesOrderId]
     );
+    const fulfilment = await ensureSalesOrderFulfilment(client, {
+      businessId: salesOrder.business_id,
+      salesOrderId,
+      invoiceId: result.invoiceId,
+      branchId: invoiceBranchId,
+      actorType: 'staff',
+      actorUserId: userId,
+      note: 'Invoiced',
+    });
 
     await client.query('COMMIT');
+    if (fulfilment?.row.channel === 'whatsapp') {
+      triggerFulfilmentNotification(salesOrder.business_id, { fulfilmentId: fulfilment.row.id, to: fulfilment.row.status });
+    }
     return NextResponse.json({ invoice: result.invoice, sales_order_id: salesOrderId }, { status: 201 });
   } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {});

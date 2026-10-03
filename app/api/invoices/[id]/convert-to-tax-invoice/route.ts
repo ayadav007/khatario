@@ -9,6 +9,7 @@ import {
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { resolveBranchId } from '@/lib/branch-helpers';
+import { isInvoiceChannel } from '@/lib/invoices/channel';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import {
   createInvoiceInTransaction,
@@ -186,6 +187,8 @@ export async function POST(
       supply_type: proforma.supply_type,
       export_type: proforma.export_type,
       template_id: proforma.template_id || null,
+      channel: isInvoiceChannel(proforma.channel) ? proforma.channel : 'manual',
+      sales_order_id: proforma.sales_order_id || null,
     };
 
     const result = await createInvoiceInTransaction(client, payload);

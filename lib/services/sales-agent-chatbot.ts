@@ -36,7 +36,7 @@ export interface SalesAgentRequest {
   };
   /** Second attempt after provider returned empty content — prompts model to answer non-empty */
   retryAfterEmpty?: boolean;
-  /** Sender's WhatsApp number: online-store order status is looked up only for this number. */
+  /** Sender's WhatsApp number: order status is looked up only for this number. */
   customerPhone?: string;
   /** Real customers in Live mode (the Khatario AI trial covers Test mode only). */
   live?: boolean;
@@ -133,8 +133,8 @@ export class SalesAgentChatbot {
       if (request.customerPhone && settings.skills.orderStatus) {
         const orders = await orderStatusContext(businessId, request.customerPhone, request.message);
         if (orders) {
-          productContext += `\n\nThis customer's online-store orders (looked up by their WhatsApp number; share only these):\n${orders}`;
-          sources.push('Online store orders');
+          productContext += `\n\nThis customer's orders (looked up by their WhatsApp number; share only these, and include the order status link when there is one):\n${orders}`;
+          sources.push('Orders');
         }
       }
 
@@ -290,9 +290,12 @@ export class SalesAgentChatbot {
     }
 
     if (customerInfo) {
+      const who = customerInfo.name
+        ? `Name: ${customerInfo.name}. `
+        : `Customer name: not known yet.${customerInfo.profileName ? ` WhatsApp profile name (unconfirmed): ${customerInfo.profileName}.` : ''} `;
       messages.push({
         role: 'system',
-        content: `Customer Information: ${customerInfo.name ? `Name: ${customerInfo.name}. ` : ''}${customerInfo.previousOrders ? `Previous Orders: ${customerInfo.previousOrders}. ` : ''}${customerInfo.totalSpent ? `Total Spent: ₹${customerInfo.totalSpent}. ` : ''}`
+        content: `Customer Information: ${who}${customerInfo.previousOrders ? `Previous Orders: ${customerInfo.previousOrders}. ` : ''}${customerInfo.totalSpent ? `Total Spent: ₹${customerInfo.totalSpent}. ` : ''}`.trim()
       });
     }
 
