@@ -113,3 +113,4 @@ Desktop.ini
 # Site builder uploads (per environment, lives on the VPS disk)
 /storage/marketing-media/
 /storage/marketing-creatives/
+/storage/sales-flow/

@@ -6,11 +6,13 @@ const mockQueryOne = jest.fn();
 const mockSendText = jest.fn();
 const mockAnswerTurn = jest.fn();
 const mockChannelEnabled = jest.fn();
+const mockFunnel = jest.fn();
 
 jest.mock('@/lib/db', () => ({ query: jest.fn(), queryOne: (...a: unknown[]) => mockQueryOne(...a), queryRows: jest.fn() }));
 jest.mock('@/lib/meta-whatsapp', () => ({ sendTextMessage: (...a: unknown[]) => mockSendText(...a) }));
 jest.mock('@/lib/rag/answer', () => ({ answerTurn: (...a: unknown[]) => mockAnswerTurn(...a) }));
 jest.mock('@/lib/rag/settings', () => ({ isChannelEnabled: (...a: unknown[]) => mockChannelEnabled(...a) }));
+jest.mock('@/lib/sales-funnel/engine', () => ({ handleFunnelMessage: (...a: unknown[]) => mockFunnel(...a) }));
 
 import { actionToText, PLATFORM_MESSAGES_PER_HOUR, PLATFORM_REPLY_MAX, platformReplyText, processPlatformIncoming } from '@/lib/whatsapp/platform-incoming';
 import type { PlatformIncomingQueueJob } from '@/lib/whatsapp-queue-types';
@@ -36,6 +38,7 @@ beforeEach(() => {
   user = null;
   hourly = 1;
   mockChannelEnabled.mockResolvedValue(true);
+  mockFunnel.mockResolvedValue(false);
   mockSendText.mockResolvedValue({ messageId: 'out1' });
   mockQueryOne.mockImplementation(async (sql: string) => {
     if (sql.includes('FROM users')) return user;
@@ -114,6 +117,28 @@ describe('processPlatformIncoming', () => {
     await processPlatformIncoming(job('hi'));
     expect(mockSendText).not.toHaveBeenCalled();
     expect(mockAnswerTurn).not.toHaveBeenCalled();
+  });
+
+  it('lets the sales flow handle a prospect, without a second assistant reply', async () => {
+    mockFunnel.mockResolvedValue(true);
+    await processPlatformIncoming(job('I want to know about GST billing'));
+    expect(mockFunnel).toHaveBeenCalledWith(expect.objectContaining({ from: PHONE }), expect.any(Function), { knownUser: false });
+    expect(mockAnswerTurn).not.toHaveBeenCalled();
+  });
+
+  it('tells the flow when the sender is a registered user', async () => {
+    user = { user_id: USER, business_id: BIZ };
+    await processPlatformIncoming(job('how do I create an invoice?'));
+    expect(mockFunnel).toHaveBeenCalledWith(expect.anything(), expect.any(Function), { knownUser: true });
+    expect(mockAnswerTurn).toHaveBeenCalled();
+  });
+
+  it('falls back to the assistant when the sales flow fails', async () => {
+    mockFunnel.mockRejectedValue(new Error('db down'));
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    await processPlatformIncoming(job('hi'));
+    spy.mockRestore();
+    expect(mockAnswerTurn).toHaveBeenCalled();
   });
 
   it('never throws', async () => {

@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
       userPhone,
       password,
       productLine: productLineRaw,
+      leadToken,
     } = body;
 
     const productLine = normalizeProductLine(productLineRaw);
@@ -138,8 +139,12 @@ export async function POST(request: NextRequest) {
 
     const { nationalPhone10, requestHasVerifiedPlatformOtp } = await import('@/lib/platform-public-otp');
     const phone10 = nationalPhone10(phoneNorm);
+    // A WhatsApp sales-funnel signup link proves this number messaged us, like the OTP does.
+    const { signupTokenVerifiesPhone, linkSignupToLead } = await import('@/lib/sales-funnel/signup');
+    const funnelLeadId =
+      typeof leadToken === 'string' ? await signupTokenVerifiesPhone(leadToken, phone10).catch(() => null) : null;
     const skipOtp =
-      process.env.E2E_DISABLE_RATE_LIMIT === 'true' || process.env.PLATFORM_SKIP_OTP === '1';
+      process.env.E2E_DISABLE_RATE_LIMIT === 'true' || process.env.PLATFORM_SKIP_OTP === '1' || Boolean(funnelLeadId);
     if (!skipOtp && (!phone10 || !(await requestHasVerifiedPlatformOtp(request, 'signup', phone10)))) {
       return NextResponse.json(
         { error: 'Verify your mobile number with the WhatsApp code first', code: 'OTP_REQUIRED' },
@@ -478,6 +483,7 @@ export async function POST(request: NextRequest) {
     await client.query('COMMIT');
     committed = true;
     clearSubscriptionCache(businessId);
+    await linkSignupToLead({ businessId, phone10, leadId: funnelLeadId });
 
     const tokenPayload = { userId: primaryAdminUserId, businessId, sessionVersion: 1 };
     const [accessToken, refreshToken] = await Promise.all([

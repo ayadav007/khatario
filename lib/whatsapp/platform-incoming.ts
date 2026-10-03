@@ -128,28 +128,49 @@ export async function processPlatformIncoming(job: PlatformIncomingQueueJob): Pr
 
     // No userId: business figures never go out from Khatario's number, only how-to help.
     const audience = user ? 'tenant_user' : 'prospect';
-    let text = '';
-    let error: string | null = null;
-    let citations: Citation[] = [];
-    const actions: AssistantAction[] = [];
-    for await (const ev of answerTurn({
-      message: job.text,
-      conversationId: await recentConversationId(phone, audience),
-      channel: 'whatsapp',
-      audience,
-      businessId: user?.business_id ?? null,
-      userId: null,
-      phone,
-      textFormat: 'whatsapp',
-    })) {
-      if (ev.type === 'delta') text += ev.text;
-      else if (ev.type === 'citations') citations = ev.citations;
-      else if (ev.type === 'action') actions.push(ev.action);
-      else if (ev.type === 'error') error = ev.message;
-    }
-    const body = platformReplyText({ text: text || error || 'Sorry, I could not answer that. Please try again.', citations, actions });
-    await reply(phone, body);
+    const answer = (message: string) => answerOnPlatform(phone, message, audience, user?.business_id ?? null);
+
+    if (await runSalesFunnel(job, answer, Boolean(user))) return;
+    await answer(job.text);
   } catch (err) {
     console.error('[platform-incoming] failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+async function answerOnPlatform(phone: string, message: string, audience: 'prospect' | 'tenant_user', businessId: string | null): Promise<void> {
+  let text = '';
+  let error: string | null = null;
+  let citations: Citation[] = [];
+  const actions: AssistantAction[] = [];
+  for await (const ev of answerTurn({
+    message,
+    conversationId: await recentConversationId(phone, audience),
+    channel: 'whatsapp',
+    audience,
+    businessId,
+    userId: null,
+    phone,
+    textFormat: 'whatsapp',
+  })) {
+    if (ev.type === 'delta') text += ev.text;
+    else if (ev.type === 'citations') citations = ev.citations;
+    else if (ev.type === 'action') actions.push(ev.action);
+    else if (ev.type === 'error') error = ev.message;
+  }
+  const body = platformReplyText({ text: text || error || 'Sorry, I could not answer that. Please try again.', citations, actions });
+  await reply(phone, body);
+}
+
+/**
+ * Prospects go through the WhatsApp sales flow; registered users only for opt-out, HELP and funnel
+ * buttons. False means the assistant should answer as before (funnel off, or it failed before replying).
+ */
+async function runSalesFunnel(job: PlatformIncomingQueueJob, answer: (text: string) => Promise<void>, knownUser: boolean): Promise<boolean> {
+  try {
+    const { handleFunnelMessage } = await import('@/lib/sales-funnel/engine');
+    return await handleFunnelMessage(job, answer, { knownUser });
+  } catch (err) {
+    console.error('[platform-incoming] sales funnel failed:', err instanceof Error ? err.message : err);
+    return false;
   }
 }

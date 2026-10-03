@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -120,6 +120,40 @@ function SignupPageContent() {
     password: '',
   });
 
+  const leadToken = searchParams.get('lead');
+  const [leadPhone, setLeadPhone] = useState<string | null>(null);
+  const [leadNotice, setLeadNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!leadToken) return;
+    let cancelled = false;
+    fetch(`/api/public/sales-funnel/lead-prefill?token=${encodeURIComponent(leadToken)}`)
+      .then((r) => r.json())
+      .then((data: { valid?: boolean; reason?: string; name?: string; businessName?: string; businessType?: string; industry?: string; phone?: string }) => {
+        if (cancelled) return;
+        if (!data.valid) {
+          setLeadNotice(data.reason === 'used' ? 'This signup link was already used. Log in, or sign up with a new number.' : null);
+          return;
+        }
+        setFormData((prev) => ({
+          ...prev,
+          businessName: prev.businessName || data.businessName || '',
+          businessType: prev.businessType || data.businessType || '',
+          industry: prev.industry || data.industry || '',
+          userName: prev.userName || data.name || '',
+          userPhone: prev.userPhone || data.phone || '',
+        }));
+        if (data.phone) setLeadPhone(data.phone);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [leadToken]);
+
+  const phoneVerifiedByWhatsApp =
+    Boolean(leadPhone) && formData.userPhone.replace(/\D/g, '').slice(-10) === leadPhone;
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
@@ -135,7 +169,7 @@ function SignupPageContent() {
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, productLine }),
+        body: JSON.stringify({ ...formData, productLine, ...(leadToken ? { leadToken } : {}) }),
         credentials: 'include',
       });
 
@@ -167,6 +201,10 @@ function SignupPageContent() {
     const phoneDigits = formData.userPhone.replace(/\D/g, '').slice(-10);
     if (phoneDigits.length !== 10) {
       setError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (phoneVerifiedByWhatsApp) {
+      void completeSignup();
       return;
     }
     setStep('otp');
@@ -294,6 +332,11 @@ function SignupPageContent() {
               ) : null}
 
               <form onSubmit={handleSubmit} className={step === 'otp' ? 'space-y-5' : 'mt-8 space-y-5'}>
+                {leadNotice && !error && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    {leadNotice}
+                  </div>
+                )}
                 {error && (
                   <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                     <p>{error}</p>
@@ -468,6 +511,12 @@ function SignupPageContent() {
                         className="min-w-0 flex-1 border-0 bg-transparent px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500/30 dark:text-slate-100"
                       />
                     </div>
+                    {phoneVerifiedByWhatsApp && (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                        <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                        Verified through WhatsApp. No code needed.
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-5">

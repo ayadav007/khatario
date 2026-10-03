@@ -1,8 +1,12 @@
 import { createHmac } from 'crypto';
 import {
   buildGraphComponents,
+  buildInteractiveButtonsPayload,
+  buildInteractiveListPayload,
   buildSendComponents,
   countBodyPlaceholders,
+  extractInboundMessages,
+  extractMessageStatuses,
   extractTemplateStatusUpdates,
   mapMetaStatus,
   metaWaWebhookChallenge,
@@ -90,6 +94,103 @@ describe('meta-whatsapp helpers', () => {
     expect(metaWaWebhookChallenge(q)).toBe('12345');
     process.env.META_WA_APP_SECRET = prevSecret;
     process.env.META_WA_VERIFY_TOKEN = prevToken;
+  });
+});
+
+describe('sales funnel message parsing and builders', () => {
+  const webhook = (value: Record<string, unknown>) => ({ entry: [{ changes: [{ field: 'messages', value }] }] });
+
+  it('reads the ad referral and the tapped option id', () => {
+    const [ad, tap, template] = extractInboundMessages(
+      webhook({
+        contacts: [{ wa_id: '919800000001', profile: { name: 'Ramesh' } }],
+        messages: [
+          {
+            id: 'w1',
+            from: '919800000001',
+            type: 'text',
+            text: { body: 'I want to know about GST billing.' },
+            referral: { source_id: '120200', source_type: 'ad', source_url: 'https://fb.me/x', headline: 'GST billing', ctwa_clid: 'clid1' },
+          },
+          { id: 'w2', from: '919800000001', type: 'interactive', interactive: { list_reply: { id: 'bt_retail', title: 'Retail / Kirana Store' } } },
+          { id: 'w3', from: '919800000001', type: 'button', button: { payload: 'Watch Demo', text: 'Watch Demo' } },
+        ],
+      }),
+    );
+    expect(ad.profileName).toBe('Ramesh');
+    expect(ad.referral).toEqual({ sourceId: '120200', sourceType: 'ad', sourceUrl: 'https://fb.me/x', headline: 'GST billing', body: null, ctwaClid: 'clid1' });
+    expect(ad.replyId).toBeNull();
+    expect(tap).toMatchObject({ replyId: 'bt_retail', text: 'Retail / Kirana Store', referral: null });
+    expect(template).toMatchObject({ replyId: 'Watch Demo', text: 'Watch Demo' });
+  });
+
+  it('extracts delivery and read receipts, skipping unknown statuses', () => {
+    const statuses = extractMessageStatuses(
+      webhook({
+        statuses: [
+          { id: 'o1', status: 'read', recipient_id: '+91 98000 00001', timestamp: '1700000000' },
+          { id: 'o2', status: 'failed', recipient_id: '919800000001', errors: [{ title: 'Re-engagement message' }] },
+          { id: 'o3', status: 'deleted' },
+        ],
+      }),
+    );
+    expect(statuses).toEqual([
+      { messageId: 'o1', status: 'read', recipient: '919800000001', timestamp: 1700000000, errorTitle: null },
+      { messageId: 'o2', status: 'failed', recipient: '919800000001', timestamp: null, errorTitle: 'Re-engagement message' },
+    ]);
+  });
+
+  it('caps reply buttons at 3 with 20-character titles', () => {
+    const p = buildInteractiveButtonsPayload({
+      body: 'Pick one',
+      footer: 'Free trial',
+      header: { type: 'image', media: { id: 'm1' } },
+      buttons: [
+        { id: 'a', title: 'Watch Demo' },
+        { id: 'b', title: 'A title that is far too long' },
+        { id: 'c', title: 'Talk to Expert' },
+        { id: 'd', title: 'Fourth' },
+      ],
+    }) as { interactive: { header: unknown; footer: unknown; action: { buttons: Array<{ reply: { id: string; title: string } }> } } };
+    expect(p.interactive.action.buttons).toHaveLength(3);
+    expect(p.interactive.action.buttons[1].reply.title.length).toBeLessThanOrEqual(20);
+    expect(p.interactive.header).toEqual({ type: 'image', image: { id: 'm1' } });
+    expect(p.interactive.footer).toEqual({ text: 'Free trial' });
+    expect(() => buildInteractiveButtonsPayload({ body: 'x', buttons: [] })).toThrow();
+  });
+
+  it('caps list rows at 10 and clips titles and descriptions', () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: `r${i}`, title: `Row number ${i} with a long title`, description: 'd'.repeat(100) }));
+    const p = buildInteractiveListPayload({ body: 'Choose', buttonText: 'Choose business', rows }) as {
+      interactive: { action: { button: string; sections: Array<{ rows: Array<{ title: string; description: string }> }> } };
+    };
+    const out = p.interactive.action.sections[0].rows;
+    expect(out).toHaveLength(10);
+    expect(out[0].title.length).toBeLessThanOrEqual(24);
+    expect(out[0].description.length).toBeLessThanOrEqual(72);
+    expect(p.interactive.action.button).toBe('Choose business');
+  });
+
+  it('builds image-header template components with a sample handle and quick replies', () => {
+    const c = buildGraphComponents({
+      category: 'MARKETING',
+      bodyText: 'Hi {{1}}, still looking?',
+      exampleVars: ['Ramesh'],
+      headerFormat: 'image',
+      headerHandle: '4::aGFuZGxl',
+      quickReplies: ['Watch Demo', 'Talk to Expert'],
+    });
+    expect(c[0]).toEqual({ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['4::aGFuZGxl'] } });
+    expect(c[2]).toEqual({ type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Watch Demo' }, { type: 'QUICK_REPLY', text: 'Talk to Expert' }] });
+    expect(() => buildGraphComponents({ category: 'MARKETING', bodyText: 'x', exampleVars: [], headerFormat: 'video' })).toThrow(/sample/);
+  });
+
+  it('sends the header media before body variables', () => {
+    const c = buildSendComponents({ category: 'MARKETING', vars: ['Ramesh'], headerFormat: 'video', headerMedia: { id: 'vid1' } });
+    expect(c).toEqual([
+      { type: 'header', parameters: [{ type: 'video', video: { id: 'vid1' } }] },
+      { type: 'body', parameters: [{ type: 'text', text: 'Ramesh' }] },
+    ]);
   });
 });
 

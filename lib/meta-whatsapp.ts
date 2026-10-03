@@ -186,6 +186,209 @@ export async function sendTemplateMessage(input: {
 /** WhatsApp's limit for a text message body. */
 export const WA_TEXT_MAX = 4096;
 
+/** Cloud API limits for interactive messages; Graph rejects the whole message if any is exceeded. */
+export const WA_LIMITS = {
+  interactiveBody: 1024,
+  interactiveFooter: 60,
+  headerText: 60,
+  buttonsMax: 3,
+  buttonTitle: 20,
+  listRowsMax: 10,
+  listRowTitle: 24,
+  listRowDescription: 72,
+  listButton: 20,
+  replyId: 256,
+  caption: 1024,
+  videoBytes: 16 * 1024 * 1024,
+  imageBytes: 5 * 1024 * 1024,
+} as const;
+
+export type MediaRef = { id: string; link?: never } | { link: string; id?: never };
+
+function clip(s: string, max: number): string {
+  const t = String(s ?? '').trim();
+  return t.length <= max ? t : t.slice(0, max);
+}
+
+async function sendGraphMessage(
+  businessId: string | null | undefined,
+  to: string,
+  payload: Record<string, unknown>,
+): Promise<{ messageId: string }> {
+  const cfg = await requireConfig(businessId);
+  const json = (await graphFetch(`/${cfg.phoneNumberId}/messages`, {
+    token: cfg.accessToken,
+    method: 'POST',
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to.replace(/\D/g, ''),
+      ...payload,
+    }),
+  })) as { messages?: Array<{ id?: string }> };
+  const messageId = json.messages?.[0]?.id;
+  if (!messageId) throw new MetaWhatsAppError('Send returned no message id', 502);
+  return { messageId };
+}
+
+export type InteractiveHeader =
+  | { type: 'text'; text: string }
+  | { type: 'image'; media: MediaRef }
+  | { type: 'video'; media: MediaRef };
+
+function interactiveHeader(h: InteractiveHeader | undefined): Record<string, unknown> | undefined {
+  if (!h) return undefined;
+  if (h.type === 'text') return { type: 'text', text: clip(h.text, WA_LIMITS.headerText) };
+  return { type: h.type, [h.type]: h.media };
+}
+
+/** Reply buttons: at most 3, titles up to 20 characters; ids come back in the webhook. */
+export function buildInteractiveButtonsPayload(input: {
+  body: string;
+  buttons: Array<{ id: string; title: string }>;
+  header?: InteractiveHeader;
+  footer?: string;
+}): Record<string, unknown> {
+  const buttons = input.buttons.slice(0, WA_LIMITS.buttonsMax).map((b) => ({
+    type: 'reply',
+    reply: { id: clip(b.id, WA_LIMITS.replyId), title: clip(b.title, WA_LIMITS.buttonTitle) },
+  }));
+  if (buttons.length === 0) throw new MetaWhatsAppError('At least one button is required', 400);
+  const header = interactiveHeader(input.header);
+  return {
+    type: 'interactive',
+    interactive: {
+      type: 'button',
+      ...(header ? { header } : {}),
+      body: { text: clip(input.body, WA_LIMITS.interactiveBody) },
+      ...(input.footer?.trim() ? { footer: { text: clip(input.footer, WA_LIMITS.interactiveFooter) } } : {}),
+      action: { buttons },
+    },
+  };
+}
+
+/** List message: one section, up to 10 rows (titles 24, descriptions 72 characters). */
+export function buildInteractiveListPayload(input: {
+  body: string;
+  buttonText: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+  headerText?: string;
+  footer?: string;
+  sectionTitle?: string;
+}): Record<string, unknown> {
+  const rows = input.rows.slice(0, WA_LIMITS.listRowsMax).map((r) => ({
+    id: clip(r.id, WA_LIMITS.replyId),
+    title: clip(r.title, WA_LIMITS.listRowTitle),
+    ...(r.description?.trim() ? { description: clip(r.description, WA_LIMITS.listRowDescription) } : {}),
+  }));
+  if (rows.length === 0) throw new MetaWhatsAppError('At least one list row is required', 400);
+  return {
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      ...(input.headerText?.trim() ? { header: { type: 'text', text: clip(input.headerText, WA_LIMITS.headerText) } } : {}),
+      body: { text: clip(input.body, WA_LIMITS.interactiveBody) },
+      ...(input.footer?.trim() ? { footer: { text: clip(input.footer, WA_LIMITS.interactiveFooter) } } : {}),
+      action: {
+        button: clip(input.buttonText || 'Choose', WA_LIMITS.listButton),
+        sections: [{ title: clip(input.sectionTitle || 'Options', WA_LIMITS.listRowTitle), rows }],
+      },
+    },
+  };
+}
+
+export async function sendInteractiveButtons(input: {
+  businessId?: string | null;
+  to: string;
+  body: string;
+  buttons: Array<{ id: string; title: string }>;
+  header?: InteractiveHeader;
+  footer?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, buildInteractiveButtonsPayload(input));
+}
+
+export async function sendInteractiveList(input: {
+  businessId?: string | null;
+  to: string;
+  body: string;
+  buttonText: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+  headerText?: string;
+  footer?: string;
+  sectionTitle?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, buildInteractiveListPayload(input));
+}
+
+export async function sendImageMessage(input: {
+  businessId?: string | null;
+  to: string;
+  media: MediaRef;
+  caption?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, {
+    type: 'image',
+    image: { ...input.media, ...(input.caption?.trim() ? { caption: clip(input.caption, WA_LIMITS.caption) } : {}) },
+  });
+}
+
+/** MP4 (H.264 + AAC), at most 16 MB. */
+export async function sendVideoMessage(input: {
+  businessId?: string | null;
+  to: string;
+  media: MediaRef;
+  caption?: string;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, {
+    type: 'video',
+    video: { ...input.media, ...(input.caption?.trim() ? { caption: clip(input.caption, WA_LIMITS.caption) } : {}) },
+  });
+}
+
+async function resolveAppId(token: string): Promise<string> {
+  const fromEnv = process.env.META_WA_APP_ID?.trim();
+  if (fromEnv) return fromEnv;
+  const json = (await graphFetch('/app', { token, method: 'GET' })) as { id?: string };
+  if (!json?.id) throw new MetaWhatsAppError('Could not find the Meta app id for this token; set META_WA_APP_ID', 502);
+  return json.id;
+}
+
+/**
+ * Sample media for an IMAGE/VIDEO template header goes through Meta's Resumable Upload API;
+ * the returned handle is what template creation expects in `example.header_handle`.
+ */
+export async function uploadTemplateHeaderSample(input: {
+  businessId?: string | null;
+  buffer: Buffer;
+  mimeType: string;
+}): Promise<string> {
+  const cfg = await requireConfig(input.businessId);
+  const appId = await resolveAppId(cfg.accessToken);
+  const session = (await graphFetch(
+    `/${appId}/uploads?file_length=${input.buffer.length}&file_type=${encodeURIComponent(input.mimeType)}`,
+    { token: cfg.accessToken, method: 'POST' },
+  )) as { id?: string };
+  if (!session?.id) throw new MetaWhatsAppError('Upload session returned no id', 502);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_MS * 4);
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${session.id}`, {
+      method: 'POST',
+      headers: { Authorization: `OAuth ${cfg.accessToken}`, file_offset: '0' },
+      body: new Uint8Array(input.buffer),
+      signal: ctrl.signal,
+    });
+    const json = (await res.json().catch(() => null)) as { h?: string } | null;
+    if (!res.ok || !json?.h) {
+      throw new MetaWhatsAppError(graphErrorMessage(json, res.status), res.status);
+    }
+    return json.h;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /**
  * Free-form text. Meta only delivers it inside the 24-hour window after the recipient last
  * messaged this number; outside it, use an approved template.
@@ -220,6 +423,7 @@ export async function uploadMedia(input: {
   buffer: Buffer;
   mimeType: string;
   filename: string;
+  timeoutMs?: number;
 }): Promise<string> {
   const cfg = await requireConfig(input.businessId);
   const form = new FormData();
@@ -227,7 +431,7 @@ export async function uploadMedia(input: {
   form.append('type', input.mimeType);
   form.append('file', new Blob([new Uint8Array(input.buffer)], { type: input.mimeType }), input.filename);
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_MS);
+  const t = setTimeout(() => ctrl.abort(), input.timeoutMs ?? FETCH_MS);
   try {
     const res = await fetch(`${GRAPH_BASE}/${cfg.phoneNumberId}/media`, {
       method: 'POST',
@@ -259,6 +463,7 @@ export function buildTemplateSendComponents(
   template: SendableTemplate,
   values: string[],
   document?: { mediaId: string; filename: string },
+  headerMedia?: MediaRef,
 ): GraphComponent[] {
   // Graph rejects parameter text containing newlines, tabs or 4+ consecutive spaces (132018).
   const text = (v: string | undefined) => ({
@@ -284,6 +489,10 @@ export function buildTemplateSendComponents(
       parameters: [{ type: 'document', document: { id: document.mediaId, filename: document.filename } }],
     });
   }
+  if ((template.header_format === 'image' || template.header_format === 'video') && headerMedia) {
+    const kind = template.header_format;
+    components.push({ type: 'header', parameters: [{ type: kind, [kind]: headerMedia }] });
+  }
   if (template.placeholder_count > 0) {
     components.push({
       type: 'body',
@@ -305,7 +514,20 @@ export type InboundMessage = {
   type: string;
   /** Text, button title or list choice; null for media and other types. */
   text: string | null;
+  /** Stable id of the tapped reply button, list row or template quick-reply payload. */
+  replyId: string | null;
+  /** Click-to-WhatsApp ad (or post) that opened this chat; only on the first message. */
+  referral: InboundReferral | null;
   timestamp: number | null;
+};
+
+export type InboundReferral = {
+  sourceId: string | null;
+  sourceType: string | null;
+  sourceUrl: string | null;
+  headline: string | null;
+  body: string | null;
+  ctwaClid: string | null;
 };
 
 type RawInbound = {
@@ -315,10 +537,41 @@ type RawInbound = {
   type?: string;
   text?: { body?: string };
   button?: { text?: string; payload?: string };
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } };
+  interactive?: {
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string };
+  };
   image?: { caption?: string };
   document?: { caption?: string };
+  referral?: {
+    source_id?: string;
+    source_type?: string;
+    source_url?: string;
+    headline?: string;
+    body?: string;
+    ctwa_clid?: string;
+  };
 };
+
+function inboundReplyId(m: RawInbound): string | null {
+  const id = m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? m.button?.payload ?? null;
+  return id && id.trim() ? id.trim() : null;
+}
+
+function inboundReferral(m: RawInbound): InboundReferral | null {
+  const r = m.referral;
+  if (!r) return null;
+  const s = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
+  const out = {
+    sourceId: s(r.source_id),
+    sourceType: s(r.source_type),
+    sourceUrl: s(r.source_url),
+    headline: s(r.headline),
+    body: s(r.body),
+    ctwaClid: s(r.ctwa_clid),
+  };
+  return Object.values(out).some(Boolean) ? out : null;
+}
 
 function inboundText(m: RawInbound): string | null {
   const t =
@@ -365,7 +618,56 @@ export function extractInboundMessages(body: unknown): InboundMessage[] {
           displayPhoneNumber: v.metadata?.display_phone_number || null,
           type: m.type || 'unknown',
           text: inboundText(m),
+          replyId: inboundReplyId(m),
+          referral: inboundReferral(m),
           timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export type MessageStatusUpdate = {
+  messageId: string;
+  status: 'sent' | 'delivered' | 'read' | 'failed';
+  recipient: string;
+  timestamp: number | null;
+  errorTitle: string | null;
+};
+
+/** Delivery receipts for messages this number sent. */
+export function extractMessageStatuses(body: unknown): MessageStatusUpdate[] {
+  const out: MessageStatusUpdate[] = [];
+  const root = body as {
+    entry?: Array<{
+      changes?: Array<{
+        field?: string;
+        value?: {
+          statuses?: Array<{
+            id?: string;
+            status?: string;
+            recipient_id?: string;
+            timestamp?: string;
+            errors?: Array<{ title?: string }>;
+          }>;
+        };
+      }>;
+    }>;
+  };
+  for (const entry of root?.entry || []) {
+    for (const change of entry.changes || []) {
+      if (change.field !== 'messages') continue;
+      for (const s of change.value?.statuses || []) {
+        const status = String(s.status || '');
+        if (!s.id || !['sent', 'delivered', 'read', 'failed'].includes(status)) continue;
+        const ts = Number(s.timestamp);
+        out.push({
+          messageId: s.id,
+          status: status as MessageStatusUpdate['status'],
+          recipient: String(s.recipient_id || '').replace(/\D/g, ''),
+          timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
+          errorTitle: s.errors?.[0]?.title?.trim() || null,
         });
       }
     }
@@ -389,6 +691,10 @@ export function buildGraphComponents(input: {
   headerText?: string | null;
   footerText?: string | null;
   exampleVars: string[];
+  /** IMAGE/VIDEO headers need a sample handle from `uploadTemplateHeaderSample`. */
+  headerFormat?: 'none' | 'text' | 'image' | 'video' | null;
+  headerHandle?: string | null;
+  quickReplies?: string[];
 }): GraphComponent[] {
   if (input.category === 'AUTHENTICATION') {
     return [
@@ -399,7 +705,17 @@ export function buildGraphComponents(input: {
   }
 
   const components: GraphComponent[] = [];
-  if (input.headerText?.trim()) {
+  const mediaHeader = input.headerFormat === 'image' || input.headerFormat === 'video';
+  if (mediaHeader) {
+    if (!input.headerHandle?.trim()) {
+      throw new MetaWhatsAppError('Upload a sample image or video for the template header first', 400);
+    }
+    components.push({
+      type: 'HEADER',
+      format: input.headerFormat === 'image' ? 'IMAGE' : 'VIDEO',
+      example: { header_handle: [input.headerHandle.trim()] },
+    });
+  } else if (input.headerText?.trim()) {
     components.push({ type: 'HEADER', format: 'TEXT', text: input.headerText.trim() });
   }
   const body: GraphComponent = { type: 'BODY', text: input.bodyText };
@@ -412,12 +728,21 @@ export function buildGraphComponents(input: {
   if (input.footerText?.trim()) {
     components.push({ type: 'FOOTER', text: input.footerText.trim() });
   }
+  const replies = (input.quickReplies || []).map((r) => r.trim()).filter(Boolean).slice(0, 10);
+  if (replies.length > 0) {
+    components.push({
+      type: 'BUTTONS',
+      buttons: replies.map((text) => ({ type: 'QUICK_REPLY', text: text.slice(0, 25) })),
+    });
+  }
   return components;
 }
 
 export function buildSendComponents(input: {
   category: string;
   vars: string[];
+  headerFormat?: string | null;
+  headerMedia?: MediaRef | null;
 }): GraphComponent[] {
   const cleaned = (input.vars || []).map((v) => String(v || '').trim()).filter(Boolean);
   if (input.category === 'AUTHENTICATION') {
@@ -435,13 +760,18 @@ export function buildSendComponents(input: {
       },
     ];
   }
-  if (cleaned.length === 0) return [];
-  return [
-    {
+  const out: GraphComponent[] = [];
+  if ((input.headerFormat === 'image' || input.headerFormat === 'video') && input.headerMedia) {
+    const kind = input.headerFormat;
+    out.push({ type: 'header', parameters: [{ type: kind, [kind]: input.headerMedia }] });
+  }
+  if (cleaned.length > 0) {
+    out.push({
       type: 'body',
       parameters: cleaned.map((text) => ({ type: 'text', text })),
-    },
-  ];
+    });
+  }
+  return out;
 }
 
 export function verifyMetaWaWebhookSignature(

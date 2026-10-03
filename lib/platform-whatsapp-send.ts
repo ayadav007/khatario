@@ -1,5 +1,5 @@
 import { query, queryOne } from '@/lib/db';
-import { buildSendComponents, isMetaWaConfigured, sendTemplateMessage } from '@/lib/meta-whatsapp';
+import { buildSendComponents, isMetaWaConfigured, sendTemplateMessage, type MediaRef } from '@/lib/meta-whatsapp';
 import type { PlatformWaEventKey } from '@/lib/platform-whatsapp-templates';
 
 export function toE164Digits(phone: string): string | null {
@@ -25,11 +25,23 @@ export async function lookupTenantWhatsAppPhone(businessId: string): Promise<str
   }
 }
 
+type HeaderInfo = { header_format: string | null; header_media_key: string | null };
+
+/** Image/video header templates need media on every send; defaults to the template's own media. */
+async function resolveHeaderMedia(row: HeaderInfo, override?: MediaRef | null): Promise<MediaRef | null> {
+  if (row.header_format !== 'image' && row.header_format !== 'video') return null;
+  if (override) return override;
+  if (!row.header_media_key) return null;
+  const { mediaRefForSend } = await import('@/lib/sales-funnel/media');
+  return mediaRefForSend(row.header_media_key);
+}
+
 export async function sendPlatformEventWhatsApp(input: {
   eventKey: PlatformWaEventKey;
   toPhone: string;
   vars?: string[];
   language?: string;
+  headerMedia?: MediaRef | null;
 }): Promise<{ sent: boolean; skipped: string | null; messageId?: string }> {
   if (!(await isMetaWaConfigured())) {
     return { sent: false, skipped: 'META_WA_NOT_CONFIGURED' };
@@ -41,20 +53,11 @@ export async function sendPlatformEventWhatsApp(input: {
   const keys: PlatformWaEventKey[] =
     input.eventKey === 'demo_booking_otp' ? ['demo_booking_otp', 'signup_otp'] : [input.eventKey];
 
-  let row: {
-    id: string;
-    name: string;
-    language: string;
-    category: string;
-  } | null = null;
+  type Row = HeaderInfo & { id: string; name: string; language: string; category: string };
+  let row: Row | null = null;
   for (const eventKey of keys) {
-    row = await queryOne<{
-      id: string;
-      name: string;
-      language: string;
-      category: string;
-    }>(
-      `SELECT id, name, language, category FROM platform_whatsapp_templates
+    row = await queryOne<Row>(
+      `SELECT id, name, language, category, header_format, header_media_key FROM platform_whatsapp_templates
        WHERE event_key = $1 AND status = 'approved'
        ORDER BY CASE WHEN language = $2 THEN 0 WHEN language = 'en_US' THEN 1 WHEN language = 'en' THEN 2 ELSE 3 END
        LIMIT 1`,
@@ -66,11 +69,15 @@ export async function sendPlatformEventWhatsApp(input: {
 
   const vars = input.vars || [];
   try {
+    const headerMedia = await resolveHeaderMedia(row, input.headerMedia);
+    if ((row.header_format === 'image' || row.header_format === 'video') && !headerMedia) {
+      return { sent: false, skipped: 'NO_HEADER_MEDIA' };
+    }
     const { messageId } = await sendTemplateMessage({
       to,
       name: row.name,
       language: row.language,
-      components: buildSendComponents({ category: row.category, vars }),
+      components: buildSendComponents({ category: row.category, vars, headerFormat: row.header_format, headerMedia }),
     });
     await query(
       `INSERT INTO platform_whatsapp_sends (template_id, to_phone, event_key, graph_message_id, status)
@@ -100,7 +107,7 @@ export async function sendApprovedTemplateTest(input: {
   }
   const to = toE164Digits(input.toPhone);
   if (!to) throw new Error('Invalid phone number');
-  const row = await queryOne<{
+  const row = await queryOne<HeaderInfo & {
     id: string;
     name: string;
     language: string;
@@ -108,17 +115,24 @@ export async function sendApprovedTemplateTest(input: {
     status: string;
     event_key: string | null;
   }>(
-    `SELECT id, name, language, category, status, event_key FROM platform_whatsapp_templates WHERE id = $1`,
+    `SELECT id, name, language, category, status, event_key, header_format, header_media_key
+       FROM platform_whatsapp_templates WHERE id = $1`,
     [input.templateId],
   );
   if (!row) throw new Error('Template not found');
   if (row.status !== 'approved') throw new Error('Template is not approved');
 
+  const headerMedia = await resolveHeaderMedia(row);
   const { messageId } = await sendTemplateMessage({
     to,
     name: row.name,
     language: row.language,
-    components: buildSendComponents({ category: row.category, vars: input.vars || [] }),
+    components: buildSendComponents({
+      category: row.category,
+      vars: input.vars || [],
+      headerFormat: row.header_format,
+      headerMedia,
+    }),
   });
   await query(
     `INSERT INTO platform_whatsapp_sends (template_id, to_phone, event_key, graph_message_id, status)

@@ -23,6 +23,7 @@ import {
   LayoutTemplate,
   Bot,
   Megaphone,
+  MessageCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AdminPwaChrome } from '@/components/admin/AdminPwaChrome';
@@ -48,6 +49,7 @@ const navigation: AdminNavItem[] = [
   { name: 'Reports', href: '/admin/reports', icon: BarChart3 },
   { name: 'Bookings', href: '/admin/bookings', icon: Calendar },
   { name: 'AI Assistant', href: '/admin/assistant', icon: Bot },
+  { name: 'Sales Flow', href: '/admin/sales-flow', icon: MessageCircle },
   { name: 'Platform Users', href: '/admin/users', icon: Users, requiresSuper: true },
   { name: 'PBAC Policies', href: '/admin/policies', icon: Shield },
   { name: 'HSN/SAC Codes', href: '/admin/hsn-codes', icon: Hash },

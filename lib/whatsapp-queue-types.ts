@@ -127,6 +127,17 @@ export type PlatformIncomingQueueJob = WhatsAppQueueJobBase & {
   from: string;
   profileName: string | null;
   text: string;
+  /** Id of the tapped button / list row, when the message is a reply. */
+  replyId?: string | null;
+  /** Click-to-WhatsApp ad that opened the chat (first message only). */
+  referral?: {
+    sourceId: string | null;
+    sourceType: string | null;
+    sourceUrl: string | null;
+    headline: string | null;
+    body: string | null;
+    ctwaClid: string | null;
+  } | null;
 };
 
 export type WhatsAppMessageJob =

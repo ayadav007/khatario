@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   extractInboundMessages,
+  extractMessageStatuses,
   extractTemplateStatusUpdates,
   metaWaWebhookChallenge,
   verifyMetaWaWebhookSignature,
@@ -85,9 +86,21 @@ async function handlePlatformMessages(body: unknown) {
       from: m.from,
       profileName: m.profileName,
       text: m.text,
+      replyId: m.replyId,
+      referral: m.referral,
     });
   }
   return messages.length;
+}
+
+async function handlePlatformStatuses(body: unknown) {
+  const reads = extractMessageStatuses(body).filter((s) => s.status === 'read');
+  if (reads.length === 0) return 0;
+  const { recordFunnelRead } = await import('@/lib/sales-funnel/receipts');
+  for (const s of reads) {
+    await recordFunnelRead(s.messageId).catch(() => undefined);
+  }
+  return reads.length;
 }
 
 export async function POST(request: NextRequest) {
@@ -124,7 +137,8 @@ export async function POST(request: NextRequest) {
       await applyWebhookTemplateStatus(update);
     }
     const messages = await handlePlatformMessages(body);
-    return NextResponse.json({ ok: true, updates: updates.length, messages });
+    const reads = await handlePlatformStatuses(body);
+    return NextResponse.json({ ok: true, updates: updates.length, messages, reads });
   } catch (err) {
     // Meta retries non-2xx for days; message ids are de-duplicated, so log and acknowledge.
     console.error('[meta-whatsapp webhook] processing failed:', err instanceof Error ? err.message : err);
