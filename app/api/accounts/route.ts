@@ -116,6 +116,24 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
       paramIndex++;
     }
 
+    const search = searchParams.get('search')?.trim();
+    if (search) {
+      sql += ` AND (a.account_code ILIKE $${paramIndex} OR a.account_name ILIKE $${paramIndex} OR ag.group_name ILIKE $${paramIndex})`;
+      params.push(`%${search.replace(/[\\%_]/g, '\\$&')}%`);
+      paramIndex++;
+    }
+
+    // Account pickers (journal lines, opening balances, mappings) need every account, so
+    // pagination applies only when the caller asks for it.
+    if (!searchParams.has('page') && !searchParams.has('limit')) {
+      sql += ` ORDER BY a.account_code`;
+      const all = await queryRows<Account & { account_group_name: string; account_group_code: string }>(sql, params);
+      return NextResponse.json({
+        accounts: all,
+        pagination: { page: 1, limit: all.length, total: all.length, totalPages: 1 },
+      });
+    }
+
     // Get total count for pagination
     const countParams = params.slice(0, params.length);
     const countSql = sql.replace(/SELECT[\s\S]*?FROM/, 'SELECT COUNT(*) as total FROM');

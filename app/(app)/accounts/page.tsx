@@ -32,6 +32,7 @@ export default function AccountsPage() {
   const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<string>('all');
@@ -40,11 +41,16 @@ export default function AccountsPage() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     if (business?.id) {
       fetchAccounts();
       fetchGroups();
     }
-  }, [business?.id, viewMode, filterType, filterSection, pagination.page]);
+  }, [business?.id, viewMode, filterType, filterSection, debouncedSearch, pagination.page]);
 
   useEffect(() => {
     if (business?.id) {
@@ -52,7 +58,7 @@ export default function AccountsPage() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, viewMode, filterType, filterSection]);
+  }, [business?.id, viewMode, filterType, filterSection, debouncedSearch]);
 
   const fetchAccounts = async () => {
     if (!business?.id) return;
@@ -64,6 +70,7 @@ export default function AccountsPage() {
         user_id: user?.id || '', // Required for authorization
         ...(filterType !== 'all' && { account_type: filterType }),
         ...(viewMode === 'list' && filterSection !== 'all' && { pl_section: filterSection }),
+        ...(viewMode === 'list' && debouncedSearch && { search: debouncedSearch }),
         ...(viewMode === 'tree' && { tree: 'true' }),
         ...(viewMode === 'list' && { 
           page: pagination.page.toString(),
