@@ -305,6 +305,9 @@ function NewInvoiceContent() {
   const pathname = usePathname();
   const { business, user } = useAuth();
   const { ensureProfile } = useProfileRequiredGate();
+  // Latest save/print handlers, so finishing the profile modal resumes the action with current invoice state.
+  const handleSaveRef = useRef<((targetStatus: 'draft' | 'final') => Promise<unknown>) | null>(null);
+  const handlePrintBillRef = useRef<(() => Promise<unknown>) | null>(null);
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const toastCtx = useToastContext();
   const { canQueueOffline, queueSalesFinalize, resetIdempotency } =
@@ -1554,7 +1557,7 @@ function NewInvoiceContent() {
         documentType,
         (business as { gst_registration_type?: string | null })?.gst_registration_type,
       );
-      if (!ensureProfile(profileContext)) {
+      if (!ensureProfile(profileContext, () => void handlePrintBillRef.current?.())) {
         return;
       }
     }
@@ -2056,6 +2059,7 @@ function NewInvoiceContent() {
           documentType,
           (business as { gst_registration_type?: string | null })?.gst_registration_type,
         ),
+        () => void handleSaveRef.current?.(targetStatus),
       )
     ) {
       return;
@@ -2279,6 +2283,8 @@ function NewInvoiceContent() {
       return false;
     } finally { setLoading(false); }
   }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
+  handleSaveRef.current = handleSave;
+  handlePrintBillRef.current = handlePrintBill;
 
   const handlePosSaveBill = useCallback(async () => {
     const ok = await handleSave('final');
