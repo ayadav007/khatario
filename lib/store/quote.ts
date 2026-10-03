@@ -207,7 +207,8 @@ export async function buildStoreQuote(input: {
   let eta = input.deliveryMode === 'pickup' ? 'Ready for pickup' : '';
   if (input.deliveryMode === 'delivery' || input.deliveryMode === 'pickup') {
     if (!input.branchId) {
-      if (input.deliveryMode === 'delivery') {
+      // Stores without delivery zones have no location to pick; deliver without zone rules, like pickup.
+      if (input.deliveryMode === 'delivery' && (await hasDeliveryZones(input.businessId))) {
         return {
           ...failQuote(subtotal, taxTotal, lines, discount, couponCode),
           error: 'Select a store location',
@@ -255,6 +256,19 @@ export async function buildStoreQuote(input: {
     lines,
     coupon_code: couponCode,
   };
+}
+
+/** Same filter as getStoreBranches: the locations a shopper can pick at checkout. */
+async function hasDeliveryZones(businessId: string): Promise<boolean> {
+  const row = await queryOne<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM store_branch_delivery sbd
+       JOIN branches br ON br.id = sbd.branch_id AND br.business_id = sbd.business_id
+       WHERE sbd.business_id = $1 AND sbd.is_active = true AND br.is_active = true
+     ) AS ok`,
+    [businessId],
+  );
+  return !!row?.ok;
 }
 
 function emptyFail(error: string): StoreQuote {

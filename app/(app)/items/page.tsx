@@ -410,14 +410,14 @@ function ItemsPage() {
                   </div>
                   <div className="text-xs text-text-secondary truncate">
                     {item.code && <span>{item.code}</span>}
-                    {item.code && item.barcode && <span> â€¢ </span>}
+                    {item.code && item.barcode && <span> • </span>}
                     {item.barcode && <span className="font-mono">{item.barcode}</span>}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-semibold text-text-primary">
                     {item.selling_price != null
-                      ? `â‚¹${Number(item.selling_price).toLocaleString('en-IN')}`
+                      ? `₹${Number(item.selling_price).toLocaleString('en-IN')}`
                       : '-'}
                   </div>
                 </div>
@@ -433,7 +433,7 @@ function ItemsPage() {
             disabled={page === 1}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            â€¹ Prev
+            ‹ Prev
           </button>
           <span className="text-text-secondary">
             {page} / {totalPages}
@@ -443,14 +443,14 @@ function ItemsPage() {
             disabled={page === totalPages}
             className="px-2 py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 text-text-primary"
           >
-            Next â€º
+            Next ›
           </button>
         </div>
       )}
     </Card>
   );
 
-  // Full list (table + mobile cards) â€” original experience when no detail panel is open
+  // Full list (table + mobile cards) — original experience when no detail panel is open
   const fullList = (
     <Card padding="none" className="overflow-hidden">
       {loading ? (

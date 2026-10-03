@@ -109,7 +109,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
                       {item.variantName || item.unit}
                     </p>
                     <p className="mt-1 text-[14px] font-medium tabular-nums">
-                      â‚¹{(item.price * item.quantity).toLocaleString('en-IN')}
+                      ₹{(item.price * item.quantity).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div className={clsx('flex items-center', soft && 'rounded-xl')} style={{ border: hair }}>
@@ -144,13 +144,13 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
           <div className="px-4 py-4" style={{ borderTop: hair }}>
             {store?.store_min_order_amount && cartTotal < store.store_min_order_amount ? (
               <p className="mb-2 text-[12px]">
-                Minimum order â‚¹{store.store_min_order_amount.toLocaleString('en-IN')}. Add â‚¹
+                Minimum order ₹{store.store_min_order_amount.toLocaleString('en-IN')}. Add ₹
                 {(store.store_min_order_amount - cartTotal).toLocaleString('en-IN')} more.
               </p>
             ) : null}
             <div className="flex justify-between text-[13px]">
               <span style={{ opacity: 0.55 }}>Subtotal</span>
-              <span className="tabular-nums">â‚¹{cartTotal.toLocaleString('en-IN')}</span>
+              <span className="tabular-nums">₹{cartTotal.toLocaleString('en-IN')}</span>
             </div>
             <button
               type="button"
@@ -171,7 +171,7 @@ export function StoreCartDrawer({ open, onClose, onCheckout }: StoreCartDrawerPr
                     : chowkOnAccent(accent),
               }}
             >
-              {soft ? `Proceed to Checkout Â· â‚¹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
+              {soft ? `Proceed to Checkout · ₹${cartTotal.toLocaleString('en-IN')}` : 'Checkout'}
             </button>
           </div>
         ) : null}
