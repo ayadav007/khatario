@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, Bell, Clock, CreditCard, Loader2, Package, Search, Send, ThumbsUp, Truck } from 'lucide-react';
+import { AlertTriangle, Bell, Clock, CreditCard, FileText, Loader2, Package, Search, Send, ThumbsUp, Truck } from 'lucide-react';
 import { ChannelBadge } from '@/components/orders/ChannelBadge';
 import { DeliveryStatusBadge } from '@/components/orders/DeliveryStatusBadge';
 import { OrderDrawer } from '@/components/orders/OrderDrawer';
@@ -77,6 +77,8 @@ function OrdersHub() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<{ source: string; id: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [manifest, setManifest] = useState<{ pending: number } | null>(null);
+  const [manifestBusy, setManifestBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,9 +103,38 @@ function OrdersHub() {
     }
   }, [channel, deliveryStatus, needs, query, page]);
 
+  const loadManifest = useCallback(async () => {
+    const res = await fetch('/api/orders/shiprocket/manifest').catch(() => null);
+    const json = res?.ok ? await res.json().catch(() => null) : null;
+    setManifest(json?.configured ? { pending: Number(json.pending) || 0 } : null);
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadManifest();
+  }, [loadManifest]);
+
+  async function printManifest() {
+    setManifestBusy(true);
+    setError(null);
+    // Opened before the request so the browser does not block it as a pop-up.
+    const win = window.open('', '_blank');
+    try {
+      const res = await fetch('/api/orders/shiprocket/manifest', { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.url) throw new Error(json.error || 'Manifest could not be created');
+      if (win) win.location.href = json.url;
+      void loadManifest();
+    } catch (e) {
+      win?.close();
+      setError(e instanceof Error ? e.message : 'Manifest could not be created');
+    } finally {
+      setManifestBusy(false);
+    }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -116,7 +147,7 @@ function OrdersHub() {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const chip = (active: boolean) =>
     `whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition ${
-      active ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200'
+      active ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200'
     }`;
 
   return (
@@ -150,6 +181,18 @@ function OrdersHub() {
           >
             <Bell className="h-4 w-4" /> Buyer updates
           </button>
+          {manifest ? (
+            <button
+              type="button"
+              onClick={() => void printManifest()}
+              disabled={manifestBusy}
+              title="The pickup sheet the courier signs when collecting today's Shiprocket parcels"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:hover:bg-slate-800"
+            >
+              {manifestBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              {manifest.pending > 0 ? `Pickup manifest (${manifest.pending})` : 'Pickup manifest'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -163,7 +206,7 @@ function OrdersHub() {
               setNeeds(needs === key ? '' : key);
             }}
             className={`rounded-xl border p-3 text-left transition ${
-              needs === key ? 'border-primary ring-1 ring-primary' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'
+              needs === key ? 'border-primary-500 ring-1 ring-primary-500' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'
             } bg-white dark:bg-slate-900`}
             title={key === 'stale' ? `Paid more than ${sla} hours ago and not dispatched` : undefined}
           >
@@ -300,7 +343,7 @@ function OrdersHub() {
       ) : null}
 
       {open ? (
-        <OrderDrawer source={open.source} id={open.id} onClose={() => setOpen(null)} onChanged={() => void load()} />
+        <OrderDrawer source={open.source} id={open.id} onClose={() => setOpen(null)} onChanged={() => { void load(); void loadManifest(); }} />
       ) : null}
       {showSettings ? <OrderUpdateSettingsDialog onClose={() => setShowSettings(false)} onSaved={() => void load()} /> : null}
     </div>

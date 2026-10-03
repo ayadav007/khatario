@@ -301,6 +301,8 @@ export async function loadOrderFulfilments(businessId: string, source: HubSource
     `SELECT f.id, f.seq, f.status, f.method, f.partner_name, f.awb, f.tracking_url, f.rider_name, f.rider_phone,
             f.pickup_code, f.proof_photo_url, f.cod_amount::float8 AS cod_amount, f.cod_collected_at,
             f.failure_reason, f.public_token, f.ship_address, f.ship_pincode, f.packages,
+            f.weight_kg::float8 AS weight_kg, f.carrier_shipment_id, f.label_url, f.manifest_url,
+            f.pickup_scheduled_at, f.booking_error,
             f.status_changed_at, f.created_at
        FROM order_fulfilments f
       WHERE f.business_id = $1 AND f.${col} = $2 ${extra}

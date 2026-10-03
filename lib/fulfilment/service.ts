@@ -43,6 +43,13 @@ export interface FulfilmentRow {
   ship_address?: string | null;
   ship_pincode?: string | null;
   packages?: number;
+  carrier_order_id?: string | null;
+  carrier_shipment_id?: string | null;
+  weight_kg?: string | null;
+  label_url?: string | null;
+  manifest_url?: string | null;
+  pickup_scheduled_at?: string | null;
+  booking_error?: string | null;
   status_changed_at: string;
 }
 
@@ -50,9 +57,17 @@ export interface FulfilmentShipping {
   address?: string | null;
   pincode?: string | null;
   packages?: number | null;
+  weightKg?: number | null;
 }
 
-/** Saves the delivery address and box count printed on the shipping label. */
+/** Parcel weight in kg, 10 g to 500 kg, rounded to grams; null when unusable. */
+export function cleanWeightKg(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0.01) return null;
+  return Math.round(Math.min(500, n) * 1000) / 1000;
+}
+
+/** Saves the delivery address, box count and weight used for labels and courier booking. */
 export async function setFulfilmentShipping(
   client: PoolClient,
   input: { businessId: string; fulfilmentId: string } & FulfilmentShipping,
@@ -60,11 +75,13 @@ export async function setFulfilmentShipping(
   const pin = input.pincode != null ? String(input.pincode).replace(/\D/g, '').slice(0, 6) || null : undefined;
   const packages =
     input.packages != null ? Math.min(50, Math.max(1, Math.round(Number(input.packages) || 1))) : undefined;
+  const weight = input.weightKg != null ? cleanWeightKg(input.weightKg) : null;
   const res = await client.query(
     `UPDATE order_fulfilments
         SET ship_address = CASE WHEN $3::boolean THEN $4::text ELSE ship_address END,
             ship_pincode = CASE WHEN $5::boolean THEN $6::varchar ELSE ship_pincode END,
             packages = COALESCE($7::smallint, packages),
+            weight_kg = COALESCE($8::numeric, weight_kg),
             updated_at = NOW()
       WHERE id = $1 AND business_id = $2`,
     [
@@ -75,6 +92,7 @@ export async function setFulfilmentShipping(
       pin !== undefined,
       pin ?? null,
       packages ?? null,
+      weight,
     ],
   );
   return res.rowCount === 1;
@@ -365,22 +383,50 @@ export async function transitionFulfilment(
   return { ok: true, changed, fulfilmentId: row.id, from, to: input.to };
 }
 
-/** Another shipment for an order going out in parts; copies links and buyer from the first. */
+const SAME_ORDER = `x.business_id = f.business_id
+                AND x.store_order_id IS NOT DISTINCT FROM f.store_order_id
+                AND x.sales_order_id IS NOT DISTINCT FROM f.sales_order_id
+                AND x.invoice_id IS NOT DISTINCT FROM f.invoice_id`;
+
+export type AddShipmentResult =
+  | { ok: true; row: FulfilmentRow }
+  | { ok: false; code: 'NOT_FOUND' | 'PARCEL_PENDING'; error: string; pendingSeq?: number };
+
+/**
+ * Another parcel for an order going out in parts; copies links and buyer from the first. Refused
+ * while any parcel of the order is still waiting to go out, so repeated clicks cannot pile up
+ * empty parcels.
+ */
 export async function addShipment(
   client: PoolClient,
   input: { businessId: string; fulfilmentId: string; actorUserId?: string | null },
-): Promise<FulfilmentRow | null> {
+): Promise<AddShipmentResult> {
+  const pending = await client.query<{ seq: number }>(
+    `SELECT x.seq
+       FROM order_fulfilments f
+       JOIN order_fulfilments x ON ${SAME_ORDER}
+      WHERE f.id = $1 AND f.business_id = $2
+        AND x.status IN ('new', 'confirmed', 'packed')
+      ORDER BY x.seq
+      LIMIT 1`,
+    [input.fulfilmentId, input.businessId],
+  );
+  if (pending.rows[0]) {
+    const seq = pending.rows[0].seq;
+    return {
+      ok: false,
+      code: 'PARCEL_PENDING',
+      pendingSeq: seq,
+      error: `Parcel ${seq} has not gone out yet. Dispatch it first, or remove it if it is not needed.`,
+    };
+  }
   const res = await client.query<FulfilmentRow>(
     `INSERT INTO order_fulfilments (
        business_id, branch_id, channel, store_order_id, sales_order_id, invoice_id, customer_id, seq,
        buyer_name, buyer_phone, status, public_token
      )
      SELECT f.business_id, f.branch_id, f.channel, f.store_order_id, f.sales_order_id, f.invoice_id, f.customer_id,
-            (SELECT MAX(x.seq) + 1 FROM order_fulfilments x
-              WHERE x.business_id = f.business_id
-                AND x.store_order_id IS NOT DISTINCT FROM f.store_order_id
-                AND x.sales_order_id IS NOT DISTINCT FROM f.sales_order_id
-                AND x.invoice_id IS NOT DISTINCT FROM f.invoice_id),
+            (SELECT MAX(x.seq) + 1 FROM order_fulfilments x WHERE ${SAME_ORDER}),
             f.buyer_name, f.buyer_phone, 'confirmed', $3
        FROM order_fulfilments f
       WHERE f.id = $1 AND f.business_id = $2
@@ -388,8 +434,24 @@ export async function addShipment(
     [input.fulfilmentId, input.businessId, newPublicToken()],
   );
   const row = res.rows[0];
-  if (row) await recordEvent(client, row, 'confirmed', 'staff', input.actorUserId, `Shipment ${row.seq}`);
-  return row ?? null;
+  if (!row) return { ok: false, code: 'NOT_FOUND', error: 'Delivery record not found' };
+  await recordEvent(client, row, 'confirmed', 'staff', input.actorUserId, `Parcel ${row.seq}`);
+  return { ok: true, row };
+}
+
+/** Deletes an extra parcel (not the first) that has not been dispatched or booked with a courier. */
+export async function removeShipment(
+  client: PoolClient,
+  input: { businessId: string; fulfilmentId: string },
+): Promise<boolean> {
+  const res = await client.query(
+    `DELETE FROM order_fulfilments
+      WHERE id = $1 AND business_id = $2 AND seq > 1
+        AND status IN ('new', 'confirmed', 'packed')
+        AND awb IS NULL AND carrier_shipment_id IS NULL`,
+    [input.fulfilmentId, input.businessId],
+  );
+  return res.rowCount === 1;
 }
 
 /** Marks cash on delivery as collected (once). */

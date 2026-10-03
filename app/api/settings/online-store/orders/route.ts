@@ -247,7 +247,7 @@ export async function PATCH(request: NextRequest) {
     }
     throw error;
   }
-  const { moved, invoiceError } = applied;
+  const { moved, invoiceError, bookingError, bookingWarning } = applied;
   if (!moved.ok) {
     return NextResponse.json(
       { error: moved.error, code: moved.code, current_status: moved.from ?? null },
@@ -256,7 +256,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   const detail = await loadOrder(orderId, businessId);
-  return NextResponse.json({ success: true, invoice_error: invoiceError, ...detail });
+  return NextResponse.json({
+    success: true,
+    invoice_error: invoiceError,
+    booking_error: bookingError,
+    booking_warning: bookingWarning,
+    ...detail,
+  });
 }
 
 async function handleScan(businessId: string, body: Record<string, unknown>) {

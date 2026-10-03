@@ -157,6 +157,11 @@ export default function StoreOrdersPage() {
         if (data.invoice_error) {
           toast.error(String(data.invoice_error));
         }
+        if (data.booking_error) {
+          toast.error(`Shiprocket: ${String(data.booking_error)}`);
+        } else if (data.booking_warning) {
+          toast(String(data.booking_warning));
+        }
         if (data.order) {
           setSelectedOrder(data.order);
           setItems(data.items ?? []);

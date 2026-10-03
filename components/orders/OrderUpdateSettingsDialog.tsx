@@ -115,7 +115,7 @@ export function OrderUpdateSettingsDialog({ onClose, onSaved }: { onClose: () =>
               <button
                 type="button"
                 disabled={saving}
-                className="rounded-lg bg-primary px-4 py-2 font-medium text-white disabled:opacity-60"
+                className="rounded-lg bg-primary-600 px-4 py-2 font-medium text-white hover:bg-primary-700 disabled:opacity-60"
                 onClick={() => void save()}
               >
                 {saving ? 'Saving…' : 'Save'}

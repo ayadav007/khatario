@@ -37,8 +37,16 @@ interface Fulfilment {
   ship_address: string | null;
   ship_pincode: string | null;
   packages: number;
+  weight_kg: number | null;
+  carrier_shipment_id: string | null;
+  label_url: string | null;
+  manifest_url: string | null;
+  pickup_scheduled_at: string | null;
+  booking_error: string | null;
   events: TimelineEvent[];
 }
+
+const NOT_YET_OUT: FulfilmentStatus[] = ['new', 'confirmed', 'packed'];
 
 interface ShipFrom {
   name: string;
@@ -92,6 +100,7 @@ export function OrderDrawer({
 }) {
   const [data, setData] = useState<OrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
@@ -110,6 +119,7 @@ export function OrderDrawer({
     address: '',
     pincode: '',
     boxes: '1',
+    weight: '',
   });
   const [labelSize, setLabelSize] = useState<LabelSize>('4x6');
 
@@ -147,18 +157,30 @@ export function OrderDrawer({
       return;
     }
     if (p === 'dispatch' || p === 'address') {
-      setForm((s) => ({ ...s, address: shipAddress ?? '', pincode: shipPincode ?? '', boxes: String(boxes) }));
+      setForm((s) => ({
+        ...s,
+        address: shipAddress ?? '',
+        pincode: shipPincode ?? '',
+        boxes: String(boxes),
+        weight: f?.weight_kg ? String(f.weight_kg) : '',
+      }));
     }
     setPanel(p);
   }
 
   function shippingFromForm() {
-    return { address: form.address, pincode: form.pincode, packages: Number(form.boxes) || 1 };
+    return {
+      address: form.address,
+      pincode: form.pincode,
+      packages: Number(form.boxes) || 1,
+      ...(form.weight ? { weight_kg: Number(form.weight) } : {}),
+    };
   }
 
-  async function act(body: Record<string, unknown>) {
+  async function act(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const res = await fetch(`/api/orders/${source}/${id}`, {
         method: 'POST',
@@ -166,16 +188,49 @@ export function OrderDrawer({
         body: JSON.stringify({ fulfilment_id: f?.id, ...body }),
       });
       const json = await res.json().catch(() => ({}));
+      if (json.order) setData(json);
       if (!res.ok) {
         setError(json.error || 'That did not work');
-        return;
+        if (json.order) onChanged();
+        return null;
       }
-      if (json.order) setData(json);
+      if (json.active_fulfilment_id) setActive(json.active_fulfilment_id);
+      if (json.warning) setNotice(json.warning);
       setPanel(null);
       onChanged();
+      return json;
     } finally {
       setBusy(false);
     }
+  }
+
+  function splitParcel() {
+    const ok = window.confirm(
+      'Send part of this order as a separate parcel?\n\n' +
+        'Use this only when some items go out later or with a different courier. ' +
+        'For several boxes going out together, set "Boxes" on the same parcel instead.',
+    );
+    if (ok) void act({ action: 'add_shipment' });
+  }
+
+  async function removeParcel() {
+    if (!f || !window.confirm(`Remove parcel ${f.seq}? It has not been dispatched.`)) return;
+    const json = await act({ action: 'remove_shipment' });
+    if (json) setActive(null);
+  }
+
+  async function printShiprocketLabel() {
+    if (!f) return;
+    // Opened before the request so the browser does not block it as a pop-up.
+    const win = f.label_url ? null : window.open('', '_blank');
+    if (f.label_url) {
+      window.open(f.label_url, '_blank', 'noopener');
+      return;
+    }
+    const json = await act({ action: 'shiprocket_label' });
+    const url = typeof json?.label_url === 'string' ? json.label_url : null;
+    if (url && win) win.location.href = url;
+    else win?.close();
   }
 
   function move(to: FulfilmentStatus, extra: Record<string, unknown> = {}) {
@@ -289,6 +344,7 @@ export function OrderDrawer({
         ) : null}
 
         {error ? <div className="mx-5 mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">{error}</div> : null}
+        {notice ? <div className="mx-5 mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">{notice}</div> : null}
 
         {data && o ? (
           <div className="space-y-5 px-5 py-4">
@@ -330,17 +386,24 @@ export function OrderDrawer({
             ) : null}
 
             {data.fulfilments.length > 1 ? (
-              <div className="flex flex-wrap gap-2">
-                {data.fulfilments.map((x) => (
-                  <button
-                    key={x.id}
-                    type="button"
-                    onClick={() => setActive(x.id)}
-                    className={`rounded-full px-3 py-1 text-xs ${x.id === f?.id ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800'}`}
-                  >
-                    Shipment {x.seq}
-                  </button>
-                ))}
+              <div>
+                <p className="mb-1.5 text-xs text-slate-500">This order goes out in {data.fulfilments.length} parcels. Pick one to manage it.</p>
+                <div className="flex flex-wrap gap-2">
+                  {data.fulfilments.map((x) => (
+                    <button
+                      key={x.id}
+                      type="button"
+                      onClick={() => setActive(x.id)}
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        x.id === f?.id
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      Parcel {x.seq} · {x.status.replace(/_/g, ' ')}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
 
@@ -383,21 +446,49 @@ export function OrderDrawer({
                         <Pencil className="h-3 w-3" /> {shipAddress ? 'Edit' : 'Add'}
                       </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="secondary" disabled={!shipAddress} onClick={() => void printLabel()}>
-                        <Tag className="mr-1 h-4 w-4" /> Print shipping label
-                      </Button>
-                      <select
-                        aria-label="Label size"
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-800"
-                        value={labelSize}
-                        onChange={(e) => changeLabelSize(e.target.value as LabelSize)}
-                      >
-                        <option value="4x6">4×6 in thermal</option>
-                        <option value="a4">A4 (2 per page)</option>
-                      </select>
-                      {f.method === 'shiprocket' ? (
-                        <span className="text-xs text-slate-500">Shiprocket parcels need Shiprocket&apos;s own label.</span>
+                    {f.method === 'shiprocket' && f.carrier_shipment_id && f.awb ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button size="sm" isLoading={busy} onClick={() => void printShiprocketLabel()}>
+                          <Tag className="mr-1 h-4 w-4" /> Print Shiprocket label
+                        </Button>
+                        <span className="text-xs text-slate-500">Stick this on the parcel; the courier scans its barcode.</span>
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="secondary" disabled={!shipAddress} onClick={() => void printLabel()}>
+                          <Tag className="mr-1 h-4 w-4" /> Print shipping label
+                        </Button>
+                        <select
+                          aria-label="Label size"
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-800"
+                          value={labelSize}
+                          onChange={(e) => changeLabelSize(e.target.value as LabelSize)}
+                        >
+                          <option value="4x6">4×6 in thermal</option>
+                          <option value="a4">A4 (2 per page)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {f.booking_error && !f.awb ? (
+                  <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">
+                    <div>
+                      <span className="font-medium">Shiprocket could not book this parcel:</span> {f.booking_error}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {f.status === 'shipped' ? (
+                        <Button size="sm" variant="secondary" isLoading={busy} onClick={() => void act({ action: 'book_courier' })}>
+                          Try booking again
+                        </Button>
+                      ) : (
+                        <span className="text-xs">Fix the problem, then use Dispatch → Shiprocket again.</span>
+                      )}
+                      {f.carrier_shipment_id && o.source_type !== 'store_order' ? (
+                        <Button size="sm" variant="ghost" isLoading={busy} onClick={() => void act({ action: 'cancel_booking' })}>
+                          Start over
+                        </Button>
                       ) : null}
                     </div>
                   </div>
@@ -406,11 +497,12 @@ export function OrderDrawer({
                 {panel === 'address' ? (
                   <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                     <textarea className={input} rows={3} placeholder="House / shop, street, area, city, state" value={form.address} onChange={set('address')} />
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <input className={input} placeholder="PIN code" inputMode="numeric" maxLength={6} value={form.pincode} onChange={set('pincode')} />
                       <input className={input} placeholder="Boxes" type="number" min={1} max={50} value={form.boxes} onChange={set('boxes')} />
+                      <input className={input} placeholder="Weight kg" inputMode="decimal" value={form.weight} onChange={set('weight')} />
                     </div>
-                    <p className="text-xs text-slate-500">Saved on this shipment only; the customer record is not changed.</p>
+                    <p className="text-xs text-slate-500">Saved on this parcel only; the customer record is not changed.</p>
                     <Button size="sm" isLoading={busy} onClick={() => void act({ action: 'set_shipping', shipping: shippingFromForm() })}>
                       Save address
                     </Button>
@@ -420,6 +512,13 @@ export function OrderDrawer({
                 <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
                   {f.method ? <div>Method: {FULFILMENT_METHOD_LABEL[f.method]}{f.partner_name ? ` · ${f.partner_name}` : ''}</div> : null}
                   {f.awb ? <div>Tracking no: <span className="font-mono">{f.awb}</span></div> : null}
+                  {f.method === 'shiprocket' && f.pickup_scheduled_at && f.status === 'shipped' ? (
+                    <div>
+                      Pickup booked for{' '}
+                      {new Date(f.pickup_scheduled_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                  ) : null}
+                  {f.weight_kg ? <div>Weight: {f.weight_kg} kg</div> : null}
                   {f.tracking_url ? (
                     <a href={f.tracking_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                       Courier tracking <ExternalLink className="h-3 w-3" />
@@ -473,8 +572,25 @@ export function OrderDrawer({
                   {next.includes('cancelled') ? (
                     <Button size="sm" variant="ghost" onClick={() => setPanel(panel === 'cancel' ? null : 'cancel')}>Cancel</Button>
                   ) : null}
-                  {status !== 'cancelled' ? (
-                    <Button size="sm" variant="ghost" isLoading={busy} onClick={() => void act({ action: 'add_shipment' })}>Add shipment</Button>
+                  {f.method === 'shiprocket' && f.carrier_shipment_id && f.status === 'shipped' && o.source_type !== 'store_order' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      isLoading={busy}
+                      onClick={() => {
+                        if (window.confirm('Cancel the Shiprocket booking? The parcel goes back to packed so you can book it again.')) {
+                          void act({ action: 'cancel_booking' });
+                        }
+                      }}
+                    >
+                      Cancel booking
+                    </Button>
+                  ) : null}
+                  {f.seq > 1 && NOT_YET_OUT.includes(f.status) && !f.awb && !f.carrier_shipment_id ? (
+                    <Button size="sm" variant="ghost" isLoading={busy} onClick={() => void removeParcel()}>Remove parcel</Button>
+                  ) : null}
+                  {status !== 'cancelled' && status !== 'returned' && !data.fulfilments.some((x) => NOT_YET_OUT.includes(x.status)) ? (
+                    <Button size="sm" variant="ghost" isLoading={busy} onClick={splitParcel}>Send rest as another parcel</Button>
                   ) : null}
                 </div>
 
@@ -496,7 +612,13 @@ export function OrderDrawer({
                       </>
                     ) : null}
                     {form.method === 'shiprocket' ? (
-                      <input className={input} placeholder="AWB (leave empty to book through Shiprocket)" value={form.awb} onChange={set('awb')} />
+                      <>
+                        <p className="text-xs text-slate-500">
+                          Khatario books the courier, gets the AWB and asks for pickup. Then print the Shiprocket label.
+                        </p>
+                        <input className={input} placeholder="Weight in kg (e.g. 0.5)" inputMode="decimal" value={form.weight} onChange={set('weight')} />
+                        <input className={input} placeholder="Already booked on Shiprocket? Paste the AWB" value={form.awb} onChange={set('awb')} />
+                      </>
                     ) : null}
                     {form.method === 'local_app' ? (
                       <>
@@ -527,7 +649,11 @@ export function OrderDrawer({
                       </>
                     ) : null}
                     <Button size="sm" isLoading={busy} onClick={() => void dispatch()}>
-                      {form.method === 'pickup' ? 'Ready for pickup' : 'Mark shipped'}
+                      {form.method === 'pickup'
+                        ? 'Ready for pickup'
+                        : form.method === 'shiprocket' && !form.awb.trim()
+                          ? 'Book courier & mark shipped'
+                          : 'Mark shipped'}
                     </Button>
                   </div>
                 ) : null}

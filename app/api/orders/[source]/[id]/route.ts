@@ -14,20 +14,37 @@ import {
 } from '@/lib/fulfilment/hub';
 import { resolveHubAuth } from '@/lib/fulfilment/hub-scope';
 import { triggerFulfilmentNotification } from '@/lib/fulfilment/notify-trigger';
-import { isFulfilmentMethod, isFulfilmentStatus, type FulfilmentMethod, type FulfilmentStatus } from '@/lib/fulfilment/rules';
+import {
+  canDispatch,
+  canTransitionFulfilment,
+  isFulfilmentMethod,
+  isFulfilmentStatus,
+  requiresPaymentFor,
+  type FulfilmentMethod,
+  type FulfilmentStatus,
+} from '@/lib/fulfilment/rules';
 import {
   addShipment,
   ensureFulfilment,
+  fulfilmentPaymentState,
   markCodCollected,
+  removeShipment,
   setFulfilmentShipping,
   syncStoreOrderFulfilment,
   transitionFulfilment,
   type FulfilmentDetails,
+  type FulfilmentRow,
   type FulfilmentShipping,
 } from '@/lib/fulfilment/service';
+import {
+  bookFulfilmentWithShiprocket,
+  cancelShiprocketBooking,
+  shiprocketLabelUrl,
+} from '@/lib/fulfilment/shiprocket-booking';
 import { isInvoiceChannel } from '@/lib/invoices/channel';
 import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
 import { applyStoreOrderStatus, syncStoreFulfilmentQuietly, type StoreDispatchMode } from '@/lib/store/apply-store-status';
+import { bookStoreCourierIfNeeded } from '@/lib/store/book-store-shipment';
 import type { StoreOrderStatus } from '@/lib/store/fulfillment-rules';
 
 export const dynamic = 'force-dynamic';
@@ -103,6 +120,7 @@ function parseShipping(raw: unknown): FulfilmentShipping | null {
   if (s.address !== undefined) out.address = str(s.address, 500);
   if (s.pincode !== undefined) out.pincode = str(s.pincode, 10);
   if (s.packages !== undefined) out.packages = Number(s.packages);
+  if (s.weight_kg !== undefined && s.weight_kg !== null && s.weight_kg !== '') out.weightKg = Number(s.weight_kg);
   return out;
 }
 
@@ -176,8 +194,10 @@ async function firstOrStart(c: PoolClient, businessId: string, row: OrderHubRow,
 
 /**
  * POST /api/orders/{source}/{id}
- * Actions: start | transition {to, details, note, pickup_code} | cod_collected | add_shipment.
- * Store orders move through the store lifecycle (invoice, courier booking) first.
+ * Actions: start | transition {to, details, note, pickup_code, shipping} | cod_collected | set_shipping |
+ * add_shipment | remove_shipment | book_courier | cancel_booking | shiprocket_label.
+ * Store orders move through the store lifecycle (invoice, courier booking) first. Dispatching
+ * other orders "via Shiprocket" without an AWB books the courier before marking shipped.
  */
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await resolveHubAuth(request, 'update');
@@ -196,6 +216,17 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'Shipment not found on this order' }, { status: 404 });
   }
 
+  let warning: string | null = null;
+  let labelUrl: string | null = null;
+  let activeId: string | null = null;
+  const bookingFailed = async (error: string) => {
+    const fresh = await getOrderHubRow(auth.scope, row.source_type, row.source_id);
+    return NextResponse.json(
+      { error, code: 'BOOKING_FAILED', ...(fresh ? await detail(businessId, fresh) : {}) },
+      { status: 422 },
+    );
+  };
+
   if (action === 'start') {
     if (row.source_type === 'store_order') {
       await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
@@ -205,7 +236,48 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   } else if (action === 'add_shipment') {
     const base = requested ?? own[0]?.id;
     if (!base) return NextResponse.json({ error: 'Start delivery tracking first' }, { status: 409 });
-    await inTx((c) => addShipment(c, { businessId, fulfilmentId: base, actorUserId: auth.userId }));
+    const added = await inTx((c) => addShipment(c, { businessId, fulfilmentId: base, actorUserId: auth.userId }));
+    if (!added.ok) {
+      return NextResponse.json({ error: added.error, code: added.code }, { status: added.code === 'NOT_FOUND' ? 404 : 409 });
+    }
+    activeId = added.row.id;
+  } else if (action === 'remove_shipment') {
+    if (!requested) return NextResponse.json({ error: 'Choose the parcel to remove' }, { status: 400 });
+    const removed = await inTx((c) => removeShipment(c, { businessId, fulfilmentId: requested }));
+    if (!removed) {
+      return NextResponse.json(
+        { error: 'Only an extra parcel that has not been dispatched or booked can be removed' },
+        { status: 409 },
+      );
+    }
+  } else if (action === 'shiprocket_label') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const label = await shiprocketLabelUrl(businessId, target);
+    if (!label.ok) return NextResponse.json({ error: label.error }, { status: 409 });
+    labelUrl = label.url;
+  } else if (action === 'book_courier') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const current = own.find((x) => x.id === target) as { status?: string; seq?: number } | undefined;
+    if (current?.status !== 'shipped') {
+      return NextResponse.json({ error: 'Use Dispatch to book this parcel' }, { status: 409 });
+    }
+    if (row.source_type === 'store_order' && current.seq === 1) {
+      const booking = await bookStoreCourierIfNeeded(row.source_id, businessId, auth.userId);
+      if (booking.error) return bookingFailed(booking.error);
+      warning = booking.warning ?? null;
+      await syncStoreFulfilmentQuietly(businessId, row.source_id, auth.userId);
+    } else {
+      const booked = await bookFulfilmentWithShiprocket(businessId, target, { actorUserId: auth.userId });
+      if (!booked.ok) return bookingFailed(booked.error);
+      warning = booked.warning ?? null;
+    }
+  } else if (action === 'cancel_booking') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const cancelled = await cancelShiprocketBooking(businessId, target, { actorUserId: auth.userId });
+    if (!cancelled.ok) return NextResponse.json({ error: cancelled.error }, { status: cancelled.status });
   } else if (action === 'cod_collected') {
     const target = requested ?? own[0]?.id;
     if (!target) return NextResponse.json({ error: 'No cash on delivery on this order' }, { status: 409 });
@@ -253,11 +325,60 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       }
     }
 
-    if (row.source_type === 'store_order' && (!requested || requested === own[0]?.id)) {
+    const isStoreFirst = row.source_type === 'store_order' && (!requested || requested === own[0]?.id);
+    const bookShiprocket = to === 'shipped' && details.method === 'shiprocket' && !details.awb;
+
+    if (isStoreFirst && shipping) {
+      // The store lifecycle books the courier, so the corrected address must be saved first.
+      await inTx(async (c) => {
+        const target = requested ?? (await firstOrStart(c, businessId, row, auth.userId));
+        await setFulfilmentShipping(c, { businessId, fulfilmentId: target, ...shipping });
+      });
+    }
+
+    if (bookShiprocket && !isStoreFirst) {
+      const pre = await inTx(async (c) => {
+        const fulfilmentId = requested ?? (await firstOrStart(c, businessId, row, auth.userId));
+        if (shipping) await setFulfilmentShipping(c, { businessId, fulfilmentId, ...shipping });
+        const r = await c.query<FulfilmentRow>(
+          `SELECT * FROM order_fulfilments WHERE id = $1 AND business_id = $2`,
+          [fulfilmentId, businessId],
+        );
+        const f = r.rows[0];
+        if (!f) return { error: 'Delivery record not found', status: 404 as const };
+        if (f.status !== 'shipped' && !canTransitionFulfilment(f.status, 'shipped')) {
+          return { error: `Cannot dispatch a ${f.status.replace(/_/g, ' ')} order`, status: 409 as const };
+        }
+        if (requiresPaymentFor('shipped') && row.source_type !== 'store_order') {
+          const codAmount = details.codAmount != null ? details.codAmount : Number(f.cod_amount) || 0;
+          if (details.codAmount != null) {
+            await c.query(`UPDATE order_fulfilments SET cod_amount = $3 WHERE id = $1 AND business_id = $2`, [
+              fulfilmentId,
+              businessId,
+              Math.max(0, codAmount),
+            ]);
+          }
+          const pay = await fulfilmentPaymentState(c, { ...f, cod_amount: String(codAmount) });
+          if (!canDispatch(pay)) {
+            return { error: 'Cannot dispatch until the order is paid or marked cash on delivery', status: 409 as const };
+          }
+        }
+        return { fulfilmentId };
+      });
+      if ('error' in pre) return NextResponse.json({ error: pre.error }, { status: pre.status });
+      const booked = await bookFulfilmentWithShiprocket(businessId, pre.fulfilmentId, { actorUserId: auth.userId });
+      if (!booked.ok) return bookingFailed(booked.error);
+      warning = booked.warning ?? null;
+      details.awb = booked.awb;
+      details.partnerName = `${booked.courierName} (Shiprocket)`;
+      details.trackingUrl = booked.trackingUrl;
+    }
+
+    if (isStoreFirst) {
       const storeTo = storeTargetFor(to, row.order_status);
       if (storeTo) {
         try {
-          const { moved } = await applyStoreOrderStatus({
+          const { moved, bookingError, bookingWarning } = await applyStoreOrderStatus({
             businessId,
             orderId: row.source_id,
             to: storeTo,
@@ -268,6 +389,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
           if (!moved.ok) {
             return NextResponse.json({ error: moved.error, code: moved.code }, { status: moved.status });
           }
+          if (bookingError) warning = `Shiprocket booking failed: ${bookingError}`;
+          else if (bookingWarning) warning = bookingWarning;
         } catch (error) {
           if (error instanceof InvoiceCancelError) {
             return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
@@ -312,5 +435,6 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   }
 
   const updated = await getOrderHubRow(auth.scope, row.source_type, row.source_id);
-  return NextResponse.json(updated ? await detail(businessId, updated) : { ok: true });
+  const extra = { warning, label_url: labelUrl, active_fulfilment_id: activeId };
+  return NextResponse.json(updated ? { ...(await detail(businessId, updated)), ...extra } : { ok: true, ...extra });
 }

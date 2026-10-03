@@ -1,7 +1,7 @@
 import { queryOne, queryRows } from '@/lib/db';
 import { decryptPaymentSecret } from '@/lib/payments/secret-encryption';
 import { quoteSelfDelivery, type DeliveryMode } from './self';
-import { createShiprocketProvider } from './shiprocket';
+import { createShiprocketProvider, type ShiprocketCreds } from './shiprocket';
 import type { DeliveryProvider, DeliveryProviderId, DeliveryQuoteResult } from './types';
 import type { StoreBranch, StoreDeliveryCharge } from '@/lib/store/resolve-store';
 
@@ -105,11 +105,8 @@ function selfProvider(): DeliveryProvider {
   };
 }
 
-export async function resolveDeliveryProvider(
-  businessId: string,
-): Promise<DeliveryProvider> {
-  const id = await getStoreDeliveryProviderId(businessId);
-  if (id !== 'shiprocket') return selfProvider();
+/** The merchant's Shiprocket API login, whether or not Shiprocket is the store's default provider. */
+export async function loadShiprocketCreds(businessId: string): Promise<ShiprocketCreds | null> {
   const row = await queryOne<{
     store_shiprocket_email: string | null;
     store_shiprocket_password_enc: string | null;
@@ -118,13 +115,21 @@ export async function resolveDeliveryProvider(
      FROM business_settings WHERE business_id = $1`,
     [businessId],
   );
-  if (!row?.store_shiprocket_email || !row.store_shiprocket_password_enc) {
-    throw new Error('Shiprocket is not configured');
-  }
-  return createShiprocketProvider({
+  if (!row?.store_shiprocket_email || !row.store_shiprocket_password_enc) return null;
+  return {
     email: row.store_shiprocket_email,
     password: decryptPaymentSecret(row.store_shiprocket_password_enc),
-  });
+  };
+}
+
+export async function resolveDeliveryProvider(
+  businessId: string,
+): Promise<DeliveryProvider> {
+  const id = await getStoreDeliveryProviderId(businessId);
+  if (id !== 'shiprocket') return selfProvider();
+  const creds = await loadShiprocketCreds(businessId);
+  if (!creds) throw new Error('Shiprocket is not configured');
+  return createShiprocketProvider(creds);
 }
 
 export async function quoteDeliveryForBranch(input: {

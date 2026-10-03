@@ -1,5 +1,6 @@
-import { query } from '@/lib/db';
-import { resolveDeliveryProvider } from '@/lib/store/delivery';
+import { query, queryOne } from '@/lib/db';
+import { loadShiprocketCreds } from '@/lib/store/delivery';
+import { createShiprocketProvider } from '@/lib/store/delivery/shiprocket';
 import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
 import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
 import { syncStoreFulfilment, transitionStoreOrder, type StoreOrderLifecycleResult } from './order-lifecycle';
@@ -20,7 +21,12 @@ export async function applyStoreOrderStatus(input: {
   dispatchMode: StoreDispatchMode | null;
   cancelledReason: string | null;
   actorUserId: string | null;
-}): Promise<{ moved: StoreOrderLifecycleResult; invoiceError: string | null }> {
+}): Promise<{
+  moved: StoreOrderLifecycleResult;
+  invoiceError: string | null;
+  bookingError: string | null;
+  bookingWarning: string | null;
+}> {
   const { businessId, orderId, to, dispatchMode, actorUserId } = input;
   const moved = await transitionStoreOrder({
     businessId,
@@ -30,12 +36,17 @@ export async function applyStoreOrderStatus(input: {
     dispatchMode,
     actorUserId,
   });
-  if (!moved.ok) return { moved, invoiceError: null };
+  if (!moved.ok) return { moved, invoiceError: null, bookingError: null, bookingWarning: null };
 
   if (to === 'cancelled' && moved.shipmentId && moved.shipmentId !== 'self') {
     try {
-      const provider = await resolveDeliveryProvider(businessId);
-      await provider.cancelShipment?.(moved.shipmentId);
+      const ids = await queryOne<{ carrier_order_id: string | null }>(
+        `SELECT carrier_order_id FROM store_orders WHERE id = $1 AND business_id = $2`,
+        [orderId, businessId],
+      );
+      const creds = await loadShiprocketCreds(businessId);
+      // Bookings made before carrier_order_id existed stored only Shiprocket's shipment id.
+      if (creds) await createShiprocketProvider(creds).cancelShipment?.(ids?.carrier_order_id || moved.shipmentId);
     } catch (err) {
       console.error('[store cancel shipment]', err);
     }
@@ -51,6 +62,8 @@ export async function applyStoreOrderStatus(input: {
     }
   }
 
+  let bookingError: string | null = null;
+  let bookingWarning: string | null = null;
   if (to === 'ready') {
     if (dispatchMode === 'self' || dispatchMode === 'pickup') {
       await markSelfDispatch(orderId, businessId);
@@ -62,13 +75,15 @@ export async function applyStoreOrderStatus(input: {
         );
       }
     } else {
-      await bookStoreCourierIfNeeded(orderId, businessId);
+      const booking = await bookStoreCourierIfNeeded(orderId, businessId, actorUserId);
+      bookingError = booking.error;
+      bookingWarning = booking.warning ?? null;
     }
   }
 
   await syncStoreFulfilmentQuietly(businessId, orderId, actorUserId);
   triggerFulfilmentNotification(businessId, moved.fulfilment);
-  return { moved, invoiceError };
+  return { moved, invoiceError, bookingError, bookingWarning };
 }
 
 /** The store order is already saved; a delivery-record hiccup must not fail the merchant's action. */
