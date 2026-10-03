@@ -1,0 +1,15 @@
+# Build output, caches and generated artefacts: keep out of agent context and indexing.
+.next/
+out/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.playwright-mcp/
+android/app/build/
+android/.gradle/
+public/sw.js
+public/workbox-*.js
+public/swe-worker-*.js
+*.tsbuildinfo
+*.log

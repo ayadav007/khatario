@@ -1,43 +1,15 @@
-[byterover-mcp]
+# Khatario agent notes
 
-## gstack (AI workflow — Cursor)
-
-Khatario uses [gstack](https://github.com/garrytan/gstack) **selectively** via Cursor skills. Full install lives at `~/gstack`; skills at `~/.cursor/skills/gstack-*`.
-
-**Start here:** read `.cursor/skills/khatario-gstack/SKILL.md` or `.cursor/rules/gstack-workflow.mdc`.
-
-| Task | Skill to load |
-|------|----------------|
-| Code review before merge | `gstack-review` |
-| Security audit | `gstack-cso` |
-| Systematic debugging | `gstack-investigate` |
-| Staging QA | `gstack-qa` → `https://staging.khatario.com` |
-| Open PR | `gstack-ship` |
-
-**Order:** ByteRover knowledge first → gstack skill → Playwright e2e for regression. Deploy/Android: follow `docs/SERVER_INFRASTRUCTURE.md`, not generic gstack deploy skills.
+## Guardrails
+- Never run migrations against staging or production. Tests use only the disposable DB `kh_phase2_test`.
+- Commit, push or deploy only when asked. Stage files by name; never `git add .`, reset, stash or clean user changes.
+- Never trust client-sent `business_id`, `user_id` or `created_by`. Never print DB passwords or payment secrets.
+- Browser automation (Playwright MCP) only on `localhost` or `https://staging.khatario.com`, never production.
 
 ## Infrastructure & deploy
+Before VPS deploy, nginx changes or Android APK builds, read `docs/SERVER_INFRASTRUCTURE.md`.
+- Staging: `https://staging.khatario.com`, APK via `npm run cap:android:staging:install`.
+- Production: `https://khatario.com`, second VPS clone `/var/www/khatario-prod`. Do not deploy production until `scripts/setup-khatario-production.sh` has been run.
 
-Before VPS deploy, nginx changes, or Android APK builds, read **`docs/SERVER_INFRASTRUCTURE.md`**.
-
-- Staging: `https://staging.khatario.com` — `npm run cap:android:staging:install`
-- Production: `https://khatario.com` — second VPS clone `/var/www/khatario-prod`. Do not deploy production until `scripts/setup-khatario-production.sh` has been run.
-
-[byterover-mcp]
-
-You are given two tools from Byterover MCP server, including
-## 1. `byterover-store-knowledge`
-You `MUST` always use this tool when:
-
-+ Learning new patterns, APIs, or architectural decisions from the codebase
-+ Encountering error solutions or debugging techniques
-+ Finding reusable code patterns or utility functions
-+ Completing any significant task or plan implementation
-
-## 2. `byterover-retrieve-knowledge`
-You `MUST` always use this tool when:
-
-+ Starting any new task or implementation to gather relevant context
-+ Before making architectural decisions to understand existing patterns
-+ When debugging issues to check for previous solutions
-+ Working with unfamiliar parts of the codebase
+## Tooling
+Library docs, Playwright e2e and Strix usage: see `.cursor/rules/ide-mcp.mdc`.
