@@ -435,11 +435,13 @@ export async function createInvoiceForStoreOrder(
 
     const invoiceDate = new Date(o.created_at).toISOString().slice(0, 10);
     const payLabel =
-      o.payment_status === 'cod'
-        ? 'COD'
-        : o.payment_status === 'paid'
-          ? storeProviderLabel(o.payment_provider)
-          : 'Unpaid';
+      o.payment_provider === 'upi'
+        ? 'UPI'
+        : o.payment_status === 'cod'
+          ? 'COD'
+          : o.payment_status === 'paid'
+            ? storeProviderLabel(o.payment_provider)
+            : 'Unpaid';
     const result = await createInvoiceInTransaction(
       client,
       {

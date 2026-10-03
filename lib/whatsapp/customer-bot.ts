@@ -41,6 +41,8 @@ export interface StoreOrderRow {
   order_number: string;
   status: string;
   payment_status: string | null;
+  payment_provider?: string | null;
+  cash_collected_at?: string | Date | null;
   grand_total: string | number;
   delivery_mode: string;
   tracking_url: string | null;
@@ -67,7 +69,16 @@ export function looksLikeOrderQuestion(message: string): boolean {
 export function formatOrderStatus(o: StoreOrderRow): string {
   const status = STATUS_TEXT[o.status] ?? o.status;
   const ready = o.status === 'ready' ? (o.delivery_mode === 'pickup' ? ' for pickup' : ' for delivery') : '';
-  const paid = o.payment_status === 'paid' ? 'paid' : o.payment_status === 'cod' ? 'cash on delivery' : 'payment pending';
+  const paid =
+    o.payment_status === 'paid'
+      ? 'paid'
+      : o.payment_provider === 'upi'
+        ? o.cash_collected_at
+          ? 'paid by UPI'
+          : 'UPI payment awaiting confirmation'
+        : o.payment_status === 'cod'
+          ? 'cash on delivery'
+          : 'payment pending';
   const date = new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
   const lines = [`Order ${o.order_number} (${date}): ${status}${ready}. Total ₹${Number(o.grand_total).toLocaleString('en-IN')}, ${paid}.`];
   if (o.items) lines.push(`Items: ${o.items}`);
@@ -85,7 +96,7 @@ export async function orderStatusContext(businessId: string, senderPhone: string
   if (last10.length < 10) return null;
   const typed = ORDER_NUMBER.exec(message)?.[1] ?? null;
   const rows = await queryRows<StoreOrderRow>(
-    `SELECT o.order_number, o.status, o.payment_status, o.grand_total, o.delivery_mode, o.tracking_url, o.created_at,
+    `SELECT o.order_number, o.status, o.payment_status, o.payment_provider, o.cash_collected_at, o.grand_total, o.delivery_mode, o.tracking_url, o.created_at,
             (SELECT string_agg(oi.item_name || ' x' || trim(to_char(oi.quantity, 'FM999990.###')), ', ' ORDER BY oi.item_name)
                FROM store_order_items oi WHERE oi.order_id = o.id) AS items
        FROM store_orders o

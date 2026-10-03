@@ -6,6 +6,10 @@ import {
   type StorePromoSheetConfig,
 } from '@/lib/store/promo-sheet';
 import { sanitizeStoreTheme, type StoreTheme } from '@/lib/store/store-theme';
+import { getPreferredConfiguredProvider } from '@/lib/payments/business-provider-config';
+import { getBusinessUpiVpa } from '@/lib/payments/upi-pay-link';
+
+export const STORE_GATEWAY_PROVIDERS = ['razorpay', 'easebuzz'] as const;
 
 export interface StoreBusinessContext {
   business_id: string;
@@ -27,6 +31,8 @@ export interface StoreBusinessContext {
   store_allow_cod: boolean;
   store_hide_khatario_badge: boolean;
   online_pay_enabled: boolean;
+  /** Direct UPI app payment to the business's own UPI ID; confirmed by the merchant. */
+  upi_pay_enabled: boolean;
   store_promo_sheet: StorePromoSheetConfig;
   is_demo?: boolean;
 }
@@ -118,9 +124,11 @@ export async function resolveStoreBySubdomain(
 
   if (!row) return null;
 
-  const [customBranding, paymentGateway] = await Promise.all([
+  const [customBranding, paymentGateway, gatewayProvider, upiVpa] = await Promise.all([
     hasFeatureAccess(row.business_id, FeatureKeys.CUSTOM_BRANDING).catch(() => false),
     hasFeatureAccess(row.business_id, FeatureKeys.PAYMENT_GATEWAY).catch(() => false),
+    getPreferredConfiguredProvider(row.business_id, STORE_GATEWAY_PROVIDERS).catch(() => null),
+    getBusinessUpiVpa(row.business_id).catch(() => null),
   ]);
 
   return {
@@ -142,7 +150,8 @@ export async function resolveStoreBySubdomain(
     store_terms_md: row.store_terms_md,
     store_allow_cod: row.store_allow_cod !== false,
     store_hide_khatario_badge: !!row.store_hide_khatario_badge || customBranding,
-    online_pay_enabled: paymentGateway,
+    online_pay_enabled: paymentGateway && gatewayProvider != null,
+    upi_pay_enabled: upiVpa != null,
     store_promo_sheet: sanitizeStorePromoSheet(row.store_promo_sheet),
   };
 }

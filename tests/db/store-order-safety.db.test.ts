@@ -137,7 +137,7 @@ d('store order safety (real DB)', () => {
     return { status: res.status, json: (await res.json()) as any };
   }
 
-  async function checkout(items: unknown, withCookie = true) {
+  async function checkout(items: unknown, withCookie = true, paymentMethod = 'cod') {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (withCookie) headers.cookie = `${STORE_CUSTOMER_COOKIE}=${signStoreCustomer(A, CUST_A)}`;
     const res = await placeOrder(
@@ -145,7 +145,7 @@ d('store order safety (real DB)', () => {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          payment_method: 'cod',
+          payment_method: paymentMethod,
           delivery_mode: 'pickup',
           customer_name: 'Buyer',
           customer_phone: PHONE,
@@ -234,6 +234,51 @@ d('store order safety (real DB)', () => {
     } finally {
       await closePool();
     }
+  });
+
+  describe('checkout payment methods', () => {
+    const count = async () =>
+      Number((await pool.query(`SELECT COUNT(*) FROM store_orders WHERE business_id = $1`, [A])).rows[0].count);
+
+    test('online payment without a configured gateway is refused before an order is created', async () => {
+      const before = await count();
+      const r = await checkout([{ item_id: ITEM_A, quantity: 1 }], true, 'online');
+      expect(r.status).toBe(400);
+      expect(await count()).toBe(before);
+    });
+
+    test('direct UPI is refused when the business has no UPI ID', async () => {
+      const before = await count();
+      const r = await checkout([{ item_id: ITEM_A, quantity: 1 }], true, 'upi');
+      expect(r.status).toBe(400);
+      expect(await count()).toBe(before);
+    });
+
+    test('direct UPI places a COD-style order tagged upi and returns UPI app links', async () => {
+      await pool.query(
+        `INSERT INTO payment_methods (business_id, method_type, method_name, upi_id, is_active, is_default)
+         VALUES ($1, 'upi', 'Shop UPI', 'shop.test@okicici', true, true)`,
+        [A],
+      );
+      try {
+        const r = await checkout([{ item_id: ITEM_A, quantity: 1 }], true, 'upi');
+        expect(r.status).toBe(200);
+        expect(r.json.payment_url).toBeUndefined();
+        expect(r.json.upi.vpa).toBe('shop.test@okicici');
+        expect(r.json.upi.links.any).toMatch(/^upi:\/\/pay\?pa=shop\.test%40okicici&/);
+        expect(r.json.upi.links.any).toContain(`tr=${r.json.order_number}`);
+        const row = (
+          await pool.query(`SELECT payment_status, payment_provider FROM store_orders WHERE id = $1`, [r.json.order_id])
+        ).rows[0];
+        expect(row).toEqual({ payment_status: 'cod', payment_provider: 'upi' });
+
+        const collected = await patch(A, { action: 'collect_cash', order_id: r.json.order_id });
+        expect(collected.status).toBe(200);
+        expect(collected.json.order.cash_collected_at).toBeTruthy();
+      } finally {
+        await pool.query(`DELETE FROM payment_methods WHERE business_id = $1`, [A]);
+      }
+    });
   });
 
   describe('order transitions', () => {

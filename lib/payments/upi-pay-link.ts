@@ -99,6 +99,17 @@ export function upiPayPageUrl(orderId: string): string | null {
   return token ? `${appBaseUrl()}/pay/upi/${token}` : null;
 }
 
+/** The business's active UPI ID (Settings > Business Profile > payment methods), default first. */
+export async function getBusinessUpiVpa(businessId: string): Promise<string | null> {
+  const method = await queryOne<{ upi_id: string | null }>(
+    `SELECT upi_id FROM payment_methods
+      WHERE business_id = $1 AND is_active = true AND method_type = 'upi' AND upi_id IS NOT NULL
+      ORDER BY is_default DESC, priority ASC, created_at ASC LIMIT 1`,
+    [businessId],
+  );
+  return method?.upi_id?.trim() || null;
+}
+
 export interface UpiPayment {
   shopName: string;
   orderNumber: string;
@@ -119,16 +130,10 @@ export async function loadUpiPayment(token: string): Promise<UpiPayment | null> 
     [orderId],
   );
   if (!order || order.status === 'cancelled') return null;
-  const method = await queryOne<{ upi_id: string | null }>(
-    `SELECT upi_id FROM payment_methods
-      WHERE business_id = $1 AND is_active = true AND method_type = 'upi' AND upi_id IS NOT NULL
-      ORDER BY is_default DESC, priority ASC, created_at ASC LIMIT 1`,
-    [order.business_id],
-  );
+  const vpa = await getBusinessUpiVpa(order.business_id);
   const paidSum = await getSuccessfulPaymentsSumForOrder(order.business_id, orderId);
   const amount = remainingOrderAmountAfterSuccessSum(parseFloat(order.grand_total) || 0, paidSum);
   const shopName = order.shop?.trim() || 'Shop';
-  const vpa = method?.upi_id?.trim() || null;
   const paid = amount <= 0.009;
   return {
     shopName,

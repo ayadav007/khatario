@@ -171,6 +171,7 @@ export function themeDemoStore(subdomain: string): StoreBusinessContext | null {
     store_allow_cod: false,
     store_hide_khatario_badge: false,
     online_pay_enabled: false,
+    upi_pay_enabled: false,
     store_promo_sheet: DEFAULT_STORE_PROMO,
     is_demo: true,
   };

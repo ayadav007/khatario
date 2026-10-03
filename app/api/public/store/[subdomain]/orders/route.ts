@@ -18,6 +18,7 @@ import { FeatureKeys } from '@/lib/featureKeys';
 import { validateStoreOrderLines } from '@/lib/store/fulfillment-rules';
 import { reserveStoreOrderNumber } from '@/lib/store/order-lifecycle';
 import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
+import { getBusinessUpiVpa, upiAppLinks } from '@/lib/payments/upi-pay-link';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,17 +39,35 @@ export async function POST(
     }
 
     const body = await request.json();
-    const paymentMethod =
-      body.payment_method === 'online' || body.payment_method === 'razorpay' ? 'online' : 'cod';
+    const paymentMethod: 'online' | 'upi' | 'cod' =
+      body.payment_method === 'online' || body.payment_method === 'razorpay'
+        ? 'online'
+        : body.payment_method === 'upi'
+          ? 'upi'
+          : 'cod';
 
+    const upiVpa = paymentMethod === 'upi' ? await getBusinessUpiVpa(store.business_id) : null;
+    if (paymentMethod === 'upi' && !upiVpa) {
+      return NextResponse.json(
+        { error: 'UPI payment is not available for this store. Please choose another payment option.' },
+        { status: 400 },
+      );
+    }
+
+    let gateway: { providerId: StoreOnlinePaymentProvider; cfg: NonNullable<Awaited<ReturnType<typeof getBusinessPaymentProviderConfig>>> } | null = null;
     if (paymentMethod === 'online') {
       const payOk = await hasFeatureAccess(store.business_id, FeatureKeys.PAYMENT_GATEWAY);
-      if (!payOk) {
+      const providerId = payOk
+        ? ((await getPreferredConfiguredProvider(store.business_id, STORE_ONLINE_PROVIDERS)) as StoreOnlinePaymentProvider | null)
+        : null;
+      const cfg = providerId ? await getBusinessPaymentProviderConfig(store.business_id, providerId) : null;
+      if (!providerId || !cfg?.clientId || !cfg.clientSecret) {
         return NextResponse.json(
-          { error: 'Online payment is not available for this store' },
+          { error: 'Online payment is not available for this store. Please choose another payment option.' },
           { status: 400 },
         );
       }
+      gateway = { providerId, cfg };
     }
 
     if (paymentMethod === 'cod') {
@@ -127,8 +146,8 @@ export async function POST(
           customer_address, customer_pincode, customer_lat, customer_lng,
           delivery_mode, notes,
           subtotal, tax_total, delivery_charge, discount_amount, coupon_code, grand_total,
-          payment_status, quoted_delivery_fee, store_customer_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          payment_status, quoted_delivery_fee, store_customer_id, payment_provider)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        RETURNING id, order_number`,
       [
         store.business_id,
@@ -149,9 +168,11 @@ export async function POST(
         quote.discount,
         quote.coupon_code,
         quote.grand_total,
-        paymentMethod === 'cod' ? 'cod' : 'unpaid',
+        // Direct UPI is settled outside a gateway like COD; payment_provider 'upi' tells them apart.
+        paymentMethod === 'online' ? 'unpaid' : 'cod',
         quote.delivery_charge,
         storeCustomerId,
+        paymentMethod === 'upi' ? 'upi' : null,
       ],
     );
 
@@ -208,14 +229,15 @@ export async function POST(
       customerName: customer_name,
     });
 
-    if (paymentMethod === 'cod') {
+    if (paymentMethod === 'cod' || paymentMethod === 'upi') {
       const { createInvoiceForStoreOrder } = await import('@/lib/store/fulfill-paid-order');
       const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
       await incrementStoreCouponUse(store.business_id, quote.coupon_code);
       await createInvoiceForStoreOrder(orderId, store.business_id).catch((err) => {
-        console.error('[store invoice cod]', err);
+        console.error(`[store invoice ${paymentMethod}]`, err);
       });
       const total = quote.grand_total.toLocaleString('en-IN');
+      const mode = paymentMethod === 'upi' ? 'UPI' : 'Pay on delivery';
       void notifyStoreEvent({
         businessId: store.business_id,
         eventKey: 'store_order_placed',
@@ -225,33 +247,29 @@ export async function POST(
           order_number: orderNum,
           store_name: store.name,
           total,
-          payment_mode: 'Pay on delivery',
+          payment_mode: mode,
         },
-        text: `Order ${orderNum} placed at ${store.name}. Pay on delivery. Total ₹${total}.`,
+        text: `Order ${orderNum} placed at ${store.name}. ${mode}. Total ₹${total}.`,
       });
     }
 
+    const upi = upiVpa
+      ? {
+          vpa: upiVpa,
+          amount: quote.grand_total,
+          links: upiAppLinks({
+            vpa: upiVpa,
+            payeeName: store.name,
+            amount: quote.grand_total,
+            note: `Order ${orderNum}`,
+            reference: orderNum,
+          }),
+        }
+      : undefined;
+
     let paymentUrl: string | undefined;
-    if (paymentMethod === 'online') {
-      const providerId = (await getPreferredConfiguredProvider(
-        store.business_id,
-        STORE_ONLINE_PROVIDERS,
-      )) as StoreOnlinePaymentProvider | null;
-      const cfg = providerId
-        ? await getBusinessPaymentProviderConfig(store.business_id, providerId)
-        : null;
-      if (!providerId || !cfg?.clientId || !cfg.clientSecret) {
-        return NextResponse.json(
-          {
-            order_id: orderId,
-            order_number: orderNum,
-            grand_total: quote.grand_total,
-            payment_status: 'unpaid',
-            error: 'Online payment is not configured for this store',
-          },
-          { status: 201 },
-        );
-      }
+    if (gateway) {
+      const { providerId, cfg } = gateway;
       const psp =
         providerId === 'easebuzz' ? new EasebuzzPaymentProvider(cfg) : new RazorpayPaymentProvider(cfg);
       const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://staging.khatario.com';
@@ -284,8 +302,9 @@ export async function POST(
       order_id: orderId,
       order_number: orderNum,
       grand_total: quote.grand_total,
-      payment_status: paymentMethod === 'cod' ? 'cod' : 'unpaid',
+      payment_status: paymentMethod === 'online' ? 'unpaid' : 'cod',
       payment_url: paymentUrl,
+      upi,
     });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});

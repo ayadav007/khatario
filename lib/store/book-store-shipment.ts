@@ -27,10 +27,12 @@ export async function bookStoreCourierIfNeeded(orderId: string, businessId: stri
     shipment_id: string | null;
     dispatch_mode: string | null;
     store_name: string | null;
+    payment_provider: string | null;
+    cash_collected_at: string | null;
   }>(
     `SELECT o.order_number, o.grand_total::text, o.payment_status, o.customer_name, o.customer_phone,
             o.customer_email, o.customer_address, o.customer_pincode, o.delivery_mode, o.shipment_id,
-            o.dispatch_mode, b.name AS store_name
+            o.dispatch_mode, b.name AS store_name, o.payment_provider, o.cash_collected_at
      FROM store_orders o
      JOIN businesses b ON b.id = o.business_id
      WHERE o.id = $1 AND o.business_id = $2`,
@@ -50,7 +52,11 @@ export async function bookStoreCourierIfNeeded(orderId: string, businessId: stri
       orderId,
       orderNumber: ship.order_number,
       grandTotal: parseFloat(ship.grand_total) || 0,
-      paymentStatus: ship.payment_status as 'unpaid' | 'paid' | 'cod',
+      // A confirmed direct-UPI order ships prepaid; unconfirmed, the courier still collects.
+      paymentStatus:
+        ship.payment_provider === 'upi' && ship.cash_collected_at
+          ? 'paid'
+          : (ship.payment_status as 'unpaid' | 'paid' | 'cod'),
       customerName: ship.customer_name,
       customerPhone: ship.customer_phone,
       customerEmail: ship.customer_email,

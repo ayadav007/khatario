@@ -8,7 +8,11 @@ import {
 import { useStore } from '@/lib/store/store-context';
 import { storePhoneDigits, storePhonesMatch } from '@/lib/store/store-phone';
 import { StorePhoneAuth } from '@/components/store/StorePhoneAuth';
+import UpiPayActions from '@/components/payments/UpiPayActions';
+import type { upiAppLinks } from '@/lib/payments/upi-pay-link';
 import clsx from 'clsx';
+
+type UpiLinks = ReturnType<typeof upiAppLinks>;
 
 interface StoreCheckoutProps {
   open: boolean;
@@ -34,7 +38,13 @@ export function StoreCheckout({
   const [deliveryMode, setDeliveryMode] = useState<'delivery' | 'pickup'>('delivery');
   const [notes, setNotes] = useState('');
   const [coupon, setCoupon] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online' | 'upi'>('cod');
+  const [upiPay, setUpiPay] = useState<{
+    orderNumber: string;
+    grandTotal: number;
+    vpa: string;
+    links: UpiLinks;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<{
@@ -58,9 +68,12 @@ export function StoreCheckout({
     if (customer.last_pincode) setPincode(customer.last_pincode);
   }, [customer]);
 
+  // Direct UPI is offered only when there is no gateway, which confirms payment by itself.
+  const directUpi = !!store?.upi_pay_enabled && !store?.online_pay_enabled;
+
   useEffect(() => {
-    if (store?.store_allow_cod === false) setPaymentMethod('online');
-  }, [store?.store_allow_cod]);
+    if (store?.store_allow_cod === false) setPaymentMethod(directUpi ? 'upi' : 'online');
+  }, [store?.store_allow_cod, directUpi]);
 
   useEffect(() => {
     if (!store) return;
@@ -148,6 +161,20 @@ export function StoreCheckout({
           window.location.href = data.payment_url as string;
           return;
         }
+        if (paymentMethod === 'upi' && data.upi) {
+          clearCart();
+          setUpiPay({
+            orderNumber: data.order_number,
+            grandTotal: data.grand_total,
+            vpa: data.upi.vpa,
+            links: data.upi.links,
+          });
+          return;
+        }
+        if (paymentMethod === 'online') {
+          setError('We could not start the payment. Please try again or choose another payment option.');
+          return;
+        }
         clearCart();
         onOrderPlaced(data.order_number, data.grand_total);
       } catch {
@@ -208,6 +235,31 @@ export function StoreCheckout({
           color: 'var(--store-accent)',
         }
       : undefined;
+
+  const payView = upiPay ? (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-6 text-center">
+      <h2 className="text-lg font-semibold text-gray-900">Pay {store.name}</h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Order <span className="font-semibold text-gray-900">{upiPay.orderNumber}</span> is placed. Complete the
+        payment in your UPI app.
+      </p>
+      <p className="mt-3 text-2xl font-bold text-gray-900">&#x20B9;{upiPay.grandTotal.toLocaleString('en-IN')}</p>
+      <UpiPayActions links={upiPay.links} vpa={upiPay.vpa} />
+      <button
+        type="button"
+        onClick={() => {
+          const done = upiPay;
+          setUpiPay(null);
+          onOrderPlaced(done.orderNumber, done.grandTotal);
+        }}
+        className="mt-4 w-full rounded-xl py-3 text-sm font-semibold text-white"
+        style={{ backgroundColor: 'var(--store-accent)' }}
+      >
+        I have paid
+      </button>
+      <p className="mt-2 text-xs text-gray-400">The store confirms your payment and then processes the order.</p>
+    </div>
+  ) : null;
 
   const panel = (
     <>
@@ -380,7 +432,7 @@ export function StoreCheckout({
               />
             </div>
 
-            {store.store_allow_cod !== false || store.online_pay_enabled ? (
+            {store.store_allow_cod !== false || store.online_pay_enabled || directUpi ? (
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-2">Payment</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -396,7 +448,19 @@ export function StoreCheckout({
                       Pay on delivery
                     </button>
                   ) : null}
-                  {store.online_pay_enabled !== false ? (
+                  {directUpi ? (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('upi')}
+                      className={clsx(
+                        'rounded-lg border px-3 py-2 text-sm',
+                        paymentMethod === 'upi' ? 'border-gray-900 bg-gray-50' : 'border-gray-200',
+                      )}
+                    >
+                      UPI (GPay, PhonePe…)
+                    </button>
+                  ) : null}
+                  {store.online_pay_enabled ? (
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('online')}
@@ -528,7 +592,7 @@ export function StoreCheckout({
   if (embedded) {
     return (
       <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-        {panel}
+        {payView ?? panel}
       </div>
     );
   }
@@ -540,7 +604,7 @@ export function StoreCheckout({
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative flex h-full min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-xl">
-        {panel}
+        {payView ?? panel}
       </div>
     </div>
   );

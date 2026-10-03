@@ -1,5 +1,5 @@
 import { loadUpiPayment, upiAppLinks } from '@/lib/payments/upi-pay-link';
-import UpiPayActions from './UpiPayActions';
+import UpiPayActions from '@/components/payments/UpiPayActions';
 
 export const dynamic = 'force-dynamic';
 

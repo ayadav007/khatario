@@ -17,7 +17,7 @@ const VALID_DISPATCH = ['pickup', 'self', 'shiprocket'];
 const ORDER_SELECT = `
   so.id, so.order_number, so.customer_name, so.customer_phone,
   so.customer_email, so.customer_address, so.customer_pincode,
-  so.delivery_mode, so.status, so.notes, so.payment_status,
+  so.delivery_mode, so.status, so.notes, so.payment_status, so.payment_provider,
   so.subtotal::text, so.tax_total::text, so.delivery_charge::text, so.grand_total::text,
   so.cancelled_reason, so.created_at, so.awb, so.tracking_url, so.shipment_id,
   so.invoice_id, so.dispatch_mode, so.courier_scanned_at, so.cash_collected_at,

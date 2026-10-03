@@ -44,6 +44,7 @@ interface StoreOrder {
   grand_total: number;
   delivery_charge: number;
   payment_status?: string;
+  payment_provider?: string | null;
   awb?: string | null;
   tracking_url?: string | null;
   invoice_id?: string | null;
@@ -279,6 +280,7 @@ export default function StoreOrdersPage() {
             <li>Choose dispatch: customer pickup, own rider, or Shiprocket.</li>
             <li>When the courier hands you the AWB sticker, scan it onto the open order — that is the delivery-partner barcode.</li>
             <li>COD: tap Cash collected when the rider or customer pays. Then mark Delivered.</li>
+            <li>UPI: check the credit in your bank or UPI app (the note shows the order number), then tap UPI received before dispatch.</li>
           </ol>
         ) : null}
       </div>
@@ -373,7 +375,15 @@ export default function StoreOrdersPage() {
                     {order.delivery_mode === 'pickup' ? (
                       <span>Self pickup</span>
                     ) : null}
-                    {order.payment_status === 'cod' ? <span>COD</span> : null}
+                    {order.payment_status === 'cod' ? (
+                      <span>
+                        {order.payment_provider === 'upi'
+                          ? order.cash_collected_at
+                            ? 'UPI received'
+                            : 'UPI · confirm payment'
+                          : 'COD'}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -532,7 +542,7 @@ export default function StoreOrdersPage() {
                     onClick={() => void patchOrder({ action: 'collect_cash', order_id: selectedOrder.id })}
                   >
                     <Banknote className="mr-1 h-3.5 w-3.5" />
-                    Cash collected
+                    {selectedOrder.payment_provider === 'upi' ? 'UPI received' : 'Cash collected'}
                   </Button>
                 ) : null}
               </div>
@@ -595,8 +605,12 @@ export default function StoreOrdersPage() {
 
               {selectedOrder.payment_status ? (
                 <p className="mt-2 text-xs text-gray-500">
-                  Payment: {selectedOrder.payment_status}
-                  {selectedOrder.cash_collected_at ? ' · cash in' : ''}
+                  Payment: {selectedOrder.payment_provider === 'upi' ? 'UPI to your UPI ID' : selectedOrder.payment_status}
+                  {selectedOrder.cash_collected_at
+                    ? selectedOrder.payment_provider === 'upi'
+                      ? ' · received'
+                      : ' · cash in'
+                    : ''}
                 </p>
               ) : null}
               {selectedOrder.awb || selectedOrder.tracking_url ? (
