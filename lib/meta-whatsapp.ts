@@ -24,6 +24,30 @@ export class MetaWhatsAppError extends Error {
   }
 }
 
+/** Graph's top-level message is often just "Invalid parameter"; the real reason is in the user fields. */
+export function graphErrorMessage(json: unknown, status: number): string {
+  const e = (json as {
+    error?: {
+      message?: string;
+      code?: number;
+      error_subcode?: number;
+      error_user_title?: string;
+      error_user_msg?: string;
+      error_data?: { details?: string } | string;
+    };
+  })?.error;
+  if (!e) return `Graph API ${status}`;
+  const details = typeof e.error_data === 'string' ? e.error_data : e.error_data?.details;
+  const parts = [e.error_user_title, e.error_user_msg, details].filter(
+    (p): p is string => typeof p === 'string' && p.trim().length > 0,
+  );
+  const unique = parts.filter((p, i) => parts.indexOf(p) === i && p !== e.message);
+  const codes = [e.code, e.error_subcode].filter((c) => c != null).join('/');
+  const base = e.message || `Graph API ${status}`;
+  const tail = codes ? `${base} (code ${codes})` : base;
+  return unique.length > 0 ? `${unique.join(': ')}. ${tail}` : tail;
+}
+
 async function graphFetch(
   path: string,
   init: RequestInit & { token: string },
@@ -48,9 +72,7 @@ async function graphFetch(
       json = { raw };
     }
     if (!res.ok) {
-      const errObj = json as { error?: { message?: string } };
-      const msg = errObj?.error?.message || `Graph API ${res.status}`;
-      throw new MetaWhatsAppError(msg, res.status);
+      throw new MetaWhatsAppError(graphErrorMessage(json, res.status), res.status);
     }
     return json;
   } finally {
@@ -89,22 +111,43 @@ export async function createMessageTemplate(input: {
   return { id: json.id, status: json.status || 'PENDING', category: json.category };
 }
 
-export async function listMessageTemplates(businessId?: string | null): Promise<
-  Array<{ id: string; name: string; status: string; language?: string; category?: string }>
-> {
+export type GraphTemplateComponent = {
+  type?: string;
+  format?: string;
+  text?: string;
+  buttons?: Array<{ type?: string; text?: string; url?: string; phone_number?: string; otp_type?: string }>;
+};
+
+export type GraphTemplate = {
+  id: string;
+  name: string;
+  status: string;
+  language?: string;
+  category?: string;
+  rejected_reason?: string;
+  components?: GraphTemplateComponent[];
+};
+
+export async function listMessageTemplates(businessId?: string | null): Promise<GraphTemplate[]> {
   const cfg = await requireConfig(businessId);
-  const json = (await graphFetch(
-    `/${cfg.wabaId}/message_templates?fields=id,name,status,language,category&limit=100`,
-    { token: cfg.accessToken, method: 'GET' },
-  )) as {
-    data?: Array<{ id: string; name: string; status: string; language?: string; category?: string }>;
-  };
-  return json.data || [];
+  const out: GraphTemplate[] = [];
+  let path: string | null =
+    `/${cfg.wabaId}/message_templates?fields=id,name,status,language,category,rejected_reason,components&limit=100`;
+  // A WABA rarely has more than a few hundred templates; the page cap guards against loops.
+  for (let page = 0; path && page < 10; page++) {
+    const json = (await graphFetch(path, { token: cfg.accessToken, method: 'GET' })) as {
+      data?: GraphTemplate[];
+      paging?: { next?: string };
+    };
+    out.push(...(json.data || []));
+    const next: string | undefined = json.paging?.next;
+    path = next && next.startsWith(GRAPH_BASE) ? next.slice(GRAPH_BASE.length) : null;
+  }
+  return out;
 }
 
-export async function deleteMessageTemplate(name: string): Promise<void> {
-  const cfg = await getMetaWaConfig();
-  if (!cfg) throw new MetaWhatsAppError('Meta WhatsApp is not configured', 503, 'META_WA_NOT_CONFIGURED');
+export async function deleteMessageTemplate(name: string, businessId?: string | null): Promise<void> {
+  const cfg = await requireConfig(businessId);
   await graphFetch(
     `/${cfg.wabaId}/message_templates?name=${encodeURIComponent(name)}`,
     { token: cfg.accessToken, method: 'DELETE' },
@@ -169,6 +212,85 @@ export async function sendTextMessage(input: {
   const messageId = json.messages?.[0]?.id;
   if (!messageId) throw new MetaWhatsAppError('Send returned no message id', 502);
   return { messageId };
+}
+
+/** Uploads a file to the business number's media store; the id is valid for 30 days. */
+export async function uploadMedia(input: {
+  businessId?: string | null;
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+}): Promise<string> {
+  const cfg = await requireConfig(input.businessId);
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', input.mimeType);
+  form.append('file', new Blob([new Uint8Array(input.buffer)], { type: input.mimeType }), input.filename);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_MS);
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${cfg.phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cfg.accessToken}` },
+      body: form,
+      signal: ctrl.signal,
+    });
+    const json = (await res.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+    if (!res.ok || !json?.id) {
+      throw new MetaWhatsAppError(json?.error?.message || `Media upload failed (${res.status})`, res.status);
+    }
+    return json.id;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export type SendableTemplate = {
+  category: string;
+  header_format: string;
+  placeholder_count: number;
+};
+
+/**
+ * Send-time components for a stored template. `values` fill {{1}}..{{n}} in order; AUTHENTICATION
+ * templates take the code as values[0] for both the body and the copy-code button.
+ */
+export function buildTemplateSendComponents(
+  template: SendableTemplate,
+  values: string[],
+  document?: { mediaId: string; filename: string },
+): GraphComponent[] {
+  // Graph rejects parameter text containing newlines, tabs or 4+ consecutive spaces (132018).
+  const text = (v: string | undefined) => ({
+    type: 'text',
+    text:
+      String(v ?? '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/ {4,}/g, '   ')
+        .trim()
+        .slice(0, 1000) || '-',
+  });
+  if (template.category === 'AUTHENTICATION') {
+    const code = String(values[0] ?? '');
+    return [
+      { type: 'body', parameters: [{ type: 'text', text: code }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+    ];
+  }
+  const components: GraphComponent[] = [];
+  if (template.header_format === 'document' && document) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: 'document', document: { id: document.mediaId, filename: document.filename } }],
+    });
+  }
+  if (template.placeholder_count > 0) {
+    components.push({
+      type: 'body',
+      parameters: Array.from({ length: template.placeholder_count }, (_, i) => text(values[i])),
+    });
+  }
+  return components;
 }
 
 export type InboundMessage = {

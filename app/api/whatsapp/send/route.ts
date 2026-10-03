@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
+import { queryOne } from '@/lib/db';
+import { sendEventTemplate } from '@/lib/whatsapp/tenant-send';
+import { invoiceEventValues } from '@/lib/whatsapp/invoice-event-values';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import {
   assertWhatsAppBaseAccess,
@@ -149,11 +152,41 @@ export const POST = withPremiumSubscriptionApi(
       let media: string | Buffer | undefined = mediaUrl || imageBuffer;
 
       if (invoiceId) {
+        const invoice = await queryOne<{
+          id: string;
+          invoice_number: string | null;
+          grand_total: string | null;
+          balance_amount: string | null;
+          due_date: string | null;
+          customer_name: string | null;
+          business_name: string | null;
+        }>(
+          `SELECT i.id, i.invoice_number, i.grand_total, i.balance_amount, i.due_date,
+                  c.name AS customer_name, b.name AS business_name
+           FROM invoices i
+           LEFT JOIN customers c ON c.id = i.customer_id
+           JOIN businesses b ON b.id = i.business_id
+           WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
+          [String(invoiceId), businessId],
+        );
+        if (!invoice) {
+          return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+        }
         try {
           media = await generateInvoicePdf(String(invoiceId));
         } catch (e) {
           console.error('Failed to generate PDF for WhatsApp:', e);
           return NextResponse.json({ error: 'Failed to generate invoice PDF' }, { status: 500 });
+        }
+        const viaTemplate = await sendEventTemplate({
+          businessId,
+          eventKey: 'invoice_sent',
+          to,
+          values: await invoiceEventValues(invoice),
+          document: { buffer: media, filename: `${invoice.invoice_number || 'invoice'}.pdf` },
+        });
+        if (viaTemplate.sent) {
+          return NextResponse.json({ success: true, via: 'cloud', template: viaTemplate.template });
         }
       }
 

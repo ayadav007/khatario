@@ -1,6 +1,6 @@
 import { query, queryOne } from '@/lib/db';
 import { resolveDeliveryProvider } from '@/lib/store/delivery';
-import { notifyStoreCustomerWhatsApp } from '@/lib/store/notify-whatsapp';
+import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
 
 export async function markSelfDispatch(orderId: string, businessId: string): Promise<void> {
   await query(
@@ -26,11 +26,14 @@ export async function bookStoreCourierIfNeeded(orderId: string, businessId: stri
     delivery_mode: string;
     shipment_id: string | null;
     dispatch_mode: string | null;
+    store_name: string | null;
   }>(
-    `SELECT order_number, grand_total::text, payment_status, customer_name, customer_phone,
-            customer_email, customer_address, customer_pincode, delivery_mode, shipment_id,
-            dispatch_mode
-     FROM store_orders WHERE id = $1 AND business_id = $2`,
+    `SELECT o.order_number, o.grand_total::text, o.payment_status, o.customer_name, o.customer_phone,
+            o.customer_email, o.customer_address, o.customer_pincode, o.delivery_mode, o.shipment_id,
+            o.dispatch_mode, b.name AS store_name
+     FROM store_orders o
+     JOIN businesses b ON b.id = o.business_id
+     WHERE o.id = $1 AND o.business_id = $2`,
     [orderId, businessId],
   );
   if (!ship) return;
@@ -73,9 +76,18 @@ export async function bookStoreCourierIfNeeded(orderId: string, businessId: stri
       ],
     );
     if (booked.trackingUrl) {
-      void notifyStoreCustomerWhatsApp({
+      void notifyStoreEvent({
         businessId,
+        eventKey: 'store_order_shipped',
         phone: ship.customer_phone,
+        values: {
+          customer_name: ship.customer_name,
+          order_number: ship.order_number,
+          store_name: ship.store_name ?? '',
+          total: (parseFloat(ship.grand_total) || 0).toLocaleString('en-IN'),
+          awb: booked.awb ?? '-',
+          tracking_url: booked.trackingUrl,
+        },
         text: `Your order ${ship.order_number} is ready to ship.${booked.awb ? ` AWB ${booked.awb}.` : ''} Track: ${booked.trackingUrl}`,
       });
     }

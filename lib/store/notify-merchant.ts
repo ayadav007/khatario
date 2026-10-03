@@ -1,5 +1,5 @@
 import { query, queryOne } from '@/lib/db';
-import { notifyStoreCustomerWhatsApp } from '@/lib/store/notify-whatsapp';
+import { notifyBusinessEvent } from '@/lib/whatsapp/tenant-send';
 
 /** Ping the shop owner when a storefront order lands. */
 export async function notifyStoreMerchantNewOrder(input: {
@@ -15,10 +15,12 @@ export async function notifyStoreMerchantNewOrder(input: {
   const phone = biz?.phone;
   if (!phone) return;
   const total = input.grandTotal.toLocaleString('en-IN');
-  await notifyStoreCustomerWhatsApp({
+  await notifyBusinessEvent({
     businessId: input.businessId,
-    phone,
-    text: `New store order ${input.orderNumber} from ${input.customerName}. ₹${total}. Open Store Orders in Khatario to pack and dispatch.`,
+    eventKey: 'merchant_new_order',
+    to: phone,
+    values: { order_number: input.orderNumber, customer_name: input.customerName, total },
+    fallbackText: `New store order ${input.orderNumber} from ${input.customerName}. ₹${total}. Open Store Orders in Khatario to pack and dispatch.`,
   });
 }
 
@@ -47,9 +49,12 @@ export async function notifyStoreMerchantEnquiry(input: {
     [input.businessId],
   );
   if (!biz?.phone) return;
-  await notifyStoreCustomerWhatsApp({
+  await notifyBusinessEvent({
     businessId: input.businessId,
-    phone: biz.phone,
-    text: `New store enquiry from ${input.name}${reach ? ` (${reach})` : ''}: "${preview}". Open Store Enquiries in Khatario to reply.`,
+    eventKey: 'merchant_new_enquiry',
+    to: biz.phone,
+    // Template parameters can't contain newlines.
+    values: { customer_name: input.name, contact: reach || '-', preview: preview.replace(/\s+/g, ' ') },
+    fallbackText: `New store enquiry from ${input.name}${reach ? ` (${reach})` : ''}: "${preview}". Open Store Enquiries in Khatario to reply.`,
   });
 }

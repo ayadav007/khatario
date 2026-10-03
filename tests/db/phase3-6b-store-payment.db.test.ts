@@ -27,7 +27,7 @@ jest.mock('@/lib/enforce-access', () => ({
   enforceAccess: jest.fn().mockResolvedValue(undefined),
   enforceAccessErrorResponse: jest.fn(() => null),
 }));
-jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn() }));
+jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn(), notifyStoreEvent: jest.fn() }));
 jest.mock('@/lib/subscription/feature-access', () => ({
   ...jest.requireActual('@/lib/subscription/feature-access'),
   assertFeatureAccess: jest.fn().mockResolvedValue(undefined),

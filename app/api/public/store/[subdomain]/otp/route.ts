@@ -54,12 +54,19 @@ export async function POST(
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
       [store.business_id, phone, code],
     );
-    const { notifyStoreCustomerWhatsApp } = await import('@/lib/store/notify-whatsapp');
-    void notifyStoreCustomerWhatsApp({
+    const { sendStoreOtpWhatsApp } = await import('@/lib/store/notify-whatsapp');
+    const delivery = await sendStoreOtpWhatsApp({
       businessId: store.business_id,
+      storeName: store.name,
       phone,
-      text: `Your ${store.name} verification code is ${code}. It expires in 10 minutes.`,
+      code,
     });
+    if (!delivery.sent && !debug) {
+      return NextResponse.json(
+        { error: "We couldn't send the code on WhatsApp right now. Please try again in a minute." },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({
       ok: true,
       ...(debug ? { debug_otp: code } : {}),

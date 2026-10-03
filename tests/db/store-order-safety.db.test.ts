@@ -16,7 +16,7 @@ jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
 jest.mock('@/lib/subscription/feature-access', () => ({
   hasFeatureAccess: jest.fn().mockResolvedValue(false),
 }));
-jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn() }));
+jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn(), notifyStoreEvent: jest.fn() }));
 jest.mock('@/lib/store/notify-merchant', () => ({ notifyStoreMerchantNewOrder: jest.fn() }));
 
 import { getPool, closePool } from '@/lib/db';

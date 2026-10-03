@@ -16,6 +16,7 @@ import { useCapabilityCheck } from '@/hooks/useCapability';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { MetaCloudCredentialsForm, type MetaCloudPublic } from '@/components/whatsapp/MetaCloudCredentialsForm';
 import { OwnerUpdatesCard } from '@/components/whatsapp/OwnerUpdatesCard';
+import { TenantTemplatesPanel } from '@/components/whatsapp/TenantTemplatesPanel';
 import { Lock } from 'lucide-react';
 
 type ConnectionStatus = 'disconnected' | 'pending_qr' | 'connected' | 'error';
@@ -474,6 +475,7 @@ export function WhatsAppTab({ connectOnly = false }: { connectOnly?: boolean }) 
               title="Meta Cloud API"
               description="Optional. Save your own WhatsApp Business Account so Khatario can submit and send approved templates from your number. QR session below is unchanged. Leave secret fields blank to keep saved values."
             />
+            {cloudCreds?.ready ? <TenantTemplatesPanel /> : null}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Connection Card */}
             <Card padding="lg" className="space-y-6">

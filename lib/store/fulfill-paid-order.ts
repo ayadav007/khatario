@@ -39,7 +39,14 @@ export async function fulfillStoreOrderPayment(
 ): Promise<StorePaymentOutcome> {
   const pool = getPool();
   const client = await pool.connect();
-  let notify: { couponCode: string | null; phone: string; orderNumber: string; grandTotal: number } | null = null;
+  let notify: {
+    couponCode: string | null;
+    phone: string;
+    orderNumber: string;
+    grandTotal: number;
+    customerName: string;
+    storeName: string;
+  } | null = null;
   try {
     await client.query('BEGIN');
     const claimed = await client.query<{ id: string }>(
@@ -75,11 +82,17 @@ export async function fulfillStoreOrderPayment(
       status: string;
       coupon_code: string | null;
       customer_phone: string;
+      customer_name: string | null;
       order_number: string;
       grand_total: string;
+      store_name: string | null;
     }>(
-      `SELECT payment_status, status, coupon_code, customer_phone, order_number, grand_total::text
-       FROM store_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
+      `SELECT o.payment_status, o.status, o.coupon_code, o.customer_phone, o.customer_name, o.order_number,
+              o.grand_total::text, b.name AS store_name
+       FROM store_orders o
+       JOIN businesses b ON b.id = o.business_id
+       WHERE o.id = $1 AND o.business_id = $2
+       FOR UPDATE OF o`,
       [orderId, businessId],
     );
     const row = order.rows[0];
@@ -109,6 +122,8 @@ export async function fulfillStoreOrderPayment(
       phone: row.customer_phone,
       orderNumber: row.order_number,
       grandTotal,
+      customerName: row.customer_name || 'there',
+      storeName: row.store_name || '',
     };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
@@ -122,11 +137,20 @@ export async function fulfillStoreOrderPayment(
 
   const { incrementStoreCouponUse } = await import('@/lib/store/coupons');
   await incrementStoreCouponUse(businessId, notify.couponCode);
-  const { notifyStoreCustomerWhatsApp } = await import('@/lib/store/notify-whatsapp');
-  void notifyStoreCustomerWhatsApp({
+  const { notifyStoreEvent } = await import('@/lib/store/notify-whatsapp');
+  const paidTotal = notify.grandTotal.toLocaleString('en-IN');
+  void notifyStoreEvent({
     businessId,
+    eventKey: 'store_order_paid',
     phone: notify.phone,
-    text: `Order ${notify.orderNumber} is paid. Total ₹${notify.grandTotal.toLocaleString('en-IN')}. Thank you.`,
+    values: {
+      customer_name: notify.customerName,
+      order_number: notify.orderNumber,
+      store_name: notify.storeName,
+      total: paidTotal,
+      payment_mode: 'Paid online',
+    },
+    text: `Order ${notify.orderNumber} is paid. Total ₹${paidTotal}. Thank you.`,
   });
 
   await reconcilePaidStoreOrder(orderId, businessId);

@@ -18,7 +18,7 @@ jest.mock('next/headers', () => ({
 }));
 jest.mock('@/lib/jwt', () => ({ clearSessionCookie: jest.fn() }));
 jest.mock('@/lib/credit-alerts', () => ({ checkAndSendCreditAlerts: jest.fn() }));
-jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn() }));
+jest.mock('@/lib/store/notify-whatsapp', () => ({ notifyStoreCustomerWhatsApp: jest.fn(), notifyStoreEvent: jest.fn() }));
 jest.mock('@/lib/authorization', () => ({
   ...jest.requireActual('@/lib/authorization'),
   authorize: jest.fn().mockResolvedValue(undefined),

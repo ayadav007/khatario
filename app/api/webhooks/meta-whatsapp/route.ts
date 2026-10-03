@@ -32,8 +32,10 @@ export async function GET(request: NextRequest) {
 
 async function handleTenant(businessId: string, body: unknown) {
   const { applyTenantTemplateStatus } = await import('@/lib/whatsapp/owner-summary');
+  const { applyBusinessTemplateWebhook } = await import('@/lib/whatsapp/tenant-templates');
   for (const update of extractTemplateStatusUpdates(body)) {
     await applyTenantTemplateStatus(businessId, update).catch(() => undefined);
+    await applyBusinessTemplateWebhook(businessId, update).catch(() => undefined);
   }
   const messages = extractInboundMessages(body);
   for (const m of messages) {

@@ -17,7 +17,7 @@ import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { validateStoreOrderLines } from '@/lib/store/fulfillment-rules';
 import { reserveStoreOrderNumber } from '@/lib/store/order-lifecycle';
-import { notifyStoreCustomerWhatsApp } from '@/lib/store/notify-whatsapp';
+import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
 
 export const dynamic = 'force-dynamic';
 
@@ -215,10 +215,19 @@ export async function POST(
       await createInvoiceForStoreOrder(orderId, store.business_id).catch((err) => {
         console.error('[store invoice cod]', err);
       });
-      void notifyStoreCustomerWhatsApp({
+      const total = quote.grand_total.toLocaleString('en-IN');
+      void notifyStoreEvent({
         businessId: store.business_id,
+        eventKey: 'store_order_placed',
         phone: customer_phone,
-        text: `Order ${orderNum} placed at ${store.name}. Pay on delivery. Total ₹${quote.grand_total.toLocaleString('en-IN')}.`,
+        values: {
+          customer_name,
+          order_number: orderNum,
+          store_name: store.name,
+          total,
+          payment_mode: 'Pay on delivery',
+        },
+        text: `Order ${orderNum} placed at ${store.name}. Pay on delivery. Total ₹${total}.`,
       });
     }
 

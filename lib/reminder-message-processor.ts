@@ -2,6 +2,9 @@ import * as db from '@/lib/db';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { format } from 'date-fns';
+import { toE164Digits } from '@/lib/platform-whatsapp-send';
+import { sendEventTemplate } from '@/lib/whatsapp/tenant-send';
+import { invoiceEventValues, reminderEventKey } from '@/lib/whatsapp/invoice-event-values';
 
 /**
  * Process message template by replacing placeholders
@@ -119,14 +122,28 @@ export async function sendReminderMessage(
       }
     }
 
-    // Send WhatsApp message (string return = Baileys message id for delivery/read updates)
-    const sendResult = await sendWhatsAppMessage(
+    const eventKey = reminderEventKey(reminderSource, invoice.due_date);
+    const viaTemplate = await sendEventTemplate({
       businessId,
-      invoice.customer_phone,
-      message,
-      pdfBuffer
-    );
-    const baileysMessageId = typeof sendResult === 'string' ? sendResult : null;
+      eventKey,
+      to: invoice.customer_phone,
+      values: await invoiceEventValues(invoice),
+      document: pdfBuffer
+        ? { buffer: pdfBuffer, filename: `${invoice.invoice_number || 'invoice'}.pdf` }
+        : undefined,
+    });
+
+    let baileysMessageId: string | null = null;
+    if (!viaTemplate.sent) {
+      // Send WhatsApp message (string return = Baileys message id for delivery/read updates)
+      const sendResult = await sendWhatsAppMessage(
+        businessId,
+        toE164Digits(invoice.customer_phone) ?? invoice.customer_phone,
+        message,
+        pdfBuffer
+      );
+      baileysMessageId = typeof sendResult === 'string' ? sendResult : null;
+    }
 
     // Log to whatsapp_messages table
     await db.query(
@@ -148,7 +165,7 @@ export async function sendReminderMessage(
         'reminder',
         'invoice',
         invoiceId,
-        message,
+        viaTemplate.sent ? `[Meta template ${viaTemplate.template}] ${message}` : message,
         includePdf ? 'blob:pdf' : null,
         'sent',
         baileysMessageId,
