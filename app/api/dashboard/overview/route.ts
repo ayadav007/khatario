@@ -106,8 +106,14 @@ export async function GET(request: NextRequest) {
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     if (branchIdParam) params.branch_id = branchIdParam;
+    const { accountOutstandingStoreOrders } = await import('@/lib/store/fulfill-paid-order');
+    const postedStoreSales = await accountOutstandingStoreOrders(businessId, userId).catch((err) => {
+      console.error('[store invoice]', err);
+      return 0;
+    });
+
     const cacheKey = getCacheKey('/api/dashboard/overview', params);
-    const cached = getCached(cacheKey);
+    const cached = postedStoreSales > 0 ? null : getCached(cacheKey);
     if (cached) {
       return NextResponse.json(cached);
     }

@@ -426,23 +426,38 @@ d('Phase 3.6B store payment lifecycle (real DB)', () => {
     expect(row.cash_collected_at).toBeTruthy();
   });
 
-  test('18. cash collection does not post a receipt', async () => {
+  test('18. cash collection posts one cash receipt against the invoice', async () => {
     const id = await seedOrder({ payment: 'cod', status: 'ready' });
-    await patchOrder(
-      new NextRequest('http://localhost/api/settings/online-store/orders', {
-        method: 'PATCH',
-        headers: {
-          'content-type': 'application/json',
-          'x-authenticated-user-id': A,
-          'x-authenticated-business-id': B,
-        },
-        body: JSON.stringify({ action: 'collect_cash', order_id: id }),
-      }),
-    );
+    const collect = () =>
+      patchOrder(
+        new NextRequest('http://localhost/api/settings/online-store/orders', {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            'x-authenticated-user-id': A,
+            'x-authenticated-business-id': B,
+          },
+          body: JSON.stringify({ action: 'collect_cash', order_id: id }),
+        }),
+      );
+    expect((await collect()).status).toBe(200);
+    expect((await collect()).status).toBe(200);
     const row = await orderRow(id);
     expect(row.payment_status).toBe('cod');
     expect(row.receipt_payment_id).toBeNull();
     expect(row.status).toBe('ready');
+    expect(row.invoice_id).toEqual(expect.any(String));
+    expect(await paymentCount(row.invoice_id)).toBe(1);
+    const pay = (
+      await pool.query(`SELECT id, payment_mode, amount::float8 AS amount, created_by FROM payments WHERE reference_id = $1`, [
+        row.invoice_id,
+      ])
+    ).rows[0];
+    expect(pay).toMatchObject({ payment_mode: 'cash', amount: 236, created_by: A });
+    const lines = await voucherLines(pay.id, 'payment');
+    expect(lines.find((l) => l.account_code === '1103')?.credit).toBe('236.00');
+    const inv = (await pool.query(`SELECT payment_status FROM invoices WHERE id = $1`, [row.invoice_id])).rows[0];
+    expect(inv.payment_status).toBe('paid');
   });
 
   test('19. a refund can be requested for the captured payment', async () => {

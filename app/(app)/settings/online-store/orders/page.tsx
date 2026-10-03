@@ -154,6 +154,9 @@ export default function StoreOrdersPage() {
           toast.error(data.error || 'Could not update order');
           return null;
         }
+        if (data.invoice_error) {
+          toast.error(String(data.invoice_error));
+        }
         if (data.order) {
           setSelectedOrder(data.order);
           setItems(data.items ?? []);

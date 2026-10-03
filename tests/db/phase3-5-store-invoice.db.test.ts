@@ -417,6 +417,66 @@ d('Phase 3.5 store order final invoice (real DB)', () => {
     expect(Number(forOrder.rows[0].n)).toBe(0);
   });
 
+  test('12b. warehouse mode posts the sale to the default warehouse and the ledger', async () => {
+    const id = await seedOrder();
+    const wh = randomUUID();
+    await pool.query(
+      `INSERT INTO warehouses (id, business_id, branch_id, name, is_active)
+       VALUES ($1, $2, $3, 'Store warehouse', true)`,
+      [wh, B, BR],
+    );
+    await pool.query(
+      `INSERT INTO branch_warehouses (branch_id, warehouse_id, is_primary) VALUES ($1, $2, true)`,
+      [BR, wh],
+    );
+    await pool.query(
+      `INSERT INTO location_stock (location_id, item_id, current_stock_qty) VALUES ($1, $2, 10)`,
+      [wh, ITEM],
+    );
+    await pool.query(
+      `INSERT INTO business_settings (business_id, warehouses_enabled)
+       VALUES ($1, true)
+       ON CONFLICT (business_id) DO UPDATE SET warehouses_enabled = true`,
+      [B],
+    );
+    try {
+      const invoiceId = await createInvoiceForStoreOrder(id, B, A);
+      expect(invoiceId).toEqual(expect.any(String));
+      const lines = await ledgerCodes(invoiceId!);
+      expect(lines.find((l) => l.code === '4101')?.credit).toBeCloseTo(200, 2);
+      expect(lines.find((l) => l.code === '1103')?.debit).toBeCloseTo(236, 2);
+      const stock = await pool.query(
+        `SELECT current_stock_qty::float8 AS q FROM location_stock WHERE location_id = $1 AND item_id = $2`,
+        [wh, ITEM],
+      );
+      expect(Number(stock.rows[0].q)).toBe(8);
+      const row = await invoiceRow(invoiceId!);
+      expect(row.status).toBe('final');
+    } finally {
+      await pool.query(`UPDATE business_settings SET warehouses_enabled = false WHERE business_id = $1`, [B]);
+    }
+  });
+
+  test('12c. a shopper who is not a customer yet is created and the sale posts to their account', async () => {
+    const id = await seedOrder();
+    const newPhone = `8${String(Date.now()).slice(-9)}`;
+    await pool.query(`UPDATE store_orders SET customer_phone = $2, customer_name = 'New Shopper' WHERE id = $1`, [id, newPhone]);
+    const invoiceId = await createInvoiceForStoreOrder(id, B, A);
+    const inv = await invoiceRow(invoiceId!);
+    expect(inv.customer_id).toEqual(expect.any(String));
+    expect(inv.customer_id).not.toBe(CUST);
+    const cust = (await pool.query(`SELECT name, phone, business_id FROM customers WHERE id = $1`, [inv.customer_id])).rows[0];
+    expect(cust).toMatchObject({ name: 'New Shopper', phone: newPhone, business_id: B });
+    const lines = await ledgerCodes(invoiceId!);
+    expect(lines.find((l) => l.code === '1103')?.debit).toBeCloseTo(236, 2);
+    expect(lines.find((l) => l.code === '1101')).toBeUndefined();
+
+    const again = await seedOrder();
+    await pool.query(`UPDATE store_orders SET customer_phone = $2 WHERE id = $1`, [again, newPhone]);
+    const second = await invoiceRow((await createInvoiceForStoreOrder(again, B, A))!);
+    expect(second.customer_id).toBe(inv.customer_id);
+  });
+
   test('13. a failed transaction leaves the store order uninvoiced', async () => {
     const id = await seedOrder({ tax: 0, grand: 200 });
     await expect(createInvoiceForStoreOrder(id, B, A)).rejects.toMatchObject({

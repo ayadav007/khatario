@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'business_id required' }, { status: 400 });
     }
 
+    const { accountOutstandingStoreOrders } = await import('@/lib/store/fulfill-paid-order');
+    await accountOutstandingStoreOrders(businessId, userId).catch((err) => {
+      console.error('[store invoice]', err);
+    });
+
     const today = format(startOfDay(new Date()), 'yyyy-MM-dd');
     const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');

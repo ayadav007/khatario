@@ -5,8 +5,9 @@ import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
 import { resolveDeliveryProvider } from '@/lib/store/delivery';
 import { isStoreOrderStatus } from '@/lib/store/fulfillment-rules';
 import { transitionStoreOrder } from '@/lib/store/order-lifecycle';
-import { createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
+import { accountOutstandingStoreOrders, createInvoiceForStoreOrder } from '@/lib/store/fulfill-paid-order';
 import { refundStoreOrder, StoreRefundError } from '@/lib/store/store-refund';
+import { collectStoreOrderCash, StoreCashCollectError } from '@/lib/store/store-receipt';
 import { bookStoreCourierIfNeeded, markSelfDispatch } from '@/lib/store/book-store-shipment';
 import { looksLikeCourierBarcode, matchPackScan } from '@/lib/store/fulfillment-scan';
 
@@ -96,6 +97,9 @@ export async function GET(request: NextRequest) {
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
   const businessId = tenant.businessId;
+  await accountOutstandingStoreOrders(businessId, getAuthenticatedUserId(request)).catch((err) => {
+    console.error('[store invoice]', err);
+  });
 
   const orderId = searchParams.get('order_id');
   if (orderId) {
@@ -189,15 +193,21 @@ export async function PATCH(request: NextRequest) {
 
   if (action === 'collect_cash') {
     if (!orderId) return NextResponse.json({ error: 'order_id is required' }, { status: 400 });
-    const updated = await queryOne(
-      `UPDATE store_orders
-       SET cash_collected_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1 AND business_id = $2 AND payment_status = 'cod'
-       RETURNING id`,
-      [orderId, businessId],
-    );
-    if (!updated) {
-      return NextResponse.json({ error: 'COD order not found' }, { status: 404 });
+    const actorUserId = getAuthenticatedUserId(request);
+    try {
+      await createInvoiceForStoreOrder(orderId, businessId, actorUserId);
+    } catch (err) {
+      console.error('[store invoice on cash collect]', err);
+      const message = err instanceof Error ? err.message : 'The sale could not be posted to the accounts';
+      return NextResponse.json({ error: message, code: 'STORE_INVOICE_FAILED' }, { status: 409 });
+    }
+    try {
+      await collectStoreOrderCash(orderId, businessId, actorUserId);
+    } catch (err) {
+      if (err instanceof StoreCashCollectError) {
+        return NextResponse.json({ error: err.message, code: err.code }, { status: err.statusCode });
+      }
+      throw err;
     }
     const detail = await loadOrder(orderId, businessId);
     return NextResponse.json({ success: true, kind: 'cash', ...detail });
@@ -250,10 +260,14 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  let invoiceError: string | null = null;
   if (status === 'confirmed') {
-    await createInvoiceForStoreOrder(orderId, businessId, getAuthenticatedUserId(request)).catch((err) => {
+    try {
+      await createInvoiceForStoreOrder(orderId, businessId, getAuthenticatedUserId(request));
+    } catch (err) {
       console.error('[store invoice on confirm]', err);
-    });
+      invoiceError = err instanceof Error ? err.message : 'The sale could not be posted to the accounts';
+    }
   }
 
   if (status === 'ready') {
@@ -272,7 +286,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const detail = await loadOrder(orderId, businessId);
-  return NextResponse.json({ success: true, ...detail });
+  return NextResponse.json({ success: true, invoice_error: invoiceError, ...detail });
 }
 
 async function handleScan(businessId: string, body: Record<string, unknown>) {

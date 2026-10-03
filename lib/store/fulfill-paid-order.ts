@@ -300,13 +300,123 @@ function classifyStoreLine(line: StoreOrderLine): 'inclusive' | 'exclusive' {
 }
 
 /**
+ * Warehouse mode requires a location on every goods line. Store checkout has no warehouse
+ * picker, so the branch default warehouse is the sale location. Without it the invoice
+ * service refuses the sale and no ledger is posted.
+ */
+async function storeInvoiceWarehouseId(
+  client: import('pg').PoolClient,
+  businessId: string,
+  branchId: string,
+): Promise<string | null> {
+  const { isWarehouseModeEnabled } = await import('@/lib/warehouse-mode');
+  if (!(await isWarehouseModeEnabled(businessId))) return null;
+  const found = await client.query<{ id: string }>(
+    `SELECT get_default_warehouse_for_branch($1) AS id`,
+    [branchId],
+  );
+  const locationId = found.rows[0]?.id ?? null;
+  if (!locationId) {
+    throw new StoreInvoiceError(
+      'Warehouse required for this store order. Set a default warehouse for the branch.',
+      'WAREHOUSE_REQUIRED',
+    );
+  }
+  return locationId;
+}
+
+/**
+ * The shopper's customer record, matched on the last 10 phone digits, or created from the order.
+ * Store invoices always carry a customer so the sale lands in that customer's ledger and a
+ * later receipt (gateway or cash collected) can settle it.
+ */
+async function storeOrderCustomerId(
+  client: import('pg').PoolClient,
+  businessId: string,
+  branchId: string,
+  o: {
+    customer_name: string;
+    customer_phone: string;
+    customer_address: string | null;
+    customer_email: string | null;
+    customer_pincode: string | null;
+  },
+): Promise<string | null> {
+  const phone = String(o.customer_phone || '').replace(/\D/g, '');
+  if (phone.length < 10) return null;
+  const found = await client.query<{ id: string }>(
+    `SELECT id FROM customers
+      WHERE business_id = $1 AND deleted_at IS NULL
+        AND right(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = right($2, 10)
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [businessId, phone],
+  );
+  if (found.rows[0]) return found.rows[0].id;
+  const name = String(o.customer_name || '').trim() || `Store customer ${phone.slice(-4)}`;
+  const created = await client.query<{ id: string }>(
+    `INSERT INTO customers
+       (business_id, branch_id, name, phone, email, billing_address, shipping_address, pincode, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'Created from online store order')
+     RETURNING id`,
+    [businessId, branchId, name, phone.slice(-10), o.customer_email || null, o.customer_address || null, o.customer_pincode || null],
+  );
+  return created.rows[0].id;
+}
+
+const storeInvoiceRetryAfter = new Map<string, number>();
+
+/**
+ * Posts store sales that were saved but never invoiced (and receipts for paid orders).
+ * Safe to call more than once: an order that already has an invoice is not posted again.
+ * Returns how many invoices or receipts were newly written.
+ */
+export async function accountOutstandingStoreOrders(
+  businessId: string,
+  actorUserId?: string | null,
+): Promise<number> {
+  const now = Date.now();
+  const rows = await getPool().query<{ id: string; payment_status: string; invoice_id: string | null }>(
+    `SELECT id, payment_status, invoice_id
+       FROM store_orders
+      WHERE business_id = $1
+        AND status <> 'cancelled'
+        AND (
+          (invoice_id IS NULL AND payment_status IN ('paid', 'cod'))
+          OR (payment_status = 'paid' AND invoice_id IS NOT NULL AND receipt_payment_id IS NULL)
+        )
+      ORDER BY created_at ASC
+      LIMIT 25`,
+    [businessId],
+  );
+  let posted = 0;
+  for (const row of rows.rows) {
+    if ((storeInvoiceRetryAfter.get(row.id) ?? 0) > now) continue;
+    try {
+      const invoiceId = await createInvoiceForStoreOrder(row.id, businessId, actorUserId ?? undefined);
+      if (invoiceId && !row.invoice_id) posted += 1;
+      if (row.payment_status === 'paid' && invoiceId) {
+        const { settleStoreOrderReceipt } = await import('@/lib/store/store-receipt');
+        const settled = await settleStoreOrderReceipt(row.id, businessId);
+        if (settled.outcome === 'posted') posted += 1;
+      }
+      storeInvoiceRetryAfter.delete(row.id);
+    } catch (err) {
+      storeInvoiceRetryAfter.set(row.id, now + 60_000);
+      console.error('[store invoice]', row.id, err);
+    }
+  }
+  return posted;
+}
+
+/**
  * Finalises one store order as a normal final sales invoice.
  * The order row is locked. Accounting, GST and the order→invoice link commit together.
  * A second call returns the invoice already linked and does not post again.
  *
  * `actorUserId`, when passed, must be a user of `businessId` (the session user).
  * It is never taken from a request body. Public checkout and the payment webhook
- * omit it; the business primary admin is the author.
+ * omit it; the business primary admin, or the oldest active user, is the author.
  */
 export async function createInvoiceForStoreOrder(
   orderId: string,
@@ -336,6 +446,8 @@ export async function createInvoiceForStoreOrder(
           customer_name: string;
           customer_phone: string;
           customer_address: string | null;
+          customer_email: string | null;
+          customer_pincode: string | null;
           created_at: Date | string;
         }
       | undefined;
@@ -410,8 +522,9 @@ export async function createInvoiceForStoreOrder(
     } else {
       const admin = await client.query<{ id: string }>(
         `SELECT id FROM users
-          WHERE business_id = $1 AND COALESCE(is_primary_admin, false) = true
-          ORDER BY created_at ASC LIMIT 1`,
+          WHERE business_id = $1 AND COALESCE(is_active, true) = true
+          ORDER BY COALESCE(is_primary_admin, false) DESC, created_at ASC
+          LIMIT 1`,
         [businessId],
       );
       if (admin.rows.length === 0) {
@@ -420,18 +533,9 @@ export async function createInvoiceForStoreOrder(
       createdBy = admin.rows[0].id;
     }
 
-    const phone = String(o.customer_phone || '').replace(/\D/g, '');
-    const customer = phone.length >= 10
-      ? await client.query<{ id: string }>(
-          `SELECT id FROM customers
-            WHERE business_id = $1 AND deleted_at IS NULL
-              AND right(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = right($2, 10)
-            LIMIT 1`,
-          [businessId, phone],
-        )
-      : { rows: [] as { id: string }[] };
-
     const branchId = o.branch_id || (await resolveBranchId({ businessId, branchId: null }));
+    const customerId = await storeOrderCustomerId(client, businessId, branchId, o);
+    const locationId = await storeInvoiceWarehouseId(client, businessId, branchId);
 
     const invoiceDate = new Date(o.created_at).toISOString().slice(0, 10);
     const payLabel =
@@ -448,7 +552,7 @@ export async function createInvoiceForStoreOrder(
         business_id: businessId,
         created_by: createdBy,
         branch_id: branchId,
-        customer_id: customer.rows[0]?.id ?? null,
+        customer_id: customerId,
         invoice_date: invoiceDate,
         status: 'final',
         document_type: 'tax_invoice',
@@ -464,6 +568,7 @@ export async function createInvoiceForStoreOrder(
           unit: line.unit || 'PCS',
           unit_price: parseFloat(line.unit_price) || 0,
           tax_rate: parseFloat(line.tax_rate) || 0,
+          location_id: locationId,
         })),
       },
     );

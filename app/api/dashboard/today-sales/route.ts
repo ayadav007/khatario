@@ -34,6 +34,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const { accountOutstandingStoreOrders } = await import('@/lib/store/fulfill-paid-order');
+    await accountOutstandingStoreOrders(businessId, userId).catch((err) => {
+      console.error('[store invoice]', err);
+    });
+
     // Use the same SQL logic as dashboard overview
     const invoices = await queryRows(
       `SELECT 
