@@ -13,9 +13,10 @@ const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
 
 export interface PaymentInRequestBody {
   business_id: string;
-  type: 'receivable';
+  type: 'receivable' | 'payable';
   customer_id: string | null;
-  reference_type: 'invoice' | null;
+  supplier_id?: string | null;
+  reference_type: 'invoice' | 'purchase' | null;
   created_by: string | undefined;
   reference_id: string | null;
   amount: number;
@@ -31,6 +32,7 @@ export function paymentInFingerprint(body: PaymentInRequestBody): string {
   return JSON.stringify([
     body.type,
     body.customer_id,
+    body.supplier_id ?? null,
     body.reference_type,
     body.reference_id,
     body.amount,

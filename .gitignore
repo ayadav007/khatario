@@ -13,7 +13,7 @@ __pycache__/
 
 # Next.js
 .next/
-out/
+/out/
 
 # Build output
 dist/
@@ -114,3 +114,4 @@ Desktop.ini
 /storage/marketing-media/
 /storage/marketing-creatives/
 /storage/sales-flow/
+/storage/whatsapp-media/
