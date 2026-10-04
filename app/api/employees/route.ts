@@ -225,13 +225,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (send_portal_invite) {
+    // Portal invite is optional. HR Lite (and plans without portal) still create the employee.
+    let shouldSendPortalInvite = Boolean(send_portal_invite);
+    if (shouldSendPortalInvite) {
       const portalEnabled = await hasFeatureAccess(business_id, 'hr_employee_portal');
       if (!portalEnabled) {
-        return NextResponse.json(
-          { error: 'Employee portal is not enabled on your subscription plan.' },
-          { status: 403 }
-        );
+        shouldSendPortalInvite = false;
       }
     }
 
@@ -436,7 +435,7 @@ export async function POST(request: NextRequest) {
     }
 
     let portalInvite: Awaited<ReturnType<typeof sendEmployeePortalInvite>> | null = null;
-    if (send_portal_invite) {
+    if (shouldSendPortalInvite) {
       const channels: PortalInviteChannel =
         portal_invite_via === 'email' || portal_invite_via === 'whatsapp'
           ? portal_invite_via

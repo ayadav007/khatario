@@ -41,7 +41,8 @@ export default function NewEmployeePage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
-  const [sendPortalInvite, setSendPortalInvite] = useState(true);
+  // Off by default — HR Lite has no employee portal; invite only when plan allows.
+  const [sendPortalInvite, setSendPortalInvite] = useState(false);
   const [portalInviteVia, setPortalInviteVia] = useState<'email' | 'whatsapp' | 'both'>('whatsapp');
   const [createdInvite, setCreatedInvite] = useState<{
     temporary_password: string;
