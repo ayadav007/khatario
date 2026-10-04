@@ -24,9 +24,12 @@ import { FlowInspector } from './FlowInspector';
 export function FlowCanvas({
   definition,
   onChange,
+  className,
 }: {
   definition: FlowDefinition;
   onChange: (next: FlowDefinition) => void;
+  /** Optional height/layout override (e.g. fullscreen shell). */
+  className?: string;
 }) {
   const initial = useMemo(() => toRf(definition), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
@@ -71,9 +74,14 @@ export function FlowCanvas({
     : null;
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-1 overflow-hidden rounded-lg border border-border dark:border-border-dark">
+    <div
+      className={
+        className ||
+        'flex min-h-[calc(100vh-8rem)] flex-1 overflow-hidden rounded-lg border border-border dark:border-border-dark'
+      }
+    >
       <FlowPalette onAdd={addNode} />
-      <div className="relative min-h-[480px] flex-1 bg-[#f7f7f5] dark:bg-zinc-950">
+      <div className="relative min-h-0 flex-1 bg-[#f7f7f5] dark:bg-zinc-950">
         <ReactFlow
           nodes={nodes}
           edges={edges}

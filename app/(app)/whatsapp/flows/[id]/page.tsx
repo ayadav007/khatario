@@ -4,9 +4,12 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { Maximize2, Minimize2, Play } from 'lucide-react';
+import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FlowCanvas } from '@/components/whatsapp/flows/FlowCanvas';
+import { FlowSimulator } from '@/components/whatsapp/flows/FlowSimulator';
 import { MobileFlowEditor } from '@/components/whatsapp/flows/MobileFlowEditor';
 import { GenerateFlowModal } from '@/components/whatsapp/flows/GenerateFlowModal';
 import { emptyFlowDefinition, type FlowDefinition } from '@/lib/whatsapp/flows/schema';
@@ -27,6 +30,8 @@ export default function WhatsAppFlowEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [tryOpen, setTryOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -41,6 +46,20 @@ export default function WhatsAppFlowEditorPage() {
       setDefinition(data.flow.definition);
     })();
   }, [params.id]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [expanded]);
 
   async function save() {
     setSaving(true);
@@ -88,43 +107,102 @@ export default function WhatsAppFlowEditorPage() {
   if (!flow) return <div className="p-6 text-sm text-text-muted">Loading…</div>;
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 dark:border-border-dark">
-        <Button variant="ghost" size="sm" onClick={() => router.push('/whatsapp/flows')}>
-          Back
-        </Button>
-        <Input className="max-w-xs" value={name} onChange={(e) => setName(e.target.value)} />
-        <span className="text-xs capitalize text-text-muted">{flow.status}</span>
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setGenerateOpen(true)}>
-            Generate with AI
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => void save()} disabled={saving}>
-            Save draft
-          </Button>
-          {flow.status === 'published' ? (
-            <Button variant="secondary" size="sm" onClick={() => void unpublish()}>
-              Unpublish
+    <>
+      <div
+        className={clsx(
+          'flex flex-col bg-background',
+          expanded ? 'fixed inset-0 z-[80]' : 'min-h-[calc(100vh-4rem)]',
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 dark:border-border-dark">
+          {!expanded ? (
+            <Button variant="ghost" size="sm" onClick={() => router.push('/whatsapp/flows')}>
+              Back
             </Button>
-          ) : (
-            <Button size="sm" onClick={() => void publish()}>
-              Publish
+          ) : null}
+          <Input className="max-w-xs" value={name} onChange={(e) => setName(e.target.value)} />
+          <span className="text-xs capitalize text-text-muted">{flow.status}</span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button
+              variant={tryOpen ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => setTryOpen((v) => !v)}
+              title="Preview this draft without publishing"
+            >
+              <Play className="mr-1 h-4 w-4" />
+              Try flow
             </Button>
-          )}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="hidden md:inline-flex"
+              onClick={() => setExpanded((v) => !v)}
+              title={expanded ? 'Exit fullscreen (Esc)' : 'Expand canvas'}
+            >
+              {expanded ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
+              {expanded ? 'Exit' : 'Expand'}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setGenerateOpen(true)}>
+              Generate with AI
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void save()} disabled={saving}>
+              Save draft
+            </Button>
+            {flow.status === 'published' ? (
+              <Button variant="secondary" size="sm" onClick={() => void unpublish()}>
+                Unpublish
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void publish()}>
+                Publish
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {error ? <p className="px-3 py-2 text-sm text-red-600">{error}</p> : null}
+
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <div
+            className={clsx(
+              'min-h-0 min-w-0 flex-1',
+              expanded ? 'flex' : 'hidden md:flex',
+            )}
+          >
+            <FlowCanvas
+              key={flow.id}
+              definition={definition}
+              onChange={setDefinition}
+              className="flex min-h-0 w-full flex-1 overflow-hidden border-0 md:border-r md:border-border md:dark:border-border-dark"
+            />
+          </div>
+
+          {!expanded ? (
+            <div className="p-3 md:hidden">
+              <MobileFlowEditor definition={definition} onChange={setDefinition} />
+            </div>
+          ) : null}
+
+          {tryOpen ? (
+            <div
+              className={clsx(
+                'flex shrink-0 flex-col bg-surface',
+                expanded
+                  ? 'h-full w-full max-w-md border-l border-border dark:border-border-dark'
+                  : 'max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-[90] max-md:h-[min(70vh,560px)] max-md:rounded-t-2xl max-md:border max-md:border-border max-md:shadow-xl md:h-auto md:w-96 md:border-l md:border-border md:dark:border-border-dark',
+              )}
+            >
+              <FlowSimulator definition={definition} open onClose={() => setTryOpen(false)} />
+            </div>
+          ) : null}
         </div>
       </div>
-      {error ? <p className="px-3 py-2 text-sm text-red-600">{error}</p> : null}
-      <div className="hidden flex-1 md:flex">
-        <FlowCanvas key={flow.id} definition={definition} onChange={setDefinition} />
-      </div>
-      <div className="p-3 md:hidden">
-        <MobileFlowEditor definition={definition} onChange={setDefinition} />
-      </div>
+
       <GenerateFlowModal
         open={generateOpen}
         onClose={() => setGenerateOpen(false)}
         onCreated={(id) => router.push(`/whatsapp/flows/${id}`)}
       />
-    </div>
+    </>
   );
 }

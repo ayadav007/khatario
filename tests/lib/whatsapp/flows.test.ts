@@ -3,6 +3,7 @@ import { extractTriggers, parseFlowDefinition, canPublish, emptyFlowDefinition }
 import { shopOrderStarterDefinition } from '@/lib/whatsapp/flows/starter';
 import { startWalk } from '@/lib/whatsapp/flows/walk';
 import { botRulesToDefinition } from '@/lib/whatsapp/flows/import-bot-rules';
+import { createSimState, simStep } from '@/lib/whatsapp/flows/simulate';
 
 describe('flow hard match', () => {
   const triggers = {
@@ -84,5 +85,28 @@ describe('bot rule import', () => {
     const start = def.nodes.find((n) => n.type === 'start');
     expect(start && start.type === 'start' && start.data.softIntents).toEqual(['price', 'timing']);
     expect(start && start.type === 'start' && start.data.hardPhrases).toEqual([]);
+  });
+});
+
+describe('flow simulate (draft preview)', () => {
+  it('does not start on a non-matching keyword', () => {
+    const def = shopOrderStarterDefinition();
+    const next = simStep(def, createSimState(), { text: 'hello there' });
+    expect(next.status).toBe('idle');
+    expect(next.bubbles.some((b) => b.role === 'system' && b.text.includes('No start match'))).toBe(true);
+  });
+
+  it('walks shop starter after an exact keyword', () => {
+    const def = shopOrderStarterDefinition();
+    let state = simStep(def, createSimState(), { text: 'order' });
+    expect(state.status).toBe('active');
+    expect(state.bubbles.some((b) => b.role === 'bot')).toBe(true);
+
+    const bot = [...state.bubbles].reverse().find((b) => b.role === 'bot');
+    expect(bot && bot.role === 'bot' && bot.reply.buttons?.length).toBeTruthy();
+    const first = bot && bot.role === 'bot' ? bot.reply.buttons![0] : null;
+    expect(first).toBeTruthy();
+    state = simStep(def, state, { text: first!.title, replyId: first!.id });
+    expect(state.bubbles.length).toBeGreaterThan(2);
   });
 });
