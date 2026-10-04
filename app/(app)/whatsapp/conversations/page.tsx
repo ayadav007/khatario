@@ -80,7 +80,10 @@ function ConversationsContent() {
 
   return (
     <div className="h-full w-full">
-      <ConversationsTab initialPhoneNumber={searchParams.get('phone') || undefined} />
+      <ConversationsTab
+        initialPhoneNumber={searchParams.get('phone') || undefined}
+        openConversationId={searchParams.get('c') || undefined}
+      />
     </div>
   );
 }

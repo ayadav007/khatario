@@ -57,6 +57,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/whatsapp/templates': 'WhatsApp templates',
   '/settings/whatsapp/notifications': 'WhatsApp notifications',
   '/settings/whatsapp/inbox': 'Inbox & team',
+  '/settings/whatsapp/team': 'Agents',
   '/settings/whatsapp/ai-agent': 'AI agent',
   '/settings/whatsapp/shop': 'WhatsApp shop',
   '/settings/help': 'Help & Support',

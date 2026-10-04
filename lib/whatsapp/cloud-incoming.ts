@@ -2,6 +2,7 @@ import { queryOne } from '@/lib/db';
 import { processIncomingMessage, storeIncomingMessage, storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import type { CloudIncomingQueueJob } from '@/lib/whatsapp-queue-types';
 import { sendBusinessText } from './business-transport';
+import { queueIfUnanswered } from './inbox-ownership';
 
 /** A cart sent from the business's Meta catalog: stored in the inbox, then ordered and billed. */
 async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullable<CloudIncomingQueueJob['order']> }) {
@@ -34,6 +35,22 @@ async function processCloudCart(job: CloudIncomingQueueJob & { order: NonNullabl
   await sendShopOrderReply(job.businessId, job.from, outcome);
 }
 
+/** Saves the customer's file locally (Meta's copy needs a token and expires); undefined if it can't be fetched. */
+async function storeCloudMedia(
+  businessId: string,
+  media: NonNullable<CloudIncomingQueueJob['media']>,
+): Promise<string | undefined> {
+  try {
+    const { downloadMedia } = await import('@/lib/meta-whatsapp');
+    const { saveInboxMedia } = await import('./inbox-media');
+    const file = await downloadMedia({ businessId, mediaId: media.id });
+    return await saveInboxMedia(businessId, file.buffer, media.mimeType || file.mimeType);
+  } catch (err) {
+    console.error('[cloud-incoming] media download failed:', err instanceof Error ? err.message : err);
+    return undefined;
+  }
+}
+
 type BotButton = { title: string; type?: string; phone?: string; url?: string };
 
 /** Cloud API text replies have no QR-style buttons here: list them as lines the customer can type. */
@@ -61,22 +78,49 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
       await processCloudCart({ ...job, order: job.order });
       return;
     }
+    const mediaUrl = job.media ? await storeCloudMedia(job.businessId, job.media) : undefined;
+    if (job.media && !job.text.trim()) {
+      // Photos, voice notes and files without a caption go to a person; the bot has nothing to read.
+      const { conversationId } = await storeIncomingMessage(
+        job.businessId,
+        `${job.from}@s.whatsapp.net`,
+        job.businessPhone,
+        job.media.kind === 'document' ? job.media.filename || '' : '',
+        job.messageId,
+        job.media.kind,
+        mediaUrl,
+        false,
+        undefined,
+        undefined,
+        job.profileName ?? undefined,
+        job.sourceTimestampSec,
+        null,
+      );
+      await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
+      return;
+    }
     if (!job.text.trim()) return;
+    const out: { conversationUuid?: string } = {};
     const result = await processIncomingMessage(
       job.businessId,
       `${job.from}@s.whatsapp.net`,
       job.businessPhone,
       job.text,
       job.messageId,
-      job.messageType === 'text' ? 'text' : job.messageType,
-      undefined,
+      job.media ? job.media.kind : job.messageType === 'text' ? 'text' : job.messageType,
+      mediaUrl,
       false,
       undefined,
       undefined,
       job.profileName ?? undefined,
       job.sourceTimestampSec,
       null,
+      out,
     );
+    await queueIfUnanswered(job.businessId, out.conversationUuid, {
+      replied: !!result.response?.trim(),
+      handled: result.handled,
+    });
     if (!result.response?.trim()) return;
 
     const delayMs = Math.min(Math.max(result.delaySeconds ?? 0, 0), 10) * 1000;

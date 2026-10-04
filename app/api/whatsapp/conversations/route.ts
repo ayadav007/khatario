@@ -5,47 +5,28 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextResponse } from 'next/server';
-import { queryRows, queryOne } from '@/lib/db';
+import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { getInboxViewer, UNOWNED_SQL, visibilityClause } from '@/lib/whatsapp/inbox-ownership';
 
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0);
     const status = searchParams.get('status'); // 'active', 'archived', or null for all
-    const labelId = searchParams.get('label_id'); // Filter by label
-    const assignedTo = searchParams.get('assigned_to'); // Filter by assigned agent
-    const leadStatus = searchParams.get('lead_status'); // Filter by lead status
-    const conversationStatus = searchParams.get('conversation_status'); // Filter by conversation status
-    const unreadOnly = searchParams.get('unread_only'); // Filter by unread only (true/false)
-
-    // Debug: Log all query parameters to see what's being sent
-    const allParams = Object.fromEntries(searchParams.entries());
-    console.log('[Conversations API] 📥 Request received:', {
-      businessId,
-      status,
-      labelId,
-      leadStatus: leadStatus || '⚠️ NULL - Filter not sent from frontend!',
-      conversationStatus,
-      unreadOnly,
-      allParams,
-      url: request.url
-    });
-    
-    if (leadStatus) {
-      console.log('[Conversations API] ✅ Lead status filter received:', leadStatus);
-    } else if (allParams.lead_status) {
-      console.log('[Conversations API] ⚠️ lead_status found in allParams but not extracted:', allParams.lead_status);
-    } else {
-      console.log('[Conversations API] ❌ No lead_status parameter in request');
-    }
+    const labelId = searchParams.get('label_id');
+    const assignedTo = searchParams.get('assigned_to');
+    const leadStatus = searchParams.get('lead_status');
+    const conversationStatus = searchParams.get('conversation_status');
+    const unreadOnly = searchParams.get('unread_only');
+    const newOnly = searchParams.get('new_only');
+    const search = (searchParams.get('search') || '').trim().slice(0, 100);
 
     if (!businessId) {
       return NextResponse.json({ error: 'businessId is required' }, { status: 400 });
     }
 
-    // Build WHERE clause
     const whereConditions: string[] = ['c.business_id = $1'];
     const params: any[] = [businessId];
     let paramIndex = 2;
@@ -54,7 +35,6 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
       whereConditions.push(`c.status = $${paramIndex++}`);
       params.push(status);
     } else {
-      // By default, exclude archived conversations (show only active)
       whereConditions.push(`c.status = 'active'`);
     }
 
@@ -71,30 +51,20 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
       params.push(assignedTo);
     }
 
-    // Lead status filter: Use AI lead_status from whatsapp_lead_profiles
-    // Support both old manual values (new, interested, follow_up, converted, lost) 
-    // and new AI values (hot, warm, cold, not_interested)
+    // AI lead status lives on whatsapp_lead_profiles; older manual values on the conversation.
     if (leadStatus) {
       const normalizedLeadStatus = leadStatus.trim().toLowerCase();
-      console.log('[Conversations API] Filtering by lead_status:', { original: leadStatus, normalized: normalizedLeadStatus });
-      
-      // Check if it's an AI-based status (hot, warm, cold, not_interested)
       if (['hot', 'warm', 'cold', 'not_interested'].includes(normalizedLeadStatus)) {
-        // Filter by AI lead_status from whatsapp_lead_profiles
-        // Use EXISTS subquery to check lead_profiles table
         whereConditions.push(`EXISTS (
           SELECT 1 FROM whatsapp_lead_profiles lp
-          WHERE lp.conversation_id = c.id 
+          WHERE lp.conversation_id = c.id
             AND lp.business_id = c.business_id
             AND lp.lead_status = $${paramIndex++}
         )`);
         params.push(normalizedLeadStatus);
-        console.log('[Conversations API] ✅ Added AI lead_status filter (EXISTS query):', normalizedLeadStatus);
       } else {
-        // Backward compatibility: filter by old manual lead_status in conversations table
         whereConditions.push(`c.lead_status = $${paramIndex++}`);
         params.push(leadStatus);
-        console.log('[Conversations API] ⚠️ Added manual lead_status filter (old column):', leadStatus);
       }
     }
 
@@ -107,6 +77,65 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
       whereConditions.push(`c.unread_count > 0`);
     }
 
+    if (newOnly === 'true') {
+      whereConditions.push(`c.last_message_direction = 'incoming'`);
+    }
+
+    if (search) {
+      const like = `%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+      const digits = search.replace(/\D/g, '');
+      const p = `$${paramIndex++}`;
+      params.push(like);
+      let phoneMatch = '';
+      if (digits.length >= 4) {
+        phoneMatch = ` OR REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g') LIKE $${paramIndex++}`;
+        params.push(`%${digits}%`);
+      }
+      whereConditions.push(`(
+        c.whatsapp_display_name ILIKE ${p}
+        OR c.group_name ILIKE ${p}
+        OR c.last_message_text ILIKE ${p}
+        OR cust.name ILIKE ${p}
+        ${phoneMatch}
+        OR EXISTS (
+          SELECT 1 FROM whatsapp_conversation_messages sm
+           WHERE sm.conversation_id = c.id AND sm.business_id = c.business_id AND sm.message_text ILIKE ${p}
+        )
+      )`);
+    }
+
+    const onlyId = searchParams.get('id');
+    if (onlyId && /^[0-9a-f-]{36}$/i.test(onlyId)) {
+      whereConditions.push(`c.id = $${paramIndex++}::uuid`);
+      params.push(onlyId);
+    }
+
+    const inboxState = searchParams.get('inbox_state');
+    if (inboxState === 'active' || inboxState === 'requesting') {
+      whereConditions.push(`c.inbox_state = $${paramIndex++} AND ${UNOWNED_SQL('c')}`);
+      params.push(inboxState);
+    } else if (inboxState === 'intervened') {
+      whereConditions.push(`NOT ${UNOWNED_SQL('c')}`);
+      const intervenedBy = searchParams.get('intervened_by');
+      if (intervenedBy === 'me') {
+        whereConditions.push(`c.assigned_to = $${paramIndex++}::uuid`);
+        params.push(userId);
+      } else if (intervenedBy === 'others') {
+        whereConditions.push(`c.assigned_to <> $${paramIndex++}::uuid`);
+        params.push(userId);
+      } else if (intervenedBy && /^[0-9a-f-]{36}$/i.test(intervenedBy)) {
+        whereConditions.push(`c.assigned_to = $${paramIndex++}::uuid`);
+        params.push(intervenedBy);
+      }
+    }
+
+    const viewer = await getInboxViewer({ businessId, userId });
+    const visibility = visibilityClause(viewer, 'c', paramIndex);
+    whereConditions.push(visibility.sql);
+    params.push(...visibility.params);
+    paramIndex += visibility.params.length;
+
+    // One customer per chat: the linked one, else the first whose last 10 digits match the number.
     const querySQL = `SELECT 
         c.id,
         c.conversation_id,
@@ -129,46 +158,40 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
         c.bot_paused_until,
         c.bot_paused_reason,
         c.handoff_requested_at,
-        COALESCE(cust.name, cust_by_phone.name, c.whatsapp_display_name, NULL) as customer_name,
-        COALESCE(cust.phone, cust_by_phone.phone, c.from_number) as customer_phone,
+        c.inbox_state,
+        c.requested_at,
+        c.intervened_at,
+        (NOT ${UNOWNED_SQL('c')}) AS is_owned,
+        COALESCE(cust.name, c.whatsapp_display_name, NULL) as customer_name,
+        COALESCE(cust.phone, c.from_number) as customer_phone,
         c.whatsapp_display_name,
         c.profile_picture_url,
         u.name as assigned_agent_name
        FROM whatsapp_conversations c
-       LEFT JOIN customers cust ON c.customer_id = cust.id
-       LEFT JOIN customers cust_by_phone ON cust_by_phone.business_id = $1 
-         AND (
-           cust_by_phone.phone = c.from_number 
-           OR cust_by_phone.phone = REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g')
-           OR REGEXP_REPLACE(cust_by_phone.phone, '[^0-9]', '', 'g') = REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g')
-           OR c.from_number LIKE '%' || cust_by_phone.phone || '%'
-           OR cust_by_phone.phone LIKE '%' || REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g') || '%'
-         )
-         AND c.customer_id IS NULL
+       LEFT JOIN LATERAL (
+         SELECT cu.name, cu.phone FROM customers cu
+          WHERE cu.business_id = c.business_id
+            AND (
+              cu.id = c.customer_id
+              OR (
+                c.customer_id IS NULL AND NOT COALESCE(c.is_group, false)
+                AND length(REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g')) >= 10
+                AND RIGHT(REGEXP_REPLACE(cu.phone, '[^0-9]', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g'), 10)
+              )
+            )
+          ORDER BY (cu.id = c.customer_id) DESC NULLS LAST
+          LIMIT 1
+       ) cust ON true
        LEFT JOIN users u ON c.assigned_to = u.id
        WHERE ${whereConditions.join(' AND ')}
        ORDER BY c.is_pinned DESC, COALESCE(c.last_message_at, c.created_at) DESC NULLS LAST
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    
-    console.log('[Conversations API] Query:', {
-      leadStatus,
-      whereConditions: whereConditions.join(' AND '),
-      params: params.map((p, i) => `$${i + 1}=${typeof p === 'string' ? p.substring(0, 50) : p}`),
-      paramCount: params.length
-    });
 
     const conversations = await queryRows(querySQL, [...params, limit, offset]);
-    
-    console.log('[Conversations API] Results:', {
-      count: conversations.length,
-      leadStatus,
-      sampleIds: conversations.slice(0, 3).map((c: any) => c.id)
-    });
 
-    // Fetch labels for each conversation
     const conversationIds = conversations.map((c: any) => c.id);
     let labelsMap: Record<string, any[]> = {};
-    
+
     if (conversationIds.length > 0) {
       const labels = await queryRows(
         `SELECT 
@@ -196,18 +219,17 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
       }, {});
     }
 
-    // Attach labels and cached profile pictures to conversations
-    // Profile pictures are now cached in the DB column (profile_picture_url) and refreshed
-    // automatically in the background when new messages arrive — no live WA API call needed.
-    const conversationsWithLabels = conversations.map((conv: any) => {
-      return {
-        ...conv,
-        labels: labelsMap[conv.id] || [],
-        profile_picture_url: (conv as any).profile_picture_url || null,
-      };
-    });
+    // Profile pictures are cached on the row and refreshed in the background when messages arrive.
+    const conversationsWithLabels = conversations.map((conv: any) => ({
+      ...conv,
+      labels: labelsMap[conv.id] || [],
+      profile_picture_url: conv.profile_picture_url || null,
+    }));
 
-    return NextResponse.json({ conversations: conversationsWithLabels });
+    return NextResponse.json({
+      conversations: conversationsWithLabels,
+      viewer: { user_id: viewer.userId, is_supervisor: viewer.isSupervisor },
+    });
   } catch (error: any) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

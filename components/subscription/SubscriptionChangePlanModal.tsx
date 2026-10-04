@@ -13,6 +13,7 @@ import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
 import { useToastContext } from '@/contexts/ToastContext';
 import { getPlanChangeAction } from '@/lib/subscription/trial-plan';
 import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
+import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
 
 export interface SubscriptionPlanFeatures {
   limits: {
@@ -335,10 +336,15 @@ export function SubscriptionChangePlanModal({
                         ).map(([key, unit, unlimited]) => {
                           const value = plan.features?.limits?.[key];
                           if (value === undefined || value === null || value === 0) return null;
+                          const isConnectSeats = key === 'max_users' && moduleKey === 'connect';
                           return (
                             <li key={key} className="flex items-center gap-1.5">
                               <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                              {value === -1 ? unlimited : `${value} ${unit}`}
+                              {isConnectSeats
+                                ? connectSeatsLabel(value)
+                                : value === -1
+                                  ? unlimited
+                                  : `${value} ${unit}`}
                             </li>
                           );
                         })}

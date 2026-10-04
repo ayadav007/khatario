@@ -1,13 +1,22 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, Inbox, Clock, CheckCircle, XCircle, Loader2, Tag, Settings2, User } from 'lucide-react';
+import { MessageSquare, Inbox, Clock, CheckCircle, XCircle, Loader2, Tag, Settings2, User, Hand, Headphones, Bot, Volume2, VolumeX } from 'lucide-react';
 import { useWhatsAppSocket } from '@/hooks/useWhatsAppSocket';
+import { isInboxSoundOn, requestInboxNotificationPermission, setInboxSoundOn, type InboxState, type TeamMember } from './inbox';
+
+export interface InboxFilter {
+  state: InboxState | null;
+  /** 'me', 'others' or a user id; only for Intervened. Undefined = anyone. */
+  intervenedBy?: string;
+}
 
 interface SummaryBarProps {
   businessId: string;
   activeFilter?: 'unread' | 'new' | 'open' | 'pending' | 'closed' | string | null; // string for label/lead status IDs
   onFilterClick: (filter: 'unread' | 'new' | 'open' | 'pending' | 'closed' | string | null, type?: 'status' | 'label' | 'lead_status') => void;
+  inboxFilter?: InboxFilter;
+  onInboxFilter?: (filter: InboxFilter) => void;
 }
 
 interface SummaryData {
@@ -21,6 +30,11 @@ interface SummaryData {
   warm?: number;
   cold?: number;
   not_interested?: number;
+  active?: number;
+  requesting?: number;
+  intervened?: number;
+  intervened_by_me?: number;
+  intervened_by_others?: number;
 }
 
 interface Label {
@@ -36,7 +50,15 @@ interface LeadStatus {
   count?: number; // Will be calculated
 }
 
-export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryBarProps) {
+export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilter, onInboxFilter }: SummaryBarProps) {
+  const [isSupervisor, setIsSupervisor] = useState(false);
+  const [agents, setAgents] = useState<TeamMember[]>([]);
+  const [soundOn, setSoundOn] = useState(true);
+  const summaryRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setSoundOn(isInboxSoundOn());
+  }, []);
   const [summary, setSummary] = useState<SummaryData>({
     unread: 0,
     new: 0,
@@ -61,7 +83,7 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
   } => {
     if (typeof window === 'undefined' || !businessId) {
       return {
-        statuses: ['unread', 'new', 'open', 'pending', 'closed'],
+        statuses: ['unread'],
         labels: [],
         leadStatuses: []
       };
@@ -72,7 +94,7 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
       if (stored) {
         const parsed = JSON.parse(stored);
         return {
-          statuses: parsed.statuses || ['unread', 'new', 'open', 'pending', 'closed'],
+          statuses: parsed.statuses || ['unread'],
           labels: parsed.labels || [],
           leadStatuses: parsed.leadStatuses || []
         };
@@ -82,7 +104,7 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
     }
     
     return {
-      statuses: ['unread', 'new', 'open', 'pending', 'closed'],
+      statuses: ['unread'],
       labels: [],
       leadStatuses: []
     };
@@ -122,6 +144,7 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
       const res = await fetch(`/api/whatsapp/conversations/summary?business_id=${businessId}`);
       if (res.ok) {
         const data = await res.json();
+        setIsSupervisor(!!data.viewer?.is_supervisor);
         setSummary(data.summary || {
           unread: 0,
           new: 0,
@@ -155,21 +178,34 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
     }
   }, [businessId]);
 
+  // Ownership changes move chats between Requesting / Intervened / Active; refetch counts (debounced).
+  const scheduleSummaryRefresh = useCallback(() => {
+    if (summaryRefreshRef.current) clearTimeout(summaryRefreshRef.current);
+    summaryRefreshRef.current = setTimeout(() => {
+      void fetchSummary();
+    }, 1500);
+  }, [fetchSummary]);
+
+  useEffect(() => () => {
+    if (summaryRefreshRef.current) clearTimeout(summaryRefreshRef.current);
+  }, []);
+
   // Listen to SSE events for real-time updates
   const { connected: wsConnected } = useWhatsAppSocket({
     businessId: businessId || null,
     enabled: !!businessId,
-    onSummaryUpdate: useCallback((event: any) => {
-      // Update summary from SSE event (currently only has unread, but can update partial data)
-      // SSE events currently only send unread_conversations, so we update that
-      if (event.summary && event.summary.unread_conversations !== undefined) {
-        setSummary(prev => ({
-          ...prev,
-          unread: event.summary.unread_conversations || 0
-        }));
-      }
-    }, [])
+    onConversationUpdate: scheduleSummaryRefresh,
+    onConversationHidden: scheduleSummaryRefresh,
+    onSummaryUpdate: scheduleSummaryRefresh,
   });
+
+  useEffect(() => {
+    if (!businessId || !isSupervisor) return;
+    fetch(`/api/whatsapp/users?business_id=${businessId}`)
+      .then((res) => (res.ok ? res.json() : { users: [] }))
+      .then((data) => setAgents((data.users || []).filter((u: TeamMember) => u.can_receive !== false)))
+      .catch(() => setAgents([]));
+  }, [businessId, isSupervisor]);
 
   // Initial fetches
   useEffect(() => {
@@ -243,6 +279,40 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
     }
   ];
 
+  const inboxItems: Array<{
+    key: InboxState;
+    label: string;
+    title: string;
+    icon: typeof Hand;
+    count: number;
+    colors: { bg: string; text: string; active: string };
+  }> = [
+    {
+      key: 'requesting',
+      label: 'Requesting',
+      title: 'Customers waiting for a person. Anyone can intervene.',
+      icon: Hand,
+      count: summary.requesting ?? 0,
+      colors: { bg: 'bg-amber-50', text: 'text-amber-700', active: 'bg-amber-100 border-amber-300' },
+    },
+    {
+      key: 'intervened',
+      label: 'Intervened',
+      title: isSupervisor ? 'Chats a team member is handling' : 'Chats you are handling',
+      icon: Headphones,
+      count: summary.intervened ?? 0,
+      colors: { bg: 'bg-blue-50', text: 'text-blue-700', active: 'bg-blue-100 border-blue-300' },
+    },
+    {
+      key: 'active',
+      label: 'Active',
+      title: 'Chats the bot is handling',
+      icon: Bot,
+      count: summary.active ?? 0,
+      colors: { bg: 'bg-gray-100', text: 'text-gray-700', active: 'bg-gray-200 border-gray-400' },
+    },
+  ];
+
   const visibleStatusItems = statusItems.filter(item => visibleItems.statuses.includes(item.key));
   const visibleLabelItems = labels
     .filter(label => visibleItems.labels.includes(label.id))
@@ -303,6 +373,76 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick }: SummaryB
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
+          {onInboxFilter && inboxItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = inboxFilter?.state === item.key;
+            return (
+              <button
+                key={`inbox:${item.key}`}
+                type="button"
+                onClick={() => onInboxFilter(isActive ? { state: null } : { state: item.key })}
+                className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all duration-200 border-2 ${
+                  isActive ? `${item.colors.active} shadow-sm` : `${item.colors.bg} border-transparent hover:border-gray-300 hover:shadow-sm`
+                }`}
+                title={item.title}
+              >
+                <Icon className={`w-4 h-4 ${item.colors.text}`} />
+                <span className={`text-sm font-medium ${item.colors.text}`}>{item.label}</span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold min-w-[24px] text-center ${isActive ? item.colors.active : item.colors.bg} ${item.colors.text}`}>
+                  {item.count}
+                </span>
+              </button>
+            );
+          })}
+          {onInboxFilter && isSupervisor && inboxFilter?.state === 'intervened' && (
+            <div className="flex items-center gap-1 rounded-xl border border-blue-200 bg-white p-1 text-xs">
+              {[
+                { key: undefined, label: 'By anyone' },
+                { key: 'me', label: `By me (${summary.intervened_by_me ?? 0})` },
+                { key: 'others', label: `By others (${summary.intervened_by_others ?? 0})` },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => onInboxFilter({ state: 'intervened', intervenedBy: opt.key })}
+                  className={`rounded-lg px-2.5 py-1 font-medium ${
+                    inboxFilter.intervenedBy === opt.key ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              {agents.length > 0 && (
+                <select
+                  className="rounded-lg border-0 bg-transparent py-1 pl-2 pr-6 text-xs text-gray-700 focus:ring-0"
+                  value={inboxFilter.intervenedBy && !['me', 'others'].includes(inboxFilter.intervenedBy) ? inboxFilter.intervenedBy : ''}
+                  onChange={(e) => onInboxFilter({ state: 'intervened', intervenedBy: e.target.value || undefined })}
+                  aria-label="Intervened by agent"
+                >
+                  <option value="">Agent…</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {onInboxFilter && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !soundOn;
+                setSoundOn(next);
+                setInboxSoundOn(next);
+                if (next) requestInboxNotificationPermission();
+              }}
+              className="p-1.5 rounded-lg text-gray-600 hover:bg-gray-200"
+              title={soundOn ? 'Sound alerts on (new requests and transfers). Click to mute.' : 'Sound alerts off. Click to turn on.'}
+              aria-label={soundOn ? 'Mute inbox alerts' : 'Turn on inbox alerts'}
+            >
+              {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          )}
           {allVisibleItems.map((item) => {
             const Icon = item.icon;
             // Use displayKey for filter matching (for labels/lead statuses), or key for status items

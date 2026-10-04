@@ -7,14 +7,43 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextResponse } from 'next/server';
-import { query, queryOne, queryRows } from '@/lib/db';
+import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
+import { broadcastOwnership } from '@/lib/whatsapp/inbox-ownership';
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+/** Contact-panel status for one chat: blocked, and whether the number opted out of broadcasts. */
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, businessId, userId }) => {
+  const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+  if (!found) {
+    return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+  }
+  const row = await queryOne<{ is_blocked: boolean | null; is_group: boolean | null; opted_out: boolean }>(
+    `SELECT c.is_blocked, c.is_group,
+            EXISTS (
+              SELECT 1 FROM whatsapp_unsubscribes u
+               WHERE u.business_id = c.business_id
+                 AND length(REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g')) >= 10
+                 AND RIGHT(REGEXP_REPLACE(u.phone, '[^0-9]', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(c.from_number, '[^0-9]', '', 'g'), 10)
+            ) AS opted_out
+       FROM whatsapp_conversations c
+      WHERE c.id = $1 AND c.business_id = $2`,
+    [found.id, businessId]
+  );
+  if (!row) {
+    return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+  }
+  return NextResponse.json({
+    is_blocked: !!row.is_blocked,
+    is_group: !!row.is_group,
+    opted_out: !row.is_group && !!row.opted_out,
+  });
+});
+
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
@@ -32,13 +61,14 @@ export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params
   }
 });
 
-export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
-    if (!conversationId) {
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
+    const conversationId = found.id;
 
     const {
       status, // 'active', 'archived', 'blocked'
@@ -99,13 +129,13 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
     }
 
     if (assigned_to !== undefined) {
-      // Allow null to unassign
-      if (assigned_to === null || assigned_to === '') {
-        updates.push(`assigned_to = NULL`);
-      } else {
-        updates.push(`assigned_to = $${paramIndex++}`);
-        values.push(assigned_to);
-      }
+      return NextResponse.json(
+        {
+          error: 'Use Intervene, Transfer or Resolve to change who handles a chat',
+          code: 'USE_OWNERSHIP_ENDPOINT',
+        },
+        { status: 400 },
+      );
     }
 
     if (lead_status !== undefined) {
@@ -148,6 +178,12 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
     }
 
     if (conversation_status !== undefined) {
+      if (!found.viewer.isSupervisor) {
+        return NextResponse.json(
+          { error: 'Only supervisors can change the conversation status directly', code: 'NOT_SUPERVISOR' },
+          { status: 403 },
+        );
+      }
       updates.push(`conversation_status = $${paramIndex++}`);
       values.push(conversation_status);
     }
@@ -180,42 +216,8 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
       values
     );
 
-    // TODO: Emit WebSocket conversation:update event
     if (result) {
-      try {
-        // Get full conversation data with assigned agent name
-        const conversationData = await queryRows(`
-          SELECT 
-            c.id,
-            c.conversation_id,
-            c.from_number,
-            c.last_message_text,
-            c.last_message_at,
-            c.last_message_direction,
-            c.unread_count,
-            c.assigned_to,
-            c.conversation_status,
-            c.lead_status,
-            c.is_group,
-            c.group_name,
-            u.name as assigned_agent_name
-          FROM whatsapp_conversations c
-          LEFT JOIN users u ON c.assigned_to = u.id
-          WHERE c.id = $1 AND c.business_id = $2
-        `, [conversationId, businessId]);
-
-        if (conversationData.length > 0) {
-          const { emitConversationUpdate, emitAgentUpdate } = await import('@/lib/whatsapp-websocket');
-          emitConversationUpdate(businessId, conversationData[0]);
-          
-          // If assigned_to changed, emit agent update
-          if (assigned_to !== undefined) {
-            emitAgentUpdate(businessId, conversationId, assigned_to === null || assigned_to === '' ? null : assigned_to);
-          }
-        }
-      } catch (err) {
-        console.error('[API] Error emitting WebSocket events:', err);
-      }
+      await broadcastOwnership(businessId, conversationId);
     }
 
     return NextResponse.json({ conversation: result });

@@ -9,6 +9,7 @@ import { NewConversationModal } from './NewConversationModal';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { ExportButton } from './ExportButton';
 import { waChat } from '@/lib/whatsapp-chat-typography';
+import type { InboxState } from './inbox';
 
 export interface Conversation {
   id: string;
@@ -36,6 +37,11 @@ export interface Conversation {
   bot_paused_until?: string | null;
   bot_paused_reason?: string | null;
   handoff_requested_at?: string | null;
+  requested_at?: string | null;
+  inbox_state?: InboxState;
+  /** Intervened by an active team member (an orphaned "intervened" chat counts as Requesting). */
+  is_owned?: boolean;
+  owner_name?: string | null;
 }
 
 export interface FilterState {
@@ -44,6 +50,15 @@ export interface FilterState {
   lead_status?: string;
   conversation_status?: string;
   label_id?: string;
+  inbox_state?: InboxState;
+  /** 'me', 'others' or a user id; only with inbox_state = intervened. */
+  intervened_by?: string;
+}
+
+/** Requesting / Intervened as the list shows it, accounting for chats whose owner left. */
+export function effectiveInboxState(conv: Pick<Conversation, 'inbox_state' | 'is_owned'>): InboxState | undefined {
+  if (conv.inbox_state === 'intervened' && conv.is_owned === false) return 'requesting';
+  return conv.inbox_state;
 }
 
 interface ConversationListProps {
@@ -58,6 +73,20 @@ interface ConversationListProps {
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
   businessId?: string;
   initialPhoneNumber?: string;
+  currentUserId?: string | null;
+  /** Called after a new chat is started; the id is null when the chat row does not exist yet. */
+  onConversationStarted?: (conversationId: string | null) => void;
+}
+
+function waitingLabel(since: string | null | undefined, now: number): string | null {
+  if (!since) return null;
+  const mins = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60000));
+  if (!Number.isFinite(mins)) return null;
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 // Helper function to format phone number
@@ -153,11 +182,19 @@ export function ConversationList({
   isLoadingMore = false,
   onScroll,
   businessId,
-  initialPhoneNumber
+  initialPhoneNumber,
+  currentUserId,
+  onConversationStarted
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewConversationModal, setShowNewConversationModal] = useState(false);
-  
+  const [now, setNow] = useState(() => Date.now());
+
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Open modal with initial phone number if provided
   React.useEffect(() => {
     if (initialPhoneNumber && businessId) {
@@ -276,7 +313,7 @@ export function ConversationList({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
             type="text"
-            placeholder="Ask Meta AI or Search"
+            placeholder="Search name, number or message"
             value={searchQuery}
             onChange={handleSearchChange}
             className="pl-10 pr-4 py-2 bg-white text-gray-900 placeholder-gray-500 border-0 rounded-lg focus:ring-0 focus:outline-none text-sm"
@@ -448,12 +485,23 @@ export function ConversationList({
                       <p className={waChat.listPreview}>
                         {formatLastMessage(conv.last_message_text, conv.last_message_direction)}
                       </p>
-                      {conv.handoff_requested_at && conv.conversation_status !== 'closed' && (
+                      {!conv.is_group && effectiveInboxState(conv) === 'requesting' && (() => {
+                        const waited = waitingLabel(conv.requested_at || conv.handoff_requested_at, now);
+                        return (
+                          <span
+                            className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                            title="The customer is waiting for a person"
+                          >
+                            {waited ? `Waiting ${waited}` : 'Requesting'}
+                          </span>
+                        );
+                      })()}
+                      {!conv.is_group && effectiveInboxState(conv) === 'intervened' && (
                         <span
-                          className="flex-shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
-                          title="The AI handed this chat to your team"
+                          className="max-w-[90px] flex-shrink-0 truncate rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800"
+                          title={`Handled by ${conv.assigned_to === currentUserId ? 'you' : conv.owner_name || conv.assigned_agent_name || 'a team member'}`}
                         >
-                          Needs human
+                          {conv.assigned_to === currentUserId ? 'You' : conv.owner_name || conv.assigned_agent_name || 'Intervened'}
                         </span>
                       )}
                       {conv.unread_count > 0 && (
@@ -462,6 +510,22 @@ export function ConversationList({
                         </span>
                       )}
                     </div>
+                    {conv.labels && conv.labels.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {conv.labels.slice(0, 3).map((l) => (
+                          <span
+                            key={l.id}
+                            className="max-w-[110px] truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                            style={{ backgroundColor: `${l.color}22`, color: l.color }}
+                          >
+                            {l.name}
+                          </span>
+                        ))}
+                        {conv.labels.length > 3 && (
+                          <span className="text-[10px] text-[#667781]">+{conv.labels.length - 3}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -482,9 +546,7 @@ export function ConversationList({
         <NewConversationModal
           isOpen={showNewConversationModal}
           onClose={() => setShowNewConversationModal(false)}
-          onSuccess={() => {
-            // Conversation will appear automatically via WebSocket events
-          }}
+          onSuccess={(_phone, conversationId) => onConversationStarted?.(conversationId ?? null)}
           businessId={businessId}
           initialPhoneNumber={initialPhoneNumber}
         />

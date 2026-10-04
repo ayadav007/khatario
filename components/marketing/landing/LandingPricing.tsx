@@ -10,6 +10,7 @@ import { type ProductLine } from '@/lib/product-lines';
 import { LandingProductToggle } from '@/components/marketing/landing/LandingProductToggle';
 import { useLandingPlans } from '@/components/marketing/landing/LandingPlansContext';
 import { withDefaults } from '@/lib/marketing-builder/merge';
+import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
 
 export interface LandingPricingPlan {
   id: string;
@@ -89,7 +90,7 @@ function getPlanHighlights(plan: LandingPricingPlan): string[] {
           : 'AI agent replies',
       'Meta-approved message templates',
       'Campaigns, automation & WhatsApp shop',
-      users,
+      connectSeatsLabel(limits.max_users),
     ],
     hr_starter: [
       'Employee records & profiles',

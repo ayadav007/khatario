@@ -60,6 +60,7 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
         { href: '/settings/whatsapp', label: 'Connection', description: 'Link your business number' },
         { href: '/settings/whatsapp/notifications', label: 'Notifications', description: 'Payment reminders and updates for you' },
         { href: '/settings/whatsapp/inbox', label: 'Inbox & team', description: 'Chat assignment and saved replies' },
+        { href: '/settings/whatsapp/team', label: 'Agents', description: 'WhatsApp agent logins and seats' },
         { href: '/settings/whatsapp/ai-agent', label: 'AI agent', description: 'Answer customer chats automatically' },
         { href: '/settings/products', label: 'Your products', description: 'Enable or manage Connect' },
       ],

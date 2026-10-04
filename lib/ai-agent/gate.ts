@@ -97,7 +97,8 @@ export async function runAgentGate(input: GateInput): Promise<GateResult> {
     incoming: string;
     outgoing: string;
   }>(
-    `SELECT (c.bot_paused_until IS NOT NULL AND c.bot_paused_until > NOW()) AS paused,
+    `SELECT ((c.bot_paused_until IS NOT NULL AND c.bot_paused_until > NOW())
+              OR c.inbox_state = 'intervened') AS paused,
             c.after_hours_notified_on,
             (SELECT COUNT(*) FROM whatsapp_conversation_messages m
               WHERE m.conversation_id = c.id AND m.direction = 'incoming') AS incoming,

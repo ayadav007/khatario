@@ -534,6 +534,7 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     users: 'Console seats (shared)',
     employees: 'Employees',
     whatsapp: 'WhatsApp today',
+    connect_agents: 'WhatsApp agents',
   };
 
   const useModulePlans = modulePlans.length > 0;

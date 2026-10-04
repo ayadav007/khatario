@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { BookOpen, Bot, ChevronRight, Loader2, Workflow, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWhatsAppAccess } from '@/components/whatsapp/settings/useWhatsAppAccess';
-import { AutoAssignSettingsCard } from '@/components/whatsapp/settings/AutoAssignSettingsCard';
+import { InboxOwnershipSettingsCard } from '@/components/whatsapp/settings/InboxOwnershipSettingsCard';
 import { ConnectLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
 import { WHATSAPP_SETTINGS_BASE } from '@/components/whatsapp/settings/WhatsAppSettingsNav';
 
@@ -43,7 +43,7 @@ export default function WhatsAppInboxSettingsPage() {
         <SettingsBlock
           bare
           title="Shared inbox"
-          description="Assign chats to your team automatically and reply faster with saved answers."
+          description="Share one WhatsApp number with your team and reply faster with saved answers."
         >
           <ConnectLockedCard
             title="The shared inbox comes with Connect"
@@ -58,10 +58,10 @@ export default function WhatsAppInboxSettingsPage() {
     <SettingsPageBody>
       <SettingsBlock
         id="inbox-assignment"
-        title="Assigning chats"
-        description="Decide who on your team answers new conversations. The AI agent's handoff uses these rules when set to Automatic."
+        title="How your team shares chats"
+        description="Chats move between Active, Requesting and Intervened. Agents pick up waiting chats with Intervene, so two people never answer the same customer."
       >
-        <AutoAssignSettingsCard businessId={business.id} />
+        <InboxOwnershipSettingsCard businessId={business.id} />
       </SettingsBlock>
 
       <SettingsBlock

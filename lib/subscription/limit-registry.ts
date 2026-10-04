@@ -3,13 +3,18 @@
  * Used by checkLimit and checkLimitInTransaction.
  */
 
-import { ACTIVE_EMPLOYEE_COUNT_SQL, CONSOLE_SEAT_COUNT_SQL } from '@/lib/subscription/seat-counting';
+import {
+  ACTIVE_EMPLOYEE_COUNT_SQL,
+  CONNECT_AGENT_SEAT_COUNT_SQL,
+  CONSOLE_SEAT_COUNT_SQL,
+} from '@/lib/subscription/seat-counting';
 
 export type LimitCheckType =
   | 'invoices'
   | 'customers'
   | 'items'
   | 'users'
+  | 'connect_agents'
   | 'whatsapp'
   | 'employees'
   | 'attendance'
@@ -39,6 +44,7 @@ export const LIMIT_KEY_BY_TYPE: Record<LimitCheckType, string> = {
   customers: 'max_customers',
   items: 'max_items',
   users: 'max_users',
+  connect_agents: 'max_users',
   whatsapp: 'max_whatsapp_per_day',
   employees: 'max_employees',
   attendance: 'max_attendance_records_per_month',
@@ -93,6 +99,8 @@ export function buildLimitCountQuery(limitType: LimitCheckType, businessId: stri
       return { sql: `SELECT COUNT(*)::int AS count FROM items WHERE business_id = $1`, params: p };
     case 'users':
       return { sql: CONSOLE_SEAT_COUNT_SQL, params: p };
+    case 'connect_agents':
+      return { sql: CONNECT_AGENT_SEAT_COUNT_SQL, params: p };
     case 'whatsapp':
       return {
         sql: `SELECT COUNT(*)::int AS count FROM whatsapp_messages WHERE business_id = $1 AND sent_at >= ${todayStart}`,

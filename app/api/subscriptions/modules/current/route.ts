@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 const USAGE_TYPES_BY_MODULE: Record<string, string[]> = {
   billing: ['invoices', 'customers', 'items'],
   hr: ['employees'],
-  connect: ['whatsapp'],
+  connect: ['whatsapp', 'connect_agents'],
 };
 
 async function mergePlanFeatures(planId: string, features: Record<string, unknown>) {

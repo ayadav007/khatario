@@ -1,4 +1,5 @@
 import { queryOne } from '@/lib/db';
+import { canViewConversation, getInboxViewer, intervene, type InboxViewer } from '@/lib/whatsapp/inbox-ownership';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -64,4 +65,34 @@ export async function resolveWhatsAppConversationDbId(
     [businessId, raw, atS || null, digits]
   );
   return row?.id ?? null;
+}
+
+/**
+ * Like {@link resolveWhatsAppConversationDbId}, but returns null when the signed-in user may not
+ * see the chat (owned by another agent, or outside their agent label rules).
+ */
+export async function resolveVisibleConversation(
+  ctx: { businessId: string; userId: string },
+  idOrJid: string
+): Promise<{ id: string; viewer: InboxViewer } | null> {
+  const id = await resolveWhatsAppConversationDbId(ctx.businessId, idOrJid);
+  if (!id) return null;
+  const viewer = await getInboxViewer(ctx);
+  if (!(await canViewConversation(viewer, id))) return null;
+  return { id, viewer };
+}
+
+/**
+ * A chat started from the inbox belongs to whoever started it. The conversation row only appears
+ * once WhatsApp echoes the send, so poll briefly before giving up.
+ */
+export async function claimStartedChat(businessId: string, userId: string, to: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const conversationId = await resolveWhatsAppConversationDbId(businessId, to).catch(() => null);
+    if (conversationId) {
+      await intervene(await getInboxViewer({ businessId, userId }), conversationId).catch(() => undefined);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }

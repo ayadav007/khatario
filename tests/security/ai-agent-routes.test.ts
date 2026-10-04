@@ -56,7 +56,10 @@ jest.mock('@/lib/ai-agent/conversation', () => ({
   resumeConversationBot: (...a: unknown[]) => mockResume(...a),
 }));
 jest.mock('@/lib/whatsapp-conversation-resolve', () => ({
-  resolveWhatsAppConversationDbId: (...a: unknown[]) => mockResolveConv(...a),
+  resolveVisibleConversation: async (ctx: { businessId: string; userId: string }, id: string) => {
+    const found = await mockResolveConv(ctx, id);
+    return found ? { id: found, viewer: { ...ctx, isSupervisor: false } } : null;
+  },
 }));
 
 import { GET as knowledgeItemGET } from '@/app/api/ai-agent/knowledge/[id]/route';
@@ -158,12 +161,12 @@ describe('handler input checks', () => {
     expect(mockSaveProvider).not.toHaveBeenCalled();
   });
 
-  it('conversation bot toggle: resolves the chat inside the business and caps pauses', async () => {
+  it('conversation bot toggle: resolves a chat the user can see and caps pauses', async () => {
     const bad = await call(botPOST, json(`/api/whatsapp/conversations/${ITEM}/bot`, 'POST', { action: 'explode' }), { id: ITEM });
     expect(bad.status).toBe(400);
 
     await call(botPOST, json(`/api/whatsapp/conversations/${ITEM}/bot`, 'POST', { action: 'pause', minutes: 999999 }), { id: ITEM });
-    expect(mockResolveConv).toHaveBeenCalledWith(BIZ, ITEM);
+    expect(mockResolveConv).toHaveBeenCalledWith({ businessId: BIZ, userId: USER }, ITEM);
     expect(mockPause).toHaveBeenCalledWith(BIZ, ITEM, 7 * 24 * 60, 'manual');
 
     mockResolveConv.mockResolvedValue(null);

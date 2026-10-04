@@ -954,70 +954,28 @@ function attachMessageListener(socket: any, businessId: string, sessionRecord: S
         continue;
       }
       
-      // Map Baileys status to our status
-      // Baileys uses: 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ
+      // Baileys proto: 0=ERROR, 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ, 5=PLAYED
       if (statusUpdate?.status !== undefined) {
         switch (statusUpdate.status) {
-          case 1: // PENDING
-            newStatus = 'sent';
+          case 0:
+            newStatus = 'failed';
             break;
-          case 2: // SERVER_ACK
-            newStatus = 'sent';
-            break;
-          case 3: // DELIVERY_ACK
+          case 3:
             newStatus = 'delivered';
             break;
-          case 4: // READ
+          case 4:
+          case 5:
             newStatus = 'read';
             break;
           default:
-            // If status is 0 or unknown, keep as sent
             newStatus = 'sent';
         }
       }
-      
+
       if (newStatus) {
-        // Update message status in database (await — no setImmediate; keeps ordering vs other DB work)
         try {
-          const result = await db.query(
-            `UPDATE whatsapp_conversation_messages 
-             SET status = $1
-             WHERE message_id = $2 AND business_id = $3
-             RETURNING conversation_id, id, message_text, message_type, media_url, direction, buttons, created_at`,
-            [newStatus, messageId, businessId]
-          );
-
-          if ((result.rowCount || 0) > 0) {
-            console.log(`[WA] Updated message ${messageId} status to ${newStatus}`);
-
-            const updatedMessage = result.rows[0];
-            if (updatedMessage && updatedMessage.conversation_id) {
-              try {
-                const { emitNewMessage } = await import('@/lib/whatsapp-websocket');
-                emitNewMessage(businessId, updatedMessage.conversation_id, {
-                  ...updatedMessage,
-                  status: newStatus,
-                  message_id: messageId
-                });
-                console.log(`[WA] ✅ Emitted WebSocket update for message ${messageId} status: ${newStatus}`);
-              } catch (wsError) {
-                console.error('[WA] Error emitting WebSocket update for message status:', wsError);
-              }
-            }
-          }
-
-          // Reminder / outbox log (whatsapp_messages) — same Baileys id as conversation row
-          const logUp = await db.query(
-            `UPDATE whatsapp_messages
-             SET status = $1
-             WHERE business_id = $2 AND baileys_message_id = $3`,
-            [newStatus, businessId, messageId]
-          );
-          if ((logUp.rowCount || 0) > 0) {
-            console.log(
-              `[WA] Updated whatsapp_messages log(s) for ${messageId} to ${newStatus} (${logUp.rowCount} row(s))`
-            );
-          }
+          const { applyOutgoingStatus } = await import('@/lib/whatsapp/message-status');
+          await applyOutgoingStatus(businessId, messageId, newStatus as 'sent' | 'delivered' | 'read' | 'failed');
         } catch (err) {
           console.error('[WA] Error updating message status:', err);
         }
@@ -3036,9 +2994,10 @@ export async function sendWhatsAppMessage(
   to: string,
   text: string,
   media?: string | Buffer,
-  messageType: 'text' | 'image' | 'button' | 'document' = 'text',
+  messageType: 'text' | 'image' | 'button' | 'document' | 'video' | 'audio' = 'text',
   buttons?: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }>,
-  footer?: string
+  footer?: string,
+  file?: { mimeType?: string; fileName?: string }
 ) {
   console.log('[WA] sendWhatsAppMessage called with:', {
     messageType,
@@ -3200,13 +3159,26 @@ export async function sendWhatsAppMessage(
       } else {
         throw new Error('Invalid image data');
       }
+    } else if (messageType === 'video' && media) {
+      const video = Buffer.isBuffer(media) ? media : { url: media as string };
+      messageResult = await session.socket.sendMessage(jid, {
+        video,
+        caption: text || undefined,
+        mimetype: file?.mimeType || 'video/mp4'
+      });
+    } else if (messageType === 'audio' && media) {
+      const audio = Buffer.isBuffer(media) ? media : { url: media as string };
+      messageResult = await session.socket.sendMessage(jid, {
+        audio,
+        mimetype: file?.mimeType || 'audio/mp4'
+      });
     } else if (media) {
-      // Document/PDF (existing logic)
+      // Invoice callers pass no file details, so the PDF defaults stay.
       const document = Buffer.isBuffer(media) ? media : { url: media as string };
-      messageResult = await session.socket.sendMessage(jid, { 
-        document: document, 
-        mimetype: 'application/pdf',
-        fileName: 'Invoice.pdf',
+      messageResult = await session.socket.sendMessage(jid, {
+        document: document,
+        mimetype: file?.mimeType || 'application/pdf',
+        fileName: file?.fileName || 'Invoice.pdf',
         caption: text
       });
     } else {
@@ -3264,8 +3236,8 @@ export async function sendWhatsAppMessage(
   let logMessageType = 'text';
   if (messageType === 'button') {
     logMessageType = 'button';
-  } else if (messageType === 'image' && media) {
-    logMessageType = 'image';
+  } else if ((messageType === 'image' || messageType === 'video' || messageType === 'audio') && media) {
+    logMessageType = messageType;
   } else if (media) {
     logMessageType = 'document';
   }

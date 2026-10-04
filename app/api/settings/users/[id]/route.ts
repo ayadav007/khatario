@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, queryOne } from '@/lib/db';
+import { getPool, query, queryOne } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { requireStrictSession } from '@/lib/auth-helpers';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import { checkLimit, hasWhatsAppBotAddon } from '@/lib/subscription';
+import {
+  checkRoleForConnectSeat,
+  connectSeatRoleMessage,
+  ensureWhatsAppAgentRole,
+  isSeatType,
+  seatLimitMessage,
+  seatLimitType,
+  type SeatType,
+} from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +62,7 @@ export async function GET(
         u.allow_multidevice_sync,
         u.last_active_at,
         u.created_at,
+        COALESCE(u.seat_type, 'billing') AS seat_type,
         ur.id as role_id,
         ur.role_name,
         ur.role_key
@@ -97,10 +108,15 @@ export async function PATCH(
       email,
       phone,
       password,
-      role_id,
       is_active,
       allow_multidevice_sync,
+      seat_type,
     } = body;
+    let { role_id } = body;
+
+    if (seat_type !== undefined && !isSeatType(seat_type)) {
+      return NextResponse.json({ error: "seat_type must be 'billing' or 'connect'" }, { status: 400 });
+    }
 
     const existingUser = await queryOne<{
       id: string;
@@ -109,8 +125,13 @@ export async function PATCH(
       phone: string;
       email: string | null;
       allow_multidevice_sync: boolean | null;
+      is_active: boolean | null;
+      role_id: string | null;
+      seat_type: SeatType | null;
     }>(
-      'SELECT id, business_id, is_primary_admin, phone, email, allow_multidevice_sync FROM users WHERE id = $1 AND business_id = $2',
+      `SELECT id, business_id, is_primary_admin, phone, email, allow_multidevice_sync, is_active,
+              role_id, seat_type
+         FROM users WHERE id = $1 AND business_id = $2`,
       [userId, businessId]
     );
 
@@ -148,6 +169,64 @@ export async function PATCH(
         { error: 'Cannot deactivate primary admin' },
         { status: 403 }
       );
+    }
+
+    const currentSeat: SeatType = existingUser.seat_type ?? 'billing';
+    const targetSeat: SeatType = seat_type ?? currentSeat;
+    const movingSeat = targetSeat !== currentSeat;
+
+    if (movingSeat && existingUser.is_primary_admin) {
+      return NextResponse.json(
+        { error: 'The primary admin always uses a Billing seat', code: 'PRIMARY_ADMIN_PROTECTED' },
+        { status: 403 }
+      );
+    }
+
+    if (movingSeat && targetSeat === 'connect' && !(await hasWhatsAppBotAddon(businessId))) {
+      return NextResponse.json(
+        {
+          error: 'WhatsApp agents need an active Connect plan. Buy or renew Connect from Settings → Products.',
+          code: 'WHATSAPP_BOT_ADDON_REQUIRED',
+        },
+        { status: 403 }
+      );
+    }
+
+    if (targetSeat === 'connect') {
+      const roleToCheck = role_id !== undefined ? role_id : movingSeat ? existingUser.role_id : null;
+      if (roleToCheck) {
+        const check = await checkRoleForConnectSeat(getPool(), roleToCheck, businessId);
+        if (!check.ok) {
+          if (role_id !== undefined) {
+            return NextResponse.json(
+              { error: connectSeatRoleMessage(check), code: 'ROLE_EXCEEDS_CONNECT_SEAT', permissions: check.violations },
+              { status: 400 }
+            );
+          }
+          // Moving to Connect with a Billing role: switch to the WhatsApp Agent role.
+          role_id = await ensureWhatsAppAgentRole(getPool(), businessId);
+        }
+      } else if (movingSeat) {
+        role_id = await ensureWhatsAppAgentRole(getPool(), businessId);
+      }
+    }
+
+    const willBeActive = is_active !== undefined ? is_active === true : existingUser.is_active !== false;
+    const reactivating = is_active === true && existingUser.is_active === false;
+    if (willBeActive && (movingSeat || reactivating)) {
+      const limitCheck = await checkLimit(businessId, seatLimitType(targetSeat));
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          {
+            error: seatLimitMessage(targetSeat, limitCheck),
+            limit: limitCheck.limit,
+            current: limitCheck.current,
+            seat_type: targetSeat,
+            code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
+          },
+          { status: 403 },
+        );
+      }
     }
 
     if (role_id !== undefined) {
@@ -249,6 +328,10 @@ export async function PATCH(
       updates.push(`allow_multidevice_sync = $${paramIndex++}`);
       values.push(allow_multidevice_sync);
     }
+    if (movingSeat) {
+      updates.push(`seat_type = $${paramIndex++}`);
+      values.push(targetSeat);
+    }
 
     const tighteningMultidevice =
       allow_multidevice_sync === false &&
@@ -274,7 +357,7 @@ export async function PATCH(
       SET ${updates.join(', ')}
       WHERE id = $${paramIndex} AND business_id = $${paramIndex + 1}
       RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
-                is_active, allow_multidevice_sync, updated_at
+                is_active, allow_multidevice_sync, seat_type, updated_at
     `, values);
 
     const updater = await queryOne('SELECT name FROM users WHERE id = $1', [updated_by_user_id]);
@@ -291,7 +374,10 @@ export async function PATCH(
       'settings',
       'user',
       userId,
-      JSON.stringify({ user_name: name ?? email ?? existingUser.phone })
+      JSON.stringify({
+        user_name: name ?? email ?? existingUser.phone,
+        ...(movingSeat ? { seat_type: { from: currentSeat, to: targetSeat } } : {}),
+      })
     ]);
 
     return NextResponse.json({

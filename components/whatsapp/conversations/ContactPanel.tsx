@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { User, Phone, Mail, MapPin, Calendar, Tag, Loader2, Save, Plus, X, TrendingUp, Flame } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Calendar, Tag, Loader2, Save, Plus, X, TrendingUp, Flame, Ban } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { NotesSection } from './NotesSection';
@@ -10,6 +10,7 @@ import { AutomationTimeline, TimelineEvent } from './AutomationTimeline';
 import { LabelManagerModal } from '../labels/LabelManagerModal';
 import { Toast } from '@/components/ui/Toast';
 import { LinkedOrdersCard } from './LinkedOrdersCard';
+import type { OwnershipView } from './inbox';
 
 interface ContactInfo {
   conversation_id: string;
@@ -59,7 +60,12 @@ interface ContactPanelProps {
   onNoteDeleted?: () => void | Promise<void>;
   loading?: boolean;
   leadProfile?: any; // AI-generated lead profile
+  ownership?: OwnershipView | null;
+  onLabelsChange?: (labels: LabelChip[]) => void;
+  onBlockedChange?: (blocked: boolean) => void;
 }
+
+type LabelChip = { id: string; name: string; color: string };
 
 export function ContactPanel({
   conversationId,
@@ -76,40 +82,96 @@ export function ContactPanel({
   onNoteAdded,
   onNoteDeleted,
   loading = false,
-  leadProfile
+  leadProfile,
+  ownership = null,
+  onLabelsChange,
+  onBlockedChange
 }: ContactPanelProps) {
   const [customFields, setCustomFields] = useState<CustomFields>(initialCustomFields);
+  const [chatLabels, setChatLabels] = useState<LabelChip[]>([]);
+  const [allLabels, setAllLabels] = useState<LabelChip[]>([]);
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [labelBusy, setLabelBusy] = useState<string | null>(null);
+  const [chatStatus, setChatStatus] = useState<{ is_blocked: boolean; opted_out: boolean; is_group: boolean } | null>(null);
+  const [blocking, setBlocking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setChatLabels([]);
+    setChatStatus(null);
+    setLabelPickerOpen(false);
+    fetch(`/api/whatsapp/conversations/${conversationId}/labels`)
+      .then((res) => (res.ok ? res.json() : { labels: [] }))
+      .then((data) => { if (!cancelled) setChatLabels(data.labels || []); })
+      .catch(() => undefined);
+    fetch(`/api/whatsapp/conversations/${conversationId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setChatStatus(data); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  const loadAllLabels = () => {
+    fetch('/api/whatsapp/labels')
+      .then((res) => (res.ok ? res.json() : { labels: [] }))
+      .then((data) => setAllLabels(data.labels || []))
+      .catch(() => undefined);
+  };
+
+  const toggleLabel = async (label: LabelChip) => {
+    const has = chatLabels.some((l) => l.id === label.id);
+    setLabelBusy(label.id);
+    try {
+      const res = await fetch(
+        `/api/whatsapp/conversations/${conversationId}/labels${has ? `?label_id=${encodeURIComponent(label.id)}` : ''}`,
+        {
+          method: has ? 'DELETE' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: has ? undefined : JSON.stringify({ label_id: label.id }),
+        }
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not update labels');
+      const next = has ? chatLabels.filter((l) => l.id !== label.id) : [...chatLabels, label].sort((a, b) => a.name.localeCompare(b.name));
+      setChatLabels(next);
+      onLabelsChange?.(next);
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : 'Could not update labels', type: 'error' });
+    } finally {
+      setLabelBusy(null);
+    }
+  };
+
+  const toggleBlocked = async () => {
+    if (!chatStatus) return;
+    const next = !chatStatus.is_blocked;
+    if (next && !window.confirm('Block this contact? You will not be able to send them messages until you unblock.')) return;
+    setBlocking(true);
+    try {
+      const res = await fetch(`/api/whatsapp/conversations/${conversationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_blocked: next }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not update');
+      setChatStatus({ ...chatStatus, is_blocked: next });
+      onBlockedChange?.(next);
+      setToast({ message: next ? 'Contact blocked' : 'Contact unblocked', type: 'success' });
+    } catch (e) {
+      setToast({ message: e instanceof Error ? e.message : 'Could not update', type: 'error' });
+    } finally {
+      setBlocking(false);
+    }
+  };
   const [editingField, setEditingField] = useState<string | null>(null);
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldValue, setNewFieldValue] = useState('');
   const [saving, setSaving] = useState(false);
-  const [users, setUsers] = useState<Array<{ id: string; name: string; email?: string }>>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   const [showLabelManagerModal, setShowLabelManagerModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
   useEffect(() => {
     setCustomFields(initialCustomFields);
   }, [initialCustomFields]);
-
-  useEffect(() => {
-    // Fetch users for assignment dropdown
-    const fetchUsers = async () => {
-      setLoadingUsers(true);
-      try {
-        const res = await fetch(`/api/whatsapp/users?business_id=${businessId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setUsers(data.users || []);
-        }
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      } finally {
-        setLoadingUsers(false);
-      }
-    };
-    fetchUsers();
-  }, [businessId]);
 
   const handleSaveField = async (key: string, value: string) => {
     setSaving(true);
@@ -326,6 +388,32 @@ export function ContactPanel({
                 <span>Messages: {contact?.total_messages || 0}</span>
               </div>
             </div>
+
+            {chatStatus && !chatStatus.is_group && (
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                    chatStatus.opted_out ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                  title={chatStatus.opted_out ? 'This number opted out of broadcasts and campaigns' : 'This number can receive broadcasts'}
+                >
+                  {chatStatus.opted_out ? 'Opted out' : 'Opted in'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void toggleBlocked()}
+                  disabled={blocking}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    chatStatus.is_blocked
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'text-red-600 hover:bg-red-50'
+                  }`}
+                >
+                  {blocking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                  {chatStatus.is_blocked ? 'Unblock' : 'Block'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -360,23 +448,21 @@ export function ContactPanel({
               </p>
             </div>
 
-            {/* Assigned Agent */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Assigned Agent</label>
-              <select
-                value={assignedTo || ''}
-                onChange={(e) => onUpdate({ assigned_to: e.target.value || null })}
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                disabled={loadingUsers}
-              >
-                <option value="">Unassigned</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Owner (changed with Intervene / Transfer / Resolve in the chat header) */}
+            {ownership && !ownership.is_group && (
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Handled by</label>
+                <p className="text-sm text-gray-900">
+                  {ownership.inbox_state === 'intervened'
+                    ? ownership.assigned_to && ownership.assigned_to === currentUserId
+                      ? 'You'
+                      : ownership.owner_name || 'A team member'
+                    : ownership.inbox_state === 'requesting'
+                      ? 'Nobody yet (Requesting)'
+                      : 'The bot (Active)'}
+                </p>
+              </div>
+            )}
 
             {/* Labels */}
             <div>
@@ -391,8 +477,66 @@ export function ContactPanel({
                   Manage
                 </button>
               </div>
-              <div className="text-xs text-gray-400 italic bg-gray-50 rounded-lg p-2 border border-gray-100">
-                Use Label Assignment modal to assign labels to this conversation
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chatLabels.map((l) => (
+                  <span
+                    key={l.id}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                    style={{ backgroundColor: `${l.color}22`, color: l.color }}
+                  >
+                    {l.name}
+                    <button
+                      type="button"
+                      onClick={() => void toggleLabel(l)}
+                      disabled={labelBusy === l.id}
+                      className="opacity-70 hover:opacity-100"
+                      aria-label={`Remove label ${l.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!labelPickerOpen) loadAllLabels();
+                      setLabelPickerOpen((v) => !v);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:border-gray-400 hover:text-gray-900"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add label
+                  </button>
+                  {labelPickerOpen && (
+                    <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                      {allLabels.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-gray-500">No labels yet. Use Manage to create one.</p>
+                      ) : (
+                        allLabels.map((l) => {
+                          const on = chatLabels.some((x) => x.id === l.id);
+                          return (
+                            <button
+                              key={l.id}
+                              type="button"
+                              onClick={() => void toggleLabel(l)}
+                              disabled={labelBusy === l.id}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              <span className="h-3 w-3 flex-shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
+                              <span className="flex-1 truncate">{l.name}</span>
+                              {labelBusy === l.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                              ) : on ? (
+                                <span className="text-xs text-[#008069]">✓</span>
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -491,7 +635,10 @@ export function ContactPanel({
       {businessId && (
         <LabelManagerModal
           isOpen={showLabelManagerModal}
-          onClose={() => setShowLabelManagerModal(false)}
+          onClose={() => {
+            setShowLabelManagerModal(false);
+            if (labelPickerOpen) loadAllLabels();
+          }}
           businessId={businessId}
         />
       )}

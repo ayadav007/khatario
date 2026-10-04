@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { getWhatsAppSocket } from '@/lib/whatsapp';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { queryRows } from '@/lib/db';
+import { isInboxSupervisor } from '@/lib/whatsapp/inbox-ownership';
 import {
   findStoreMessageJidKey,
   maxChatListActivityTimeSec,
@@ -99,8 +100,15 @@ function collectChatsArrayFromStore(store: { chats?: unknown } | null | undefine
   return [];
 }
 
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
+    // The live store has no ownership data, so only supervisors may read it.
+    if (!(await isInboxSupervisor(userId))) {
+      return NextResponse.json(
+        { error: 'Only supervisors can read the live chat list', code: 'NOT_SUPERVISOR', fallbackToDatabase: true },
+        { status: 403 }
+      );
+    }
 
     // Get active socket
     const session = await getWhatsAppSocket(businessId);
@@ -203,52 +211,6 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
       });
     }
 
-    // #region agent log — N1/N5 store coverage (pre-reconcile)
-    let preReconcileChatCount = chats.length;
-    let storeMessagesJidCount = 0;
-    let synthesizedCount = 0;
-    try {
-      const storeMsgs = sock.store.messages as Record<string, unknown> | undefined;
-      const chatJids = chats.map((c: any) => c?.id || c?.jid).filter(Boolean) as string[];
-      const chatJidSet = new Set(chatJids);
-      const msgsJids = storeMsgs && typeof storeMsgs === 'object' ? Object.keys(storeMsgs) : [];
-      storeMessagesJidCount = msgsJids.length;
-      const msgsJidsNotInChats = msgsJids.filter((j) => !chatJidSet.has(j));
-      const sampleMsgsOnly = msgsJidsNotInChats.slice(0, 20).map((j) => {
-        const arr = (storeMsgs as Record<string, any>)[j];
-        const list = Array.isArray(arr) ? arr : (typeof arr?.all === 'function' ? arr.all() : Object.values(arr || {}));
-        const last = list && list.length ? list[list.length - 1] : null;
-        return {
-          jid: j,
-          msgCount: list?.length || 0,
-          lastTs: protoMessageTimestampSec(last),
-        };
-      });
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'post-fix-live-store-coverage',
-          location: 'app/api/whatsapp/conversations/live/route.ts:storeCoverage',
-          message: 'store coverage snapshot (pre-reconcile)',
-          data: {
-            hypothesisId: 'N1+N5',
-            chatsCount: chats.length,
-            messagesJidCount: msgsJids.length,
-            jidsWithMessagesButNoChat: msgsJidsNotInChats.length,
-            storeChatsIsArray: Array.isArray(sock.store.chats),
-            storeChatsType: typeof sock.store.chats,
-            sampleMissingChats: sampleMsgsOnly,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch (probeErr) {
-      console.error('[Probe N1/N5] error', probeErr);
-    }
-    // #endregion
-
     // FIX (R1+R3+R4 — confirmed by debug session 29d717 logs):
     // Baileys' `messaging-history.set` only delivers chat metadata for a subset of conversations
     // (137 in this account) while the message stream covers many more (1581). Reconcile here:
@@ -296,35 +258,11 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
         }
         if (synthesized.length > 0) {
           chats = chats.concat(synthesized);
-          synthesizedCount = synthesized.length;
         }
       }
     } catch (reconcileErr) {
       console.error('[Live Conversations] reconcile error', reconcileErr);
     }
-
-    // #region agent log — R1 reconcile result
-    try {
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'post-fix-live-store-coverage',
-          location: 'app/api/whatsapp/conversations/live/route.ts:reconcile',
-          message: 'reconcile from store.messages',
-          data: {
-            hypothesisId: 'R1',
-            preReconcileChatCount,
-            storeMessagesJidCount,
-            synthesizedCount,
-            postReconcileChatCount: chats.length,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch {}
-    // #endregion
 
     // FIX (A — group names): Bulk-fetch group metadata once per process so the
     // `groupMetadataCache` (already used elsewhere in lib/whatsapp.ts) gets populated.
@@ -365,104 +303,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
     // We now keep @lid rows in the list and let the transform display them with their
     // JID-derived label, same as before this hypothesis.
 
-    // #region agent log — M1/M2/M3 missing-chats probe
-    // Investigate why some chats visible on WhatsApp Web (e.g. "IndusInd Bank" 10:05 am,
-    // "+91 70420 07959" 5:57 am, "Mitchel HPE" yesterday) are absent from our store
-    // entirely (not in store.chats, not in store.messages).
-    try {
-      const storeMsgs = sock.store.messages as Record<string, unknown> | undefined;
-      const msgJids = storeMsgs && typeof storeMsgs === 'object' ? Object.keys(storeMsgs) : [];
-
-      // Look for needles the user pointed out as missing.
-      const needles = ['7042007959', 'indusind', 'mitchel', 'hpe', '63785', '61236'];
-      const matches: Record<string, string[]> = {};
-      for (const n of needles) matches[n] = [];
-
-      // Check store.messages JIDs.
-      for (const jid of msgJids) {
-        const lower = jid.toLowerCase();
-        for (const n of needles) {
-          if (lower.includes(n)) matches[n].push(`msgs:${jid}`);
-        }
-      }
-      // Check store.chats objects (subject, name, id).
-      for (const c of chats) {
-        const id = String(c?.id || c?.jid || '').toLowerCase();
-        const subject = String(c?.subject || '').toLowerCase();
-        const name = String(c?.name || '').toLowerCase();
-        for (const n of needles) {
-          if (id.includes(n) || subject.includes(n) || name.includes(n)) {
-            matches[n].push(`chat:${c?.id || c?.jid || '?'}|${c?.subject || c?.name || ''}`);
-          }
-        }
-      }
-      // Categorize JID suffixes to spot whole categories we might miss.
-      const suffixCounts: Record<string, number> = {};
-      for (const jid of msgJids) {
-        const at = jid.indexOf('@');
-        const suffix = at >= 0 ? jid.slice(at) : '(no-@)';
-        suffixCounts[suffix] = (suffixCounts[suffix] || 0) + 1;
-      }
-      // Newsletter sample (in case some "missing" chats are newsletters).
-      const newsletterJids = msgJids.filter((j) => j.endsWith('@newsletter'));
-      const newsletterSample = newsletterJids.slice(0, 10).map((j) => {
-        const arr = (storeMsgs as Record<string, any>)[j];
-        const list = Array.isArray(arr)
-          ? arr
-          : typeof arr?.all === 'function'
-            ? arr.all()
-            : Object.values(arr || {});
-        const last = list && list.length ? list[list.length - 1] : null;
-        return { jid: j, count: list?.length || 0, lastTs: protoMessageTimestampSec(last) };
-      });
-      // Sample of recently-active s.whatsapp.net JIDs to find IndusInd / 70420 etc.
-      const swaJids = msgJids.filter((j) => j.endsWith('@s.whatsapp.net'));
-      const swaActive = swaJids
-        .map((j) => {
-          const arr = (storeMsgs as Record<string, any>)[j];
-          const list = Array.isArray(arr)
-            ? arr
-            : typeof arr?.all === 'function'
-              ? arr.all()
-              : Object.values(arr || {});
-          const last = list && list.length ? list[list.length - 1] : null;
-          return { jid: j, count: list?.length || 0, lastTs: protoMessageTimestampSec(last) };
-        })
-        .sort((a, b) => b.lastTs - a.lastTs)
-        .slice(0, 30);
-
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'missing-chats-probe',
-          location: 'app/api/whatsapp/conversations/live/route.ts:missingChatsProbe',
-          message: 'search store for chats Web shows but app does not',
-          data: {
-            hypothesisId: 'M1+M2+M3+M5',
-            totalMsgJids: msgJids.length,
-            totalChats: chats.length,
-            groupCacheSize: groupCache?.size || 0,
-            needleHits: matches,
-            jidSuffixCounts: suffixCounts,
-            newsletterSample,
-            top30RecentSwaJids: swaActive,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch (probeErr) {
-      console.error('[Probe missing-chats] error', probeErr);
-    }
-    // #endregion
-
     // Transform chats to match your frontend format
-    // Counters for the post-fix probe.
-    let newsletterFiltered = 0;
-    let displayResolvedFromPushName = 0;
-    let displayResolvedFromContacts = 0;
-    const sampleResolvedNames: Array<{ jid: string; via: string; name: string }> = [];
 
     const conversations = chats
       .filter((chat: any) => {
@@ -474,7 +315,6 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
         // FIX (C — match Web): WhatsApp Web shows newsletters/channels in a separate
         // "Updates" tab, not in the main chat list. Hide them from the main list.
         if (jid.endsWith('@newsletter')) {
-          newsletterFiltered += 1;
           return false;
         }
         return true;
@@ -583,12 +423,8 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
           displayName = cachedGroupName;
         } else if (contactName) {
           displayName = contactName;
-          displayResolvedFromContacts += 1;
-          if (sampleResolvedNames.length < 20) sampleResolvedNames.push({ jid, via: 'contacts', name: contactName });
         } else if (pushNameFromMessages) {
           displayName = pushNameFromMessages;
-          displayResolvedFromPushName += 1;
-          if (sampleResolvedNames.length < 20) sampleResolvedNames.push({ jid, via: 'pushName', name: pushNameFromMessages });
         } else {
           displayName = phoneNumber || jid;
         }
@@ -624,129 +460,6 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
         const timeB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
         return timeB - timeA;
       });
-
-    // #region agent log — N2 top-15 returned ordering
-    try {
-      const top = conversations.slice(0, 15).map((c: any, i: number) => ({
-        rank: i + 1,
-        id: c.id,
-        display: c.whatsapp_display_name,
-        last_at: c.last_message_at,
-        text: typeof c.last_message_text === 'string' ? c.last_message_text.slice(0, 60) : c.last_message_text,
-        unread: c.unread_count,
-        is_group: c.is_group,
-      }));
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'post-fix-live-store-coverage',
-          location: 'app/api/whatsapp/conversations/live/route.ts:top15',
-          message: 'top-15 conversations returned',
-          data: { hypothesisId: 'N2', total: conversations.length, top },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch (probeErr) {
-      console.error('[Probe N2] error', probeErr);
-    }
-    // #endregion
-
-    // #region agent log — A/C verification probe
-    // Verify hypothesis A (pushName/contacts resolution) and C (newsletter filter) worked.
-    try {
-      // Search the top results for chats that are still raw "@lid" or raw phone strings.
-      const stillRawLid = conversations.filter((c: any) => {
-        const id: string = c.id || '';
-        return id.endsWith('@lid') && (c.whatsapp_display_name === id || /^\+?\d+$/.test(String(c.whatsapp_display_name).replace(/[\s+]/g, '')));
-      }).slice(0, 20).map((c: any) => ({ id: c.id, display: c.whatsapp_display_name }));
-
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'post-fix-AC',
-          location: 'app/api/whatsapp/conversations/live/route.ts:nameAndNewsletterProbe',
-          message: 'verify name resolution + newsletter filter',
-          data: {
-            hypothesisId: 'A+C',
-            totalConversations: conversations.length,
-            newsletterFiltered,
-            displayResolvedFromContacts,
-            displayResolvedFromPushName,
-            sampleResolvedNames,
-            stillRawLid,
-            stillRawLidCount: stillRawLid.length,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch (probeErr) {
-      console.error('[Probe A+C] error', probeErr);
-    }
-    // #endregion
-
-    // #region agent log — B missing-chats deep probe (contacts + history sync state)
-    // Inspect Baileys' contacts store + auth-state history-sync markers to find out
-    // whether the missing chats are simply absent from history-sync, or hiding under
-    // different keys/aliases.
-    try {
-      const contactsStore = (sock.store as { contacts?: Record<string, any> } | undefined)?.contacts || {};
-      const contactJids = Object.keys(contactsStore);
-      const needles = ['7042007959', '917042007959', 'mitchel', 'hpe', 'indusind', 'tandoor'];
-
-      const contactHits: Array<{ needle: string; jid: string; name?: string; notify?: string; verifiedName?: string }> = [];
-      for (const cjid of contactJids) {
-        const entry = contactsStore[cjid] || {};
-        const haystack = `${cjid}|${entry.name || ''}|${entry.notify || ''}|${entry.verifiedName || ''}`.toLowerCase();
-        for (const n of needles) {
-          if (haystack.includes(n)) {
-            contactHits.push({ needle: n, jid: cjid, name: entry.name, notify: entry.notify, verifiedName: entry.verifiedName });
-          }
-        }
-      }
-
-      // Sample of 10 contacts so we know the shape of entries we have.
-      const contactsSample = contactJids.slice(0, 10).map((cjid) => ({
-        jid: cjid,
-        ...(contactsStore[cjid] || {}),
-      }));
-
-      // History-sync markers from auth state.
-      const creds: any = (sock as any)?.authState?.creds || {};
-      const historyMeta = {
-        processedHistoryMessages: Array.isArray(creds.processedHistoryMessages) ? creds.processedHistoryMessages.length : null,
-        accountSyncCounter: creds.accountSyncCounter ?? null,
-        lastAccountSyncTimestamp: creds.lastAccountSyncTimestamp ?? null,
-        firstUnuploadedATNKeyId: creds.firstUnuploadedATNKeyId ?? null,
-        nextPreKeyId: creds.nextPreKeyId ?? null,
-      };
-
-      fetch('http://127.0.0.1:7800/ingest/1dcfd029-2e5d-44e6-a00a-7d1eb37ea4e9', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '29d717' },
-        body: JSON.stringify({
-          sessionId: '29d717',
-          runId: 'probe-B-missing-chats',
-          location: 'app/api/whatsapp/conversations/live/route.ts:missingChatsContactsProbe',
-          message: 'check contacts store + history sync for missing chats',
-          data: {
-            hypothesisId: 'B',
-            totalContacts: contactJids.length,
-            contactHits,
-            contactHitsCount: contactHits.length,
-            contactsSample,
-            historyMeta,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    } catch (probeErr) {
-      console.error('[Probe B] error', probeErr);
-    }
-    // #endregion
 
     // Enrich with cached profile pictures from DB (single query for all JIDs)
     try {

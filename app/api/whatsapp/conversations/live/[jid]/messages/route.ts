@@ -11,6 +11,14 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
 import { onStaffReply } from '@/lib/ai-agent/conversation';
+import { claimStartedChat, resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import {
+  canReply,
+  getInboxViewer,
+  isInboxSupervisor,
+  liveOwnerId,
+  loadOwnership,
+} from '@/lib/whatsapp/inbox-ownership';
 import { proto, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { extractWebMessageInfoTimestampSec, orderResolveMessageTimestamps, normalizeMessage } from '@/lib/baileys-store-helpers';
 
@@ -213,7 +221,7 @@ async function transformOneProtoToFrontend(
   };
 }
 
-export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ jid: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const jid = decodeURIComponent(params.jid);
     const { searchParams } = new URL(request.url);
@@ -224,6 +232,14 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
 
     if (!businessId) {
       return NextResponse.json({ error: 'businessId is required' }, { status: 400 });
+    }
+
+    // The live store has no ownership data, so only supervisors may read it.
+    if (!(await isInboxSupervisor(userId))) {
+      return NextResponse.json(
+        { error: 'Only supervisors can read live chats', code: 'NOT_SUPERVISOR', fallbackToDatabase: true },
+        { status: 403 }
+      );
     }
 
     // Get active socket
@@ -838,7 +854,7 @@ export const GET = withWhatsAppPremiumApi<{ jid: string }>({}, async ({ params, 
   }
 });
 
-export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const jid = decodeURIComponent(params.jid);
 
@@ -849,6 +865,22 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
         { error: 'message_text or media_url is required' },
         { status: 400 }
       );
+    }
+
+    const existingId = await resolveWhatsAppConversationDbId(businessId, jid);
+    if (existingId) {
+      const row = await loadOwnership(businessId, existingId);
+      const viewer = await getInboxViewer({ businessId, userId });
+      if (!row || !canReply(viewer, row)) {
+        const owner = row ? liveOwnerId(row) : null;
+        return NextResponse.json(
+          {
+            error: owner ? `${row?.owner_name || 'Another agent'} is handling this chat` : 'Click Intervene to reply to this chat',
+            code: owner ? 'NOT_OWNER' : 'INTERVENE_REQUIRED',
+          },
+          { status: 403 }
+        );
+      }
     }
 
     // Determine message type
@@ -908,6 +940,10 @@ export const POST = withWhatsAppPremiumApi<{ jid: string }>({ parseJsonBody: tru
         { error: 'Message was sent but no message ID was returned' },
         { status: 500 }
       );
+    }
+
+    if (!existingId && !jid.endsWith('@g.us')) {
+      void claimStartedChat(businessId, userId, jid);
     }
 
     const skipMirror =

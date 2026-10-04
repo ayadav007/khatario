@@ -7,19 +7,29 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows, query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { storeOutgoingMessage } from '@/lib/whatsapp-crm';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { parseDataUrl, safeFileName, saveInboxMedia } from '@/lib/whatsapp/inbox-media';
+import { InboxSendError, replyWindow, sendInboxMessage, type InboxFile } from '@/lib/whatsapp/inbox-send';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 import { onStaffReply } from '@/lib/ai-agent/conversation';
+import {
+  canReply,
+  listOwnershipEvents,
+  liveOwnerId,
+  loadOwnership,
+  ownershipView,
+} from '@/lib/whatsapp/inbox-ownership';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
-    if (!conversationId) {
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
+    const conversationId = found.id;
+    const ownershipRow = await loadOwnership(businessId, conversationId);
 
     const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
     const pageSize = Math.min(200, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 50));
@@ -58,9 +68,10 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
           m.from_number as sender_number`
               : 'NULL as sender_name, NULL as sender_number'
           }
-          , m.source_timestamp, m.sent_by`;
+          , m.source_timestamp, m.sent_by, m.sent_by_user_id, su.name as sent_by_name`;
 
     const fromJoin = `FROM whatsapp_conversation_messages m
+         LEFT JOIN users su ON su.id = m.sent_by_user_id
          ${
            isGroup
              ? `LEFT JOIN customers cust ON cust.business_id = $2
@@ -158,13 +169,17 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
       };
     });
 
-    // Mark conversation as read (only if unread_count > 0 to avoid unnecessary DB writes)
-    const updateResult = await query(
-      `UPDATE whatsapp_conversations 
-       SET unread_count = 0 
-       WHERE id = $1 AND business_id = $2 AND unread_count > 0`,
-      [conversationId, businessId]
-    );
+    // A supervisor watching someone else's chat must not clear the owner's unread count.
+    const owner = ownershipRow ? liveOwnerId(ownershipRow) : null;
+    const updateResult =
+      !owner || owner === userId
+        ? await query(
+            `UPDATE whatsapp_conversations 
+             SET unread_count = 0 
+             WHERE id = $1 AND business_id = $2 AND unread_count > 0`,
+            [conversationId, businessId]
+          )
+        : { rowCount: 0 };
 
     // TODO: Emit WebSocket summary update only if rows were affected (unread_count was actually reset)
     if (updateResult.rowCount && updateResult.rowCount > 0) {
@@ -194,7 +209,10 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
     return NextResponse.json({
       messages: messagesWithSenderType,
       has_more: hasMore,
-      oldest_cursor: oldestCursor
+      oldest_cursor: oldestCursor,
+      events: loadOlder ? [] : await listOwnershipEvents(businessId, conversationId),
+      ownership: ownershipRow ? ownershipView(found.viewer, ownershipRow) : null,
+      window: loadOlder ? undefined : await replyWindow(businessId, conversationId, isGroup).catch(() => null),
     });
   } catch (error: any) {
     console.error('Error fetching messages:', error);
@@ -202,39 +220,55 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
   }
 });
 
-export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
-    if (!conversationId) {
+    const found = await resolveVisibleConversation({ businessId, userId }, params.id);
+    if (!found) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
+    const conversationId = found.id;
+    const ownershipRow = await loadOwnership(businessId, conversationId);
+    if (!ownershipRow || !canReply(found.viewer, ownershipRow)) {
+      const owner = ownershipRow ? liveOwnerId(ownershipRow) : null;
+      return NextResponse.json(
+        {
+          error: owner
+            ? `${ownershipRow?.owner_name || 'Another agent'} is handling this chat`
+            : 'Click Intervene to reply to this chat',
+          code: owner ? 'NOT_OWNER' : 'INTERVENE_REQUIRED',
+        },
+        { status: 403 }
+      );
+    }
 
-    // Get conversation details (including is_group to determine if it's a group)
-    const conversation = await queryRows(
-      `SELECT conversation_id, from_number, to_number, is_group, group_jid FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
+    const conv = await queryOne<{
+      conversation_id: string | null;
+      from_number: string | null;
+      is_group: boolean | null;
+      group_jid: string | null;
+      is_blocked: boolean | null;
+    }>(
+      `SELECT conversation_id, from_number, is_group, group_jid, is_blocked
+         FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
       [conversationId, businessId]
     );
 
-    if (conversation.length === 0) {
+    if (!conv) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
-
-    const conv = conversation[0];
-    // For individual chats, conversation_id is the normalized phone number
-    // For groups, conversation_id is the group JID (group@g.us) or use group_jid
-    let toNumber: string;
-    
-    if (conv.is_group) {
-      // For groups, use group_jid if available, otherwise conversation_id
-      toNumber = conv.group_jid || conv.conversation_id;
-      // Ensure it has @g.us suffix
-      if (toNumber && !toNumber.endsWith('@g.us')) {
-        toNumber = `${toNumber}@g.us`;
-      }
-    } else {
-      // For individual chats, use conversation_id or from_number
-      toNumber = conv.conversation_id || conv.from_number;
+    if (conv.is_blocked) {
+      return NextResponse.json(
+        { error: 'This contact is blocked. Unblock them to send messages.', code: 'BLOCKED' },
+        { status: 409 }
+      );
+    }
+    // Individual chats: conversation_id is the normalized phone; groups: the group JID.
+    let toNumber = conv.is_group
+      ? conv.group_jid || conv.conversation_id || ''
+      : conv.conversation_id || conv.from_number || '';
+    if (conv.is_group && toNumber && !toNumber.endsWith('@g.us')) {
+      toNumber = `${toNumber}@g.us`;
     }
     
     if (!toNumber) {
@@ -244,66 +278,70 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
       );
     }
 
-    const { message_text, message_type, media_url, buttons, footer } = (body ?? {}) as Record<string, any>;
+    const { message_text, media_url, file_name, buttons, footer } = (body ?? {}) as Record<string, any>;
+    const text = typeof message_text === 'string' ? message_text : '';
 
-    if (!message_text && !media_url) {
+    if (!text.trim() && !media_url) {
       return NextResponse.json(
         { error: 'message_text or media_url is required' },
         { status: 400 }
       );
     }
 
-    // Determine message type
-    const msgType = message_type || (media_url ? 'image' : 'text');
-    let media: string | Buffer | undefined = media_url;
-
-    // If media_url is a base64 data URL, convert to Buffer
-    if (media_url && typeof media_url === 'string' && media_url.startsWith('data:')) {
-      const base64Data = media_url.split(',')[1];
-      media = Buffer.from(base64Data, 'base64');
+    let file: InboxFile | undefined;
+    if (media_url) {
+      const parsed = typeof media_url === 'string' ? parseDataUrl(media_url) : null;
+      if (!parsed || parsed.buffer.length === 0) {
+        return NextResponse.json({ error: 'Attach the file again; it could not be read.' }, { status: 400 });
+      }
+      file = { ...parsed, fileName: safeFileName(file_name, parsed.mimeType) };
     }
 
-    // Send message via WhatsApp
-    let messageId: string | undefined;
+    const window = await replyWindow(businessId, conversationId, !!conv.is_group);
+    if (!window.open) {
+      return NextResponse.json(
+        {
+          error: 'More than 24 hours have passed since the customer last wrote. Send an approved template to restart the chat.',
+          code: 'WINDOW_CLOSED',
+          window,
+        },
+        { status: 409 }
+      );
+    }
+
+    let sent: Awaited<ReturnType<typeof sendInboxMessage>>;
     try {
-      const result = await sendWhatsAppMessage(
+      sent = await sendInboxMessage({
         businessId,
-        toNumber,
-        message_text || '',
-        media,
-        msgType as 'text' | 'image' | 'button' | 'document',
-        buttons,
-        footer
-      );
-      messageId = typeof result === 'string' ? result : undefined;
+        to: toNumber,
+        isGroup: !!conv.is_group,
+        text,
+        file,
+        buttons: Array.isArray(buttons) ? buttons : undefined,
+        footer: typeof footer === 'string' ? footer : undefined,
+      });
     } catch (sendError: any) {
-      console.error('Error sending WhatsApp message:', sendError);
-      // Return a more user-friendly error message
-      const errorMessage = sendError.message || 'Failed to send message via WhatsApp';
+      console.error('Error sending WhatsApp message:', sendError?.message || sendError);
+      const status = sendError instanceof InboxSendError ? sendError.status : 502;
       return NextResponse.json(
-        { error: errorMessage },
-        { status: 500 }
+        { error: sendError?.message || 'Failed to send message via WhatsApp', code: sendError?.code },
+        { status }
       );
     }
+    const messageId = sent.messageId;
 
-    if (!messageId) {
-      return NextResponse.json(
-        { error: 'Message was sent but no message ID was returned' },
-        { status: 500 }
-      );
-    }
+    const storedMediaUrl = file ? await saveInboxMedia(businessId, file.buffer, file.mimeType) : undefined;
+    const storedText = text || (file && sent.messageType === 'document' ? file.fileName : '');
 
-    // Store outgoing message (storeOutgoingMessage handles database insertion and WebSocket events)
-    // Note: storeOutgoingMessage expects conversation UUID, not phone number
     const apiSendTs = Math.floor(Date.now() / 1000);
     await storeOutgoingMessage(
       businessId,
-      conversationId, // Pass conversation UUID
+      conversationId,
       toNumber,
-      message_text || '',
+      storedText,
       messageId,
-      msgType,
-      media_url,
+      sent.messageType,
+      storedMediaUrl,
       buttons ? JSON.stringify(buttons) : undefined,
       apiSendTs,
       null,
@@ -313,9 +351,11 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
 
     // storeOutgoingMessage already updates conversation and emits WebSocket events
     const row = await queryOne<Record<string, unknown>>(
-      `SELECT id, message_id, message_text, message_type, media_url, direction, status, buttons, created_at, source_timestamp, sent_by
-       FROM whatsapp_conversation_messages
-       WHERE business_id = $1 AND conversation_id = $2 AND message_id = $3
+      `SELECT m.id, m.message_id, m.message_text, m.message_type, m.media_url, m.direction, m.status, m.buttons,
+              m.created_at, m.source_timestamp, m.sent_by, m.sent_by_user_id, su.name AS sent_by_name
+       FROM whatsapp_conversation_messages m
+       LEFT JOIN users su ON su.id = m.sent_by_user_id
+       WHERE m.business_id = $1 AND m.conversation_id = $2 AND m.message_id = $3
        LIMIT 1`,
       [businessId, conversationId, messageId]
     );

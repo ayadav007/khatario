@@ -9,7 +9,7 @@ import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const PATCH = withWhatsAppPremiumApi<{ id: string }>(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ params, body, businessId }) => {
     try {
       const labelId = params.id;
@@ -65,7 +65,7 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>(
   },
 );
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, businessId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, businessId }) => {
   try {
     const labelId = params.id;
 

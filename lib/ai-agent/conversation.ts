@@ -36,7 +36,10 @@ export async function isConversationBotPaused(businessId: string, conversationId
   return !!row?.paused;
 }
 
-/** Hand the chat to a person: pause the AI, assign, mark pending and notify the team. */
+/**
+ * Hand the chat to a person: pause the AI, put it in the Requesting queue (or straight to the
+ * chosen agent) and notify the team.
+ */
 export async function performHandoff(
   businessId: string,
   conversationId: string,
@@ -46,26 +49,18 @@ export async function performHandoff(
   const assignTo = opts.assignTo ?? settings.handoff.assignTo;
   await pauseConversationBot(businessId, conversationId, settings.handoff.pauseMinutes, 'handoff');
   await query(
-    `UPDATE whatsapp_conversations
-        SET handoff_requested_at = NOW(),
-            conversation_status = 'pending',
-            assigned_to = CASE
-              WHEN $3::uuid IS NOT NULL THEN $3::uuid
-              ELSE assigned_to
-            END
-      WHERE id = $1 AND business_id = $2`,
-    [conversationId, businessId, assignTo && assignTo !== 'auto' && /^[0-9a-f-]{36}$/i.test(assignTo) ? assignTo : null],
+    `UPDATE whatsapp_conversations SET handoff_requested_at = NOW() WHERE id = $1 AND business_id = $2`,
+    [conversationId, businessId],
   ).catch((err) => console.warn('[ai-agent] handoff update failed:', err instanceof Error ? err.message : err));
 
-  if (!assignTo || assignTo === 'auto') {
-    const row = await queryOne<{ assigned_to: string | null }>(
-      `SELECT assigned_to FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
-      [conversationId, businessId],
-    ).catch(() => null);
-    if (row && !row.assigned_to) {
-      const { autoAssignConversation } = await import('@/lib/whatsapp-crm');
-      await autoAssignConversation(businessId, conversationId, false);
-    }
+  const { markRequesting, assignToAgent } = await import('@/lib/whatsapp/inbox-ownership');
+  await markRequesting(businessId, conversationId).catch((err) =>
+    console.warn('[ai-agent] handoff requesting failed:', err instanceof Error ? err.message : err),
+  );
+  if (assignTo && assignTo !== 'auto' && /^[0-9a-f-]{36}$/i.test(assignTo)) {
+    await assignToAgent(businessId, conversationId, assignTo).catch((err) =>
+      console.warn('[ai-agent] handoff assign failed:', err instanceof Error ? err.message : err),
+    );
   }
 
   await query(

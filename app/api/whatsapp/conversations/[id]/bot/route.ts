@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 import { pauseConversationBot, resumeConversationBot } from '@/lib/ai-agent/conversation';
 
 const MAX_PAUSE_MINUTES = 7 * 24 * 60;
@@ -19,9 +19,9 @@ async function botState(businessId: string, conversationId: string) {
 /** POST /api/whatsapp/conversations/[id]/bot — `{ action: 'pause' | 'resume', minutes? }` */
 export const POST = withWhatsAppPremiumApi<{ id: string }>(
   { module: 'whatsapp', action: 'update', parseJsonBody: true },
-  async ({ params, businessId, body }) => {
+  async ({ params, businessId, userId, body }) => {
     try {
-      const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+      const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
       if (!conversationId) {
         return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
       }

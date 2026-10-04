@@ -378,8 +378,6 @@ export async function storeIncomingMessage(
         ]
       );
       conversation = { id: newConv!.id, customer_id: customer?.id };
-      // Fire-and-forget: auto-assign to next agent in pool if enabled
-      autoAssignConversation(businessId, newConv!.id, isGroup).catch(() => {});
       // Fire-and-forget: cache profile picture for new conversation
       cacheProfilePicture(businessId, newConv!.id, conversationId, fromJid, isGroup);
     } else {
@@ -690,11 +688,18 @@ export async function storeOutgoingMessage(
          ON CONFLICT (message_id) DO UPDATE SET
          message_text = EXCLUDED.message_text,
          message_type = EXCLUDED.message_type,
-         media_url = EXCLUDED.media_url,
+         -- Inbox sends save the file first; a later echo of the same message must not replace it.
+         media_url = CASE
+           WHEN whatsapp_conversation_messages.media_url LIKE '/api/whatsapp/media/%' THEN whatsapp_conversation_messages.media_url
+           ELSE COALESCE(EXCLUDED.media_url, whatsapp_conversation_messages.media_url)
+         END,
          buttons = EXCLUDED.buttons,
          sent_by = COALESCE(EXCLUDED.sent_by, whatsapp_conversation_messages.sent_by),
          sent_by_user_id = COALESCE(EXCLUDED.sent_by_user_id, whatsapp_conversation_messages.sent_by_user_id),
-         status = 'sent'
+         status = CASE
+           WHEN whatsapp_conversation_messages.status IN ('delivered', 'read', 'failed') THEN whatsapp_conversation_messages.status
+           ELSE 'sent'
+         END
        RETURNING id`,
       [
         businessId,
@@ -1999,10 +2004,14 @@ export async function processIncomingMessage(
   groupJid?: string,
   whatsappDisplayName?: string, // WhatsApp display name (pushName) - may be from phone address book or profile
   sourceTimestampSec?: number | null,
-  originalWaTimestampSec?: number | null
+  originalWaTimestampSec?: number | null,
+  /** Receives the stored conversation's DB id so callers can queue unanswered chats for a person. */
+  out?: { conversationUuid?: string }
 ): Promise<{ 
   response?: string; 
   shouldStore?: boolean;
+  /** True when the message needs no person even though no `response` is returned (duplicate, already answered). */
+  handled?: boolean;
   responseType?: string;
   buttons?: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }>;
   footer?: string;
@@ -2057,10 +2066,11 @@ export async function processIncomingMessage(
       sourceTimestampSec,
       originalWaTimestampSec
     );
+    if (out && conversationId) out.conversationUuid = conversationId;
 
     if (existingMsg) {
       console.log('[CRM] Duplicate message_id — stored/updated only, skipping bot reply:', messageId);
-      return { shouldStore: true };
+      return { shouldStore: true, handled: true };
     }
     
     // Extract normalized phone for state / bot rules (groups may use participant or 'unknown')
@@ -2112,21 +2122,32 @@ export async function processIncomingMessage(
       if (paidImmediate) return paidImmediate;
     }
 
+    // A person is handling this chat (intervened, or the bot is paused): no keyword rules, shop or AI replies.
+    if (!isGroup && conversationId) {
+      const human = await queryOne<{ handled_by_human: boolean }>(
+        `SELECT (inbox_state = 'intervened'
+                 OR (bot_paused_until IS NOT NULL AND bot_paused_until > NOW())) AS handled_by_human
+           FROM whatsapp_conversations WHERE id = $1 AND business_id = $2`,
+        [conversationId, businessId]
+      ).catch(() => null);
+      if (human?.handled_by_human) {
+        console.log('[CRM] Chat is handled by a person — stored only, no automatic reply');
+        return { shouldStore: true };
+      }
+    }
+
     if (!isGroup && messageType === 'text' && conversationId) {
       const { isShopRequest, respondToShopRequest } = await import('./whatsapp-shop/intent');
       if (isShopRequest(messageText)) {
-        const { isConversationBotPaused } = await import('./ai-agent/conversation');
-        const shopReply = (await isConversationBotPaused(businessId, conversationId))
-          ? null
-          : await respondToShopRequest({ businessId, phone: normalizedFrom, conversationUuid: conversationId, text: messageText })
-              .catch((e) => {
-                console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
-                return null;
-              });
+        const shopReply = await respondToShopRequest({ businessId, phone: normalizedFrom, conversationUuid: conversationId, text: messageText })
+          .catch((e) => {
+            console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
+            return null;
+          });
         if (shopReply) {
           return shopReply.response
             ? { response: shopReply.response, shouldStore: true, delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0 }
-            : { shouldStore: true };
+            : { shouldStore: true, handled: true };
         }
       }
     }

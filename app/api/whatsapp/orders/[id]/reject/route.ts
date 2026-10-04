@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Reject WhatsApp order and notify customer
  */
 export const POST = withWhatsAppPremiumApi<{ id: string }>(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ params, body, businessId }) => {
     const orderId = params.id;
 

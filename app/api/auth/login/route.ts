@@ -7,6 +7,8 @@ import { signAccessToken, signRefreshToken, setSessionCookies } from '@/lib/jwt'
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +121,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const isConnectAgent = (user as { seat_type?: string | null }).seat_type === 'connect';
+    if (isConnectAgent && user.business_id && !(await hasWhatsAppBotAddon(user.business_id))) {
+      return NextResponse.json(
+        { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' },
+        { status: 403 }
+      );
+    }
+
     // Multi-device login is a per-plan feature (Admin → Plans → Features).
     // When the business's plan does not grant it (default, incl. Free / no
     // subscription), we bump auth_session_version so a new login invalidates
@@ -178,13 +188,17 @@ export async function POST(request: NextRequest) {
       signRefreshToken(tokenPayload),
     ]);
 
-    const platform = business?.id
+    const businessPlatform = business?.id
       ? await getBusinessPlatformContext(
           business.id,
           business.product_line,
           (business as { primary_module?: string | null }).primary_module,
         )
       : null;
+    const platform =
+      businessPlatform && isConnectAgent
+        ? { ...businessPlatform, defaultHomePath: CONNECT_AGENT_HOME_PATH }
+        : businessPlatform;
 
     const response = NextResponse.json({
       success: true,

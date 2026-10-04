@@ -53,6 +53,7 @@ async function processWebhook(job: WebhookQueueJob): Promise<void> {
 }
 
 async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<void> {
+  const out: { conversationUuid?: string } = {};
   const r = await processIncomingMessage(
     job.businessId,
     job.senderJid,
@@ -66,10 +67,19 @@ async function processIncomingBaileys(job: BaileysIncomingQueueJob): Promise<voi
     job.groupJid,
     job.whatsappDisplayName,
     job.sourceTimestampSec,
-    job.originalWaTimestampSec
+    job.originalWaTimestampSec,
+    out
   );
 
-  if (job.enableBotReply && r.response && !job.isGroup) {
+  const willReply = !!(job.enableBotReply && r.response && !job.isGroup);
+  const { queueIfUnanswered } = await import('./whatsapp/inbox-ownership');
+  await queueIfUnanswered(job.businessId, out.conversationUuid, {
+    replied: willReply,
+    handled: r.handled,
+    isGroup: job.isGroup,
+  });
+
+  if (willReply && r.response) {
     const { sendWhatsAppMessage, whatsappSessions: sessions } = await import('./whatsapp');
     const fromNumber = job.fromNumber;
     try {

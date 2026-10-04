@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/contacts
  * List all contacts for a business with pagination, search, and filters
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
@@ -143,7 +143,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
  * POST /api/whatsapp/contacts
  * Add a new contact (skip if duplicate)
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { phone, name, email, tags, notes, custom_fields, source, imported_from_group } = (body ?? {}) as Record<string, any>;
 
@@ -219,7 +219,7 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ req
  * PUT /api/whatsapp/contacts
  * Update an existing contact
  */
-export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { id, name, email, tags, notes, custom_fields } = (body ?? {}) as Record<string, any>;
 
@@ -285,7 +285,7 @@ export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ requ
  * DELETE /api/whatsapp/contacts
  * Delete a contact
  */
-export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi({ inboxPermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

@@ -10,7 +10,7 @@ import { query, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
 export const PATCH = withWhatsAppPremiumApi<{ id: string }>(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ params, businessId, body }) => {
     try {
       const { title, shortcut, message, category } = (body ?? {}) as Record<string, any>;
@@ -55,7 +55,7 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>(
 );
 
 export const DELETE = withWhatsAppPremiumApi<{ id: string }>(
-  {},
+  { managePermission: true },
   async ({ params, businessId }) => {
     try {
       await query(

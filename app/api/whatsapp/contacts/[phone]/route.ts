@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
+import { canViewConversation, getInboxViewer } from '@/lib/whatsapp/inbox-ownership';
 
-export const GET = withWhatsAppPremiumApi<{ phone: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ phone: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const phone = decodeURIComponent(params.phone);
 
@@ -42,7 +43,7 @@ export const GET = withWhatsAppPremiumApi<{ phone: string }>({}, async ({ params
       [businessId, phone, phone.startsWith('+') ? phone : `+${phone}`, phone.replace(/^\+/, ''), normalizedPhone]
     );
 
-    if (!conversation) {
+    if (!conversation || !(await canViewConversation(await getInboxViewer({ businessId, userId }), conversation.id))) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
     }
 

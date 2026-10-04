@@ -9,6 +9,7 @@ import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
 import { productLineForModule } from '@/lib/platform-modules';
 import type { PlatformModule } from '@/lib/platform-modules';
 import { MODULE_ADD_CONFIG, getLimitOwnerModule } from '@/lib/subscription/module-entitlements';
+import { connectSeatsLabel } from '@/lib/subscription/billing-labels';
 import {
   billingCycleMonths,
   computePlanAmount,
@@ -282,7 +283,11 @@ export function UpgradeModal({
 
     describe(limits.max_invoices_per_month, 'Unlimited invoices', (n) => `${n} invoices/month`);
     describe(limits.max_customers, 'Unlimited customers', (n) => `${n} customers`);
-    describe(limits.max_users, 'Unlimited users', (n) => `${n} user(s)`);
+    if (plan.id === 'connect' || plan.id === 'connect_free') {
+      highlights.push(connectSeatsLabel(limits.max_users));
+    } else {
+      describe(limits.max_users, 'Unlimited users', (n) => `${n} user(s)`);
+    }
     describe(limits.max_ai_replies_per_month, 'Unlimited AI replies', (n) => `${n} AI replies/month`);
     describe(limits.max_whatsapp_per_day, 'Unlimited WhatsApp messages', (n) => `${n} WhatsApp messages/day`);
 

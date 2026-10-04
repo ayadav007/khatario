@@ -47,7 +47,13 @@ async function handleTenant(businessId: string, body: unknown) {
       from: m.from,
       text: m.text,
     });
-    if (route !== 'other' || (!m.text && !m.order)) continue;
+    if (route !== 'other' || (!m.text && !m.order && !m.media && !m.location)) continue;
+    const locationText = m.location
+      ? [
+          `📍 ${[m.location.name, m.location.address].filter(Boolean).join(', ') || 'Location'}`,
+          `https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}`,
+        ].join('\n')
+      : null;
     await addWhatsAppMessageJob({
       type: 'cloud-incoming',
       businessId,
@@ -56,10 +62,11 @@ async function handleTenant(businessId: string, body: unknown) {
       timestamp: Date.now(),
       from: m.from,
       profileName: m.profileName,
-      text: m.text ?? '',
-      messageType: m.type,
+      text: m.text ?? locationText ?? '',
+      messageType: m.location ? 'text' : m.type,
       businessPhone: (m.displayPhoneNumber || '').replace(/\D/g, ''),
       sourceTimestampSec: m.timestamp,
+      media: m.media,
       order: m.order
         ? {
             catalogId: m.order.catalogId,
@@ -68,6 +75,10 @@ async function handleTenant(businessId: string, body: unknown) {
           }
         : null,
     });
+  }
+  const { applyOutgoingStatus } = await import('@/lib/whatsapp/message-status');
+  for (const s of extractMessageStatuses(body)) {
+    await applyOutgoingStatus(businessId, s.messageId, s.status, s.errorTitle).catch(() => undefined);
   }
   return messages.length;
 }

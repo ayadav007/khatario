@@ -489,6 +489,15 @@ export async function sendVideoMessage(input: {
   });
 }
 
+/** AAC, MP4 audio, MPEG, AMR or OGG (opus); at most 16 MB. Audio takes no caption. */
+export async function sendAudioMessage(input: {
+  businessId?: string | null;
+  to: string;
+  media: MediaRef;
+}): Promise<{ messageId: string }> {
+  return sendGraphMessage(input.businessId, input.to, { type: 'audio', audio: { ...input.media } });
+}
+
 /** PDF or other file; WhatsApp shows `filename` to the recipient. At most 100 MB. */
 export async function sendDocumentMessage(input: {
   businessId?: string | null;
@@ -610,6 +619,37 @@ export async function uploadMedia(input: {
   }
 }
 
+/** Fetches a customer's media from Meta (media URLs need the token and expire after ~5 minutes). */
+export async function downloadMedia(input: {
+  businessId?: string | null;
+  mediaId: string;
+  timeoutMs?: number;
+}): Promise<{ buffer: Buffer; mimeType: string }> {
+  const cfg = await requireConfig(input.businessId);
+  const meta = (await graphFetch(`/${encodeURIComponent(input.mediaId)}`, {
+    token: cfg.accessToken,
+    method: 'GET',
+  })) as { url?: string; mime_type?: string };
+  if (!meta?.url) throw new MetaWhatsAppError('Media lookup returned no URL', 502);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), input.timeoutMs ?? FETCH_MS * 4);
+  try {
+    const res = await fetch(meta.url, {
+      headers: { Authorization: `Bearer ${cfg.accessToken}` },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new MetaWhatsAppError(`Media download failed (${res.status})`, res.status);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const mimeType = (meta.mime_type || res.headers.get('content-type') || 'application/octet-stream')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    return { buffer, mimeType };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export type SendableTemplate = {
   category: string;
   header_format: string;
@@ -681,7 +721,24 @@ export type InboundMessage = {
   referral: InboundReferral | null;
   /** Cart the customer sent from the business's catalog (`type: 'order'`). */
   order: InboundOrder | null;
+  /** Photo, video, voice note, sticker or file; download it with {@link downloadMedia}. */
+  media: InboundMedia | null;
+  location: InboundLocation | null;
   timestamp: number | null;
+};
+
+export type InboundMedia = {
+  kind: 'image' | 'video' | 'audio' | 'document' | 'sticker';
+  id: string;
+  mimeType: string | null;
+  filename: string | null;
+};
+
+export type InboundLocation = {
+  latitude: number;
+  longitude: number;
+  name: string | null;
+  address: string | null;
 };
 
 export type InboundOrder = {
@@ -712,8 +769,13 @@ type RawInbound = {
     button_reply?: { id?: string; title?: string };
     list_reply?: { id?: string; title?: string };
   };
-  image?: { caption?: string };
-  document?: { caption?: string };
+  image?: RawMedia;
+  video?: RawMedia;
+  audio?: RawMedia;
+  sticker?: RawMedia;
+  document?: RawMedia;
+  location?: { latitude?: number | string; longitude?: number | string; name?: string; address?: string };
+  contacts?: Array<{ name?: { formatted_name?: string }; phones?: Array<{ phone?: string }> }>;
   order?: {
     catalog_id?: string;
     text?: string;
@@ -733,6 +795,40 @@ type RawInbound = {
     ctwa_clid?: string;
   };
 };
+
+type RawMedia = { id?: string; mime_type?: string; caption?: string; filename?: string };
+
+function inboundMedia(m: RawInbound): InboundMedia | null {
+  for (const kind of ['image', 'video', 'audio', 'document', 'sticker'] as const) {
+    const raw = m[kind];
+    if (m.type === kind && raw?.id) {
+      return { kind, id: raw.id, mimeType: raw.mime_type?.split(';')[0].trim() || null, filename: raw.filename?.trim() || null };
+    }
+  }
+  return null;
+}
+
+function inboundLocation(m: RawInbound): InboundLocation | null {
+  if (m.type !== 'location' || !m.location) return null;
+  const latitude = Number(m.location.latitude);
+  const longitude = Number(m.location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return {
+    latitude,
+    longitude,
+    name: m.location.name?.trim() || null,
+    address: m.location.address?.trim() || null,
+  };
+}
+
+function inboundContactsText(m: RawInbound): string | null {
+  if (m.type !== 'contacts' || !m.contacts?.length) return null;
+  const lines = m.contacts.map((c) => {
+    const phones = (c.phones || []).map((p) => p.phone).filter(Boolean).join(', ');
+    return [c.name?.formatted_name, phones].filter(Boolean).join(': ');
+  });
+  return lines.filter(Boolean).length ? `👤 ${lines.filter(Boolean).join('\n👤 ')}` : null;
+}
 
 function inboundReplyId(m: RawInbound): string | null {
   const id = m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? m.button?.payload ?? null;
@@ -782,7 +878,9 @@ function inboundText(m: RawInbound): string | null {
     m.interactive?.button_reply?.title ??
     m.interactive?.list_reply?.title ??
     m.image?.caption ??
+    m.video?.caption ??
     m.document?.caption ??
+    inboundContactsText(m) ??
     null;
   return t && t.trim() ? t.trim() : null;
 }
@@ -823,6 +921,8 @@ export function extractInboundMessages(body: unknown): InboundMessage[] {
           replyId: inboundReplyId(m),
           referral: inboundReferral(m),
           order: inboundOrder(m),
+          media: inboundMedia(m),
+          location: inboundLocation(m),
           timestamp: Number.isFinite(ts) && ts > 0 ? ts : null,
         });
       }

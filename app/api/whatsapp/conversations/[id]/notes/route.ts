@@ -7,12 +7,12 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
@@ -40,32 +40,20 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
   }
 });
 
-export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, inboxPermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    const { note_text, user_id } = (body ?? {}) as Record<string, any>;
+    const { note_text } = (body ?? {}) as Record<string, any>;
 
-    if (!note_text || !user_id) {
-      return NextResponse.json(
-        { error: 'note_text and user_id are required' },
-        { status: 400 }
-      );
+    if (!note_text || typeof note_text !== 'string') {
+      return NextResponse.json({ error: 'note_text is required' }, { status: 400 });
     }
-
-    // Verify user belongs to business (optional check)
-    const user = await queryOne(
-      `SELECT id FROM users WHERE id = $1`,
-      [user_id]
-    );
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
+    const user_id = userId;
 
     // Create note
     const note = await queryOne<{ id: string; note_text: string; created_at: string; user_id: string }>(
@@ -98,7 +86,7 @@ export const POST = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true
   }
 });
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const noteId = searchParams.get('note_id');
@@ -110,7 +98,7 @@ export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params
       );
     }
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }

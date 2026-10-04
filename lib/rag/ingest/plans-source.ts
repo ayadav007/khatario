@@ -158,6 +158,9 @@ export async function buildPlansMarkdown(): Promise<string> {
       'Automatic scheduled payment reminders start on the Growth plan.',
     '- The Connect plan is a paid add-on for the official WhatsApp Business API: your own WhatsApp Business number, ' +
       'the shared team inbox, the AI agent, Meta-approved templates, campaigns, automation and the WhatsApp shop.',
+    '- Connect includes its own WhatsApp agent seats, separate from billing plan users. Owners add agents under ' +
+      'Settings → WhatsApp → Agents. Agents can chat with customers and view customers, items, invoices and orders, ' +
+      'but cannot create or edit them or see purchases and accounts. A person can be moved between Billing users and WhatsApp agents.',
     `- Extra AI replies beyond the Connect allowance: ${WHATSAPP_ADDON_LABELS.khatario_ai} top-up at ${inr(WHATSAPP_ADDON_PRICING.khatario_ai, 'INR')} per month (requires Connect).`,
     '',
   );

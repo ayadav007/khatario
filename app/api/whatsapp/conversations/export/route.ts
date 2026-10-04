@@ -9,8 +9,9 @@ import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import ExcelJS from 'exceljs';
+import { getInboxViewer, visibilityClause } from '@/lib/whatsapp/inbox-ownership';
 
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, inboxPermission: 'export' }, async ({ request, businessId, body, userId }) => {
   try {
     const { format = 'csv', filters = {} } = (body ?? {}) as Record<string, any>;
 
@@ -42,6 +43,12 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ req
       whereConditions.push(`c.conversation_status = $${paramIndex++}`);
       params.push(filters.conversation_status);
     }
+
+    const viewer = await getInboxViewer({ businessId, userId });
+    const visibility = visibilityClause(viewer, 'c', paramIndex);
+    whereConditions.push(visibility.sql);
+    params.push(...visibility.params);
+    paramIndex += visibility.params.length;
 
     // Fetch conversations with labels
     const conversations = await queryRows(`

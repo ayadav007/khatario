@@ -188,7 +188,7 @@ export function HandoffSection({
               <div className="max-w-sm">
                 <FieldLabel>Assign the chat to</FieldLabel>
                 <select className="input" value={handoff.assignTo} onChange={(e) => setHandoff({ assignTo: e.target.value })}>
-                  <option value="auto">Automatic (your inbox assignment rules)</option>
+                  <option value="auto">Anyone on the team (Requesting queue)</option>
                   {staff.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}

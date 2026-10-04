@@ -68,6 +68,8 @@ export const PERMISSION_MODULE_PLATFORM: Record<string, PlatformModule | 'core'>
   hr: 'hr',
 
   whatsapp: 'connect',
+  whatsapp_inbox: 'connect',
+  whatsapp_inbox_supervise: 'connect',
 };
 
 /** Normalize authorize() module keys to RBAC catalog keys before platform lookup. */

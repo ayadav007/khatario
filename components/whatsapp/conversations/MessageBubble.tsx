@@ -26,6 +26,7 @@ export interface MessageBubbleProps {
     created_at: string;
     sender_type?: 'customer' | 'agent' | 'bot' | 'campaign';
     sent_by?: 'bot' | 'staff' | 'campaign' | null;
+    sent_by_name?: string | null; // Team member who sent a staff message
     sender_name?: string; // For group messages - name of the sender
     sender_number?: string; // For group messages - phone number of the sender
     reactions?: MessageReaction[];
@@ -43,6 +44,35 @@ export interface MessageBubbleProps {
   allMessages?: Array<any>; // All messages in conversation for media navigation
   /** Re-fetch thread so media_url / status can update from the server */
   onMediaRefresh?: () => void;
+  /** Resend a message that failed to go out. */
+  onRetry?: (message: any) => void;
+  /** Search term to highlight in the text. */
+  highlight?: string;
+}
+
+function highlightParts(text: string, term: string): React.ReactNode {
+  const q = term.trim();
+  if (!q) return linkifyText(text);
+  const lower = text.toLowerCase();
+  const needle = q.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (i < text.length) {
+    const at = lower.indexOf(needle, i);
+    if (at < 0) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (at > i) out.push(text.slice(i, at));
+    out.push(
+      <mark key={k++} className="rounded bg-yellow-200 px-0.5">
+        {text.slice(at, at + q.length)}
+      </mark>,
+    );
+    i = at + q.length;
+  }
+  return out;
 }
 
 // Helper function to linkify URLs in text
@@ -76,8 +106,11 @@ export function MessageBubble({
   senderType, 
   isGroup = false,
   allMessages = [],
-  onMediaRefresh
+  onMediaRefresh,
+  onRetry,
+  highlight = '',
 }: MessageBubbleProps) {
+  const failed = isOutgoing && (message.status === 'failed' || String(message.status) === '0');
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageLoadState, setImageLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [mediaRetrying, setMediaRetrying] = useState(false);
@@ -239,6 +272,9 @@ export function MessageBubble({
           {/* Media (Image, Video, Document, Audio) */}
           {message.media_url && (
             <div className="mb-2 rounded overflow-hidden">
+              {message.message_type === 'sticker' && (
+                <img src={message.media_url} alt="Sticker" className="h-32 w-32 object-contain" />
+              )}
               {(message.message_type === 'image' || !message.message_type) && (
                 <div 
                   className={`group relative min-h-[80px] ${imageLoadState === 'error' ? 'cursor-default' : 'cursor-pointer'}`}
@@ -323,7 +359,7 @@ export function MessageBubble({
                 />
               )}
               
-              {!['image', 'video', 'document', 'audio'].includes(message.message_type || 'image') && (
+              {!['image', 'video', 'document', 'audio', 'sticker'].includes(message.message_type || 'image') && (
                 <div className={clsx(waChat.msgSecondary, 'p-4 bg-gray-50 rounded border border-gray-200')}>
                   <span className="mr-2">
                     {message.message_type === 'sticker' ? '🎭' : '📎'}
@@ -341,15 +377,19 @@ export function MessageBubble({
             </div>
           )}
 
+          {message.message_type === 'template' && (
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#008069]">Template</div>
+          )}
+
           {/* Text / Caption */}
           {message.message_text && (
             <div className={clsx(waChat.msgText, 'whitespace-pre-wrap break-words')}>
-              {linkifyText(message.message_text)}
+              {highlightParts(message.message_text, highlight)}
             </div>
           )}
           
           {/* Fallback for media-only messages without text */}
-          {message.media_url && !message.message_text && (
+          {message.media_url && !message.message_text && message.message_type !== 'sticker' && (
             <div className={waChat.msgCaption}>
               {message.message_type === 'image' ? 'Photo' :
                message.message_type === 'video' ? 'Video' :
@@ -396,14 +436,34 @@ export function MessageBubble({
                 'rounded px-1 text-[10px] font-semibold leading-4',
                 message.sent_by === 'bot' ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-700',
               )}
-              title={message.sent_by === 'bot' ? 'Sent by the AI agent' : 'Sent by your team'}
+              title={
+                message.sent_by === 'bot'
+                  ? 'Sent by the AI agent'
+                  : message.sent_by_name
+                    ? `Sent by ${message.sent_by_name}`
+                    : 'Sent by your team'
+              }
             >
-              {message.sent_by === 'bot' ? 'AI' : 'Team'}
+              {message.sent_by === 'bot' ? 'AI' : message.sent_by_name || 'Team'}
             </span>
           )}
           <span className={waChat.msgTime}>{timeStr}</span>
           {isOutgoing && renderStatusIcon()}
         </div>
+        {failed && (
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-red-600">
+            <span>{(message as { local_error?: string; error_title?: string }).local_error || (message as { error_title?: string }).error_title || 'Not delivered'}</span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={() => onRetry(message)}
+                className="inline-flex items-center gap-1 font-medium text-red-700 hover:underline"
+              >
+                <RefreshCw className="h-3 w-3" /> Retry
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Emoji Reactions */}
         {message.reactions && message.reactions.length > 0 && (

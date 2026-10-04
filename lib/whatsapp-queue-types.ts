@@ -120,6 +120,13 @@ export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
     note: string | null;
     items: Array<{ retailerId: string; quantity: number }>;
   } | null;
+  /** Meta media id for photos, videos, voice notes, stickers and files. */
+  media?: {
+    kind: 'image' | 'video' | 'audio' | 'document' | 'sticker';
+    id: string;
+    mimeType: string | null;
+    filename: string | null;
+  } | null;
 };
 
 /** A message to Khatario's own WhatsApp number (prospects and existing users). */

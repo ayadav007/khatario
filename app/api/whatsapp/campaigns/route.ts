@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/campaigns
  * List campaigns for a business with optional search, status filter, and pagination
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId, userId }) => {
   try {
     const searchParams = request.nextUrl.searchParams;
     const search = (searchParams.get('search') || '').trim();
@@ -72,7 +72,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
  * POST /api/whatsapp/campaigns
  * Create a new campaign
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const contentType = request.headers.get('content-type') || '';
     let payload: any;

@@ -11,6 +11,8 @@ import {
 } from '@/lib/subscription/effective-plan';
 import { shouldOfferTrialExtension, TRIAL_EXTENSION_DAYS } from '@/lib/subscription/trial-extension';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
+import { CONNECT_AGENT_HOME_PATH, CONNECT_SEAT_PAUSED_MESSAGE } from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +87,11 @@ export async function GET(request: NextRequest) {
         error: 'This account has been suspended. Please contact Khatario support.',
         code: 'BUSINESS_SUSPENDED',
       });
+    }
+
+    const isConnectAgent = (row as { seat_type?: string | null }).seat_type === 'connect';
+    if (isConnectAgent && row.business_id && !(await hasWhatsAppBotAddon(row.business_id))) {
+      return jsonSessionInvalid(403, { error: CONNECT_SEAT_PAUSED_MESSAGE, code: 'CONNECT_SEAT_INACTIVE' });
     }
 
     // --- 2. Branches (reuse existing helper) ---
@@ -245,6 +252,7 @@ export async function GET(request: NextRequest) {
         business.product_line,
         (business as { primary_module?: string | null }).primary_module,
       );
+      if (isConnectAgent) platform = { ...platform, defaultHomePath: CONNECT_AGENT_HOME_PATH };
     }
 
     return NextResponse.json({

@@ -6,12 +6,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, businessId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, businessId, userId }) => {
   try {
-    const conversationUuid = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationUuid = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationUuid) {
       return NextResponse.json({ invoices: [], orders: [] });
     }

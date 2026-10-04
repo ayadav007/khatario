@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
-import { Bell, Bot, FileText, Inbox, ShoppingBag, Smartphone, type LucideIcon } from 'lucide-react';
+import { Bell, Bot, FileText, Inbox, ShoppingBag, Smartphone, Users, type LucideIcon } from 'lucide-react';
 
 export const WHATSAPP_SETTINGS_BASE = '/settings/whatsapp';
 
@@ -14,6 +14,7 @@ export const WHATSAPP_SETTINGS_TABS: NavTab[] = [
   { href: `${WHATSAPP_SETTINGS_BASE}/templates`, label: 'Templates', icon: FileText },
   { href: `${WHATSAPP_SETTINGS_BASE}/notifications`, label: 'Notifications', icon: Bell },
   { href: `${WHATSAPP_SETTINGS_BASE}/inbox`, label: 'Inbox & team', icon: Inbox, connectOnly: true },
+  { href: `${WHATSAPP_SETTINGS_BASE}/team`, label: 'Agents', icon: Users, connectOnly: true },
   { href: `${WHATSAPP_SETTINGS_BASE}/ai-agent`, label: 'AI agent', icon: Bot },
   { href: `${WHATSAPP_SETTINGS_BASE}/shop`, label: 'Shop', icon: ShoppingBag },
 ];

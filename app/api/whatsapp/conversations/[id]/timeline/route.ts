@@ -7,12 +7,12 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
-import { resolveWhatsAppConversationDbId } from '@/lib/whatsapp-conversation-resolve';
+import { resolveVisibleConversation } from '@/lib/whatsapp-conversation-resolve';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: true }, async ({ params, request, businessId, userId }) => {
   try {
 
-    const conversationId = await resolveWhatsAppConversationDbId(businessId, params.id);
+    const conversationId = (await resolveVisibleConversation({ businessId, userId }, params.id))?.id ?? null;
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }

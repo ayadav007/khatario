@@ -11,7 +11,7 @@ import { NextResponse } from 'next/server';
 import { query, queryOne, queryRows } from '@/lib/db';
 import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 
-export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const ruleId = params.id;
 
@@ -45,7 +45,7 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, r
   }
 });
 
-export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true }, async ({ params, request, businessId, body, userId }) => {
+export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: true, managePermission: true }, async ({ params, request, businessId, body, userId }) => {
   try {
     const ruleId = params.id;
     const { ...updates } = (body ?? {}) as Record<string, any>;
@@ -142,7 +142,7 @@ export const PATCH = withWhatsAppPremiumApi<{ id: string }>({ parseJsonBody: tru
   }
 });
 
-export const DELETE = withWhatsAppPremiumApi<{ id: string }>({}, async ({ params, request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi<{ id: string }>({ managePermission: true }, async ({ params, request, businessId, userId }) => {
   try {
     const ruleId = params.id;
 

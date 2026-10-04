@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/whatsapp/contact-groups
  * List all contact groups for a business
  */
-export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId, userId }) => {
   try {
 
     const pool = getPool();
@@ -41,7 +41,7 @@ export const GET = withWhatsAppPremiumApi({}, async ({ request, businessId, user
  * POST /api/whatsapp/contact-groups
  * Create a new contact group
  */
-export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { name, description, color } = (body ?? {}) as Record<string, any>;
 
@@ -93,7 +93,7 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ req
  * PUT /api/whatsapp/contact-groups
  * Update an existing contact group
  */
-export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ request, businessId, body, userId }) => {
+export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true, managePermission: true }, async ({ request, businessId, body, userId }) => {
   try {
     const { id, name, description, color } = (body ?? {}) as Record<string, any>;
 
@@ -164,7 +164,7 @@ export const PUT = withWhatsAppPremiumApi({ parseJsonBody: true }, async ({ requ
  * DELETE /api/whatsapp/contact-groups
  * Delete a contact group
  */
-export const DELETE = withWhatsAppPremiumApi({}, async ({ request, businessId, userId }) => {
+export const DELETE = withWhatsAppPremiumApi({ managePermission: true }, async ({ request, businessId, userId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

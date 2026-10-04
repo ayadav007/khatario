@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
  * Approve a WhatsApp order: create a paid tax invoice (receipt via UPI) with full GST, stock and ledger posting.
  */
 export const POST = withWhatsAppPremiumApi<{ id: string }>(
-  { parseJsonBody: true },
+  { parseJsonBody: true, managePermission: true },
   async ({ params, businessId, userId }) => {
   const orderId = params.id;
   const today = todayIsoDate();

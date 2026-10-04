@@ -472,6 +472,8 @@ const EXTRA_RBAC_MODULE_KEYS = [
   'recruitment',
   'hr',
   'whatsapp',
+  'whatsapp_inbox',
+  'whatsapp_inbox_supervise',
 ];
 
 /**

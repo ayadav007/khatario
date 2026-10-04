@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireStrictSession } from '@/lib/auth-helpers';
 import { query, queryOne, queryRows, getPool } from '@/lib/db';
-import { checkLimitInTransaction } from '@/lib/subscription';
+import { checkLimitInTransaction, hasWhatsAppBotAddon } from '@/lib/subscription';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import bcrypt from 'bcryptjs';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
+import {
+  checkRoleForConnectSeat,
+  connectSeatRoleMessage,
+  ensureWhatsAppAgentRole,
+  isSeatType,
+  seatLimitMessage,
+  seatLimitType,
+  type SeatType,
+} from '@/lib/users/connect-seats';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +74,7 @@ export async function GET(request: NextRequest) {
         u.allow_multidevice_sync,
         u.last_active_at,
         u.created_at,
+        COALESCE(u.seat_type, 'billing') AS seat_type,
         ur.id as role_id,
         ur.role_name,
         ur.role_key,
@@ -116,9 +126,16 @@ export async function POST(request: NextRequest) {
       role_id,
       branch_id, // Optional: branch to assign user to
       allow_multidevice_sync,
+      seat_type: rawSeatType,
     } = body;
 
-    if (!name || !phone || !password || !role_id) {
+    if (rawSeatType !== undefined && !isSeatType(rawSeatType)) {
+      return NextResponse.json({ error: "seat_type must be 'billing' or 'connect'" }, { status: 400 });
+    }
+    const seatType: SeatType = rawSeatType ?? 'billing';
+
+    // Connect agents default to the WhatsApp Agent role.
+    if (!name || !phone || !password || (!role_id && seatType !== 'connect')) {
       return NextResponse.json(
         { error: 'name, phone, password, and role_id are required' },
         { status: 400 }
@@ -169,19 +186,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const role = await queryOne(
-      'SELECT id, role_key FROM user_roles WHERE id = $1 AND business_id = $2',
-      [role_id, business_id]
-    );
+    if (seatType === 'connect' && !(await hasWhatsAppBotAddon(business_id))) {
+      return NextResponse.json(
+        {
+          error: 'WhatsApp agents need an active Connect plan. Buy or renew Connect from Settings → Products.',
+          code: 'WHATSAPP_BOT_ADDON_REQUIRED',
+        },
+        { status: 403 }
+      );
+    }
 
-    if (!role) {
+    const role = role_id
+      ? await queryOne<{ id: string; role_key: string }>(
+          'SELECT id, role_key FROM user_roles WHERE id = $1 AND business_id = $2',
+          [role_id, business_id]
+        )
+      : null;
+
+    if (role_id && !role) {
       return NextResponse.json(
         { error: 'Invalid role_id for this business' },
         { status: 400 }
       );
     }
 
-    if (role.role_key === 'primary_admin') {
+    if (role && seatType === 'connect') {
+      const check = await checkRoleForConnectSeat(getPool(), role.id, business_id);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: connectSeatRoleMessage(check), code: 'ROLE_EXCEEDS_CONNECT_SEAT', permissions: check.violations },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (role?.role_key === 'primary_admin') {
       const actor = await queryOne<{ is_primary_admin: boolean }>(
         'SELECT is_primary_admin FROM users WHERE id = $1 AND business_id = $2',
         [createdByUserId, business_id]
@@ -199,7 +238,7 @@ export async function POST(request: NextRequest) {
       [business_id]
     );
 
-    if (!settings?.user_management_enabled && role.role_key !== 'primary_admin') {
+    if (seatType === 'billing' && !settings?.user_management_enabled && role?.role_key !== 'primary_admin') {
       return NextResponse.json(
         { error: 'User management is not enabled for this business' },
         { status: 403 }
@@ -218,44 +257,49 @@ export async function POST(request: NextRequest) {
       is_primary_admin: boolean;
       allow_multidevice_sync: boolean;
       is_active: boolean;
+      seat_type: SeatType;
       created_at: string;
     } | null = null;
 
     try {
       await client.query('BEGIN');
 
-      const limitCheck = await checkLimitInTransaction(client, business_id, 'users');
+      const limitCheck = await checkLimitInTransaction(client, business_id, seatLimitType(seatType));
       if (!limitCheck.allowed) {
         await client.query('ROLLBACK');
         return NextResponse.json(
           {
-            error: limitCheck.message || 'User limit reached',
+            error: seatLimitMessage(seatType, limitCheck),
             limit: limitCheck.limit,
             current: limitCheck.current,
+            seat_type: seatType,
             code: 'SUBSCRIPTION_LIMIT_EXCEEDED',
           },
           { status: 403 },
         );
       }
 
+      const roleIdToSave = role?.id ?? (await ensureWhatsAppAgentRole(client, business_id));
+
       const passwordHash = password ? await bcrypt.hash(password, 10) : null;
       const insertResult = await client.query(`
         INSERT INTO users (
           business_id, name, email, phone, password_hash, role_id,
-          is_primary_admin, allow_multidevice_sync, is_active
+          is_primary_admin, allow_multidevice_sync, is_active, seat_type
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9)
         RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
-                  allow_multidevice_sync, is_active, created_at
+                  allow_multidevice_sync, is_active, seat_type, created_at
       `, [
         business_id,
         name,
         email || null,
         phoneNorm,
         passwordHash,
-        role_id,
-        role.role_key === 'primary_admin',
+        roleIdToSave,
+        role?.role_key === 'primary_admin',
         allow_multidevice_sync || false,
+        seatType,
       ]);
 
       newUser = insertResult.rows[0] ?? null;
@@ -327,7 +371,7 @@ export async function POST(request: NextRequest) {
         'settings',
         'user',
         newUser.id,
-        JSON.stringify({ user_name: name, user_phone: phoneNorm })
+        JSON.stringify({ user_name: name, user_phone: phoneNorm, seat_type: seatType })
       ]);
     }
 

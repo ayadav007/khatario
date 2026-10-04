@@ -2,12 +2,25 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ConversationList, Conversation as ConversationType, FilterState } from './conversations/ConversationList';
-import { ChatWindow, Conversation, Message } from './conversations/ChatWindow';
+import { ConversationList, Conversation as ConversationType, FilterState, effectiveInboxState } from './conversations/ConversationList';
+import { ChatWindow, Conversation, Message, type ReplyWindowView } from './conversations/ChatWindow';
+import type { TemplateSendInput } from './conversations/TemplatePickerModal';
+import { fileToDataUrl } from './conversations/fileToDataUrl';
 import { ContactPanel } from './conversations/ContactPanel';
 import { TimelineEvent } from './conversations/AutomationTimeline';
-import { SummaryBar } from './conversations/SummaryBar';
+import { SummaryBar, type InboxFilter } from './conversations/SummaryBar';
+import {
+  playInboxChime,
+  requestInboxNotificationPermission,
+  showInboxBrowserNotification,
+  type OwnershipAction,
+  type OwnershipEvent,
+  type OwnershipView,
+  type TeamMember,
+} from './conversations/inbox';
+import { Toast } from '@/components/ui/Toast';
 import { useWhatsAppSocket, WSEvent } from '@/hooks/useWhatsAppSocket';
 import { getDisplayText } from './conversations/messageUtils';
 import {
@@ -18,6 +31,8 @@ import {
 
 interface ConversationsTabProps {
   initialPhoneNumber?: string;
+  /** Open this chat (e.g. from a "chat assigned to you" notification). */
+  openConversationId?: string;
 }
 
 const INITIAL_LIMIT = 30;
@@ -69,7 +84,7 @@ function setConversationsCache(businessId: string, convs: ConversationType[]): v
   }
 }
 
-export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) {
+export function ConversationsTab({ initialPhoneNumber, openConversationId }: ConversationsTabProps) {
   const { business, user } = useAuth();
   const [conversations, setConversations] = useState<ConversationType[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -91,12 +106,29 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
   const [leadProfile, setLeadProfile] = useState<any>(null);
   const [filters, setFilters] = useState<FilterState>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+  const [replyWindow, setReplyWindow] = useState<ReplyWindowView | null>(null);
+  /** Which pane is visible below the lg breakpoint. */
+  const [mobilePane, setMobilePane] = useState<'list' | 'chat' | 'contact'>('list');
   const [loading, setLoading] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [loadingContact, setLoadingContact] = useState(false);
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<'unread' | 'new' | 'open' | 'pending' | 'closed' | string | null>(null);
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>({ state: null });
+  const inboxFilterRef = useRef(inboxFilter);
+  useEffect(() => {
+    inboxFilterRef.current = inboxFilter;
+  }, [inboxFilter]);
+  const [ownership, setOwnership] = useState<OwnershipView | null>(null);
+  const [ownershipEvents, setOwnershipEvents] = useState<OwnershipEvent[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const fallbackPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [messageError, setMessageError] = useState<string | null>(null);
@@ -161,34 +193,19 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
       if (currentFilters.label_id) params.set('label_id', currentFilters.label_id);
       if (activeSummaryFilter === 'unread') params.set('unread_only', 'true');
       if (activeSummaryFilter === 'new') params.set('new_only', 'true');
+      if (inboxFilter.state) params.set('inbox_state', inboxFilter.state);
+      if (inboxFilter.state === 'intervened' && inboxFilter.intervenedBy) {
+        params.set('intervened_by', inboxFilter.intervenedBy);
+      }
 
-      params.set('skip_profile_pictures', 'true');
+      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
 
       const res = await fetch(`/api/whatsapp/conversations?${params}`);
       if (res.ok) {
         const data = await res.json();
         const raw = data.conversations || [];
         const moreFromServer = raw.length === limit;
-        let fetched = raw;
-        
-        // Apply client-side filters: search query and summary filters
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase();
-          fetched = fetched.filter((conv: ConversationType) => {
-            const name = (conv.customer_name || (conv as any).whatsapp_display_name || conv.conversation_id || conv.from_number || '').toLowerCase();
-            const phone = (conv.customer_phone || conv.from_number || '').toLowerCase();
-            return name.includes(query) || phone.includes(query);
-          });
-        }
-
-        if (activeSummaryFilter === 'unread') {
-          fetched = fetched.filter((conv: ConversationType) => (conv.unread_count || 0) > 0);
-        } else if (activeSummaryFilter === 'new') {
-          fetched = fetched.filter((conv: ConversationType) => conv.last_message_direction === 'incoming');
-        }
-        
-        // Sort to preserve pinned conversations at top
-        const sorted = fetched.sort((a: ConversationType, b: ConversationType) => {
+        const sorted = [...raw].sort((a: ConversationType, b: ConversationType) => {
           if (a.is_pinned && !b.is_pinned) return -1;
           if (!a.is_pinned && b.is_pinned) return 1;
           const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
@@ -211,7 +228,8 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
           
           // Save to cache after successful fetch (only when no filters active to keep cache clean)
           if (business?.id && !append) {
-            const hasActiveFilters = Object.keys(currentFilters).length > 0 || searchQuery.trim() || activeSummaryFilter !== null;
+            const hasActiveFilters =
+              Object.keys(currentFilters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null;
             if (!hasActiveFilters) {
               setConversationsCache(business.id, sorted);
             }
@@ -230,7 +248,7 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
         }
       }
     }
-  }, [business?.id, filters, searchQuery, activeSummaryFilter]);
+  }, [business?.id, filters, debouncedSearch, activeSummaryFilter, inboxFilter]);
 
   useEffect(() => {
     fetchConversationsRef.current = fetchConversations;
@@ -278,6 +296,9 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
         const data = await res.json();
         const fetchedMessages = (data.messages || []) as Message[];
         setMessages(fetchedMessages);
+        setReplyWindow((data.window as ReplyWindowView | undefined) ?? null);
+        setOwnership((data.ownership as OwnershipView | null) ?? null);
+        setOwnershipEvents((data.events as OwnershipEvent[] | undefined) ?? []);
         const oc = data.oldest_cursor as { created_at?: string; message_id?: string } | undefined;
         oldestMessageCursorRef.current =
           oc?.created_at && oc?.message_id
@@ -352,6 +373,9 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
       const res = await fetch(endpoint);
       if (!res.ok) return;
       const data = await res.json();
+      if (data.ownership !== undefined) setOwnership((data.ownership as OwnershipView | null) ?? null);
+      if (data.window) setReplyWindow(data.window as ReplyWindowView);
+      if (Array.isArray(data.events)) setOwnershipEvents(data.events as OwnershipEvent[]);
       const list = (data.messages || []) as Message[];
       if (list.length === 0) return;
 
@@ -572,10 +596,14 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     // Clear messages and error when switching conversations
     
     setMessages([]);
+    setOwnership(null);
+    setOwnershipEvents([]);
+    setReplyWindow(null);
     setMessageError(null);
     setRetryCount(0);
     setHasMoreMessages(true); // Reset for new conversation
     setSelectedConversationId(id);
+    setMobilePane('chat');
     const conv =
       conversations.find(c => c.id === id) ||
       (id.includes('@')
@@ -628,6 +656,98 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     }
   }, [conversations, fetchMessages, fetchNotes, fetchTimeline, fetchCustomFields, fetchContact, selectedConversationId]);
 
+  /** Re-read who owns the open chat (and its system lines) without reloading the thread. */
+  const refreshOwnership = useCallback(async (conversationId: string) => {
+    if (!business?.id) return;
+    try {
+      const sp = new URLSearchParams({ business_id: business.id, limit: '1' });
+      const res = await fetch(`/api/whatsapp/conversations/${encodeURIComponent(conversationId)}/messages?${sp}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (selectedConvIdSseRef.current !== conversationId) return;
+      setOwnership((data.ownership as OwnershipView | null) ?? null);
+      setOwnershipEvents((data.events as OwnershipEvent[] | undefined) ?? []);
+    } catch {
+      /* the next SSE update or reselect will catch up */
+    }
+  }, [business?.id]);
+
+  const handleOwnershipAction = useCallback(async (action: OwnershipAction, toUserId?: string) => {
+    if (!selectedConversationId || !business?.id) return;
+    requestInboxNotificationPermission();
+    const res = await fetch(
+      `/api/whatsapp/conversations/${encodeURIComponent(selectedConversationId)}/ownership?business_id=${encodeURIComponent(business.id)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, to_user_id: toUserId }),
+      },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Someone else won the race (409) or rights changed: show the latest owner before reporting.
+      void refreshOwnership(selectedConversationId);
+      throw new Error(data.error || 'Could not update this chat');
+    }
+    const patch = {
+      inbox_state: data.inbox_state,
+      assigned_to: data.assigned_to ?? undefined,
+      owner_name: data.owner_name ?? null,
+      is_owned: data.inbox_state === 'intervened' && !!data.assigned_to,
+    };
+    setConversations(prev => prev.map(c => (c.id === selectedConversationId ? { ...c, ...patch } : c)));
+    setSelectedConversation(prev => (prev ? { ...prev, assigned_to: data.assigned_to ?? null } : prev));
+    await refreshOwnership(selectedConversationId);
+  }, [selectedConversationId, business?.id, refreshOwnership]);
+
+  // Team list for Transfer (online/offline); refreshed every minute.
+  useEffect(() => {
+    if (!business?.id) return;
+    const load = () => {
+      fetch(`/api/whatsapp/users?business_id=${encodeURIComponent(business.id)}`)
+        .then((res) => (res.ok ? res.json() : { users: [] }))
+        .then((data) => setTeamMembers(data.users || []))
+        .catch(() => undefined);
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [business?.id]);
+
+  // Open the chat from a notification link (?c=<conversation id>), even if it isn't on the first page.
+  const pendingOpenRef = useRef<string | null>(null);
+  const openConversationById = useCallback((id: string) => {
+    if (!business?.id) return;
+    pendingOpenRef.current = id;
+    const sp = new URLSearchParams({ id, limit: '1' });
+    fetch(`/api/whatsapp/conversations?${sp}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const row = data?.conversations?.[0] as ConversationType | undefined;
+        if (!row) {
+          pendingOpenRef.current = null;
+          setNotice('That chat is no longer available to you.');
+          return;
+        }
+        setConversations(prev =>
+          prev.some(c => c.id === row.id) ? prev.map(c => (c.id === row.id ? { ...c, ...row } : c)) : [row, ...prev]
+        );
+      })
+      .catch(() => undefined);
+  }, [business?.id]);
+
+  useEffect(() => {
+    if (openConversationId) openConversationById(openConversationId);
+  }, [openConversationId, openConversationById]);
+
+  useEffect(() => {
+    const id = pendingOpenRef.current;
+    if (id && conversations.some(c => c.id === id)) {
+      pendingOpenRef.current = null;
+      handleSelectConversation(id);
+    }
+  }, [conversations, handleSelectConversation]);
+
   // Cleanup deferred fetches on unmount ONLY (not on selectedConversationId change)
   useEffect(() => {
     return () => {
@@ -641,28 +761,40 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     };
   }, []); // Empty deps - only run on unmount
 
-  // Handle send message
+  /** Sets the chat's last-message preview and re-sorts the list (pinned first, newest next). */
+  const patchListPreview = useCallback((conversationId: string, patch: Partial<ConversationType>) => {
+    setConversations(prev => {
+      const index = prev.findIndex(c => c.id === conversationId);
+      if (index < 0) return prev;
+      const updated = [...prev];
+      updated[index] = { ...updated[index], ...patch };
+      return updated.sort((a, b) => {
+        if (a.is_pinned && !b.is_pinned) return -1;
+        if (!a.is_pinned && b.is_pinned) return 1;
+        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
+  }, []);
+
+  /**
+   * Sends from the composer. A failed send stays in the thread as a red bubble with Retry
+   * (the thrown error has `kept`), except when the send can never succeed as-is
+   * (window closed, not the owner, blocked) — then the bubble goes and the draft stays.
+   */
   const handleSendMessage = useCallback(async (
     text: string,
     type: string = 'text',
     buttons?: any[],
-    media?: File
+    media?: File,
+    replaceId?: string
   ) => {
-    if (!selectedConversationId || !business?.id) return;
+    const conversationId = selectedConversationId;
+    if (!conversationId || !business?.id) return;
 
-    // Prepare media URL if needed
-    let mediaUrl: string | undefined;
-    if (media) {
-      const reader = new FileReader();
-      mediaUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(media);
-      });
-    }
-
-    // Create optimistic message
-    const optimisticId = `optimistic_${Date.now()}`;
+    const mediaUrl = media ? await fileToDataUrl(media) : undefined;
+    const optimisticId = replaceId || `optimistic_${Date.now()}`;
     const now = new Date().toISOString();
     const optimisticMessage: Message = {
       id: optimisticId,
@@ -673,158 +805,145 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
       direction: 'outgoing',
       status: 'pending',
       created_at: now,
+      local_file: media,
     };
 
-    // Immediately add optimistic message to UI
-    setMessages(prev => [...prev, optimisticMessage]);
+    setMessages(prev =>
+      replaceId && prev.some(m => m.id === replaceId)
+        ? prev.map(m => (m.id === replaceId ? optimisticMessage : m))
+        : [...prev, optimisticMessage]
+    );
 
-    // Save original conversation state for potential rollback
-    const originalConv = conversations.find(c => c.id === selectedConversationId);
-    const originalLastMessageAt = originalConv?.last_message_at || '';
-    const originalLastMessageText = originalConv?.last_message_text || '';
-    const originalLastMessageDirection = originalConv?.last_message_direction || 'incoming';
-
-    // Optimistically update conversation list
-    setConversations(prev => {
-      const index = prev.findIndex(c => c.id === selectedConversationId);
-      if (index >= 0) {
-        const updated = [...prev];
-        updated[index] = {
-          ...updated[index],
-          last_message_text: getDisplayText({ message_text: text, message_type: type, media_url: mediaUrl }) || text,
-          last_message_at: now,
-          last_message_direction: 'outgoing' as const
-        };
-        // Move to top (but preserve pinned status)
-        const [moved] = updated.splice(index, 1);
-        if (moved.is_pinned) {
-          const pinnedIndex = updated.findIndex(c => !c.is_pinned);
-          if (pinnedIndex >= 0) {
-            updated.splice(pinnedIndex, 0, moved);
-          } else {
-            updated.push(moved);
-          }
-        } else {
-          updated.unshift(moved);
-        }
-        return updated;
-      }
-      return prev;
+    const originalConv = conversations.find(c => c.id === conversationId);
+    patchListPreview(conversationId, {
+      last_message_text: getDisplayText({ message_text: text, message_type: type, media_url: mediaUrl }) || text,
+      last_message_at: now,
+      last_message_direction: 'outgoing',
     });
 
     try {
-      const endpoint = `/api/whatsapp/conversations/${selectedConversationId}/messages?business_id=${business.id}`;
-
-      const res = await fetch(endpoint, {
+      const res = await fetch(`/api/whatsapp/conversations/${conversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message_text: text,
           message_type: type,
           media_url: mediaUrl,
+          file_name: media?.name,
           buttons: buttons,
         })
       });
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        const messageData = await res.json();
-        if (messageData.message) {
-          const m = messageData.message as Message;
-          const realMessage: Message = {
-            ...m,
-            id: m.id || (messageData as { message_id?: string }).message_id || optimisticId,
-            message_text: m.message_text || text,
-            message_type: m.message_type || type,
-            media_url: m.media_url || mediaUrl,
-            direction: 'outgoing',
-            status: m.status || 'sent',
-            created_at: m.created_at || now,
-            message_id: m.message_id || (messageData as { message_id?: string }).message_id
-          };
-          setMessages(prev => {
-            const optimisticIndex = prev.findIndex(x => x.id === optimisticId);
-            if (optimisticIndex >= 0) {
-              const u = [...prev];
-              u[optimisticIndex] = realMessage;
-              return u;
-            }
-            return [...prev, realMessage];
-          });
-          setConversations(prev => {
-            const index = prev.findIndex(c => c.id === selectedConversationId);
-            if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = {
-                ...updated[index],
-                last_message_text: getDisplayText(messageData.message) || text,
-                last_message_at: m.created_at || now,
-                last_message_direction: 'outgoing' as const
-              };
-              return updated.sort((a, b) => {
-                if (a.is_pinned && !b.is_pinned) return -1;
-                if (!a.is_pinned && b.is_pinned) return 1;
-                const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-                const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-                return bTime - aTime;
-              });
-            }
-            return prev;
-          });
-        } else if ((messageData as { message_id?: string }).message_id) {
-          setMessages(prev => {
-            const mid = (messageData as { message_id: string }).message_id;
-            return prev
-              .map(m =>
-                m.id === optimisticId
-                  ? {
-                      ...m,
-                      id: mid,
-                      message_id: mid,
-                      status: 'sent' as const
-                    }
-                  : m
-              );
+      if (!res.ok) {
+        if (data.code === 'WINDOW_CLOSED' && data.window) setReplyWindow(data.window as ReplyWindowView);
+        throw Object.assign(new Error(data.error || 'Failed to send message'), { code: data.code as string | undefined });
+      }
+
+      const m = (data.message || {}) as Message;
+      const mid = m.message_id || (data as { message_id?: string }).message_id;
+      const realMessage: Message = {
+        ...m,
+        id: m.id || mid || optimisticId,
+        message_text: m.message_text ?? text,
+        message_type: m.message_type || type,
+        media_url: m.media_url || mediaUrl,
+        direction: 'outgoing',
+        status: m.status || 'sent',
+        created_at: m.created_at || now,
+        message_id: mid,
+      };
+      // The SSE copy may already be in the list; merging dedupes by message id.
+      setMessages(prev => mergeMessageLists(prev.filter(x => x.id !== optimisticId), [realMessage]));
+      patchListPreview(conversationId, {
+        last_message_text: getDisplayText(realMessage) || text,
+        last_message_at: realMessage.created_at || now,
+        last_message_direction: 'outgoing',
+      });
+    } catch (error: any) {
+      console.error('Error sending message:', error?.message || error);
+      const code = error?.code as string | undefined;
+      if (code && ['WINDOW_CLOSED', 'INTERVENE_REQUIRED', 'NOT_OWNER', 'BLOCKED'].includes(code)) {
+        setMessages(prev => prev.filter(m => m.id !== optimisticId));
+        if (originalConv) {
+          patchListPreview(conversationId, {
+            last_message_text: originalConv.last_message_text || '',
+            last_message_at: originalConv.last_message_at || '',
+            last_message_direction: originalConv.last_message_direction || 'incoming',
           });
         }
-      } else {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to send message');
+        if (code === 'INTERVENE_REQUIRED' || code === 'NOT_OWNER') void refreshOwnership(conversationId);
+        throw error;
       }
-    } catch (error: any) {
-      console.error('Error sending message:', error);
-      
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(m => m.id !== optimisticId));
-      
-      // Revert conversation list update
-      if (originalConv) {
-        setConversations(prev => {
-          const index = prev.findIndex(c => c.id === selectedConversationId);
-          if (index >= 0) {
-            const updated = [...prev];
-            // Restore original values
-            updated[index] = {
-              ...updated[index],
-              last_message_text: originalLastMessageText,
-              last_message_at: originalLastMessageAt,
-              last_message_direction: originalLastMessageDirection as 'incoming' | 'outgoing'
-            };
-            // Re-sort to original position
-            return updated.sort((a, b) => {
-              if (a.is_pinned && !b.is_pinned) return -1;
-              if (!a.is_pinned && b.is_pinned) return 1;
-              const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-              const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-              return bTime - aTime;
-            });
-          }
-          return prev;
-        });
-      }
-      
-      throw error;
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === optimisticId
+            ? { ...m, status: 'failed' as const, local_error: error?.message || 'Not delivered' }
+            : m
+        )
+      );
+      throw Object.assign(error instanceof Error ? error : new Error('Failed to send message'), { kept: true });
     }
-  }, [selectedConversationId, business?.id, fetchMessages, conversations]);
+  }, [selectedConversationId, business?.id, conversations, patchListPreview, refreshOwnership]);
+
+  const handleRetryMessage = useCallback(async (message: Message) => {
+    let file = message.local_file;
+    if (!file && message.media_url?.startsWith('/api/whatsapp/media/')) {
+      try {
+        const res = await fetch(message.media_url);
+        if (res.ok) {
+          const blob = await res.blob();
+          const name = message.message_type === 'document' && message.message_text
+            ? message.message_text
+            : message.media_url.split('/').pop() || 'file';
+          file = new File([blob], name, { type: blob.type });
+        }
+      } catch {
+        /* sent below without the file; the server reports what is missing */
+      }
+    }
+    const text = message.message_type === 'document' && file ? '' : message.message_text || '';
+    try {
+      await handleSendMessage(
+        text,
+        message.message_type || 'text',
+        message.buttons,
+        file,
+        message.local_error ? message.id : undefined
+      );
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Message was not sent');
+    }
+  }, [handleSendMessage]);
+
+  const handleSendTemplate = useCallback(async (input: TemplateSendInput) => {
+    const conversationId = selectedConversationId;
+    if (!conversationId) return;
+    const res = await fetch(`/api/whatsapp/conversations/${conversationId}/template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        template_id: input.templateId,
+        values: input.values,
+        header_media: input.headerFile ? await fileToDataUrl(input.headerFile) : undefined,
+        file_name: input.headerFile?.name,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.code === 'INTERVENE_REQUIRED' || data.code === 'NOT_OWNER') void refreshOwnership(conversationId);
+      throw new Error(data.error || 'Template was not sent');
+    }
+    if (data.message) {
+      const m = data.message as Message;
+      setMessages(prev => mergeMessageLists(prev, [{ ...m, id: m.id || m.message_id || `tpl_${Date.now()}` }]));
+      patchListPreview(conversationId, {
+        last_message_text: getDisplayText(m) || m.message_text,
+        last_message_at: m.created_at || new Date().toISOString(),
+        last_message_direction: 'outgoing',
+      });
+    }
+  }, [selectedConversationId, patchListPreview, refreshOwnership]);
 
   // Handle conversation update
   const handleUpdateConversation = useCallback(async (updates: {
@@ -865,6 +984,34 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     onMessage: (event: WSEvent) => {
       if (event.conversationId && event.message) {
         const incomingMid = (event.message as { message_id?: string })?.message_id;
+        const ev = event as WSEvent & { status_only?: boolean };
+        const statusOnly = ev.status_only || (event.message as { status_only?: boolean }).status_only;
+        if (statusOnly) {
+          if (event.conversationId !== selectedConversationId || !incomingMid) return;
+          const patch = event.message as { status?: string; error_title?: string };
+          setMessages(prev => {
+            if (!prev.some(m => m.message_id === incomingMid)) return prev;
+            return prev.map(m =>
+              m.message_id === incomingMid
+                ? { ...m, status: patch.status || m.status, ...(patch.error_title ? { error_title: patch.error_title } : {}) }
+                : m
+            );
+          });
+          return;
+        }
+        if (event.conversationId === selectedConversationId && event.message.direction === 'incoming') {
+          const at = (event.message as { created_at?: string }).created_at || new Date().toISOString();
+          setReplyWindow(prev =>
+            prev && prev.transport === 'cloud'
+              ? {
+                  ...prev,
+                  open: true,
+                  last_incoming_at: at,
+                  expires_at: new Date(new Date(at).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+                }
+              : prev
+          );
+        }
         if (event.conversationId === selectedConversationId) {
           setMessages(prev => {
             const incoming = {
@@ -944,14 +1091,87 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
         });
       }
     },
+    onConversationHidden: (event: WSEvent) => {
+      const hiddenId = event.conversationId;
+      if (!hiddenId) return;
+      setConversations(prev => prev.filter(c => c.id !== hiddenId));
+      if (selectedConvIdSseRef.current === hiddenId) {
+        setSelectedConversationId(null);
+        setSelectedConversation(null);
+        setMessages([]);
+        setOwnership(null);
+        setOwnershipEvents([]);
+        setNotice('This chat is now handled by another team member.');
+      }
+    },
     onConversationUpdate: (event: WSEvent) => {
       if (event.conversation) {
+        const raw = event.conversation as Record<string, any>;
+        if (raw.inbox_state) {
+          event.conversation = {
+            ...raw,
+            is_owned: raw.inbox_state === 'intervened' && !!raw.assigned_to,
+            owner_name: raw.owner_name ?? null,
+            assigned_agent_name: raw.owner_name ?? undefined,
+          };
+        }
+        const ownershipEvent = raw.ownership_event as
+          | { type: string; actor_user_id: string | null; target_user_id: string | null }
+          | null
+          | undefined;
+        if (ownershipEvent && user?.id && ownershipEvent.actor_user_id !== user.id) {
+          const who = raw.whatsapp_display_name || raw.customer_name || raw.from_number || 'A customer';
+          const openIt = () => {
+            pendingOpenRef.current = raw.id;
+            setConversations(prev => [...prev]);
+          };
+          if (ownershipEvent.type === 'requested' || ownershipEvent.type === 'released') {
+            playInboxChime();
+            showInboxBrowserNotification('Customer waiting on WhatsApp', `${who} is waiting for a person.`, openIt);
+          } else if (
+            (ownershipEvent.type === 'transferred' || ownershipEvent.type === 'taken_over') &&
+            ownershipEvent.target_user_id === user.id
+          ) {
+            playInboxChime();
+            showInboxBrowserNotification('WhatsApp chat assigned to you', `The chat with ${who} is now yours.`, openIt);
+          }
+        }
+        if (raw.id && raw.id === selectedConvIdSseRef.current && (ownershipEvent || raw.inbox_state)) {
+          void refreshOwnership(raw.id);
+        }
+        const activeInbox = inboxFilterRef.current;
+        const matchesInboxFilter = (c: ConversationType, wasListed: boolean): boolean => {
+          if (!activeInbox.state) return true;
+          // Message-driven updates carry no ownership fields: keep listed rows, don't pull in unknown ones.
+          if (!raw.inbox_state) return wasListed;
+          const state = effectiveInboxState(c);
+          if (state !== activeInbox.state) return false;
+          if (activeInbox.state === 'intervened' && activeInbox.intervenedBy) {
+            if (activeInbox.intervenedBy === 'me') return c.assigned_to === user?.id;
+            if (activeInbox.intervenedBy === 'others') return c.assigned_to !== user?.id;
+            return c.assigned_to === activeInbox.intervenedBy;
+          }
+          return true;
+        };
+        const evConversation = event.conversation as ConversationType;
         setConversations(prev => {
+          const wasListed = prev.some(c => c.id === raw.id);
+          const next = applyConversationUpdate(prev, evConversation);
+          return next.filter(c => c.id === selectedConvIdSseRef.current || c.id !== raw.id || matchesInboxFilter(c, wasListed));
+        });
+
+        if (selectedConversationId === evConversation.id) {
+          setSelectedConversation(prev => prev ? { ...prev, ...evConversation } : null);
+        }
+      }
+
+      function applyConversationUpdate(prev: ConversationType[], evConversation: ConversationType): ConversationType[] {
+        {
           // In live mode the list is keyed by JID, but SSE events carry the DB UUID
           // as `id` and the JID as `conversation_id`. Match by EITHER so we patch the
           // existing live row and don't inject a duplicate UUID-keyed phantom row.
-          const evConvIdRaw = (event.conversation as { conversation_id?: string }).conversation_id;
-          const evId = event.conversation?.id;
+          const evConvIdRaw = evConversation.conversation_id;
+          const evId = evConversation.id;
           const matchKey = (c: ConversationType): boolean => {
             if (evId && c.id === evId) return true;
             if (evConvIdRaw && (c.id === evConvIdRaw || (c as { conversation_id?: string }).conversation_id === evConvIdRaw)) return true;
@@ -962,18 +1182,18 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
             const conv = prev[index];
             const isPinned = conv.is_pinned || false;
             const oldLastMessageAt = conv.last_message_at;
-            const newLastMessageAt = event.conversation.last_message_at;
+            const newLastMessageAt = evConversation.last_message_at;
             const lastMessageAtChanged = newLastMessageAt && newLastMessageAt !== oldLastMessageAt;
             
             // Patch fields only — but PRESERVE the existing row's `id` so we don't
             // accidentally rewrite a JID-keyed live row to a UUID-keyed one.
             const updatedConv: ConversationType = { 
               ...conv, 
-              ...event.conversation,
+              ...evConversation,
               id: conv.id,
-              last_message_direction: (event.conversation.last_message_direction || conv.last_message_direction) as 'incoming' | 'outgoing',
-              unread_count: event.conversation.unread_count !== undefined 
-                ? event.conversation.unread_count 
+              last_message_direction: (evConversation.last_message_direction || conv.last_message_direction) as 'incoming' | 'outgoing',
+              unread_count: evConversation.unread_count !== undefined 
+                ? evConversation.unread_count 
                 : conv.unread_count
             };
             
@@ -1007,16 +1227,12 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
             const updated = [...prev];
             const firstNonPinnedIndex = updated.findIndex(c => !c.is_pinned);
             if (firstNonPinnedIndex >= 0) {
-              updated.splice(firstNonPinnedIndex, 0, event.conversation as ConversationType);
+              updated.splice(firstNonPinnedIndex, 0, evConversation);
             } else {
-              updated.unshift(event.conversation as ConversationType);
+              updated.unshift(evConversation);
             }
             return updated;
           }
-        });
-
-        if (selectedConversationId === event.conversation.id) {
-          setSelectedConversation(prev => prev ? { ...prev, ...event.conversation } : null);
         }
       }
     },
@@ -1067,7 +1283,7 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
   useEffect(() => {
     if (business?.id) {
       const hasActiveFilters =
-        Object.keys(filters).length > 0 || searchQuery.trim() || activeSummaryFilter !== null;
+        Object.keys(filters).length > 0 || debouncedSearch.trim() || activeSummaryFilter !== null || inboxFilter.state !== null;
 
       if (!hasActiveFilters) {
         const cached = getConversationsCache(business.id);
@@ -1080,7 +1296,7 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
 
       fetchConversations();
     }
-  }, [business?.id, filters, searchQuery, activeSummaryFilter, fetchConversations]);
+  }, [business?.id, filters, debouncedSearch, activeSummaryFilter, inboxFilter, fetchConversations]);
 
   // Check WhatsApp connection status periodically
   useEffect(() => {
@@ -1210,15 +1426,14 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     }
   }, [selectedConversationId, fetchMessages]);
 
-  if (!business?.id) {
-    return (
-      <div className="flex items-center justify-center h-[600px]">
-        <p className="text-gray-600">Please select a business</p>
-      </div>
-    );
-  }
+  const handleInboxFilter = useCallback((next: InboxFilter) => {
+    setActiveSummaryFilter(null);
+    setFilters({});
+    setInboxFilter(next);
+  }, []);
 
   const handleSummaryFilterClick = useCallback((filter: 'unread' | 'new' | 'open' | 'pending' | 'closed' | string | null, type?: 'status' | 'label' | 'lead_status') => {
+    setInboxFilter({ state: null });
     if (!filter) {
       // Clear all filters
       setActiveSummaryFilter(null);
@@ -1261,6 +1476,25 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
     }
   }, [business?.id, fetchConversations]);
 
+  const handleConversationStarted = useCallback((conversationId: string | null) => {
+    if (conversationId) {
+      openConversationById(conversationId);
+    } else {
+      setTimeout(() => void fetchConversationsRef.current?.(true, false, 0), 1500);
+    }
+  }, [openConversationById]);
+
+  if (!business?.id) {
+    return (
+      <div className="flex items-center justify-center h-[600px]">
+        <p className="text-gray-600">Please select a business</p>
+      </div>
+    );
+  }
+
+  const paneClass = (pane: 'list' | 'chat' | 'contact') =>
+    `${mobilePane === pane ? 'flex' : 'hidden'} lg:flex flex-col min-h-0 overflow-hidden`;
+
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden" style={{ minHeight: 0 }}>
       {/* Summary Bar */}
@@ -1271,6 +1505,8 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
               businessId={business.id}
               activeFilter={filters.lead_status || filters.label_id || activeSummaryFilter || null}
               onFilterClick={handleSummaryFilterClick}
+              inboxFilter={inboxFilter}
+              onInboxFilter={handleInboxFilter}
             />
           </div>
           <div className="flex items-center flex-wrap justify-end gap-3 ml-4 text-sm text-gray-600">
@@ -1315,27 +1551,40 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
       
       {/* 3-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* Left Panel: Conversation List */}
-        <ConversationList
-          conversations={conversations}
-          selectedId={selectedConversationId}
-          onSelect={handleSelectConversation}
-          onSearch={setSearchQuery}
-          filters={filters}
-          onFilterChange={setFilters}
-          loading={loading}
-          isLoadingMore={isLoadingMore}
-          onScroll={handleConversationListScroll}
-          businessId={business.id}
-          initialPhoneNumber={initialPhoneNumber}
-        />
+        <div className={paneClass('list')}>
+          <ConversationList
+            conversations={conversations}
+            selectedId={selectedConversationId}
+            onSelect={handleSelectConversation}
+            onSearch={setSearchQuery}
+            filters={filters}
+            onFilterChange={setFilters}
+            loading={loading}
+            isLoadingMore={isLoadingMore}
+            onScroll={handleConversationListScroll}
+            businessId={business.id}
+            initialPhoneNumber={initialPhoneNumber}
+            currentUserId={user?.id}
+            onConversationStarted={handleConversationStarted}
+          />
+        </div>
 
-        {/* Center Panel: Chat Window */}
+        <div className={paneClass('chat')}>
         <ChatWindow
           conversation={selectedConversation}
           messages={messages}
           onSendMessage={handleSendMessage}
-          onUpdateConversation={handleUpdateConversation}
+          replyWindow={replyWindow}
+          onSendTemplate={handleSendTemplate}
+          onRetryMessage={(m) => void handleRetryMessage(m)}
+          onBack={() => setMobilePane('list')}
+          onShowContact={selectedConversationId ? () => setMobilePane('contact') : undefined}
+          currentUserName={user?.name ?? null}
+          ownership={ownership}
+          ownershipEvents={ownershipEvents}
+          currentUserId={user?.id}
+          teamMembers={teamMembers}
+          onOwnershipAction={handleOwnershipAction}
           onBotStateChange={(id, state) => {
             setConversations(prev => prev.map(c => (c.id === id ? { ...c, ...state } : c)));
             setSelectedConversation(prev => (prev && prev.id === id ? { ...prev, ...state } : prev));
@@ -1359,8 +1608,21 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
           hasMoreMessages={hasMoreMessages}
           onRefreshMessages={handleRefreshMessages}
         />
+        </div>
 
-        {/* Right Panel: Contact/CRM Panel */}
+        <div className={paneClass('contact')}>
+        <div className="flex items-center gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 py-2 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobilePane('chat')}
+            className="rounded-full p-2 text-gray-700 hover:bg-gray-200"
+            aria-label="Back to chat"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-medium text-gray-900">Contact info</span>
+        </div>
+        <div className="flex-1 min-h-0">
         {selectedConversationId ? (
           <ContactPanel
             conversationId={selectedConversationId}
@@ -1378,6 +1640,13 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
             onNoteDeleted={handleNoteDeleted}
             loading={loadingContact}
             leadProfile={leadProfile}
+            ownership={ownership}
+            onLabelsChange={(labels) =>
+              setConversations(prev => prev.map(c => (c.id === selectedConversationId ? { ...c, labels } : c)))
+            }
+            onBlockedChange={(blocked) =>
+              setConversations(prev => prev.map(c => (c.id === selectedConversationId ? { ...c, is_blocked: blocked } : c)))
+            }
           />
         ) : (
           <div className="flex items-center justify-center bg-white border-l border-gray-200">
@@ -1386,7 +1655,10 @@ export function ConversationsTab({ initialPhoneNumber }: ConversationsTabProps) 
             </div>
           </div>
         )}
+        </div>
+        </div>
       </div>
+      {notice && <Toast message={notice} type="info" onClose={() => setNotice(null)} />}
     </div>
   );
 }

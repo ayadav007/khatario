@@ -10,6 +10,7 @@ import type { PoolClient } from 'pg';
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { RBAC_STANDARD_ACTIONS, type RbacPermissionFlag } from '@/lib/rbac-permission-catalog';
+import { connectSeatViolations } from '@/lib/users/connect-seats';
 
 export type PermissionFlags = Record<RbacPermissionFlag, boolean>;
 export type PermissionMap = Map<string, PermissionFlags>;
@@ -253,6 +254,32 @@ function assertWithinAuthority(changes: PermissionChange[], authority: Authority
   }
 }
 
+async function assertConnectAgentsStayWithinSeat(
+  q: PoolClient,
+  roleId: string,
+  businessId: string,
+  after: PermissionMap
+): Promise<void> {
+  const agents = Number(
+    (
+      await q.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM users WHERE role_id = $1 AND business_id = $2 AND seat_type = 'connect'`,
+        [roleId, businessId]
+      )
+    ).rows[0]?.n ?? 0
+  );
+  if (!agents) return;
+  const violations = connectSeatViolations(after);
+  if (violations.length) {
+    throw new RolePermissionError(
+      409,
+      'ROLE_HELD_BY_CONNECT_AGENTS',
+      'WhatsApp agents use this role, and they can only answer chats and view customers, items, invoices and orders. Move them to Billing users first or keep the role within those limits.',
+      { permissions: violations, connectAgents: agents }
+    );
+  }
+}
+
 async function writeChanges(q: PoolClient, roleId: string, before: PermissionMap, after: PermissionMap): Promise<void> {
   const modules = new Set([...before.keys(), ...after.keys()]);
   for (const m of modules) {
@@ -373,6 +400,7 @@ export async function updateRolePermissions(p: {
     const changes = diff(before, after);
     const authority = await loadActorAuthority(c, p.actorId, p.businessId);
     assertWithinAuthority(changes, authority);
+    await assertConnectAgentsStayWithinSeat(c, role.id, p.businessId, after);
 
     await writeChanges(c, role.id, before, after);
     await writeAudit(c, {
