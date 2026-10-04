@@ -24,11 +24,15 @@ import {
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
+import { useCapabilityCheck } from '@/hooks/useCapability';
+import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
 export default function NewEmployeePage() {
   const router = useRouter();
   const { business, user } = useAuth();
   const { canAdd, loading: permissionsLoading } = usePermissions();
+  const { hasCapability } = useCapabilityCheck();
+  const fullHr = hasFullHrFeatures((key) => hasCapability(key, 'view'));
   const [loading, setLoading] = useState(false);
   
   // Check authorization before rendering form
@@ -142,9 +146,9 @@ export default function NewEmployeePage() {
         employee_code: formData.employee_code || null, // Auto-generate if empty
         designation: formData.designation || null,
         department: formData.department || null,
-        default_shift_id: formData.default_shift_id || null,
+        default_shift_id: fullHr ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: formData.reporting_manager_id || null,
+        reporting_manager_id: fullHr ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
@@ -153,11 +157,10 @@ export default function NewEmployeePage() {
         bank_account_number: formData.bank_account_number || null,
         bank_ifsc: formData.bank_ifsc || null,
         bank_name: formData.bank_name || null,
-        pan_number: formData.pan_number || null,
-        aadhaar_number: formData.aadhaar_number || null,
-        // Note: role_id is not set - employees don't have console access, so no roles
-        created_by_user_id: user?.id, // Required for authorization
-        send_portal_invite: sendPortalInvite,
+        pan_number: fullHr ? formData.pan_number || null : null,
+        aadhaar_number: fullHr ? formData.aadhaar_number || null : null,
+        created_by_user_id: user?.id,
+        send_portal_invite: fullHr ? sendPortalInvite : false,
         portal_invite_via: portalInviteVia,
       };
 
@@ -254,7 +257,7 @@ export default function NewEmployeePage() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="john@example.com"
-                    helperText="Optional — needed only if you send the portal invite by email"
+                    helperText="Optional"
                   />
                   <Input
                     label="Employee Code (Optional)"
@@ -267,7 +270,7 @@ export default function NewEmployeePage() {
                   <div className="md:col-span-2">
                     <p className="text-sm text-text-secondary flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
-                      Note: Employees have attendance-only access. To grant console access (create invoices, purchases, etc.), create a User instead.
+                      This is a staff record for attendance and salary. To let someone log in and create invoices, add them under Settings → Users.
                     </p>
                   </div>
                 </div>
@@ -298,11 +301,13 @@ export default function NewEmployeePage() {
                     onChange={(v) => setFormData({ ...formData, department: v })}
                     placeholder="e.g. Sales"
                   />
-                  <EmployeeShiftSelect
-                    businessId={business?.id}
-                    value={formData.default_shift_id}
-                    onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
-                  />
+                  {fullHr ? (
+                    <EmployeeShiftSelect
+                      businessId={business?.id}
+                      value={formData.default_shift_id}
+                      onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
+                    />
+                  ) : null}
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-1">
                       Employment Type
@@ -318,24 +323,22 @@ export default function NewEmployeePage() {
                       <option value="contract">Contract</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">
-                      Access Type
-                    </label>
-                    <select
-                      name="access_type"
-                      value={formData.access_type}
-                      onChange={handleChange}
-                      className="input"
-                      disabled
-                    >
-                      <option value="attendance_only">Attendance Only</option>
-                    </select>
-                    <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />
-                      Employees can only mark attendance via face recognition or OTP login
-                    </p>
-                  </div>
+                  {fullHr ? (
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        Access Type
+                      </label>
+                      <select
+                        name="access_type"
+                        value={formData.access_type}
+                        onChange={handleChange}
+                        className="input"
+                        disabled
+                      >
+                        <option value="attendance_only">Attendance Only</option>
+                      </select>
+                    </div>
+                  ) : null}
                   <Input
                     label="Joining Date"
                     name="joining_date"
@@ -343,7 +346,7 @@ export default function NewEmployeePage() {
                     value={formData.joining_date}
                     onChange={handleChange}
                   />
-                  {business?.id && user?.id ? (
+                  {fullHr && business?.id && user?.id ? (
                     <ReportingManagerSelect
                       businessId={business.id}
                       userId={user.id}
@@ -426,33 +429,34 @@ export default function NewEmployeePage() {
                 </div>
               </Card>
 
-              {/* Documents */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Documents (Optional)</h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="PAN Number"
-                    name="pan_number"
-                    value={formData.pan_number}
-                    onChange={handleChange}
-                    placeholder="ABCDE1234F"
-                    maxLength={10}
-                  />
-                  <Input
-                    label="Aadhaar Number"
-                    name="aadhaar_number"
-                    value={formData.aadhaar_number}
-                    onChange={handleChange}
-                    placeholder="1234 5678 9012"
-                    maxLength={12}
-                  />
-                </div>
-              </Card>
+              {fullHr ? (
+                <Card>
+                  <div className="flex items-center gap-2 mb-4">
+                    <FileText className="w-5 h-5 text-primary-600" />
+                    <h2 className="text-lg font-semibold text-text-primary">Documents (Optional)</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="PAN Number"
+                      name="pan_number"
+                      value={formData.pan_number}
+                      onChange={handleChange}
+                      placeholder="ABCDE1234F"
+                      maxLength={10}
+                    />
+                    <Input
+                      label="Aadhaar Number"
+                      name="aadhaar_number"
+                      value={formData.aadhaar_number}
+                      onChange={handleChange}
+                      placeholder="1234 5678 9012"
+                      maxLength={12}
+                    />
+                  </div>
+                </Card>
+              ) : null}
 
-              {business?.id ? (
+              {fullHr && business?.id ? (
                 <EmployeePortalInviteCard
                   mode="form"
                   employeeId=""
@@ -480,12 +484,12 @@ export default function NewEmployeePage() {
                     <span className="text-text-secondary">Phone:</span>
                     <p className="font-medium text-text-primary">{formData.phone || '—'}</p>
                   </div>
-                  <div>
-                    <span className="text-text-secondary">Access Type:</span>
-                    <p className="font-medium text-text-primary">
-                      Attendance Only
-                    </p>
-                  </div>
+                  {fullHr ? (
+                    <div>
+                      <span className="text-text-secondary">Access Type:</span>
+                      <p className="font-medium text-text-primary">Attendance Only</p>
+                    </div>
+                  ) : null}
                   {formData.designation && (
                     <div>
                       <span className="text-text-secondary">Designation:</span>

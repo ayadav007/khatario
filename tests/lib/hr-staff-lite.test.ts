@@ -41,6 +41,8 @@ describe('HR Staff Lite', () => {
     expect(hrefs).not.toContain('/employees/leaves');
     expect(hrefs).not.toContain('/employees/recruitment');
     expect(hrefs).not.toContain('/hr/shifts/roster');
+    expect(hrefs).not.toContain('/hr/dashboard');
+    expect(hrefs).not.toContain('/activity-logs');
   });
 
   it('shows full HR nav when leave is enabled', () => {

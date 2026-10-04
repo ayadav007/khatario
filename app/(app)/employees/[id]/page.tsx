@@ -15,6 +15,8 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { EmployeePortalInviteCard } from '@/components/hr/EmployeePortalInviteCard';
 import { EmployeeSalaryStructurePanel } from '@/components/hr/EmployeeSalaryStructurePanel';
+import { useCapabilityCheck } from '@/hooks/useCapability';
+import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -31,6 +33,8 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
+  const { hasCapability } = useCapabilityCheck();
+  const fullHr = hasFullHrFeatures((key) => hasCapability(key, 'view'));
   const employeeId = params.id as string;
   
   const [activeTab, setActiveTab] = useState<'overview' | 'salary' | 'documents' | 'face_enrollment'>('overview');
@@ -218,7 +222,7 @@ export default function EmployeeDetailPage() {
           </div>
         </Card>
 
-        {business?.id ? (
+        {fullHr && business?.id ? (
           <EmployeePortalInviteCard
             employeeId={employeeId}
             businessId={business.id}
@@ -242,6 +246,8 @@ export default function EmployeeDetailPage() {
             >
               Overview
             </button>
+            {fullHr ? (
+              <>
             <button
               onClick={() => setActiveTab('salary')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -272,6 +278,8 @@ export default function EmployeeDetailPage() {
             >
               Face Enrollment
             </button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -435,7 +443,7 @@ export default function EmployeeDetailPage() {
           </div>
         )}
 
-        {activeTab === 'salary' && business?.id && user?.id && (
+        {fullHr && activeTab === 'salary' && business?.id && user?.id && (
           <EmployeeSalaryStructurePanel
             employeeId={employeeId}
             businessId={business.id}
@@ -448,7 +456,7 @@ export default function EmployeeDetailPage() {
           />
         )}
 
-        {activeTab === 'documents' && (
+        {fullHr && activeTab === 'documents' && (
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-text-primary">Documents</h2>
@@ -494,7 +502,7 @@ export default function EmployeeDetailPage() {
           </Card>
         )}
 
-        {activeTab === 'face_enrollment' && (
+        {fullHr && activeTab === 'face_enrollment' && (
           <FaceEnrollmentTab employeeId={employeeId} businessId={business?.id || ''} />
         )}
       </div>

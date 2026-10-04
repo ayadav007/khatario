@@ -43,7 +43,7 @@ export const HR_ADMIN_NAV_ITEMS: HrAdminNavItem[] = [
   { href: '/hr/reports', label: 'HR Reports', module: 'employees', featureKey: 'hr_employees', requiresFullHr: true },
   { href: '/employees/performance', label: 'Performance', module: 'employees', featureKey: 'hr_employees', requiresFullHr: true },
   { href: '/employees/tasks', label: 'Tasks', module: 'employees', featureKey: 'hr_employees', requiresFullHr: true },
-  { href: '/activity-logs', label: 'Activity Logs', module: 'settings' },
+  { href: '/activity-logs', label: 'Activity Logs', module: 'settings', requiresFullHr: true },
 ];
 
 export const HR_NAV_SECTION_TITLE = 'HR & Employees';
