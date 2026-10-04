@@ -97,11 +97,12 @@ export async function GET(
         u.phone as user_phone,
         u.is_active as user_is_active,
         u.role_id,
-        rm.name as reporting_manager_name,
+        rm_user.name as reporting_manager_name,
         rm.employee_code as reporting_manager_code
       FROM employees e
       INNER JOIN users u ON e.id = u.id
       LEFT JOIN employees rm ON e.reporting_manager_id = rm.id
+      LEFT JOIN users rm_user ON rm.id = rm_user.id
       WHERE e.id = $1 AND e.business_id = $2`,
       [employeeId, businessId]
     );

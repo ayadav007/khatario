@@ -180,7 +180,7 @@ export default function NewEmployeePage() {
         } else {
           setToast({ message: 'Employee created successfully', type: 'success' });
           setTimeout(() => {
-            router.push(`/employees/${data.employee.id}`);
+            router.push('/employees');
           }, 1000);
         }
       } else {

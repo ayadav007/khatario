@@ -30,6 +30,7 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import { DarkModeProvider } from "@/contexts/DarkModeContext";
 import { DateRangeProvider } from "@/contexts/DateRangeContext";
 import { ServiceWorkerRegistration } from "@/components/system/ServiceWorkerRegistration";
+import { DisableNumberInputWheel } from "@/components/system/DisableNumberInputWheel";
 import { OfflineSyncProvider } from "@/contexts/OfflineSyncContext";
 import { CatalogSyncProvider } from "@/contexts/CatalogSyncContext";
 import { OfflineBannerProvider } from "@/contexts/OfflineBannerContext";
@@ -99,6 +100,7 @@ export default function RootLayout({
                       <RuntimeProbeBoot />
                       <DateRangeProvider>
                         <ServiceWorkerRegistration />
+                        <DisableNumberInputWheel />
                         {children}
                       </DateRangeProvider>
                       </CatalogSyncProvider>
