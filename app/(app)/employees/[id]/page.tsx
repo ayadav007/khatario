@@ -159,9 +159,11 @@ export default function EmployeeDetailPage() {
                   <Chip className={getStatusColor()}>
                     {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
                   </Chip>
+                  {fullHr ? (
                   <Chip className={getAccessTypeColor()}>
                     {employee.access_type === 'full' ? 'Full Access' : 'Attendance Only'}
                   </Chip>
+                  ) : null}
                   {employee.role_name && (
                     <Chip className="bg-gray-100 text-gray-800">
                       {employee.role_name}
@@ -323,7 +325,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
-                {employee.reporting_manager_name && (
+                {fullHr && employee.reporting_manager_name && (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Reporting Manager:</span>
                     <span className="font-medium text-text-primary">
@@ -339,6 +341,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
+                {fullHr ? (
                 <button
                   type="button"
                   onClick={() => setActiveTab('salary')}
@@ -346,6 +349,7 @@ export default function EmployeeDetailPage() {
                 >
                   View salary structure →
                 </button>
+                ) : null}
               </div>
             </Card>
 
@@ -413,7 +417,7 @@ export default function EmployeeDetailPage() {
               </Card>
             )}
 
-            {/* Documents Summary */}
+            {fullHr ? (
             <Card>
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-5 h-5 text-primary-600" />
@@ -440,6 +444,7 @@ export default function EmployeeDetailPage() {
                 </div>
               </div>
             </Card>
+            ) : null}
           </div>
         )}
 

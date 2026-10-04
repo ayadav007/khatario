@@ -19,6 +19,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { usePermissions } from '@/hooks/usePermissions';
 import { EmployeePortalResetActions } from '@/components/hr/EmployeePortalResetActions';
+import { useFullHr } from '@/hooks/useFullHr';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -31,6 +32,7 @@ interface EmployeeWithUser extends Employee {
 
 export default function EmployeesPage() {
   const { business, user } = useAuth();
+  const fullHr = useFullHr();
   const router = useRouter();
   const [employees, setEmployees] = useState<EmployeeWithUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +195,7 @@ export default function EmployeesPage() {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+              {fullHr ? (
               <select
                 value={accessTypeFilter}
                 onChange={(e) => setAccessTypeFilter(e.target.value as typeof accessTypeFilter)}
@@ -202,6 +205,7 @@ export default function EmployeesPage() {
                 <option value="full">Full Access</option>
                 <option value="attendance_only">Attendance Only</option>
               </select>
+              ) : null}
             </div>
           </div>
         </Card>
@@ -246,6 +250,7 @@ export default function EmployeesPage() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+                {fullHr ? (
                 <div>
                   <label className="type-label mb-1.5 block">Access type</label>
                   <select
@@ -258,6 +263,7 @@ export default function EmployeesPage() {
                     <option value="attendance_only">Attendance Only</option>
                   </select>
                 </div>
+                ) : null}
                 <Button className="w-full" onClick={() => setShowMobileFilters(false)}>
                   Apply
                 </Button>
@@ -297,7 +303,9 @@ export default function EmployeesPage() {
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Code</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Designation</th>
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Department</th>
-                    <th className="text-left py-3 px-4 font-semibold text-text-primary">Access</th>
+                    {fullHr ? (
+                      <th className="text-left py-3 px-4 font-semibold text-text-primary">Access</th>
+                    ) : null}
                     <th className="text-left py-3 px-4 font-semibold text-text-primary">Status</th>
                     <th className="text-right py-3 px-4 font-semibold text-text-primary">Actions</th>
                   </tr>
@@ -361,6 +369,7 @@ export default function EmployeesPage() {
                           <span className="text-text-secondary">—</span>
                         )}
                       </td>
+                      {fullHr ? (
                       <td className="py-4 px-4">
                         <Chip
                           className={getAccessTypeColor(employee.access_type)}
@@ -368,6 +377,7 @@ export default function EmployeesPage() {
                           {employee.access_type === 'full' ? 'Full Access' : 'Attendance Only'}
                         </Chip>
                       </td>
+                      ) : null}
                       <td className="py-4 px-4">
                         <Chip className={getStatusColor(employee)}>
                           {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
@@ -385,7 +395,7 @@ export default function EmployeesPage() {
                               <Edit className="w-4 h-4" />
                             </Button>
                           </Link>
-                          {canUpdateEmployees && business?.id ? (
+                          {fullHr && canUpdateEmployees && business?.id ? (
                             <EmployeePortalResetActions
                               variant="compact"
                               employeeId={employee.id}
@@ -499,9 +509,11 @@ export default function EmployeesPage() {
                     {employee.department ? (
                       <span className="text-xs text-text-muted">{employee.department}</span>
                     ) : null}
+                    {fullHr ? (
                     <span className="chip text-2xs">
                       {employee.access_type === 'full' ? 'Full access' : 'Attendance only'}
                     </span>
+                    ) : null}
                   </div>
 
                   <div
@@ -547,7 +559,7 @@ export default function EmployeesPage() {
                       />
                     </div>
                     </div>
-                    {canUpdateEmployees && business?.id ? (
+                    {fullHr && canUpdateEmployees && business?.id ? (
                       <EmployeePortalResetActions
                         employeeId={employee.id}
                         businessId={business.id}

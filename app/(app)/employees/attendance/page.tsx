@@ -15,6 +15,7 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
 import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
+import { useFullHr } from '@/hooks/useFullHr';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
   employee_code: string;
@@ -25,6 +26,7 @@ interface AttendanceWithEmployee extends EmployeeAttendance {
 
 export default function AttendanceManagementPage() {
   const { business, user } = useAuth();
+  const fullHr = useFullHr();
   
   // Authorization guard: Check if user can read attendance
   // Uses tri-state model: 'loading' | 'allowed' | 'denied'
@@ -193,8 +195,12 @@ export default function AttendanceManagementPage() {
                 <option value="all">All Status</option>
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
-                <option value="half_day">Half Day</option>
-                <option value="leave">Leave</option>
+                {fullHr ? (
+                  <>
+                    <option value="half_day">Half Day</option>
+                    <option value="leave">Leave</option>
+                  </>
+                ) : null}
               </select>
             </div>
           </div>

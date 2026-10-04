@@ -26,6 +26,7 @@ import { Toast, ToastType } from '@/components/ui/Toast';
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
+import { useFullHr } from '@/hooks/useFullHr';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 function dateInputValue(value: unknown): string {
@@ -38,6 +39,7 @@ export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
+  const fullHr = useFullHr();
   const employeeId = params.id as string;
 
   const { status: authStatus, reason } = useAuthorizationGuard({
@@ -214,9 +216,9 @@ export default function EditEmployeePage() {
         weekly_off_override: formData.useWeeklyOffOverride
           ? { fixed_days: formData.weekly_off_fixed_days, nth_rules: [] }
           : null,
-        default_shift_id: formData.default_shift_id || null,
+        default_shift_id: fullHr ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: formData.reporting_manager_id || null,
+        reporting_manager_id: fullHr ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
@@ -225,13 +227,13 @@ export default function EditEmployeePage() {
         bank_account_number: formData.bank_account_number.trim() || null,
         bank_ifsc: formData.bank_ifsc.trim() || null,
         bank_name: formData.bank_name.trim() || null,
-        pan_number: formData.pan_number.trim() || null,
-        aadhaar_number: formData.aadhaar_number.trim() || null,
-        uan: formData.uan.trim() || null,
-        esi_ip_number: formData.esi_ip_number.trim() || null,
-        pf_account_no: formData.pf_account_no.trim() || null,
-        pf_applicable: formData.pf_applicable,
-        esi_applicable: formData.esi_applicable,
+        pan_number: fullHr ? formData.pan_number.trim() || null : null,
+        aadhaar_number: fullHr ? formData.aadhaar_number.trim() || null : null,
+        uan: fullHr ? formData.uan.trim() || null : null,
+        esi_ip_number: fullHr ? formData.esi_ip_number.trim() || null : null,
+        pf_account_no: fullHr ? formData.pf_account_no.trim() || null : null,
+        pf_applicable: fullHr ? formData.pf_applicable : false,
+        esi_applicable: fullHr ? formData.esi_applicable : false,
       };
 
       const res = await fetch(
@@ -370,11 +372,13 @@ export default function EditEmployeePage() {
                   value={formData.department}
                   onChange={(v) => setFormData({ ...formData, department: v })}
                 />
-                <EmployeeShiftSelect
-                  businessId={business?.id}
-                  value={formData.default_shift_id}
-                  onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
-                />
+                {fullHr ? (
+                  <EmployeeShiftSelect
+                    businessId={business?.id}
+                    value={formData.default_shift_id}
+                    onChange={(v) => setFormData({ ...formData, default_shift_id: v })}
+                  />
+                ) : null}
                 <div>
                   <label className="mb-1 block text-sm font-medium text-text-secondary">Branch</label>
                   <select
@@ -391,7 +395,9 @@ export default function EditEmployeePage() {
                     ))}
                   </select>
                   <p className="mt-1 text-xs text-text-muted">
-                    Branch determines which holiday list applies to this employee.
+                    {fullHr
+                      ? 'Branch determines which holiday list applies to this employee.'
+                      : 'Optional — used if you have more than one location.'}
                   </p>
                 </div>
                 <div className="md:col-span-2 space-y-2">
@@ -447,7 +453,7 @@ export default function EditEmployeePage() {
                   value={formData.joining_date}
                   onChange={handleChange}
                 />
-                {business?.id && user?.id ? (
+                {fullHr && business?.id && user?.id ? (
                   <ReportingManagerSelect
                     businessId={business.id}
                     userId={user.id}
@@ -525,6 +531,7 @@ export default function EditEmployeePage() {
               </p>
             </Card>
 
+            {fullHr ? (
             <Card>
               <div className="mb-4 flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary-600" />
@@ -590,13 +597,16 @@ export default function EditEmployeePage() {
                 </label>
               </div>
             </Card>
+            ) : null}
           </div>
 
           <div className="lg:col-span-1">
             <Card className="sticky top-4">
               <h3 className="mb-4 font-semibold text-text-primary">Save changes</h3>
               <p className="mb-4 text-sm text-text-secondary">
-                Updates apply immediately. Salary structure is managed on the employee profile.
+                {fullHr
+                  ? 'Updates apply immediately. Salary structure is managed on the employee profile.'
+                  : 'Updates apply immediately.'}
               </p>
               <Button type="submit" className="w-full" disabled={saving}>
                 {saving ? (

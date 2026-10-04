@@ -15,6 +15,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import Link from 'next/link';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useFullHr } from '@/hooks/useFullHr';
 import {
   type ProRataSalaryResult,
 } from '@/lib/hr/salary-payroll-helpers';
@@ -39,6 +40,7 @@ type RecoveryBreakdownRow = {
 export default function NewSalaryPaymentPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const fullHr = useFullHr();
   const toast = useToastContext();
   const [loading, setLoading] = useState(false);
   
@@ -308,11 +310,31 @@ export default function NewSalaryPaymentPage() {
         body: JSON.stringify({
           business_id: business.id,
           ...formData,
+          ...(fullHr
+            ? {}
+            : {
+                hra: '0',
+                transport_allowance: '0',
+                medical_allowance: '0',
+                special_allowance: '0',
+                overtime: '0',
+                provident_fund: '0',
+                professional_tax: '0',
+                tds: '0',
+                attendance_deduction: '0',
+                employer_provident_fund: '0',
+                esi_employee: '0',
+                esi_employer: '0',
+                pf_wage: '',
+                esi_wage: '',
+                leave_days: '',
+                overtime_hours: '',
+              }),
           processed_by: user?.id,
           generate_payslip: true,
-          component_breakdown: componentBreakdown,
+          component_breakdown: fullHr ? componentBreakdown : [],
           attendance_adjustment_details:
-            attendanceDeductionLines.length > 0
+            fullHr && attendanceDeductionLines.length > 0
               ? { lines: attendanceDeductionLines, summary: attendanceDeductionSummary }
               : null,
         }),
@@ -412,7 +434,7 @@ export default function NewSalaryPaymentPage() {
               />
             </div>
 
-            {prefillSource === 'salary_structure' && (
+            {fullHr && prefillSource === 'salary_structure' && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                 <p className="font-medium">Prefilled from salary structure</p>
                 <p className="mt-1 text-blue-800/90">
@@ -447,6 +469,8 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                {fullHr ? (
+                  <>
                 <Input
                   label="HRA"
                   type="number"
@@ -487,6 +511,8 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                  </>
+                ) : null}
                 <Input
                   label="Bonus"
                   type="number"
@@ -517,7 +543,7 @@ export default function NewSalaryPaymentPage() {
             {/* Deductions */}
             <div>
               <h2 className="text-lg font-semibold text-text-primary mb-4">Deductions</h2>
-              {attendanceDeductionLines.length > 0 && (
+              {fullHr && attendanceDeductionLines.length > 0 && (
                 <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <p className="font-medium">Suggested attendance deductions</p>
                   <ul className="mt-2 space-y-1 text-xs text-amber-800/90">
@@ -565,6 +591,8 @@ export default function NewSalaryPaymentPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {fullHr ? (
+                  <>
                 <Input
                   label="Employee PF"
                   type="number"
@@ -615,6 +643,8 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                  </>
+                ) : null}
                 <Input
                   label="Advance Recovery"
                   type="number"
@@ -632,6 +662,7 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                {fullHr ? (
                 <Input
                   label="Attendance deduction (late / LWP)"
                   type="number"
@@ -640,6 +671,7 @@ export default function NewSalaryPaymentPage() {
                   min="0"
                   step="0.01"
                 />
+                ) : null}
                 <Input
                   label="Other Deductions"
                   type="number"
@@ -695,6 +727,7 @@ export default function NewSalaryPaymentPage() {
                   onChange={(e) => setFormData({ ...formData, absent_days: e.target.value })}
                   min="0"
                 />
+                {fullHr ? (
                 <Input
                   label="Leave Days"
                   type="number"
@@ -702,6 +735,7 @@ export default function NewSalaryPaymentPage() {
                   onChange={(e) => setFormData({ ...formData, leave_days: e.target.value })}
                   min="0"
                 />
+                ) : null}
               </div>
             </div>
 

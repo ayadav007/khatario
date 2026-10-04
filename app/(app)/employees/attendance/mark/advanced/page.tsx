@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useFullHr } from '@/hooks/useFullHr';
 
 interface Employee {
   id: string;
@@ -31,6 +32,7 @@ interface Shift {
 export default function AdvancedMarkAttendancePage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const fullHr = useFullHr();
   const toast = useToastContext();
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -104,7 +106,7 @@ export default function AdvancedMarkAttendancePage() {
         body: JSON.stringify({
           business_id: business.id,
           ...formData,
-          shift_id: formData.shift_id || null,
+          shift_id: fullHr ? formData.shift_id || null : null,
           check_in_time: formData.check_in_time
             ? `${formData.date}T${formData.check_in_time}:00`
             : null,
@@ -177,6 +179,7 @@ export default function AdvancedMarkAttendancePage() {
               required
             />
 
+            {fullHr ? (
             <div>
               <label className="mb-1 block text-sm font-medium text-text-secondary">
                 Shift (Optional)
@@ -194,6 +197,7 @@ export default function AdvancedMarkAttendancePage() {
                 ))}
               </select>
             </div>
+            ) : null}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-text-secondary">
@@ -213,7 +217,7 @@ export default function AdvancedMarkAttendancePage() {
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
                 <option value="half_day">Half Day</option>
-                <option value="leave">Leave</option>
+                {fullHr ? <option value="leave">Leave</option> : null}
               </select>
             </div>
 
