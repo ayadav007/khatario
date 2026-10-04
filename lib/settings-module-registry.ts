@@ -637,16 +637,23 @@ export function getEnabledSettingsModuleDefinitions(
 
   return SETTINGS_MODULE_ORDER.filter((m) => modules.includes(m)).map((platformModule) => {
     const def = SETTINGS_BY_PLATFORM_MODULE[platformModule];
-    const groups = def.groups
-      .map((group) => {
-        const prepared = prepareGroup(group, modules, opts, platformModule);
-        return prepared
-          ? { id: prepared.groupId, title: prepared.title, links: prepared.links }
-          : null;
-      })
-      .filter((group): group is SettingsNavGroup => group !== null);
+    const groups: SettingsNavGroup[] = [];
+    for (const group of def.groups) {
+      const prepared = prepareGroup(group, modules, opts, platformModule);
+      if (!prepared) continue;
+      groups.push({
+        id: prepared.groupId,
+        title: prepared.title,
+        links: prepared.links.map(({ module: _module, ...link }) => link),
+      });
+    }
 
-    return { platformModule, ...def, groups };
+    return {
+      platformModule,
+      title: def.title,
+      description: def.description,
+      groups,
+    };
   });
 }
 
