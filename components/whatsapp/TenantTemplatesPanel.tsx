@@ -2,11 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, RefreshCw, Sparkles, Trash2, Send, Pencil, X } from 'lucide-react';
+import { Plus, RefreshCw, Sparkles, Trash2, Send, Pencil, X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { SettingsBlock } from '@/components/whatsapp/settings/SettingsBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Toast, type ToastType } from '@/components/ui/Toast';
+import {
+  WhatsAppTemplatePreviewCard,
+  WhatsAppTemplatePreviewModal,
+  type WhatsAppPreviewModel,
+} from '@/components/whatsapp/WhatsAppTemplatePreview';
 import {
   TENANT_WA_EVENTS,
   TENANT_WA_FIELDS,
@@ -97,6 +102,14 @@ export function TenantTemplatesPanel() {
   const [editing, setEditing] = useState<Template | 'new' | DraftSeed | null>(null);
   const [reminders, setReminders] = useState<ReminderBundle | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [tab, setTab] = useState<'explore' | 'all' | 'draft' | 'pending' | 'approved'>('explore');
+  const [groupFilter, setGroupFilter] = useState<'all' | TenantWaEventGroup>('all');
+  const [query, setQuery] = useState('');
+  const [preview, setPreview] = useState<{
+    model: WhatsAppPreviewModel;
+    onPrimary?: () => void;
+    primaryLabel?: string;
+  } | null>(null);
 
   const notify = (message: string, type: ToastType = 'success') => setToast({ message, type });
 
@@ -201,6 +214,36 @@ export function TenantTemplatesPanel() {
     return out;
   }, []);
 
+  const exploreCards = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return TENANT_WA_EVENTS.flatMap((event) =>
+      eventStarters(event).map((starter) => ({ event, starter })),
+    ).filter(({ event, starter }) => {
+      if (groupFilter !== 'all' && event.group !== groupFilter) return false;
+      if (!q) return true;
+      return (
+        starter.label.toLowerCase().includes(q) ||
+        starter.body.toLowerCase().includes(q) ||
+        event.label.toLowerCase().includes(q)
+      );
+    });
+  }, [groupFilter, query]);
+
+  const listedTemplates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return templates.filter((t) => {
+      if (tab === 'draft' && !['draft', 'rejected'].includes(t.status)) return false;
+      if (tab === 'pending' && t.status !== 'pending') return false;
+      if (tab === 'approved' && t.status !== 'approved') return false;
+      if (!q) return true;
+      return (
+        t.name.toLowerCase().includes(q) ||
+        t.body_text.toLowerCase().includes(q) ||
+        t.status.toLowerCase().includes(q)
+      );
+    });
+  }, [templates, tab, query]);
+
   if (loading) {
     return (
       <SettingsBlock title="Message templates" description="Approved wording Meta lets you send from your own number.">
@@ -233,6 +276,239 @@ export function TenantTemplatesPanel() {
 
   return (
     <>
+      <SettingsBlock
+        title="Template messages"
+        description="Browse ready wordings, preview them as WhatsApp will show, then submit to Meta. Map approved templates to Khatario events below."
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            <input
+              className={`${inputCls} pl-9`}
+              placeholder="Search templates (status, name…)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={sync} isLoading={busy === 'sync'}>
+              {busy !== 'sync' && <RefreshCw className="h-4 w-4" />} Sync status
+            </Button>
+            <Button size="sm" onClick={() => setEditing('new')}>
+              <Plus className="h-4 w-4" /> Create template
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex gap-1 overflow-x-auto border-b border-border pb-px dark:border-border-dark">
+          {(
+            [
+              ['explore', 'Explore'],
+              ['all', 'All'],
+              ['draft', 'Draft'],
+              ['pending', 'Pending'],
+              ['approved', 'Approved'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`whitespace-nowrap px-3 py-2 text-sm font-medium ${
+                tab === id
+                  ? 'border-b-2 border-primary-600 text-primary-700'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {editing ? (
+          <div id="wa-template-editor">
+            <TemplateForm
+              initial={editing !== 'new' && 'id' in editing ? editing : null}
+              seed={editing !== 'new' && editing !== null && !('id' in editing) ? editing : null}
+              onCancel={() => setEditing(null)}
+              onSaved={async (msg) => {
+                setEditing(null);
+                await load();
+                notify(msg);
+              }}
+              notify={notify}
+            />
+          </div>
+        ) : null}
+
+        {tab === 'explore' ? (
+          <div className="flex flex-col gap-4 lg:flex-row">
+            <nav className="flex shrink-0 flex-row flex-wrap gap-1 lg:w-40 lg:flex-col">
+              {(
+                [
+                  ['all', 'General'],
+                  ['store', TENANT_WA_GROUP_LABELS.store],
+                  ['delivery', TENANT_WA_GROUP_LABELS.delivery],
+                  ['billing', TENANT_WA_GROUP_LABELS.billing],
+                  ['merchant', TENANT_WA_GROUP_LABELS.merchant],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`rounded-lg px-3 py-2 text-left text-sm ${
+                    groupFilter === id ? 'bg-primary-50 font-medium text-primary-800 dark:bg-primary-950/40' : 'text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                  onClick={() => setGroupFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {exploreCards.map(({ event, starter }) => (
+                <article key={`${event.key}-${starter.id}`} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm dark:border-border-dark">
+                  <div className="bg-emerald-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    {starter.category.toLowerCase()}
+                  </div>
+                  <div className="flex flex-1 flex-col p-4">
+                    <h3 className="text-sm font-semibold text-text-primary">{event.label}</h3>
+                    {starter.label !== 'Suggested wording' ? (
+                      <p className="mt-0.5 text-xs text-text-muted">{starter.label}</p>
+                    ) : null}
+                    <p className="mt-2 line-clamp-4 flex-1 text-sm text-text-secondary">
+                      {previewTemplateBody(starter.body, starter.variableMap)}
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() =>
+                          setPreview({
+                            model: {
+                              title: event.label,
+                              header: starter.category === 'MARKETING' ? null : starter.label,
+                              headerKind: starter.category === 'MARKETING' ? 'image' : 'text',
+                              body: starter.body,
+                              footer: starter.footer,
+                            },
+                            primaryLabel: 'Use this wording',
+                            onPrimary: () => {
+                              setPreview(null);
+                              setEditing(seedFromStarter(starter));
+                            },
+                          })
+                        }
+                      >
+                        Preview
+                      </Button>
+                      <Button size="sm" className="flex-1" onClick={() => setEditing(seedFromStarter(starter))}>
+                        Use
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {exploreCards.length === 0 ? (
+                <p className="col-span-full text-sm text-text-secondary">No starters match this search.</p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {listedTemplates.map((t) => {
+              const editable = t.source === 'khatario' && ['draft', 'rejected'].includes(t.status);
+              return (
+                <article key={t.id} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm dark:border-border-dark">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2">
+                    {statusBadge(t.status)}
+                    <span className="text-[10px] uppercase text-text-muted">{t.category.toLowerCase()}</span>
+                  </div>
+                  <div className="flex flex-1 flex-col px-4 pb-4">
+                    <h3 className="font-mono text-sm font-semibold text-text-primary">{t.name}</h3>
+                    <p className="mt-2 line-clamp-4 flex-1 text-sm text-text-secondary">
+                      {t.body_text || '(no text synced)'}
+                    </p>
+                    {t.status === 'rejected' && t.rejected_reason ? (
+                      <p className="mt-1 text-xs text-red-600">Meta: {t.rejected_reason}</p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          setPreview({
+                            model: {
+                              title: t.name,
+                              header: t.header_text,
+                              headerKind: (t.header_format as WhatsAppPreviewModel['headerKind']) || 'none',
+                              body: t.body_text || '',
+                              footer: t.footer_text,
+                              examples: t.example_vars,
+                            },
+                            primaryLabel: editable ? 'Review and submit' : undefined,
+                            onPrimary: editable
+                              ? () => {
+                                  setPreview(null);
+                                  submit(t);
+                                }
+                              : undefined,
+                          })
+                        }
+                      >
+                        Preview
+                      </Button>
+                      {editable ? (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => setEditing(t)}>
+                            <Pencil className="h-4 w-4" /> Edit
+                          </Button>
+                          <Button size="sm" onClick={() => submit(t)} isLoading={busy === `submit:${t.id}`}>
+                            {busy !== `submit:${t.id}` && <Send className="h-4 w-4" />} Submit
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEditing({
+                              name: `${t.name}_v2`,
+                              language: t.language,
+                              category: t.category,
+                              body_text: t.body_text,
+                              footer_text: t.footer_text,
+                              example_vars: t.example_vars || [],
+                            })
+                          }
+                        >
+                          Copy
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => remove(t)}
+                        isLoading={busy === `delete:${t.id}`}
+                        aria-label={`Delete ${t.name}`}
+                      >
+                        {busy !== `delete:${t.id}` && <Trash2 className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            {listedTemplates.length === 0 ? (
+              <p className="col-span-full text-sm text-text-secondary">
+                No templates in this tab. Explore a wording, or create one.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </SettingsBlock>
+
       <SettingsBlock
         title="Which wording each message uses"
         description="Pick an approved template for each message Khatario sends. Start from a suggested wording, edit it and submit it to Meta. It is used only after Meta approves it."
@@ -267,105 +543,13 @@ export function TenantTemplatesPanel() {
         ))}
       </SettingsBlock>
 
-      <SettingsBlock
-        title="Your templates"
-        description="Templates on your WhatsApp Business Account. New ones need Meta's approval, usually within minutes."
-      >
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => setEditing('new')}>
-              <Plus className="h-4 w-4" /> New template
-            </Button>
-          </div>
-
-          {editing ? (
-            <div id="wa-template-editor">
-              <TemplateForm
-                initial={editing !== 'new' && 'id' in editing ? editing : null}
-                seed={editing !== 'new' && editing !== null && !('id' in editing) ? editing : null}
-                onCancel={() => setEditing(null)}
-                onSaved={async (msg) => {
-                  setEditing(null);
-                  await load();
-                  notify(msg);
-                }}
-                notify={notify}
-              />
-            </div>
-          ) : null}
-
-          {templates.length === 0 ? (
-            <p className="text-sm text-text-secondary">
-              No templates yet. Pick a wording on a message above, edit it, and submit it to Meta. Or sync templates
-              you already created in Meta.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border rounded-lg border border-border">
-              {templates.map((t) => {
-                const editable = t.source === 'khatario' && ['draft', 'rejected'].includes(t.status);
-                return (
-                  <li key={t.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-sm font-medium text-text-primary">{t.name}</span>
-                        <span className="text-xs text-text-muted">
-                          {t.language} · {t.category.toLowerCase()}
-                          {t.source === 'meta' ? ' · from Meta' : ''}
-                        </span>
-                        {statusBadge(t.status)}
-                      </div>
-                      <p className="line-clamp-2 text-sm text-text-secondary">
-                        {t.category === 'AUTHENTICATION'
-                          ? 'Fixed Meta text: "<code> is your verification code."'
-                          : t.body_text || '(no text synced)'}
-                      </p>
-                      {t.status === 'rejected' && t.rejected_reason ? (
-                        <p className="text-xs text-red-600">Meta: {t.rejected_reason}</p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      {editable ? (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => setEditing(t)}>
-                            <Pencil className="h-4 w-4" /> Edit
-                          </Button>
-                          <Button size="sm" onClick={() => submit(t)} isLoading={busy === `submit:${t.id}`}>
-                            {busy !== `submit:${t.id}` && <Send className="h-4 w-4" />} Submit
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setEditing({
-                              name: `${t.name}_v2`,
-                              language: t.language,
-                              category: t.category,
-                              body_text: t.body_text,
-                              footer_text: t.footer_text,
-                              example_vars: t.example_vars || [],
-                            })
-                          }
-                        >
-                          <Pencil className="h-4 w-4" /> Copy to a new draft
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove(t)}
-                        isLoading={busy === `delete:${t.id}`}
-                        aria-label={`Delete ${t.name}`}
-                      >
-                        {busy !== `delete:${t.id}` && <Trash2 className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-      </SettingsBlock>
+      <WhatsAppTemplatePreviewModal
+        open={!!preview}
+        model={preview?.model ?? null}
+        onClose={() => setPreview(null)}
+        primaryLabel={preview?.primaryLabel}
+        onPrimary={preview?.onPrimary}
+      />
 
       {toast ? <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} /> : null}
     </>
@@ -746,6 +930,7 @@ function TemplateForm({
   const [footer, setFooter] = useState(initial?.footer_text ?? seed?.footer_text ?? '');
   const [examples, setExamples] = useState<string[]>(initial?.example_vars ?? seed?.example_vars ?? []);
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const placeholders = category === 'AUTHENTICATION' ? 0 : countPlaceholders(body);
 
@@ -781,6 +966,17 @@ function TemplateForm({
     }
   };
 
+  const previewModel: WhatsAppPreviewModel = {
+    title: name || 'Preview',
+    header,
+    headerKind: header.trim() ? 'text' : 'none',
+    body:
+      category === 'AUTHENTICATION'
+        ? '{{1}} is your verification code. For your security, do not share this code.'
+        : body,
+    footer,
+  };
+
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-secondary p-4">
       <div className="flex items-center justify-between">
@@ -791,6 +987,8 @@ function TemplateForm({
           <X className="h-4 w-4" />
         </button>
       </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-sm sm:col-span-1">
           <span className="font-medium text-text-secondary">Name</span>
@@ -883,8 +1081,8 @@ function TemplateForm({
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => save(true)} isLoading={saving === 'submit'} disabled={!!saving}>
-          Save and submit to Meta
+        <Button size="sm" onClick={() => setReviewOpen(true)} disabled={!!saving}>
+          Review and submit
         </Button>
         <Button variant="secondary" size="sm" onClick={() => save(false)} isLoading={saving === 'draft'} disabled={!!saving}>
           Save draft
@@ -893,6 +1091,23 @@ function TemplateForm({
           Cancel
         </Button>
       </div>
+      </div>
+      <div className="hidden lg:block">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">WhatsApp preview</p>
+        <WhatsAppTemplatePreviewCard model={previewModel} />
+      </div>
+      </div>
+      <WhatsAppTemplatePreviewModal
+        open={reviewOpen}
+        model={previewModel}
+        onClose={() => setReviewOpen(false)}
+        primaryLabel="Submit to Meta"
+        primaryDisabled={!!saving}
+        onPrimary={() => {
+          setReviewOpen(false);
+          void save(true);
+        }}
+      />
     </div>
   );
 }
