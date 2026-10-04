@@ -12,7 +12,8 @@ export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermissi
   if (blocked) return blocked;
   const rl = checkRateLimit(`whatsapp-flows-generate:${businessId}`, 5, 60 * 60_000);
   if (!rl.allowed) return NextResponse.json({ error: 'Try again in a little while.' }, { status: 429 });
-  const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+  const raw = body && typeof body === 'object' ? (body as { prompt?: unknown }) : {};
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
   if (prompt.length < 8) {
     return NextResponse.json({ error: 'Describe what the flow should do in a bit more detail.' }, { status: 400 });
   }

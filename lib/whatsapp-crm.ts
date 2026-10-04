@@ -2175,7 +2175,7 @@ export async function processIncomingMessage(
       if (flowHit && 'openShop' in flowHit && flowHit.openShop) {
         const shop = await runShopReply('shop');
         if (shop) return shop;
-      } else if (flowHit) {
+      } else if (flowHit && !('openShop' in flowHit)) {
         return { ...flowHit, delaySeconds: flowHit.delaySeconds ?? (botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0) };
       }
     }

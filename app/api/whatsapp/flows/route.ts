@@ -15,12 +15,13 @@ export const GET = withWhatsAppPremiumApi({ managePermission: true }, async ({ b
 export const POST = withWhatsAppPremiumApi({ parseJsonBody: true, managePermission: true }, async ({ businessId, userId, body, request }) => {
   const blocked = await assertNotConnectAgentWrite({ request, userId });
   if (blocked) return blocked;
-  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  const raw = body && typeof body === 'object' ? (body as { name?: unknown; starter?: unknown; definition?: unknown }) : {};
+  const name = typeof raw.name === 'string' ? raw.name.trim() : '';
   if (!name) return NextResponse.json({ error: 'Give this flow a name.' }, { status: 400 });
   let definition = emptyFlowDefinition();
-  if (body?.starter === 'shop_order') definition = shopOrderStarterDefinition();
-  else if (body?.definition) {
-    const parsed = parseFlowDefinition(body.definition);
+  if (raw.starter === 'shop_order') definition = shopOrderStarterDefinition();
+  else if (raw.definition) {
+    const parsed = parseFlowDefinition(raw.definition);
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
     definition = parsed.data;
   }

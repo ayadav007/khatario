@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare, List, MousePointerClick, HelpCircle, GitBranch, Zap, CircleStop, Play } from 'lucide-react';
+import { MessageSquare, List, MousePointerClick, HelpCircle, GitBranch, Zap, StopCircle, Play } from 'lucide-react';
 import type { FlowNodeType } from '@/lib/whatsapp/flows/schema';
 
 const ITEMS: Array<{ type: FlowNodeType; label: string; icon: typeof Play }> = [
@@ -11,7 +11,7 @@ const ITEMS: Array<{ type: FlowNodeType; label: string; icon: typeof Play }> = [
   { type: 'ask', label: 'Ask', icon: HelpCircle },
   { type: 'branch', label: 'Branch', icon: GitBranch },
   { type: 'action', label: 'Action', icon: Zap },
-  { type: 'end', label: 'End', icon: CircleStop },
+  { type: 'end', label: 'End', icon: StopCircle },
 ];
 
 export function FlowPalette({ onAdd }: { onAdd: (type: FlowNodeType) => void }) {
