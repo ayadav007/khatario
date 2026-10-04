@@ -3,7 +3,7 @@
  * Keep labels/hrefs in sync here — do not duplicate lists in Sidebar / more-navigation.
  */
 
-import { hasFullHrFeatures } from '@/lib/subscription/ensure-complimentary-hr';
+import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
 export type HrAdminNavItem = {
   href: string;

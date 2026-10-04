@@ -4,7 +4,7 @@
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
-import { hasFullHrFeatures } from '@/lib/subscription/ensure-complimentary-hr';
+import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
 export const SETTINGS_MODULE_ORDER: PlatformModule[] = ['billing', 'hr', 'connect', 'crm'];
 

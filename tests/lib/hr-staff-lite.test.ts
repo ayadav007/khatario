@@ -4,7 +4,7 @@ import {
   HR_LITE_NAV_SECTION_TITLE,
   HR_NAV_SECTION_TITLE,
 } from '@/lib/hr/hr-admin-nav';
-import { hasFullHrFeatures, isHrStaffLitePlanId } from '@/lib/subscription/ensure-complimentary-hr';
+import { hasFullHrFeatures, isHrStaffLitePlanId } from '@/lib/subscription/hr-lite';
 import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { isModuleOnFreePlan } from '@/lib/subscription/module-operational-check';
 import type { ModuleSubscriptionRow } from '@/lib/subscription/module-subscriptions';

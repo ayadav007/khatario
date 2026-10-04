@@ -107,19 +107,6 @@ export async function ensureComplimentaryHrForBilling(
   return { attached, planId: attachedPlan };
 }
 
-/** Whether an HR plan id is the complimentary Staff Lite tier. */
-export function isHrStaffLitePlanId(planId: string | null | undefined): boolean {
-  return planId === HR_STAFF_LITE_PLAN_ID;
-}
-
-/**
- * Full HR suite (leave / portal / advanced IA) vs Billing-bundled Lite.
- * Lite has employees + attendance + simple payroll only.
- */
-export function hasFullHrFeatures(hasFeature: (featureKey: string) => boolean): boolean {
-  return hasFeature('hr_leaves') || hasFeature('hr_employee_portal');
-}
-
 /** Read current HR plan for a business (optional helper for UI). */
 export async function getHrModulePlanId(businessId: string): Promise<string | null> {
   const row = await queryOne<{ plan_id: string }>(
