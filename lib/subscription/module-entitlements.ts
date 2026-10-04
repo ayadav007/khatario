@@ -47,6 +47,7 @@ export const LIMIT_OWNER_MODULE: Partial<Record<LimitCheckType, PlatformModule>>
   performance_reviews: 'hr',
   email: 'billing',
   branches: 'billing',
+  connect_agents: 'connect',
 };
 
 /**
@@ -135,7 +136,8 @@ export const MODULE_ADD_CONFIG: Record<
     trialDays: SIGNUP_TRIAL_DAYS,
     status: 'trial',
     label: 'HR',
-    description: 'Employees, attendance, payroll, and leave.',
+    description:
+      'Full HR beyond Billing Lite: leave, shifts, employee portal, and statutory payroll.',
   },
   connect: {
     trialPlanId: 'connect',

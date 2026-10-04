@@ -6,6 +6,7 @@ import type { PlatformModule } from '@/lib/platform-modules';
 import {
   CONNECT_FREE_PLAN_ID,
   HR_FREE_PLAN_ID,
+  HR_STAFF_LITE_PLAN_ID,
 } from '@/lib/product-lines';
 import {
   isPaidGracePeriodActive,
@@ -70,6 +71,8 @@ export function isModuleSubscriptionOperational(row: ModuleSubscriptionRow): boo
 export function isModuleOnFreePlan(row: ModuleSubscriptionRow): boolean {
   const freeId = getFreePlanIdForModule(row.module_key);
   if (row.plan_id === freeId) return true;
+  // Complimentary HR Lite is bundled with Billing — not a cancellable paid SKU.
+  if (row.module_key === 'hr' && row.plan_id === HR_STAFF_LITE_PLAN_ID) return true;
   const effective = asEffectiveSub(row);
   if (row.status === 'trial' && !isTrialEntitlementActive(effective)) {
     return true;

@@ -4,6 +4,7 @@
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
+import { hasFullHrFeatures } from '@/lib/subscription/ensure-complimentary-hr';
 
 export const SETTINGS_MODULE_ORDER: PlatformModule[] = ['billing', 'hr', 'connect', 'crm'];
 
@@ -13,6 +14,8 @@ export type SettingsNavLink = {
   /** PBAC permission module (defaults to settings in builders). */
   permissionModule?: string;
   featureKey?: string;
+  /** Hide on Billing-bundled HR Lite (needs leave/portal / paid HR). */
+  requiresFullHr?: boolean;
   searchKeywords?: string[];
 };
 
@@ -268,11 +271,13 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hr-employee',
             label: 'Employee management',
             searchKeywords: ['probation', 'employee id', 'visibility'],
+            requiresFullHr: true,
           },
           {
             href: '/settings/hr-exit',
             label: 'Exit process',
             searchKeywords: ['resignation', 'notice period', 'fnf'],
+            requiresFullHr: true,
           },
           branchesLink,
           financialYearsLink,
@@ -292,38 +297,49 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         id: 'hr-time-attendance',
         title: 'Time & attendance',
         links: [
-          { href: '/settings/shifts', label: 'Shifts' },
-          { href: '/hr/shifts/roster', label: 'Shift roster' },
+          { href: '/settings/shifts', label: 'Shifts', requiresFullHr: true },
+          { href: '/hr/shifts/roster', label: 'Shift roster', requiresFullHr: true },
           {
             href: '/hr/shifts/bulk-assign',
             label: 'Bulk assign shifts',
             searchKeywords: ['roster', 'assign', 'shift'],
+            requiresFullHr: true,
           },
           { href: '/settings/weekly-off', label: 'Weekly off' },
-          { href: '/settings/holiday-lists', label: 'Holiday lists' },
-          { href: '/settings/holidays', label: 'Holidays (legacy)' },
-          { href: '/settings/ot-policy', label: 'Overtime policy' },
-          { href: '/settings/attendance-policy', label: 'Attendance policy' },
-          { href: '/settings/attendance-regularization', label: 'Regularization' },
+          { href: '/settings/holiday-lists', label: 'Holiday lists', requiresFullHr: true },
+          { href: '/settings/holidays', label: 'Holidays (legacy)', requiresFullHr: true },
+          { href: '/settings/ot-policy', label: 'Overtime policy', requiresFullHr: true },
+          {
+            href: '/settings/attendance-policy',
+            label: 'Attendance policy',
+            requiresFullHr: true,
+          },
+          {
+            href: '/settings/attendance-regularization',
+            label: 'Regularization',
+            requiresFullHr: true,
+          },
         ],
       },
       {
         id: 'hr-leave',
         title: 'Leave',
         links: [
-          { href: '/settings/leave-plan', label: 'Leave plan' },
-          { href: '/settings/leave-types', label: 'Leave types' },
-          { href: '/settings/holidays', label: 'Holidays' },
-          { href: '/settings/hr-approval', label: 'HR approvals' },
+          { href: '/settings/leave-plan', label: 'Leave plan', requiresFullHr: true },
+          { href: '/settings/leave-types', label: 'Leave types', requiresFullHr: true },
+          { href: '/settings/holidays', label: 'Holidays', requiresFullHr: true },
+          { href: '/settings/hr-approval', label: 'HR approvals', requiresFullHr: true },
           {
             href: '/hr/leaves/year-end',
             label: 'Leave year-end',
             searchKeywords: ['carry forward', 'lapse', 'year end'],
+            requiresFullHr: true,
           },
           {
             href: '/hr/leaves/import-balances',
             label: 'Import leave balances',
             searchKeywords: ['import', 'balances', 'opening'],
+            requiresFullHr: true,
           },
         ],
       },
@@ -335,11 +351,13 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/payroll',
             label: 'Payroll settings',
             searchKeywords: ['pay day', 'salary', 'statutory'],
+            requiresFullHr: true,
           },
           {
             href: '/settings/salary-components',
             label: 'Salary components',
             searchKeywords: ['basic', 'hra', 'allowance', 'earning', 'deduction', 'payroll'],
+            requiresFullHr: true,
           },
           { href: '/settings/commission-rules', label: 'Commission rules' },
         ],
@@ -352,16 +370,19 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hiring',
             label: 'Hiring defaults',
             searchKeywords: ['recruitment', 'onboarding invite'],
+            requiresFullHr: true,
           },
           {
             href: '/settings/onboarding-templates',
             label: 'Onboarding templates',
             searchKeywords: ['recruitment', 'portal'],
+            requiresFullHr: true,
           },
           {
             href: '/settings/offer-letter',
             label: 'Offer letter template',
             searchKeywords: ['offer', 'pdf'],
+            requiresFullHr: true,
           },
         ],
       },
@@ -373,6 +394,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/employee-portal',
             label: 'Portal & kiosk',
             searchKeywords: ['ess', 'self service', 'kiosk'],
+            requiresFullHr: true,
           },
         ],
       },
@@ -517,7 +539,11 @@ function filterLinks(
   links: SettingsNavLink[],
   opts: SettingsNavFilterOptions,
 ): SettingsNavLink[] {
+  const fullHr = opts.hasFeature ? hasFullHrFeatures(opts.hasFeature) : true;
   return links.filter((link) => {
+    if (link.requiresFullHr && !fullHr) {
+      return false;
+    }
     if (link.featureKey && opts.hasFeature && !opts.hasFeature(link.featureKey)) {
       return false;
     }

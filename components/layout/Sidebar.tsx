@@ -65,7 +65,12 @@ import {
   isNavSectionVisible,
 } from '@/lib/platform-modules';
 import { buildSettingsSidebarBlocks } from '@/lib/settings-module-registry';
-import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+import {
+  getHrNavSectionTitle,
+  getVisibleHrAdminNavItems,
+  HR_LITE_NAV_SECTION_TITLE,
+  HR_NAV_SECTION_TITLE,
+} from '@/lib/hr/hr-admin-nav';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -465,7 +470,9 @@ export const Sidebar = React.memo(function Sidebar() {
           return null;
         }
         if (
-          (item.label === HR_NAV_SECTION_TITLE || item.label === 'HR & Payroll') &&
+          (item.label === HR_NAV_SECTION_TITLE ||
+            item.label === HR_LITE_NAV_SECTION_TITLE ||
+            item.label === 'HR & Payroll') &&
           !hasPlatformModule('hr')
         ) {
           return null;
@@ -677,12 +684,12 @@ export const Sidebar = React.memo(function Sidebar() {
       ],
     },
     
-    // 7. HR & EMPLOYEES — single source: lib/hr/hr-admin-nav.ts
+    // 7. Staff / HR — single source: lib/hr/hr-admin-nav.ts (Lite vs Full)
     {
-      label: HR_NAV_SECTION_TITLE,
+      label: getHrNavSectionTitle(hasFeature),
       icon: UserCheck,
       collapsible: true,
-      subItems: HR_ADMIN_NAV_ITEMS.map((item) => ({
+      subItems: getVisibleHrAdminNavItems(hasFeature).map((item) => ({
         href: item.href,
         label: item.label,
         module: item.module,
@@ -741,72 +748,84 @@ export const Sidebar = React.memo(function Sidebar() {
                   {
                     href: '/whatsapp/dashboard',
                     label: 'Dashboard',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/conversations',
                     label: 'Conversations',
+                    module: 'whatsapp_inbox',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/reminders',
                     label: 'Payment Reminders',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/orders',
                     label: 'Order Verification',
+                    module: 'whatsapp_inbox',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/bot-rules',
                     label: 'Bot Rules',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/send-message',
                     label: 'Send Message',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/campaigns',
                     label: 'Campaigns',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/contacts',
                     label: 'Contacts',
+                    module: 'whatsapp_inbox',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/contacts/groups',
                     label: 'Contact Groups',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/group-extractor',
                     label: 'Group Extractor',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/whatsapp/unsubscribes',
                     label: 'Unsubscribes',
+                    module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
                   {
                     href: '/settings/whatsapp',
                     label: 'WhatsApp Settings',
+                    module: 'whatsapp',
                   },
                 ],
               },

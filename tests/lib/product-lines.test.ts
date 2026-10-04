@@ -1,6 +1,7 @@
 import {
   getSignupHref,
   getSignupPlanConfig,
+  HR_STAFF_LITE_PLAN_ID,
   isNavSectionHiddenForProductLine,
   normalizeProductLine,
 } from '@/lib/product-lines';
@@ -36,5 +37,9 @@ describe('product-lines', () => {
     expect(isNavSectionHiddenForProductLine('Sales', 'hr')).toBe(true);
     expect(isNavSectionHiddenForProductLine('HR & Employees', 'hr')).toBe(false);
     expect(isNavSectionHiddenForProductLine('HR & Employees', 'connect')).toBe(true);
+  });
+
+  it('exports the complimentary HR Lite plan id', () => {
+    expect(HR_STAFF_LITE_PLAN_ID).toBe('hr_staff_lite');
   });
 });

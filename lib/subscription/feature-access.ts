@@ -37,6 +37,12 @@ import { normalizeFeatureKey, FeatureKeys } from '../featureKeys';
 
 /** Built-in matrix when `subscription_plan_features` rows are missing (migration drift). */
 const HR_PLAN_FEATURE_FALLBACKS: Record<string, string[]> = {
+  hr_staff_lite: [
+    'hr_employees',
+    'hr_attendance',
+    'hr_payroll',
+    'settings_multi_user',
+  ],
   hr_starter: ['hr_employees', 'hr_attendance', 'settings_multi_user'],
   hr_pro: [
     'hr_employees',
@@ -110,7 +116,12 @@ export class FeatureAccessDeniedError extends Error {
   }
 }
 
-const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set(['free', 'hr_free', 'connect_free']);
+const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set([
+  'free',
+  'hr_free',
+  'hr_staff_lite',
+  'connect_free',
+]);
 
 /**
  * Allows any paid plan (or an active signup trial); denies free/lapsed businesses.

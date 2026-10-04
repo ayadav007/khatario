@@ -292,6 +292,7 @@ export async function checkLimit(
 
   // SAFETY FALLBACK: an enabled product with no subscription row at all gets that product's
   // free plan. Rows that exist but are expired/cancelled are left alone on purpose.
+  // HR + Billing → complimentary Staff Lite (not empty hr_free).
   if (ctx.enabledModules.includes(ownerModule)) {
     const rows = await getModuleSubscriptions(businessId);
     if (!rows.some((r) => r.module_key === ownerModule)) {
@@ -299,15 +300,22 @@ export async function checkLimit(
         `WARNING: Business ${businessId} has no ${ownerModule} subscription row. Assigning the free plan.`
       );
       try {
-        await upsertModuleSubscription(
-          { query: db.query },
-          businessId,
-          ownerModule,
-          getFreePlanIdForModule(ownerModule),
-          'active',
-          null
-        );
-        clearSubscriptionCache(businessId);
+        if (ownerModule === 'hr' && ctx.enabledModules.includes('billing')) {
+          const { ensureComplimentaryHrForBilling } = await import(
+            './subscription/ensure-complimentary-hr'
+          );
+          await ensureComplimentaryHrForBilling(businessId);
+        } else {
+          await upsertModuleSubscription(
+            { query: db.query },
+            businessId,
+            ownerModule,
+            getFreePlanIdForModule(ownerModule),
+            'active',
+            null
+          );
+          clearSubscriptionCache(businessId);
+        }
       } catch (error) {
         console.error('Fallback: Error auto-assigning free plan:', error);
       }

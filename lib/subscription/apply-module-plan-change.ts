@@ -10,6 +10,7 @@ import {
 } from '@/lib/subscription/apply-plan-change';
 import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
+import { ensureComplimentaryHrForBilling } from '@/lib/subscription/ensure-complimentary-hr';
 
 export interface ApplyModulePlanChangeResult {
   business_id: string;
@@ -81,6 +82,11 @@ export async function applyModuleSubscriptionPlanChange(params: {
   }
 
   await enableBusinessModule(params.businessId, params.moduleKey, 'upgrade');
+
+  // Billing Free / Growth / Business / Trial all include HR Lite.
+  if (params.moduleKey === 'billing') {
+    await ensureComplimentaryHrForBilling(params.businessId);
+  }
 
   clearSubscriptionCache(params.businessId);
   clearModuleSubscriptionCache(params.businessId);

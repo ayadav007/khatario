@@ -68,6 +68,7 @@ export const NAV_SECTION_MODULE: Record<string, PlatformModule | null> = {
   Reports: 'billing',
   Supplier: 'billing',
   'HR & Employees': 'hr',
+  Staff: 'hr',
   Tools: null,
   More: null,
   'Settings & data': null,

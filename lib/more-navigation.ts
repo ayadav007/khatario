@@ -7,7 +7,10 @@ import {
   isNavSectionVisible,
   type PlatformModule,
 } from '@/lib/platform-modules';
-import { HR_ADMIN_NAV_ITEMS, HR_NAV_SECTION_TITLE } from '@/lib/hr/hr-admin-nav';
+import {
+  getHrNavSectionTitle,
+  getVisibleHrAdminNavItems,
+} from '@/lib/hr/hr-admin-nav';
 
 export type MoreNavItem = {
   href: string;
@@ -195,9 +198,10 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   );
   if (reports) out.push(reports);
 
+  const hrFeatureCheck = (key: string) => hasFeature(hasCapability, key);
   const hr = section(
-    HR_NAV_SECTION_TITLE,
-    HR_ADMIN_NAV_ITEMS.map((item) => ({
+    getHrNavSectionTitle(hrFeatureCheck),
+    getVisibleHrAdminNavItems(hrFeatureCheck).map((item) => ({
       href: item.href,
       label: item.label,
       module: item.module,

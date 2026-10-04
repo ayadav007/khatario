@@ -11,6 +11,7 @@ import { getSignupPlanConfig, normalizeProductLine } from '@/lib/product-lines';
 import { productLineToModule } from '@/lib/platform-modules';
 import { seedInitialBusinessModules } from '@/lib/business-modules';
 import { seedInitialModuleSubscription } from '@/lib/subscription/module-subscriptions';
+import { ensureComplimentaryHrForBilling } from '@/lib/subscription/ensure-complimentary-hr';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { applyIndustryCoa } from '@/lib/accounting/apply-industry-coa';
 
@@ -425,6 +426,11 @@ export async function POST(request: NextRequest) {
       initialStatus,
       trialDays,
     );
+
+    // Every Billing package (incl. Free after trial) includes HR Lite.
+    if (productLine === 'billing') {
+      await ensureComplimentaryHrForBilling(businessId, client);
+    }
 
     if (softFailures.length > 0) {
       console.warn('Signup soft failures (non-fatal):', softFailures);

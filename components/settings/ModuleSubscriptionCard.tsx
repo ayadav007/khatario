@@ -16,6 +16,7 @@ import {
   type SubscriptionAvailablePlan,
 } from '@/components/subscription/SubscriptionChangePlanModal';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { productLineForModule } from '@/lib/platform-modules';
 import type { PlatformModule } from '@/lib/platform-modules';
 
@@ -51,6 +52,7 @@ const LIMIT_LABELS: Record<string, string> = {
   items: 'Items',
   employees: 'Employees',
   whatsapp: 'WhatsApp/day',
+  connect_agents: 'WhatsApp agents',
 };
 
 function formatDate(dateStr: string | null): string {
@@ -99,6 +101,10 @@ export function ModuleSubscriptionCard({
       if (p.id === TRIAL_PLAN_ID || p.id === 'hr_trial') {
         return subscription?.plan_id === p.id;
       }
+      // Complimentary with Billing — not a purchasable SKU (only show if current).
+      if (p.id === HR_STAFF_LITE_PLAN_ID) {
+        return subscription?.plan_id === HR_STAFF_LITE_PLAN_ID;
+      }
       if (p.id === 'connect_free') return subscription?.plan_id === 'connect_free';
       return true;
     });
@@ -121,9 +127,11 @@ export function ModuleSubscriptionCard({
     );
   }
 
+  const isStaffLite = subscription.plan_id === HR_STAFF_LITE_PLAN_ID;
   const isFree =
     subscription.plan_id === 'free' ||
     subscription.plan_id === 'hr_free' ||
+    isStaffLite ||
     (moduleKey === 'connect' && Number(subscription.price_monthly) === 0);
 
   const isCancelled = Boolean(subscription.cancel_at_period_end);
@@ -156,7 +164,12 @@ export function ModuleSubscriptionCard({
         </div>
 
         <div className="mb-4">
-          {isFree ? (
+          {isStaffLite ? (
+            <div className="flex items-baseline gap-2">
+              <span className="type-kpi-value">Included</span>
+              <span className="text-text-secondary">with Billing · up to 30 staff</span>
+            </div>
+          ) : isFree ? (
             <div className="flex items-baseline gap-2">
               <span className="type-kpi-value">Free</span>
               <span className="text-text-secondary">for this product</span>

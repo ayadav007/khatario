@@ -23,12 +23,12 @@ export const LANDING_HERO_COPY: Record<
   { badges: string[]; headline: string; subhead: string; cta: string; footnote: string }
 > = {
   billing: {
-    badges: ['GST-ready invoicing', 'Made for India'],
+    badges: ['GST-ready invoicing', 'Staff attendance included'],
     headline: 'Still billing by hand at closing time? There is a simpler way.',
     subhead:
-      'Khatario turns your counter into one simple flow: bill with correct GST, share on WhatsApp, track who has paid, and file reports — without wrestling spreadsheets or the CA at midnight.',
+      'Khatario turns your counter into one simple flow: bill with correct GST, share on WhatsApp, track who has paid, and file reports — plus staff attendance and simple salary for up to 30 people, included with every Billing plan.',
     cta: 'Start Billing trial',
-    footnote: 'No credit card to start · Works on phone & computer',
+    footnote: 'No credit card to start · Works on phone & computer · HR Lite included',
   },
   hr: {
     badges: ['Attendance & payroll', 'Made for India'],
@@ -56,6 +56,8 @@ export const TRIAL_EXTENSION_DAYS = 7;
 
 export const HR_TRIAL_PLAN_ID = 'hr_trial' as const;
 export const HR_FREE_PLAN_ID = 'hr_free' as const;
+/** Complimentary HR with every Billing package (incl. Free): 30 staff, simple payroll. */
+export const HR_STAFF_LITE_PLAN_ID = 'hr_staff_lite' as const;
 /** Paid Connect plan (WABA, inbox, AI, templates, automation). */
 export const CONNECT_PLAN_ID = 'connect' as const;
 /** Connect row when Connect is not bought or has lapsed: no premium WhatsApp features. */

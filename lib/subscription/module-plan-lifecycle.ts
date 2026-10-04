@@ -187,4 +187,12 @@ export async function moveModuleSubscriptionToFree(
 
   clearSubscriptionCache(businessId);
   clearModuleSubscriptionCache(businessId);
+
+  // Paid HR cancelled → hr_free; if Billing is still on, restore complimentary Lite.
+  if (moduleKey === 'hr') {
+    const { ensureComplimentaryHrForBilling } = await import(
+      '@/lib/subscription/ensure-complimentary-hr'
+    );
+    await ensureComplimentaryHrForBilling(businessId);
+  }
 }
