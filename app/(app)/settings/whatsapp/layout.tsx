@@ -15,8 +15,10 @@ export default function WhatsAppSettingsLayout({ children }: { children: ReactNo
       description="Connect your business number, then choose what Khatario sends and how customer chats are answered."
       icon={MessageSquare}
     >
-      <WhatsAppSettingsNav hasConnect={hasPlatformModule('connect')} />
-      {children}
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:gap-6">
+        <WhatsAppSettingsNav hasConnect={hasPlatformModule('connect')} />
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
     </SettingsPageShell>
   );
 }

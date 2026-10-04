@@ -9,7 +9,7 @@ import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import type { PlatformModule } from '@/lib/platform-modules';
 
 export function SettingsPageBody({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={clsx('w-full max-w-5xl space-y-6', className)}>{children}</div>;
+  return <div className={clsx('w-full max-w-none space-y-6', className)}>{children}</div>;
 }
 
 /** Annotated settings row (same layout as Business profile and New item): explanation left, card right. */

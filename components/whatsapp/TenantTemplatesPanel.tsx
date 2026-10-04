@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, RefreshCw, Sparkles, Trash2, Send, Pencil, X, Search } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, Sparkles, Trash2, Send, Pencil, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { SettingsBlock } from '@/components/whatsapp/settings/SettingsBlock';
 import { Badge } from '@/components/ui/Badge';
@@ -274,21 +274,34 @@ export function TenantTemplatesPanel() {
     );
   }
 
+  if (editing) {
+    return (
+      <>
+        <TemplateForm
+          initial={editing !== 'new' && 'id' in editing ? editing : null}
+          seed={editing !== 'new' && editing !== null && !('id' in editing) ? editing : null}
+          onCancel={() => setEditing(null)}
+          onSaved={async (msg) => {
+            setEditing(null);
+            await load();
+            notify(msg);
+          }}
+          notify={notify}
+        />
+        {toast ? <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} /> : null}
+      </>
+    );
+  }
+
   return (
     <>
-      <SettingsBlock
-        title="Template messages"
-        description="Browse ready wordings, preview them as WhatsApp will show, then submit to Meta. Map approved templates to Khatario events below."
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-            <input
-              className={`${inputCls} pl-9`}
-              placeholder="Search templates (status, name…)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">Template messages</h2>
+            <p className="mt-0.5 text-sm text-text-secondary">
+              Browse ready wordings, preview them as WhatsApp will show, then submit to Meta.
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={sync} isLoading={busy === 'sync'}>
@@ -298,6 +311,16 @@ export function TenantTemplatesPanel() {
               <Plus className="h-4 w-4" /> Create template
             </Button>
           </div>
+        </div>
+
+        <div className="relative max-w-xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+          <input
+            className={`${inputCls} pl-9`}
+            placeholder="Search templates (status, name…)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
 
         <div className="flex gap-1 overflow-x-auto border-b border-border pb-px dark:border-border-dark">
@@ -325,22 +348,6 @@ export function TenantTemplatesPanel() {
           ))}
         </div>
 
-        {editing ? (
-          <div id="wa-template-editor">
-            <TemplateForm
-              initial={editing !== 'new' && 'id' in editing ? editing : null}
-              seed={editing !== 'new' && editing !== null && !('id' in editing) ? editing : null}
-              onCancel={() => setEditing(null)}
-              onSaved={async (msg) => {
-                setEditing(null);
-                await load();
-                notify(msg);
-              }}
-              notify={notify}
-            />
-          </div>
-        ) : null}
-
         {tab === 'explore' ? (
           <div className="flex flex-col gap-4 lg:flex-row">
             <nav className="flex shrink-0 flex-row flex-wrap gap-1 lg:w-40 lg:flex-col">
@@ -365,7 +372,7 @@ export function TenantTemplatesPanel() {
                 </button>
               ))}
             </nav>
-            <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {exploreCards.map(({ event, starter }) => (
                 <article key={`${event.key}-${starter.id}`} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm dark:border-border-dark">
                   <div className="bg-emerald-600 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white">
@@ -392,6 +399,7 @@ export function TenantTemplatesPanel() {
                               headerKind: starter.category === 'MARKETING' ? 'image' : 'text',
                               body: starter.body,
                               footer: starter.footer,
+                              examples: starter.variableMap.map((k) => TENANT_WA_FIELDS[k].sample),
                             },
                             primaryLabel: 'Use this wording',
                             onPrimary: () => {
@@ -416,7 +424,7 @@ export function TenantTemplatesPanel() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {listedTemplates.map((t) => {
               const editable = t.source === 'khatario' && ['draft', 'rejected'].includes(t.status);
               return (
@@ -507,7 +515,7 @@ export function TenantTemplatesPanel() {
             ) : null}
           </div>
         )}
-      </SettingsBlock>
+      </div>
 
       <SettingsBlock
         title="Which wording each message uses"
@@ -967,136 +975,169 @@ function TemplateForm({
   };
 
   const previewModel: WhatsAppPreviewModel = {
-    title: name || 'Preview',
+    title: name || 'Your business',
     header,
-    headerKind: header.trim() ? 'text' : 'none',
+    headerKind: header.trim() ? 'text' : category === 'MARKETING' ? 'image' : 'none',
     body:
       category === 'AUTHENTICATION'
         ? '{{1}} is your verification code. For your security, do not share this code.'
-        : body,
+        : body || 'Your message will appear here…',
     footer,
+    examples: placeholders > 0 ? Array.from({ length: placeholders }, (_, i) => examples[i] ?? '') : undefined,
+    cta: category === 'AUTHENTICATION' ? 'Copy code' : null,
   };
 
+  const title = initial
+    ? `Edit ${initial.name}`
+    : seed
+      ? 'Edit wording before sending to Meta'
+      : 'New template message';
+
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-surface-secondary p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-text-primary">
-          {initial ? `Edit ${initial.name}` : seed ? 'Edit wording before sending to Meta' : 'New template'}
-        </h4>
-        <button type="button" onClick={onCancel} className="text-text-muted hover:text-text-primary" aria-label="Close">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="text-sm sm:col-span-1">
-          <span className="font-medium text-text-secondary">Name</span>
-          <input
-            className={`${inputCls} mt-1 font-mono`}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!!initial}
-            placeholder="order_update"
-          />
-          <span className="mt-1 block text-xs text-text-muted">Lowercase letters, numbers and _</span>
-        </label>
-        <label className="text-sm">
-          <span className="font-medium text-text-secondary">Language</span>
-          <select className={`${inputCls} mt-1`} value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!!initial}>
-            <option value="en_US">English (US)</option>
-            <option value="en">English</option>
-            <option value="en_GB">English (UK)</option>
-            <option value="hi">Hindi</option>
-            <option value="mr">Marathi</option>
-            <option value="gu">Gujarati</option>
-            <option value="ta">Tamil</option>
-            <option value="te">Telugu</option>
-            <option value="kn">Kannada</option>
-            <option value="bn">Bengali</option>
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="font-medium text-text-secondary">Category</span>
-          <select
-            className={`${inputCls} mt-1`}
-            value={category}
-            onChange={(e) => setCategory(e.target.value as Template['category'])}
+    <div id="wa-template-editor" className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Back to templates"
           >
-            <option value="UTILITY">Utility (orders, invoices, reminders)</option>
-            <option value="AUTHENTICATION">Authentication (verification codes)</option>
-            <option value="MARKETING">Marketing (offers)</option>
-          </select>
-        </label>
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold text-text-primary">{title}</h2>
+            <p className="text-xs text-text-muted">Live preview updates as you edit. Submit when it looks right.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => save(false)} isLoading={saving === 'draft'} disabled={!!saving}>
+            Save draft
+          </Button>
+          <Button size="sm" onClick={() => setReviewOpen(true)} disabled={!!saving}>
+            Review and submit
+          </Button>
+        </div>
       </div>
 
-      {category === 'AUTHENTICATION' ? (
-        <p className="text-sm text-text-secondary">
-          Meta writes the text for verification-code templates: &quot;&lt;code&gt; is your verification code. For
-          your security, do not share this code.&quot; with a Copy code button.
-        </p>
-      ) : (
-        <>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="space-y-5 rounded-2xl border border-border bg-surface p-4 md:p-6 dark:border-border-dark">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="font-medium text-text-secondary">Template category</span>
+              <select
+                className={`${inputCls} mt-1`}
+                value={category}
+                onChange={(e) => setCategory(e.target.value as Template['category'])}
+              >
+                <option value="UTILITY">Utility (orders, invoices, reminders)</option>
+                <option value="AUTHENTICATION">Authentication (verification codes)</option>
+                <option value="MARKETING">Marketing (offers)</option>
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-text-secondary">Template language</span>
+              <select className={`${inputCls} mt-1`} value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!!initial}>
+                <option value="en_US">English (US)</option>
+                <option value="en">English</option>
+                <option value="en_GB">English (UK)</option>
+                <option value="hi">Hindi</option>
+                <option value="mr">Marathi</option>
+                <option value="gu">Gujarati</option>
+                <option value="ta">Tamil</option>
+                <option value="te">Telugu</option>
+                <option value="kn">Kannada</option>
+                <option value="bn">Bengali</option>
+              </select>
+            </label>
+          </div>
+
           <label className="block text-sm">
-            <span className="font-medium text-text-secondary">Header (optional)</span>
-            <input className={`${inputCls} mt-1`} value={header} onChange={(e) => setHeader(e.target.value)} maxLength={60} />
-          </label>
-          <label className="block text-sm">
-            <span className="font-medium text-text-secondary">Message</span>
-            <textarea
-              className={`${inputCls} mt-1 min-h-[96px]`}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              maxLength={1024}
-              placeholder="Hi {{1}}, your order {{2}} is on its way."
+            <span className="font-medium text-text-secondary">Template name</span>
+            <input
+              className={`${inputCls} mt-1 font-mono`}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!!initial}
+              placeholder="order_update"
             />
-            <span className="mt-1 block text-xs text-text-muted">
-              Use {'{{1}}'}, {'{{2}}'}... for details Khatario fills in. The message can&apos;t start or end with one.
-            </span>
+            <span className="mt-1 block text-xs text-text-muted">Lowercase letters, numbers and _ only.</span>
           </label>
-          {placeholders > 0 ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {Array.from({ length: placeholders }, (_, i) => (
-                <label key={i} className="flex items-center gap-2 text-sm">
-                  <span className="w-10 shrink-0 font-mono text-text-muted">{`{{${i + 1}}}`}</span>
-                  <input
-                    className={inputCls}
-                    placeholder="Example for Meta review"
-                    value={examples[i] ?? ''}
-                    onChange={(e) => {
-                      const next = [...examples];
-                      next[i] = e.target.value;
-                      setExamples(next);
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-          ) : null}
-          <label className="block text-sm">
-            <span className="font-medium text-text-secondary">Footer (optional)</span>
-            <input className={`${inputCls} mt-1`} value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} />
-          </label>
-        </>
-      )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => setReviewOpen(true)} disabled={!!saving}>
-          Review and submit
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => save(false)} isLoading={saving === 'draft'} disabled={!!saving}>
-          Save draft
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel} disabled={!!saving}>
-          Cancel
-        </Button>
+          {category === 'AUTHENTICATION' ? (
+            <p className="rounded-lg bg-slate-50 p-3 text-sm text-text-secondary dark:bg-slate-800/60">
+              Meta writes the text for verification-code templates: &quot;&lt;code&gt; is your verification code. For
+              your security, do not share this code.&quot; with a Copy code button.
+            </p>
+          ) : (
+            <>
+              <label className="block text-sm">
+                <span className="font-medium text-text-secondary">Header text (optional)</span>
+                <input className={`${inputCls} mt-1`} value={header} onChange={(e) => setHeader(e.target.value)} maxLength={60} />
+                <span className="mt-1 block text-xs text-text-muted">{header.length}/60</span>
+              </label>
+
+              <label className="block text-sm">
+                <span className="font-medium text-text-secondary">Template format</span>
+                <textarea
+                  className={`${inputCls} mt-1 min-h-[160px]`}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  maxLength={1024}
+                  placeholder="Hi {{1}}, your order {{2}} is on its way."
+                />
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted">
+                  <span>
+                    Use {'{{1}}'}, {'{{2}}'}… Use *bold*, _italic_, ~strike~. Message can&apos;t start or end with a placeholder.
+                  </span>
+                  <span>{body.length}/1024</span>
+                </div>
+              </label>
+
+              {placeholders > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-text-secondary">Sample values</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {Array.from({ length: placeholders }, (_, i) => (
+                      <label key={i} className="flex items-center gap-2 text-sm">
+                        <span className="w-10 shrink-0 font-mono text-text-muted">{`{{${i + 1}}}`}</span>
+                        <input
+                          className={inputCls}
+                          placeholder="Example for Meta review"
+                          value={examples[i] ?? ''}
+                          onChange={(e) => {
+                            const next = [...examples];
+                            next[i] = e.target.value;
+                            setExamples(next);
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <label className="block text-sm">
+                <span className="font-medium text-text-secondary">Template footer (optional)</span>
+                <input className={`${inputCls} mt-1`} value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} />
+                <span className="mt-1 block text-xs text-text-muted">{footer.length}/60</span>
+              </label>
+            </>
+          )}
+        </div>
+
+        <aside className="xl:sticky xl:top-4 xl:self-start">
+          <div className="mb-3">
+            <p className="text-sm font-semibold text-text-primary">Template preview</p>
+            <p className="text-xs text-text-muted">How this may look in WhatsApp. Actual delivery can vary slightly.</p>
+          </div>
+          <WhatsAppTemplatePreviewCard model={previewModel} />
+          <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            Disclaimer: graphical representation only. Media and exact spacing may differ on the customer&apos;s phone.
+          </p>
+        </aside>
       </div>
-      </div>
-      <div className="hidden lg:block">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">WhatsApp preview</p>
-        <WhatsAppTemplatePreviewCard model={previewModel} />
-      </div>
-      </div>
+
       <WhatsAppTemplatePreviewModal
         open={reviewOpen}
         model={previewModel}
