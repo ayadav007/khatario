@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { WA_LIMITS } from '@/lib/meta-whatsapp';
+import { WA_LIMITS } from '@/lib/whatsapp/wa-limits';
 
 export const FLOW_NODE_TYPES = [
   'start',

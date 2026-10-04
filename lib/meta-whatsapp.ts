@@ -5,6 +5,7 @@
 
 import { createHmac, timingSafeEqual } from 'crypto';
 import { getMetaWaConfig } from '@/lib/meta-whatsapp-credentials';
+import { WA_LIMITS } from '@/lib/whatsapp/wa-limits';
 
 export type { MetaWaConfig } from '@/lib/meta-whatsapp-credentials';
 export { getMetaWaConfig, isMetaWaConfigured } from '@/lib/meta-whatsapp-credentials';
@@ -187,21 +188,7 @@ export async function sendTemplateMessage(input: {
 export const WA_TEXT_MAX = 4096;
 
 /** Cloud API limits for interactive messages; Graph rejects the whole message if any is exceeded. */
-export const WA_LIMITS = {
-  interactiveBody: 1024,
-  interactiveFooter: 60,
-  headerText: 60,
-  buttonsMax: 3,
-  buttonTitle: 20,
-  listRowsMax: 10,
-  listRowTitle: 24,
-  listRowDescription: 72,
-  listButton: 20,
-  replyId: 256,
-  caption: 1024,
-  videoBytes: 16 * 1024 * 1024,
-  imageBytes: 5 * 1024 * 1024,
-} as const;
+export { WA_LIMITS };
 
 export type MediaRef = { id: string; link?: never } | { link: string; id?: never };
 

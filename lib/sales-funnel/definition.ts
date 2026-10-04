@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { WA_LIMITS } from '@/lib/meta-whatsapp';
+import { WA_LIMITS } from '@/lib/whatsapp/wa-limits';
 
 /**
  * A sales flow is data, not code: steps send messages and wait for a button, list choice or typed
