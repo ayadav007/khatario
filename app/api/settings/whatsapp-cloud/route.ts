@@ -7,6 +7,7 @@ import {
   saveBusinessMetaWaCredentials,
   toPublicMetaWaCredentials,
 } from '@/lib/meta-whatsapp-credentials';
+import { assertWhatsAppPremiumAddon } from '@/lib/security/whatsapp-api-gates';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,8 @@ export async function PUT(request: NextRequest) {
     const resolved = await resolveBusinessId(request, body);
     if ('error' in resolved) return resolved.error;
     await authorize(resolved.userId, 'settings', 'update', { businessId: resolved.businessId });
+    const connectBlocked = await assertWhatsAppPremiumAddon({ businessId: resolved.businessId });
+    if (connectBlocked) return connectBlocked;
     const credentials = await saveBusinessMetaWaCredentials(resolved.businessId, {
       waba_id: String(body.waba_id || ''),
       phone_number_id: String(body.phone_number_id || ''),

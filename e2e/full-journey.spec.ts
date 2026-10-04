@@ -76,11 +76,11 @@ test.describe('Full journey', () => {
       const uid = userId as string;
 
       // --- Assign plan (API — clears subscription cache server-side) ---
-      const preference = (process.env.E2E_TARGET_PLAN || 'enterprise,business')
+      const preference = (process.env.E2E_TARGET_PLAN || 'business,growth')
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s && s !== 'trial');
-      const preferredList = preference.length ? preference : ['enterprise', 'business'];
+      const preferredList = preference.length ? preference : ['business', 'growth'];
       let targetPlanId =
         (await pickActivePlanId(preferredList)) ?? (await pickAnyActivePlanId());
       if (!targetPlanId) {

@@ -6,7 +6,7 @@ import { isPlatformPaymentConfigured } from '@/lib/platform-subscription-checkou
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
-import { computePlanAmount } from '@/lib/subscription/apply-plan-change';
+import { BILLING_CYCLES, computePlanAmount } from '@/lib/subscription/apply-plan-change';
 import {
   applyModuleSubscriptionPlanChange,
 } from '@/lib/subscription/apply-module-plan-change';
@@ -33,7 +33,6 @@ export async function POST(request: NextRequest) {
     const {
       plan_id,
       module_key: moduleKeyBody,
-      billing_cycle = 'monthly',
       payment_method = 'manual',
       payment_reference,
     } = body;
@@ -58,9 +57,10 @@ export async function POST(request: NextRequest) {
       display_name: string;
       price_monthly: number | string;
       price_yearly: number | string;
+      price_3year: number | string | null;
       product_line: string | null;
     }>(
-      `SELECT id, display_name, price_monthly, price_yearly, product_line
+      `SELECT id, display_name, price_monthly, price_yearly, price_3year, product_line
        FROM subscription_plans
        WHERE id = $1 AND is_active = true`,
       [plan_id],
@@ -80,8 +80,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Business not found' }, { status: 404 });
     }
 
-    const cycle = billing_cycle === 'yearly' ? 'yearly' : 'monthly';
-    const amount = computePlanAmount(plan, cycle);
+    // Any priced cycle makes this a paid plan; an unpriced cycle must not become a free upgrade.
+    const amount = Math.max(
+      ...BILLING_CYCLES.map((c) => computePlanAmount(plan, c)),
+    );
+    const cycle = 'monthly' as const;
 
     if (amount > 0) {
       if (await isPlatformPaymentConfigured()) {

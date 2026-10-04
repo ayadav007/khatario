@@ -4,7 +4,7 @@
 
 import type { PlatformModule } from '@/lib/platform-modules';
 import {
-  CONNECT_PLAN_ID,
+  CONNECT_FREE_PLAN_ID,
   HR_FREE_PLAN_ID,
 } from '@/lib/product-lines';
 import {
@@ -20,7 +20,7 @@ import type { ModuleSubscriptionRow } from '@/lib/subscription/module-subscripti
 
 export function getFreePlanIdForModule(moduleKey: PlatformModule): string {
   if (moduleKey === 'hr') return HR_FREE_PLAN_ID;
-  if (moduleKey === 'connect') return CONNECT_PLAN_ID;
+  if (moduleKey === 'connect') return CONNECT_FREE_PLAN_ID;
   return 'free';
 }
 

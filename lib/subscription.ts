@@ -18,12 +18,18 @@ import {
 import { resolveBusinessLimit } from './subscription/resolve-limit';
 import {
   clearModuleSubscriptionCache,
+  getEntitlementPlanIdForModuleSub,
+  getModuleSubscription,
   getModuleSubscriptions,
   upsertModuleSubscription,
 } from './subscription/module-subscriptions';
 import { getBusinessPlatformContext } from './business-modules';
-import { getFreePlanIdForModule } from './subscription/module-operational-check';
+import {
+  getFreePlanIdForModule,
+  isModuleSubscriptionOperational,
+} from './subscription/module-operational-check';
 import { getLimitOwnerModule } from './subscription/module-entitlements';
+import { normalizeBillingCycle } from './subscription/apply-plan-change';
 import type { PlatformModule } from './platform-modules';
 
 export type { LimitCheckType } from './subscription/limit-registry';
@@ -67,7 +73,7 @@ export interface BusinessSubscription {
   plan_display_name: string;
   features: SubscriptionPlan['features'];
   scheduled_plan_id: string | null;
-  billing_cycle: 'monthly' | 'yearly';
+  billing_cycle: 'monthly' | 'yearly' | 'three_year';
 }
 
 /**
@@ -178,7 +184,7 @@ export async function getBusinessSubscription(
         plan_display_name: plan.display_name,
         features,
         scheduled_plan_id: row.scheduled_plan_id ?? null,
-        billing_cycle: row.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+        billing_cycle: normalizeBillingCycle(row.billing_cycle),
       };
     }
 
@@ -202,6 +208,9 @@ export function clearSubscriptionCache(businessId: string) {
   for (const key of subscriptionCache.keys()) {
     if (key.startsWith(`${businessId}:`)) subscriptionCache.delete(key);
   }
+  for (const key of addonCache.keys()) {
+    if (key.startsWith(`${businessId}:`)) addonCache.delete(key);
+  }
   clearModuleSubscriptionCache(businessId);
 }
 
@@ -210,6 +219,7 @@ export function clearSubscriptionCache(businessId: string) {
  */
 export function clearAllSubscriptionCaches() {
   subscriptionCache.clear();
+  addonCache.clear();
 }
 
 /**
@@ -228,11 +238,7 @@ export async function hasFeature(businessId: string, featureKey: string): Promis
     return await hasWhatsAppBotAddon(businessId);
   }
   if (canonicalKey === 'whatsapp_send_message' || canonicalKey === 'whatsapp_manual') {
-    const [hasBot, hasSend] = await Promise.all([
-      hasWhatsAppBotAddon(businessId),
-      hasWhatsAppSendMessageAddon(businessId),
-    ]);
-    return hasBot || hasSend;
+    return await hasWhatsAppSendMessageAddon(businessId);
   }
 
   try {
@@ -547,7 +553,8 @@ export interface WhatsAppAddon {
   id: string;
   business_id: string;
   addon_type: WhatsAppAddonType;
-  status: 'active' | 'expired' | 'cancelled';
+  /** `migrated`: converted to a Connect subscription by migration 360. */
+  status: 'active' | 'expired' | 'cancelled' | 'migrated';
   price_monthly: number;
   start_date: string;
   end_date: string | null;
@@ -574,71 +581,68 @@ const addonCache = new Map<string, AddonCacheEntry>();
 const ADDON_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Check if a business has an active WhatsApp Bot add-on
- * Uses in-memory cache to reduce database queries
+ * Whether the business's Connect subscription grants a Connect feature: the Connect module is
+ * enabled, its row is operational, and the entitlement plan's matrix includes the feature.
  */
-export async function hasWhatsAppBotAddon(businessId: string, skipCache: boolean = false): Promise<boolean> {
-  // Check cache first (unless skipCache is true)
+async function connectPlanGrants(
+  businessId: string,
+  featureId: 'integration_whatsapp_bot' | 'integration_whatsapp_manual',
+  skipCache: boolean,
+): Promise<boolean> {
+  const cacheKey = `${businessId}:${featureId}`;
   if (!skipCache) {
-    const cached = addonCache.get(businessId);
-    if (cached && (Date.now() - cached.timestamp) < ADDON_CACHE_TTL) {
+    const cached = addonCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < ADDON_CACHE_TTL) {
       return cached.hasAddon;
     }
   }
 
   try {
-    const addon = await db.queryOne<{ count: string }>(`
-      SELECT COUNT(*) as count
-      FROM whatsapp_addons
-      WHERE business_id = $1
-        AND addon_type = 'whatsapp_bot'
-        AND status = 'active'
-        AND (start_date IS NULL OR start_date <= CURRENT_DATE)
-        AND (end_date IS NULL OR end_date >= CURRENT_DATE)
-    `, [businessId]);
-
-    const hasAddon = parseInt(addon?.count || '0', 10) > 0;
-    
-    // Update cache
-    addonCache.set(businessId, {
-      hasAddon,
-      timestamp: Date.now()
-    });
-
-    return hasAddon;
+    const ctx = await getBusinessPlatformContext(businessId);
+    let granted = false;
+    if (ctx.enabledModules.includes('connect')) {
+      const sub = await getModuleSubscription(businessId, 'connect', skipCache);
+      if (sub && isModuleSubscriptionOperational(sub)) {
+        const row = await db.queryOne<{ ok: boolean }>(
+          `SELECT true AS ok
+           FROM subscription_plan_features spf
+           JOIN platform_features pf ON pf.id = spf.feature_id AND pf.is_active = true
+           WHERE spf.plan_id = $1 AND spf.feature_id = $2 AND spf.enabled = true`,
+          [getEntitlementPlanIdForModuleSub(sub), featureId],
+        );
+        granted = !!row?.ok;
+      }
+    }
+    addonCache.set(cacheKey, { hasAddon: granted, timestamp: Date.now() });
+    return granted;
   } catch (error) {
-    console.error('Error checking WhatsApp Bot addon:', error);
+    console.error(`Error checking Connect entitlement (${featureId}):`, error);
     return false;
   }
 }
 
 /**
- * Clear addon cache for a business (call after purchase/activation)
+ * Paid Connect plan: inbox, bot, AI agent, WABA, templates, shop.
+ * Name kept from the per-addon era; the WhatsApp Bot add-on became the Connect plan in 360.
  */
+export async function hasWhatsAppBotAddon(businessId: string, skipCache: boolean = false): Promise<boolean> {
+  return connectPlanGrants(businessId, 'integration_whatsapp_bot', skipCache);
+}
+
+/** Clear cached Connect entitlement for a business (call after purchase, renewal or lapse). */
 export function clearAddonCache(businessId: string) {
-  addonCache.delete(businessId);
+  for (const key of addonCache.keys()) {
+    if (key.startsWith(`${businessId}:`)) addonCache.delete(key);
+  }
+  clearModuleSubscriptionCache(businessId);
 }
 
-/**
- * Check if a business has an active WhatsApp Send Message add-on
- */
-export async function hasWhatsAppSendMessageAddon(businessId: string): Promise<boolean> {
-  try {
-    const addon = await db.queryOne<{ count: string }>(`
-      SELECT COUNT(*) as count
-      FROM whatsapp_addons
-      WHERE business_id = $1
-        AND addon_type = 'whatsapp_send_message'
-        AND status = 'active'
-        AND (start_date IS NULL OR start_date <= CURRENT_DATE)
-        AND (end_date IS NULL OR end_date >= CURRENT_DATE)
-    `, [businessId]);
-
-    return parseInt(addon?.count || '0', 10) > 0;
-  } catch (error) {
-    console.error('Error checking WhatsApp Send Message addon:', error);
-    return false;
-  }
+/** Custom and bulk WhatsApp sends beyond invoices and reminders (paid Connect plan). */
+export async function hasWhatsAppSendMessageAddon(
+  businessId: string,
+  skipCache: boolean = false,
+): Promise<boolean> {
+  return connectPlanGrants(businessId, 'integration_whatsapp_manual', skipCache);
 }
 
 /**

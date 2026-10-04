@@ -3,6 +3,7 @@ import { requireStrictSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { MetaWhatsAppError } from '@/lib/meta-whatsapp';
 import { TenantTemplateError } from '@/lib/whatsapp/tenant-templates';
+import { assertWhatsAppPremiumAddon } from '@/lib/security/whatsapp-api-gates';
 
 export type TenantRouteContext = { userId: string; businessId: string };
 
@@ -16,6 +17,10 @@ export async function withTenantTemplates(
     const session = await requireStrictSession(request);
     if (!session.ok) return session.response;
     await authorize(session.userId, 'settings', action, { businessId: session.businessId });
+    if (action === 'update') {
+      const connectBlocked = await assertWhatsAppPremiumAddon({ businessId: session.businessId });
+      if (connectBlocked) return connectBlocked;
+    }
     return await handler({ userId: session.userId, businessId: session.businessId });
   } catch (error) {
     if (error instanceof AuthorizationError) return error.toNextResponse();

@@ -7,10 +7,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Bell, Loader2, Settings } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useBotAddon } from '@/components/whatsapp/settings/useBotAddon';
 import { SendRemindersTab } from '@/components/whatsapp/SendRemindersTab';
 import { ReminderLogsTab } from '@/components/whatsapp/ReminderLogsTab';
-import { BotAddonLockedCard } from '@/components/whatsapp/settings/SettingsBlock';
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader';
 import { WIDE_PAGE_CONTENT_CLASS, STACK_PAGE_CLASS } from '@/lib/page-layout';
 
@@ -24,8 +22,6 @@ function RemindersContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tab = searchParams.get('tab') === 'logs' ? 'logs' : 'send';
-  const { hasBotAddon, loading } = useBotAddon();
-
   return (
     <div className={clsx(WIDE_PAGE_CONTENT_CLASS, STACK_PAGE_CLASS)}>
       <SettingsPageHeader
@@ -42,41 +38,28 @@ function RemindersContent() {
         }
       />
 
-      {loading ? (
-        <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
-      ) : !hasBotAddon ? (
-        <div className="max-w-2xl">
-          <BotAddonLockedCard
-            title="Reminders need the WhatsApp Bot addon"
-            description="Send payment reminders in bulk and track delivery."
-          />
-        </div>
-      ) : (
-        <>
-          <nav aria-label="Reminder views" className="border-b border-border dark:border-border-dark">
-            <ul className="flex gap-1">
-              {TABS.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => router.replace(t.id === 'send' ? pathname : `${pathname}?tab=${t.id}`)}
-                    aria-current={tab === t.id ? 'page' : undefined}
-                    className={clsx(
-                      '-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
-                      tab === t.id
-                        ? 'border-primary-600 text-primary-700 dark:text-primary-300'
-                        : 'border-transparent text-text-secondary hover:text-text-primary',
-                    )}
-                  >
-                    {t.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          {tab === 'logs' ? <ReminderLogsTab /> : <SendRemindersTab />}
-        </>
-      )}
+      <nav aria-label="Reminder views" className="border-b border-border dark:border-border-dark">
+        <ul className="flex gap-1">
+          {TABS.map((t) => (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => router.replace(t.id === 'send' ? pathname : `${pathname}?tab=${t.id}`)}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={clsx(
+                  '-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
+                  tab === t.id
+                    ? 'border-primary-600 text-primary-700 dark:text-primary-300'
+                    : 'border-transparent text-text-secondary hover:text-text-primary',
+                )}
+              >
+                {t.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      {tab === 'logs' ? <ReminderLogsTab /> : <SendRemindersTab />}
     </div>
   );
 }

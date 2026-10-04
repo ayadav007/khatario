@@ -2,7 +2,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
-import { checkAndSendPaymentDueReminders, checkAndSendOverdueReminders } from '@/lib/payment-reminder-checker';
+import {
+  checkAndSendPaymentDueReminders,
+  checkAndSendOverdueReminders,
+  type ReminderRunResult,
+} from '@/lib/payment-reminder-checker';
+import { ensurePaymentReminderWorker } from '@/lib/queue/paymentReminderQueue';
 import { getBusinessSubscription, isSubscriptionOperationalStatus } from '@/lib/subscription';
 import {
   isInReminderSendWindow,
@@ -24,7 +29,9 @@ import { assertCronAuthorized } from '@/lib/cron-auth';
  * - Other hosts: call this URL on the same cadence, or more often; same Bearer if CRON_SECRET is set.
  * - Local dev: set CRON_SECRET and send `Authorization: Bearer <CRON_SECRET>`. Use `?force=1` to ignore the window.
  *
- * BullMQ is not required — this route is the job; something must trigger it on a schedule.
+ * With REDIS_URL set, reminders are queued on `payment-reminders` and sent by a worker this route
+ * starts inside the server process (QR sends are spaced per business). Without Redis this route
+ * sends inline. Either way something must trigger it on a schedule.
  */
 export async function GET(request: NextRequest) {
   const denied = assertCronAuthorized(request);
@@ -40,6 +47,7 @@ export async function POST(request: NextRequest) {
 
 async function processReminders(request?: NextRequest) {
   try {
+    const workerRunning = ensurePaymentReminderWorker();
     const ignoreSendWindow =
       process.env.REMINDER_IGNORE_SCHEDULE === '1' ||
       request?.nextUrl.searchParams.get('force') === '1';
@@ -60,15 +68,17 @@ async function processReminders(request?: NextRequest) {
        ORDER BY w.business_id, w.reminder_type`
     );
 
+    type RunCounts = Omit<ReminderRunResult, 'queued'> & { queued?: number };
     const results: Array<{
       business_id: string;
       schedule_skipped?: boolean;
-      payment_due: { sent: number; skipped: number; errors: number };
-      overdue: { sent: number; skipped: number; errors: number };
+      payment_due: RunCounts;
+      overdue: RunCounts;
     }> = [];
 
     let totalPaymentDueSent = 0;
     let totalOverdueSent = 0;
+    let totalQueued = 0;
     let totalErrors = 0;
 
     for (const business of businesses) {
@@ -132,6 +142,7 @@ async function processReminders(request?: NextRequest) {
 
         totalPaymentDueSent += paymentDueResult.sent;
         totalOverdueSent += overdueResult.sent;
+        totalQueued += paymentDueResult.queued + overdueResult.queued;
         totalErrors += paymentDueResult.errors + overdueResult.errors;
       } catch (error: any) {
         console.error(`Error processing reminders for business ${business.business_id}:`, error);
@@ -150,8 +161,10 @@ async function processReminders(request?: NextRequest) {
       summary: {
         payment_due_sent: totalPaymentDueSent,
         overdue_sent: totalOverdueSent,
+        queued: totalQueued,
         total_errors: totalErrors
       },
+      queue_worker: workerRunning ? 'running' : 'not_configured',
       results
     });
   } catch (error: any) {

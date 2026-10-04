@@ -21,10 +21,10 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
-import { useBotAddon } from './useBotAddon';
+import { useWhatsAppAccess } from './useWhatsAppAccess';
 import { ConfirmDialog } from '@/components/whatsapp/ConfirmDialog';
 import { MetaCloudCredentialsForm } from '@/components/whatsapp/MetaCloudCredentialsForm';
-import { SettingsBlock, SettingsPageBody } from './SettingsBlock';
+import { ConnectLockedCard, SettingsBlock, SettingsPageBody } from './SettingsBlock';
 import { useMetaCloudCredentials } from './useMetaCloudCredentials';
 import { WHATSAPP_SETTINGS_BASE } from './WhatsAppSettingsNav';
 
@@ -73,7 +73,8 @@ function NextStep({ href, icon: Icon, title, body }: { href: string; icon: Lucid
 export function ConnectionSettings() {
   const { business } = useAuth();
   const toast = useToastContext();
-  const { hasBotAddon } = useBotAddon();
+  const { hasConnect } = useWhatsAppAccess();
+  const [riskAccepted, setRiskAccepted] = useState(false);
   const cloud = useMetaCloudCredentials();
   const [showCloudForm, setShowCloudForm] = useState(false);
 
@@ -299,7 +300,7 @@ export function ConnectionSettings() {
                 <CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden />
                 Ready to send invoices and messages.
               </span>
-              {hasBotAddon ? (
+              {hasConnect ? (
                 <Button variant="secondary" size="sm" onClick={() => void handleSyncMessages()} disabled={syncing || loading}>
                   {syncing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
                   {syncing ? 'Syncing…' : 'Sync messages'}
@@ -335,19 +336,34 @@ export function ConnectionSettings() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-text-muted dark:bg-slate-800">
-                <QrCode className="h-5 w-5" aria-hidden />
+            <div className="space-y-3">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-text-muted dark:bg-slate-800">
+                  <QrCode className="h-5 w-5" aria-hidden />
+                </div>
+                <p className="flex-1 text-sm text-text-secondary">
+                  {qrExpired
+                    ? 'The QR code expired before it was scanned. Get a new one and scan it within a minute.'
+                    : 'You will scan a QR code with WhatsApp on your phone, the same way you link WhatsApp Web.'}
+                </p>
+                <Button onClick={() => void handleConnect()} disabled={loading || !riskAccepted}>
+                  {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}
+                  {qrExpired ? 'Get a new QR code' : 'Connect WhatsApp'}
+                </Button>
               </div>
-              <p className="flex-1 text-sm text-text-secondary">
-                {qrExpired
-                  ? 'The QR code expired before it was scanned. Get a new one and scan it within a minute.'
-                  : 'You will scan a QR code with WhatsApp on your phone, the same way you link WhatsApp Web.'}
-              </p>
-              <Button onClick={() => void handleConnect()} disabled={loading}>
-                {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}
-                {qrExpired ? 'Get a new QR code' : 'Connect WhatsApp'}
-              </Button>
+              <label className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400"
+                  checked={riskAccepted}
+                  onChange={(e) => setRiskAccepted(e.target.checked)}
+                />
+                <span>
+                  I understand this links WhatsApp as a device, not through Meta&apos;s official Business API. WhatsApp may
+                  restrict numbers that message people who don&apos;t expect it or send in bulk. I will only message my own
+                  customers about their invoices and payments.
+                </span>
+              </label>
             </div>
           )}
         </div>
@@ -386,6 +402,19 @@ export function ConnectionSettings() {
         </div>
       </SettingsBlock>
 
+      {!hasConnect ? (
+        <SettingsBlock
+          bare
+          id="wa-cloud"
+          title="Meta Cloud API"
+          description="Use your own WhatsApp Business Account on Meta for approved templates, the WhatsApp catalog and messaging outside the 24-hour window."
+        >
+          <ConnectLockedCard
+            title="The official WhatsApp Business API comes with Connect"
+            description="Connect adds the Cloud API, AI replies, templates, the shared inbox and automation. Your QR-linked number keeps working."
+          />
+        </SettingsBlock>
+      ) : (
       <SettingsBlock
         id="wa-cloud"
         title="Meta Cloud API"
@@ -438,6 +467,7 @@ export function ConnectionSettings() {
           </div>
         ) : null}
       </SettingsBlock>
+      )}
 
       <ConfirmDialog
         isOpen={confirmDisconnect}

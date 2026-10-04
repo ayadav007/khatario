@@ -1,71 +1,98 @@
 import * as db from '@/lib/db';
-import { sendReminderMessage } from './reminder-message-processor';
-import { sendEmailReminder } from './email-reminder';
 import { checkLimit, hasFeature } from './subscription';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { calendarDateInTimeZone, paymentDueWindow } from '@/lib/reminder-schedule';
+import {
+  deliverPaymentReminder,
+  type PaymentReminderJobData,
+  type PaymentReminderKind,
+} from '@/lib/payment-reminder-delivery';
+import { enqueuePaymentReminders } from '@/lib/queue/paymentReminderQueue';
+import { businessTransport } from '@/lib/whatsapp/business-transport';
+import { BAILEYS_SCHEDULED_GAP_MS, randomGapMs, sleep } from '@/lib/whatsapp/baileys-pacing';
 
-/**
- * Create notification for business owner about invoice status
- */
-async function createInvoiceNotification(
+export interface ReminderRunResult {
+  /** Delivered during this request (inline fallback when the queue is unavailable). */
+  sent: number;
+  /** Handed to the payment-reminders queue; the worker sends them paced. */
+  queued: number;
+  skipped: number;
+  errors: number;
+}
+
+const EMPTY: ReminderRunResult = { sent: 0, queued: 0, skipped: 0, errors: 0 };
+
+/** Without Redis the cron request itself sends; QR sends are capped so the request stays bounded. */
+export const INLINE_BAILEYS_MAX_PER_RUN = 50;
+
+async function dispatchReminders(
   businessId: string,
-  type: 'invoice_nearing_due' | 'invoice_overdue',
-  invoiceId: string,
-  invoiceNumber: string,
-  customerName: string,
-  dueDate: string,
-  amount: number
-) {
-  try {
-    const notificationType = type === 'invoice_nearing_due' ? 'invoice_nearing_due' : 'invoice_overdue';
-    const title = type === 'invoice_nearing_due' 
-      ? `Invoice ${invoiceNumber} due soon`
-      : `Invoice ${invoiceNumber} is overdue`;
-    
-    const message = type === 'invoice_nearing_due'
-      ? `${customerName || 'Customer'}'s invoice for ₹${amount.toFixed(2)} is due on ${new Date(dueDate).toLocaleDateString('en-IN')}`
-      : `${customerName || 'Customer'}'s invoice for ₹${amount.toFixed(2)} was due on ${new Date(dueDate).toLocaleDateString('en-IN')}`;
+  kind: PaymentReminderKind,
+  invoiceIds: string[],
+  messageTemplate: string,
+  includePdf: boolean,
+  skippedSoFar: number,
+): Promise<ReminderRunResult> {
+  if (invoiceIds.length === 0) return { ...EMPTY, skipped: skippedSoFar };
 
-    // Check if notification already exists for this invoice today
-    const existing = await db.queryOne(
-      `SELECT id FROM notifications 
-       WHERE business_id = $1 
-         AND type = $2 
-         AND reference_id = $3 
-         AND DATE(created_at) = CURRENT_DATE`,
-      [businessId, notificationType, invoiceId]
-    );
+  const jobs: PaymentReminderJobData[] = invoiceIds.map((invoiceId) => ({
+    businessId,
+    invoiceId,
+    kind,
+    messageTemplate,
+    includePdf,
+  }));
+  const transport = await businessTransport(businessId);
 
-    if (!existing) {
-      await db.query(
-        `INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
-         VALUES ($1, $2, $3, $4, 'invoice', $5, CURRENT_TIMESTAMP)`,
-        [businessId, notificationType, title, message, invoiceId]
-      );
-    }
-  } catch (error: any) {
-    console.error(`Error creating invoice notification:`, error);
-    // Don't throw - notification failure shouldn't break reminder process
+  const queued = await enqueuePaymentReminders(businessId, transport, jobs);
+  if (queued !== null) {
+    return { sent: 0, queued, skipped: skippedSoFar + (jobs.length - queued), errors: 0 };
   }
+
+  const batch = transport === 'baileys' ? jobs.slice(0, INLINE_BAILEYS_MAX_PER_RUN) : jobs;
+  if (batch.length < jobs.length) {
+    console.log(
+      `[Reminder Check] Queue unavailable; sending ${batch.length} of ${jobs.length} ${kind} reminders inline for QR business ${businessId}`,
+    );
+  }
+
+  const result: ReminderRunResult = { ...EMPTY, skipped: skippedSoFar + (jobs.length - batch.length) };
+  for (const [index, job] of batch.entries()) {
+    if (transport === 'baileys' && index > 0) await sleep(randomGapMs(BAILEYS_SCHEDULED_GAP_MS));
+    try {
+      const outcome = await deliverPaymentReminder(job);
+      if (outcome.outcome === 'sent') result.sent++;
+      else {
+        result.skipped++;
+        console.log(`[Reminder Check] Invoice ${job.invoiceId} ${outcome.outcome}: ${outcome.reason}`);
+      }
+    } catch (error) {
+      result.errors++;
+      console.error(`[Reminder Check] Error sending reminder for invoice ${job.invoiceId}:`, error);
+    }
+  }
+  return result;
+}
+
+/** How many more reminders fit under the monthly WhatsApp limit, or Infinity when unlimited. */
+function remainingQuota(limitCheck: { limit: number; current: number }): number {
+  return limitCheck.limit === -1 ? Infinity : Math.max(0, limitCheck.limit - limitCheck.current);
 }
 
 /**
- * Check and send payment due reminders for a business
+ * Check and queue payment due reminders for a business
  */
 export async function checkAndSendPaymentDueReminders(
   businessId: string,
   timeZone = 'Asia/Kolkata',
-): Promise<{ sent: number; skipped: number; errors: number }> {
+): Promise<ReminderRunResult> {
   try {
-    // Check if feature is enabled
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
     if (!hasAccess) {
       console.log(`[Reminder Check] Business ${businessId} does not have whatsapp_auto_reminders feature`);
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
-    // Get payment due reminder settings
     const settings = await db.queryOne(
       `SELECT enabled, days_before, message_template, include_pdf
        FROM whatsapp_reminder_settings
@@ -74,7 +101,7 @@ export async function checkAndSendPaymentDueReminders(
     );
 
     if (!settings || !settings.enabled) {
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
     const daysBefore = settings.days_before || 1;
@@ -100,25 +127,15 @@ export async function checkAndSendPaymentDueReminders(
       console.log(`[Reminder Check] Matching invoices due ${dueFrom} through ${dueTo} (${timeZone}, days_before=${daysBefore})`);
     }
 
-    // Check WhatsApp limit
     const limitCheck = await checkLimit(businessId, 'whatsapp');
     if (!limitCheck.allowed) {
       console.log(`[Reminder Check] Business ${businessId} has reached WhatsApp limit`);
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
     // Due today through today + days before, in the business calendar. A failed earlier attempt is retried.
-    const invoices = await db.queryRows(
-      `SELECT 
-        i.id,
-        i.invoice_number,
-        i.due_date,
-        i.payment_status,
-        i.grand_total,
-        i.balance_amount,
-        c.id as customer_id,
-        c.name as customer_name,
-        c.phone as customer_phone
+    const invoices = await db.queryRows<{ id: string }>(
+      `SELECT i.id
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
        WHERE i.business_id = $1
@@ -134,90 +151,45 @@ export async function checkAndSendPaymentDueReminders(
              AND wm.business_id = $1
              AND wm.status = 'sent'
              AND wm.reminder_source = 'auto_payment_due'
-         )`,
+         )
+       ORDER BY COALESCE(i.due_date, i.invoice_date), i.id`,
       [businessId, dueFrom, dueTo]
     );
 
-    let sent = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    for (const invoice of invoices) {
-      // Check if we've reached the limit
-      if (limitCheck.limit !== -1 && (limitCheck.current + sent) >= limitCheck.limit) {
-        console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
-        break;
-      }
-
-      try {
-        const result = await sendReminderMessage(
-          invoice.id,
-          businessId,
-          messageTemplate,
-          includePdf,
-          'auto_payment_due'
-        );
-
-        if (result.success) {
-          sent++;
-        } else {
-          skipped++;
-          console.log(`[Reminder Check] Skipped invoice ${invoice.invoice_number}: ${result.error}`);
-        }
-
-        if (result.success) {
-          try {
-            await sendEmailReminder({
-              invoiceId: invoice.id,
-              businessId,
-              messageTemplate,
-              includePdf,
-              kind: 'payment_due',
-            });
-          } catch (e) {
-            console.error(`[Reminder Check] Email reminder (payment due) failed for ${invoice.invoice_number}:`, e);
-          }
-        }
-
-        // Create notification for business owner (regardless of WhatsApp success)
-        await createInvoiceNotification(
-          businessId,
-          'invoice_nearing_due',
-          invoice.id,
-          invoice.invoice_number,
-          invoice.customer_name || 'Customer',
-          invoice.due_date,
-          parseFloat(invoice.grand_total || 0)
-        );
-      } catch (error: any) {
-        errors++;
-        console.error(`[Reminder Check] Error sending reminder for invoice ${invoice.invoice_number}:`, error);
-      }
+    const quota = remainingQuota(limitCheck);
+    if (invoices.length > quota) {
+      console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
     }
+    const selected = invoices.slice(0, quota === Infinity ? undefined : quota).map((i) => i.id);
 
-    return { sent, skipped, errors };
+    return await dispatchReminders(
+      businessId,
+      'payment_due',
+      selected,
+      messageTemplate,
+      includePdf,
+      invoices.length - selected.length,
+    );
   } catch (error: any) {
     console.error(`[Reminder Check] Error checking payment due reminders for business ${businessId}:`, error);
-    return { sent: 0, skipped: 0, errors: 1 };
+    return { ...EMPTY, errors: 1 };
   }
 }
 
 /**
- * Check and send overdue reminders for a business
+ * Check and queue overdue reminders for a business
  */
 export async function checkAndSendOverdueReminders(
   businessId: string,
   timeZone = 'Asia/Kolkata',
-): Promise<{ sent: number; skipped: number; errors: number }> {
+): Promise<ReminderRunResult> {
   try {
-    // Check if feature is enabled
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
     if (!hasAccess) {
       console.log(`[Reminder Check] Business ${businessId} does not have whatsapp_auto_reminders feature`);
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
-    // Get overdue reminder settings
     const settings = await db.queryOne(
       `SELECT enabled, interval_days, message_template, include_pdf
        FROM whatsapp_reminder_settings
@@ -226,7 +198,7 @@ export async function checkAndSendOverdueReminders(
     );
 
     if (!settings || !settings.enabled) {
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
     const intervalDays = settings.interval_days || 7;
@@ -234,25 +206,15 @@ export async function checkAndSendOverdueReminders(
     const includePdf = settings.include_pdf !== false;
     const localToday = calendarDateInTimeZone(timeZone);
 
-    // Check WhatsApp limit
     const limitCheck = await checkLimit(businessId, 'whatsapp');
     if (!limitCheck.allowed) {
       console.log(`[Reminder Check] Business ${businessId} has reached WhatsApp limit`);
-      return { sent: 0, skipped: 0, errors: 0 };
+      return { ...EMPTY };
     }
 
-    // Find overdue invoices
-    const invoices = await db.queryRows(
-      `SELECT 
+    const invoices = await db.queryRows<{ id: string; last_reminder_sent: string | null }>(
+      `SELECT
         i.id,
-        i.invoice_number,
-        i.due_date,
-        i.payment_status,
-        i.grand_total,
-        i.balance_amount,
-        c.id as customer_id,
-        c.name as customer_name,
-        c.phone as customer_phone,
         (
           SELECT MAX(sent_at)
           FROM whatsapp_messages wm
@@ -268,19 +230,17 @@ export async function checkAndSendOverdueReminders(
          AND i.status = 'final'
          AND i.payment_status IN ('unpaid', 'partially_paid')
          AND DATE(COALESCE(i.due_date, i.invoice_date)) < $2::date
-         AND (c.phone IS NOT NULL AND c.phone != '')`,
+         AND (c.phone IS NOT NULL AND c.phone != '')
+       ORDER BY COALESCE(i.due_date, i.invoice_date), i.id`,
       [businessId, localToday]
     );
-
-    let sent = 0;
-    let skipped = 0;
-    let errors = 0;
 
     // TEST MODE: same env flag — interval treated as minutes instead of days
     const testMinutesOverdue = process.env.REMINDER_TEST_MINUTES ? parseInt(process.env.REMINDER_TEST_MINUTES) : null;
 
+    let skipped = 0;
+    const due: string[] = [];
     for (const invoice of invoices) {
-      // Check if we should send reminder based on interval
       if (invoice.last_reminder_sent) {
         const lastSent = new Date(invoice.last_reminder_sent);
         let shouldSkip: boolean;
@@ -297,63 +257,26 @@ export async function checkAndSendOverdueReminders(
           continue;
         }
       }
-
-      // Check if we've reached the limit
-      if (limitCheck.limit !== -1 && (limitCheck.current + sent) >= limitCheck.limit) {
-        console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
-        break;
-      }
-
-      try {
-        const result = await sendReminderMessage(
-          invoice.id,
-          businessId,
-          messageTemplate,
-          includePdf,
-          'auto_overdue'
-        );
-
-        if (result.success) {
-          sent++;
-        } else {
-          skipped++;
-          console.log(`[Reminder Check] Skipped invoice ${invoice.invoice_number}: ${result.error}`);
-        }
-
-        if (result.success) {
-          try {
-            await sendEmailReminder({
-              invoiceId: invoice.id,
-              businessId,
-              messageTemplate,
-              includePdf,
-              kind: 'overdue',
-            });
-          } catch (e) {
-            console.error(`[Reminder Check] Email reminder (overdue) failed for ${invoice.invoice_number}:`, e);
-          }
-        }
-
-        // Create notification for business owner (regardless of WhatsApp success)
-        await createInvoiceNotification(
-          businessId,
-          'invoice_overdue',
-          invoice.id,
-          invoice.invoice_number,
-          invoice.customer_name || 'Customer',
-          invoice.due_date,
-          parseFloat(invoice.balance_amount || invoice.grand_total || 0)
-        );
-      } catch (error: any) {
-        errors++;
-        console.error(`[Reminder Check] Error sending reminder for invoice ${invoice.invoice_number}:`, error);
-      }
+      due.push(invoice.id);
     }
 
-    return { sent, skipped, errors };
+    const quota = remainingQuota(limitCheck);
+    if (due.length > quota) {
+      console.log(`[Reminder Check] Reached WhatsApp limit for business ${businessId}`);
+    }
+    const selected = due.slice(0, quota === Infinity ? undefined : quota);
+
+    return await dispatchReminders(
+      businessId,
+      'overdue',
+      selected,
+      messageTemplate,
+      includePdf,
+      skipped + (due.length - selected.length),
+    );
   } catch (error: any) {
     console.error(`[Reminder Check] Error checking overdue reminders for business ${businessId}:`, error);
-    return { sent: 0, skipped: 0, errors: 1 };
+    return { ...EMPTY, errors: 1 };
   }
 }
 
@@ -384,4 +307,3 @@ Please arrange payment immediately to avoid any inconvenience.
 Thank you!
 {business_name}`;
 }
-

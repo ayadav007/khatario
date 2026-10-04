@@ -63,8 +63,10 @@ export function KeySourceCards({
       title: 'Khatario AI',
       badge: 'Recommended',
       body: k.active
-        ? `Active · ${k.monthlyQuota.toLocaleString('en-IN')} replies a month included.`
-        : `No setup. ${k.trialTotal} free test replies, then ₹${k.price}/month for ${k.monthlyQuota.toLocaleString('en-IN')} replies.`,
+        ? k.monthlyQuota === -1
+          ? 'Active · unlimited replies included.'
+          : `Active · ${k.monthlyQuota.toLocaleString('en-IN')} replies a month included with Connect.`
+        : `No setup. ${k.trialTotal} free test replies. Live replies come with your Connect plan.`,
     },
     {
       v: 'own',

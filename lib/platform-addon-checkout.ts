@@ -224,7 +224,44 @@ export async function completeAddonCheckoutPayment(params: {
     });
   }
 
-  await activateWhatsAppAddon(params.businessId, params.addonType, price);
+  if (params.addonType === 'khatario_ai') {
+    await activateWhatsAppAddon(params.businessId, params.addonType, price);
+  } else {
+    // Checkouts opened before the Bot/Send add-ons were folded into Connect.
+    await grantConnectMonthForLegacyAddon(params.businessId);
+  }
+}
+
+async function grantConnectMonthForLegacyAddon(businessId: string): Promise<void> {
+  await query(
+    `INSERT INTO business_module_subscriptions
+       (business_id, module_key, plan_id, status, start_date, end_date, billing_cycle)
+     VALUES ($1, 'connect', $2, 'active', CURRENT_DATE, (CURRENT_DATE + INTERVAL '1 month')::date, 'monthly')
+     ON CONFLICT (business_id, module_key) DO UPDATE SET
+       plan_id = $2,
+       status = 'active',
+       end_date = (
+         GREATEST(
+           CASE WHEN business_module_subscriptions.plan_id = $2 AND business_module_subscriptions.status = 'active'
+                THEN COALESCE(business_module_subscriptions.end_date, CURRENT_DATE)
+                ELSE CURRENT_DATE END,
+           CURRENT_DATE
+         ) + INTERVAL '1 month'
+       )::date,
+       trial_end_date = NULL,
+       grace_period_end = NULL,
+       scheduled_plan_id = NULL,
+       cancel_at_period_end = false,
+       updated_at = CURRENT_TIMESTAMP`,
+    [businessId, CONNECT_PLAN_ID],
+  );
+  await query(
+    `INSERT INTO business_modules (business_id, module_key, enabled, source)
+     VALUES ($1, 'connect', true, 'legacy_addon_checkout')
+     ON CONFLICT (business_id, module_key) DO UPDATE SET enabled = true`,
+    [businessId],
+  );
+  clearAddonCache(businessId);
 }
 
 export function isWhatsAppAddonType(value: unknown): value is WhatsAppAddonType {

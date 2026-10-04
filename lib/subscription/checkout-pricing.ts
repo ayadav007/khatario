@@ -1,5 +1,5 @@
 import type { BillingCycle } from '@/lib/subscription/apply-plan-change';
-import { computePlanAmount } from '@/lib/subscription/apply-plan-change';
+import { computePlanAmount, isBillingCycleOffered } from '@/lib/subscription/apply-plan-change';
 import {
   calculateDiscount,
   validateCoupon,
@@ -25,14 +25,18 @@ export async function resolveCheckoutPricing(params: {
   const plan = await queryOne<{
     price_monthly: string | number;
     price_yearly: string | number;
+    price_3year: string | number | null;
     is_active: boolean;
   }>(
-    `SELECT price_monthly, price_yearly, is_active FROM subscription_plans WHERE id = $1`,
+    `SELECT price_monthly, price_yearly, price_3year, is_active FROM subscription_plans WHERE id = $1`,
     [params.planId],
   );
 
   if (!plan?.is_active) {
     throw new Error('Invalid or inactive plan');
+  }
+  if (!isBillingCycleOffered(plan, params.billingCycle)) {
+    throw new Error('This billing period is not offered for this plan');
   }
 
   const baseAmount = computePlanAmount(plan, params.billingCycle);

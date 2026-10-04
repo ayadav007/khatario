@@ -36,6 +36,7 @@ import {
   getPlatformRazorpayProvider,
 } from '@/lib/platform-subscription-checkout';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 import { getPrimaryModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import {
   formatModulePlanReceiptLabel,
@@ -51,7 +52,7 @@ export interface RecordBillingInput {
   moduleKey?: PlatformModule | string | null;
   /** List/base price before discount */
   amount: number;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: 'monthly' | 'yearly' | 'three_year';
   paymentMethod?: string;
   paymentReference?: string | null;
   status: BillingTxStatus;
@@ -326,7 +327,7 @@ export async function recordUpgradeBilling(params: {
   planDisplayName: string;
   moduleKey?: PlatformModule | string | null;
   amount: number;
-  billingCycle: 'monthly' | 'yearly';
+  billingCycle: 'monthly' | 'yearly' | 'three_year';
   paymentMethod: string;
   paymentReference?: string | null;
   paymentStatus?: BillingTxStatus;
@@ -405,7 +406,7 @@ function extractBusinessIdFromWebhook(verified: VerifyWebhookResult): string | n
 
 function extractPlanMetaFromWebhook(verified: VerifyWebhookResult): {
   planId?: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: 'monthly' | 'yearly' | 'three_year';
 } {
   const raw = verified.rawPayload as Record<string, unknown> | undefined;
   const payload = raw?.payload as Record<string, unknown> | undefined;
@@ -415,7 +416,9 @@ function extractPlanMetaFromWebhook(verified: VerifyWebhookResult): {
   return {
     planId: typeof notes.plan_id === 'string' ? notes.plan_id : undefined,
     billingCycle:
-      notes.billing_cycle === 'yearly' || notes.billing_cycle === 'monthly'
+      notes.billing_cycle === 'yearly' ||
+      notes.billing_cycle === 'monthly' ||
+      notes.billing_cycle === 'three_year'
         ? notes.billing_cycle
         : undefined,
   };
@@ -679,7 +682,7 @@ export async function processPlatformEasebuzzCallback(rawBody: string): Promise<
       await completeSubscriptionCheckoutPayment({
         businessId: tx.business_id,
         planId: tx.plan_id || 'free',
-        billingCycle: tx.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+        billingCycle: normalizeBillingCycle(tx.billing_cycle),
         billingTransactionId: tx.id,
         providerPaymentId: verified.providerPaymentId,
         amount: verified.amount ?? 0,

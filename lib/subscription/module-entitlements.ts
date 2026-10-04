@@ -45,13 +45,22 @@ export const LIMIT_OWNER_MODULE: Partial<Record<LimitCheckType, PlatformModule>>
   shifts: 'hr',
   designations: 'hr',
   performance_reviews: 'hr',
-  whatsapp: 'connect',
   email: 'billing',
   branches: 'billing',
 };
 
-/** Account-wide: MAX console seats across active module plans (not SUM). */
-export const ACCOUNT_WIDE_LIMIT_TYPES = new Set<LimitCheckType>(['users']);
+/**
+ * Account-wide: MAX across active module plans (not SUM). WhatsApp sends come from billing
+ * (QR invoice sends and reminders) or Connect, so the higher daily cap wins.
+ */
+export const ACCOUNT_WIDE_LIMIT_TYPES = new Set<LimitCheckType>(['users', 'whatsapp']);
+
+/** WhatsApp features every billing plan can grant without the Connect module. */
+const SHARED_WHATSAPP_FEATURE_IDS = new Set([
+  'settings_whatsapp',
+  'whatsapp_auto_reminders',
+  'whatsapp_credit_alerts',
+]);
 
 export const CORE_BILLING_FEATURE_KEYS = new Set([
   'customer_management',
@@ -80,6 +89,8 @@ export function getFeatureRequiredModule(featureKey: string): PlatformModule | n
     return 'billing';
   }
   if (registryId.startsWith('hr_')) return 'hr';
+  if (SHARED_WHATSAPP_FEATURE_IDS.has(registryId)) return null;
+  if (registryId === 'e_invoice' || registryId === 'eway_bill') return 'billing';
   if (
     registryId.startsWith('sales_') ||
     registryId.startsWith('purchase_') ||
@@ -102,7 +113,15 @@ export function getFeatureRequiredModule(featureKey: string): PlatformModule | n
 
 export const MODULE_ADD_CONFIG: Record<
   Exclude<PlatformModule, 'crm'>,
-  { trialPlanId: string; trialDays: number | null; status: 'trial' | 'active'; label: string; description: string }
+  {
+    trialPlanId: string;
+    trialDays: number | null;
+    status: 'trial' | 'active';
+    label: string;
+    description: string;
+    /** Module can only be added through checkout (no free or trial start). */
+    paidOnly?: boolean;
+  }
 > = {
   billing: {
     trialPlanId: 'trial',
@@ -123,6 +142,7 @@ export const MODULE_ADD_CONFIG: Record<
     trialDays: null,
     status: 'active',
     label: 'Connect',
-    description: 'WhatsApp inbox, bot, and customer messaging.',
+    description: 'Official WhatsApp API, shared inbox, AI agent, templates and automation.',
+    paidOnly: true,
   },
 };

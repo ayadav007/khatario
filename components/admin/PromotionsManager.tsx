@@ -692,9 +692,8 @@ export function PromotionsManager() {
                 >
                   <option value="all">All Businesses</option>
                   <option value="free">Free Plan Users</option>
-                  <option value="professional">Professional Plan Users</option>
+                  <option value="growth">Growth Plan Users</option>
                   <option value="business">Business Plan Users</option>
-                  <option value="enterprise">Enterprise Plan Users</option>
                 </select>
               </div>
 

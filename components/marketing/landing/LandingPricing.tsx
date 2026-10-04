@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Check } from 'lucide-react';
+import { clsx } from 'clsx';
 import { LANDING_INTRO_SUBTEXT, LANDING_MAX_WIDE, LANDING_PAGE_GUTTER, LANDING_SECTION_INTRO } from '@/lib/marketing-layout';
 import { FALLBACK_LANDING_PLANS } from '@/lib/landing-pricing-fallback';
 import { useLandingProduct } from '@/components/marketing/landing/LandingProductContext';
@@ -19,12 +20,7 @@ export interface LandingPricingPlan {
   price_yearly: number;
   product_line?: ProductLine | string;
   features: {
-    limits: {
-      max_invoices_per_month: number;
-      max_customers: number;
-      max_users: number;
-      max_whatsapp_per_day: number;
-    };
+    limits: Partial<Record<string, number>>;
     features: Record<string, boolean>;
   };
   sort_order: number;
@@ -34,69 +30,66 @@ function formatRupees(value: number): string {
   return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
-const HIDDEN_PLAN_IDS = new Set(['trial', 'hr_trial', 'hr_free', 'connect']);
+/** Trials, lapsed states and retired plans are never sold on the landing page. */
+const HIDDEN_PLAN_IDS = new Set([
+  'trial',
+  'hr_trial',
+  'hr_free',
+  'connect_free',
+  'professional',
+  'enterprise',
+]);
 
-const CONNECT_ADDONS = [
-  {
-    id: 'whatsapp_bot',
-    name: 'WhatsApp Bot',
-    price: 499,
-    description: 'Conversations, bot rules, automation, and CRM integration.',
-    highlights: [
-      'Conversations inbox',
-      'Bot rules & auto-replies',
-      'Order verification',
-      'Message labeling',
-    ],
-  },
-  {
-    id: 'whatsapp_send_message',
-    name: 'Send Message',
-    price: 299,
-    description: 'Send text, buttons, and media to customers on demand.',
-    highlights: [
-      'Custom text messages',
-      'Button messages',
-      'Images & documents',
-      'Message scheduling',
-    ],
-  },
-];
+const CONNECT_PLAN_ID = 'connect';
 
-function getPlanHighlights(planId: string): string[] {
-  const highlights: Record<string, string[]> = {
+function usersLabel(limit: number | undefined): string | null {
+  if (limit === undefined || limit === 0) return null;
+  if (limit === -1) return 'Unlimited users';
+  return limit === 1 ? '1 user' : `Up to ${limit} users`;
+}
+
+function getPlanHighlights(plan: LandingPricingPlan): string[] {
+  const limits = plan.features?.limits ?? {};
+  const users = usersLabel(limits.max_users);
+  const highlights: Record<string, (string | null)[]> = {
     free: [
-      'Up to 20 invoices/month',
-      '10 customers & 10 items',
-      'Basic invoice templates',
-      'PDF generation',
-      'Payment tracking',
+      'Unlimited GST invoices, customers & items',
+      'Send invoices on WhatsApp from your own number',
+      'Send payment reminders yourself',
+      'GST reports & backups',
+      users,
     ],
-    professional: [
-      'Up to 500 invoices/month',
-      'Unlimited customers & items',
-      'All invoice & thermal templates',
-      'WhatsApp integration (10/day)',
-      'Purchase & expense tracking',
-      'Up to 3 users',
+    growth: [
+      'Everything in Free',
+      'Automatic WhatsApp payment reminders',
+      'Inventory, purchase orders & expenses',
+      'POS mode & barcode labels',
+      'Payment links & email reminders',
+      'Your own branding on invoices',
+      users,
     ],
     business: [
-      'Unlimited invoices',
-      'WhatsApp automation (100/day)',
-      'GST reports (GSTR-1, GSTR-3B)',
-      'Multi-branch support',
-      'Advanced reports & analytics',
-      'Up to 10 users',
-      'Auto-backup & restore',
+      'Everything in Growth',
+      'Full accounting ledger',
+      limits.max_branches && limits.max_branches > 1
+        ? `Up to ${limits.max_branches} branches & multiple warehouses`
+        : 'Multiple branches & warehouses',
+      'Online store & multi-currency',
+      'Advanced analytics & report builder',
+      'API access',
+      users,
     ],
-    enterprise: [
-      'Everything unlimited',
-      'Payment gateway integration',
-      'REST API access',
-      'Online store',
-      'Custom branding',
-      'Priority support',
-      'Dedicated account manager',
+    [CONNECT_PLAN_ID]: [
+      'Official WhatsApp Business API on your number',
+      'Shared team inbox',
+      limits.max_ai_replies_per_month === -1
+        ? 'Unlimited AI agent replies'
+        : limits.max_ai_replies_per_month
+          ? `${limits.max_ai_replies_per_month.toLocaleString('en-IN')} AI agent replies a month`
+          : 'AI agent replies',
+      'Meta-approved message templates',
+      'Campaigns, automation & WhatsApp shop',
+      users,
     ],
     hr_starter: [
       'Employee records & profiles',
@@ -112,7 +105,19 @@ function getPlanHighlights(planId: string): string[] {
       'Up to 200 employees',
     ],
   };
-  return highlights[planId] || [];
+  return (highlights[plan.id] ?? []).filter((h): h is string => !!h);
+}
+
+/** Largest yearly saving across the shown plans, as a whole percentage. */
+function maxYearlySavingPercent(plans: LandingPricingPlan[]): number {
+  let best = 0;
+  for (const plan of plans) {
+    const monthly = Number(plan.price_monthly) || 0;
+    const yearly = Number(plan.price_yearly) || 0;
+    if (monthly <= 0 || yearly <= 0) continue;
+    best = Math.max(best, Math.round((1 - yearly / (monthly * 12)) * 100));
+  }
+  return best;
 }
 
 /** Editable headings for the Billing plans; HR and Connect keep their built-in copy. Plans always come live from the API. */
@@ -137,8 +142,8 @@ function getPricingCopy(productLine: ProductLine, content: LandingPricingContent
       };
     case 'connect':
       return {
-        title: 'Connect pricing — no platform fee',
-        subtitle: 'Sign up free, then add only the WhatsApp capabilities you need.',
+        title: 'Connect: the official WhatsApp Business API',
+        subtitle: 'One add-on for your own WhatsApp Business number, AI replies, templates, the shared inbox and automation.',
       };
     default:
       return { title: content.billingTitle, subtitle: content.billingSubtitle };
@@ -160,7 +165,8 @@ export function LandingPricing(props: Partial<LandingPricingContent> = {}) {
     });
 
   const isPopular = (planId: string) =>
-    productLine === 'hr' ? planId === 'hr_pro' : planId === 'professional';
+    productLine === 'hr' ? planId === 'hr_pro' : planId === 'growth';
+  const yearlySaving = maxYearlySavingPercent(displayPlans);
 
   return (
     <section id="pricing" className="scroll-mt-24 border-t border-slate-200/80 bg-slate-50/90 py-20 2xl:py-24">
@@ -175,30 +181,38 @@ export function LandingPricing(props: Partial<LandingPricingContent> = {}) {
               <LandingProductToggle label="Show pricing for" />
             </div>
           )}
-          {productLine !== 'connect' && (
-            <div className="mt-4 flex max-md:justify-center md:justify-start">
-              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => onBillingCycle('monthly')}
-                  className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
-                    billingCycle === 'monthly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onBillingCycle('yearly')}
-                  className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
-                    billingCycle === 'yearly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
-                  }`}
-                >
-                  Yearly <span className="text-xs font-bold text-primary-600">(Save 20%)</span>
-                </button>
-              </div>
+          <div className="mt-4 flex max-md:justify-center md:justify-start">
+            <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => onBillingCycle('monthly')}
+                className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
+                  billingCycle === 'monthly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => onBillingCycle('yearly')}
+                className={`rounded-lg px-6 py-2.5 text-sm font-semibold transition sm:px-8 sm:text-base ${
+                  billingCycle === 'yearly' ? 'bg-primary-600 text-white' : 'text-slate-600 hover:text-primary-600'
+                }`}
+              >
+                Yearly
+                {yearlySaving > 0 && (
+                  <span
+                    className={clsx(
+                      'ml-1 text-xs font-bold',
+                      billingCycle === 'yearly' ? 'text-white/90' : 'text-primary-600',
+                    )}
+                  >
+                    (Save up to {yearlySaving}%)
+                  </span>
+                )}
+              </button>
             </div>
-          )}
+          </div>
         </div>
 
         {loading ? (
@@ -209,48 +223,16 @@ export function LandingPricing(props: Partial<LandingPricingContent> = {}) {
               aria-label="Loading pricing"
             />
           </div>
-        ) : productLine === 'connect' ? (
-          <div className={`mx-auto grid max-w-4xl grid-cols-1 gap-6 sm:grid-cols-2 ${LANDING_MAX_WIDE}`}>
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md sm:col-span-2">
-              <h3 className="text-xl font-bold text-slate-900">Khatario Connect platform</h3>
-              <p className="mt-2 text-slate-600">Free to sign up — no monthly platform charge.</p>
-              <button
-                type="button"
-                onClick={() => router.push(signupHref)}
-                className="mt-4 rounded-lg bg-primary-600 px-6 py-3 text-sm font-semibold text-white hover:bg-primary-700"
-              >
-                Create free Connect account
-              </button>
-            </div>
-            {CONNECT_ADDONS.map((addon) => (
-              <div key={addon.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-md">
-                <h3 className="text-2xl font-bold text-slate-900">{addon.name}</h3>
-                <p className="mt-1 text-sm text-slate-600">{addon.description}</p>
-                <div className="mt-4 flex items-baseline">
-                  <span className="text-4xl font-bold text-slate-900">{formatRupees(addon.price)}</span>
-                  <span className="ml-2 text-slate-600">/month add-on</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => router.push(signupHref)}
-                  className="mt-6 w-full rounded-lg bg-slate-100 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-200"
-                >
-                  Get started
-                </button>
-                <ul className="mt-6 space-y-3">
-                  {addon.highlights.map((feature) => (
-                    <li key={feature} className="flex items-start text-sm">
-                      <Check className="mt-0.5 mr-2 h-5 w-5 shrink-0 text-primary-600" strokeWidth={2} />
-                      <span className="text-slate-700">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
         ) : (
           <div
-            className={`grid w-full grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-6 lg:grid-cols-2 lg:gap-7 xl:grid-cols-4 xl:gap-8 2xl:gap-10 ${LANDING_MAX_WIDE}`}
+            className={clsx(
+              'mx-auto grid w-full grid-cols-1 gap-6 sm:gap-6 lg:gap-7 xl:gap-8 2xl:gap-10',
+              displayPlans.length === 1 && 'max-w-md',
+              displayPlans.length === 2 && 'max-w-4xl sm:grid-cols-2',
+              displayPlans.length === 3 && 'sm:grid-cols-2 xl:grid-cols-3',
+              displayPlans.length >= 4 && 'sm:grid-cols-2 xl:grid-cols-4',
+              LANDING_MAX_WIDE,
+            )}
           >
             {displayPlans.map((plan) => {
               const monthly = Number(plan.price_monthly) || 0;
@@ -294,11 +276,16 @@ export function LandingPricing(props: Partial<LandingPricingContent> = {}) {
                           : 'bg-slate-100 text-slate-900 hover:bg-slate-200'
                       }`}
                     >
-                      {monthly === 0 ? 'Start free' : 'Start trial'}
+                      {monthly === 0 ? 'Start free' : plan.id === CONNECT_PLAN_ID ? 'Get started' : 'Start trial'}
                     </button>
+                    {plan.id === CONNECT_PLAN_ID && (
+                      <p className="mt-2 text-center text-xs text-slate-500">
+                        Add it to any Khatario plan. Sending invoices from a QR-linked number stays free.
+                      </p>
+                    )}
 
                     <ul className="mt-6 space-y-3">
-                      {getPlanHighlights(plan.id).map((feature) => (
+                      {getPlanHighlights(plan).map((feature) => (
                         <li key={feature} className="flex items-start text-sm">
                           <Check className="mt-0.5 mr-2 h-5 w-5 shrink-0 text-primary-600" strokeWidth={2} />
                           <span className="text-slate-700">{feature}</span>

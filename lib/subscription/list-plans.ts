@@ -13,6 +13,7 @@ export async function listActiveSubscriptionPlans() {
       description,
       price_monthly,
       price_yearly,
+      price_3year,
       currency,
       features,
       is_active,

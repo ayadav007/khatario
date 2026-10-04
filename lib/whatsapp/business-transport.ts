@@ -1,4 +1,5 @@
 import { query } from '@/lib/db';
+import { hasWhatsAppBotAddon } from '@/lib/subscription';
 import {
   getMetaWaConfig,
   sendCtaUrlMessage,
@@ -22,9 +23,13 @@ export function isAssistantEcho(text: string | null | undefined): boolean {
   return typeof text === 'string' && text.startsWith(ASSISTANT_MARKER);
 }
 
-/** Cloud API when the business has saved Cloud credentials, otherwise its QR (Baileys) session. */
+/**
+ * Cloud API when the business has saved Cloud credentials and an active Connect plan, otherwise
+ * its QR (Baileys) session. Saved credentials stay in place so renewing Connect resumes Cloud.
+ */
 export async function businessTransport(businessId: string): Promise<BusinessTransport> {
-  return (await getMetaWaConfig(businessId)) ? 'cloud' : 'baileys';
+  if (!(await getMetaWaConfig(businessId))) return 'baileys';
+  return (await hasWhatsAppBotAddon(businessId)) ? 'cloud' : 'baileys';
 }
 
 async function recordOutbound(provider: BusinessTransport, businessId: string, messageId: string | null, to: string) {

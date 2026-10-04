@@ -210,7 +210,8 @@ export function scheduleReconnectWithBackoff(
   clearReconnectTimer(e);
 
   const statusCode = ctx.reason;
-  const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+  const shouldReconnect =
+    statusCode !== DisconnectReason.loggedOut && statusCode !== DisconnectReason.forbidden;
 
   if (!shouldReconnect) {
     e.apiStatus = 'disconnected';

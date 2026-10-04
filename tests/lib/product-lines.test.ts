@@ -24,9 +24,9 @@ describe('product-lines', () => {
     });
   });
 
-  it('maps Connect signup to free connect plan', () => {
+  it('maps Connect signup to the unpaid connect_free plan', () => {
     expect(getSignupPlanConfig('connect')).toMatchObject({
-      planId: 'connect',
+      planId: 'connect_free',
       status: 'active',
       trialDays: null,
     });

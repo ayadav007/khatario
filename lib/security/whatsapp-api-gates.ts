@@ -11,17 +11,20 @@ import type { BusinessApiHandlerContext } from './types';
 
 export const WHATSAPP_BASE_FEATURE = 'settings_whatsapp';
 
-async function isConnectModuleOff(businessId: string): Promise<boolean> {
+const CONNECT_ACTION_URL = '/settings/products';
+
+/** WhatsApp ships with Billing (QR) and Connect; other products alone do not include it. */
+async function hasNoWhatsAppProduct(businessId: string): Promise<boolean> {
   try {
     const { getBusinessPlatformContext } = await import('@/lib/business-modules');
-    const ctx = await getBusinessPlatformContext(businessId);
-    return !ctx.enabledModules.includes('connect');
+    const { enabledModules } = await getBusinessPlatformContext(businessId);
+    return !enabledModules.includes('billing') && !enabledModules.includes('connect');
   } catch {
     return false;
   }
 }
 
-/** Basic WhatsApp: connect + transactional sends (plan feature, not addon). */
+/** Basic WhatsApp: QR link + invoice sends and reminders (every billing plan). */
 export async function assertWhatsAppBaseAccess(
   ctx: BusinessApiHandlerContext,
 ): Promise<NextResponse | null> {
@@ -30,15 +33,15 @@ export async function assertWhatsAppBaseAccess(
     return null;
   } catch (error) {
     if (error instanceof FeatureAccessDeniedError) {
-      const moduleOff = await isConnectModuleOff(ctx.businessId);
+      const noProduct = await hasNoWhatsAppProduct(ctx.businessId);
       return NextResponse.json(
         {
-          error: moduleOff
-            ? 'WhatsApp is part of Khatario Connect, which is not switched on for this business. Add Connect from Settings → Products.'
-            : 'WhatsApp integration is not available on your plan. Upgrade to connect WhatsApp.',
-          code: moduleOff ? 'MODULE_NOT_ENABLED' : error.toResponse().code,
+          error: noProduct
+            ? 'WhatsApp comes with Khatario Billing or Connect. Add one from Settings → Products.'
+            : 'WhatsApp is not available on your plan right now. Check your subscription in Settings → Subscription.',
+          code: noProduct ? 'MODULE_NOT_ENABLED' : error.toResponse().code,
           feature: WHATSAPP_BASE_FEATURE,
-          ...(moduleOff ? { module: 'connect', action_url: '/settings/products' } : {}),
+          ...(noProduct ? { action_url: CONNECT_ACTION_URL } : {}),
         },
         { status: 403 },
       );
@@ -47,53 +50,48 @@ export async function assertWhatsAppBaseAccess(
   }
 }
 
-/** Bot / CRM / inbox product (`whatsapp_bot` addon). */
+/** Inbox, bot, AI agent, WABA, templates, shop (paid Connect plan). */
 export async function assertWhatsAppPremiumAddon(
-  ctx: BusinessApiHandlerContext,
+  ctx: Pick<BusinessApiHandlerContext, 'businessId'>,
 ): Promise<NextResponse | null> {
-  const hasAddon = await hasWhatsAppBotAddon(ctx.businessId);
-  if (!hasAddon) {
-    return NextResponse.json(
-      {
-        error:
-          'WhatsApp Bot addon is required. Purchase the addon to unlock conversations, automation, and CRM.',
-        code: 'WHATSAPP_BOT_ADDON_REQUIRED',
-      },
-      { status: 403 },
-    );
-  }
-  return null;
-}
-
-/** Custom / bulk manual sends (`whatsapp_send_message` or bot addon). */
-export async function assertWhatsAppManualAddon(
-  ctx: BusinessApiHandlerContext,
-): Promise<NextResponse | null> {
-  const [hasBot, hasSend] = await Promise.all([
-    hasWhatsAppBotAddon(ctx.businessId),
-    hasWhatsAppSendMessageAddon(ctx.businessId),
-  ]);
-  if (hasBot || hasSend) {
-    return null;
-  }
+  if (await hasWhatsAppBotAddon(ctx.businessId)) return null;
   return NextResponse.json(
     {
       error:
-        'WhatsApp Send Message addon is required for custom messaging. Invoice sends from billing work on Basic WhatsApp.',
-      code: 'WHATSAPP_SEND_ADDON_REQUIRED',
+        'This needs Khatario Connect. Connect adds the official WhatsApp API, shared inbox, AI agent, templates and automation.',
+      code: 'WHATSAPP_BOT_ADDON_REQUIRED',
+      module: 'connect',
+      action_url: CONNECT_ACTION_URL,
     },
     { status: 403 },
   );
 }
 
+/** Custom and bulk sends beyond invoices and reminders (paid Connect plan). */
+export async function assertWhatsAppManualAddon(
+  ctx: BusinessApiHandlerContext,
+): Promise<NextResponse | null> {
+  if (await hasWhatsAppSendMessageAddon(ctx.businessId)) return null;
+  return NextResponse.json(
+    {
+      error:
+        'Custom and bulk WhatsApp messages need Khatario Connect. Invoice sends and payment reminders work on every plan.',
+      code: 'WHATSAPP_SEND_ADDON_REQUIRED',
+      module: 'connect',
+      action_url: CONNECT_ACTION_URL,
+    },
+    { status: 403 },
+  );
+}
+
+/**
+ * Invoice sends ride the basic gate. Only `invoiceId` qualifies because the send route loads that
+ * invoice scoped to the business (404 otherwise); other client flags were unverifiable.
+ */
 export function isTransactionalWhatsAppSend(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false;
   const o = body as Record<string, unknown>;
-  return Boolean(
-    o.invoiceId ||
-      o.estimateId ||
-      o.creditNoteId ||
-      o.salesOrderId ||
-      o.transactional === true,
+  return (
+    (typeof o.invoiceId === 'string' && o.invoiceId.length > 0) || typeof o.invoiceId === 'number'
   );
 }

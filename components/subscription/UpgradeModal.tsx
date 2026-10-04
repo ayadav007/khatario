@@ -9,6 +9,12 @@ import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
 import { productLineForModule } from '@/lib/platform-modules';
 import type { PlatformModule } from '@/lib/platform-modules';
 import { MODULE_ADD_CONFIG, getLimitOwnerModule } from '@/lib/subscription/module-entitlements';
+import {
+  billingCycleMonths,
+  computePlanAmount,
+  isBillingCycleOffered,
+  type BillingCycle,
+} from '@/lib/subscription/apply-plan-change';
 
 interface SubscriptionPlan {
   id: string;
@@ -17,14 +23,16 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  price_3year?: number | null;
   currency: string;
   features: {
     limits: {
-      max_invoices_per_month: number;
-      max_customers: number;
-      max_items: number;
-      max_users: number;
-      max_whatsapp_per_day: number;
+      max_invoices_per_month?: number;
+      max_customers?: number;
+      max_items?: number;
+      max_users?: number;
+      max_whatsapp_per_day?: number;
+      max_ai_replies_per_month?: number;
     };
     features: Record<string, boolean>;
   };
@@ -70,7 +78,7 @@ export function UpgradeModal({
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [upgrading, setUpgrading] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
@@ -82,8 +90,8 @@ export function UpgradeModal({
     showTrialOption && moduleKey
       ? MODULE_ADD_CONFIG[moduleKey as Exclude<PlatformModule, 'crm'>]
       : null;
-  /** Free products (e.g. Connect) activate on their own ₹0 plan and have no paid tiers to list. */
-  const isFreeModule = !!trialConfig && !trialConfig.trialDays;
+  /** Products that activate on their own ₹0 plan with no paid tiers; paid-only products list plans. */
+  const isFreeModule = !!trialConfig && !trialConfig.trialDays && !trialConfig.paidOnly;
 
   async function handleStartTrial() {
     if (!trialConfig || !business?.id || !moduleKey) return;
@@ -124,10 +132,15 @@ export function UpgradeModal({
   }, [selectedPlanId, billingCycle]);
 
   function listPrice(plan: SubscriptionPlan): number {
-    return billingCycle === 'yearly'
-      ? Number(plan.price_yearly) || 0
-      : Number(plan.price_monthly) || 0;
+    return computePlanAmount(plan, billingCycle);
   }
+
+  const offersThreeYear = plans.some((p) => Number(p.price_3year) > 0);
+  const cycleOptions: Array<{ id: BillingCycle; label: string }> = [
+    { id: 'monthly', label: 'Monthly' },
+    { id: 'yearly', label: 'Yearly' },
+    ...(offersThreeYear ? [{ id: 'three_year' as const, label: '3 years' }] : []),
+  ];
 
   async function applyCoupon() {
     if (!couponCode.trim() || !selectedPlanId || !business?.id) return;
@@ -243,7 +256,7 @@ export function UpgradeModal({
       items: `You've reached your limit of ${limit} items/products.`,
       users: `You've reached your limit of ${limit} user(s).`,
       employees: `You've reached your limit of ${limit} employee(s).`,
-      whatsapp: 'WhatsApp integration is not available in your current plan.',
+      whatsapp: `You've reached your limit of ${limit} WhatsApp messages today.`,
       feature: `${featureName} is not available in your current plan.`,
     };
 
@@ -259,30 +272,19 @@ export function UpgradeModal({
   };
 
   const getPlanHighlights = (plan: SubscriptionPlan): string[] => {
-    const limits = plan.features.limits;
+    const limits = plan.features?.limits ?? {};
     const highlights: string[] = [];
+    const describe = (value: number | undefined, unlimited: string, counted: (n: number) => string) => {
+      if (value === undefined || value === null) return;
+      if (value === -1) highlights.push(unlimited);
+      else if (value > 0) highlights.push(counted(value));
+    };
 
-    if (limits.max_invoices_per_month === -1) {
-      highlights.push('Unlimited invoices');
-    } else {
-      highlights.push(`${limits.max_invoices_per_month} invoices/month`);
-    }
-
-    if (limits.max_customers === -1) {
-      highlights.push('Unlimited customers');
-    } else {
-      highlights.push(`${limits.max_customers} customers`);
-    }
-
-    if (limits.max_users === -1) {
-      highlights.push('Unlimited users');
-    } else {
-      highlights.push(`${limits.max_users} user(s)`);
-    }
-
-    if (limits.max_whatsapp_per_day > 0) {
-      highlights.push(`${limits.max_whatsapp_per_day} WhatsApp messages/day`);
-    }
+    describe(limits.max_invoices_per_month, 'Unlimited invoices', (n) => `${n} invoices/month`);
+    describe(limits.max_customers, 'Unlimited customers', (n) => `${n} customers`);
+    describe(limits.max_users, 'Unlimited users', (n) => `${n} user(s)`);
+    describe(limits.max_ai_replies_per_month, 'Unlimited AI replies', (n) => `${n} AI replies/month`);
+    describe(limits.max_whatsapp_per_day, 'Unlimited WhatsApp messages', (n) => `${n} WhatsApp messages/day`);
 
     return highlights;
   };
@@ -415,31 +417,23 @@ export function UpgradeModal({
         <>
         {/* Billing Cycle Toggle */}
         <div className="p-6 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center justify-center gap-4">
-            <span className={`text-sm font-medium ${billingCycle === 'monthly' ? 'text-gray-900' : 'text-gray-500'}`}>
-              Monthly
-            </span>
-            <button
-              type="button"
-              onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                billingCycle === 'yearly' ? 'bg-primary-600' : 'bg-gray-300'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  billingCycle === 'yearly' ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-            <span className={`text-sm font-medium ${billingCycle === 'yearly' ? 'text-gray-900' : 'text-gray-500'}`}>
-              Yearly
-            </span>
-            {billingCycle === 'yearly' && (
-              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-medium">
-                Save up to 17%
-              </span>
-            )}
+          <div className="flex items-center justify-center">
+            <div className="inline-flex rounded-full border border-gray-300 bg-white p-1" role="radiogroup" aria-label="Billing period">
+              {cycleOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={billingCycle === opt.id}
+                  onClick={() => setBillingCycle(opt.id)}
+                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                    billingCycle === opt.id ? 'bg-primary-600 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -448,8 +442,14 @@ export function UpgradeModal({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             {plans.map((plan) => {
               const isSelected = selectedPlanId === plan.id;
-              const price = billingCycle === 'yearly' ? plan.price_yearly : plan.price_monthly;
-              const monthlyEquivalent = billingCycle === 'yearly' ? Math.round(plan.price_yearly / 12) : plan.price_monthly;
+              const offered = isBillingCycleOffered(plan, billingCycle);
+              const price = listPrice(plan);
+              const months = billingCycleMonths(billingCycle);
+              const monthlyEquivalent = Math.round(price / months);
+              const saving =
+                months > 1 && Number(plan.price_monthly) > 0
+                  ? Math.round((1 - price / (Number(plan.price_monthly) * months)) * 100)
+                  : 0;
 
               return (
                 <div
@@ -480,19 +480,23 @@ export function UpgradeModal({
 
                   {/* Price */}
                   <div className="mb-4">
-                    <div className="flex items-baseline">
-                      <span className="text-3xl font-bold text-gray-900">{formatPrice(price)}</span>
-                      {billingCycle === 'yearly' && (
-                        <span className="text-sm text-gray-500 ml-2">/year</span>
-                      )}
-                      {billingCycle === 'monthly' && (
-                        <span className="text-sm text-gray-500 ml-2">/month</span>
-                      )}
-                    </div>
-                    {billingCycle === 'yearly' && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        {formatPrice(monthlyEquivalent)}/month billed annually
-                      </p>
+                    {offered ? (
+                      <>
+                        <div className="flex items-baseline">
+                          <span className="text-3xl font-bold text-gray-900">{formatPrice(price)}</span>
+                          <span className="text-sm text-gray-500 ml-2">
+                            {billingCycle === 'three_year' ? 'for 3 years' : billingCycle === 'yearly' ? '/year' : '/month'}
+                          </span>
+                        </div>
+                        {months > 1 && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {formatPrice(monthlyEquivalent)}/month
+                            {saving > 0 ? ` · save ${saving}%` : ''}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500">Not offered for this billing period</p>
                     )}
                   </div>
 
@@ -560,7 +564,11 @@ export function UpgradeModal({
             </button>
             <button
               onClick={handleUpgrade}
-              disabled={!selectedPlanId || upgrading}
+              disabled={
+                !selectedPlanId ||
+                upgrading ||
+                (!!selectedPlan && !isBillingCycleOffered(selectedPlan, billingCycle))
+              }
               className="flex-1 px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition font-semibold shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {upgrading ? (

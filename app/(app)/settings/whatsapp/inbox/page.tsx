@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import { BookOpen, Bot, ChevronRight, Loader2, Workflow, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useBotAddon } from '@/components/whatsapp/settings/useBotAddon';
+import { useWhatsAppAccess } from '@/components/whatsapp/settings/useWhatsAppAccess';
 import { AutoAssignSettingsCard } from '@/components/whatsapp/settings/AutoAssignSettingsCard';
-import { BotAddonLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
+import { ConnectLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
 import { WHATSAPP_SETTINGS_BASE } from '@/components/whatsapp/settings/WhatsAppSettingsNav';
 
 function LinkRow({ href, icon: Icon, title, body }: { href: string; icon: LucideIcon; title: string; body: string }) {
@@ -26,30 +26,8 @@ function LinkRow({ href, icon: Icon, title, body }: { href: string; icon: Lucide
 }
 
 export default function WhatsAppInboxSettingsPage() {
-  const { business, hasPlatformModule } = useAuth();
-  const { hasBotAddon, loading } = useBotAddon();
-  const hasConnect = hasPlatformModule('connect');
-
-  if (!hasConnect) {
-    return (
-      <SettingsPageBody>
-        <SettingsBlock
-          title="Shared inbox"
-          description="Answer customer chats as a team from one inbox, with automatic assignment and saved replies."
-        >
-          <p className="text-sm text-text-secondary">The shared inbox is part of the Connect product.</p>
-          <div className="flex justify-end border-t border-border pt-4 dark:border-border-dark">
-            <Link
-              href="/settings/products?upsell=connect"
-              className="inline-flex items-center rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
-            >
-              Add Connect
-            </Link>
-          </div>
-        </SettingsBlock>
-      </SettingsPageBody>
-    );
-  }
+  const { business } = useAuth();
+  const { hasConnect, loading } = useWhatsAppAccess();
 
   if (loading || !business) {
     return (
@@ -59,7 +37,7 @@ export default function WhatsAppInboxSettingsPage() {
     );
   }
 
-  if (!hasBotAddon) {
+  if (!hasConnect) {
     return (
       <SettingsPageBody>
         <SettingsBlock
@@ -67,8 +45,8 @@ export default function WhatsAppInboxSettingsPage() {
           title="Shared inbox"
           description="Assign chats to your team automatically and reply faster with saved answers."
         >
-          <BotAddonLockedCard
-            title="The shared inbox needs the WhatsApp Bot addon"
+          <ConnectLockedCard
+            title="The shared inbox comes with Connect"
             description="Unlock conversations, team assignment, keyword auto-replies and saved replies."
           />
         </SettingsBlock>

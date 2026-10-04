@@ -34,7 +34,11 @@ export function UsageMeter({
   let total: number;
   let showUpgrade = false;
 
-  if (usage.keySource === 'khatario' && k.active) {
+  if (usage.keySource === 'khatario' && k.active && k.monthlyQuota === -1) {
+    label = `Khatario AI · ${fmt(usage.repliesThisMonth)} replies this month`;
+    used = usage.repliesThisMonth;
+    total = 0;
+  } else if (usage.keySource === 'khatario' && k.active) {
     label = `Khatario AI · ${fmt(usage.repliesThisMonth)} / ${fmt(k.monthlyQuota)} this month`;
     used = usage.repliesThisMonth;
     total = k.monthlyQuota;

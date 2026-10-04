@@ -15,6 +15,7 @@ interface SubscriptionPlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  price_3year: number;
   currency: string;
   features: {
     limits: {
@@ -80,6 +81,7 @@ export default function PlansManagement() {
       description: '',
       price_monthly: 0,
       price_yearly: 0,
+      price_3year: 0,
       currency: 'INR',
       features: {
         limits: {
@@ -195,7 +197,7 @@ export default function PlansManagement() {
           <div
             key={plan.id}
             className={`bg-white rounded-xl shadow-sm border-2 ${
-              plan.id === 'professional' ? 'border-primary-500' : 'border-gray-200'
+              plan.id === 'growth' ? 'border-primary-500' : 'border-gray-200'
             } p-6 hover:shadow-lg transition`}
           >
             {/* Header */}
@@ -221,6 +223,11 @@ export default function PlansManagement() {
               {plan.price_yearly > 0 && (
                 <p className="text-sm text-green-600 mt-1">
                   ₹{plan.price_yearly}/year (Save {Math.round((1 - plan.price_yearly / (plan.price_monthly * 12)) * 100)}%)
+                </p>
+              )}
+              {Number(plan.price_3year) > 0 && (
+                <p className="text-sm text-green-600">
+                  ₹{plan.price_3year} for 3 years (Save {Math.round((1 - Number(plan.price_3year) / (plan.price_monthly * 36)) * 100)}%)
                 </p>
               )}
             </div>
@@ -372,6 +379,12 @@ export default function PlansManagement() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Yearly Price:</span>
                     <span className="font-semibold">₹{selectedPlan.price_yearly}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">3-Year Price:</span>
+                    <span className="font-semibold">
+                      {Number(selectedPlan.price_3year) > 0 ? `₹${selectedPlan.price_3year}` : 'Not offered'}
+                    </span>
                   </div>
                   {selectedPlan.price_yearly > 0 && (
                     <div className="flex justify-between text-green-600">
@@ -572,7 +585,7 @@ function EditPlanModal({
           </div>
 
           {/* Pricing */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Monthly Price *
@@ -595,6 +608,18 @@ function EditPlanModal({
                 step="0.01"
                 value={formData.price_yearly}
                 onChange={(e) => updateField('price_yearly', parseFloat(e.target.value) || 0)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                3-Year Price (0 = not offered)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.price_3year ?? 0}
+                onChange={(e) => updateField('price_3year', parseFloat(e.target.value) || 0)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>

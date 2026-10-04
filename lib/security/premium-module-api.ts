@@ -11,7 +11,6 @@ import {
   assertWhatsAppBaseAccess,
   assertWhatsAppPremiumAddon,
 } from './whatsapp-api-gates';
-
 export {
   assertWhatsAppBaseAccess,
   assertWhatsAppManualAddon,
@@ -65,7 +64,7 @@ export function withWhatsAppPremiumApi<
   );
 }
 
-/** Connect + status + transactional billing sends (`settings_whatsapp` plan feature). */
+/** QR link + status + invoice sends and manual reminders (`settings_whatsapp` plan feature). */
 export function withWhatsAppBaseApi<
   TParams extends Record<string, string> = Record<string, string>,
 >(

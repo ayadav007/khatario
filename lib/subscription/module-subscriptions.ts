@@ -23,7 +23,7 @@ export interface ModuleSubscriptionRow extends SubscriptionForEffectivePlan {
   trial_end_date: string | null;
   end_date: string | null;
   grace_period_end?: string | null;
-  billing_cycle?: 'monthly' | 'yearly';
+  billing_cycle?: 'monthly' | 'yearly' | 'three_year';
   scheduled_plan_id?: string | null;
   cancel_at_period_end?: boolean;
   cancelled_at?: string | null;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import * as db from '@/lib/db';
-import { WhatsAppAddonType } from '@/lib/subscription';
+import { hasWhatsAppBotAddon, type WhatsAppAddonType } from '@/lib/subscription';
 import {
   WHATSAPP_ADDON_PRICING,
   createAddonCheckout,
@@ -30,15 +30,32 @@ export async function POST(
 
     const addonType = params.type as WhatsAppAddonType;
 
-    const validAddonTypes: WhatsAppAddonType[] = [
-      'whatsapp_bot',
-      'whatsapp_send_message',
-      'khatario_ai',
-    ];
-    if (!validAddonTypes.includes(addonType)) {
+    if (addonType === 'whatsapp_bot' || addonType === 'whatsapp_send_message') {
+      return NextResponse.json(
+        {
+          error: 'This add-on is now part of Khatario Connect. Add Connect from Settings → Your products.',
+          code: 'ADDON_REPLACED_BY_CONNECT',
+          module: 'connect',
+          action_url: '/settings/products',
+        },
+        { status: 410 },
+      );
+    }
+    if (addonType !== 'khatario_ai') {
       return NextResponse.json(
         { error: `Invalid addon type: ${addonType}` },
         { status: 400 },
+      );
+    }
+    if (!(await hasWhatsAppBotAddon(business_id, true))) {
+      return NextResponse.json(
+        {
+          error: 'Extra AI replies are a top-up for Khatario Connect. Add Connect first.',
+          code: 'WHATSAPP_BOT_ADDON_REQUIRED',
+          module: 'connect',
+          action_url: '/settings/products',
+        },
+        { status: 403 },
       );
     }
 

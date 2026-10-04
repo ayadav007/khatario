@@ -124,8 +124,8 @@ describe('WhatsApp premium route gates', () => {
     expect(String(json.error)).toMatch(/not available on your plan/i);
   });
 
-  it('/api/whatsapp/status points to Products (not upgrade) when Connect is off', async () => {
-    mockPlatformContext.mockResolvedValueOnce({ enabledModules: ['billing'] } as never);
+  it('/api/whatsapp/status points to Products (not upgrade) when neither Billing nor Connect is on', async () => {
+    mockPlatformContext.mockResolvedValueOnce({ enabledModules: ['hr'] } as never);
     mockAssertFeatureAccess.mockRejectedValueOnce(
       new FeatureAccessDeniedError('settings_whatsapp', BUSINESS_A, 'FEATURE_NOT_ENABLED'),
     );

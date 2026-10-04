@@ -6,9 +6,14 @@ import {
   KHATARIO_AI_TRIAL_REPLIES,
 } from './billing-constants';
 import { getBusinessAssistantSettings, loadProviderRow } from './settings';
+import { hasWhatsAppBotAddon, resolvePlanLimitValue } from '@/lib/subscription';
+import {
+  getEntitlementPlanIdForModuleSub,
+  getModuleSubscription,
+} from '@/lib/subscription/module-subscriptions';
 import type { AgentUsage } from './types';
 
-export async function hasKhatarioAiAddon(businessId: string): Promise<boolean> {
+async function hasKhatarioAiTopUp(businessId: string): Promise<boolean> {
   const row = await queryOne<{ n: string }>(
     `SELECT COUNT(*) AS n FROM whatsapp_addons
       WHERE business_id = $1 AND addon_type = 'khatario_ai' AND status = 'active'
@@ -17,6 +22,33 @@ export async function hasKhatarioAiAddon(businessId: string): Promise<boolean> {
     [businessId],
   ).catch(() => null);
   return Number(row?.n ?? 0) > 0;
+}
+
+/**
+ * Monthly replies on Khatario's key: the Connect plan's `max_ai_replies_per_month` (editable in
+ * Admin → Plans) plus the AI top-up quota when that add-on is active. -1 = unlimited.
+ */
+export async function khatarioMonthlyQuota(businessId: string): Promise<number> {
+  const [connect, topUp] = await Promise.all([
+    hasWhatsAppBotAddon(businessId),
+    hasKhatarioAiTopUp(businessId),
+  ]);
+  let quota = 0;
+  if (connect) {
+    const sub = await getModuleSubscription(businessId, 'connect');
+    const planLimit = sub
+      ? await resolvePlanLimitValue(getEntitlementPlanIdForModuleSub(sub), 'max_ai_replies_per_month')
+      : null;
+    if (planLimit === -1) return -1;
+    quota += planLimit ?? 0;
+  }
+  if (topUp) quota += KHATARIO_AI_MONTHLY_QUOTA;
+  return quota;
+}
+
+/** Khatario AI is paid for: Connect includes replies, or the AI top-up is active. */
+export async function hasKhatarioAiAddon(businessId: string): Promise<boolean> {
+  return (await khatarioMonthlyQuota(businessId)) !== 0;
 }
 
 export function platformAiConfigured(): boolean {
@@ -62,9 +94,11 @@ export async function khatarioAccess(
   context: { live: boolean },
 ): Promise<KhatarioAccess> {
   if (!platformAiConfigured()) return { ok: false, reason: 'not_configured' };
-  if (await hasKhatarioAiAddon(businessId)) {
+  const quota = await khatarioMonthlyQuota(businessId);
+  if (quota !== 0) {
+    if (quota === -1) return { ok: true, via: 'addon' };
     const used = await repliesThisMonth(businessId);
-    return used < KHATARIO_AI_MONTHLY_QUOTA ? { ok: true, via: 'addon' } : { ok: false, reason: 'quota_exhausted' };
+    return used < quota ? { ok: true, via: 'addon' } : { ok: false, reason: 'quota_exhausted' };
   }
   if (context.live) return { ok: false, reason: 'live_needs_addon' };
   return (await trialRemaining(businessId)) > 0 ? { ok: true, via: 'trial' } : { ok: false, reason: 'trial_exhausted' };
@@ -78,12 +112,12 @@ export async function khatarioAvailable(businessId: string): Promise<boolean> {
 }
 
 export async function loadUsage(businessId: string): Promise<AgentUsage> {
-  const [today, month, limit, row, active, remaining] = await Promise.all([
+  const [today, month, limit, row, quota, remaining] = await Promise.all([
     repliesToday(businessId),
     repliesThisMonth(businessId),
     dailyLimit(businessId),
     loadProviderRow(businessId),
-    hasKhatarioAiAddon(businessId),
+    khatarioMonthlyQuota(businessId),
     trialRemaining(businessId),
   ]);
   return {
@@ -92,8 +126,8 @@ export async function loadUsage(businessId: string): Promise<AgentUsage> {
     repliesThisMonth: month,
     keySource: row?.key_source === 'khatario' ? 'khatario' : 'own',
     khatarioAi: {
-      active,
-      monthlyQuota: KHATARIO_AI_MONTHLY_QUOTA,
+      active: quota !== 0,
+      monthlyQuota: quota,
       trialRemaining: remaining,
       trialTotal: KHATARIO_AI_TRIAL_REPLIES,
       price: KHATARIO_AI_PRICE_MONTHLY,
@@ -120,7 +154,7 @@ export async function notifyQuotaExhaustedOnce(businessId: string): Promise<void
     [
       businessId,
       'Khatario AI replies used up',
-      `Your AI agent has used all ${KHATARIO_AI_MONTHLY_QUOTA} Khatario AI replies this month. Customers now get your fallback message. Switch to your own API key in Settings → AI Agent, or wait for next month.`,
+      `Your AI agent has used all ${await khatarioMonthlyQuota(businessId)} Khatario AI replies this month. Customers now get your fallback message. Switch to your own API key in Settings → AI Agent, or wait for next month.`,
     ],
   ).catch((err) => console.error('[ai-agent] quota notification failed', err));
 }

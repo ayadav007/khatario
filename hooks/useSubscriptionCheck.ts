@@ -158,41 +158,11 @@ export function useSubscriptionCheck(businessId: string | undefined) {
    * 3. JSONB fallback (legacy)
    */
   const hasFeature = useCallback((featureKey: string): boolean => {
-    // Helper: Check if addon is active
-    const hasActiveAddon = (addonType: string): boolean => {
-      if (!Array.isArray(addons) || addons.length === 0) {
-        return false;
-      }
-      return addons.some(a => 
-        a.addon_type === addonType && 
-        a.status === 'active' &&
-        (!a.end_date || new Date(a.end_date) >= new Date())
-      );
-    };
-
-    // ALL addon-based feature keys (current and legacy)
-    const addonFeatureMap: Record<string, string> = {
-      // Legacy keys
-      'whatsapp_bot': 'whatsapp_bot',
-      'whatsapp_send_message': 'whatsapp_send_message',
-      'integration_whatsapp_bot': 'whatsapp_bot',
-      'integration_whatsapp_manual': 'whatsapp_send_message',
-    };
-
-    // Check if this is an addon-based feature
-    const addonType = addonFeatureMap[featureKey];
-    if (addonType) {
-      if (addonType === 'whatsapp_send_message') {
-        return (
-          hasActiveAddon('whatsapp_send_message') || hasActiveAddon('whatsapp_bot')
-        );
-      }
-      return hasActiveAddon(addonType);
-    }
-
-    // Map legacy feature keys to Feature Registry IDs
+    // Connect-owned WhatsApp features are resolved server-side from the Connect subscription.
     const featureKeyMapping: Record<string, string> = {
-      'todo': 'tools_todo', // Map 'todo' to 'tools_todo' in registry
+      'todo': 'tools_todo',
+      'whatsapp_bot': 'integration_whatsapp_bot',
+      'whatsapp_send_message': 'integration_whatsapp_manual',
     };
     const registryFeatureKey = featureKeyMapping[featureKey] || featureKey;
 
@@ -205,7 +175,7 @@ export function useSubscriptionCheck(businessId: string | undefined) {
       );
     }
     return hasInRegistry;
-  }, [addons, enabledFeatures]);
+  }, [enabledFeatures]);
 
   return {
     loading: loading || addonsLoading || featuresLoading,

@@ -9,6 +9,7 @@ import { applyInstantPlanUpgradeWithCoupon } from '@/lib/subscription/apply-coup
 import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 import { queryOne } from '@/lib/db';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
+import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,8 +27,7 @@ export async function POST(request: NextRequest) {
     if (guard) return guard;
 
     const plan_id = body.plan_id as string | undefined;
-    const billing_cycle =
-      body.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+    const billing_cycle = normalizeBillingCycle(body.billing_cycle);
     const coupon_code =
       typeof body.coupon_code === 'string' ? body.coupon_code.trim() : '';
     const module_key =

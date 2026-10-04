@@ -274,6 +274,23 @@ const creatingSockets = new Set<string>();
 const revivalTimestamps = globalStore.__waRevivalTimestamps as Map<string, number>;
 const saveStateTimers = globalStore.__waSaveStateTimers as Map<string, NodeJS.Timeout>;
 const lastSavedStates = globalStore.__waLastSavedStates as Map<string, string>;
+/** Businesses whose owner pressed Disconnect, so the resulting logged-out event is not reported as a ban. */
+const ownerInitiatedLogouts = new Set<string>();
+
+/** Tell the owner their QR-linked number was logged out or blocked by WhatsApp. */
+async function notifyWhatsAppSessionLost(businessId: string, blocked: boolean): Promise<void> {
+  const title = blocked ? 'WhatsApp blocked your linked number' : 'WhatsApp logged out your linked number';
+  const message = blocked
+    ? 'WhatsApp refused the connection for your QR-linked number, which usually means the number was restricted for sending too many or unwanted messages. Invoices and reminders are not being sent. Check the number in the WhatsApp app, then reconnect it in Settings → WhatsApp. Connect lets you send through the official WhatsApp Business API instead.'
+    : 'Your QR-linked WhatsApp number was logged out from the phone or by WhatsApp. Invoices and reminders are not being sent until you scan a new QR code in Settings → WhatsApp.';
+  await db
+    .query(
+      `INSERT INTO notifications (business_id, type, title, message, reference_type, created_at)
+       VALUES ($1, 'general', $2, $3, 'whatsapp_session', CURRENT_TIMESTAMP)`,
+      [businessId, title, message],
+    )
+    .catch((err) => console.error('[WA] session-lost notification failed', err));
+}
 
 // Helper to invalidate status cache when session is updated
 function invalidateStatusCache(businessId: string) {
@@ -2153,8 +2170,13 @@ export async function getWhatsAppSocket(businessId: string, options?: { syncFull
       }
 
       // Case 1: Logged Out (Explicitly or by phone)
-      if (reason === DisconnectReason.loggedOut) {
-        console.log(`[WA] Logged out. Clearing session.`);
+      if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.forbidden) {
+        const blocked = reason === DisconnectReason.forbidden;
+        console.log(`[WA] ${blocked ? 'Forbidden (likely banned)' : 'Logged out'}. Clearing session.`);
+        const ownerInitiated = ownerInitiatedLogouts.delete(businessId);
+        if (!ownerInitiated && !wasPendingQR) {
+          void notifyWhatsAppSessionLost(businessId, blocked);
+        }
         WACM.onLoggedOut(businessId);
         if (sessionRecord.reconnectTimer) {
           clearTimeout(sessionRecord.reconnectTimer);
@@ -2163,9 +2185,9 @@ export async function getWhatsAppSocket(businessId: string, options?: { syncFull
         await db.query(`
           UPDATE whatsapp_sessions 
           SET status = 'disconnected', auth_state = NULL, last_qr = NULL, phone_number = NULL, 
-              last_error = 'Logged out', updated_at = CURRENT_TIMESTAMP 
+              last_error = $2, updated_at = CURRENT_TIMESTAMP 
           WHERE business_id = $1
-        `, [businessId]);
+        `, [businessId, blocked ? 'Blocked by WhatsApp' : 'Logged out']);
         return;
       }
 
@@ -2969,6 +2991,8 @@ export async function disconnectWhatsApp(businessId: string) {
     
     // Logout and cleanup socket
     if (session.socket) {
+      ownerInitiatedLogouts.add(businessId);
+      setTimeout(() => ownerInitiatedLogouts.delete(businessId), 60_000).unref?.();
       try {
         await session.socket.logout();
       } catch (e) {

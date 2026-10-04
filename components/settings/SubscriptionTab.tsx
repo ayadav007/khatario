@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { CreditCard, TrendingUp, Check, Zap, AlertCircle, ArrowRight, ArrowDown, MessageSquare, Lock, Calendar, Clock, X, Loader2, History, Tag, AlertTriangle } from 'lucide-react';
-import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import {
   SubscriptionChangePlanModal,
   type SubscriptionAvailablePlan,
@@ -46,7 +45,7 @@ interface CurrentSubscription {
   };
   trial_days_remaining: number | null;
   scheduled_plan_id: string | null;
-  billing_cycle: 'monthly' | 'yearly';
+  billing_cycle: 'monthly' | 'yearly' | 'three_year';
   grace_period_end?: string | null;
   cancel_at_period_end?: boolean;
   is_operational?: boolean;
@@ -98,10 +97,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   const [loading, setLoading] = useState(true);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [celebrationPlan, setCelebrationPlan] = useState<string | null>(null);
-  const [addons, setAddons] = useState<any[]>([]);
-  const [addonsLoading, setAddonsLoading] = useState(true);
-  const [showAddonModal, setShowAddonModal] = useState(false);
-
   const [usageData, setUsageData] = useState<UsageData[]>([]);
   const [usageLoading, setUsageLoading] = useState(true);
 
@@ -138,7 +133,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     fetchSubscription();
     fetchModulePlans();
     fetchAvailablePlans();
-    fetchAddons();
     fetchBillingHistory();
   }, [businessId]);
 
@@ -165,27 +159,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
     url.searchParams.delete('plan');
     window.history.replaceState({}, '', url.pathname + url.search);
   }, [searchParams]);
-
-  async function fetchAddons() {
-    try {
-      const response = await fetch(
-        `/api/subscriptions/addons/current?business_id=${businessId}`,
-        authFetchOpts,
-      );
-      if (response.status === 401) {
-        setSessionExpired(true);
-        return;
-      }
-      if (response.ok) {
-        const data = await response.json();
-        setAddons(data.addons || []);
-      }
-    } catch (error) {
-      console.error('Error fetching addons:', error);
-    } finally {
-      setAddonsLoading(false);
-    }
-  }
 
   async function fetchModulePlans() {
     setModulePlansLoading(true);
@@ -642,40 +615,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
               />
             ))}
           </div>
-
-          {!addonsLoading && (
-            <div className="rounded-xl border border-border bg-surface p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-semibold text-text-primary">WhatsApp add-ons</h3>
-                <button
-                  type="button"
-                  onClick={() => setShowAddonModal(true)}
-                  className="link-primary text-sm font-medium"
-                >
-                  {addons.length ? 'Manage' : 'Explore add-ons'}
-                </button>
-              </div>
-              {addons.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {addons.map((addon) => (
-                    <div
-                      key={addon.id}
-                      className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5"
-                    >
-                      <Check className="h-3.5 w-3.5 text-green-600" />
-                      <span className="text-xs font-medium text-text-primary">
-                        {addon.addon_type === 'whatsapp_bot' ? 'WhatsApp Bot' : 'Send Message'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-text-secondary">
-                  Bot and send-message add-ons work with Billing or Connect.
-                </p>
-              )}
-            </div>
-          )}
         </div>
       ) : subscription ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -1007,18 +946,6 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
             if (upgradedPlanName) {
               setCelebrationPlan(upgradedPlanName);
             }
-          }}
-        />
-      )}
-
-      {/* Add-on Modal */}
-      {showAddonModal && (
-        <WhatsAppAddonModal
-          addonType="all"
-          onClose={() => setShowAddonModal(false)}
-          onPurchaseSuccess={() => {
-            fetchAddons();
-            setShowAddonModal(false);
           }}
         />
       )}

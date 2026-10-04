@@ -26,7 +26,7 @@ export type ModuleSubscriptionDetail = {
   end_date: string | null;
   trial_end_date: string | null;
   scheduled_plan_id: string | null;
-  billing_cycle: 'monthly' | 'yearly';
+  billing_cycle: 'monthly' | 'yearly' | 'three_year';
   plan_display_name: string;
   plan_description: string;
   price_monthly: number;
@@ -99,7 +99,7 @@ export function ModuleSubscriptionCard({
       if (p.id === TRIAL_PLAN_ID || p.id === 'hr_trial') {
         return subscription?.plan_id === p.id;
       }
-      if (p.id === 'connect') return subscription?.plan_id === 'connect';
+      if (p.id === 'connect_free') return subscription?.plan_id === 'connect_free';
       return true;
     });
   }, [availablePlans, productLine, subscription?.plan_id]);
@@ -208,7 +208,13 @@ export function ModuleSubscriptionCard({
           <div className="rounded-lg bg-gray-50 p-3 dark:bg-slate-800/50">
             <p className="text-xs text-text-muted">Cycle</p>
             <p className="font-semibold text-text-primary">
-              {isFree ? 'Free' : subscription.billing_cycle === 'yearly' ? 'Yearly' : 'Monthly'}
+              {isFree
+                ? 'Free'
+                : subscription.billing_cycle === 'three_year'
+                  ? '3 years'
+                  : subscription.billing_cycle === 'yearly'
+                    ? 'Yearly'
+                    : 'Monthly'}
             </p>
           </div>
         </div>

@@ -15,7 +15,7 @@ export const PRODUCT_LINE_LABELS: Record<ProductLine, string> = {
 export const PRODUCT_LINE_DESCRIPTIONS: Record<ProductLine, string> = {
   billing: 'GST invoicing, inventory, purchases, and reports for Indian shops.',
   hr: 'Employees, attendance, payroll, and leave — without the billing suite.',
-  connect: 'WhatsApp CRM, bot, and messaging — pay only for the add-ons you need.',
+  connect: 'Official WhatsApp Business API, shared inbox, AI agent, templates and automation.',
 };
 
 export const LANDING_HERO_COPY: Record<
@@ -39,12 +39,12 @@ export const LANDING_HERO_COPY: Record<
     footnote: '30-day HR Pro trial · No credit card to start',
   },
   connect: {
-    badges: ['WhatsApp CRM', 'No platform fee'],
+    badges: ['Official WhatsApp API', 'No markup on Meta charges'],
     headline: 'Customers on WhatsApp, replies all over the place? There is a simpler way.',
     subhead:
-      'Run conversations, bot rules, and outbound messages from one inbox. Pay only for the WhatsApp add-ons you enable.',
-    cta: 'Create free Connect account',
-    footnote: 'Free platform · Bot & Send Message add-ons when you need them',
+      'Run conversations, bot rules, AI replies, templates and campaigns from one shared inbox on the official WhatsApp Business API.',
+    cta: 'Create Connect account',
+    footnote: 'Connect plan from ₹1,199/month billed yearly · Meta conversation charges at cost',
   },
 };
 
@@ -56,7 +56,10 @@ export const TRIAL_EXTENSION_DAYS = 7;
 
 export const HR_TRIAL_PLAN_ID = 'hr_trial' as const;
 export const HR_FREE_PLAN_ID = 'hr_free' as const;
+/** Paid Connect plan (WABA, inbox, AI, templates, automation). */
 export const CONNECT_PLAN_ID = 'connect' as const;
+/** Connect row when Connect is not bought or has lapsed: no premium WhatsApp features. */
+export const CONNECT_FREE_PLAN_ID = 'connect_free' as const;
 
 /** Top-level sidebar sections hidden per product line (label match). */
 export const HIDDEN_NAV_LABELS_BY_PRODUCT_LINE: Record<ProductLine, Set<string>> = {
@@ -105,10 +108,10 @@ export function getSignupPlanConfig(productLine: ProductLine): SignupPlanConfig 
     case 'connect':
       return {
         productLine: 'connect',
-        planId: CONNECT_PLAN_ID,
+        planId: CONNECT_FREE_PLAN_ID,
         status: 'active',
         trialDays: null,
-        postTrialPlanId: CONNECT_PLAN_ID,
+        postTrialPlanId: CONNECT_FREE_PLAN_ID,
       };
     default:
       return {

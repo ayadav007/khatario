@@ -12,14 +12,16 @@ import {
 import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
 import { useToastContext } from '@/contexts/ToastContext';
 import { getPlanChangeAction } from '@/lib/subscription/trial-plan';
+import { computePlanAmount, type BillingCycle } from '@/lib/subscription/apply-plan-change';
 
 export interface SubscriptionPlanFeatures {
   limits: {
-    max_invoices_per_month: number;
-    max_customers: number;
-    max_items: number;
-    max_users: number;
-    max_whatsapp_per_day: number;
+    max_invoices_per_month?: number;
+    max_customers?: number;
+    max_items?: number;
+    max_users?: number;
+    max_whatsapp_per_day?: number;
+    max_ai_replies_per_month?: number;
   };
   features: Record<string, boolean>;
 }
@@ -30,6 +32,7 @@ export interface SubscriptionAvailablePlan {
   description: string;
   price_monthly: number;
   price_yearly: number;
+  price_3year?: number | null;
   sort_order: number;
   product_line?: string;
   features: SubscriptionPlanFeatures;
@@ -67,7 +70,7 @@ export function SubscriptionChangePlanModal({
   const toast = useToastContext();
   const [processing, setProcessing] = useState(false);
   const [confirmPlan, setConfirmPlan] = useState<SubscriptionAvailablePlan | null>(null);
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -78,9 +81,7 @@ export function SubscriptionChangePlanModal({
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
 
   function listPrice(plan: SubscriptionAvailablePlan): number {
-    return billingCycle === 'yearly'
-      ? Number(plan.price_yearly) || 0
-      : Number(plan.price_monthly) || 0;
+    return computePlanAmount(plan, billingCycle);
   }
 
   async function applyCouponForConfirmPlan() {
@@ -324,28 +325,23 @@ export function SubscriptionChangePlanModal({
                       </div>
 
                       <ul className="type-body-sm mb-4 space-y-1.5 text-text-secondary">
-                        {plan.features?.limits ? (
-                          <>
-                            <li className="flex items-center gap-1.5">
+                        {(
+                          [
+                            ['max_invoices_per_month', 'invoices/mo', 'Unlimited invoices'],
+                            ['max_customers', 'customers', 'Unlimited customers'],
+                            ['max_users', 'users', 'Unlimited users'],
+                            ['max_ai_replies_per_month', 'AI replies/mo', 'Unlimited AI replies'],
+                          ] as const
+                        ).map(([key, unit, unlimited]) => {
+                          const value = plan.features?.limits?.[key];
+                          if (value === undefined || value === null || value === 0) return null;
+                          return (
+                            <li key={key} className="flex items-center gap-1.5">
                               <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                              {plan.features.limits.max_invoices_per_month === -1
-                                ? 'Unlimited invoices'
-                                : `${plan.features.limits.max_invoices_per_month} invoices/mo`}
+                              {value === -1 ? unlimited : `${value} ${unit}`}
                             </li>
-                            <li className="flex items-center gap-1.5">
-                              <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                              {plan.features.limits.max_customers === -1
-                                ? 'Unlimited customers'
-                                : `${plan.features.limits.max_customers} customers`}
-                            </li>
-                            <li className="flex items-center gap-1.5">
-                              <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                              {plan.features.limits.max_users === -1
-                                ? 'Unlimited users'
-                                : `${plan.features.limits.max_users} users`}
-                            </li>
-                          </>
-                        ) : null}
+                          );
+                        })}
                         {plan.features?.features
                           ? Object.entries(plan.features.features)
                               .filter(([, v]) => v)
@@ -431,7 +427,7 @@ export function SubscriptionChangePlanModal({
                       <p className="text-lg font-bold text-text-primary md:text-xl">
                         ₹{listPrice(confirmPlan).toLocaleString('en-IN')}
                         <span className="text-caption font-normal text-text-muted md:text-sm">
-                          /{billingCycle === 'yearly' ? 'yr' : 'mo'}
+                          {billingCycle === 'three_year' ? ' for 3 yrs' : billingCycle === 'yearly' ? '/yr' : '/mo'}
                         </span>
                       </p>
                     )}
@@ -474,6 +470,23 @@ export function SubscriptionChangePlanModal({
                           }`}
                         >
                           Yearly · ₹{confirmPlan.price_yearly}/yr
+                        </button>
+                      ) : null}
+                      {Number(confirmPlan.price_3year) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBillingCycle('three_year');
+                            setCouponApplied(false);
+                            setCouponMessage(null);
+                          }}
+                          className={`flex-1 rounded-lg border py-2.5 text-sm font-semibold transition ${
+                            billingCycle === 'three_year'
+                              ? 'border-gray-900 bg-gray-900 text-white'
+                              : 'border-border bg-surface text-text-secondary'
+                          }`}
+                        >
+                          3 years · ₹{confirmPlan.price_3year}
                         </button>
                       ) : null}
                     </div>

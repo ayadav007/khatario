@@ -136,21 +136,21 @@ run('module subscriptions as the sole record (kh_phase2_test)', () => {
     const biz = await newBusiness('expired');
     await query(
       `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date)
-       VALUES ($1, 'billing', 'enterprise', 'expired', CURRENT_DATE - 60, CURRENT_DATE - 30)`,
+       VALUES ($1, 'billing', 'business', 'expired', CURRENT_DATE - 60, CURRENT_DATE - 30)`,
       [biz],
     );
 
     const result = await checkLimit(biz, 'invoices');
 
     expect(result.allowed).toBe(false);
-    expect(await billingRow(biz)).toMatchObject({ plan_id: 'enterprise', status: 'expired' });
+    expect(await billingRow(biz)).toMatchObject({ plan_id: 'business', status: 'expired' });
   });
 
   it('an admin Free/active save on the billing product unblocks invoices', async () => {
     const biz = await newBusiness('admin-free');
     await query(
       `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date)
-       VALUES ($1, 'billing', 'enterprise', 'expired', CURRENT_DATE - 60, CURRENT_DATE - 30)`,
+       VALUES ($1, 'billing', 'business', 'expired', CURRENT_DATE - 60, CURRENT_DATE - 30)`,
       [biz],
     );
     expect((await checkLimit(biz, 'invoices')).allowed).toBe(false);
@@ -177,7 +177,7 @@ run('module subscriptions as the sole record (kh_phase2_test)', () => {
         businessId: biz,
         adminId: randomUUID(),
         moduleKey: 'billing',
-        planId: 'professional',
+        planId: 'growth',
         status: 'expired',
       }),
     ).rejects.toThrow(/not allowed/i);

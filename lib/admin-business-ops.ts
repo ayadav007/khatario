@@ -20,6 +20,11 @@ import { normalizeProductLine, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
 import { productLineToModule, type PlatformModule } from '@/lib/platform-modules';
 import { getBusinessPlatformRecipient, notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
+import {
+  computePlanAmount,
+  computeSubscriptionPeriodEnd,
+  normalizeBillingCycle,
+} from '@/lib/subscription/apply-plan-change';
 
 export interface BusinessSubscriptionRow {
   business_id: string;
@@ -257,17 +262,16 @@ function normalizeAdminSubscriptionFields(
     trialEndDate?: string;
     extendTrialDays?: number;
     endDate?: string | null;
-    billingCycle?: 'monthly' | 'yearly';
+    billingCycle?: 'monthly' | 'yearly' | 'three_year';
   },
 ): {
   status: string;
   trialEnd: string | null;
   endDate: string | null;
-  billingCycle: 'monthly' | 'yearly';
+  billingCycle: 'monthly' | 'yearly' | 'three_year';
 } {
   const rawCycle = params.billingCycle ?? existing?.billing_cycle ?? 'monthly';
-  const billingCycle: 'monthly' | 'yearly' =
-    rawCycle === 'yearly' ? 'yearly' : 'monthly';
+  const billingCycle = normalizeBillingCycle(rawCycle);
 
   if (isTrialPlanId(planId)) {
     let trialEnd = params.trialEndDate ?? existing?.trial_end_date ?? null;
@@ -324,11 +328,7 @@ function normalizeAdminSubscriptionFields(
     endDate = null;
   }
   if (params.endDate === undefined && endDate === null && status === 'active') {
-    const start = new Date();
-    const end = new Date(start);
-    if (billingCycle === 'yearly') end.setFullYear(end.getFullYear() + 1);
-    else end.setMonth(end.getMonth() + 1);
-    endDate = end.toISOString().split('T')[0];
+    endDate = computeSubscriptionPeriodEnd(billingCycle);
   }
 
   return { status, trialEnd, endDate, billingCycle };
@@ -341,7 +341,7 @@ export async function adminUpdateSubscription(params: {
   status?: string;
   extendTrialDays?: number;
   trialEndDate?: string;
-  billingCycle?: 'monthly' | 'yearly';
+  billingCycle?: 'monthly' | 'yearly' | 'three_year';
   endDate?: string | null;
   moduleKey: PlatformModule;
 }): Promise<BusinessSubscriptionRow> {
@@ -353,12 +353,13 @@ export async function adminUpdateSubscription(params: {
     display_name: string;
     price_monthly: number;
     price_yearly: number;
+    price_3year: number | null;
     product_line: string | null;
   };
   let planPrices: PlanMeta | null = null;
   if (params.planId) {
     planPrices = await queryOne<PlanMeta>(
-      `SELECT id, display_name, price_monthly, price_yearly, product_line
+      `SELECT id, display_name, price_monthly, price_yearly, price_3year, product_line
        FROM subscription_plans WHERE id = $1 AND is_active = true`,
       [params.planId],
     );
@@ -437,8 +438,13 @@ export async function adminUpdateSubscription(params: {
 
   const planMeta =
     planPrices ||
-    (await queryOne<{ display_name: string; price_monthly: number; price_yearly: number }>(
-      `SELECT display_name, price_monthly, price_yearly FROM subscription_plans WHERE id = $1`,
+    (await queryOne<{
+      display_name: string;
+      price_monthly: number;
+      price_yearly: number;
+      price_3year: number | null;
+    }>(
+      `SELECT display_name, price_monthly, price_yearly, price_3year FROM subscription_plans WHERE id = $1`,
       [planId],
     ));
 
@@ -453,10 +459,7 @@ export async function adminUpdateSubscription(params: {
     try {
       const recipient = await getBusinessPlatformRecipient(params.businessId);
       if (!onlyTrialExtension && status !== 'cancelled') {
-        const amount =
-          billingCycle === 'yearly'
-            ? Number(planMeta?.price_yearly) || 0
-            : Number(planMeta?.price_monthly) || 0;
+        const amount = planMeta ? computePlanAmount(planMeta, billingCycle) : 0;
         await recordUpgradeBilling({
           businessId: params.businessId,
           moduleKey,

@@ -110,7 +110,7 @@ export class FeatureAccessDeniedError extends Error {
   }
 }
 
-const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set(['free', 'hr_free', 'connect']);
+const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set(['free', 'hr_free', 'connect_free']);
 
 /**
  * Allows any paid plan (or an active signup trial); denies free/lapsed businesses.
@@ -488,13 +488,8 @@ export async function assertFeatureAccess(
     );
   }
   
-  // WhatsApp Bot / CRM / inbox — addon only
-  if (
-    featureKey === 'integration_whatsapp_bot' ||
-    canonicalKey === FeatureKeys.WHATSAPP_BOT ||
-    canonicalKey === FeatureKeys.WHATSAPP_AUTO_REMINDERS ||
-    canonicalKey === FeatureKeys.WHATSAPP_CREDIT_ALERTS
-  ) {
+  // Inbox, bot, AI, WABA, templates, shop — paid Connect plan
+  if (featureKey === 'integration_whatsapp_bot' || canonicalKey === FeatureKeys.WHATSAPP_BOT) {
     if (!(await hasWhatsAppBotAddon(businessId))) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
@@ -505,17 +500,13 @@ export async function assertFeatureAccess(
     return;
   }
 
-  // Custom manual sends — Send Message addon OR Bot addon (bot includes send)
+  // Custom and bulk sends beyond invoices/reminders — paid Connect plan
   if (
     featureKey === 'integration_whatsapp_manual' ||
     canonicalKey === FeatureKeys.WHATSAPP_MANUAL ||
     canonicalKey === FeatureKeys.WHATSAPP_SEND_MESSAGE
   ) {
-    const [hasBot, hasSend] = await Promise.all([
-      hasWhatsAppBotAddon(businessId),
-      hasWhatsAppSendMessageAddon(businessId),
-    ]);
-    if (!hasBot && !hasSend) {
+    if (!(await hasWhatsAppSendMessageAddon(businessId))) {
       throw new FeatureAccessDeniedError(
         canonicalKey,
         businessId,
@@ -661,24 +652,19 @@ async function loadEnabledFeatureIdsForBusinessInternal(
     }
   }
   
-  // Inject addon-based integration features for UI/capability snapshots
-  const [hasBotAddon, hasSendAddon] = await Promise.all([
+  // Connect features follow the Connect subscription, not the union matrix of other modules.
+  const [hasConnect, hasConnectSend] = await Promise.all([
     hasWhatsAppBotAddon(businessId),
     hasWhatsAppSendMessageAddon(businessId),
   ]);
-  if (hasBotAddon || hasSendAddon) {
-    if (!enabledFeatures.includes('integration_whatsapp_manual')) {
-      enabledFeatures.push('integration_whatsapp_manual');
-    }
+  for (const [id, granted] of [
+    ['integration_whatsapp_bot', hasConnect],
+    ['integration_whatsapp_manual', hasConnectSend],
+  ] as const) {
+    const idx = enabledFeatures.indexOf(id);
+    if (granted && idx === -1) enabledFeatures.push(id);
+    if (!granted && idx !== -1) enabledFeatures.splice(idx, 1);
   }
-  if (hasBotAddon) {
-    if (!enabledFeatures.includes('integration_whatsapp_bot')) {
-      enabledFeatures.push('integration_whatsapp_bot');
-    }
-  }
-  
-  // TODO: Add other addon types here when implemented
-  // Example: if (hasOtherAddon) { enabledFeatures.push('other_addon_feature'); }
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[getEnabledFeatures] Final enabled features:', {

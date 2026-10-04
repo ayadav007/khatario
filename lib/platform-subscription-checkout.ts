@@ -584,7 +584,7 @@ export function extractCheckoutMetaFromWebhookNotes(
 
     const billingCycle =
 
-      n.billing_cycle === 'yearly' || n.billing_cycle === 'monthly'
+      n.billing_cycle === 'yearly' || n.billing_cycle === 'monthly' || n.billing_cycle === 'three_year'
 
         ? n.billing_cycle
 

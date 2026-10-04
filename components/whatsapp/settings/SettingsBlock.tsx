@@ -5,7 +5,8 @@ import { Lock } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
-import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
+import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import type { PlatformModule } from '@/lib/platform-modules';
 
 export function SettingsPageBody({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={clsx('w-full max-w-5xl space-y-6', className)}>{children}</div>;
@@ -33,7 +34,21 @@ export function SettingsBlock({
   );
 }
 
-export function BotAddonLockedCard({ title, description }: { title: string; description: string }) {
+function LockedCard({
+  title,
+  description,
+  cta,
+  featureName,
+  moduleKey,
+  initialPlanId,
+}: {
+  title: string;
+  description: string;
+  cta: string;
+  featureName: string;
+  moduleKey: PlatformModule;
+  initialPlanId?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -46,19 +61,58 @@ export function BotAddonLockedCard({ title, description }: { title: string; desc
           <p className="mt-0.5 text-sm text-text-secondary">{description}</p>
         </div>
         <Button size="sm" onClick={() => setOpen(true)}>
-          Unlock WhatsApp Bot
+          {cta}
         </Button>
       </div>
       {open ? (
-        <WhatsAppAddonModal
-          addonType="whatsapp_bot"
+        <UpgradeModal
+          limitType="feature"
+          featureName={featureName}
+          moduleKey={moduleKey}
+          initialPlanId={initialPlanId}
           onClose={() => setOpen(false)}
-          onPurchaseSuccess={() => {
+          onUpgradeSuccess={() => {
             setOpen(false);
             window.location.reload();
           }}
         />
       ) : null}
     </>
+  );
+}
+
+/** Upsell for WABA, AI, templates, inbox and automation, which come with the Connect add-on. */
+export function ConnectLockedCard({ title, description }: { title: string; description: string }) {
+  return (
+    <LockedCard
+      title={title}
+      description={description}
+      cta="Get Connect"
+      featureName="Khatario Connect"
+      moduleKey="connect"
+      initialPlanId="connect"
+    />
+  );
+}
+
+/** Upsell for billing-plan WhatsApp features such as automatic payment reminders. */
+export function BillingPlanLockedCard({
+  title,
+  description,
+  featureName,
+}: {
+  title: string;
+  description: string;
+  featureName: string;
+}) {
+  return (
+    <LockedCard
+      title={title}
+      description={description}
+      cta="See plans"
+      featureName={featureName}
+      moduleKey="billing"
+      initialPlanId="growth"
+    />
   );
 }

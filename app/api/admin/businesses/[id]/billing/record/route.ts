@@ -3,6 +3,7 @@ import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { recordBillingTransaction } from '@/lib/platform-billing';
 import { queryOne } from '@/lib/db';
 import { normalizePlatformModule } from '@/lib/platform-modules';
+import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ export async function POST(
       planId,
       moduleKey: normalizePlatformModule(body.module_key),
       amount: Number(body.amount) || 0,
-      billingCycle: body.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+      billingCycle: normalizeBillingCycle(body.billing_cycle),
       paymentMethod: body.payment_method || 'manual',
       paymentReference: body.payment_reference,
       status,

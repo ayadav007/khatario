@@ -52,12 +52,19 @@ export async function GET(request: NextRequest) {
 
     // Monthly Recurring Revenue (MRR)
     const mrrResult = await db.queryOne(`
-      SELECT 
-        SUM(sp.price_monthly) as mrr
+      SELECT
+        SUM(
+          CASE bs.billing_cycle
+            WHEN 'yearly' THEN COALESCE(NULLIF(sp.price_yearly, 0) / 12, sp.price_monthly)
+            WHEN 'three_year' THEN COALESCE(NULLIF(sp.price_3year, 0) / 36, sp.price_monthly)
+            ELSE sp.price_monthly
+          END
+        ) as mrr
       FROM business_module_subscriptions bs
       JOIN subscription_plans sp ON bs.plan_id = sp.id
       WHERE bs.status = 'active'
-        AND bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial')
+        AND bs.plan_id NOT IN ('trial', 'hr_trial')
+        AND sp.price_monthly > 0
     `);
     const mrr = parseFloat(mrrResult?.mrr || '0');
 
@@ -86,11 +93,13 @@ export async function GET(request: NextRequest) {
     `);
     const newBusinessesThisMonth = parseInt(newBusinessesResult?.count || '0');
 
-    // Trial conversions: businesses now on a paid plan (Connect is free, so it is excluded)
+    // Trial conversions: businesses now on a paid plan
     const trialConversionsResult = await db.queryOne(`
       SELECT COUNT(DISTINCT bs.business_id) as count
       FROM business_module_subscriptions bs
-      WHERE bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial', 'connect')
+      JOIN subscription_plans sp ON sp.id = bs.plan_id
+      WHERE bs.plan_id NOT IN ('trial', 'hr_trial')
+        AND sp.price_monthly > 0
         AND bs.status = 'active'
     `);
     const trialConversions = parseInt(trialConversionsResult?.count || '0');

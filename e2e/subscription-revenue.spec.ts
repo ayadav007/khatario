@@ -107,7 +107,7 @@ test.describe('Subscription revenue guards', () => {
     }
   });
 
-  test('WhatsApp addon purchase does not activate without payment', async ({
+  test('retired WhatsApp Bot add-on cannot be bought and points to Connect', async ({
     authenticatedPage: page,
   }) => {
     test.skip(!hasDbConfig(), 'DB required for addon assertions');
@@ -134,14 +134,9 @@ test.describe('Subscription revenue guards', () => {
     );
     const body = await purchaseRes.json();
 
-    if (purchaseRes.status() === 503 && body.code === 'PAYMENT_NOT_CONFIGURED') {
-      expect(body.code).toBe('PAYMENT_NOT_CONFIGURED');
-    } else {
-      expect(purchaseRes.ok(), JSON.stringify(body)).toBeTruthy();
-      expect(body.mode).toBe('redirect');
-      expect(body.checkoutUrl).toMatch(/^https?:\/\//);
-      expect(body.addon?.status).toBe('pending_payment');
-    }
+    expect(purchaseRes.status(), JSON.stringify(body)).toBe(410);
+    expect(body.code).toBe('ADDON_REPLACED_BY_CONNECT');
+    expect(body.action_url).toBe('/settings/products');
 
     const addonRow = await withDbClient(async (c) => {
       const r = await c.query<{ status: string }>(

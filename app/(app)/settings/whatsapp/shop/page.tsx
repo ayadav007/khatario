@@ -4,27 +4,27 @@ export const dynamic = 'force-dynamic';
 
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useBotAddon } from '@/components/whatsapp/settings/useBotAddon';
+import { useWhatsAppAccess } from '@/components/whatsapp/settings/useWhatsAppAccess';
 import { WhatsAppShopSection } from '@/components/ai-agent/WhatsAppShopSection';
-import { BotAddonLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
+import { ConnectLockedCard, SettingsBlock, SettingsPageBody } from '@/components/whatsapp/settings/SettingsBlock';
 
 export default function WhatsAppShopSettingsPage() {
   const { business } = useAuth();
-  const { hasBotAddon, loading } = useBotAddon();
+  const { hasConnect, loading } = useWhatsAppAccess();
 
   return (
     <SettingsPageBody>
       {!business || loading ? (
         <Loader2 className="h-6 w-6 animate-spin text-text-muted" />
-      ) : !hasBotAddon ? (
+      ) : !hasConnect ? (
         <SettingsBlock
           bare
           title="Take orders on WhatsApp"
           description="Customers browse your items, send a cart and get a payment link. Paid orders are invoiced automatically."
         >
-          <BotAddonLockedCard
-            title="The WhatsApp shop needs the WhatsApp Bot addon"
-            description="Unlock it to take orders and payments inside WhatsApp."
+          <ConnectLockedCard
+            title="The WhatsApp shop comes with Connect"
+            description="Take orders and payments inside WhatsApp."
           />
         </SettingsBlock>
       ) : (

@@ -59,14 +59,7 @@ export async function POST(request: NextRequest) {
     return subscriptionGate.response;
   }
 
-  const addonBlocked = await assertWhatsAppPremiumAddon({
-    request,
-    params: {},
-    body,
-    businessId: business_id,
-    userId: 'webhook',
-    subscription: subscriptionGate.subscription,
-  });
+  const addonBlocked = await assertWhatsAppPremiumAddon({ businessId: business_id });
   if (addonBlocked) {
     return addonBlocked;
   }

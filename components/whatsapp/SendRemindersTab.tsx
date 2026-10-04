@@ -121,7 +121,7 @@ export function SendRemindersTab() {
         setSelectedInvoices(new Set());
         fetchInvoices();
       } else {
-        if (data.code === 'LIMIT_EXCEEDED') {
+        if (data.code === 'LIMIT_EXCEEDED' || data.code === 'BATCH_TOO_LARGE') {
           setToast({ message: `Cannot send reminders: ${data.error}`, type: 'error' });
         } else {
           setToast({ message: `Failed to send reminders: ${data.error}`, type: 'error' });

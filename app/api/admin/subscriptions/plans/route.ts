@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
       description,
       price_monthly,
       price_yearly,
+      price_3year = 0,
       currency = 'INR',
       features,
       is_active = true,
@@ -63,15 +64,16 @@ export async function POST(request: NextRequest) {
       INSERT INTO subscription_plans (
         id, name, display_name, description, 
         price_monthly, price_yearly, currency, 
-        features, is_active, sort_order
+        features, is_active, sort_order, price_3year
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         display_name = EXCLUDED.display_name,
         description = EXCLUDED.description,
         price_monthly = EXCLUDED.price_monthly,
         price_yearly = EXCLUDED.price_yearly,
+        price_3year = EXCLUDED.price_3year,
         currency = EXCLUDED.currency,
         features = EXCLUDED.features,
         is_active = EXCLUDED.is_active,
@@ -81,7 +83,8 @@ export async function POST(request: NextRequest) {
     `, [
       id, name, display_name, description,
       price_monthly, price_yearly, currency,
-      JSON.stringify(features), is_active, sort_order
+      JSON.stringify(features), is_active, sort_order,
+      Math.max(0, Number(price_3year) || 0),
     ]);
 
     // Clear all subscription caches since plan features changed

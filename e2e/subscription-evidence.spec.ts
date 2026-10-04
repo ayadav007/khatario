@@ -328,7 +328,7 @@ test('E — Revenue leakage: API attacks (authenticated)', async ({ browser, pla
   const planAssign = await authedRequest.post(`${baseUrl}/api/subscriptions/current`, {
     data: {
       business_id: p.businessId,
-      plan_id: 'enterprise',
+      plan_id: 'business',
       status: 'active',
     },
   });
@@ -352,13 +352,13 @@ test('E — Revenue leakage: API attacks (authenticated)', async ({ browser, pla
     title: 'Revenue leakage: API + direct URL',
     persona: 'hr',
     screenshotLabel: 'leakage-connect-url',
-    userAction: 'POST current plan=enterprise; POST modules connect; POST addon purchase; visit /whatsapp/conversations',
+    userAction: 'POST current plan=business; POST modules connect; POST addon purchase; visit /whatsapp/conversations',
     result: `Plan assign ${planAssign.status()}; module ${moduleAdd.status()} (${moduleAddBody.code ?? 'n/a'}); addon ${addonPurchase.status()}; URL=${page.url()}`,
     pricingVisible: false,
     ctaText: '',
     checkoutReached: Boolean(addonBody.checkoutUrl),
     apiFindings: [
-      { label: 'POST /api/subscriptions/current (enterprise)', status: planAssign.status(), bodySnippet: await apiSnippet(planAssign) },
+      { label: 'POST /api/subscriptions/current (business)', status: planAssign.status(), bodySnippet: await apiSnippet(planAssign) },
       { label: 'POST /api/modules (connect)', status: moduleAdd.status(), bodySnippet: JSON.stringify(moduleAddBody).slice(0, 400) },
       { label: 'POST /api/subscriptions/addons/whatsapp_bot/purchase', status: addonPurchase.status(), bodySnippet: JSON.stringify(addonBody).slice(0, 400) },
     ],

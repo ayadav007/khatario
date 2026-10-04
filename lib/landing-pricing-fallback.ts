@@ -3,81 +3,51 @@ import type { LandingPricingPlan } from '@/components/marketing/landing/LandingP
 /**
  * Shown on the marketing homepage when `/api/admin/subscriptions/plans` is empty, errors, or DB is
  * not seeded — keeps pricing visible in local dev and during outages. Values align with
- * `database/seed_subscriptions.sql` (adjust there + API if you change live pricing).
+ * `database/migrations/360_plan_catalog_v2.sql`; live prices are edited in Admin → Plans.
  */
-const emptyFeatureMatrix: Record<string, boolean> = {};
-
 export const FALLBACK_LANDING_PLANS: LandingPricingPlan[] = [
   {
     id: 'free',
     name: 'free',
-    display_name: 'Free / Starter',
-    description: 'Perfect for solo freelancers and trying out the platform',
+    display_name: 'Free',
+    description: 'Unlimited GST invoices for one user, with WhatsApp invoice sending from your own number.',
     price_monthly: 0,
     price_yearly: 0,
+    product_line: 'billing',
     sort_order: 1,
-    features: {
-      limits: {
-        max_invoices_per_month: 20,
-        max_customers: 10,
-        max_users: 1,
-        max_whatsapp_per_day: 0,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
+    features: { limits: { max_users: 1, max_whatsapp_per_day: 20 }, features: {} },
   },
   {
-    id: 'professional',
-    name: 'professional',
-    display_name: 'Professional',
-    description: 'Growing businesses and retail shops',
-    price_monthly: 299,
-    price_yearly: 2999,
+    id: 'growth',
+    name: 'growth',
+    display_name: 'Growth',
+    description: 'For shops and traders: automatic WhatsApp payment reminders, inventory, POS and 3 users.',
+    price_monthly: 399,
+    price_yearly: 3588,
+    product_line: 'billing',
     sort_order: 2,
-    features: {
-      limits: {
-        max_invoices_per_month: 500,
-        max_customers: -1,
-        max_users: 3,
-        max_whatsapp_per_day: 10,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
+    features: { limits: { max_users: 3, max_whatsapp_per_day: 200 }, features: {} },
   },
   {
     id: 'business',
     name: 'business',
     display_name: 'Business',
-    description: 'Established businesses with advanced needs',
+    description: 'Full accounting, multiple branches and warehouses, online store and 10 users.',
     price_monthly: 999,
-    price_yearly: 9999,
+    price_yearly: 9588,
+    product_line: 'billing',
     sort_order: 3,
-    features: {
-      limits: {
-        max_invoices_per_month: -1,
-        max_customers: -1,
-        max_users: 10,
-        max_whatsapp_per_day: 100,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
+    features: { limits: { max_users: 10, max_branches: 3, max_whatsapp_per_day: 500 }, features: {} },
   },
   {
-    id: 'enterprise',
-    name: 'enterprise',
-    display_name: 'Enterprise',
-    description: 'Large businesses with custom requirements',
-    price_monthly: 2999,
-    price_yearly: 29999,
-    sort_order: 4,
-    features: {
-      limits: {
-        max_invoices_per_month: -1,
-        max_customers: -1,
-        max_users: -1,
-        max_whatsapp_per_day: -1,
-      },
-      features: { ...emptyFeatureMatrix },
-    },
+    id: 'connect',
+    name: 'connect',
+    display_name: 'Connect',
+    description: 'Official WhatsApp Business API, shared inbox, AI agent, templates, campaigns and WhatsApp shop.',
+    price_monthly: 1499,
+    price_yearly: 14388,
+    product_line: 'connect',
+    sort_order: 20,
+    features: { limits: { max_users: 5, max_whatsapp_per_day: 1000, max_ai_replies_per_month: 500 }, features: {} },
   },
 ];

@@ -31,19 +31,6 @@ function planFeatureForModule(resource: string): string | null {
 }
 import { getHrPlanFeatureForCapabilityCheck } from '@/lib/hr-plan-features';
 
-function hasAddonFeature(
-  addons: { addon_type: string; status: string; end_date?: string }[] | undefined,
-  addonType: string
-): boolean {
-  if (!Array.isArray(addons) || addons.length === 0) return false;
-  return addons.some(
-    (a) =>
-      a.addon_type === addonType &&
-      a.status === 'active' &&
-      (!a.end_date || new Date(a.end_date) >= new Date())
-  );
-}
-
 export type CapabilityDenialReason = 'FEATURE_NOT_IN_PLAN' | 'PERMISSION_DENIED';
 
 export interface CapabilityEvalInput {
@@ -115,17 +102,11 @@ export function evaluateCapabilityAccess(
     return { allowed: true };
   }
 
-  const featureRegistryId = normalizeFeature(res);
-
-  if (
-    featureRegistryId === 'integration_whatsapp_bot' ||
-    featureRegistryId === 'whatsapp_send_message' ||
-    featureRegistryId === 'whatsapp_manual'
-  ) {
-    if (hasAddonFeature(snapshot?.addons || [], 'whatsapp_bot')) {
-      return { allowed: true };
-    }
-  }
+  const normalized = normalizeFeature(res);
+  const featureRegistryId =
+    normalized === 'whatsapp_send_message' || normalized === 'whatsapp_manual'
+      ? 'integration_whatsapp_manual'
+      : normalized;
 
   if (snapshot?.enabledFeatures?.includes(featureRegistryId)) {
     return { allowed: true };

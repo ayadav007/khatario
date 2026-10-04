@@ -1,8 +1,7 @@
 import { queryRows } from '@/lib/db';
 import { listActiveSubscriptionPlans } from '@/lib/subscription/list-plans';
-import { PRODUCT_LINE_LABELS, normalizeProductLine } from '@/lib/product-lines';
+import { CONNECT_FREE_PLAN_ID, PRODUCT_LINE_LABELS, normalizeProductLine } from '@/lib/product-lines';
 import { WHATSAPP_ADDON_LABELS, WHATSAPP_ADDON_PRICING } from '@/lib/platform-addon-checkout';
-import type { WhatsAppAddonType } from '@/lib/subscription';
 import { getPublicSupportConfig } from '@/lib/marketing-public-config';
 import type { KbSourceInput } from '../types';
 import { HR_COMING_SOON, HR_LAUNCHED } from '../product-availability';
@@ -48,6 +47,7 @@ type PlanRow = {
   description: string | null;
   price_monthly: string | number | null;
   price_yearly: string | number | null;
+  price_3year?: string | number | null;
   currency: string | null;
   product_line: string | null;
   features: {
@@ -74,6 +74,8 @@ function priceLine(plan: PlanRow): string {
     const saving = monthly ? Math.round((1 - yearly / (monthly * 12)) * 100) : 0;
     parts.push(`${inr(yearly, currency)} per year${saving > 0 ? ` (about ${saving}% less than paying monthly)` : ''}`);
   }
+  const threeYear = Number(plan.price_3year ?? 0);
+  if (threeYear) parts.push(`${inr(threeYear, currency)} for 3 years`);
   return `Price: ${parts.join(', or ')}.`;
 }
 
@@ -86,7 +88,7 @@ function limitValue(value: number): string {
 /** Live plan facts rendered as markdown; the assistant must only quote prices from this document. */
 export async function buildPlansMarkdown(): Promise<string> {
   const plans = ((await listActiveSubscriptionPlans()) as unknown as PlanRow[]).filter(
-    (p) => HR_LAUNCHED || normalizeProductLine(p.product_line) !== 'hr',
+    (p) => p.id !== CONNECT_FREE_PLAN_ID && (HR_LAUNCHED || normalizeProductLine(p.product_line) !== 'hr'),
   );
   const featureRows = await queryRows<{ id: string; label: string; category: string }>(
     `SELECT id, label, category FROM platform_features WHERE is_active = true`,
@@ -150,15 +152,15 @@ export async function buildPlansMarkdown(): Promise<string> {
   }
 
   lines.push(
-    '## Connect WhatsApp add-ons',
+    '## WhatsApp on Khatario',
     '',
-    'The Connect plan itself has no platform fee. WhatsApp features are enabled as monthly add-ons:',
+    '- Every billing plan, including Free, can link a WhatsApp number by QR code to send invoices and payment reminders. ' +
+      'Automatic scheduled payment reminders start on the Growth plan.',
+    '- The Connect plan is a paid add-on for the official WhatsApp Business API: your own WhatsApp Business number, ' +
+      'the shared team inbox, the AI agent, Meta-approved templates, campaigns, automation and the WhatsApp shop.',
+    `- Extra AI replies beyond the Connect allowance: ${WHATSAPP_ADDON_LABELS.khatario_ai} top-up at ${inr(WHATSAPP_ADDON_PRICING.khatario_ai, 'INR')} per month (requires Connect).`,
     '',
   );
-  for (const [key, price] of Object.entries(WHATSAPP_ADDON_PRICING) as Array<[WhatsAppAddonType, number]>) {
-    lines.push(`- ${WHATSAPP_ADDON_LABELS[key]} add-on: ${inr(price, 'INR')} per month.`);
-  }
-  lines.push('');
 
   return lines.join('\n').trim() + '\n';
 }
