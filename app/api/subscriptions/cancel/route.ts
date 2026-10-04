@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
-import { cancelSubscription } from '@/lib/subscription/lifecycle';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { cancelModuleSubscription } from '@/lib/subscription/module-plan-lifecycle';
 import { normalizePlatformModule, PLATFORM_MODULE_LABELS } from '@/lib/platform-modules';
 
@@ -17,24 +17,16 @@ export async function POST(request: NextRequest) {
     if (guard) return guard;
 
     const { reason } = body;
-    const moduleKey = normalizePlatformModule(body.module_key);
+    const moduleKey =
+      normalizePlatformModule(body.module_key) ??
+      (await getBusinessPlatformContext(tenant.businessId)).primaryModule;
 
-    if (moduleKey) {
-      const result = await cancelModuleSubscription(tenant.businessId, moduleKey, reason);
-      return NextResponse.json({
-        success: true,
-        module_key: moduleKey,
-        message: `${PLATFORM_MODULE_LABELS[moduleKey]} cancellation scheduled at end of billing period.`,
-        end_date: result.end_date,
-      });
-    }
-
-    const subscription = await cancelSubscription(tenant.businessId, reason);
-
+    const result = await cancelModuleSubscription(tenant.businessId, moduleKey, reason);
     return NextResponse.json({
       success: true,
-      message: 'Subscription cancellation scheduled at end of billing period',
-      subscription,
+      module_key: moduleKey,
+      message: `${PLATFORM_MODULE_LABELS[moduleKey]} cancellation scheduled at end of billing period.`,
+      end_date: result.end_date,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

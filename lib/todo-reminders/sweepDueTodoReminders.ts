@@ -27,16 +27,11 @@ function dueBatchSql(scoped: boolean): string {
       AND t.reminder_time <= NOW()
       AND (t.assigned_to IS NOT NULL OR t.created_by IS NOT NULL)
       AND EXISTS (
-        SELECT 1 FROM (
-          SELECT bs.end_date
-            FROM business_subscriptions bs
-            JOIN subscription_plans sp ON sp.id = bs.plan_id
-           WHERE bs.business_id = t.business_id
-             AND bs.status IN ('active', 'trial')
-           ORDER BY bs.created_at DESC
-           LIMIT 1
-        ) s
-        WHERE s.end_date IS NULL OR s.end_date >= CURRENT_DATE - 1
+        SELECT 1
+          FROM business_module_subscriptions bms
+         WHERE bms.business_id = t.business_id
+           AND bms.status IN ('active', 'trial')
+           AND (bms.end_date IS NULL OR bms.end_date >= CURRENT_DATE - 1)
       )
       ${scoped ? 'AND t.business_id = $1' : ''}
       AND ($${p + 1}::timestamptz IS NULL OR (t.reminder_time, t.id) > ($${p + 1}::timestamptz, $${p + 2}::uuid))

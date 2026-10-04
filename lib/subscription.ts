@@ -16,7 +16,15 @@ import {
   buildLimitCountQuery,
 } from './subscription/limit-registry';
 import { resolveBusinessLimit } from './subscription/resolve-limit';
-import { clearModuleSubscriptionCache } from './subscription/module-subscriptions';
+import {
+  clearModuleSubscriptionCache,
+  getModuleSubscriptions,
+  upsertModuleSubscription,
+} from './subscription/module-subscriptions';
+import { getBusinessPlatformContext } from './business-modules';
+import { getFreePlanIdForModule } from './subscription/module-operational-check';
+import { getLimitOwnerModule } from './subscription/module-entitlements';
+import type { PlatformModule } from './platform-modules';
 
 export type { LimitCheckType } from './subscription/limit-registry';
 export { ALL_LIMIT_CHECK_TYPES } from './subscription/limit-registry';
@@ -44,13 +52,17 @@ export interface SubscriptionPlan {
 }
 
 export interface BusinessSubscription {
-  subscription_id: string;
   business_id: string;
+  module_key: PlatformModule;
   plan_id: string;
   status: 'active' | 'expired' | 'cancelled' | 'trial';
   start_date: string;
   end_date: string | null;
   trial_end_date: string | null;
+  grace_period_end: string | null;
+  cancel_at_period_end: boolean;
+  trial_extension_granted: boolean;
+  trial_extension_declined_at: string | null;
   plan_name: string;
   plan_display_name: string;
   features: SubscriptionPlan['features'];
@@ -70,51 +82,46 @@ export function isSubscriptionOperationalStatus(
 }
 
 /**
- * Get the current active subscription for a business
- * Uses in-memory cache to reduce database queries
+ * Active/trial subscription row for one product (default: the business's primary product,
+ * falling back to any other enabled product that is active/trial).
+ * Reads business_module_subscriptions; cached in memory.
  */
 export async function getBusinessSubscription(
   businessId: string,
-  skipCache: boolean = false
+  skipCache: boolean = false,
+  moduleKey?: PlatformModule
 ): Promise<BusinessSubscription | null> {
-  // Check cache first (unless skipCache is true)
+  const cacheKey = `${businessId}:${moduleKey ?? '*'}`;
   if (!skipCache) {
-    const cached = subscriptionCache.get(businessId);
+    const cached = subscriptionCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < SUBSCRIPTION_CACHE_TTL) {
       return cached.subscription;
     }
   }
 
   try {
-    const subscription = await db.queryOne(`
-      SELECT 
-        bs.id as subscription_id,
-        bs.business_id,
-        bs.plan_id,
-        bs.status,
-        bs.start_date,
-        bs.end_date,
-        bs.trial_end_date,
-        bs.scheduled_plan_id,
-        bs.billing_cycle,
-        sp.name as plan_name,
-        sp.display_name as plan_display_name,
-        sp.features
-      FROM business_subscriptions bs
-      JOIN subscription_plans sp ON bs.plan_id = sp.id
-      WHERE bs.business_id = $1
-        AND bs.status IN ('active', 'trial')
-      ORDER BY bs.created_at DESC
-      LIMIT 1
-    `, [businessId]);
+    const ctx = await getBusinessPlatformContext(businessId);
+    const rows = (await getModuleSubscriptions(businessId, skipCache)).filter((r) =>
+      isSubscriptionOperationalStatus(r.status)
+    );
+    const row = moduleKey
+      ? rows.find((r) => r.module_key === moduleKey)
+      : rows.find((r) => r.module_key === ctx.primaryModule) ??
+        rows.find((r) => ctx.enabledModules.includes(r.module_key));
+
+    const plan = row
+      ? await db.queryOne<{ name: string; display_name: string; features: unknown }>(
+          `SELECT name, display_name, features FROM subscription_plans WHERE id = $1`,
+          [row.plan_id]
+        )
+      : null;
 
     let parsedSubscription: BusinessSubscription | null = null;
 
-    if (subscription) {
-      // Parse features if it's a string
-      let features = typeof subscription.features === 'string'
-        ? JSON.parse(subscription.features)
-        : subscription.features || {};
+    if (row && plan) {
+      const features = typeof plan.features === 'string'
+        ? JSON.parse(plan.features)
+        : (plan.features as Record<string, any>) || {};
 
       // MERGE LIMITS FROM REGISTRY (same logic as admin plans API)
       try {
@@ -122,7 +129,7 @@ export async function getBusinessSubscription(
           `SELECT limit_key, limit_value 
            FROM subscription_plan_limits 
            WHERE plan_id = $1`,
-          [subscription.plan_id]
+          [row.plan_id]
         );
 
         if (planLimits.rows.length > 0) {
@@ -156,13 +163,27 @@ export async function getBusinessSubscription(
       }
 
       parsedSubscription = {
-        ...subscription,
-        features
-      } as BusinessSubscription;
+        business_id: row.business_id,
+        module_key: row.module_key,
+        plan_id: row.plan_id,
+        status: row.status as BusinessSubscription['status'],
+        start_date: row.start_date,
+        end_date: row.end_date,
+        trial_end_date: row.trial_end_date,
+        grace_period_end: row.grace_period_end ?? null,
+        cancel_at_period_end: Boolean(row.cancel_at_period_end),
+        trial_extension_granted: Boolean(row.trial_extension_granted),
+        trial_extension_declined_at: row.trial_extension_declined_at ?? null,
+        plan_name: plan.name,
+        plan_display_name: plan.display_name,
+        features,
+        scheduled_plan_id: row.scheduled_plan_id ?? null,
+        billing_cycle: row.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+      };
     }
 
     // Update cache (even if null to prevent repeated queries)
-    subscriptionCache.set(businessId, {
+    subscriptionCache.set(cacheKey, {
       subscription: parsedSubscription,
       timestamp: Date.now()
     });
@@ -178,7 +199,9 @@ export async function getBusinessSubscription(
  * Clear subscription cache for a business (call after subscription updates)
  */
 export function clearSubscriptionCache(businessId: string) {
-  subscriptionCache.delete(businessId);
+  for (const key of subscriptionCache.keys()) {
+    if (key.startsWith(`${businessId}:`)) subscriptionCache.delete(key);
+  }
   clearModuleSubscriptionCache(businessId);
 }
 
@@ -258,58 +281,36 @@ export async function checkLimit(
   businessId: string,
   limitType: LimitCheckType
 ): Promise<{ allowed: boolean; current: number; limit: number; message?: string }> {
-  let subscription = await getBusinessSubscription(businessId);
-  
-  // SAFETY FALLBACK: Auto-assign free plan if no subscription exists
-  // NOTE: This should NOT happen for new registrations (signup route now guarantees subscription creation)
-  // This fallback exists only for legacy data or edge cases where subscription was deleted/missing
-  if (!subscription) {
-    console.warn(`WARNING: Business ${businessId} has no active subscription. This should not happen for new registrations. Attempting fallback assignment.`);
-    
-    try {
-      // Check if free plan exists
-      const freePlan = await db.queryOne(`SELECT id FROM subscription_plans WHERE id = 'free' AND is_active = true`);
-      
-      if (freePlan) {
-        // Check if business exists
-        const business = await db.queryOne(`SELECT id FROM businesses WHERE id = $1`, [businessId]);
-        
-        if (business) {
-          // Auto-assign free plan (fallback for legacy data)
-          
-          await db.query(`
-            INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-            VALUES ($1, 'free', 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days')
-            ON CONFLICT (business_id) DO UPDATE SET
-              plan_id = 'free',
-              status = 'active',
-              updated_at = CURRENT_TIMESTAMP
-          `, [businessId]);
-          
-          // Clear cache to ensure fresh fetch
-          clearSubscriptionCache(businessId);
-          
-          
-          
-          // Fetch the newly created subscription
-          subscription = await getBusinessSubscription(businessId, true); // Skip cache
-        } else {
-          console.error(`Fallback failed: Business ${businessId} does not exist`);
-        }
-      } else {
-        console.error(`Fallback failed: Default subscription plan (id: "free") not found or inactive`);
+  const ctx = await getBusinessPlatformContext(businessId);
+  const ownerModule = getLimitOwnerModule(limitType) ?? ctx.primaryModule;
+
+  // SAFETY FALLBACK: an enabled product with no subscription row at all gets that product's
+  // free plan. Rows that exist but are expired/cancelled are left alone on purpose.
+  if (ctx.enabledModules.includes(ownerModule)) {
+    const rows = await getModuleSubscriptions(businessId);
+    if (!rows.some((r) => r.module_key === ownerModule)) {
+      console.warn(
+        `WARNING: Business ${businessId} has no ${ownerModule} subscription row. Assigning the free plan.`
+      );
+      try {
+        await upsertModuleSubscription(
+          { query: db.query },
+          businessId,
+          ownerModule,
+          getFreePlanIdForModule(ownerModule),
+          'active',
+          null
+        );
+        clearSubscriptionCache(businessId);
+      } catch (error) {
+        console.error('Fallback: Error auto-assigning free plan:', error);
       }
-    } catch (error: any) {
-      
-      console.error('Fallback: Error auto-assigning free plan:', error);
-    }
-    
-    // If still no subscription after fallback, return strict limits (block everything)
-    if (!subscription) {
-      console.error(`CRITICAL: Business ${businessId} has no subscription and fallback assignment failed. Blocking all operations.`);
-      return { allowed: false, current: 0, limit: 0, message: 'No active subscription. Please contact support.' };
     }
   }
+
+  const subscription =
+    (await getBusinessSubscription(businessId, false, ownerModule)) ??
+    (await getBusinessSubscription(businessId));
 
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
   const resolved = await resolveBusinessLimit(businessId, limitType, limitKey);
@@ -415,26 +416,26 @@ export async function checkLimitInTransaction(
 ): Promise<{ allowed: boolean; current: number; limit: number; message?: string }> {
   
   // NOTE: Removed pg_advisory_xact_lock as it was causing deadlocks/hangs
-  // The FOR UPDATE lock on the subscription row is sufficient for preventing race conditions
+  // The FOR UPDATE lock on the owning product's subscription row serialises concurrent creates.
+  const ctx = await getBusinessPlatformContext(businessId);
+  const ownerModule = getLimitOwnerModule(limitType) ?? ctx.primaryModule;
 
-  // Get subscription with plan_id (FOR UPDATE provides row-level locking)
-  
   const subscriptionResult = await client.query(`
     SELECT
       sp.id AS plan_id,
-      bs.status,
-      bs.trial_end_date,
-      bs.end_date,
-      bs.grace_period_end,
+      bms.status,
+      bms.trial_end_date,
+      bms.end_date,
+      bms.grace_period_end,
       sp.features->'limits' AS limits
-    FROM business_subscriptions bs
-    JOIN subscription_plans sp ON bs.plan_id = sp.id
-    WHERE bs.business_id = $1 AND bs.status IN ('active', 'trial')
-    ORDER BY bs.created_at DESC
+    FROM business_module_subscriptions bms
+    JOIN subscription_plans sp ON bms.plan_id = sp.id
+    WHERE bms.business_id = $1 AND bms.status IN ('active', 'trial')
+    ORDER BY (bms.module_key = $2) DESC, bms.module_key
     LIMIT 1
-    FOR UPDATE
-  `, [businessId]);
-  
+    FOR UPDATE OF bms
+  `, [businessId, ownerModule]);
+
 
   if (subscriptionResult.rows.length === 0) {
     // Auto-assign free plan if no subscription (outside transaction context)

@@ -31,19 +31,19 @@ export async function GET(request: NextRequest) {
     // is counted under its free plan, matching what the product enforces.
     const subscriptionsByPlan = await db.queryRows(`
       WITH effective AS (
-        SELECT bs.id,
+        SELECT bs.business_id,
                CASE
                  WHEN bs.plan_id = 'trial' AND bs.trial_end_date < CURRENT_DATE THEN 'free'
                  WHEN bs.plan_id = 'hr_trial' AND bs.trial_end_date < CURRENT_DATE THEN 'hr_free'
                  ELSE bs.plan_id
                END AS plan_id
-        FROM business_subscriptions bs
+        FROM business_module_subscriptions bs
         WHERE bs.status IN ('active', 'trial')
       )
       SELECT 
         sp.display_name as plan_name,
         sp.id as plan_id,
-        COUNT(e.id) as count
+        COUNT(e.business_id) as count
       FROM subscription_plans sp
       LEFT JOIN effective e ON sp.id = e.plan_id
       GROUP BY sp.id, sp.display_name, sp.sort_order
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const mrrResult = await db.queryOne(`
       SELECT 
         SUM(sp.price_monthly) as mrr
-      FROM business_subscriptions bs
+      FROM business_module_subscriptions bs
       JOIN subscription_plans sp ON bs.plan_id = sp.id
       WHERE bs.status = 'active'
         AND bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial')
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     // Trial conversions: businesses now on a paid plan (Connect is free, so it is excluded)
     const trialConversionsResult = await db.queryOne(`
       SELECT COUNT(DISTINCT bs.business_id) as count
-      FROM business_subscriptions bs
+      FROM business_module_subscriptions bs
       WHERE bs.plan_id NOT IN ('free', 'trial', 'hr_free', 'hr_trial', 'connect')
         AND bs.status = 'active'
     `);
@@ -105,7 +105,10 @@ export async function GET(request: NextRequest) {
         bs.plan_id,
         sp.display_name as plan_name
       FROM businesses b
-      LEFT JOIN business_subscriptions bs ON b.id = bs.business_id AND bs.status IN ('active', 'trial')
+      LEFT JOIN business_module_subscriptions bs
+        ON bs.business_id = b.id
+       AND bs.module_key = COALESCE(b.primary_module, 'billing')
+       AND bs.status IN ('active', 'trial')
       LEFT JOIN subscription_plans sp ON bs.plan_id = sp.id
       ORDER BY b.created_at DESC
       LIMIT 10

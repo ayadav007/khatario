@@ -59,15 +59,30 @@ export async function GET(request: NextRequest) {
         (SELECT COUNT(*) FROM invoices WHERE business_id = b.id) as invoice_count,
         (SELECT COUNT(*) FROM customers WHERE business_id = b.id) as customer_count,
         (SELECT COUNT(*) FROM items WHERE business_id = b.id) as item_count,
-        (SELECT MAX(created_at) FROM invoices WHERE business_id = b.id) as last_invoice_date
+        (SELECT MAX(created_at) FROM invoices WHERE business_id = b.id) as last_invoice_date,
+        COALESCE(b.primary_module, 'billing') as primary_module,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+                   'module_key', m.module_key,
+                   'plan_id', m.plan_id,
+                   'plan_name', mp.display_name,
+                   'status', m.status,
+                   'trial_end_date', m.trial_end_date::text,
+                   'end_date', m.end_date::text
+                 ) ORDER BY m.module_key)
+          FROM business_module_subscriptions m
+          LEFT JOIN subscription_plans mp ON mp.id = m.plan_id
+          WHERE m.business_id = b.id
+        ), '[]'::json) as module_subscriptions
       FROM businesses b
       LEFT JOIN LATERAL (
         SELECT *
-        FROM business_subscriptions bs2
+        FROM business_module_subscriptions bs2
         WHERE bs2.business_id = b.id
         ORDER BY
+          (bs2.module_key = COALESCE(b.primary_module, 'billing')) DESC,
           CASE WHEN bs2.status IN ('active', 'trial') THEN 0 ELSE 1 END,
-          bs2.updated_at DESC NULLS LAST
+          bs2.module_key
         LIMIT 1
       ) bs ON true
       LEFT JOIN subscription_plans sp ON bs.plan_id = sp.id

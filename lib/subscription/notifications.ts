@@ -9,7 +9,7 @@
 
 import { query, queryOne, queryRows } from '@/lib/db';
 import { sendPlatformEmail } from '@/lib/platform-email';
-import { getBusinessSubscription, checkLimit } from '@/lib/subscription';
+import { checkLimit } from '@/lib/subscription';
 import { lookupTenantWhatsAppPhone, sendPlatformEventWhatsApp } from '@/lib/platform-whatsapp-send';
 import { HR_TRIAL_PLAN_ID, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
 
@@ -593,7 +593,9 @@ export async function sendPendingNotifications(): Promise<number> {
     }>(
       `SELECT bs.business_id,
               (bs.trial_end_date::date - CURRENT_DATE) AS days_remaining
-       FROM business_subscriptions bs
+       FROM business_module_subscriptions bs
+       JOIN businesses b ON b.id = bs.business_id
+         AND bs.module_key = COALESCE(b.primary_module, 'billing')
        WHERE bs.status = 'trial'
          AND bs.trial_end_date IS NOT NULL
          AND (bs.trial_end_date::date - CURRENT_DATE) IN (7, 3, 1)
@@ -608,7 +610,9 @@ export async function sendPendingNotifications(): Promise<number> {
     // ── 2. Trial ended yesterday (first expiry, before any extension) ──────
     const trialJustExpired = await queryRows<{ business_id: string }>(
       `SELECT bs.business_id
-       FROM business_subscriptions bs
+       FROM business_module_subscriptions bs
+       JOIN businesses b ON b.id = bs.business_id
+         AND bs.module_key = COALESCE(b.primary_module, 'billing')
        WHERE bs.plan_id IN ('trial', $1)
          AND bs.status = 'trial'
          AND bs.trial_end_date::date = CURRENT_DATE - 1
@@ -623,8 +627,8 @@ export async function sendPendingNotifications(): Promise<number> {
 
     // ── 3. Paid renewal grace period ending in 3 days ───────────────────────
     const graceEnding = await queryRows<{ business_id: string }>(
-      `SELECT bs.business_id
-       FROM business_subscriptions bs
+      `SELECT DISTINCT bs.business_id
+       FROM business_module_subscriptions bs
        WHERE bs.status = 'active'
          AND bs.grace_period_end IS NOT NULL
          AND bs.grace_period_end::date - CURRENT_DATE = 3`,
@@ -673,7 +677,7 @@ export async function sendPendingNotifications(): Promise<number> {
     // ── 4. Usage at 80 %+ ──────────────────────────────────────────────────
     const activeBusinesses = await queryRows<{ business_id: string }>(
       `SELECT DISTINCT business_id
-       FROM business_subscriptions
+       FROM business_module_subscriptions
        WHERE status IN ('active', 'trial')`,
     );
 

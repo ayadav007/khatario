@@ -408,7 +408,7 @@ export async function runGstComplianceAlerts(opts: { asOn?: string; notify?: boo
   const summary: RunSummary = { as_on: asOn, businesses: businesses.length, evaluated: 0, skipped: 0, notified: 0, resolved: 0, failed: 0 };
   for (const { id } of businesses) {
     try {
-      const sub = await getBusinessSubscription(id);
+      const sub = await getBusinessSubscription(id, false, 'billing');
       if (!sub || !isSubscriptionOperationalStatus(sub.status) || !(await hasFeatureAccess(id, FeatureKeys.REPORTS_GST))) {
         summary.skipped++;
         continue;

@@ -8,6 +8,7 @@ import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
 import { DeleteTenantModal } from '@/components/admin/DeleteTenantModal';
+import { PLATFORM_MODULE_LABELS, normalizePlatformModule } from '@/lib/platform-modules';
 
 interface Business {
   id: string;
@@ -25,6 +26,12 @@ interface Business {
   customer_count: number;
   item_count: number;
   last_invoice_date: string | null;
+  module_subscriptions?: {
+    module_key: string;
+    plan_id: string;
+    plan_name: string | null;
+    status: string;
+  }[];
 }
 
 export default function BusinessesManagement() {
@@ -206,15 +213,27 @@ export default function BusinessesManagement() {
 
                     {/* Plan */}
                     <td className="py-4 px-4">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPlanBadgeColor(
-                          business.plan_id
-                        )}`}
-                      >
-                        {business.plan_name || 'Free'}
-                      </span>
-                      {business.price_monthly && business.price_monthly > 0 && (
-                        <p className="text-xs text-gray-500 mt-1">₹{business.price_monthly}/mo</p>
+                      {(business.module_subscriptions ?? []).length > 0 ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          {(business.module_subscriptions ?? []).map((sub) => {
+                            const mod = normalizePlatformModule(sub.module_key);
+                            const lapsed = sub.status !== 'active' && sub.status !== 'trial';
+                            return (
+                              <span
+                                key={sub.module_key}
+                                title={`${mod ? PLATFORM_MODULE_LABELS[mod] : sub.module_key}: ${sub.status}`}
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  lapsed ? 'bg-red-100 text-red-800' : getPlanBadgeColor(sub.plan_id)
+                                }`}
+                              >
+                                {mod ? PLATFORM_MODULE_LABELS[mod] : sub.module_key}: {sub.plan_name || sub.plan_id}
+                                {lapsed ? ` (${sub.status})` : ''}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">No subscription</span>
                       )}
                     </td>
 

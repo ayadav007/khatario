@@ -36,13 +36,7 @@ import {
 
 } from '@/lib/platform-billing';
 
-import {
-
-  applySubscriptionPlanChange,
-
-  type BillingCycle,
-
-} from '@/lib/subscription/apply-plan-change';
+import { type BillingCycle } from '@/lib/subscription/apply-plan-change';
 
 import { applyModuleSubscriptionPlanChange } from '@/lib/subscription/apply-module-plan-change';
 
@@ -491,40 +485,14 @@ export async function completeSubscriptionCheckoutPayment(params: {
     );
   }
 
-  try {
-    await applyModuleSubscriptionPlanChange({
-
-      businessId: params.businessId,
-
-      moduleKey,
-
-      planId: params.planId,
-
-      billingCycle: params.billingCycle,
-
-      paymentMethod,
-
-      paymentReference: params.providerPaymentId,
-
-    });
-
-  } catch {
-
-    await applySubscriptionPlanChange({
-
-      businessId: params.businessId,
-
-      planId: params.planId,
-
-      billingCycle: params.billingCycle,
-
-      paymentMethod,
-
-      paymentReference: params.providerPaymentId,
-
-    });
-
-  }
+  await applyModuleSubscriptionPlanChange({
+    businessId: params.businessId,
+    moduleKey,
+    planId: params.planId,
+    billingCycle: params.billingCycle,
+    paymentMethod,
+    paymentReference: params.providerPaymentId,
+  });
 
 
 

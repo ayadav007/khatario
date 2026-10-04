@@ -1,5 +1,5 @@
 /**
- * Admin-facing trial timeline derived from business_subscriptions + subscription_events.
+ * Admin-facing trial timeline derived from the primary product subscription + subscription_events.
  */
 
 import { queryOne, queryRows } from '@/lib/db';
@@ -73,13 +73,13 @@ export async function getTrialAdminSummary(businessId: string): Promise<TrialAdm
     trial_extension_granted: boolean;
     trial_extension_declined_at: string | null;
   }>(
-    `SELECT plan_id, status, start_date::text, trial_end_date::text,
-            trial_extension_granted, trial_extension_declined_at::text
-     FROM business_subscriptions
-     WHERE business_id = $1
-     ORDER BY
-       CASE WHEN status IN ('active', 'trial') THEN 0 ELSE 1 END,
-       created_at DESC
+    `SELECT m.plan_id, m.status, m.start_date::text, m.trial_end_date::text,
+            COALESCE(m.trial_extension_granted, false) AS trial_extension_granted,
+            m.trial_extension_declined_at::text
+     FROM business_module_subscriptions m
+     JOIN businesses b ON b.id = m.business_id
+     WHERE m.business_id = $1
+     ORDER BY (m.module_key = COALESCE(b.primary_module, 'billing')) DESC, m.module_key
      LIMIT 1`,
     [businessId],
   );

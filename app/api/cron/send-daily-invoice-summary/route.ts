@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       try {
         // CRITICAL: Check if business has active subscription
         // Skip processing if subscription is inactive or expired
-        const subscription = await getBusinessSubscription(business.id);
+        const subscription = await getBusinessSubscription(business.id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
           console.log(`Skipping business ${business.id}: subscription inactive or expired`);
           failCount++;

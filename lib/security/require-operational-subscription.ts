@@ -5,8 +5,10 @@ import {
   isSubscriptionOperationalStatus,
   type BusinessSubscription,
 } from '@/lib/subscription';
-import { isPaidGracePeriodActive } from '@/lib/subscription/effective-plan';
-import { isLocalCalendarOnOrBeforeToday, parseLocalDateOnly } from '@/lib/subscription/date-only';
+import {
+  getOperationalModuleSubscriptions,
+  getPrimaryModuleSubscription,
+} from '@/lib/subscription/module-subscriptions';
 import type { OperationalSubscriptionDeniedCode } from './types';
 
 export class OperationalSubscriptionError extends Error {
@@ -49,7 +51,30 @@ export async function requireOperationalSubscription(
     );
   }
 
-  const subscription = await getBusinessSubscription(businessId, true);
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  const primary = await getPrimaryModuleSubscription(businessId, true);
+  if (operational.length === 0) {
+    if (!primary) {
+      throw new OperationalSubscriptionError(
+        403,
+        'NO_SUBSCRIPTION',
+        'No active subscription for this business.',
+      );
+    }
+    if (!isSubscriptionOperationalStatus(primary.status)) {
+      const code: OperationalSubscriptionDeniedCode =
+        primary.status === 'expired'
+          ? 'SUBSCRIPTION_EXPIRED'
+          : primary.status === 'cancelled'
+            ? 'SUBSCRIPTION_CANCELLED'
+            : 'SUBSCRIPTION_INACTIVE';
+      throw new OperationalSubscriptionError(403, code, `Subscription status is ${primary.status}.`);
+    }
+    throw new OperationalSubscriptionError(403, 'SUBSCRIPTION_EXPIRED', 'Subscription has expired.');
+  }
+
+  const row = operational.find((r) => r.module_key === primary?.module_key) ?? operational[0];
+  const subscription = await getBusinessSubscription(businessId, true, row.module_key);
   if (!subscription) {
     throw new OperationalSubscriptionError(
       403,
@@ -57,36 +82,6 @@ export async function requireOperationalSubscription(
       'No active subscription for this business.',
     );
   }
-
-  if (!isSubscriptionOperationalStatus(subscription.status)) {
-    const code: OperationalSubscriptionDeniedCode =
-      subscription.status === 'expired'
-        ? 'SUBSCRIPTION_EXPIRED'
-        : subscription.status === 'cancelled'
-          ? 'SUBSCRIPTION_CANCELLED'
-          : 'SUBSCRIPTION_INACTIVE';
-    throw new OperationalSubscriptionError(
-      403,
-      code,
-      `Subscription status is ${subscription.status}.`,
-    );
-  }
-
-  if (subscription.end_date && subscription.status !== 'trial') {
-    const endDate = parseLocalDateOnly(subscription.end_date);
-    if (
-      endDate &&
-      !isLocalCalendarOnOrBeforeToday(endDate) &&
-      !isPaidGracePeriodActive(subscription)
-    ) {
-      throw new OperationalSubscriptionError(
-        403,
-        'SUBSCRIPTION_EXPIRED',
-        'Subscription has expired.',
-      );
-    }
-  }
-
   return subscription;
 }
 

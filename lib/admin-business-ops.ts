@@ -11,14 +11,21 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { logAdminAction } from '@/lib/platform-auth';
 import { logSubscriptionEvent } from '@/lib/subscription/lifecycle';
 import { isTrialPlanId } from '@/lib/subscription/trial-plan';
-import { SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
+import {
+  allowedAdminStatusesForPlan,
+  isAllowedAdminStatus,
+} from '@/lib/subscription/admin-plan-status';
+import { clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
+import { normalizeProductLine, SIGNUP_TRIAL_DAYS } from '@/lib/product-lines';
+import { productLineToModule, type PlatformModule } from '@/lib/platform-modules';
 import { getBusinessPlatformRecipient, notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 
 export interface BusinessSubscriptionRow {
-  id: string;
   business_id: string;
+  module_key: PlatformModule;
   plan_id: string;
+  plan_display_name?: string | null;
   status: string;
   start_date: string;
   end_date: string | null;
@@ -207,17 +214,38 @@ export async function setBusinessSuspended(
   });
 }
 
+const ADMIN_SUB_COLUMNS = `bms.business_id, bms.module_key, bms.plan_id, bms.status,
+            bms.start_date::text AS start_date, bms.end_date::text AS end_date,
+            bms.trial_end_date::text AS trial_end_date, bms.billing_cycle,
+            bms.grace_period_end::text AS grace_period_end,
+            COALESCE(bms.cancel_at_period_end, false) AS cancel_at_period_end,
+            bms.cancelled_at::text AS cancelled_at, bms.scheduled_plan_id,
+            sp.display_name AS plan_display_name`;
+
+/** Every product subscription for a business, one row per module. */
+export async function getBusinessModuleSubscriptions(
+  businessId: string,
+): Promise<BusinessSubscriptionRow[]> {
+  return queryRows<BusinessSubscriptionRow>(
+    `SELECT ${ADMIN_SUB_COLUMNS}
+     FROM business_module_subscriptions bms
+     LEFT JOIN subscription_plans sp ON sp.id = bms.plan_id
+     WHERE bms.business_id = $1
+     ORDER BY bms.module_key`,
+    [businessId],
+  );
+}
+
 export async function getBusinessSubscription(
   businessId: string,
+  moduleKey: PlatformModule,
 ): Promise<BusinessSubscriptionRow | null> {
   return queryOne<BusinessSubscriptionRow>(
-    `SELECT id, business_id, plan_id, status, start_date::text, end_date::text,
-            trial_end_date::text, billing_cycle, grace_period_end::text,
-            COALESCE(cancel_at_period_end, false) AS cancel_at_period_end,
-            cancelled_at::text, scheduled_plan_id
-     FROM business_subscriptions
-     WHERE business_id = $1`,
-    [businessId],
+    `SELECT ${ADMIN_SUB_COLUMNS}
+     FROM business_module_subscriptions bms
+     LEFT JOIN subscription_plans sp ON sp.id = bms.plan_id
+     WHERE bms.business_id = $1 AND bms.module_key = $2`,
+    [businessId, moduleKey],
   );
 }
 
@@ -262,7 +290,8 @@ function normalizeAdminSubscriptionFields(
     };
   }
 
-  if (planId === 'free') {
+  const allowed = allowedAdminStatusesForPlan(planId);
+  if (allowed.length === 1 && allowed[0] === 'active') {
     return {
       status: 'active',
       trialEnd: null,
@@ -280,9 +309,20 @@ function normalizeAdminSubscriptionFields(
     trialEnd = base.toISOString().split('T')[0];
   }
 
-  const status = params.status ?? existing?.status ?? 'active';
+  const keptStatus =
+    existing?.status && isAllowedAdminStatus(planId, existing.status) ? existing.status : 'active';
+  const status = params.status ?? keptStatus;
+  if (!isAllowedAdminStatus(planId, status)) {
+    throw new Error(
+      `Status "${status}" is not allowed for plan ${planId}. Allowed: ${allowedAdminStatusesForPlan(planId).join(', ')}`,
+    );
+  }
+  const today = new Date().toISOString().split('T')[0];
   let endDate =
     params.endDate !== undefined ? params.endDate : existing?.end_date ?? null;
+  if (params.endDate === undefined && endDate !== null && endDate < today && status === 'active') {
+    endDate = null;
+  }
   if (params.endDate === undefined && endDate === null && status === 'active') {
     const start = new Date();
     const end = new Date(start);
@@ -303,42 +343,68 @@ export async function adminUpdateSubscription(params: {
   trialEndDate?: string;
   billingCycle?: 'monthly' | 'yearly';
   endDate?: string | null;
+  moduleKey: PlatformModule;
 }): Promise<BusinessSubscriptionRow> {
-  const existing = await getBusinessSubscription(params.businessId);
+  const moduleKey = params.moduleKey;
+  const existing = await getBusinessSubscription(params.businessId, moduleKey);
   const fromPlanId = existing?.plan_id ?? null;
 
-  let planPrices: { display_name: string; price_monthly: number; price_yearly: number } | null = null;
+  type PlanMeta = {
+    display_name: string;
+    price_monthly: number;
+    price_yearly: number;
+    product_line: string | null;
+  };
+  let planPrices: PlanMeta | null = null;
   if (params.planId) {
-    planPrices = await queryOne<{ display_name: string; price_monthly: number; price_yearly: number }>(
-      `SELECT id, display_name, price_monthly, price_yearly FROM subscription_plans WHERE id = $1 AND is_active = true`,
+    planPrices = await queryOne<PlanMeta>(
+      `SELECT id, display_name, price_monthly, price_yearly, product_line
+       FROM subscription_plans WHERE id = $1 AND is_active = true`,
       [params.planId],
     );
     if (!planPrices) throw new Error('Invalid or inactive plan');
+    const planModule = productLineToModule(normalizeProductLine(planPrices.product_line));
+    if (planModule !== moduleKey) {
+      throw new Error(`Plan ${params.planId} belongs to ${planModule}, not ${moduleKey}`);
+    }
   }
 
-  const planId = params.planId ?? existing?.plan_id ?? 'free';
+  const planId = params.planId ?? existing?.plan_id;
+  if (!planId) throw new Error(`No ${moduleKey} subscription yet; choose a plan`);
   const normalized = normalizeAdminSubscriptionFields(planId, existing, params);
   const { status, trialEnd, endDate, billingCycle } = normalized;
 
   const row = await queryOne<BusinessSubscriptionRow>(
-    `INSERT INTO business_subscriptions (
-       business_id, plan_id, status, start_date, end_date, trial_end_date, billing_cycle, updated_at
-     ) VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE), $5::date, $6::date, $7, NOW())
-     ON CONFLICT (business_id) DO UPDATE SET
+    `INSERT INTO business_module_subscriptions AS bms (
+       business_id, module_key, plan_id, status, start_date, end_date, trial_end_date,
+       billing_cycle, cancelled_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4::varchar, COALESCE($5::date, CURRENT_DATE), $6::date, $7::date, $8,
+       CASE WHEN $4::varchar = 'cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END, NOW()
+     )
+     ON CONFLICT (business_id, module_key) DO UPDATE SET
        plan_id = EXCLUDED.plan_id,
        status = EXCLUDED.status,
        end_date = EXCLUDED.end_date,
        trial_end_date = EXCLUDED.trial_end_date,
        billing_cycle = EXCLUDED.billing_cycle,
+       cancelled_at = CASE
+         WHEN EXCLUDED.status = 'cancelled' THEN COALESCE(bms.cancelled_at, CURRENT_TIMESTAMP)
+         ELSE NULL
+       END,
+       cancel_at_period_end = false,
        grace_period_end = NULL,
        scheduled_plan_id = NULL,
        updated_at = NOW()
-     RETURNING id, business_id, plan_id, status, start_date::text, end_date::text,
-               trial_end_date::text, billing_cycle, grace_period_end::text,
-               COALESCE(cancel_at_period_end, false) AS cancel_at_period_end,
-               cancelled_at::text, scheduled_plan_id`,
+     RETURNING bms.business_id, bms.module_key, bms.plan_id, bms.status,
+               bms.start_date::text AS start_date, bms.end_date::text AS end_date,
+               bms.trial_end_date::text AS trial_end_date, bms.billing_cycle,
+               bms.grace_period_end::text AS grace_period_end,
+               COALESCE(bms.cancel_at_period_end, false) AS cancel_at_period_end,
+               bms.cancelled_at::text AS cancelled_at, bms.scheduled_plan_id`,
     [
       params.businessId,
+      moduleKey,
       planId,
       status,
       existing?.start_date ?? null,
@@ -350,21 +416,20 @@ export async function adminUpdateSubscription(params: {
 
   if (!row) throw new Error('Failed to update subscription');
 
-  const { syncPrimaryModuleFromLegacySubscription } = await import(
-    '@/lib/subscription/sync-legacy-subscription'
-  );
-  await syncPrimaryModuleFromLegacySubscription(params.businessId);
   clearSubscriptionCache(params.businessId);
+  clearModuleSubscriptionCache(params.businessId);
 
   await logSubscriptionEvent(params.businessId, 'admin_updated', {
     from_plan_id: fromPlanId ?? undefined,
     to_plan_id: planId,
+    module_key: moduleKey,
     admin_id: params.adminId,
     status,
     trial_end_date: trialEnd,
   });
 
   await logAdminAction(params.adminId, 'update_subscription', 'business', params.businessId, {
+    module_key: moduleKey,
     plan_id: planId,
     status,
     trial_end_date: trialEnd,
@@ -387,14 +452,14 @@ export async function adminUpdateSubscription(params: {
   void (async () => {
     try {
       const recipient = await getBusinessPlatformRecipient(params.businessId);
-      if (!onlyTrialExtension) {
+      if (!onlyTrialExtension && status !== 'cancelled') {
         const amount =
           billingCycle === 'yearly'
             ? Number(planMeta?.price_yearly) || 0
             : Number(planMeta?.price_monthly) || 0;
         await recordUpgradeBilling({
           businessId: params.businessId,
-          subscriptionId: row.id,
+          moduleKey,
           planId,
           planDisplayName: planMeta?.display_name || planId,
           amount,

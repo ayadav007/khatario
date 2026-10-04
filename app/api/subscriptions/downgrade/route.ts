@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { applySubscriptionMutationGuard } from '@/lib/security/apply-subscription-mutation-guard';
 import { downgradeModuleSubscription } from '@/lib/subscription/module-plan-lifecycle';
-import { downgradeSubscription } from '@/lib/subscription/lifecycle';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 import { normalizePlatformModule, type PlatformModule } from '@/lib/platform-modules';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
 
@@ -39,33 +39,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const moduleKey: PlatformModule | null =
+    const moduleKey: PlatformModule =
       normalizePlatformModule(moduleKeyBody) ??
-      (await resolveModuleKeyForPlan(target_plan_id));
+      (await resolveModuleKeyForPlan(target_plan_id)) ??
+      (await getBusinessPlatformContext(business_id)).primaryModule;
 
-    const runDowngrade = async () => {
-      if (moduleKey) {
-        try {
-          return await downgradeModuleSubscription(
-            business_id,
-            moduleKey,
-            target_plan_id,
-            { confirmed: !!confirmed },
-          );
-        } catch (moduleErr) {
-          if (
-            moduleErr instanceof Error &&
-            isDowngradeClientError(moduleErr.message)
-          ) {
-            throw moduleErr;
-          }
-          console.warn('[downgrade] module path failed, legacy fallback:', moduleErr);
-        }
-      }
-      return downgradeSubscription(business_id, target_plan_id, {
+    const runDowngrade = () =>
+      downgradeModuleSubscription(business_id, moduleKey, target_plan_id, {
         confirmed: !!confirmed,
       });
-    };
 
     if (!confirmed) {
       const result = await runDowngrade();
@@ -84,7 +66,6 @@ export async function POST(request: NextRequest) {
       confirmed: true,
       scheduled_date: result.scheduled_date,
       dataImpact: result.dataImpact,
-      subscription: 'subscription' in result ? result.subscription : undefined,
       message: result.scheduled_date
         ? `Downgrade scheduled for ${result.scheduled_date}. You'll keep your current plan until then.`
         : 'Downgrade scheduled successfully.',

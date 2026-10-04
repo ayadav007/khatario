@@ -28,7 +28,7 @@ const baseSubscription = (
   overrides: Partial<BusinessSubscription>,
 ): BusinessSubscription =>
   ({
-    subscription_id: 'sub-1',
+    module_key: 'billing',
     business_id: 'biz-1',
     plan_id: 'pro',
     status: 'active',

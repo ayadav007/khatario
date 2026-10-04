@@ -172,14 +172,17 @@ export async function GET(request: NextRequest) {
       }>(
         `SELECT bs.plan_id, bs.status, bs.trial_end_date::text, bs.end_date::text,
                 bs.grace_period_end::text,
-                bs.trial_extension_granted, bs.trial_extension_declined_at::text,
+                COALESCE(bs.trial_extension_granted, false) AS trial_extension_granted,
+                bs.trial_extension_declined_at::text,
                 sp.display_name as plan_display_name, sp.features
-         FROM business_subscriptions bs
+         FROM business_module_subscriptions bs
          JOIN subscription_plans sp ON bs.plan_id = sp.id
+         JOIN businesses b ON b.id = bs.business_id
          WHERE bs.business_id = $1
          ORDER BY
+           (bs.module_key = COALESCE(b.primary_module, 'billing')) DESC,
            CASE WHEN bs.status IN ('active', 'trial') THEN 0 ELSE 1 END,
-           bs.updated_at DESC NULLS LAST
+           bs.module_key
          LIMIT 1`,
         [row.business_id],
       );

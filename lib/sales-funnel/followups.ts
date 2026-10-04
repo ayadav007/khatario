@@ -189,7 +189,7 @@ export async function runLifecycleChecks(): Promise<{ activated: number; convert
   const toConvert = await queryRows<FunnelLead & { plan_value: string | null }>(
     `SELECT l.*, (
         SELECT CASE WHEN bs.billing_cycle = 'yearly' THEN p.price_yearly ELSE p.price_monthly END
-          FROM business_subscriptions bs JOIN subscription_plans p ON p.id = bs.plan_id
+          FROM business_module_subscriptions bs JOIN subscription_plans p ON p.id = bs.plan_id
          WHERE bs.business_id = l.business_id AND bs.status = 'active'
            AND (COALESCE(p.price_monthly, 0) > 0 OR COALESCE(p.price_yearly, 0) > 0)
          ORDER BY bs.updated_at DESC LIMIT 1

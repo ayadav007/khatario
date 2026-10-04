@@ -5,9 +5,11 @@ import { useAdmin } from '@/context/AdminContext';
 import { CreditCard, Building2, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { useToastContext } from '@/contexts/ToastContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
+import { moduleLabelForKey } from '@/lib/subscription/billing-labels';
 
 interface BusinessSubscription {
   business_id: string;
+  module_key: string;
   business_name: string;
   plan_name: string;
   plan_code: string;
@@ -174,6 +176,7 @@ export default function AdminSubscriptionsPage() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Business</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Product</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Plan</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Billing</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Price</th>
@@ -184,7 +187,7 @@ export default function AdminSubscriptionsPage() {
               </thead>
               <tbody>
                 {subscriptions.map((sub) => (
-                  <tr key={sub.business_id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr key={`${sub.business_id}:${sub.module_key}`} className="border-b border-gray-100 hover:bg-gray-50">
                     {/* Business */}
                     <td className="py-4 px-4">
                       <div className="flex items-center space-x-3">
@@ -193,6 +196,10 @@ export default function AdminSubscriptionsPage() {
                         </div>
                         <span className="font-medium text-gray-900">{sub.business_name}</span>
                       </div>
+                    </td>
+
+                    <td className="py-4 px-4 text-sm text-gray-700">
+                      {moduleLabelForKey(sub.module_key)}
                     </td>
 
                     {/* Plan */}

@@ -9,7 +9,8 @@ import {
 import Link from 'next/link';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
-import { BusinessAdminPanel } from '@/components/admin/BusinessAdminPanel';
+import { BusinessAdminPanel, type AdminModuleSubscription } from '@/components/admin/BusinessAdminPanel';
+import { PLATFORM_MODULE_LABELS, normalizePlatformModule } from '@/lib/platform-modules';
 import { SubscriptionTrialHistory } from '@/components/admin/SubscriptionTrialHistory';
 
 interface BusinessDetail {
@@ -40,6 +41,9 @@ interface BusinessDetail {
   subscription_status: string | null;
   trial_end_date: string | null;
   user_count: number;
+  primary_module?: string;
+  enabled_modules?: string[];
+  module_subscriptions?: AdminModuleSubscription[];
 }
 
 export default function BusinessDetailPage({ params }: { params: { id: string } }) {
@@ -228,18 +232,30 @@ export default function BusinessDetailPage({ params }: { params: { id: string } 
               Subscription
             </h2>
             <div className="space-y-3">
-              <div>
-                <span
-                  className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getPlanBadgeColor(
-                    business.plan_id
-                  )}`}
-                >
-                  {business.plan_name || 'Free'}
-                </span>
-                {business.price_monthly && business.price_monthly > 0 && (
-                  <p className="text-sm text-gray-600 mt-2">₹{business.price_monthly}/month</p>
-                )}
-              </div>
+              {(business.module_subscriptions ?? []).length === 0 ? (
+                <p className="text-sm text-gray-600">No product subscriptions.</p>
+              ) : (
+                (business.module_subscriptions ?? []).map((sub) => {
+                  const mod = normalizePlatformModule(sub.module_key);
+                  return (
+                    <div key={sub.module_key} className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-gray-600">
+                        {mod ? PLATFORM_MODULE_LABELS[mod] : sub.module_key}
+                        {sub.module_key === business.primary_module && (
+                          <span className="ml-1 text-xs text-gray-400">(primary)</span>
+                        )}
+                      </span>
+                      <span
+                        className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getPlanBadgeColor(
+                          sub.plan_id
+                        )}`}
+                      >
+                        {sub.plan_display_name || sub.plan_id} · {sub.status}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -313,9 +329,8 @@ export default function BusinessDetailPage({ params }: { params: { id: string } 
           businessName={business.name}
           platformSuspendedAt={business.platform_suspended_at}
           platformSuspendReason={business.platform_suspend_reason}
-          subscriptionStatus={business.subscription_status}
-          planId={business.plan_id}
-          trialEndDate={business.trial_end_date}
+          moduleSubscriptions={business.module_subscriptions ?? []}
+          enabledModules={business.enabled_modules ?? []}
           onUpdated={fetchBusiness}
           onDeleted={() => router.push('/admin/businesses')}
         />

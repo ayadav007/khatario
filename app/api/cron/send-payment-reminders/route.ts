@@ -90,7 +90,7 @@ async function processReminders(request?: NextRequest) {
 
         // CRITICAL: Check if business has active subscription
         // Skip processing if subscription is inactive or expired
-        const subscription = await getBusinessSubscription(business.business_id);
+        const subscription = await getBusinessSubscription(business.business_id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
           console.log(`Skipping business ${business.business_id}: subscription inactive or expired`);
           results.push({

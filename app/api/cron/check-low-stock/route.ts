@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     for (const item of lowStockItems) {
       // CRITICAL: Check if supplier business has active subscription
       // Skip processing if subscription is inactive or expired
-      const subscription = await getBusinessSubscription(item.supplier_business_id);
+      const subscription = await getBusinessSubscription(item.supplier_business_id, false, 'billing');
       if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
         console.log(`Skipping low stock alert for item ${item.item_id}: supplier business ${item.supplier_business_id} subscription inactive or expired`);
         continue;

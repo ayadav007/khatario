@@ -17,18 +17,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import {
-  getBusinessSubscription,
-  hasWhatsAppBotAddon,
-  hasWhatsAppSendMessageAddon,
-  isSubscriptionOperationalStatus,
-} from '../subscription';
+import { hasWhatsAppBotAddon, hasWhatsAppSendMessageAddon } from '../subscription';
 import { getEntitlementPlanId, isTrialEntitlementActive } from './effective-plan';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import {
   getEntitlementPlanIdForModuleSub,
   getModuleSubscription,
   getOperationalModuleSubscriptions,
+  getPrimaryModuleSubscription,
 } from '@/lib/subscription/module-subscriptions';
 import {
   CORE_BILLING_FEATURE_KEYS,
@@ -121,14 +117,19 @@ const NON_PAID_ENTITLEMENT_PLAN_IDS = new Set(['free', 'hr_free', 'connect']);
  * For controls every paying customer should have regardless of tier, e.g. period lock.
  */
 export async function assertPaidPlan(businessId: string, featureKey: string): Promise<void> {
-  const sub = businessId ? await getBusinessSubscription(businessId, true) : null;
-  if (!sub) {
-    throw new FeatureAccessDeniedError(featureKey, businessId || 'unknown', 'NO_SUBSCRIPTION');
+  if (!businessId) {
+    throw new FeatureAccessDeniedError(featureKey, 'unknown', 'NO_SUBSCRIPTION');
   }
-  if (!isSubscriptionOperationalStatus(sub.status)) {
-    throw new FeatureAccessDeniedError(featureKey, businessId, 'SUBSCRIPTION_INACTIVE');
+  const operational = await getOperationalModuleSubscriptions(businessId, true);
+  if (operational.length === 0) {
+    const primary = await getPrimaryModuleSubscription(businessId, true);
+    throw new FeatureAccessDeniedError(
+      featureKey,
+      businessId,
+      primary ? 'SUBSCRIPTION_INACTIVE' : 'NO_SUBSCRIPTION',
+    );
   }
-  if (NON_PAID_ENTITLEMENT_PLAN_IDS.has(getEntitlementPlanId(sub))) {
+  if (operational.every((sub) => NON_PAID_ENTITLEMENT_PLAN_IDS.has(getEntitlementPlanId(sub)))) {
     throw new FeatureAccessDeniedError(featureKey, businessId, 'FEATURE_NOT_ENABLED');
   }
 }
@@ -196,21 +197,6 @@ async function loadUnionEnabledRegistryFeatureIds(businessId: string): Promise<s
         );
       }
     }
-    if (merged.size > 0) return [...merged];
-  }
-
-  const subscription = await getBusinessSubscription(businessId, true);
-  if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-    return [...merged];
-  }
-  try {
-    const planId = isTrialEntitlementActive(subscription)
-      ? subscription.plan_id
-      : getEntitlementPlanId(subscription);
-    const ids = await getEnabledFeaturesFromRegistry(businessId, planId);
-    ids.forEach((id) => merged.add(id));
-  } catch (error) {
-    console.error('[loadUnionEnabledRegistryFeatureIds] Legacy subscription failed:', error);
   }
   return [...merged];
 }
@@ -290,17 +276,15 @@ async function assertModuleOperationalForFeature(
 
   const operational = await getOperationalModuleSubscriptions(businessId, true);
   if (operational.length === 0) {
-    const subscription = await getBusinessSubscription(businessId, true);
-    if (!subscription) {
+    const primary = await getPrimaryModuleSubscription(businessId, true);
+    if (!primary) {
       throw new FeatureAccessDeniedError(featureKey, businessId, 'NO_SUBSCRIPTION');
     }
-    if (!isSubscriptionOperationalStatus(subscription.status)) {
-      throw new FeatureAccessDeniedError(
-        featureKey,
-        businessId,
-        subscription.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
-      );
-    }
+    throw new FeatureAccessDeniedError(
+      featureKey,
+      businessId,
+      primary.status === 'expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_INACTIVE',
+    );
   }
 }
 
@@ -554,16 +538,13 @@ export async function assertFeatureAccess(
 
   const registryFeatureId = resolveRegistryFeatureId(canonicalKey);
   const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
-  const moduleSub = await resolveModuleSubForFeature(businessId, featureKey);
-  const legacySub = moduleSub ? null : await getBusinessSubscription(businessId, true);
-  const entitlementPlanId = moduleSub
-    ? getEntitlementPlanIdForModuleSub(moduleSub)
-    : legacySub
-      ? getEntitlementPlanId(legacySub)
-      : 'unknown';
-  const planIdForRegistry = moduleSub?.plan_id ?? legacySub?.plan_id;
+  const moduleSub =
+    (await resolveModuleSubForFeature(businessId, featureKey)) ??
+    (await getPrimaryModuleSubscription(businessId, true));
+  const entitlementPlanId = moduleSub ? getEntitlementPlanIdForModuleSub(moduleSub) : 'unknown';
+  const planIdForRegistry = moduleSub?.plan_id;
 
-  // Check if plan is marked as registry_complete (primary / legacy plan)
+  // Check if plan is marked as registry_complete (owning or primary product's plan)
   let isRegistryComplete = false;
   try {
     if (planIdForRegistry) {
@@ -667,18 +648,7 @@ async function loadEnabledFeatureIdsForBusinessInternal(
   businessId: string
 ): Promise<string[]> {
   const operational = await getOperationalModuleSubscriptions(businessId, true);
-  if (operational.length === 0) {
-    const subscription = await getBusinessSubscription(businessId, true);
-    if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
-      return [];
-    }
-    if (subscription.end_date) {
-      const endDate = new Date(subscription.end_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (endDate < today) return [];
-    }
-  }
+  if (operational.length === 0) return [];
 
   const enabledFeatures = await loadUnionEnabledRegistryFeatureIds(businessId);
   const platformCtx = await getBusinessPlatformContext(businessId);

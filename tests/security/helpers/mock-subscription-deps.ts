@@ -1,3 +1,5 @@
+import './module-subscription-mock';
+
 jest.mock('@/lib/subscription', () => {
   const actual = jest.requireActual('@/lib/subscription');
   return {

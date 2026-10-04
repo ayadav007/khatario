@@ -8,7 +8,7 @@ import { startPlanUpgrade } from '@/lib/subscription/client-upgrade';
 import { isPurchasableUpgradePlan } from '@/lib/subscription/trial-plan';
 import { productLineForModule } from '@/lib/platform-modules';
 import type { PlatformModule } from '@/lib/platform-modules';
-import { MODULE_ADD_CONFIG } from '@/lib/subscription/module-entitlements';
+import { MODULE_ADD_CONFIG, getLimitOwnerModule } from '@/lib/subscription/module-entitlements';
 
 interface SubscriptionPlan {
   id: string;
@@ -53,12 +53,19 @@ export function UpgradeModal({
   limit,
   featureName,
   initialPlanId,
-  moduleKey,
+  moduleKey: moduleKeyProp,
   showTrialOption,
   onClose,
   onUpgradeSuccess,
 }: UpgradeModalProps) {
-  const { business } = useAuth();
+  const { business, platformSession } = useAuth();
+  // Plans are per product: an employee limit must offer HR plans, not Billing ones.
+  const limitModule =
+    limitType && limitType !== 'feature' ? getLimitOwnerModule(limitType) : null;
+  const moduleKey: PlatformModule | undefined =
+    moduleKeyProp ??
+    limitModule ??
+    (initialPlanId ? undefined : platformSession?.primaryModule ?? 'billing');
   const toast = useToastContext();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,7 +167,14 @@ export function UpgradeModal({
       const response = await fetch('/api/subscriptions/plans');
       if (response.ok) {
         const data = await response.json();
-        const productLine = moduleKey ? productLineForModule(moduleKey) : null;
+        const initialPlan = initialPlanId
+          ? (data.plans || []).find((p: SubscriptionPlan) => p.id === initialPlanId)
+          : null;
+        const productLine = moduleKey
+          ? productLineForModule(moduleKey)
+          : initialPlan
+            ? initialPlan.product_line ?? 'billing'
+            : null;
         const availablePlans = (data.plans || [])
           .filter((p: SubscriptionPlan) => isPurchasableUpgradePlan(p.id))
           .filter((p: SubscriptionPlan) => {

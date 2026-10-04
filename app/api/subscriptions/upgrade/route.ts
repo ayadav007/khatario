@@ -6,10 +6,7 @@ import { isPlatformPaymentConfigured } from '@/lib/platform-subscription-checkou
 import { recordUpgradeBilling } from '@/lib/platform-billing';
 import { notifyAdminsSubscriptionChange } from '@/lib/platform-email';
 import { getBusinessPlatformRecipient } from '@/lib/platform-email';
-import {
-  applySubscriptionPlanChange,
-  computePlanAmount,
-} from '@/lib/subscription/apply-plan-change';
+import { computePlanAmount } from '@/lib/subscription/apply-plan-change';
 import {
   applyModuleSubscriptionPlanChange,
 } from '@/lib/subscription/apply-module-plan-change';
@@ -117,22 +114,12 @@ export async function POST(request: NextRequest) {
       billingCycle: cycle,
       paymentMethod: payment_method,
       paymentReference: payment_reference,
-    }).catch(async (moduleErr) => {
-      console.warn('[upgrade] module plan change failed, trying legacy row:', moduleErr);
-      return applySubscriptionPlanChange({
-        businessId: business_id,
-        planId: plan_id,
-        billingCycle: cycle,
-        paymentMethod: payment_method,
-        paymentReference: payment_reference,
-      });
     });
 
     void (async () => {
       try {
         await recordUpgradeBilling({
           businessId: business_id,
-          subscriptionId: undefined,
           planId: plan_id,
           planDisplayName: plan.display_name,
           moduleKey,

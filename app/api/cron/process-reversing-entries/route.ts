@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       try {
         // CRITICAL: Check if business has active subscription
         // Skip processing if subscription is inactive or expired
-        const subscription = await getBusinessSubscription(entry.business_id);
+        const subscription = await getBusinessSubscription(entry.business_id, false, 'billing');
         if (!subscription || !isSubscriptionOperationalStatus(subscription.status)) {
           console.log(`Skipping reversing entry ${entry.id}: business ${entry.business_id} subscription inactive or expired`);
           continue;

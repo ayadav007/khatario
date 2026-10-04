@@ -12,7 +12,9 @@ import {
 } from '@/lib/subscription/date-only';
 import { logSubscriptionEvent, moveSubscriptionToFree } from '@/lib/subscription/lifecycle';
 import { isProductLineTrialPlanId, TRIAL_EXTENSION_DAYS } from '@/lib/product-lines';
-import { syncPrimaryModuleFromLegacySubscription } from '@/lib/subscription/sync-legacy-subscription';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
+import { type PlatformModule } from '@/lib/platform-modules';
+import { getFreePlanIdForModule } from '@/lib/subscription/module-operational-check';
 
 export { TRIAL_EXTENSION_DAYS };
 
@@ -52,22 +54,24 @@ export function shouldDowngradeStaleTrial(sub: TrialExtensionFields): boolean {
   return true;
 }
 
+/** Trial-extension fields of the business's primary product subscription. */
 export async function getTrialExtensionState(businessId: string) {
+  const ctx = await getBusinessPlatformContext(businessId);
   return queryOne<{
+    module_key: PlatformModule;
     plan_id: string;
     trial_end_date: string | null;
     trial_extension_granted: boolean;
     trial_extension_declined_at: string | null;
   }>(
-    `SELECT plan_id, trial_end_date::text, trial_extension_granted,
+    `SELECT module_key, plan_id, trial_end_date::text,
+            COALESCE(trial_extension_granted, false) AS trial_extension_granted,
             trial_extension_declined_at::text
-     FROM business_subscriptions
+     FROM business_module_subscriptions
      WHERE business_id = $1
-     ORDER BY
-       CASE WHEN status IN ('active', 'trial') THEN 0 ELSE 1 END,
-       created_at DESC
+     ORDER BY (module_key = $2) DESC, module_key
      LIMIT 1`,
-    [businessId],
+    [businessId, ctx.primaryModule],
   );
 }
 
@@ -81,24 +85,23 @@ export async function grantSelfServeTrialExtension(businessId: string): Promise<
   const newTrialEnd = addLocalDaysFromToday(TRIAL_EXTENSION_DAYS);
 
   await query(
-    `UPDATE business_subscriptions
-     SET plan_id = $2,
-         status = 'trial',
+    `UPDATE business_module_subscriptions
+     SET status = 'trial',
          trial_end_date = $3,
          trial_extension_granted = true,
          grace_period_end = NULL,
          end_date = NULL,
          updated_at = CURRENT_TIMESTAMP
-     WHERE business_id = $1`,
-    [businessId, sub.plan_id, newTrialEnd],
+     WHERE business_id = $1 AND module_key = $2`,
+    [businessId, sub.module_key, newTrialEnd],
   );
 
   await logSubscriptionEvent(businessId, 'trial_extension_granted', {
+    module_key: sub.module_key,
     extension_days: TRIAL_EXTENSION_DAYS,
     trial_end_date: newTrialEnd,
   });
 
-  await syncPrimaryModuleFromLegacySubscription(businessId);
   clearSubscriptionCache(businessId);
   return newTrialEnd;
 }
@@ -111,17 +114,18 @@ export async function declineSelfServeTrialExtension(businessId: string): Promis
   }
 
   await query(
-    `UPDATE business_subscriptions
+    `UPDATE business_module_subscriptions
      SET trial_extension_declined_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
-     WHERE business_id = $1`,
-    [businessId],
+     WHERE business_id = $1 AND module_key = $2`,
+    [businessId, sub.module_key],
   );
 
-  await moveSubscriptionToFree(businessId, sub.plan_id, 'trial_extension_declined');
+  await moveSubscriptionToFree(businessId, sub.plan_id, 'trial_extension_declined', sub.module_key);
 
   await logSubscriptionEvent(businessId, 'trial_extension_declined', {
+    module_key: sub.module_key,
     from_plan_id: sub.plan_id,
-    to_plan_id: 'free',
+    to_plan_id: getFreePlanIdForModule(sub.module_key),
   });
 }

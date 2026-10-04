@@ -36,6 +36,7 @@ import {
   getPlatformRazorpayProvider,
 } from '@/lib/platform-subscription-checkout';
 import { resolveModuleKeyForPlan } from '@/lib/subscription/plan-module';
+import { getPrimaryModuleSubscription } from '@/lib/subscription/module-subscriptions';
 import {
   formatModulePlanReceiptLabel,
 } from '@/lib/subscription/billing-labels';
@@ -46,7 +47,6 @@ export type { BillingTxStatus };
 
 export interface RecordBillingInput {
   businessId: string;
-  subscriptionId?: string | null;
   planId: string;
   moduleKey?: PlatformModule | string | null;
   /** List/base price before discount */
@@ -143,11 +143,6 @@ export async function recordBillingTransaction(
     }
   }
 
-  const sub = await queryOne<{ id: string }>(
-    `SELECT id FROM business_subscriptions WHERE business_id = $1 LIMIT 1`,
-    [input.businessId],
-  );
-
   const planMeta = await queryOne<{ display_name: string; product_line: string | null }>(
     `SELECT display_name, product_line FROM subscription_plans WHERE id = $1`,
     [input.planId],
@@ -174,65 +169,29 @@ export async function recordBillingTransaction(
   const discount = Math.round((input.discountAmount ?? 0) * 100) / 100;
   const total = Math.max(0, Math.round((base - discount) * 100) / 100);
 
-  const insertWithModule = async () =>
-    queryOne<{ id: string; status: string }>(
-      `INSERT INTO billing_transactions (
-         business_id, subscription_id, type, status, amount, currency, plan_id, module_key,
-         billing_cycle, payment_method, payment_reference, gateway_response, description,
-         coupon_id, discount_amount, total_amount
-       ) VALUES ($1, $2, 'payment', $3, $4, 'INR', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       RETURNING id, status`,
-      [
-        input.businessId,
-        input.subscriptionId ?? sub?.id ?? null,
-        input.status,
-        base,
-        input.planId,
-        moduleKey,
-        input.billingCycle ?? 'monthly',
-        input.paymentMethod ?? 'manual',
-        input.paymentReference?.trim() || null,
-        input.gatewayResponse ? JSON.stringify(input.gatewayResponse) : null,
-        description,
-        input.couponId ?? null,
-        discount,
-        total,
-      ],
-    );
-
-  let row: { id: string; status: string } | null = null;
-  try {
-    row = await insertWithModule();
-  } catch (err: unknown) {
-    const code = (err as { code?: string })?.code;
-    if (code === '42703') {
-      row = await queryOne<{ id: string; status: string }>(
-        `INSERT INTO billing_transactions (
-           business_id, subscription_id, type, status, amount, currency, plan_id, billing_cycle,
-           payment_method, payment_reference, gateway_response, description,
-           coupon_id, discount_amount, total_amount
-         ) VALUES ($1, $2, 'payment', $3, $4, 'INR', $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         RETURNING id, status`,
-        [
-          input.businessId,
-          input.subscriptionId ?? sub?.id ?? null,
-          input.status,
-          base,
-          input.planId,
-          input.billingCycle ?? 'monthly',
-          input.paymentMethod ?? 'manual',
-          input.paymentReference?.trim() || null,
-          input.gatewayResponse ? JSON.stringify(input.gatewayResponse) : null,
-          description,
-          input.couponId ?? null,
-          discount,
-          total,
-        ],
-      );
-    } else {
-      throw err;
-    }
-  }
+  const row = await queryOne<{ id: string; status: string }>(
+    `INSERT INTO billing_transactions (
+       business_id, type, status, amount, currency, plan_id, module_key,
+       billing_cycle, payment_method, payment_reference, gateway_response, description,
+       coupon_id, discount_amount, total_amount
+     ) VALUES ($1, 'payment', $2, $3, 'INR', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING id, status`,
+    [
+      input.businessId,
+      input.status,
+      base,
+      input.planId,
+      moduleKey,
+      input.billingCycle ?? 'monthly',
+      input.paymentMethod ?? 'manual',
+      input.paymentReference?.trim() || null,
+      input.gatewayResponse ? JSON.stringify(input.gatewayResponse) : null,
+      description,
+      input.couponId ?? null,
+      discount,
+      total,
+    ],
+  );
 
   if (!row) throw new Error('Failed to record billing transaction');
 
@@ -363,7 +322,6 @@ async function dispatchBillingEmails(
 /** Record billing + emails after a successful plan upgrade (tenant or admin). */
 export async function recordUpgradeBilling(params: {
   businessId: string;
-  subscriptionId?: string;
   planId: string;
   planDisplayName: string;
   moduleKey?: PlatformModule | string | null;
@@ -403,7 +361,6 @@ export async function recordUpgradeBilling(params: {
 
   await recordBillingTransaction({
     businessId: params.businessId,
-    subscriptionId: params.subscriptionId,
     planId: params.planId,
     moduleKey,
     amount: params.amount,
@@ -538,10 +495,7 @@ export async function processPlatformRazorpayWebhook(
 
   const legacyMeta = extractPlanMetaFromWebhook(verified);
   const checkoutMeta = extractCheckoutMetaFromWebhookNotes(verified);
-  const sub = await queryOne<{ plan_id: string; id: string }>(
-    `SELECT id, plan_id FROM business_subscriptions WHERE business_id = $1`,
-    [businessId],
-  );
+  const sub = await getPrimaryModuleSubscription(businessId, true);
   const planId =
     checkoutMeta.planId || legacyMeta.planId || sub?.plan_id || 'free';
   const amount = verified.amount ?? 0;
@@ -602,7 +556,6 @@ export async function processPlatformRazorpayWebhook(
     } else {
       const { id } = await recordBillingTransaction({
         businessId,
-        subscriptionId: sub?.id,
         planId,
         amount,
         billingCycle,

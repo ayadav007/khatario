@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { recordBillingTransaction } from '@/lib/platform-billing';
 import { queryOne } from '@/lib/db';
+import { normalizePlatformModule } from '@/lib/platform-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,7 @@ export async function POST(
     const result = await recordBillingTransaction({
       businessId: params.id,
       planId,
+      moduleKey: normalizePlatformModule(body.module_key),
       amount: Number(body.amount) || 0,
       billingCycle: body.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
       paymentMethod: body.payment_method || 'manual',

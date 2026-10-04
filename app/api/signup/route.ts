@@ -415,57 +415,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existingSubscription = await client.query(`
-      SELECT id, plan_id, status FROM business_subscriptions WHERE business_id = $1
-    `, [businessId]);
-
     const trialDays = signupPlan.trialDays;
-
-    if (existingSubscription.rows.length > 0) {
-      await client.query(
-        `
-        UPDATE business_subscriptions
-        SET plan_id = $1,
-            status = $2,
-            start_date = CURRENT_DATE,
-            trial_end_date = CASE
-              WHEN $2::text = 'trial' AND $4::int IS NOT NULL
-              THEN CURRENT_DATE + ($4::text || ' days')::interval
-              ELSE NULL
-            END,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE business_id = $3
-        `,
-        [initialPlanId, initialStatus, businessId, trialDays]
-      );
-
-      clearSubscriptionCache(businessId);
-    } else {
-      const insertResult =
-        initialStatus === 'trial' && trialDays
-          ? await client.query(
-              `
-            INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-            VALUES ($1, $2, 'trial', CURRENT_DATE, CURRENT_DATE + ($3::text || ' days')::interval)
-            RETURNING id, plan_id, status
-            `,
-              [businessId, initialPlanId, trialDays]
-            )
-          : await client.query(
-              `
-            INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, trial_end_date)
-            VALUES ($1, $2, 'active', CURRENT_DATE, NULL)
-            RETURNING id, plan_id, status
-            `,
-              [businessId, initialPlanId]
-            );
-
-      if (!insertResult.rows || insertResult.rows.length === 0) {
-        throw new Error('Failed to create subscription: INSERT returned no rows');
-      }
-
-      clearSubscriptionCache(businessId);
-    }
 
     await seedInitialModuleSubscription(
       client,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRows, queryOne } from '@/lib/db';
+import { queryRows } from '@/lib/db';
+import { getBusinessSubscription } from '@/lib/subscription';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,13 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 1. Get current business subscription plan
-    const sub = await queryOne<{ plan_id: string; status: string; trial_end_date: string | null }>(
-      `SELECT plan_id, status, trial_end_date::text FROM business_subscriptions 
-       WHERE business_id = $1 AND status IN ('active', 'trial')
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [businessId]
-    );
+    const sub = await getBusinessSubscription(businessId);
 
     const planId = sub?.plan_id || 'free';
     const onActiveTrial = !!sub && isTrialEntitlementActive(sub);

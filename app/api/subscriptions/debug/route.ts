@@ -19,19 +19,19 @@ export async function GET(request: NextRequest) {
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
 
-    const subscription = await queryOne(
+    const moduleSubscriptions = await queryRows(
       `
       SELECT 
-        bs.id,
         bs.business_id,
+        bs.module_key,
         bs.plan_id,
         bs.status,
         sp.display_name as plan_name,
         sp.features
-      FROM business_subscriptions bs
+      FROM business_module_subscriptions bs
       JOIN subscription_plans sp ON bs.plan_id = sp.id
       WHERE bs.business_id = $1
-      LIMIT 1
+      ORDER BY bs.module_key
     `,
       [businessId]
     );
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       business_id: businessId,
-      subscription: subscription || null,
+      module_subscriptions: moduleSubscriptions,
       invoice_counts: {
         this_month: parseInt(invoiceCount?.count || '0'),
         total: parseInt(totalInvoices?.count || '0'),

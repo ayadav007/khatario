@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
-import { deleteBusinessCompletely } from '@/lib/admin-business-ops';
+import { deleteBusinessCompletely, getBusinessModuleSubscriptions } from '@/lib/admin-business-ops';
+import { getBusinessPlatformContext } from '@/lib/business-modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,8 @@ export async function GET(
         b.created_at,
         b.platform_suspended_at,
         b.platform_suspend_reason,
-        bs.id as subscription_id,
+        COALESCE(b.primary_module, 'billing') as primary_module,
+        bs.module_key,
         bs.plan_id,
         bs.status as subscription_status,
         bs.start_date as subscription_start_date,
@@ -56,7 +58,9 @@ export async function GET(
         (SELECT COUNT(*) FROM users WHERE business_id = b.id) as user_count,
         (SELECT MAX(created_at) FROM invoices WHERE business_id = b.id) as last_invoice_date
       FROM businesses b
-      LEFT JOIN business_subscriptions bs ON b.id = bs.business_id
+      LEFT JOIN business_module_subscriptions bs
+        ON bs.business_id = b.id
+       AND bs.module_key = COALESCE(b.primary_module, 'billing')
       LEFT JOIN subscription_plans sp ON bs.plan_id = sp.id
       WHERE b.id = $1
     `, [businessId]);
@@ -68,7 +72,18 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ business });
+    const [moduleSubscriptions, platform] = await Promise.all([
+      getBusinessModuleSubscriptions(businessId),
+      getBusinessPlatformContext(businessId),
+    ]);
+
+    return NextResponse.json({
+      business: {
+        ...business,
+        enabled_modules: platform.enabledModules,
+        module_subscriptions: moduleSubscriptions,
+      },
+    });
   } catch (error: any) {
     console.error('Error fetching business:', error);
     return NextResponse.json(

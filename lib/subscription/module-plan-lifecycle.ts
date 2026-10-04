@@ -1,7 +1,6 @@
 import { query, queryOne } from '@/lib/db';
 import { type PlatformModule } from '@/lib/platform-modules';
-import { getBusinessPlatformContext } from '@/lib/business-modules';
-import { clearSubscriptionCache, getBusinessSubscription } from '@/lib/subscription';
+import { clearSubscriptionCache } from '@/lib/subscription';
 import { logSubscriptionEvent, getDataImpactWarnings, type DataImpactWarning } from '@/lib/subscription/lifecycle';
 import { getModuleSubscription, clearModuleSubscriptionCache } from '@/lib/subscription/module-subscriptions';
 import { assertPlanMatchesModule } from '@/lib/subscription/plan-module';
@@ -63,19 +62,6 @@ export async function downgradeModuleSubscription(
     [businessId, moduleKey, targetPlanId],
   );
 
-  const ctx = await import('@/lib/business-modules').then((m) =>
-    m.getBusinessPlatformContext(businessId),
-  );
-  if (ctx.primaryModule === moduleKey) {
-    await query(
-      `UPDATE business_subscriptions
-       SET scheduled_plan_id = $2,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE business_id = $1 AND status IN ('active', 'trial')`,
-      [businessId, targetPlanId],
-    );
-  }
-
   await logSubscriptionEvent(businessId, 'downgrade_scheduled', {
     module_key: moduleKey,
     from_plan_id: current.plan_id,
@@ -117,22 +103,6 @@ export async function cancelModuleScheduledDowngrade(
     [businessId, moduleKey],
   );
 
-  const ctx = await import('@/lib/business-modules').then((m) =>
-    m.getBusinessPlatformContext(businessId),
-  );
-  if (ctx.primaryModule === moduleKey) {
-    const legacy = await getBusinessSubscription(businessId, true);
-    if (legacy?.scheduled_plan_id) {
-      await query(
-        `UPDATE business_subscriptions
-         SET scheduled_plan_id = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE business_id = $1`,
-        [businessId],
-      );
-    }
-  }
-
   await logSubscriptionEvent(businessId, 'downgrade_cancelled', {
     module_key: moduleKey,
     from_plan_id: current.plan_id,
@@ -166,22 +136,11 @@ export async function cancelModuleSubscription(
   await query(
     `UPDATE business_module_subscriptions
      SET cancel_at_period_end = true,
+         cancelled_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
      WHERE business_id = $1 AND module_key = $2`,
     [businessId, moduleKey],
   );
-
-  const ctx = await getBusinessPlatformContext(businessId);
-  if (ctx.primaryModule === moduleKey) {
-    await query(
-      `UPDATE business_subscriptions
-       SET cancel_at_period_end = true,
-           cancelled_at = NOW(),
-           updated_at = NOW()
-       WHERE business_id = $1 AND status IN ('active', 'trial')`,
-      [businessId],
-    );
-  }
 
   await logSubscriptionEvent(businessId, 'cancelled', {
     module_key: moduleKey,
@@ -213,9 +172,11 @@ export async function moveModuleSubscriptionToFree(
          grace_period_end = NULL,
          scheduled_plan_id = NULL,
          cancel_at_period_end = false,
+         cancelled_at = NULL,
+         downgraded_from = $4,
          updated_at = CURRENT_TIMESTAMP
      WHERE business_id = $1 AND module_key = $2`,
-    [businessId, moduleKey, freePlanId],
+    [businessId, moduleKey, freePlanId, fromPlanId],
   );
 
   await logSubscriptionEvent(businessId, eventType, {
@@ -223,12 +184,6 @@ export async function moveModuleSubscriptionToFree(
     from_plan_id: fromPlanId,
     to_plan_id: freePlanId,
   });
-
-  const ctx = await getBusinessPlatformContext(businessId);
-  if (ctx.primaryModule === moduleKey) {
-    const { moveSubscriptionToFree } = await import('@/lib/subscription/lifecycle');
-    await moveSubscriptionToFree(businessId, fromPlanId, eventType);
-  }
 
   clearSubscriptionCache(businessId);
   clearModuleSubscriptionCache(businessId);

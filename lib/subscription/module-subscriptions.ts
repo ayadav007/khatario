@@ -1,6 +1,6 @@
 /**
  * Per-module subscriptions — one plan row per (business, module).
- * Falls back to legacy business_subscriptions when the new table is empty.
+ * This is the only subscription record; business_subscriptions is legacy and unused.
  */
 
 import * as db from '@/lib/db';
@@ -26,6 +26,11 @@ export interface ModuleSubscriptionRow extends SubscriptionForEffectivePlan {
   billing_cycle?: 'monthly' | 'yearly';
   scheduled_plan_id?: string | null;
   cancel_at_period_end?: boolean;
+  cancelled_at?: string | null;
+  downgraded_from?: string | null;
+  trial_extension_granted?: boolean;
+  trial_extension_declined_at?: string | null;
+  created_at?: string;
   plan_display_name?: string;
   product_line?: string;
 }
@@ -61,6 +66,11 @@ async function loadModuleSubscriptionsFromDb(
          bms.billing_cycle,
          bms.scheduled_plan_id,
          bms.cancel_at_period_end,
+         bms.cancelled_at::text AS cancelled_at,
+         bms.downgraded_from,
+         COALESCE(bms.trial_extension_granted, false) AS trial_extension_granted,
+         bms.trial_extension_declined_at::text AS trial_extension_declined_at,
+         bms.created_at::text AS created_at,
          sp.display_name AS plan_display_name,
          sp.product_line
        FROM business_module_subscriptions bms
@@ -69,43 +79,9 @@ async function loadModuleSubscriptionsFromDb(
        ORDER BY bms.module_key`,
       [businessId],
     );
-    if (rows.length > 0) return rows;
+    return rows;
   } catch (error: unknown) {
-    const code = (error as { code?: string })?.code;
-    if (code !== '42P01') {
-      console.warn('[loadModuleSubscriptionsFromDb] query failed:', error);
-    }
-  }
-
-  // Legacy: single business_subscriptions row → infer module from plan product_line
-  try {
-    const legacy = await db.queryOne<ModuleSubscriptionRow>(
-      `SELECT
-         bs.business_id,
-         CASE
-           WHEN sp.product_line = 'hr' THEN 'hr'
-           WHEN sp.product_line = 'connect' THEN 'connect'
-           ELSE 'billing'
-         END AS module_key,
-         bs.plan_id,
-         bs.status,
-         bs.start_date::text AS start_date,
-         bs.end_date::text AS end_date,
-         bs.trial_end_date::text AS trial_end_date,
-         bs.grace_period_end::text AS grace_period_end,
-         bs.billing_cycle,
-         sp.display_name AS plan_display_name,
-         sp.product_line
-       FROM business_subscriptions bs
-       JOIN subscription_plans sp ON sp.id = bs.plan_id
-       WHERE bs.business_id = $1
-         AND bs.status IN ('active', 'trial')
-       ORDER BY bs.created_at DESC
-       LIMIT 1`,
-      [businessId],
-    );
-    return legacy ? [legacy] : [];
-  } catch {
+    console.warn('[loadModuleSubscriptionsFromDb] query failed:', error);
     return [];
   }
 }
@@ -147,6 +123,32 @@ export async function getModuleSubscription(
 ): Promise<ModuleSubscriptionRow | null> {
   const rows = await getModuleSubscriptions(businessId, skipCache);
   return rows.find((r) => r.module_key === moduleKey) ?? null;
+}
+
+/**
+ * The row that stands for "the business's plan" on account-level screens:
+ * the primary module's row, or the first enabled module that has one.
+ */
+export async function getPrimaryModuleSubscription(
+  businessId: string,
+  skipCache = false,
+): Promise<ModuleSubscriptionRow | null> {
+  const ctx = await getBusinessPlatformContext(businessId);
+  const rows = await getModuleSubscriptions(businessId, skipCache);
+  return (
+    rows.find((r) => r.module_key === ctx.primaryModule) ??
+    rows.find((r) => ctx.enabledModules.includes(r.module_key)) ??
+    null
+  );
+}
+
+/** True when at least one enabled product still grants access. */
+export async function isBusinessOperational(
+  businessId: string,
+  skipCache = false,
+): Promise<boolean> {
+  const rows = await getOperationalModuleSubscriptions(businessId, skipCache);
+  return rows.length > 0;
 }
 
 export function getEntitlementPlanIdForModuleSub(row: ModuleSubscriptionRow): string {

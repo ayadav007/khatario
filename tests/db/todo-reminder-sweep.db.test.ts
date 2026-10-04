@@ -144,8 +144,8 @@ d('todo reminder delivery (real DB)', () => {
         [biz, `Todo sweep ${tag} ${biz.slice(0, 4)}`],
       );
       await pool.query(
-        `INSERT INTO business_subscriptions (business_id, plan_id, status, start_date, end_date)
-         VALUES ($1, 'professional', $2, CURRENT_DATE - 30, $3)`,
+        `INSERT INTO business_module_subscriptions (business_id, module_key, plan_id, status, start_date, end_date)
+         VALUES ($1, 'billing', 'professional', $2, CURRENT_DATE - 30, $3)`,
         [biz, status, status === 'active' ? null : '2020-01-01'],
       );
     }
@@ -208,7 +208,7 @@ d('todo reminder delivery (real DB)', () => {
       await pool.query(`DROP TABLE IF EXISTS r5_reminder_faults`);
       await pool.query(`DELETE FROM notifications WHERE business_id = ANY($1::uuid[])`, [[BIZ, BIZ_EXPIRED]]);
       await pool.query(`DELETE FROM todos WHERE business_id = ANY($1::uuid[])`, [[BIZ, BIZ_EXPIRED]]);
-      await pool.query(`DELETE FROM business_subscriptions WHERE business_id = ANY($1::uuid[])`, [[BIZ, BIZ_EXPIRED]]);
+      await pool.query(`DELETE FROM business_module_subscriptions WHERE business_id = ANY($1::uuid[])`, [[BIZ, BIZ_EXPIRED]]);
       await tx(async (c) => {
         await withLedgerDelete(c, 'tenant_purge', null, async () => {
           await c.query(`DELETE FROM businesses WHERE id = ANY($1::uuid[])`, [[BIZ, BIZ_EXPIRED]]);

@@ -201,7 +201,7 @@ test.describe('Full journey', () => {
       // --- DB validation ---
       await withDbClient(async (c) => {
         const sub = await c.query(
-          `SELECT plan_id, status FROM business_subscriptions WHERE business_id = $1 ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
+          `SELECT plan_id, status FROM business_module_subscriptions WHERE business_id = $1 AND module_key = 'billing'`,
           [bizId]
         );
         expect(sub.rows[0]?.plan_id).toBe(targetPlanId);

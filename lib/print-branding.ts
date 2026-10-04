@@ -32,7 +32,7 @@ export async function shouldShowKhatarioPrintFooter(
   businessId: string
 ): Promise<boolean> {
   const sub =
-    (await getBusinessSubscription(businessId)) as PrintBrandingSubscription | null;
+    (await getBusinessSubscription(businessId, false, 'billing')) as PrintBrandingSubscription | null;
 
   const syncResult = shouldShowKhatarioFooterFromSubscription(sub);
 

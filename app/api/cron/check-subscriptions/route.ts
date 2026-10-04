@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processExpiredSubscriptions, processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
+import { processExpiredModuleSubscriptions } from '@/lib/subscription/lifecycle';
 import { sendPendingNotifications } from '@/lib/subscription/notifications';
 import { queryRows, query } from '@/lib/db';
 import { assertCronAuthorized } from '@/lib/cron-auth';
@@ -8,13 +8,12 @@ import { getEntitlementPlanId } from '@/lib/subscription/effective-plan';
 export const dynamic = 'force-dynamic';
 
 async function runSubscriptionCron() {
-  const expiredCounts = await processExpiredSubscriptions();
   const moduleExpiredCounts = await processExpiredModuleSubscriptions();
   const notificationsSent = await sendPendingNotifications();
 
   const activeBusinesses = await queryRows<{ business_id: string }>(
     `SELECT DISTINCT business_id
-     FROM business_subscriptions
+     FROM business_module_subscriptions
      WHERE status IN ('active', 'trial')`,
   );
 
@@ -22,7 +21,12 @@ async function runSubscriptionCron() {
 
   for (const { business_id } of activeBusinesses) {
     const sub = await queryRows<{ plan_id: string; status: string; trial_end_date: string | null }>(
-      `SELECT plan_id, status, trial_end_date::text FROM business_subscriptions WHERE business_id = $1 LIMIT 1`,
+      `SELECT m.plan_id, m.status, m.trial_end_date::text
+       FROM business_module_subscriptions m
+       JOIN businesses b ON b.id = m.business_id
+       WHERE m.business_id = $1
+       ORDER BY (m.module_key = COALESCE(b.primary_module, 'billing')) DESC, m.module_key
+       LIMIT 1`,
       [business_id],
     );
     const planId = sub[0] ? getEntitlementPlanId(sub[0]) : 'free';
@@ -77,7 +81,6 @@ async function runSubscriptionCron() {
   return {
     success: true,
     summary: {
-      expired: expiredCounts,
       moduleExpired: moduleExpiredCounts,
       notificationsSent,
       usageSnapshots: snapshotsInserted,
