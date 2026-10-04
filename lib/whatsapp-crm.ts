@@ -2006,7 +2006,7 @@ export async function processIncomingMessage(
   sourceTimestampSec?: number | null,
   originalWaTimestampSec?: number | null,
   /** Receives the stored conversation's DB id so callers can queue unanswered chats for a person. */
-  out?: { conversationUuid?: string }
+  out?: { conversationUuid?: string; replyId?: string | null }
 ): Promise<{ 
   response?: string; 
   shouldStore?: boolean;
@@ -2015,6 +2015,7 @@ export async function processIncomingMessage(
   responseType?: string;
   buttons?: Array<{ id: string; title: string; type?: 'quick_reply' | 'call' | 'url'; phone?: string; url?: string }>;
   footer?: string;
+  list?: { buttonText: string; rows: Array<{ id: string; title: string; description?: string }> };
   mediaUrl?: string;
   delaySeconds?: number;
   enableTyping?: boolean;
@@ -2132,23 +2133,58 @@ export async function processIncomingMessage(
       ).catch(() => null);
       if (human?.handled_by_human) {
         console.log('[CRM] Chat is handled by a person — stored only, no automatic reply');
+        const { logRouting } = await import('@/lib/whatsapp/flows/log');
+        await logRouting({ businessId, conversationId, messageId, handler: 'human' });
         return { shouldStore: true };
       }
     }
 
+    const replyId = out?.replyId ?? null;
+
+    const runShopReply = async (textForShop: string) => {
+      const { respondToShopRequest } = await import('./whatsapp-shop/intent');
+      const shopReply = await respondToShopRequest({
+        businessId,
+        phone: normalizedFrom,
+        conversationUuid: conversationId,
+        text: textForShop,
+      }).catch((e) => {
+        console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
+        return null;
+      });
+      if (!shopReply) return null;
+      const { logRouting } = await import('@/lib/whatsapp/flows/log');
+      await logRouting({ businessId, conversationId, messageId, handler: 'shop' });
+      return shopReply.response
+        ? { response: shopReply.response, shouldStore: true, delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0 }
+        : { shouldStore: true, handled: true as const };
+    };
+
+    if (!isGroup && conversationId && convState !== 'waiting_payment' && (messageType === 'text' || replyId)) {
+      const { tryFlowSessionOrHard } = await import('@/lib/whatsapp/flows/hook');
+      const first = await isFirstMessage(businessId, normalizedFrom);
+      const flowHit = await tryFlowSessionOrHard({
+        businessId,
+        conversationId,
+        messageId,
+        text: messageText,
+        replyId,
+        isFirstMessage: first,
+        phone: normalizedFrom,
+      });
+      if (flowHit && 'openShop' in flowHit && flowHit.openShop) {
+        const shop = await runShopReply('shop');
+        if (shop) return shop;
+      } else if (flowHit) {
+        return { ...flowHit, delaySeconds: flowHit.delaySeconds ?? (botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0) };
+      }
+    }
+
     if (!isGroup && messageType === 'text' && conversationId) {
-      const { isShopRequest, respondToShopRequest } = await import('./whatsapp-shop/intent');
+      const { isShopRequest } = await import('./whatsapp-shop/intent');
       if (isShopRequest(messageText)) {
-        const shopReply = await respondToShopRequest({ businessId, phone: normalizedFrom, conversationUuid: conversationId, text: messageText })
-          .catch((e) => {
-            console.error('[CRM] WhatsApp shop reply failed:', e instanceof Error ? e.message : e);
-            return null;
-          });
-        if (shopReply) {
-          return shopReply.response
-            ? { response: shopReply.response, shouldStore: true, delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0 }
-            : { shouldStore: true, handled: true };
-        }
+        const shop = await runShopReply(messageText);
+        if (shop) return shop;
       }
     }
 
@@ -2192,6 +2228,14 @@ export async function processIncomingMessage(
     });
 
     if (matchedRule) {
+      const { logRouting } = await import('@/lib/whatsapp/flows/log');
+      await logRouting({
+        businessId,
+        conversationId,
+        messageId,
+        handler: 'bot_rule',
+        reason: matchedRule.name,
+      });
       // If rule has next_rule_id or response_options, set state to wait for user input
       if (matchedRule.response_options || matchedRule.next_rule_id) {
         await updateConversationState(businessId, normalizedFrom, 'waiting_for_option', {
@@ -2561,6 +2605,32 @@ export async function processIncomingMessage(
 
     // AI Sales Agent - Try to generate response if no manual rule matched (individual chats only)
     // Note: We allow AI to respond even in waiting_payment state, but payment confirmations are handled first above
+    if (!isGroup && conversationId && convState !== 'waiting_payment' && (messageType === 'text' || replyId) && !matchedRule) {
+      const { tryFlowRouter } = await import('@/lib/whatsapp/flows/hook');
+      const routed = await tryFlowRouter({
+        businessId,
+        conversationId,
+        messageId,
+        text: messageText,
+        replyId,
+        isFirstMessage: false,
+        phone: normalizedFrom,
+      });
+      if (routed && routed !== 'ai_agent') {
+        if ('openShop' in routed && routed.openShop) {
+          const shop = await runShopReply('shop');
+          if (shop) return shop;
+        } else if (!('openShop' in routed)) {
+          if (routed.response || routed.handled) {
+            return {
+              ...routed,
+              delaySeconds: routed.delaySeconds ?? (botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0),
+            };
+          }
+        }
+      }
+    }
+
     if (!isGroup && messageType === 'text' && messageText.trim()) {
       console.log('[CRM] 🔍 Pre-AI Check:', {
         isGroup,

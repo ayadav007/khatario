@@ -77,10 +77,10 @@ export default function WhatsAppInboxSettingsPage() {
             body="Short answers your team inserts in a chat with a shortcut."
           />
           <LinkRow
-            href="/whatsapp/bot-rules"
+            href="/whatsapp/flows"
             icon={Workflow}
-            title="Keyword auto-replies"
-            body="Reply automatically when a message contains a word like “price” or “timing”."
+            title="Flows"
+            body="Guided journeys with buttons. Exact keywords start a flow; other questions go to the AI agent."
           />
           <LinkRow
             href={`${WHATSAPP_SETTINGS_BASE}/ai-agent`}

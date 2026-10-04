@@ -91,7 +91,7 @@ const LIST_CREATE_BY_PATH: Record<string, MobileListCreateAction> = {
     href: '/inventory-adjustments/new',
     ariaLabel: 'New adjustment',
   },
-  '/employees': { href: '/employees/new', ariaLabel: 'New employee' },
+  '/whatsapp/flows': { href: '/whatsapp/flows?new=1', ariaLabel: 'New flow' },
 };
 
 const COMPOSER_PREFIXES = [

@@ -99,8 +99,8 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
       await queueIfUnanswered(job.businessId, conversationId ?? undefined, { replied: false, handled: false });
       return;
     }
-    if (!job.text.trim()) return;
-    const out: { conversationUuid?: string } = {};
+    if (!job.text.trim() && !job.replyId) return;
+    const out: { conversationUuid?: string; replyId?: string | null } = { replyId: job.replyId ?? null };
     const result = await processIncomingMessage(
       job.businessId,
       `${job.from}@s.whatsapp.net`,
@@ -118,16 +118,32 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
       out,
     );
     await queueIfUnanswered(job.businessId, out.conversationUuid, {
-      replied: !!result.response?.trim(),
+      replied: !!result.response?.trim() || !!result.list || !!(result.buttons && result.buttons.length),
       handled: result.handled,
     });
-    if (!result.response?.trim()) return;
+    if (!result.response?.trim() && !result.list && !(result.buttons && result.buttons.length)) return;
 
     const delayMs = Math.min(Math.max(result.delaySeconds ?? 0, 0), 10) * 1000;
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
 
-    const text = cloudReplyText(result.response, result.buttons, result.footer);
-    const sent = await sendBusinessText(job.businessId, job.from, text);
+    let storedText: string;
+    let messageId: string | null;
+    if (result.list || (result.buttons && result.buttons.length)) {
+      const { sendFlowReply } = await import('@/lib/whatsapp/flows/send');
+      const sent = await sendFlowReply(job.businessId, job.from, {
+        text: result.response || '',
+        footer: result.footer,
+        buttons: result.buttons?.map((b) => ({ id: b.id, title: b.title })),
+        list: result.list,
+      });
+      storedText = sent.storedText;
+      messageId = sent.messageId;
+    } else {
+      const text = cloudReplyText(result.response || '', result.buttons, result.footer);
+      const sent = await sendBusinessText(job.businessId, job.from, text);
+      storedText = text;
+      messageId = sent.messageId;
+    }
 
     const conv = await queryOne<{ id: string }>(
       `SELECT id FROM whatsapp_conversations WHERE business_id = $1 AND conversation_id = $2 LIMIT 1`,
@@ -138,8 +154,8 @@ export async function processCloudIncoming(job: CloudIncomingQueueJob): Promise<
         job.businessId,
         conv.id,
         `${job.from}@s.whatsapp.net`,
-        text,
-        sent.messageId ?? `cloud_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        storedText,
+        messageId ?? `cloud_out_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
         'text',
         undefined,
         undefined,

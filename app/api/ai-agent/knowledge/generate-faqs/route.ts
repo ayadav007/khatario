@@ -3,31 +3,9 @@ import { withWhatsAppPremiumApi } from '@/lib/security/premium-module-api';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { helperCompletion, HelperAiError, parseJsonArray } from '@/lib/ai-agent/helper-ai';
 import { listKnowledge } from '@/lib/ai-agent/knowledge';
-import {
-  loadTenantCatalogSource,
-  loadTenantFileSource,
-  loadTenantPolicySource,
-  loadTenantTextSource,
-} from '@/lib/rag/ingest/tenant-sources';
+import { loadShopMaterial } from '@/lib/whatsapp/flows/shop-material';
 
 export const dynamic = 'force-dynamic';
-
-const MATERIAL_MAX = 12_000;
-
-async function shopMaterial(businessId: string): Promise<string> {
-  const [policy, catalog, notes, files] = await Promise.all([
-    loadTenantPolicySource(businessId).catch(() => null),
-    loadTenantCatalogSource(businessId).catch(() => null),
-    loadTenantTextSource(businessId).catch(() => null),
-    loadTenantFileSource(businessId).catch(() => null),
-  ]);
-  const parts: string[] = [];
-  for (const d of policy?.documents ?? []) parts.push(d.body.slice(0, 2500));
-  for (const d of [...(notes?.documents ?? []), ...(files?.documents ?? [])]) parts.push(d.body.slice(0, 2500));
-  const items = (catalog?.documents ?? []).slice(0, 40).map((d) => d.body.split('\n').slice(0, 4).join(' | '));
-  if (items.length) parts.push(`# Products\n${items.join('\n')}`);
-  return parts.join('\n\n').slice(0, MATERIAL_MAX);
-}
 
 /**
  * POST /api/ai-agent/knowledge/generate-faqs — 8-10 draft FAQs from the shop's catalogue, policies
@@ -37,7 +15,7 @@ export const POST = withWhatsAppPremiumApi({ module: 'whatsapp', action: 'update
   const rl = checkRateLimit(`ai-agent-gen-faqs:${businessId}`, 5, 60 * 60_000);
   if (!rl.allowed) return NextResponse.json({ error: 'Try again in a little while.' }, { status: 429 });
 
-  const material = await shopMaterial(businessId);
+  const material = await loadShopMaterial(businessId);
   if (material.length < 80) {
     return NextResponse.json(
       { error: 'Add some items, store policies or notes first — there is not enough to write FAQs from.' },

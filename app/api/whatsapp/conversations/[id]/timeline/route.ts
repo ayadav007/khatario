@@ -82,7 +82,35 @@ export const GET = withWhatsAppPremiumApi<{ id: string }>({ inboxPermission: tru
       };
     });
 
-    return NextResponse.json({ events: formattedEvents });
+    const routing = await queryRows<{
+      id: string;
+      handler: string;
+      reason: string | null;
+      confidence: string | null;
+      created_at: string;
+    }>(
+      `SELECT id, handler, reason, confidence, created_at
+         FROM whatsapp_inbound_routing_events
+        WHERE conversation_id = $1 AND business_id = $2
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      [conversationId, businessId],
+    ).catch(() => []);
+
+    const routingEvents = routing.map((r) => ({
+      id: r.id,
+      event_type: 'flow_entered' as const,
+      description: `Routed to ${r.handler}${r.reason ? `: ${r.reason}` : ''}`,
+      icon: r.handler.startsWith('flow') || r.handler === 'router' ? 'arrow-right' : r.handler === 'ai_agent' ? 'bot' : 'activity',
+      event_data: { handler: r.handler, reason: r.reason, confidence: r.confidence },
+      created_at: r.created_at,
+    }));
+
+    const merged = [...formattedEvents, ...routingEvents].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+
+    return NextResponse.json({ events: merged.slice(0, 100) });
   } catch (error: any) {
     console.error('Error fetching timeline:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

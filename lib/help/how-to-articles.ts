@@ -915,7 +915,7 @@ const articles: HowToArticle[] = [
           'Use Logs to review send status and errors.',
           'Use Conversations for live chats, notes, labels, linked orders, and timelines where enabled.',
           'Use Contacts, Groups, and Campaigns for bulk communication. Message only customers who have consented.',
-          'Use Bot Rules for automated replies and order handling; test rules with a small audience before relying on them.',
+          'Use Flows for guided WhatsApp journeys; test with a small audience before publishing.',
         ],
       },
       {

@@ -127,6 +127,8 @@ export type CloudIncomingQueueJob = WhatsAppQueueJobBase & {
     mimeType: string | null;
     filename: string | null;
   } | null;
+  /** Tapped reply button or list row id. */
+  replyId?: string | null;
 };
 
 /** A message to Khatario's own WhatsApp number (prospects and existing users). */

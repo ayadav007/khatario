@@ -269,7 +269,7 @@ export default function CampaignsPage() {
               WhatsApp Campaigns is Locked
             </h2>
             <p className="text-gray-600 mb-6">
-              Upgrade to unlock WhatsApp Campaigns, Bot Rules, and advanced automation features.
+              Upgrade to unlock WhatsApp Campaigns, Flows, and advanced automation features.
             </p>
             <Button onClick={() => setShowUpgradeModal(true)}>
               Unlock WhatsApp Bot Features

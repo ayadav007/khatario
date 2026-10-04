@@ -49,7 +49,7 @@ function ConversationsContent() {
               WhatsApp Conversations is Locked
             </h2>
             <p className="text-gray-600 mb-6">
-              Upgrade to unlock WhatsApp Conversations, Bot Rules, and advanced automation features.
+              Upgrade to unlock WhatsApp Conversations, Flows, and advanced automation features.
             </p>
             <button
               onClick={() => setShowUpgradeModal(true)}

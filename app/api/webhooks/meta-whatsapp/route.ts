@@ -67,6 +67,7 @@ async function handleTenant(businessId: string, body: unknown) {
       businessPhone: (m.displayPhoneNumber || '').replace(/\D/g, ''),
       sourceTimestampSec: m.timestamp,
       media: m.media,
+      replyId: m.replyId,
       order: m.order
         ? {
             catalogId: m.order.catalogId,
