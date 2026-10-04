@@ -42,7 +42,7 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/number-series': 'Transaction Number Series',
   '/settings/label-templates': 'Label Templates',
   '/settings/label-templates/new': 'New label template',
-  '/settings/features': 'UI features',
+  '/settings/features': 'Appearance',
   '/settings/backup': 'Backup & restore',
   '/settings/offline-sync': 'Offline sync',
   '/settings/automation': 'Workflow Automation',

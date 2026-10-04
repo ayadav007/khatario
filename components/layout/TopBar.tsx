@@ -17,6 +17,7 @@ import {
   MessageSquare,
   ArrowLeft,
   Plus,
+  Menu,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -34,6 +35,7 @@ import {
   type MobileQuickSettingsKind,
 } from '@/lib/mobile-quick-settings';
 import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
+import { SettingsMobileNav } from '@/components/settings/SettingsMobileNav';
 import { useMobileHeaderTitleContext } from '@/contexts/MobileHeaderTitleContext';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
@@ -323,6 +325,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(undefined);
   const [userRole, setUserRole] = useState<string>('');
   const [moduleSettingsOpen, setModuleSettingsOpen] = useState(false);
+  const [settingsNavOpen, setSettingsNavOpen] = useState(false);
+  const isSettingsDrillIn = Boolean(pathname?.startsWith('/settings/'));
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const branchSelectorRefMobile = useRef<HTMLDivElement>(null);
   const branchSelectorRefDesktop = useRef<HTMLDivElement>(null);
@@ -506,7 +510,17 @@ export const TopBar: React.FC<TopBarProps> = ({
             >
               {user?.name?.charAt(0)?.toUpperCase() || <User className="h-5 w-5 text-text-muted" />}
             </Link>
-            {mobileQuickSettings.moduleMenu ? (
+            {isSettingsDrillIn ? (
+              <button
+                type="button"
+                onClick={() => setSettingsNavOpen(true)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-label="Settings menu"
+                title="Settings menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            ) : mobileQuickSettings.moduleMenu ? (
               <button
                 type="button"
                 onClick={() => setModuleSettingsOpen(true)}
@@ -721,6 +735,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClose={() => setModuleSettingsOpen(false)}
           menu={mobileQuickSettings.moduleMenu}
         />
+      ) : null}
+      {isSettingsDrillIn ? (
+        <SettingsMobileNav open={settingsNavOpen} onClose={() => setSettingsNavOpen(false)} />
       ) : null}
     </>
   );

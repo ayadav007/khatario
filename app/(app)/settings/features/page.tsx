@@ -233,7 +233,7 @@ function UIFeaturesSettingsPage() {
 
   return (
     <SettingsPageShell
-      title="UI features"
+      title="Appearance"
       description="Personal color scheme (this device) and organization-wide portal branding for everyone in your business."
       icon={Layout}
     >

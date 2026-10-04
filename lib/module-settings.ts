@@ -26,6 +26,8 @@ export interface ModuleSettingsEntry {
   description?: string;
   /** When set, entry is hidden unless the business has this feature. */
   featureKey?: string;
+  /** When set, entry is hidden unless this platform module is enabled. */
+  requiresModule?: 'billing' | 'hr' | 'connect' | 'crm';
 }
 
 export interface ModuleSettingsMenu {
@@ -58,10 +60,13 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
       iconKind: 'whatsapp',
       entries: [
         { href: '/settings/whatsapp', label: 'Connection', description: 'Link your business number' },
+        { href: '/settings/whatsapp/templates', label: 'Templates', description: 'Message templates for invoices and reminders' },
         { href: '/settings/whatsapp/notifications', label: 'Notifications', description: 'Payment reminders and updates for you' },
-        { href: '/settings/whatsapp/inbox', label: 'Inbox & team', description: 'Chat assignment and saved replies' },
-        { href: '/settings/whatsapp/team', label: 'Agents', description: 'WhatsApp agent logins and seats' },
+        { href: '/settings/whatsapp/inbox', label: 'Inbox & team', description: 'Chat assignment and saved replies', requiresModule: 'connect' },
+        { href: '/whatsapp/flows', label: 'Flows', description: 'Guided journeys and AI generate', requiresModule: 'connect' },
+        { href: '/settings/whatsapp/team', label: 'Agents', description: 'WhatsApp agent logins and seats', requiresModule: 'connect' },
         { href: '/settings/whatsapp/ai-agent', label: 'AI agent', description: 'Answer customer chats automatically' },
+        { href: '/settings/whatsapp/shop', label: 'Shop', description: 'WhatsApp catalog and orders' },
         { href: '/settings/products', label: 'Your products', description: 'Enable or manage Connect' },
       ],
     };
@@ -202,7 +207,7 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
         { href: '/settings/attendance-policy', label: 'Attendance policy', description: 'Late & LWP rules' },
         { href: '/settings/attendance-regularization', label: 'Regularization', description: 'Employee attendance corrections' },
         { href: '/settings/leave-types', label: 'Leave types', description: 'Time-off categories' },
-        { href: '/settings/holidays', label: 'Holidays', description: 'Company holidays' },
+        { href: '/settings/holiday-lists', label: 'Holiday lists', description: 'Company holidays' },
         { href: '/settings/commission-rules', label: 'Commission rules', description: 'Sales commissions' },
       ],
     };

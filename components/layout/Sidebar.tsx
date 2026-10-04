@@ -51,6 +51,11 @@ import {
   Mail,
   ClipboardList,
   HelpCircle,
+  SlidersHorizontal,
+  Bell,
+  Bot,
+  Inbox,
+  ShoppingBag,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLayout } from '@/contexts/LayoutContext';
@@ -64,7 +69,7 @@ import { PRODUCT_TOUR_START_EVENT } from '@/components/onboarding/productTourSha
 import {
   isNavSectionVisible,
 } from '@/lib/platform-modules';
-import { buildSettingsSidebarBlocks } from '@/lib/settings-module-registry';
+import { buildFlatSettingsGroups } from '@/lib/settings-module-registry';
 import {
   getHrNavSectionTitle,
   getVisibleHrAdminNavItems,
@@ -96,6 +101,14 @@ export const Sidebar = React.memo(function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+  const [locationHash, setLocationHash] = useState('');
+
+  useEffect(() => {
+    const read = () => setLocationHash(window.location.hash.replace(/^#/, ''));
+    read();
+    window.addEventListener('hashchange', read);
+    return () => window.removeEventListener('hashchange', read);
+  }, [pathname]);
   const { business, user, branch: sessionBranch, branches, activeBranchCount, platformSession, hasPlatformModule } = useAuth();
   const enabledModules = platformSession?.enabledModules ?? ['billing'];
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
@@ -774,8 +787,8 @@ export const Sidebar = React.memo(function Sidebar() {
                     featureKey: 'whatsapp_bot',
                   },
                   {
-                    href: '/whatsapp/bot-rules',
-                    label: 'Bot Rules',
+                    href: '/whatsapp/flows',
+                    label: 'Flows',
                     module: 'whatsapp',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
@@ -839,25 +852,32 @@ export const Sidebar = React.memo(function Sidebar() {
     [isSupplier, warehousesEnabled, snapshotLoaded, hasCapability, reportRouteMap, homeHref, hasPlatformModule]
   );
 
-  // Settings navigation (module-scoped: Billing | HR | Connect | CRM)
-  const settingsNavItems = useMemo(() => {
+  const sectionKeyOf = (item: { sectionKey?: string; label?: string }) =>
+    item.sectionKey || item.label || '';
+
+  // Settings navigation: one collapsible level (shared groups once, then product groups).
+  const settingsNavModel = useMemo(() => {
     if (!isSettingsPage) return null;
 
     const groupIcons: Record<string, typeof Settings> = {
-      organization: Building,
-      users: Users,
-      subscription: CreditCard,
+      account: Building,
+      team: Users,
+      plan: CreditCard,
+      'billing-setup': Building,
       accounting: DollarSign,
       'sales-billing': FileText,
+      'online-store': ShoppingBag,
       'inventory-items': Package,
-      general: Settings,
+      'billing-general': Settings,
+      'hr-organization': Building,
       'hr-time-attendance': Clock,
       'hr-leave': Calendar,
       'hr-payroll': DollarSign,
       'hr-hiring': UserCheck,
       'hr-employee-portal': Users,
-      connect: MessageSquare,
+      whatsapp: MessageSquare,
       integrations: LayoutGrid,
+      system: Palette,
       help: HelpCircle,
     };
 
@@ -883,7 +903,7 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/number-series': Hash,
       '/settings/business#bp-features': Package,
       '/settings/label-templates': Printer,
-      '/settings/features': Settings,
+      '/settings/features': Palette,
       '/settings/backup': Database,
       '/settings/offline-sync': RefreshCw,
       '/settings/automation': Settings,
@@ -905,48 +925,69 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/hr-approval': CheckSquare,
       '/settings/onboarding-templates': ClipboardList,
       '/settings/offer-letter': FileText,
-      '/settings/whatsapp': MessageSquare,
+      '/settings/whatsapp': Smartphone,
+      '/settings/whatsapp/templates': FileText,
+      '/settings/whatsapp/notifications': Bell,
+      '/settings/whatsapp/inbox': Inbox,
+      '/settings/whatsapp/team': Users,
+      '/settings/whatsapp/ai-agent': Bot,
+      '/settings/whatsapp/shop': ShoppingBag,
+      '/settings/online-store': ShoppingBag,
+      '/settings/online-store/orders': ShoppingBag,
+      '/settings/online-store/enquiries': MessageSquare,
+      '/settings/holiday-lists': Calendar,
       '/settings/integrations?category=crm': Briefcase,
       '/items/categories': Package,
       '/settings/business#pos-mode': FileText,
     };
 
-    const blocks = buildSettingsSidebarBlocks(enabledModules, {
+    const groups = buildFlatSettingsGroups(enabledModules, {
       hasFeature,
     });
 
-    const moduleSections = blocks.map((block) => ({
-      label: block.label,
+    const items = groups.map((group) => ({
+      label: group.title,
+      sectionKey: `settings:${group.groupId}`,
       collapsible: true,
-      subItems: block.groups.map((group) => ({
-        label: group.title,
-        collapsible: true,
-        subItems: group.links.map((link) => {
-          const path = link.href.split('#')[0];
-          return {
-            href: link.href,
-            label: link.label,
-            icon:
-              linkIcons[link.href] ??
-              linkIcons[path] ??
-              groupIcons[group.groupId] ??
-              Settings,
-            module: link.module,
-            featureKey: link.featureKey,
-          };
-        }),
-      })),
+      icon: groupIcons[group.groupId] ?? Settings,
+      subItems: group.links.map((link) => {
+        const path = link.href.split('#')[0].split('?')[0];
+        return {
+          href: link.href,
+          label: link.label,
+          icon:
+            linkIcons[link.href] ??
+            linkIcons[path] ??
+            groupIcons[group.groupId] ??
+            Settings,
+          module: link.module,
+          featureKey: link.featureKey,
+        };
+      }),
     }));
 
-    return [
-      ...moduleSections,
-      {
-        href: homeHref,
-        label: 'Back to Dashboard',
-        icon: ArrowLeft,
-      },
-    ];
+    const hrefs = groups.flatMap((group) => group.links.map((link) => link.href));
+
+    return {
+      hrefs,
+      items: [
+        ...items,
+        {
+          href: '/settings',
+          label: 'All settings',
+          icon: SlidersHorizontal,
+        },
+        {
+          href: homeHref,
+          label: 'Back to Dashboard',
+          icon: ArrowLeft,
+        },
+      ],
+    };
   }, [isSettingsPage, enabledModules, hasFeature, homeHref]);
+
+  const settingsNavItems = settingsNavModel?.items ?? null;
+  const settingsHrefs = settingsNavModel?.hrefs ?? [];
 
   const sidebarReady = useMemo(
     () =>
@@ -976,7 +1017,7 @@ export const Sidebar = React.memo(function Sidebar() {
     sidebarReady,
     navItems,
     isSettingsPage,
-    settingsNavItems,
+    settingsNavModel,
     hasCapability,
     snapshotLoaded,
     warehousesEnabled,
@@ -1012,32 +1053,60 @@ export const Sidebar = React.memo(function Sidebar() {
     return () => window.removeEventListener('khatario-tour:expand', onExpand);
   }, []);
 
-  // Helper function to check if a navigation item is active
+  // Helper function to check if a navigation item is active.
+  // Settings links strip hashes, and a parent stays inactive when a longer settings link matches.
   const isItemActive = (href: string): boolean => {
     if (!href) return false;
-    
-    // Parse href to separate path and query
-    const [path, queryString] = href.split('?');
-    const pathMatch = pathname === path || pathname?.startsWith(path + '/');
-    
+
+    const hashIdx = href.indexOf('#');
+    const hash = hashIdx >= 0 ? href.slice(hashIdx + 1) : '';
+    const beforeHash = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+    const qIdx = beforeHash.indexOf('?');
+    const path = qIdx >= 0 ? beforeHash.slice(0, qIdx) : beforeHash;
+    const queryString = qIdx >= 0 ? beforeHash.slice(qIdx + 1) : '';
+
+    const pathMatch = pathname === path || Boolean(pathname?.startsWith(`${path}/`));
     if (!pathMatch) return false;
-    
-    // If href has query parameters, check if they all match
+
+    if (hash) {
+      return pathname === path && locationHash === hash;
+    }
+
     if (queryString) {
       const hrefParams = new URLSearchParams(queryString);
-      // Check that all query params in href match current searchParams
       for (const [key, value] of hrefParams.entries()) {
-        if (searchParams.get(key) !== value) {
-          return false;
-        }
+        if (searchParams.get(key) !== value) return false;
       }
-      // All query params match
-      return true;
-    } else {
-      // If href has no query params, current URL should also have no query params
-      // (e.g., /invoices/new should not match /invoices/new?type=proforma_invoice)
+      if (settingsHrefs.length === 0) return true;
+    } else if (settingsHrefs.length === 0) {
       return searchParams.toString() === '';
+    } else if (pathname === path && searchParams.toString() !== '') {
+      return false;
     }
+
+    if (
+      pathname === path &&
+      locationHash &&
+      settingsHrefs.some((other) => {
+        const otherHashIdx = other.indexOf('#');
+        if (otherHashIdx < 0) return false;
+        const otherPath = other.slice(0, otherHashIdx).split('?')[0];
+        return otherPath === path && other.slice(otherHashIdx + 1) === locationHash;
+      })
+    ) {
+      return false;
+    }
+
+    if (pathname !== path && settingsHrefs.length > 0) {
+      const longer = settingsHrefs.some((other) => {
+        const otherPath = other.split('#')[0].split('?')[0];
+        if (otherPath.length <= path.length) return false;
+        return pathname === otherPath || Boolean(pathname?.startsWith(`${otherPath}/`));
+      });
+      if (longer) return false;
+    }
+
+    return true;
   };
 
   // Helper function to check if any sub-item is active
@@ -1076,8 +1145,9 @@ export const Sidebar = React.memo(function Sidebar() {
 
       for (const item of items) {
         if (item.collapsible && item.subItems && isAnySubItemActive(item)) {
-          if (!newOpenSections[item.label]) {
-            newOpenSections[item.label] = true;
+          const key = sectionKeyOf(item);
+          if (!newOpenSections[key]) {
+            newOpenSections[key] = true;
             hasChanges = true;
           }
         }
@@ -1086,7 +1156,7 @@ export const Sidebar = React.memo(function Sidebar() {
       return hasChanges ? newOpenSections : prevOpenSections;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads pathname/searchParamsKey
-  }, [pathname, searchParamsKey, sidebarReady]);
+  }, [pathname, searchParamsKey, sidebarReady, locationHash]);
 
   // Restore scroll position after render
   useEffect(() => {
@@ -1130,15 +1200,16 @@ export const Sidebar = React.memo(function Sidebar() {
         {items.map((item, index) => {
           const Icon = item.icon;
           const isActive = item.href ? isItemActive(item.href) : false;
-          const isSectionOpen = item.collapsible ? openSections[item.label] : true;
+          const sectionKey = sectionKeyOf(item);
+          const isSectionOpen = item.collapsible ? openSections[sectionKey] : true;
           const hasActiveSubItem = item.subItems ? isAnySubItemActive(item) : false;
           // If section is explicitly closed (false), respect that even with active sub-item
           // Otherwise, expand if section is open OR has active sub-item
-          const isExpanded = openSections[item.label] === false 
-            ? false 
+          const isExpanded = openSections[sectionKey] === false
+            ? false
             : (isSectionOpen || hasActiveSubItem);
           // Determine the top-level parent for nested items
-          const currentTopLevelParent = isSubItem ? topLevelParentLabel : item.label;
+          const currentTopLevelParent = isSubItem ? topLevelParentLabel : sectionKey;
           // Check if we're within an expanded section (check top-level parent)
           const isWithinExpanded = isSubItem && topLevelParentLabel && openSections[topLevelParentLabel];
 
@@ -1170,7 +1241,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           // Then toggle section to show sub-items
                           // Use setTimeout to ensure sidebar expansion completes first
                           setTimeout(() => {
-                            toggleSection(item.label, e);
+                            toggleSection(sectionKeyOf(item), e);
                           }, 100);
                           return;
                         }
@@ -1183,7 +1254,7 @@ export const Sidebar = React.memo(function Sidebar() {
                           if (!hasValidHref) {
                             // No valid href: prevent default and toggle section only
                             e.preventDefault();
-                            toggleSection(item.label, e);
+                            toggleSection(sectionKeyOf(item), e);
                             return;
                           }
                           // Has valid href: allow navigation (don't prevent default)

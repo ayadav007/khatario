@@ -4,10 +4,7 @@
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
-import {
-  SETTINGS_BY_PLATFORM_MODULE,
-  SETTINGS_MODULE_ORDER,
-} from '@/lib/settings-module-registry';
+import { collectSettingsPathModules } from '@/lib/settings-module-registry';
 
 const ALWAYS_ALLOWED_PREFIXES = ['/settings/help'];
 
@@ -16,23 +13,7 @@ function normalizeSettingsPath(pathname: string): string {
 }
 
 function buildPathToModulesMap(): Map<string, PlatformModule[]> {
-  const counts = new Map<string, Set<PlatformModule>>();
-
-  for (const mod of SETTINGS_MODULE_ORDER) {
-    for (const group of SETTINGS_BY_PLATFORM_MODULE[mod].groups) {
-      for (const link of group.links) {
-        const path = normalizeSettingsPath(link.href);
-        if (!counts.has(path)) counts.set(path, new Set());
-        counts.get(path)!.add(mod);
-      }
-    }
-  }
-
-  const map = new Map<string, PlatformModule[]>();
-  for (const [path, mods] of counts) {
-    map.set(path, Array.from(mods));
-  }
-  return map;
+  return collectSettingsPathModules();
 }
 
 const PATH_TO_MODULES = buildPathToModulesMap();

@@ -76,10 +76,7 @@ const MORE_MENU_ROUTES: { href: string; section: string }[] = [
   { href: '/tools/google-lead-extractor', section: 'Tools' },
   { href: '/tools', section: 'Tools' },
   { href: '/search', section: 'Tools' },
-  // Settings & data
-  { href: '/settings/users', section: 'Settings & data' },
-  { href: '/settings/backup', section: 'Settings & data' },
-  { href: '/settings/offline-sync', section: 'Settings & data' },
+  // Settings hub. Drill-in pages match this prefix and step back to /settings.
   { href: '/settings', section: 'Settings & data' },
   // Support
   { href: '/docs', section: 'Support' },
