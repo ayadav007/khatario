@@ -11,6 +11,7 @@ export function shopOrderStarterDefinition(): FlowDefinition {
         data: {
           hardPhrases: ['order', 'order now', 'place order'],
           hardRegex: [],
+          regexCaseSensitive: false,
           firstMessage: false,
           softIntents: ['I want to buy', 'checkout', 'place an order'],
         },
@@ -20,6 +21,7 @@ export function shopOrderStarterDefinition(): FlowDefinition {
         type: 'buttons',
         position: { x: 40, y: 160 },
         data: {
+          header: '',
           body: 'Welcome! How can we help you today?',
           footer: '',
           buttons: [
@@ -33,28 +35,32 @@ export function shopOrderStarterDefinition(): FlowDefinition {
         id: 'open_shop',
         type: 'action',
         position: { x: 280, y: 320 },
-        data: { kind: 'open_shop', labelIds: [] },
+        data: { kind: 'open_shop', labelIds: [], catalogBody: 'Browse our catalogue', catalogFooter: '' },
       },
       {
         id: 'status_msg',
         type: 'message',
         position: { x: 40, y: 320 },
         data: {
+          header: '',
           body: 'Please share your order number or tell us what you ordered. Our team or AI assistant can look it up.',
           footer: '',
+          mediaType: 'none',
+          mediaUrl: '',
+          delaySeconds: 0,
         },
       },
       {
         id: 'handoff',
         type: 'action',
         position: { x: -200, y: 320 },
-        data: { kind: 'handoff', labelIds: [] },
+        data: { kind: 'handoff', labelIds: [], catalogBody: '', catalogFooter: '' },
       },
       {
         id: 'handoff_msg',
         type: 'message',
         position: { x: -200, y: 460 },
-        data: { body: 'Connecting you with our team. Someone will reply here shortly.', footer: '' },
+        data: { header: '', body: 'Connecting you with our team. Someone will reply here shortly.', footer: '', mediaType: 'none', mediaUrl: '', delaySeconds: 0 },
       },
       { id: 'end', type: 'end', position: { x: 40, y: 600 }, data: {} },
     ],

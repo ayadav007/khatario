@@ -11,7 +11,8 @@ function BotBubble({ bubble }: { bubble: Extract<SimBubble, { role: 'bot' }> }) 
   const { reply } = bubble;
   return (
     <div className="max-w-[90%] rounded-2xl rounded-bl-md bg-emerald-50 px-3 py-2 text-sm text-text-primary dark:bg-emerald-950/40">
-      <p className="whitespace-pre-wrap">{reply.text}</p>
+      <p className="whitespace-pre-wrap">{reply.header ? `${reply.header}\n${reply.text}` : reply.text}</p>
+      {reply.mediaUrl ? <p className="mt-1 text-[10px] text-text-muted">Media: {reply.mediaType} {reply.mediaUrl}</p> : null}
       {reply.footer ? <p className="mt-1 text-xs text-text-muted">{reply.footer}</p> : null}
       {reply.buttons?.length ? (
         <div className="mt-2 flex flex-col gap-1.5">

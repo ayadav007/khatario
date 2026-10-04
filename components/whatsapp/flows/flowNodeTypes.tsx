@@ -1,10 +1,15 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { FlowNode } from '@/lib/whatsapp/flows/schema';
+import { FlowNodeEditor } from './FlowNodeEditor';
 
-const card = 'rounded-lg border border-border bg-white px-3 py-2 shadow-sm dark:border-border-dark dark:bg-surface-dark min-w-[180px] max-w-[240px]';
+const card =
+  'rounded-xl border border-border bg-white px-3 py-2 shadow-sm dark:border-border-dark dark:bg-surface-dark min-w-[260px] max-w-[300px]';
 const label = 'text-[10px] font-semibold uppercase tracking-wide text-text-muted';
+
+type Patchable = { onPatch?: (data: FlowNode['data']) => void };
 
 export const flowNodeTypes = {
   start: StartNode,
@@ -17,101 +22,148 @@ export const flowNodeTypes = {
   end: EndNode,
 };
 
-function StartNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'start' }>['data'];
-  return (
-    <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <p className={label}>Start</p>
-      <p className="mt-1 text-xs text-text-secondary">
-        {(d.hardPhrases || []).slice(0, 3).join(', ') || (d.firstMessage ? 'First message' : 'No keywords yet')}
-      </p>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  );
+function asFlow<T extends FlowNode['type']>(
+  type: T,
+  id: string,
+  data: NodeProps['data'],
+): Extract<FlowNode, { type: T }> {
+  const { onPatch: _onPatch, ...rest } = (data || {}) as Record<string, unknown> & Patchable;
+  return { id, type, position: { x: 0, y: 0 }, data: rest } as Extract<FlowNode, { type: T }>;
 }
 
-function MessageNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'message' }>['data'];
+function EditableCard({
+  selected,
+  title,
+  node,
+  onPatch,
+  extraHandles,
+}: {
+  selected?: boolean;
+  title: string;
+  node: FlowNode;
+  onPatch?: (data: FlowNode['data']) => void;
+  extraHandles?: ReactNode;
+}) {
   return (
     <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
       <Handle type="target" position={Position.Top} />
-      <p className={label}>Message</p>
-      <p className="mt-1 line-clamp-3 text-sm text-text-primary">{d.body}</p>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  );
-}
-
-function ButtonsNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'buttons' }>['data'];
-  return (
-    <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <Handle type="target" position={Position.Top} />
-      <p className={label}>Buttons</p>
-      <p className="mt-1 line-clamp-2 text-sm">{d.body}</p>
-      <div className="relative mt-2 space-y-1">
-        {(d.buttons || []).map((b, i) => (
-          <div key={b.id} className="relative rounded border border-border px-2 py-1 text-xs dark:border-border-dark">
-            {b.title}
-            <Handle type="source" position={Position.Right} id={b.id} style={{ top: 12 + i * 28 }} />
-          </div>
-        ))}
+      <p className={label}>{title}</p>
+      <div className="mt-2">
+        {onPatch ? (
+          <FlowNodeEditor compact node={node} onChange={(n) => onPatch(n.data)} />
+        ) : (
+          <p className="line-clamp-3 text-xs text-text-secondary">Select to edit</p>
+        )}
       </div>
+      {extraHandles}
+      {node.type !== 'buttons' && node.type !== 'list' && node.type !== 'branch' ? (
+        <Handle type="source" position={Position.Bottom} />
+      ) : null}
     </div>
   );
 }
 
-function ListNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'list' }>['data'];
+function StartNode({ id, data, selected }: NodeProps) {
+  const patch = (data as Patchable).onPatch;
+  const node = asFlow('start', id, data);
   return (
     <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <Handle type="target" position={Position.Top} />
-      <p className={label}>List</p>
-      <p className="mt-1 line-clamp-2 text-sm">{d.body}</p>
-      {(d.rows || []).slice(0, 4).map((r) => (
-        <div key={r.id} className="relative mt-1 rounded border border-border px-2 py-1 text-xs dark:border-border-dark">
-          {r.title}
-          <Handle type="source" position={Position.Right} id={r.id} />
+      <p className={label}>Flow start</p>
+      <div className="mt-2">
+        {patch ? <FlowNodeEditor compact node={node} onChange={(n) => patch(n.data)} /> : null}
+      </div>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+function MessageNode({ id, data, selected }: NodeProps) {
+  return (
+    <EditableCard
+      selected={selected}
+      title="Message"
+      node={asFlow('message', id, data)}
+      onPatch={(data as Patchable).onPatch}
+    />
+  );
+}
+
+function ButtonsNode({ id, data, selected }: NodeProps) {
+  const node = asFlow('buttons', id, data);
+  return (
+    <EditableCard
+      selected={selected}
+      title="Buttons"
+      node={node}
+      onPatch={(data as Patchable).onPatch}
+      extraHandles={
+        <div className="relative mt-1">
+          {(node.data.buttons || []).map((b) => (
+            <Handle key={b.id} type="source" position={Position.Right} id={b.id} />
+          ))}
         </div>
-      ))}
-    </div>
+      }
+    />
   );
 }
 
-function AskNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'ask' }>['data'];
+function ListNode({ id, data, selected }: NodeProps) {
+  const node = asFlow('list', id, data);
   return (
-    <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <Handle type="target" position={Position.Top} />
-      <p className={label}>Ask · {d.input}</p>
-      <p className="mt-1 line-clamp-2 text-sm">{d.body}</p>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
+    <EditableCard
+      selected={selected}
+      title="List"
+      node={node}
+      onPatch={(data as Patchable).onPatch}
+      extraHandles={
+        <div className="relative mt-1">
+          {(node.data.rows || []).map((r) => (
+            <Handle key={r.id} type="source" position={Position.Right} id={r.id} />
+          ))}
+        </div>
+      }
+    />
   );
 }
 
-function BranchNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'branch' }>['data'];
+function AskNode({ id, data, selected }: NodeProps) {
   return (
-    <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <Handle type="target" position={Position.Top} />
-      <p className={label}>Branch</p>
-      <p className="mt-1 text-xs">{d.field}{d.equals ? ` = ${d.equals}` : d.exists ? ' exists' : ''}</p>
-      <Handle type="source" position={Position.Right} id="yes" style={{ top: '40%' }} />
-      <Handle type="source" position={Position.Right} id="no" style={{ top: '70%' }} />
-    </div>
+    <EditableCard
+      selected={selected}
+      title="Ask"
+      node={asFlow('ask', id, data)}
+      onPatch={(data as Patchable).onPatch}
+    />
   );
 }
 
-function ActionNode({ data, selected }: NodeProps) {
-  const d = data as Extract<FlowNode, { type: 'action' }>['data'];
+function BranchNode({ id, data, selected }: NodeProps) {
   return (
-    <div className={`${card} ${selected ? 'ring-2 ring-primary-500' : ''}`}>
-      <Handle type="target" position={Position.Top} />
-      <p className={label}>Action</p>
-      <p className="mt-1 text-sm">{d.kind.replace(/_/g, ' ')}</p>
-      <Handle type="source" position={Position.Bottom} />
-    </div>
+    <EditableCard
+      selected={selected}
+      title="Branch"
+      node={asFlow('branch', id, data)}
+      onPatch={(data as Patchable).onPatch}
+      extraHandles={
+        <>
+          <Handle type="source" position={Position.Right} id="yes" style={{ top: '40%' }} />
+          <Handle type="source" position={Position.Right} id="no" style={{ top: '70%' }} />
+        </>
+      }
+    />
+  );
+}
+
+function ActionNode({ id, data, selected }: NodeProps) {
+  const node = asFlow('action', id, data);
+  const title = node.data.kind === 'open_shop' ? 'Catalogue' : 'Action';
+  return (
+    <EditableCard
+      selected={selected}
+      title={title}
+      node={node}
+      onPatch={(data as Patchable).onPatch}
+    />
   );
 }
 

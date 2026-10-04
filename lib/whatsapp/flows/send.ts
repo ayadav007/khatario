@@ -1,12 +1,16 @@
 import { ASSISTANT_MARKER, businessTransport, sendBusinessText } from '@/lib/whatsapp/business-transport';
-import { sendInteractiveButtons, sendInteractiveList } from '@/lib/meta-whatsapp';
+import { sendImageMessage, sendInteractiveButtons, sendInteractiveList, sendVideoMessage } from '@/lib/meta-whatsapp';
 
 /** Reply payload the inbound pipeline can send without flattening buttons. */
 export type FlowReply = {
   text: string;
+  header?: string;
   footer?: string;
   buttons?: Array<{ id: string; title: string }>;
   list?: { buttonText: string; rows: Array<{ id: string; title: string; description?: string }> };
+  mediaType?: 'none' | 'image' | 'video';
+  mediaUrl?: string;
+  delaySeconds?: number;
 };
 
 export type CrmBotResult = {
@@ -30,6 +34,7 @@ export function replyToCrm(reply: FlowReply): CrmBotResult {
     buttons: reply.buttons?.map((b) => ({ ...b, type: 'quick_reply' as const })),
     list: reply.list,
     responseType: reply.list ? 'list' : reply.buttons?.length ? 'button' : 'text',
+    delaySeconds: reply.delaySeconds || 0,
   };
 }
 
@@ -40,7 +45,24 @@ export async function sendFlowReply(
 ): Promise<{ messageId: string | null; storedText: string }> {
   const digits = to.replace(/\D/g, '');
   const transport = await businessTransport(businessId);
-  const body = `${ASSISTANT_MARKER}${reply.text}`;
+  const header = reply.header?.trim();
+  const bodyText = header ? `*${header}*\n${reply.text}` : reply.text;
+  const body = `${ASSISTANT_MARKER}${bodyText}`;
+
+  if (transport === 'cloud' && reply.mediaUrl && (reply.mediaType === 'image' || reply.mediaType === 'video')) {
+    try {
+      const media = { link: reply.mediaUrl };
+      const caption = (header ? `${header}\n${reply.text}` : reply.text).slice(0, 1024);
+      if (reply.mediaType === 'image') {
+        const { messageId } = await sendImageMessage({ businessId, to: digits, media, caption });
+        return { messageId, storedText: storedInteractive(reply) };
+      }
+      const { messageId } = await sendVideoMessage({ businessId, to: digits, media, caption });
+      return { messageId, storedText: storedInteractive(reply) };
+    } catch (err) {
+      console.warn('[flows] media send failed, text fallback:', err instanceof Error ? err.message : err);
+    }
+  }
 
   if (transport === 'cloud' && reply.list?.rows.length) {
     try {
@@ -51,6 +73,7 @@ export async function sendFlowReply(
         buttonText: reply.list.buttonText,
         rows: reply.list.rows,
         footer: reply.footer,
+        headerText: header,
       });
       return { messageId, storedText: storedInteractive(reply) };
     } catch (err) {
@@ -66,6 +89,7 @@ export async function sendFlowReply(
         body,
         buttons: reply.buttons,
         footer: reply.footer,
+        header: header ? { type: 'text', text: header } : undefined,
       });
       return { messageId, storedText: storedInteractive(reply) };
     } catch (err) {
@@ -101,7 +125,9 @@ export async function sendFlowReply(
 }
 
 function storedInteractive(reply: FlowReply): string {
-  const lines = [reply.text.trim()];
+  const lines = [];
+  if (reply.header?.trim()) lines.push(reply.header.trim());
+  lines.push(reply.text.trim());
   const opts = reply.buttons?.length
     ? reply.buttons
     : reply.list?.rows.map((r) => ({ id: r.id, title: r.title })) ?? [];

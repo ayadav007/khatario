@@ -19,13 +19,18 @@ const pos = z.object({ x: z.number(), y: z.number() });
 const startData = z.object({
   hardPhrases: z.array(z.string().trim().min(1).max(80)).max(40).default([]),
   hardRegex: z.array(z.string().trim().min(1).max(200)).max(10).default([]),
+  regexCaseSensitive: z.boolean().optional().default(false),
   firstMessage: z.boolean().optional().default(false),
   softIntents: z.array(z.string().trim().min(1).max(120)).max(40).default([]),
 });
 
 const messageData = z.object({
+  header: z.string().trim().max(WA_LIMITS.headerText).optional().default(''),
   body: z.string().trim().min(1).max(WA_LIMITS.interactiveBody),
   footer: z.string().trim().max(WA_LIMITS.interactiveFooter).optional().default(''),
+  mediaType: z.enum(['none', 'image', 'video']).optional().default('none'),
+  mediaUrl: z.string().trim().max(2000).optional().default(''),
+  delaySeconds: z.number().int().min(0).max(30).optional().default(0),
 });
 
 const buttonItem = z.object({
@@ -34,6 +39,7 @@ const buttonItem = z.object({
 });
 
 const buttonsData = z.object({
+  header: z.string().trim().max(WA_LIMITS.headerText).optional().default(''),
   body: z.string().trim().min(1).max(WA_LIMITS.interactiveBody),
   footer: z.string().trim().max(WA_LIMITS.interactiveFooter).optional().default(''),
   buttons: z.array(buttonItem).min(1).max(WA_LIMITS.buttonsMax),
@@ -46,6 +52,7 @@ const listRow = z.object({
 });
 
 const listData = z.object({
+  header: z.string().trim().max(WA_LIMITS.headerText).optional().default(''),
   body: z.string().trim().min(1).max(WA_LIMITS.interactiveBody),
   footer: z.string().trim().max(WA_LIMITS.interactiveFooter).optional().default(''),
   buttonText: z.string().trim().min(1).max(WA_LIMITS.listButton),
@@ -69,6 +76,8 @@ const actionData = z.object({
   kind: z.enum(['add_labels', 'remove_labels', 'assign_to_user_id', 'handoff', 'open_shop']),
   labelIds: z.array(z.string().uuid()).max(20).optional().default([]),
   userId: z.string().uuid().optional().nullable(),
+  catalogBody: z.string().trim().max(WA_LIMITS.interactiveBody).optional().default(''),
+  catalogFooter: z.string().trim().max(WA_LIMITS.interactiveFooter).optional().default(''),
 });
 
 const endData = z.object({}).default({});
@@ -108,6 +117,7 @@ export type FlowEdge = z.infer<typeof flowEdgeSchema>;
 export type FlowTriggers = {
   hardPhrases: string[];
   hardRegex: string[];
+  regexCaseSensitive: boolean;
   firstMessage: boolean;
   softIntents: string[];
 };
@@ -119,7 +129,7 @@ export function emptyFlowDefinition(): FlowDefinition {
         id: 'start',
         type: 'start',
         position: { x: 40, y: 40 },
-        data: { hardPhrases: [], hardRegex: [], firstMessage: false, softIntents: [] },
+        data: { hardPhrases: [], hardRegex: [], regexCaseSensitive: false, firstMessage: false, softIntents: [] },
       },
       { id: 'end', type: 'end', position: { x: 40, y: 220 }, data: {} },
     ],
@@ -131,11 +141,12 @@ export function emptyFlowDefinition(): FlowDefinition {
 export function extractTriggers(definition: FlowDefinition): FlowTriggers {
   const start = definition.nodes.find((n) => n.type === 'start');
   if (!start || start.type !== 'start') {
-    return { hardPhrases: [], hardRegex: [], firstMessage: false, softIntents: [] };
+    return { hardPhrases: [], hardRegex: [], regexCaseSensitive: false, firstMessage: false, softIntents: [] };
   }
   return {
     hardPhrases: start.data.hardPhrases.map((p) => p.trim().toLowerCase()).filter(Boolean),
     hardRegex: start.data.hardRegex.map((p) => p.trim()).filter(Boolean),
+    regexCaseSensitive: !!start.data.regexCaseSensitive,
     firstMessage: !!start.data.firstMessage,
     softIntents: start.data.softIntents.map((p) => p.trim()).filter(Boolean),
   };

@@ -9,6 +9,7 @@ describe('flow hard match', () => {
   const triggers = {
     hardPhrases: ['order', 'order now'],
     hardRegex: ['^buy\\s+now$'],
+    regexCaseSensitive: false,
     firstMessage: false,
     softIntents: ['I want to purchase'],
   };

@@ -11,11 +11,12 @@ export function matchesHardPhrases(message: string, phrases: string[]): boolean 
   return phrases.some((p) => norm(p) === t);
 }
 
-export function matchesHardRegex(message: string, patterns: string[]): boolean {
+export function matchesHardRegex(message: string, patterns: string[], caseSensitive = false): boolean {
   const original = message.trim();
+  const flags = caseSensitive ? '' : 'i';
   for (const p of patterns) {
     try {
-      if (new RegExp(p, 'i').test(original)) return true;
+      if (new RegExp(p, flags).test(original)) return true;
     } catch {
       continue;
     }
@@ -29,7 +30,7 @@ export function isHardStartMatch(
 ): boolean {
   if (input.isFirstMessage && triggers.firstMessage) return true;
   if (matchesHardPhrases(input.text, triggers.hardPhrases)) return true;
-  if (matchesHardRegex(input.text, triggers.hardRegex)) return true;
+  if (matchesHardRegex(input.text, triggers.hardRegex, triggers.regexCaseSensitive)) return true;
   return false;
 }
 

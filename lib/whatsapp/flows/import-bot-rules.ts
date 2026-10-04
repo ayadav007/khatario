@@ -51,6 +51,7 @@ export function botRulesToDefinition(rules: RuleRow[], chains: Array<{ rule_id: 
     data: {
       hardPhrases: hard,
       hardRegex: regex,
+      regexCaseSensitive: false,
       firstMessage: root.trigger_type === 'first_message',
       softIntents: soft,
     },
@@ -70,7 +71,7 @@ export function botRulesToDefinition(rules: RuleRow[], chains: Array<{ rule_id: 
         id: nodeId,
         type: 'buttons',
         position: { x, y },
-        data: { body: (rule.response_message || 'Choose:').slice(0, 1024), footer: '', buttons: opts },
+        data: { header: '', body: (rule.response_message || 'Choose:').slice(0, 1024), footer: '', buttons: opts },
       });
     } else if (opts.length && rule.response_type === 'list') {
       nodes.push({
@@ -78,6 +79,7 @@ export function botRulesToDefinition(rules: RuleRow[], chains: Array<{ rule_id: 
         type: 'list',
         position: { x, y },
         data: {
+          header: '',
           body: (rule.response_message || 'Choose:').slice(0, 1024),
           footer: '',
           buttonText: 'Choose',
@@ -89,7 +91,7 @@ export function botRulesToDefinition(rules: RuleRow[], chains: Array<{ rule_id: 
         id: nodeId,
         type: 'message',
         position: { x, y },
-        data: { body: (rule.response_message || '...').slice(0, 1024), footer: '' },
+        data: { header: '', body: (rule.response_message || '...').slice(0, 1024), footer: '', mediaType: 'none', mediaUrl: '', delaySeconds: 0 },
       });
     }
     y += 140;

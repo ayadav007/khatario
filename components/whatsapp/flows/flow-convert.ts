@@ -18,13 +18,19 @@ export function toRf(def: FlowDefinition): { nodes: Node[]; edges: Edge[] } {
   };
 }
 
+function stripNodeData(data: Record<string, unknown> | undefined): FlowNode['data'] {
+  if (!data) return {} as FlowNode['data'];
+  const { onPatch: _onPatch, ...rest } = data;
+  return rest as FlowNode['data'];
+}
+
 export function fromRf(nodes: Node[], edges: Edge[], viewport: FlowDefinition['viewport']): FlowDefinition {
   return {
     nodes: nodes.map((n) => ({
       id: n.id,
       type: (n.type || 'message') as FlowNode['type'],
       position: n.position,
-      data: (n.data || {}) as FlowNode['data'],
+      data: stripNodeData(n.data as Record<string, unknown>),
     })) as FlowNode[],
     edges: edges.map((e) => ({
       id: e.id,
@@ -39,11 +45,12 @@ export function fromRf(nodes: Node[], edges: Edge[], viewport: FlowDefinition['v
 export function defaultData(type: FlowNodeType): FlowNode['data'] {
   switch (type) {
     case 'start':
-      return { hardPhrases: ['hi'], hardRegex: [], firstMessage: false, softIntents: [] };
+      return { hardPhrases: ['hi'], hardRegex: [], regexCaseSensitive: false, firstMessage: false, softIntents: [] };
     case 'message':
-      return { body: 'Hello! How can we help?', footer: '' };
+      return { header: '', body: 'Hello! How can we help?', footer: '', mediaType: 'none', mediaUrl: '', delaySeconds: 0 };
     case 'buttons':
       return {
+        header: '',
         body: 'Choose an option',
         footer: '',
         buttons: [
@@ -53,9 +60,10 @@ export function defaultData(type: FlowNodeType): FlowNode['data'] {
       };
     case 'list':
       return {
+        header: '',
         body: 'Pick from the list',
         footer: '',
-        buttonText: 'Choose',
+        buttonText: 'View items',
         rows: [{ id: 'one', title: 'Option 1', description: '' }],
       };
     case 'ask':
@@ -63,7 +71,7 @@ export function defaultData(type: FlowNodeType): FlowNode['data'] {
     case 'branch':
       return { field: 'name', exists: true };
     case 'action':
-      return { kind: 'handoff', labelIds: [] };
+      return { kind: 'handoff', labelIds: [], catalogBody: 'Browse our catalogue', catalogFooter: '' };
     case 'end':
       return {};
     default:

@@ -45,7 +45,24 @@ export function MobileFlowEditor({
       </div>
       {definition.nodes.map((node) => (
         <div key={node.id} className="rounded-lg border border-border p-3 dark:border-border-dark">
-          <p className="text-[10px] font-semibold uppercase text-text-muted">{node.type}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase text-text-muted">{node.type}</p>
+            {node.type !== 'start' ? (
+              <button
+                type="button"
+                className="text-xs font-medium text-red-600"
+                onClick={() =>
+                  onChange({
+                    ...definition,
+                    nodes: definition.nodes.filter((n) => n.id !== node.id),
+                    edges: definition.edges.filter((e) => e.source !== node.id && e.target !== node.id),
+                  })
+                }
+              >
+                Delete
+              </button>
+            ) : null}
+          </div>
           {node.type === 'start' && (
             <Input
               className="mt-2"

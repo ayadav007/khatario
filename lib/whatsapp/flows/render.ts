@@ -10,11 +10,19 @@ export function interpolate(template: string, context: Record<string, unknown>):
 
 export function renderNode(node: FlowNode, context: Record<string, unknown>): FlowReply | null {
   if (node.type === 'message') {
-    return { text: interpolate(node.data.body, context), footer: interpolate(node.data.footer || '', context) || undefined };
+    return {
+      text: interpolate(node.data.body, context),
+      header: interpolate(node.data.header || '', context) || undefined,
+      footer: interpolate(node.data.footer || '', context) || undefined,
+      mediaType: node.data.mediaType && node.data.mediaType !== 'none' ? node.data.mediaType : undefined,
+      mediaUrl: node.data.mediaUrl || undefined,
+      delaySeconds: node.data.delaySeconds || undefined,
+    };
   }
   if (node.type === 'buttons') {
     return {
       text: interpolate(node.data.body, context),
+      header: interpolate(node.data.header || '', context) || undefined,
       footer: interpolate(node.data.footer || '', context) || undefined,
       buttons: node.data.buttons.map((b) => ({ id: b.id, title: interpolate(b.title, context) })),
     };
@@ -22,6 +30,7 @@ export function renderNode(node: FlowNode, context: Record<string, unknown>): Fl
   if (node.type === 'list') {
     return {
       text: interpolate(node.data.body, context),
+      header: interpolate(node.data.header || '', context) || undefined,
       footer: interpolate(node.data.footer || '', context) || undefined,
       list: {
         buttonText: interpolate(node.data.buttonText, context),
