@@ -124,7 +124,19 @@ export default function AttendanceManagementPage() {
   // authStatus === 'allowed' - render page content
 
   if (isMobile) {
-    return <ManagerTeamRollCall />;
+    return (
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <Link
+            href="/employees/attendance/mark/advanced"
+            className="text-sm font-medium text-text-secondary underline-offset-2 hover:underline"
+          >
+            Advanced
+          </Link>
+        </div>
+        <ManagerTeamRollCall simpleStatuses />
+      </div>
+    );
   }
 
   return (

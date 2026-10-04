@@ -31,12 +31,16 @@ type Summary = {
 
 type FilterMode = 'all' | 'pending';
 
-const STATUS_OPTIONS: { value: AttendanceStatus; label: string; short: string }[] = [
+const FULL_STATUS_OPTIONS: { value: AttendanceStatus; label: string; short: string }[] = [
   { value: 'present', label: 'Present', short: 'P' },
   { value: 'absent', label: 'Absent', short: 'A' },
   { value: 'half_day', label: 'Half day', short: '½' },
   { value: 'leave', label: 'Leave', short: 'L' },
 ];
+
+const SIMPLE_STATUS_OPTIONS = FULL_STATUS_OPTIONS.filter(
+  (o) => o.value === 'present' || o.value === 'absent',
+);
 
 function statusButtonClass(status: AttendanceStatus, selected: boolean): string {
   if (!selected) {
@@ -54,7 +58,12 @@ function statusButtonClass(status: AttendanceStatus, selected: boolean): string 
   }
 }
 
-export function ManagerTeamRollCall() {
+export function ManagerTeamRollCall({
+  /** Present / Absent only (Billing Staff Lite register). */
+  simpleStatuses = false,
+}: {
+  simpleStatuses?: boolean;
+} = {}) {
   const { business } = useAuth();
   const toast = useToastContext();
 
@@ -67,6 +76,8 @@ export function ManagerTeamRollCall() {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [rollCallScope, setRollCallScope] = useState<'team' | 'all'>('team');
+
+  const statusOptions = simpleStatuses ? SIMPLE_STATUS_OPTIONS : FULL_STATUS_OPTIONS;
 
   const loadTeam = useCallback(async () => {
     if (!business?.id) return;
@@ -186,8 +197,9 @@ export function ManagerTeamRollCall() {
   }
 
   const pageTitle = rollCallScope === 'all' ? 'Mark attendance' : 'Team roll call';
-  const pageDescription =
-    rollCallScope === 'all'
+  const pageDescription = simpleStatuses
+    ? 'Tap Present or Absent for each person — saves automatically'
+    : rollCallScope === 'all'
       ? 'Tap P, A, ½, or L for each employee — saves automatically'
       : 'Tap a status for each person — saves automatically';
 
@@ -282,9 +294,17 @@ export function ManagerTeamRollCall() {
             return (
               <li
                 key={member.id}
-                className="rounded-xl border border-border bg-white p-3 shadow-sm"
+                className={clsx(
+                  'rounded-xl border border-border bg-white shadow-sm',
+                  simpleStatuses ? 'p-3 sm:flex sm:items-center sm:justify-between sm:gap-4' : 'p-3',
+                )}
               >
-                <div className="mb-3 flex items-start justify-between gap-2">
+                <div
+                  className={clsx(
+                    'flex items-start justify-between gap-2',
+                    simpleStatuses ? 'mb-3 min-w-0 sm:mb-0 sm:flex-1' : 'mb-3',
+                  )}
+                >
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-text-primary">{member.name}</p>
                     <p className="text-xs text-text-muted">
@@ -293,7 +313,7 @@ export function ManagerTeamRollCall() {
                     </p>
                   </div>
                   {current && !isSaving ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-green-700">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-green-700 sm:hidden">
                       <Check className="h-3.5 w-3.5" />
                       Saved
                     </span>
@@ -302,8 +322,15 @@ export function ManagerTeamRollCall() {
                   ) : null}
                 </div>
 
-                <div className="grid grid-cols-4 gap-2">
-                  {STATUS_OPTIONS.map((opt) => (
+                <div
+                  className={clsx(
+                    'grid gap-2',
+                    simpleStatuses
+                      ? 'grid-cols-2 sm:w-64 sm:shrink-0'
+                      : 'grid-cols-4',
+                  )}
+                >
+                  {statusOptions.map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
@@ -316,13 +343,19 @@ export function ManagerTeamRollCall() {
                       aria-label={`${member.name} — ${opt.label}`}
                       aria-pressed={current === opt.value}
                     >
-                      <span className="md:hidden">{opt.short}</span>
-                      <span className="hidden md:inline">{opt.label}</span>
+                      {simpleStatuses ? (
+                        <span>{opt.label}</span>
+                      ) : (
+                        <>
+                          <span className="md:hidden">{opt.short}</span>
+                          <span className="hidden md:inline">{opt.label}</span>
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>
 
-                {current === 'present' && (
+                {!simpleStatuses && current === 'present' && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {member.is_late && !member.late_excused ? (
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-900">

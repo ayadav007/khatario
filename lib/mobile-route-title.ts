@@ -115,6 +115,7 @@ export function getMobileRouteTitle(
   // —— Employees & HR ——
   if (p === '/employees/attendance') return 'Mark attendance';
   if (p === '/employees/attendance/mark') return 'Mark attendance';
+  if (p === '/employees/attendance/mark/advanced') return 'Advanced attendance';
   if (p === '/employees/manager/attendance') return 'Roll call';
   if (p === '/employees/expenses/new') return 'Submit expense';
   if (p === '/employees/leaves/calendar') return 'Team calendar';
