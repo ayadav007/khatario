@@ -3,6 +3,7 @@ import { sendReminderMessage } from './reminder-message-processor';
 import { sendEmailReminder } from './email-reminder';
 import { checkLimit, hasFeature } from './subscription';
 import { FeatureKeys } from '@/lib/featureKeys';
+import { calendarDateInTimeZone, paymentDueWindow } from '@/lib/reminder-schedule';
 
 /**
  * Create notification for business owner about invoice status
@@ -52,7 +53,10 @@ async function createInvoiceNotification(
 /**
  * Check and send payment due reminders for a business
  */
-export async function checkAndSendPaymentDueReminders(businessId: string): Promise<{ sent: number; skipped: number; errors: number }> {
+export async function checkAndSendPaymentDueReminders(
+  businessId: string,
+  timeZone = 'Asia/Kolkata',
+): Promise<{ sent: number; skipped: number; errors: number }> {
   try {
     // Check if feature is enabled
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
@@ -82,16 +86,18 @@ export async function checkAndSendPaymentDueReminders(businessId: string): Promi
     // e.g. REMINDER_TEST_MINUTES=2 means "due within next 2 minutes" instead of N days.
     // Remove / unset this variable to restore normal day-based behaviour.
     const testMinutes = process.env.REMINDER_TEST_MINUTES ? parseInt(process.env.REMINDER_TEST_MINUTES) : null;
-    let targetDateStr: string;
+    let dueFrom: string;
+    let dueTo: string;
     if (testMinutes !== null && testMinutes > 0) {
       const targetDate = new Date(Date.now() + testMinutes * 60 * 1000);
-      targetDateStr = targetDate.toISOString().split('T')[0];
-      console.log(`[Reminder Check] 🧪 TEST MODE — matching invoices due on ${targetDateStr} (${testMinutes}min from now instead of ${daysBefore} days)`);
+      dueFrom = targetDate.toISOString().split('T')[0];
+      dueTo = dueFrom;
+      console.log(`[Reminder Check] 🧪 TEST MODE — matching invoices due on ${dueFrom} (${testMinutes}min from now instead of ${daysBefore} days)`);
     } else {
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + daysBefore);
-      targetDateStr = targetDate.toISOString().split('T')[0];
-      console.log(`[Reminder Check] Normal mode — matching invoices due on ${targetDateStr} (days_before=${daysBefore})`);
+      const window = paymentDueWindow(timeZone, daysBefore);
+      dueFrom = window.from;
+      dueTo = window.to;
+      console.log(`[Reminder Check] Matching invoices due ${dueFrom} through ${dueTo} (${timeZone}, days_before=${daysBefore})`);
     }
 
     // Check WhatsApp limit
@@ -101,7 +107,7 @@ export async function checkAndSendPaymentDueReminders(businessId: string): Promi
       return { sent: 0, skipped: 0, errors: 0 };
     }
 
-    // Find invoices that are due on target date
+    // Due today through today + days before, in the business calendar. A failed earlier attempt is retried.
     const invoices = await db.queryRows(
       `SELECT 
         i.id,
@@ -118,7 +124,7 @@ export async function checkAndSendPaymentDueReminders(businessId: string): Promi
        WHERE i.business_id = $1
          AND i.status = 'final'
          AND i.payment_status IN ('unpaid', 'partially_paid')
-         AND DATE(COALESCE(i.due_date, i.invoice_date)) = $2
+         AND DATE(COALESCE(i.due_date, i.invoice_date)) BETWEEN $2::date AND $3::date
          AND (c.phone IS NOT NULL AND c.phone != '')
          AND NOT EXISTS (
            SELECT 1 FROM whatsapp_messages wm
@@ -126,8 +132,10 @@ export async function checkAndSendPaymentDueReminders(businessId: string): Promi
              AND wm.message_type = 'reminder'
              AND wm.reference_type = 'invoice'
              AND wm.business_id = $1
+             AND wm.status = 'sent'
+             AND wm.reminder_source = 'auto_payment_due'
          )`,
-      [businessId, targetDateStr]
+      [businessId, dueFrom, dueTo]
     );
 
     let sent = 0;
@@ -197,7 +205,10 @@ export async function checkAndSendPaymentDueReminders(businessId: string): Promi
 /**
  * Check and send overdue reminders for a business
  */
-export async function checkAndSendOverdueReminders(businessId: string): Promise<{ sent: number; skipped: number; errors: number }> {
+export async function checkAndSendOverdueReminders(
+  businessId: string,
+  timeZone = 'Asia/Kolkata',
+): Promise<{ sent: number; skipped: number; errors: number }> {
   try {
     // Check if feature is enabled
     const hasAccess = await hasFeature(businessId, FeatureKeys.WHATSAPP_AUTO_REMINDERS);
@@ -221,6 +232,7 @@ export async function checkAndSendOverdueReminders(businessId: string): Promise<
     const intervalDays = settings.interval_days || 7;
     const messageTemplate = settings.message_template || getDefaultOverdueTemplate();
     const includePdf = settings.include_pdf !== false;
+    const localToday = calendarDateInTimeZone(timeZone);
 
     // Check WhatsApp limit
     const limitCheck = await checkLimit(businessId, 'whatsapp');
@@ -248,15 +260,16 @@ export async function checkAndSendOverdueReminders(businessId: string): Promise<
             AND wm.message_type = 'reminder'
             AND wm.reference_type = 'invoice'
             AND wm.business_id = $1
+            AND wm.status = 'sent'
         ) as last_reminder_sent
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
        WHERE i.business_id = $1
          AND i.status = 'final'
          AND i.payment_status IN ('unpaid', 'partially_paid')
-         AND DATE(COALESCE(i.due_date, i.invoice_date)) < CURRENT_DATE
+         AND DATE(COALESCE(i.due_date, i.invoice_date)) < $2::date
          AND (c.phone IS NOT NULL AND c.phone != '')`,
-      [businessId]
+      [businessId, localToday]
     );
 
     let sent = 0;

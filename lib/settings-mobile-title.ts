@@ -53,10 +53,13 @@ const SETTINGS_PATH_TITLES: Record<string, string> = {
   '/settings/attendance-policy': 'Attendance policy',
   '/settings/attendance-regularization': 'Regularization',
   '/settings/payments': 'Payments',
-  '/connect/whatsapp': 'Send invoices on WhatsApp',
-  '/settings/whatsapp': 'WhatsApp settings',
+  '/settings/whatsapp': 'WhatsApp',
+  '/settings/whatsapp/templates': 'WhatsApp templates',
+  '/settings/whatsapp/notifications': 'WhatsApp notifications',
+  '/settings/whatsapp/inbox': 'Inbox & team',
+  '/settings/whatsapp/ai-agent': 'AI agent',
+  '/settings/whatsapp/shop': 'WhatsApp shop',
   '/settings/help': 'Help & Support',
-  '/settings/ai-agent': 'AI Agent',
   '/settings/email': 'Email settings',
 };
 

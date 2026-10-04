@@ -723,11 +723,11 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/tools/image-background-remover', label: 'BG Remover' },
           ],
         },
-        ...(hasPlatformModule('billing')
+        ...(hasPlatformModule('billing') && !hasPlatformModule('connect')
           ? [
               {
-                href: '/connect/whatsapp',
-                label: 'Send invoices on WhatsApp',
+                href: '/settings/whatsapp',
+                label: 'WhatsApp',
                 icon: MessageSquare,
               },
             ]
@@ -739,10 +739,6 @@ export const Sidebar = React.memo(function Sidebar() {
                 collapsible: true,
                 subItems: [
                   {
-                    href: '/connect/whatsapp',
-                    label: 'WhatsApp number',
-                  },
-                  {
                     href: '/whatsapp/dashboard',
                     label: 'Dashboard',
                     isLocked: !hasWhatsAppAddon(),
@@ -751,6 +747,12 @@ export const Sidebar = React.memo(function Sidebar() {
                   {
                     href: '/whatsapp/conversations',
                     label: 'Conversations',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/whatsapp/reminders',
+                    label: 'Payment Reminders',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
                   },
@@ -801,6 +803,10 @@ export const Sidebar = React.memo(function Sidebar() {
                     label: 'Unsubscribes',
                     isLocked: !hasWhatsAppAddon(),
                     featureKey: 'whatsapp_bot',
+                  },
+                  {
+                    href: '/settings/whatsapp',
+                    label: 'WhatsApp Settings',
                   },
                 ],
               },
@@ -856,7 +862,6 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/bluetooth-printer': Bluetooth,
       '/settings/custom-fields': FileText,
       '/settings/number-series': Hash,
-      '/connect/whatsapp': MessageSquare,
       '/settings/business#bp-features': Package,
       '/settings/label-templates': Printer,
       '/settings/features': Settings,
@@ -867,7 +872,6 @@ export const Sidebar = React.memo(function Sidebar() {
       '/settings/email': Mail,
       '/settings/payments': Wallet,
       '/settings/integrations?category=sms': Smartphone,
-      '/settings/ai-agent': Sparkles,
       '/settings/help': HelpCircle,
       '/settings/help/how-to': HelpCircle,
       '/settings/departments': Building,

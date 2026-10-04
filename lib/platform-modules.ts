@@ -93,7 +93,6 @@ export const SETTINGS_HUB_LINK_MODULE: Partial<Record<string, PlatformModule>> =
   '/settings/period-locks': 'billing',
   '/settings/user-warehouses': 'billing',
   '/settings/payments': 'billing',
-  '/settings/whatsapp': 'connect',
   '/settings/integrations?category=crm': 'crm',
   '/items/categories': 'billing',
 };

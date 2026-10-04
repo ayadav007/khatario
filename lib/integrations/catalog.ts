@@ -132,7 +132,7 @@ export const INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
 
     icon: 'MessageSquare',
 
-    configureHref: '/connect/whatsapp',
+    configureHref: '/settings/whatsapp',
 
     featureKeys: ['settings_whatsapp'],
 
@@ -156,7 +156,7 @@ export const INTEGRATION_CATALOG: IntegrationCatalogEntry[] = [
 
     icon: 'Zap',
 
-    configureHref: '/settings/ai-agent',
+    configureHref: '/settings/whatsapp/ai-agent',
 
     featureKeys: [],
 

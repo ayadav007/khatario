@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Plus, RefreshCw, Sparkles, Trash2, Send, Pencil, X } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { SettingsBlock } from '@/components/whatsapp/settings/SettingsBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Toast, type ToastType } from '@/components/ui/Toast';
 import {
@@ -11,10 +12,12 @@ import {
   TENANT_WA_FIELDS,
   TENANT_WA_GROUP_LABELS,
   countPlaceholders,
+  eventStarters,
   previewTemplateBody,
   templateEventMismatch,
   type TenantWaEvent,
   type TenantWaEventGroup,
+  type TenantWaStarter,
 } from '@/lib/whatsapp/tenant-events';
 
 type Template = {
@@ -34,6 +37,30 @@ type Template = {
 };
 
 type Mapping = { event_key: string; template_id: string; variable_map: string[] };
+
+type DraftSeed = {
+  name: string;
+  language?: string;
+  category: Template['category'];
+  body_text: string;
+  footer_text?: string | null;
+  example_vars: string[];
+};
+
+type ReminderSchedule = { reminder_send_time: string; reminder_send_timezone: string };
+type DueReminder = { enabled: boolean; days_before: number; message_template: string; include_pdf: boolean };
+type OverdueReminder = { enabled: boolean; interval_days: number; message_template: string; include_pdf: boolean };
+type ReminderBundle = { schedule: ReminderSchedule; payment_due: DueReminder; overdue: OverdueReminder };
+
+function seedFromStarter(starter: TenantWaStarter): DraftSeed {
+  return {
+    name: starter.name,
+    category: starter.category,
+    body_text: starter.body,
+    footer_text: starter.footer ?? '',
+    example_vars: starter.variableMap.map((key) => TENANT_WA_FIELDS[key].sample),
+  };
+}
 
 const inputCls =
   'w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500';
@@ -67,7 +94,8 @@ export function TenantTemplatesPanel() {
   const [cloudReady, setCloudReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Template | 'new' | null>(null);
+  const [editing, setEditing] = useState<Template | 'new' | DraftSeed | null>(null);
+  const [reminders, setReminders] = useState<ReminderBundle | null>(null);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
   const notify = (message: string, type: ToastType = 'success') => setToast({ message, type });
@@ -90,6 +118,48 @@ export function TenantTemplatesPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!editing) return;
+    document.getElementById('wa-template-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/whatsapp/reminders');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const due = data.settings?.payment_due;
+        const late = data.settings?.overdue;
+        setReminders({
+          schedule: {
+            reminder_send_time: data.schedule?.reminder_send_time || '09:00',
+            reminder_send_timezone: data.schedule?.reminder_send_timezone || 'Asia/Kolkata',
+          },
+          payment_due: {
+            enabled: !!due?.enabled,
+            days_before: Number(due?.days_before) || 1,
+            message_template: due?.message_template || '',
+            include_pdf: due?.include_pdf !== false,
+          },
+          overdue: {
+            enabled: !!late?.enabled,
+            interval_days: Number(late?.interval_days) || 7,
+            message_template: late?.message_template || '',
+            include_pdf: late?.include_pdf !== false,
+          },
+        });
+      } catch {
+        /* Auto reminders may be off this plan; the card explains that. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -133,90 +203,100 @@ export function TenantTemplatesPanel() {
 
   if (loading) {
     return (
-      <Card padding="lg">
+      <SettingsBlock title="Message templates" description="Approved wording Meta lets you send from your own number.">
         <p className="text-sm text-text-secondary">Loading message templates...</p>
-      </Card>
+      </SettingsBlock>
+    );
+  }
+
+  if (!cloudReady) {
+    return (
+      <SettingsBlock
+        title="Message templates"
+        description="Approved wording Meta lets you send from your own number, for invoices, order updates and reminders."
+      >
+        <p className="text-sm text-text-secondary">
+          Templates need the Meta Cloud API. Without it, your QR-linked number sends invoices and reminders as plain
+          text, so you don&apos;t need templates.
+        </p>
+        <div className="flex justify-end border-t border-border pt-4 dark:border-border-dark">
+          <Link
+            href="/settings/whatsapp#wa-cloud"
+            className="inline-flex items-center rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+          >
+            Set up Cloud API
+          </Link>
+        </div>
+      </SettingsBlock>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <Card padding="lg" className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-text-primary">Message templates</h3>
-            <p className="mt-1 max-w-2xl text-sm text-text-secondary">
-              Meta only delivers messages to customers who haven&apos;t written to you in the last 24 hours when they
-              use an approved template. Choose which template Khatario uses for each message. Messages without a
-              template are sent as plain text from your QR-linked WhatsApp.
-            </p>
-          </div>
-          {cloudReady ? (
-            <Button variant="secondary" size="sm" onClick={sync} isLoading={busy === 'sync'}>
-              {busy !== 'sync' && <RefreshCw className="h-4 w-4" />} Sync from Meta
-            </Button>
-          ) : null}
+    <>
+      <SettingsBlock
+        title="Which wording each message uses"
+        description="Pick an approved template for each message Khatario sends. Start from a suggested wording, edit it and submit it to Meta. It is used only after Meta approves it."
+      >
+        <div className="flex justify-end">
+          <Button variant="secondary" size="sm" onClick={sync} isLoading={busy === 'sync'}>
+            {busy !== 'sync' && <RefreshCw className="h-4 w-4" />} Sync from Meta
+          </Button>
         </div>
-
-        {!cloudReady ? (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Save your WhatsApp Business Account ID, Phone number ID and Access token above to use templates.
-          </p>
-        ) : (
-          (Object.keys(groups) as TenantWaEventGroup[]).map((g) => (
-            <div key={g} className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {TENANT_WA_GROUP_LABELS[g]}
-              </h4>
-              <div className="divide-y divide-border rounded-lg border border-border">
-                {groups[g].map((event) => (
-                  <EventRow
-                    key={event.key}
-                    event={event}
-                    templates={templates}
-                    mapping={mappings.find((m) => m.event_key === event.key) ?? null}
-                    onSaved={(m) => setMappings(m)}
-                    onTemplatesChanged={load}
-                    notify={notify}
-                  />
-                ))}
-              </div>
+        {(Object.keys(groups) as TenantWaEventGroup[]).map((g) => (
+          <div key={g} className="space-y-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+              {TENANT_WA_GROUP_LABELS[g]}
+            </h4>
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {groups[g].map((event) => (
+                <EventRow
+                  key={event.key}
+                  event={event}
+                  templates={templates}
+                  mapping={mappings.find((m) => m.event_key === event.key) ?? null}
+                  reminders={reminders}
+                  onReminders={setReminders}
+                  onUseStarter={(starter) => setEditing(seedFromStarter(starter))}
+                  onSaved={(m) => setMappings(m)}
+                  onTemplatesChanged={load}
+                  notify={notify}
+                />
+              ))}
             </div>
-          ))
-        )}
-      </Card>
+          </div>
+        ))}
+      </SettingsBlock>
 
-      {cloudReady ? (
-        <Card padding="lg" className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-text-primary">Your templates</h3>
-              <p className="mt-1 text-sm text-text-secondary">
-                Templates on your WhatsApp Business Account. New ones need Meta&apos;s approval, usually within minutes.
-              </p>
-            </div>
+      <SettingsBlock
+        title="Your templates"
+        description="Templates on your WhatsApp Business Account. New ones need Meta's approval, usually within minutes."
+      >
+          <div className="flex justify-end">
             <Button size="sm" onClick={() => setEditing('new')}>
               <Plus className="h-4 w-4" /> New template
             </Button>
           </div>
 
           {editing ? (
-            <TemplateForm
-              initial={editing === 'new' ? null : editing}
-              onCancel={() => setEditing(null)}
-              onSaved={async (msg) => {
-                setEditing(null);
-                await load();
-                notify(msg);
-              }}
-              notify={notify}
-            />
+            <div id="wa-template-editor">
+              <TemplateForm
+                initial={editing !== 'new' && 'id' in editing ? editing : null}
+                seed={editing !== 'new' && editing !== null && !('id' in editing) ? editing : null}
+                onCancel={() => setEditing(null)}
+                onSaved={async (msg) => {
+                  setEditing(null);
+                  await load();
+                  notify(msg);
+                }}
+                notify={notify}
+              />
+            </div>
           ) : null}
 
           {templates.length === 0 ? (
             <p className="text-sm text-text-secondary">
-              No templates yet. Click Sync from Meta to bring in templates you made elsewhere, or use a suggested
-              template above.
+              No templates yet. Pick a wording on a message above, edit it, and submit it to Meta. Or sync templates
+              you already created in Meta.
             </p>
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border">
@@ -252,7 +332,24 @@ export function TenantTemplatesPanel() {
                             {busy !== `submit:${t.id}` && <Send className="h-4 w-4" />} Submit
                           </Button>
                         </>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEditing({
+                              name: `${t.name}_v2`,
+                              language: t.language,
+                              category: t.category,
+                              body_text: t.body_text,
+                              footer_text: t.footer_text,
+                              example_vars: t.example_vars || [],
+                            })
+                          }
+                        >
+                          <Pencil className="h-4 w-4" /> Copy to a new draft
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -268,10 +365,147 @@ export function TenantTemplatesPanel() {
               })}
             </ul>
           )}
-        </Card>
-      ) : null}
+      </SettingsBlock>
 
       {toast ? <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} /> : null}
+    </>
+  );
+}
+
+function BillingTrigger({
+  eventKey,
+  reminders,
+  onReminders,
+  notify,
+}: {
+  eventKey: 'payment_due_reminder' | 'payment_overdue_reminder';
+  reminders: ReminderBundle | null;
+  onReminders: (next: ReminderBundle) => void;
+  notify: (message: string, type?: ToastType) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  if (!reminders) {
+    return (
+      <p className="text-xs text-text-muted">
+        Choose the day and time under WhatsApp → Notifications. Auto reminders need the WhatsApp Bot addon.
+      </p>
+    );
+  }
+  const due = eventKey === 'payment_due_reminder';
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api('/api/whatsapp/reminders', {
+        method: 'POST',
+        body: JSON.stringify(
+          due
+            ? { payment_due: reminders.payment_due, schedule: reminders.schedule }
+            : { overdue: reminders.overdue, schedule: reminders.schedule },
+        ),
+      });
+      notify('Reminder schedule saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save the schedule', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-lg border border-border px-3 py-2">
+      <p className="text-xs font-medium text-text-primary">When to send</p>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          checked={due ? reminders.payment_due.enabled : reminders.overdue.enabled}
+          onChange={(e) =>
+            onReminders(
+              due
+                ? { ...reminders, payment_due: { ...reminders.payment_due, enabled: e.target.checked } }
+                : { ...reminders, overdue: { ...reminders.overdue, enabled: e.target.checked } },
+            )
+          }
+        />
+        Send this reminder
+      </label>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="text-xs text-text-secondary">
+          {due ? 'Days before the due date' : 'Repeat every (days)'}
+          <input
+            type="number"
+            min={1}
+            max={30}
+            className={`${inputCls} mt-1`}
+            value={due ? reminders.payment_due.days_before : reminders.overdue.interval_days}
+            onChange={(e) => {
+              const n = Math.max(1, parseInt(e.target.value, 10) || 1);
+              onReminders(
+                due
+                  ? { ...reminders, payment_due: { ...reminders.payment_due, days_before: n } }
+                  : { ...reminders, overdue: { ...reminders.overdue, interval_days: n } },
+              );
+            }}
+          />
+        </label>
+        <label className="text-xs text-text-secondary">
+          Local time
+          <input
+            type="time"
+            className={`${inputCls} mt-1`}
+            value={reminders.schedule.reminder_send_time}
+            onChange={(e) =>
+              onReminders({
+                ...reminders,
+                schedule: { ...reminders.schedule, reminder_send_time: e.target.value || '09:00' },
+              })
+            }
+          />
+        </label>
+        <label className="text-xs text-text-secondary">
+          Time zone
+          <select
+            className={`${inputCls} mt-1`}
+            value={reminders.schedule.reminder_send_timezone}
+            onChange={(e) =>
+              onReminders({
+                ...reminders,
+                schedule: { ...reminders.schedule, reminder_send_timezone: e.target.value },
+              })
+            }
+          >
+            {Array.from(
+              new Set([
+                'Asia/Kolkata',
+                'Asia/Dubai',
+                'Asia/Singapore',
+                'Europe/London',
+                'America/New_York',
+                reminders.schedule.reminder_send_timezone,
+              ]),
+            ).map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-text-secondary">
+        <input
+          type="checkbox"
+          checked={due ? reminders.payment_due.include_pdf : reminders.overdue.include_pdf}
+          onChange={(e) =>
+            onReminders(
+              due
+                ? { ...reminders, payment_due: { ...reminders.payment_due, include_pdf: e.target.checked } }
+                : { ...reminders, overdue: { ...reminders.overdue, include_pdf: e.target.checked } },
+            )
+          }
+        />
+        Attach the invoice PDF on a QR number, or when the template has a document header
+      </label>
+      <Button size="sm" onClick={save} isLoading={saving}>
+        Save schedule
+      </Button>
     </div>
   );
 }
@@ -280,6 +514,9 @@ function EventRow({
   event,
   templates,
   mapping,
+  reminders,
+  onReminders,
+  onUseStarter,
   onSaved,
   onTemplatesChanged,
   notify,
@@ -287,6 +524,9 @@ function EventRow({
   event: TenantWaEvent;
   templates: Template[];
   mapping: Mapping | null;
+  reminders: ReminderBundle | null;
+  onReminders: (next: ReminderBundle) => void;
+  onUseStarter: (starter: TenantWaStarter) => void;
   onSaved: (m: Mapping[]) => void;
   onTemplatesChanged: () => Promise<void>;
   notify: (message: string, type?: ToastType) => void;
@@ -385,19 +625,59 @@ function EventRow({
           }}
           aria-label={`Template for ${event.label}`}
         >
-          <option value="">{event.key === 'store_otp' ? 'Default code template' : 'No template (plain text over QR)'}</option>
+          <option value="">
+            {event.key === 'store_otp'
+              ? 'Default code template'
+              : event.key === 'invoice_sent' || event.key === 'payment_due_reminder' || event.key === 'payment_overdue_reminder'
+                ? 'No template yet (not sent on WhatsApp Business API)'
+                : 'No template (plain text over QR)'}
+          </option>
           {options.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name} ({t.language}){t.status === 'approved' ? '' : ` - ${t.status}`}
             </option>
           ))}
         </select>
-        {!mapping ? (
+        {event.key === 'store_otp' && !mapping ? (
           <Button variant="secondary" size="sm" onClick={suggest} isLoading={suggesting}>
             {!suggesting && <Sparkles className="h-4 w-4" />} Use suggested template
           </Button>
         ) : null}
       </div>
+
+      {event.key !== 'store_otp' ? (
+        <div className="space-y-2">
+          {eventStarters(event).map((starter) => (
+            <div key={starter.id} className="rounded-lg border border-border bg-surface-secondary px-3 py-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="text-xs font-medium text-text-primary">{starter.label}</p>
+                <Button variant="secondary" size="sm" onClick={() => onUseStarter(starter)}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit this wording
+                </Button>
+              </div>
+              <p className="mt-1 text-sm text-text-secondary">
+                {previewTemplateBody(starter.body, starter.variableMap)}
+              </p>
+            </div>
+          ))}
+          <p className="text-xs text-text-muted">
+            {event.key === 'invoice_sent'
+              ? 'Sends when you tap Send on an invoice. Meta must approve the wording before WhatsApp Business API can deliver it.'
+              : event.key === 'payment_due_reminder' || event.key === 'payment_overdue_reminder'
+                ? 'After approval, select the template above. The schedule below is when Khatario sends it.'
+                : 'Sends when this happens in Khatario. Edit the wording, submit it to Meta, then select the approved template.'}
+          </p>
+        </div>
+      ) : null}
+
+      {event.key === 'payment_due_reminder' || event.key === 'payment_overdue_reminder' ? (
+        <BillingTrigger
+          eventKey={event.key}
+          reminders={reminders}
+          onReminders={onReminders}
+          notify={notify}
+        />
+      ) : null}
 
       {needsMap && selected.placeholder_count > 0 ? (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -447,22 +727,24 @@ function EventRow({
 
 function TemplateForm({
   initial,
+  seed,
   onCancel,
   onSaved,
   notify,
 }: {
   initial: Template | null;
+  seed?: DraftSeed | null;
   onCancel: () => void;
   onSaved: (message: string) => Promise<void>;
   notify: (message: string, type?: ToastType) => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [language, setLanguage] = useState(initial?.language ?? 'en_US');
-  const [category, setCategory] = useState<Template['category']>(initial?.category ?? 'UTILITY');
+  const [name, setName] = useState(initial?.name ?? seed?.name ?? '');
+  const [language, setLanguage] = useState(initial?.language ?? seed?.language ?? 'en_US');
+  const [category, setCategory] = useState<Template['category']>(initial?.category ?? seed?.category ?? 'UTILITY');
   const [header, setHeader] = useState(initial?.header_text ?? '');
-  const [body, setBody] = useState(initial?.body_text ?? '');
-  const [footer, setFooter] = useState(initial?.footer_text ?? '');
-  const [examples, setExamples] = useState<string[]>(initial?.example_vars ?? []);
+  const [body, setBody] = useState(initial?.body_text ?? seed?.body_text ?? '');
+  const [footer, setFooter] = useState(initial?.footer_text ?? seed?.footer_text ?? '');
+  const [examples, setExamples] = useState<string[]>(initial?.example_vars ?? seed?.example_vars ?? []);
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
 
   const placeholders = category === 'AUTHENTICATION' ? 0 : countPlaceholders(body);
@@ -502,7 +784,9 @@ function TemplateForm({
   return (
     <div className="space-y-3 rounded-lg border border-border bg-surface-secondary p-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-text-primary">{initial ? `Edit ${initial.name}` : 'New template'}</h4>
+        <h4 className="text-sm font-semibold text-text-primary">
+          {initial ? `Edit ${initial.name}` : seed ? 'Edit wording before sending to Meta' : 'New template'}
+        </h4>
         <button type="button" onClick={onCancel} className="text-text-muted hover:text-text-primary" aria-label="Close">
           <X className="h-4 w-4" />
         </button>

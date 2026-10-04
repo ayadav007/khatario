@@ -30,7 +30,7 @@ function IntegrationsMarketplaceContent() {
   useEffect(() => {
     const raw = searchParams.get('category');
     if (raw === 'whatsapp') {
-      router.replace('/connect/whatsapp');
+      router.replace('/settings/whatsapp');
     }
     if (raw === 'hr') {
       router.replace('/settings/integrations');

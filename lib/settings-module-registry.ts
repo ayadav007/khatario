@@ -57,6 +57,31 @@ const businessProfileLink: SettingsNavLink = {
   searchKeywords: ['profile', 'company', 'logo', 'organization'],
 };
 
+const whatsappSettingsLink: SettingsNavLink = {
+  href: '/settings/whatsapp',
+  label: 'WhatsApp',
+  searchKeywords: [
+    'whatsapp',
+    'qr',
+    'meta',
+    'cloud api',
+    'templates',
+    'reminder',
+    'invoice',
+    'notifications',
+    'inbox',
+    'auto assign',
+    'ai',
+    'ai agent',
+    'chatbot',
+    'bot',
+    'assistant',
+    'knowledge',
+    'shop',
+    'catalog',
+  ],
+};
+
 const branchesLink: SettingsNavLink = {
   href: '/settings/branches',
   label: 'Branches',
@@ -146,11 +171,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             searchKeywords: ['invoice fields', 'item fields'],
           },
           { href: '/settings/number-series', label: 'Transaction number series' },
-          {
-            href: '/connect/whatsapp',
-            label: 'Send invoices on WhatsApp',
-            searchKeywords: ['whatsapp', 'invoice', 'reminder'],
-          },
+          whatsappSettingsLink,
           {
             href: '/settings/online-store',
             label: 'Online Store',
@@ -219,11 +240,6 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             searchKeywords: ['cashfree', 'upi', 'gateway'],
           },
           smsLink,
-          {
-            href: '/settings/ai-agent',
-            label: 'AI agent',
-            searchKeywords: ['ai', 'chatbot', 'whatsapp', 'sales agent', 'assistant', 'faq', 'knowledge'],
-          },
         ],
       },
       {
@@ -400,18 +416,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
       {
         id: 'connect',
         title: 'Connect',
-        links: [
-          {
-            href: '/connect/whatsapp',
-            label: 'WhatsApp number',
-            searchKeywords: ['meta', 'cloud api', 'qr'],
-          },
-          {
-            href: '/settings/whatsapp',
-            label: 'Bot & messaging',
-            searchKeywords: ['inbox', 'campaigns', 'bot'],
-          },
-        ],
+        links: [whatsappSettingsLink],
       },
       {
         id: 'general',
@@ -421,11 +426,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
       {
         id: 'integrations',
         title: 'Integrations',
-        links: [
-          emailLink,
-          smsLink,
-          { href: '/settings/ai-agent', label: 'AI agent' },
-        ],
+        links: [emailLink, smsLink],
       },
       {
         id: 'help',

@@ -183,6 +183,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 45 0 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron-staging.log 2>&1
 0 9 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron-staging.log 2>&1
+*/15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/send-payment-reminders >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
 0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
@@ -190,6 +191,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
 5 9 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/gst-compliance-alerts >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/owner-daily-summary >> /var/log/khatario-cron.log 2>&1
+*/15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/send-payment-reminders >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
 0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
 ```
@@ -204,7 +206,9 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 
 `/api/cron/recurring-invoices` raises recurring invoices due on the current IST date (00:45 server time assumes the server runs in IST; adjust if it is UTC). Each run date is claimed in `recurring_invoice_history`, so re-running the job the same day does not duplicate invoices.
 
-The JSON response’s `summary.notificationsSent` counts only reminders that actually reached someone (email, WhatsApp or in-app). `subscription_notifications.metadata.channels` shows which channels delivered. Other jobs under `app/api/cron/` (payment reminders, low stock, backups, HR) use the same Bearer header.
+`/api/cron/send-payment-reminders` sends payment-due and overdue WhatsApp reminders inside each business’s 15-minute local send window. It must run every 15 minutes. A missed tick is retried on the next run until the invoice is paid or, for a due reminder, until the due date has passed. Without this crontab line, no automatic payment reminder is sent.
+
+The JSON response’s `summary.notificationsSent` counts only reminders that actually reached someone (email, WhatsApp or in-app). `subscription_notifications.metadata.channels` shows which channels delivered. Other jobs under `app/api/cron/` (low stock, backups, HR) use the same Bearer header.
 
 ### Staging-only test settings
 

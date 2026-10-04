@@ -3,7 +3,7 @@ jest.mock('@/lib/db', () => ({ query: jest.fn(), queryOne: (...a: unknown[]) => 
 
 import { buildGraphComponents } from '@/lib/meta-whatsapp';
 import { createBusinessTemplateDraft } from '@/lib/whatsapp/tenant-templates';
-import { TENANT_WA_EVENTS, TENANT_WA_FIELDS } from '@/lib/whatsapp/tenant-events';
+import { TENANT_WA_EVENTS, TENANT_WA_FIELDS, eventStarters } from '@/lib/whatsapp/tenant-events';
 
 const draft = (body: string, extra: Record<string, unknown> = {}) =>
   createBusinessTemplateDraft('biz-1', 'user-1', { name: 'Order Paid', category: 'UTILITY', body_text: body, ...extra });
@@ -55,6 +55,24 @@ describe('Graph payload for suggested templates', () => {
       expect(body.text).toBe(s.body);
       expect(body.example?.body_text[0]).toHaveLength(s.variableMap.length);
       expect(body.example?.body_text[0].every((v) => v.length > 0)).toBe(true);
+    }
+  });
+
+  it('every starter wording builds a body with one example per placeholder', () => {
+    for (const e of TENANT_WA_EVENTS) {
+      for (const s of eventStarters(e)) {
+        if (s.category === 'AUTHENTICATION' || !s.body) continue;
+        expect(s.body).not.toMatch(/^\s*\{\{|\}\}\s*[.!?]?\s*$/);
+        const components = buildGraphComponents({
+          category: s.category,
+          bodyText: s.body,
+          footerText: s.footer,
+          exampleVars: s.variableMap.map((k) => TENANT_WA_FIELDS[k].sample),
+        });
+        const body = components.find((c) => c.type === 'BODY') as { text?: string; example?: { body_text: string[][] } };
+        expect(body.text).toBe(s.body);
+        expect(body.example?.body_text[0]).toHaveLength(s.variableMap.length);
+      }
     }
   });
 });

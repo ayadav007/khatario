@@ -400,7 +400,7 @@ export default function WhatsAppGroupExtractorPage() {
                           variant="secondary"
                           size="sm"
                           className="mt-4"
-                          onClick={() => router.push('/whatsapp')}
+                          onClick={() => router.push('/settings/whatsapp')}
                         >
                           <Settings2 className="h-4 w-4 mr-2" />
                           Open WhatsApp connection settings

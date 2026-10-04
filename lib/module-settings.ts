@@ -57,8 +57,10 @@ export function getModuleSettingsMenu(pathname: string | null): ModuleSettingsMe
       ariaLabel: 'WhatsApp settings',
       iconKind: 'whatsapp',
       entries: [
-        { href: '/connect/whatsapp', label: 'WhatsApp number', description: 'Link your business number' },
-        { href: '/settings/whatsapp', label: 'Bot & messaging', description: 'Inbox, bot rules, and reminders' },
+        { href: '/settings/whatsapp', label: 'Connection', description: 'Link your business number' },
+        { href: '/settings/whatsapp/notifications', label: 'Notifications', description: 'Payment reminders and updates for you' },
+        { href: '/settings/whatsapp/inbox', label: 'Inbox & team', description: 'Chat assignment and saved replies' },
+        { href: '/settings/whatsapp/ai-agent', label: 'AI agent', description: 'Answer customer chats automatically' },
         { href: '/settings/products', label: 'Your products', description: 'Enable or manage Connect' },
       ],
     };

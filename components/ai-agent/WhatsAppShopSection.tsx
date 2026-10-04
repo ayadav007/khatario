@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
 import { Textarea } from '@/components/ui/Textarea';
 import { useToastContext } from '@/contexts/ToastContext';
+import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
 import { DEFAULT_SHOP_WELCOME, SHOP_WELCOME_MAX } from '@/lib/whatsapp-shop/constants';
 import type { ShopItemScope, ShopSyncSummary } from '@/lib/whatsapp-shop/settings';
 import type { ShopStatus } from '@/lib/whatsapp-shop/status';
@@ -145,17 +146,12 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
   const catalogSaved = !!status.settings.metaCatalogId;
 
   return (
+    <>
     <SectionCard
       id="shop"
       icon={ShoppingBag}
-      title="WhatsApp shop"
+      title="Take orders on WhatsApp"
       description="Customers send “menu” or “catalog”, pick items, send the cart and get a payment link. Paid orders are invoiced automatically."
-      appliesImmediately
-      actions={
-        <Button size="sm" onClick={() => void save()} disabled={!dirty} isLoading={saving}>
-          Save shop
-        </Button>
-      }
     >
       <div className="space-y-5">
         <Switch
@@ -197,7 +193,15 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
             <Link href="/settings/payments" className="font-medium underline">Payment settings</Link>
           </Notice>
         )}
+      </div>
+    </SectionCard>
 
+    <SectionCard
+      id="shop-items"
+      title="What's on sale"
+      description="Which items customers see, and the message sent with the catalog or shop link."
+    >
+      <div className="space-y-5">
         <div>
           <FieldLabel>Which items to sell</FieldLabel>
           <div className="space-y-2">
@@ -240,16 +244,16 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
           />
           <CharCount value={draft.welcomeText} max={SHOP_WELCOME_MAX} />
         </div>
+      </div>
+    </SectionCard>
 
         {cloud && (
-          <div className="space-y-3 rounded-xl border border-border p-4">
-            <div>
-              <p className="text-sm font-semibold text-text-primary">WhatsApp catalog (Cloud API)</p>
-              <p className="mt-0.5 text-xs text-text-secondary">
-                Create a catalog in Meta Commerce Manager, give your WhatsApp system user access to it (catalog_management), then paste its
-                ID here. Khatario connects it to your number, turns on the cart and keeps the products in sync.
-              </p>
-            </div>
+          <SectionCard
+            id="shop-catalog"
+            title="WhatsApp catalog"
+            description="For Cloud API numbers. Create a catalog in Meta Commerce Manager, give your WhatsApp system user access to it (catalog_management), then paste its ID. Khatario connects it, turns on the cart and keeps products in sync."
+          >
+          <div className="space-y-3">
             <div>
               <FieldLabel>Catalog ID</FieldLabel>
               <input
@@ -284,8 +288,22 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
               Open Commerce Manager <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
+          </SectionCard>
         )}
-      </div>
-    </SectionCard>
+
+      {dirty && (
+        <SettingsFloatingSaveBar align="between">
+          <span className="text-sm text-text-secondary">You have unsaved shop changes</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => apply(status)} disabled={saving}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={() => void save()} isLoading={saving}>
+              Save shop
+            </Button>
+          </div>
+        </SettingsFloatingSaveBar>
+      )}
+    </>
   );
 }

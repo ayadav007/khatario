@@ -119,10 +119,10 @@ async function processReminders(request?: NextRequest) {
         }
 
         // Process payment due reminders
-        const paymentDueResult = await checkAndSendPaymentDueReminders(business.business_id);
-        
+        const paymentDueResult = await checkAndSendPaymentDueReminders(business.business_id, tz);
+
         // Process overdue reminders
-        const overdueResult = await checkAndSendOverdueReminders(business.business_id);
+        const overdueResult = await checkAndSendOverdueReminders(business.business_id, tz);
 
         results.push({
           business_id: business.business_id,

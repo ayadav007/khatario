@@ -63,7 +63,7 @@ export function OrderUpdateSettingsDialog({ onClose, onSaved }: { onClose: () =>
           <div className="space-y-4 text-sm">
             <p className="text-slate-500">
               The buyer gets one message per step, with a link to follow the order. Messages use your approved templates
-              when set in <Link href="/settings/whatsapp" className="text-primary underline">WhatsApp templates</Link>,
+              when set in <Link href="/settings/whatsapp/templates" className="text-primary underline">WhatsApp templates</Link>,
               otherwise a plain message from your connected number.
             </p>
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">

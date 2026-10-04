@@ -36,7 +36,7 @@ test.describe('Subscription revenue guards', () => {
     });
 
     try {
-      await page.goto('/connect/whatsapp');
+      await page.goto('/whatsapp/conversations');
       await page.waitForURL(/\/settings\/products\?upsell=connect/, {
         timeout: 15000,
       });

@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Save, Plus, X, Info } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
-import { Toast } from '@/components/ui/Toast';
+import { Switch } from '@/components/ui/Switch';
+import { useToastContext } from '@/contexts/ToastContext';
 
 interface Agent {
   id: string;
@@ -11,17 +13,14 @@ interface Agent {
   email?: string;
 }
 
-interface AutoAssignSettingsCardProps {
-  businessId: string;
-}
-
-export function AutoAssignSettingsCard({ businessId }: AutoAssignSettingsCardProps) {
+export function AutoAssignSettingsCard({ businessId }: { businessId: string }) {
+  const toast = useToastContext();
   const [enabled, setEnabled] = useState(false);
   const [pool, setPool] = useState<string[]>([]);
+  const [saved, setSaved] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -31,19 +30,21 @@ export function AutoAssignSettingsCard({ businessId }: AutoAssignSettingsCardPro
         fetch(`/api/whatsapp/users?business_id=${businessId}`),
       ]);
       const [settingsData, usersData] = await Promise.all([settingsRes.json(), usersRes.json()]);
-
-      setEnabled(settingsData.enabled ?? false);
-      setPool(settingsData.agent_ids ?? []);
+      const nextEnabled = settingsData.enabled ?? false;
+      const nextPool: string[] = settingsData.agent_ids ?? [];
+      setEnabled(nextEnabled);
+      setPool(nextPool);
+      setSaved(JSON.stringify({ e: nextEnabled, p: nextPool }));
       setAgents(usersData.users ?? []);
     } catch {
-      setToast({ message: 'Failed to load settings.', type: 'error' });
+      toast.error('Failed to load assignment settings');
     } finally {
       setLoading(false);
     }
-  }, [businessId]);
+  }, [businessId, toast]);
 
   useEffect(() => {
-    if (businessId) fetchSettings();
+    if (businessId) void fetchSettings();
   }, [businessId, fetchSettings]);
 
   const handleSave = async () => {
@@ -56,112 +57,82 @@ export function AutoAssignSettingsCard({ businessId }: AutoAssignSettingsCardPro
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save');
-      setToast({ message: 'Auto-assignment settings saved!', type: 'success' });
-    } catch (e: any) {
-      setToast({ message: e.message || 'Failed to save.', type: 'error' });
+      setSaved(JSON.stringify({ e: enabled, p: pool }));
+      toast.success('Assignment settings saved');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save');
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleAgent = (id: string) => {
-    setPool((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
-    );
-  };
+  const toggleAgent = (id: string) =>
+    setPool((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-4 text-gray-400 text-sm">
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading auto-assignment settings…
+      <div className="flex items-center gap-2 text-sm text-text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
       </div>
     );
   }
 
+  const dirty = saved !== JSON.stringify({ e: enabled, p: pool });
+
   return (
     <div className="space-y-4">
-      {/* Enable toggle */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-900">Auto-Assign New Conversations</p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Round-robin assignment when a new chat arrives with no assigned agent.
-          </p>
-        </div>
-        <button
-          onClick={() => setEnabled((v) => !v)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            enabled ? 'bg-primary-600' : 'bg-gray-300'
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-              enabled ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
-      </div>
+      <Switch
+        checked={enabled}
+        onChange={setEnabled}
+        label="Assign new chats automatically"
+        description="Each new conversation without an owner goes to the next person in the list below, in turn."
+      />
 
-      {/* Agent pool */}
-      {enabled && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-2">
-            <Users className="w-4 h-4 text-gray-500" />
-            <span className="text-xs font-semibold text-gray-700">Assignment Pool</span>
-            <span className="text-xs text-gray-400 ml-1">({pool.length} selected)</span>
-          </div>
+      {enabled ? (
+        <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
+          <p className="type-label">
+            Who gets chats <span className="font-normal text-text-muted">({pool.length} selected)</span>
+          </p>
           {agents.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">No team members found. Invite users first.</p>
+            <p className="text-sm text-text-secondary">No team members yet. Invite users under Users &amp; access first.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-1.5">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {agents.map((agent) => {
                 const selected = pool.includes(agent.id);
                 return (
                   <label
                     key={agent.id}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border transition-colors ${
+                    className={clsx(
+                      'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors',
                       selected
-                        ? 'bg-slate-50 border-primary-300 text-primary-800'
-                        : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-                    }`}
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                        : 'border-border hover:bg-gray-50 dark:border-border-dark dark:hover:bg-slate-800/50',
+                    )}
                   >
                     <input
                       type="checkbox"
                       checked={selected}
                       onChange={() => toggleAgent(agent.id)}
-                      className="rounded accent-primary-600"
+                      className="h-4 w-4 rounded accent-primary-600"
                     />
-                    <span className="text-sm font-medium">{agent.name}</span>
-                    {agent.email && (
-                      <span className="text-xs text-gray-400 truncate">{agent.email}</span>
-                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-text-primary">{agent.name}</span>
+                      {agent.email ? <span className="block truncate text-xs text-text-muted">{agent.email}</span> : null}
+                    </span>
                   </label>
                 );
               })}
             </div>
           )}
-          <div className="flex items-start gap-1.5 mt-2 text-xs text-gray-400">
-            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            Conversations are assigned in the order shown. You can reorder by selecting the agents
-            in your preferred priority.
-          </div>
+          <p className="text-xs text-text-secondary">Chats are handed out in the order you tick people.</p>
         </div>
-      )}
+      ) : null}
 
-      <div className="flex justify-end">
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          size="sm"
-          variant="primary"
-          className="gap-1.5"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+      <div className="flex justify-end border-t border-border pt-4 dark:border-border-dark">
+        <Button size="sm" onClick={() => void handleSave()} disabled={!dirty} isLoading={saving}>
           Save
         </Button>
       </div>
-
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

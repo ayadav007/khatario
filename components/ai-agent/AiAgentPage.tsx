@@ -1,21 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  AlertCircle,
-  BookOpen,
-  CreditCard,
-  Hand,
-  Loader2,
-  MessageCircle,
-  Package,
-  Phone,
-  Settings2,
-  ShoppingBag,
-  Store,
-  Wand2,
-  type LucideIcon,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, Loader2, MessageSquare } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { SlideOverPanel } from '@/components/ui/SlideOverPanel';
@@ -39,20 +25,18 @@ import { SkillsSection } from './SkillsSection';
 import { TestChatPanel } from './TestChatPanel';
 import { TestNumbersSection } from './TestNumbersSection';
 import { ToneSection } from './ToneSection';
-import { WhatsAppShopSection } from './WhatsAppShopSection';
 
-const NAV: Array<{ id: string; label: string; icon: LucideIcon }> = [
-  { id: 'profile', label: 'Profile', icon: Store },
-  { id: 'tone', label: 'Tone', icon: MessageCircle },
-  { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
-  { id: 'products', label: 'Products', icon: Package },
-  { id: 'shop', label: 'WhatsApp shop', icon: ShoppingBag },
-  { id: 'skills', label: 'Skills', icon: Wand2 },
-  { id: 'payments', label: 'Payments', icon: CreditCard },
-  { id: 'handoff', label: 'Hours & handoff', icon: Hand },
-  { id: 'test-numbers', label: 'Test numbers', icon: Phone },
-  { id: 'advanced', label: 'Advanced', icon: Settings2 },
+type GroupId = 'identity' | 'knowledge' | 'abilities' | 'handoff' | 'golive';
+
+const GROUPS: Array<{ id: GroupId; label: string; sections: string[] }> = [
+  { id: 'identity', label: 'Profile & tone', sections: ['profile', 'tone'] },
+  { id: 'knowledge', label: 'Knowledge & products', sections: ['knowledge', 'products'] },
+  { id: 'abilities', label: 'Skills & payments', sections: ['skills', 'payments'] },
+  { id: 'handoff', label: 'Hours & handoff', sections: ['handoff'] },
+  { id: 'golive', label: 'Testing & AI model', sections: ['test-numbers', 'advanced'] },
 ];
+
+const groupOf = (sectionId: string): GroupId => GROUPS.find((g) => g.sections.includes(sectionId))?.id ?? 'identity';
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -68,12 +52,8 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
   const [testOpen, setTestOpen] = useState(false);
   const [testHidden, setTestHidden] = useState(false);
   const [goLiveOpen, setGoLiveOpen] = useState(false);
-  const [active, setActive] = useState('profile');
-  const pendingScroll = useRef<string | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
-  const centerRef = useRef<HTMLDivElement>(null);
-  /** Desktop: the three columns fill the window below the header and only the centre column scrolls. */
-  const [paneHeight, setPaneHeight] = useState<number | null>(null);
+  const [group, setGroup] = useState<GroupId>('identity');
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -106,65 +86,20 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
   }, [dirty]);
 
   const inWizard = !!snap && !snap.settings.setupCompletedAt && !showEditor;
-  const loaded = !!snap && !!draft;
 
   useEffect(() => {
-    if (!loaded || inWizard) return;
-    const desktop = window.matchMedia('(min-width: 1280px)');
-    const measure = () => {
-      const grid = gridRef.current;
-      if (!grid || !desktop.matches) {
-        setPaneHeight(null);
-        return;
-      }
-      const main = grid.closest('main');
-      const bottomPad = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0;
-      const top = grid.getBoundingClientRect().top + window.scrollY;
-      setPaneHeight(Math.max(420, Math.floor(window.innerHeight - top - Math.max(bottomPad, 16))));
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    desktop.addEventListener('change', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-      desktop.removeEventListener('change', measure);
-    };
-  }, [loaded, inWizard]);
+    if (!scrollTarget || inWizard) return;
+    const id = scrollTarget;
+    const raf = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-agent-section="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setScrollTarget(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollTarget, group, inWizard]);
 
-  useEffect(() => {
-    if (!loaded || inWizard) return;
-    const els = Array.from(document.querySelectorAll<HTMLElement>('[data-agent-section]'));
-    if (!els.length) return;
-    const inner = paneHeight != null ? centerRef.current : null;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const id = visible[0]?.target.getAttribute('data-agent-section');
-        if (id) setActive(id);
-      },
-      inner ? { root: inner, rootMargin: '0px 0px -55% 0px' } : { rootMargin: '-120px 0px -55% 0px' },
-    );
-    els.forEach((el) => observer.observe(el));
-    if (pendingScroll.current) {
-      const target = pendingScroll.current;
-      pendingScroll.current = null;
-      requestAnimationFrame(() => scrollTo(target));
-    }
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, inWizard, paneHeight]);
-
-  const scrollTo = (id: string) => {
-    const el = document.querySelector<HTMLElement>(`[data-agent-section="${id}"]`);
-    if (!el) return;
-    const inner = centerRef.current;
-    if (paneHeight != null && inner?.contains(el)) {
-      const top = el.getBoundingClientRect().top - inner.getBoundingClientRect().top + inner.scrollTop;
-      inner.scrollTo({ top: Math.max(0, top - 4), behavior: 'smooth' });
-    } else {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    setActive(id);
+  const goToSection = (id: string) => {
+    setGroup(groupOf(id));
+    setScrollTarget(id);
   };
 
   const patch = (p: Partial<AgentSettings>) => setDraft((d) => (d ? { ...d, ...p } : d));
@@ -277,12 +212,14 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
         }}
         onOpenEditor={() => setShowEditor(true)}
         onAddTestNumber={() => {
-          pendingScroll.current = 'test-numbers';
           setShowEditor(true);
+          goToSection('test-numbers');
         }}
       />
     );
   }
+
+  const groupClass = (id: GroupId) => clsx('space-y-6', group !== id && 'hidden');
 
   return (
     <div className="space-y-4">
@@ -292,6 +229,7 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
         provider={snap.provider}
         usage={snap.usage}
         busy={providerBusy}
+        testChatDocked={!testHidden}
         onToggleEnabled={(chatbotEnabled) =>
           void updateProvider({ chatbotEnabled }, chatbotEnabled ? 'AI replies turned on' : 'AI replies turned off')
         }
@@ -300,102 +238,76 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
         onUpgrade={() => void upgrade()}
       />
 
-      <nav className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 xl:hidden" aria-label="AI agent sections">
-        {NAV.map((n) => (
+      <nav className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" aria-label="AI agent sections">
+        {GROUPS.map((g) => (
           <button
-            key={n.id}
+            key={g.id}
             type="button"
-            onClick={() => scrollTo(n.id)}
+            onClick={() => setGroup(g.id)}
+            aria-current={group === g.id ? 'true' : undefined}
             className={clsx(
-              'shrink-0 rounded-full border px-3 py-1 text-xs font-medium',
-              active === n.id ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-border text-text-secondary',
+              'shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
+              group === g.id
+                ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                : 'border-border text-text-secondary hover:bg-gray-50 hover:text-text-primary dark:border-border-dark dark:hover:bg-slate-800',
             )}
           >
-            {n.label}
+            {g.label}
           </button>
         ))}
+        {testHidden && (
+          <button
+            type="button"
+            onClick={() => setTestHidden(false)}
+            className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border px-3.5 py-1.5 text-sm text-text-secondary hover:text-text-primary xl:inline-flex"
+          >
+            <MessageSquare className="h-4 w-4" /> Show test chat
+          </button>
+        )}
       </nav>
 
-      <div
-        ref={gridRef}
-        style={paneHeight != null ? { height: paneHeight } : undefined}
-        className={clsx(
-          'grid gap-6',
-          testHidden ? 'xl:grid-cols-[220px_minmax(0,1fr)]' : 'xl:grid-cols-[220px_minmax(0,1fr)_380px]',
-        )}
-      >
-        <aside className="hidden min-h-0 xl:block xl:overflow-y-auto">
-          <nav className="sticky top-28 space-y-0.5 xl:static" aria-label="AI agent sections">
-            {NAV.map((n) => {
-              const Icon = n.icon;
-              return (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => scrollTo(n.id)}
-                  aria-current={active === n.id ? 'true' : undefined}
-                  className={clsx(
-                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                    active === n.id
-                      ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-                      : 'text-text-secondary hover:bg-gray-50 hover:text-text-primary dark:hover:bg-slate-800',
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {n.label}
-                </button>
-              );
-            })}
-            {testHidden && (
-              <button
-                type="button"
-                onClick={() => setTestHidden(false)}
-                className="mt-3 w-full rounded-lg border border-dashed border-border px-3 py-2 text-left text-sm text-text-secondary hover:text-text-primary"
-              >
-                Show test chat
-              </button>
-            )}
-          </nav>
-        </aside>
-
-        <div
-          ref={centerRef}
-          className={clsx(
-            'min-w-0 space-y-6',
-            paneHeight != null && 'min-h-0 overflow-y-auto overscroll-contain pr-1',
-            paneHeight != null && dirty && 'pb-24',
-          )}
-        >
-          <ProfileSection settings={draft} onChange={patch} companyIntroduction={snap.companyIntroduction} />
-          <ToneSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} />
-          <KnowledgeSection businessId={businessId} />
-          <ProductsSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} catalogItems={snap.catalogItems} />
-          <WhatsAppShopSection businessId={businessId} />
-          <SkillsSection businessId={businessId} settings={draft} onChange={patch} staff={staff} />
-          <PaymentsSection settings={draft} onChange={patch} paymentsConfigured={snap.paymentsConfigured} />
-          <HandoffSection settings={draft} onChange={patch} staff={staff} />
-          <TestNumbersSection
-            phones={snap.provider.devAllowedPhones}
-            saving={providerBusy}
-            onSave={async (devAllowedPhones) => {
-              await updateProvider({ devAllowedPhones }, 'Test numbers saved');
-            }}
-          />
-          <ProviderSection
-            businessId={businessId}
-            provider={snap.provider}
-            usage={snap.usage}
-            saving={providerBusy}
-            onSave={onProviderSave}
-            onResetDefaults={() => {
-              patch({ behavior: DefaultUIConfig });
-              toast.info('Behaviour reset. Save to apply.');
-            }}
-          />
+      <div className={clsx('grid gap-8', !testHidden && 'xl:grid-cols-[minmax(0,1fr)_360px]')}>
+        <div className={clsx('min-w-0', dirty && 'pb-4')}>
+          <div className={groupClass('identity')}>
+            <ProfileSection settings={draft} onChange={patch} companyIntroduction={snap.companyIntroduction} />
+            <ToneSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} />
+          </div>
+          <div className={groupClass('knowledge')}>
+            <KnowledgeSection businessId={businessId} />
+            <ProductsSection behavior={draft.behavior} onChange={(behavior) => patch({ behavior })} catalogItems={snap.catalogItems} />
+          </div>
+          <div className={groupClass('abilities')}>
+            <SkillsSection businessId={businessId} settings={draft} onChange={patch} staff={staff} />
+            <PaymentsSection settings={draft} onChange={patch} paymentsConfigured={snap.paymentsConfigured} />
+          </div>
+          <div className={groupClass('handoff')}>
+            <HandoffSection settings={draft} onChange={patch} staff={staff} />
+          </div>
+          <div className={groupClass('golive')}>
+            <TestNumbersSection
+              phones={snap.provider.devAllowedPhones}
+              saving={providerBusy}
+              onSave={async (devAllowedPhones) => {
+                await updateProvider({ devAllowedPhones }, 'Test numbers saved');
+              }}
+            />
+            <ProviderSection
+              businessId={businessId}
+              provider={snap.provider}
+              usage={snap.usage}
+              saving={providerBusy}
+              onSave={onProviderSave}
+              onResetDefaults={() => {
+                patch({ behavior: DefaultUIConfig });
+                toast.info('Behaviour reset. Save to apply.');
+              }}
+            />
+          </div>
         </div>
 
         {!testHidden && (
           <aside className="hidden min-h-0 xl:block">
-            <div className={paneHeight != null ? 'h-full' : 'sticky top-28 h-[calc(100vh-9rem)]'}>
+            <div className="sticky top-24 h-[calc(100vh-8rem)]">
               <TestChatPanel
                 businessId={businessId}
                 draftSettings={draft}
@@ -427,7 +339,7 @@ export function AiAgentPage({ businessId }: { businessId: string }) {
         onClose={() => setGoLiveOpen(false)}
         onFix={(id) => {
           setGoLiveOpen(false);
-          scrollTo(id);
+          goToSection(id);
         }}
         onConfirm={async () => {
           if (await updateProvider({ mode: 'prod', chatbotEnabled: true }, 'Your AI agent is live')) setGoLiveOpen(false);

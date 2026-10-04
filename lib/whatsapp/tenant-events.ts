@@ -60,6 +60,17 @@ export type TenantWaFieldKey = keyof typeof TENANT_WA_FIELDS;
 
 export type TenantWaEventGroup = 'store' | 'delivery' | 'merchant' | 'billing';
 
+/** A ready-made wording the tenant copies into a draft, edits, then submits to Meta. */
+export interface TenantWaStarter {
+  id: string;
+  label: string;
+  name: string;
+  category: TemplateCategory;
+  body: string;
+  footer?: string;
+  variableMap: TenantWaFieldKey[];
+}
+
 export interface TenantWaEvent {
   key: TenantWaEventKey;
   group: TenantWaEventGroup;
@@ -68,7 +79,7 @@ export interface TenantWaEvent {
   recipient: 'customer' | 'merchant';
   categories: TemplateCategory[];
   fields: TenantWaFieldKey[];
-  /** One-click template; body uses {{n}} in the order of variableMap. */
+  /** Default wording. Body uses {{n}} in the order of variableMap. */
   suggested: {
     name: string;
     category: TemplateCategory;
@@ -76,6 +87,8 @@ export interface TenantWaEvent {
     footer?: string;
     variableMap: TenantWaFieldKey[];
   };
+  /** Extra wordings. When omitted, the default suggested body is the only starter. */
+  starters?: TenantWaStarter[];
 }
 
 const STORE_ORDER_FIELDS: TenantWaFieldKey[] = [
@@ -314,6 +327,24 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
       body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} is ready. View or download it here: {{5}} Thank you for your business.',
       variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount', 'invoice_link'],
     },
+    starters: [
+      {
+        id: 'with_link',
+        label: 'With a link',
+        name: 'khatario_invoice_sent',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} is ready. View or download it here: {{5}} Thank you for your business.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount', 'invoice_link'],
+      },
+      {
+        id: 'short',
+        label: 'Short',
+        name: 'khatario_invoice_sent_short',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, your invoice {{2}} from {{3}} for ₹{{4}} is ready. Thank you for your business.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount'],
+      },
+    ],
   },
   {
     key: 'payment_due_reminder',
@@ -329,6 +360,24 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
       body: 'Hi {{1}}, a gentle reminder that invoice {{2}} from {{3}} for ₹{{4}} is due on {{5}}. View and pay here: {{6}} Thank you.',
       variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date', 'invoice_link'],
     },
+    starters: [
+      {
+        id: 'with_link',
+        label: 'With a pay link',
+        name: 'khatario_payment_due',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, a gentle reminder that invoice {{2}} from {{3}} for ₹{{4}} is due on {{5}}. View and pay here: {{6}} Thank you.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date', 'invoice_link'],
+      },
+      {
+        id: 'short',
+        label: 'Short reminder',
+        name: 'khatario_payment_due_short',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} is due on {{5}}. Please arrange payment when you can.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date'],
+      },
+    ],
   },
   {
     key: 'payment_overdue_reminder',
@@ -344,6 +393,24 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
       body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} was due on {{5}} and is still unpaid. View and pay here: {{6}} Please ignore if already paid.',
       variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date', 'invoice_link'],
     },
+    starters: [
+      {
+        id: 'with_link',
+        label: 'With a pay link',
+        name: 'khatario_payment_overdue',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} was due on {{5}} and is still unpaid. View and pay here: {{6}} Please ignore if already paid.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date', 'invoice_link'],
+      },
+      {
+        id: 'short',
+        label: 'Short reminder',
+        name: 'khatario_payment_overdue_short',
+        category: 'UTILITY',
+        body: 'Hi {{1}}, invoice {{2}} from {{3}} for ₹{{4}} was due on {{5}} and is still unpaid. Please arrange payment.',
+        variableMap: ['customer_name', 'invoice_number', 'business_name', 'amount_due', 'due_date'],
+      },
+    ],
   },
 ];
 
@@ -360,6 +427,22 @@ export function isTenantWaEventKey(v: unknown): v is TenantWaEventKey {
 
 export function getTenantWaEvent(key: TenantWaEventKey): TenantWaEvent {
   return TENANT_WA_EVENTS.find((e) => e.key === key)!;
+}
+
+/** Wordings the tenant can copy into a draft. Falls back to the single suggested body. */
+export function eventStarters(event: TenantWaEvent): TenantWaStarter[] {
+  if (event.starters && event.starters.length > 0) return event.starters;
+  return [
+    {
+      id: 'suggested',
+      label: 'Suggested wording',
+      name: event.suggested.name,
+      category: event.suggested.category,
+      body: event.suggested.body,
+      footer: event.suggested.footer,
+      variableMap: event.suggested.variableMap,
+    },
+  ];
 }
 
 export function countPlaceholders(text: string | null | undefined): number {

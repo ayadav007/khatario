@@ -344,7 +344,7 @@ test('E — Revenue leakage: API attacks (authenticated)', async ({ browser, pla
   );
   const addonBody = await addonPurchase.json().catch(() => ({}));
 
-  await page.goto(`${baseUrl}/connect/whatsapp`);
+  await page.goto(`${baseUrl}/whatsapp/conversations`);
   await page.waitForTimeout(2000);
 
   await evidence.capture(page, {
@@ -352,7 +352,7 @@ test('E — Revenue leakage: API attacks (authenticated)', async ({ browser, pla
     title: 'Revenue leakage: API + direct URL',
     persona: 'hr',
     screenshotLabel: 'leakage-connect-url',
-    userAction: 'POST current plan=enterprise; POST modules connect; POST addon purchase; visit /connect/whatsapp',
+    userAction: 'POST current plan=enterprise; POST modules connect; POST addon purchase; visit /whatsapp/conversations',
     result: `Plan assign ${planAssign.status()}; module ${moduleAdd.status()} (${moduleAddBody.code ?? 'n/a'}); addon ${addonPurchase.status()}; URL=${page.url()}`,
     pricingVisible: false,
     ctaText: '',
@@ -373,7 +373,7 @@ test('E — Revenue leakage: API attacks (authenticated)', async ({ browser, pla
       moduleAdd.status() === 403 &&
       moduleAddBody.code === 'MODULE_REQUIRES_CHECKOUT' &&
       planAssign.status() === 403,
-    urlVisited: `${baseUrl}/connect/whatsapp`,
+    urlVisited: `${baseUrl}/whatsapp/conversations`,
     modalOrBannerText: await visibleMainText(page),
   });
 

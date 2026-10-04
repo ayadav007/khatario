@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test';
 import { test, loginAsTestUser } from './fixtures/auth';
 
 /**
- * Shop WhatsApp AI agent settings (/settings/ai-agent): auth on the APIs, old routes redirect,
+ * Shop WhatsApp AI agent settings (/settings/whatsapp/ai-agent): auth on the APIs, old routes redirect,
  * the editor or setup wizard renders, and owner FAQs round-trip through the knowledge API.
  * The logged-in tests need E2E_TEST_PHONE / E2E_TEST_PASSWORD for a shop with the WhatsApp add-on.
  */
@@ -30,17 +30,18 @@ test.describe('AI agent - settings page', () => {
 
   test('old AI settings URLs redirect to the new page', async ({ authenticatedPage: page }) => {
     test.setTimeout(180_000);
-    for (const old of ['/settings/ai-config', '/settings/ai-assistant']) {
+    for (const old of ['/settings/ai-config', '/settings/ai-assistant', '/settings/ai-agent']) {
       await page.goto(old, COLD);
-      await expect(page).toHaveURL(/\/settings\/ai-agent$/, COLD);
+      await expect(page).toHaveURL(/\/settings\/whatsapp\/ai-agent$/, COLD);
     }
   });
 
   test('shows the setup wizard or the editor with a test chat', async ({ authenticatedPage: page }) => {
     test.setTimeout(180_000);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/settings/ai-agent', COLD);
-    await expect(page.getByRole('heading', { name: 'AI Agent' }).first()).toBeVisible(COLD);
+    await page.goto('/settings/whatsapp/ai-agent', COLD);
+    await expect(page.getByRole('heading', { name: 'WhatsApp' }).first()).toBeVisible(COLD);
+    await expect(page.getByRole('link', { name: 'AI agent' }).first()).toHaveAttribute('aria-current', 'page');
 
     const wizard = page.getByText('Set up your WhatsApp AI agent');
     const editor = page.locator('[data-agent-section="profile"]');

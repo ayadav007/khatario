@@ -13,6 +13,7 @@ export function AgentStatusBar({
   provider,
   usage,
   busy,
+  testChatDocked = true,
   onToggleEnabled,
   onModeChange,
   onOpenTestChat,
@@ -23,6 +24,8 @@ export function AgentStatusBar({
   provider: AgentProviderSummary;
   usage: AgentUsage;
   busy: boolean;
+  /** The test chat is shown beside the editor on wide screens, so the button is only needed below that. */
+  testChatDocked?: boolean;
   onToggleEnabled: (enabled: boolean) => void;
   onModeChange: (mode: AgentMode) => void;
   onOpenTestChat: () => void;
@@ -119,7 +122,10 @@ export function AgentStatusBar({
         <button
           type="button"
           onClick={onOpenTestChat}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-gray-50 dark:hover:bg-slate-800 xl:hidden"
+          className={clsx(
+            'inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-gray-50 dark:hover:bg-slate-800',
+            testChatDocked && 'xl:hidden',
+          )}
         >
           <MessageSquare className="h-4 w-4" /> Test chat
         </button>

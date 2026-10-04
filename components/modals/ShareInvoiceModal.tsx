@@ -52,6 +52,7 @@ export function ShareInvoiceModal({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [nativeFormatLoading, setNativeFormatLoading] = useState<InvoiceShareFormat | null>(null);
   const [waConnected, setWaConnected] = useState<boolean | null>(null);
+  const [cloudReady, setCloudReady] = useState(false);
   const showNativeShare = canUseNativeInvoiceShare();
 
   const resolvePublicUrl = useCallback(async (): Promise<string | null> => {
@@ -99,6 +100,7 @@ export function ShareInvoiceModal({
         const data = await res.json();
         if (!cancelled) {
           setWaConnected(data.status === 'connected');
+          setCloudReady(data.cloudReady === true);
         }
       } catch {
         if (!cancelled) setWaConnected(false);
@@ -332,10 +334,10 @@ export function ShareInvoiceModal({
 
           {/* WhatsApp */}
           <div className="space-y-2">
-            {sendViaApi && waConnected === false ? (
+            {sendViaApi && waConnected === false && !cloudReady ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 WhatsApp is not connected.{' '}
-                <Link href="/connect/whatsapp" className="font-medium underline hover:text-amber-950">
+                <Link href="/settings/whatsapp" className="font-medium underline hover:text-amber-950">
                   Connect now
                 </Link>{' '}
                 to send from your business number, or turn off &quot;Send from my connected WhatsApp number&quot; below to open WhatsApp Web.

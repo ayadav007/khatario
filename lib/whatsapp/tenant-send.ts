@@ -18,6 +18,19 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** What to tell the tenant when a Cloud template was not sent. Callers must not fall through to QR. */
+export function eventTemplateFailureMessage(
+  result: Extract<EventTemplateResult, { sent: false }>,
+  purpose: string,
+): string {
+  if (result.reason === 'no_template') {
+    return `Approve a WhatsApp template for ${purpose}, then select it under Settings → WhatsApp.`;
+  }
+  if (result.reason === 'invalid_phone') return 'That phone number is not a valid WhatsApp number.';
+  if (result.reason === 'not_configured') return 'WhatsApp Business API is not set up for this business.';
+  return result.error || 'WhatsApp template was not sent.';
+}
+
 /**
  * Sends the approved template the business chose for this event from its own Cloud API number.
  * Callers fall back to their QR text when this returns `sent: false`.

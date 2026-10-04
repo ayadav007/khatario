@@ -3,8 +3,9 @@ import { getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { generateInvoicePdf } from '@/lib/pdf-generator';
 import { queryOne } from '@/lib/db';
-import { sendEventTemplate } from '@/lib/whatsapp/tenant-send';
+import { eventTemplateFailureMessage, sendEventTemplate } from '@/lib/whatsapp/tenant-send';
 import { invoiceEventValues } from '@/lib/whatsapp/invoice-event-values';
+import { businessTransport } from '@/lib/whatsapp/business-transport';
 import { limitExceededResponse } from '@/lib/subscription/limit-response';
 import {
   assertWhatsAppBaseAccess,
@@ -178,14 +179,24 @@ export const POST = withPremiumSubscriptionApi(
           console.error('Failed to generate PDF for WhatsApp:', e);
           return NextResponse.json({ error: 'Failed to generate invoice PDF' }, { status: 500 });
         }
-        const viaTemplate = await sendEventTemplate({
-          businessId,
-          eventKey: 'invoice_sent',
-          to,
-          values: await invoiceEventValues(invoice),
-          document: { buffer: media, filename: `${invoice.invoice_number || 'invoice'}.pdf` },
-        });
-        if (viaTemplate.sent) {
+        const transport = await businessTransport(businessId);
+        if (transport === 'cloud') {
+          if (!Buffer.isBuffer(media)) {
+            return NextResponse.json({ error: 'Failed to generate invoice PDF' }, { status: 500 });
+          }
+          const viaTemplate = await sendEventTemplate({
+            businessId,
+            eventKey: 'invoice_sent',
+            to,
+            values: await invoiceEventValues(invoice),
+            document: { buffer: media, filename: `${invoice.invoice_number || 'invoice'}.pdf` },
+          });
+          if (!viaTemplate.sent) {
+            return NextResponse.json(
+              { error: eventTemplateFailureMessage(viaTemplate, 'sending an invoice') },
+              { status: 409 },
+            );
+          }
           return NextResponse.json({ success: true, via: 'cloud', template: viaTemplate.template });
         }
       }

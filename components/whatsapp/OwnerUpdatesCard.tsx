@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BellRing, Loader2, Smartphone } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
+import Link from 'next/link';
+import { Loader2, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { SettingsBlock } from '@/components/whatsapp/settings/SettingsBlock';
 
 type OwnerLinkState = {
   transport: 'cloud' | 'baileys';
@@ -43,7 +44,7 @@ const TEMPLATE_LABEL: Record<string, string> = {
 };
 
 /**
- * Settings > WhatsApp: link the owner's phone to the business's own WhatsApp number for business
+ * Settings > WhatsApp > Notifications: link the owner's phone to the business's own WhatsApp number for business
  * figures on request and an evening summary. Renders nothing for anyone but the primary admin.
  */
 export function OwnerUpdatesCard({ onToast }: { onToast?: (message: string, type: 'success' | 'error' | 'info') => void }) {
@@ -109,23 +110,24 @@ export function OwnerUpdatesCard({ onToast }: { onToast?: (message: string, type
   };
 
   return (
-    <Card padding="lg" className="space-y-4" data-testid="owner-updates-card">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-950/40">
-          <BellRing className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-text-primary">Owner updates on WhatsApp</h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Ask &quot;sales today&quot; or &quot;who owes me the most&quot; from your phone and get the answer from your own business number,
-            plus an evening summary. Only you (the primary admin) can link a phone.
-          </p>
-        </div>
-      </div>
-
+    <SettingsBlock
+      id="owner-updates"
+      title="Updates for you"
+      description={
+        <>
+          Ask &quot;sales today&quot; or &quot;who owes me the most&quot; from your phone and get the answer from your business
+          number, plus an evening summary. Only the primary admin can link a phone.
+        </>
+      }
+    >
+      <div className="space-y-4" data-testid="owner-updates-card">
       {!cloud && !state.qrConnected ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          Connect your WhatsApp number first (QR below, or Meta Cloud API above).
+          Connect your WhatsApp number first on the{' '}
+          <Link href="/settings/whatsapp" className="font-medium underline">
+            Connection
+          </Link>{' '}
+          tab.
         </p>
       ) : null}
 
@@ -229,6 +231,7 @@ export function OwnerUpdatesCard({ onToast }: { onToast?: (message: string, type
           ) : null}
         </div>
       ) : null}
-    </Card>
+      </div>
+    </SettingsBlock>
   );
 }

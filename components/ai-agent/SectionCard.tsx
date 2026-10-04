@@ -3,11 +3,10 @@
 import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Card } from '@/components/ui/Card';
 
+/** Annotated settings row, same layout as Business profile: explanation left, card right. */
 export function SectionCard({
   id,
-  icon: Icon,
   title,
   description,
   appliesImmediately,
@@ -16,7 +15,7 @@ export function SectionCard({
   className,
 }: {
   id: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   title: string;
   description?: string;
   /** Section saves on its own actions rather than through the page save bar. */
@@ -26,29 +25,27 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section id={id} data-agent-section={id} className={clsx('scroll-mt-28', className)}>
-      <Card padding="lg">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
-              <Icon className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
-                {appliesImmediately && (
-                  <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                    Changes apply immediately
-                  </span>
-                )}
-              </div>
-              {description && <p className="mt-0.5 text-sm text-text-secondary">{description}</p>}
-            </div>
-          </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-        </div>
+    <section
+      id={id}
+      data-agent-section={id}
+      className={clsx(
+        'scroll-mt-28 grid grid-cols-1 gap-3 border-t border-border pt-6 first:border-t-0 first:pt-0 dark:border-border-dark lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:gap-10',
+        className,
+      )}
+    >
+      <div className="min-w-0">
+        <h3 className="text-base font-semibold text-text-primary">{title}</h3>
+        {description && <p className="mt-1 text-sm leading-relaxed text-text-secondary">{description}</p>}
+        {appliesImmediately && (
+          <span className="mt-2 inline-block rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+            Has its own Save button
+          </span>
+        )}
+      </div>
+      <div className="card min-w-0 p-4 md:p-5">
+        {actions && <div className="mb-4 flex flex-wrap items-center justify-end gap-2">{actions}</div>}
         {children}
-      </Card>
+      </div>
     </section>
   );
 }
