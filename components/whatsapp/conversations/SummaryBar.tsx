@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { MessageSquare, Inbox, Clock, CheckCircle, XCircle, Loader2, Tag, Settings2, User, Hand, Headphones, Bot, Volume2, VolumeX } from 'lucide-react';
 import { useWhatsAppSocket } from '@/hooks/useWhatsAppSocket';
 import { isInboxSoundOn, requestInboxNotificationPermission, setInboxSoundOn, type InboxState, type TeamMember } from './inbox';
@@ -17,6 +18,12 @@ interface SummaryBarProps {
   onFilterClick: (filter: 'unread' | 'new' | 'open' | 'pending' | 'closed' | string | null, type?: 'status' | 'label' | 'lead_status') => void;
   inboxFilter?: InboxFilter;
   onInboxFilter?: (filter: InboxFilter) => void;
+  /** SSE / live list updates connected */
+  wsConnected?: boolean;
+  /** WhatsApp session linked */
+  whatsappConnected?: boolean;
+  /** Dev-only cache clear */
+  onClearCache?: () => void;
 }
 
 interface SummaryData {
@@ -50,7 +57,16 @@ interface LeadStatus {
   count?: number; // Will be calculated
 }
 
-export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilter, onInboxFilter }: SummaryBarProps) {
+export function SummaryBar({
+  businessId,
+  activeFilter,
+  onFilterClick,
+  inboxFilter,
+  onInboxFilter,
+  wsConnected: wsConnectedProp,
+  whatsappConnected,
+  onClearCache,
+}: SummaryBarProps) {
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [agents, setAgents] = useState<TeamMember[]>([]);
   const [soundOn, setSoundOn] = useState(true);
@@ -336,7 +352,6 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
       type: 'lead_status' as const
     }));
 
-  const allVisibleItems = [...visibleStatusItems, ...visibleLabelItems, ...visibleLeadStatusItems];
 
   const colorMap: Record<string, { bg: string; text: string; active: string }> = {
     unread: { bg: 'bg-red-50', text: 'text-red-700', active: 'bg-red-100 border-red-300' },
@@ -347,32 +362,52 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
     bot_resolved: { bg: 'bg-purple-50', text: 'text-purple-700', active: 'bg-purple-100 border-purple-300' }
   };
 
+  const isItemActive = (item: (typeof visibleStatusItems)[0] | (typeof visibleLabelItems)[0] | (typeof visibleLeadStatusItems)[0]) => {
+    const filterKey = 'displayKey' in item ? item.displayKey : item.key;
+    return item.type === 'lead_status'
+      ? (activeFilter === filterKey || activeFilter === item.key)
+      : activeFilter === filterKey;
+  };
+
+  /** Hide zero-count status/lead chips unless active; Unread always stays; labels always if customized. */
+  const filterItemsToShow = [
+    ...visibleStatusItems,
+    ...visibleLabelItems,
+    ...visibleLeadStatusItems,
+  ].filter((item) => {
+    if (item.type === 'label') return true;
+    if (item.type === 'status' && item.key === 'unread') return true;
+    if (isItemActive(item)) return true;
+    return (item.count ?? 0) > 0;
+  });
+
+  const liveConnected = wsConnectedProp ?? wsConnected;
+
   if (loading) {
     return (
-      <div className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200 px-6 py-4 flex-shrink-0">
-        <div className="flex items-center justify-center gap-3">
-          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-          <span className="text-sm text-gray-600">Loading overview...</span>
-        </div>
+      <div className="flex items-center gap-2 px-1 py-1">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+        <span className="text-xs text-gray-500">Loading overview…</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200 px-6 py-4 flex-shrink-0">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-gray-700">Overview</span>
+    <div className="w-full min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-xs font-semibold text-gray-600">Overview</span>
           <button
             onClick={() => setShowCustomize(!showCustomize)}
-            className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors"
+            className="p-1 hover:bg-gray-200 rounded-md transition-colors"
             title="Customize filters"
+            aria-expanded={showCustomize}
           >
-            <Settings2 className="w-4 h-4 text-gray-600" />
+            <Settings2 className="w-3.5 h-3.5 text-gray-500" />
           </button>
         </div>
-        
-        <div className="flex items-center gap-3 flex-wrap">
+
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
           {onInboxFilter && inboxItems.map((item) => {
             const Icon = item.icon;
             const isActive = inboxFilter?.state === item.key;
@@ -381,31 +416,34 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
                 key={`inbox:${item.key}`}
                 type="button"
                 onClick={() => onInboxFilter(isActive ? { state: null } : { state: item.key })}
-                className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all duration-200 border-2 ${
-                  isActive ? `${item.colors.active} shadow-sm` : `${item.colors.bg} border-transparent hover:border-gray-300 hover:shadow-sm`
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                  isActive
+                    ? `${item.colors.active} shadow-sm`
+                    : `${item.colors.bg} border-transparent hover:border-gray-300`
                 }`}
                 title={item.title}
               >
-                <Icon className={`w-4 h-4 ${item.colors.text}`} />
-                <span className={`text-sm font-medium ${item.colors.text}`}>{item.label}</span>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold min-w-[24px] text-center ${isActive ? item.colors.active : item.colors.bg} ${item.colors.text}`}>
+                <Icon className={`w-3.5 h-3.5 ${item.colors.text}`} />
+                <span className={item.colors.text}>{item.label}</span>
+                <span className={`min-w-[1.25rem] text-center font-bold ${item.colors.text}`}>
                   {item.count}
                 </span>
               </button>
             );
           })}
+
           {onInboxFilter && isSupervisor && inboxFilter?.state === 'intervened' && (
-            <div className="flex items-center gap-1 rounded-xl border border-blue-200 bg-white p-1 text-xs">
+            <div className="flex items-center gap-0.5 rounded-lg border border-blue-200 bg-white p-0.5 text-[11px]">
               {[
-                { key: undefined, label: 'By anyone' },
-                { key: 'me', label: `By me (${summary.intervened_by_me ?? 0})` },
-                { key: 'others', label: `By others (${summary.intervened_by_others ?? 0})` },
+                { key: undefined as string | undefined, label: 'Anyone' },
+                { key: 'me', label: `Me (${summary.intervened_by_me ?? 0})` },
+                { key: 'others', label: `Others (${summary.intervened_by_others ?? 0})` },
               ].map((opt) => (
                 <button
                   key={opt.label}
                   type="button"
                   onClick={() => onInboxFilter({ state: 'intervened', intervenedBy: opt.key })}
-                  className={`rounded-lg px-2.5 py-1 font-medium ${
+                  className={`rounded-md px-1.5 py-0.5 font-medium ${
                     inboxFilter.intervenedBy === opt.key ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -414,7 +452,7 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
               ))}
               {agents.length > 0 && (
                 <select
-                  className="rounded-lg border-0 bg-transparent py-1 pl-2 pr-6 text-xs text-gray-700 focus:ring-0"
+                  className="rounded-md border-0 bg-transparent py-0.5 pl-1 pr-5 text-[11px] text-gray-700 focus:ring-0"
                   value={inboxFilter.intervenedBy && !['me', 'others'].includes(inboxFilter.intervenedBy) ? inboxFilter.intervenedBy : ''}
                   onChange={(e) => onInboxFilter({ state: 'intervened', intervenedBy: e.target.value || undefined })}
                   aria-label="Intervened by agent"
@@ -427,6 +465,76 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
               )}
             </div>
           )}
+
+          {onInboxFilter && filterItemsToShow.length > 0 && (
+            <span className="hidden sm:block w-px h-4 bg-gray-300 shrink-0 mx-0.5" aria-hidden />
+          )}
+
+          {filterItemsToShow.map((item) => {
+            const Icon = item.icon;
+            const filterKey = 'displayKey' in item ? item.displayKey : item.key;
+            const isActive = isItemActive(item);
+
+            let colors = colorMap[filterKey] || {
+              bg: 'bg-slate-50',
+              text: 'text-primary-700',
+              active: 'bg-slate-100 border-primary-300',
+            };
+
+            if (item.type === 'label' && 'color' in item) {
+              const labelColor = item.color;
+              colors = {
+                bg: `${labelColor}15`,
+                text: labelColor,
+                active: `${labelColor}30`,
+              };
+            }
+
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onFilterClick(isActive ? null : filterKey, item.type)}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-colors ${
+                  isActive
+                    ? `${colors.active} shadow-sm`
+                    : `${colors.bg} border-transparent hover:border-gray-300`
+                }`}
+                title={`Filter by ${item.label}`}
+                style={
+                  item.type === 'label' && 'color' in item
+                    ? { borderColor: isActive ? (item as { color: string }).color : 'transparent' }
+                    : undefined
+                }
+              >
+                <Icon
+                  className={`w-3 h-3 ${colors.text}`}
+                  style={item.type === 'label' && 'color' in item ? { color: (item as { color: string }).color } : undefined}
+                />
+                <span
+                  className={colors.text}
+                  style={item.type === 'label' && 'color' in item ? { color: (item as { color: string }).color } : undefined}
+                >
+                  {item.label}
+                </span>
+                {item.count !== undefined && (
+                  <span
+                    className={`font-bold tabular-nums ${colors.text}`}
+                    style={
+                      item.type === 'label' && 'color' in item
+                        ? { color: (item as { color: string }).color }
+                        : undefined
+                    }
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 text-xs text-gray-600 ml-1">
           {onInboxFilter && (
             <button
               type="button"
@@ -436,176 +544,153 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
                 setInboxSoundOn(next);
                 if (next) requestInboxNotificationPermission();
               }}
-              className="p-1.5 rounded-lg text-gray-600 hover:bg-gray-200"
-              title={soundOn ? 'Sound alerts on (new requests and transfers). Click to mute.' : 'Sound alerts off. Click to turn on.'}
+              className="p-1 rounded-md text-gray-500 hover:bg-gray-200"
+              title={soundOn ? 'Sound alerts on. Click to mute.' : 'Sound alerts off. Click to turn on.'}
               aria-label={soundOn ? 'Mute inbox alerts' : 'Turn on inbox alerts'}
             >
-              {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             </button>
           )}
-          {allVisibleItems.map((item) => {
-            const Icon = item.icon;
-            // Use displayKey for filter matching (for labels/lead statuses), or key for status items
-            const filterKey = 'displayKey' in item ? item.displayKey : item.key;
-            // For lead_status items, check if activeFilter matches the value (could be passed directly)
-            // For other items, check exact match with filterKey
-            const isActive = item.type === 'lead_status' 
-              ? (activeFilter === filterKey || activeFilter === item.key)
-              : activeFilter === filterKey;
-            
-            // Get colors - use custom color for labels, default map for statuses
-            // Use filterKey for colorMap lookup (removes type prefix)
-            let colors = colorMap[filterKey] || {
-              bg: 'bg-slate-50',
-              text: 'text-primary-700',
-              active: 'bg-slate-100 border-primary-300'
-            };
-            
-            // Override with label color if it's a label
-            if (item.type === 'label' && 'color' in item) {
-              const labelColor = item.color;
-              colors = {
-                bg: `${labelColor}15`,
-                text: labelColor,
-                active: `${labelColor}30`
-              };
-            }
-            
-            return (
-              <button
-                key={item.key} // Use prefixed key for React uniqueness
-                onClick={() => {
-                  onFilterClick(isActive ? null : filterKey, item.type);
-                }}
-                className={`
-                  flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all duration-200
-                  border-2 ${isActive ? colors.active : `${colors.bg} border-transparent hover:border-gray-300`}
-                  ${isActive ? 'shadow-sm' : 'hover:shadow-sm'}
-                `}
-                title={`Filter by ${item.label}`}
-                style={(item.type === 'label' && 'color' in item) ? {
-                  borderColor: isActive ? (item as any).color : 'transparent'
-                } : {}}
+
+          {wsConnectedProp !== undefined && (
+            <span
+              className="inline-flex items-center gap-1"
+              title="Server-sent events for new messages and list updates"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  liveConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                }`}
+              />
+              <span className="hidden md:inline">{liveConnected ? 'Live' : 'Reconnecting…'}</span>
+            </span>
+          )}
+
+          {whatsappConnected !== undefined && (
+            whatsappConnected ? (
+              <span className="inline-flex items-center gap-1" title="Your WhatsApp number is connected">
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-500" />
+                <span className="hidden md:inline">WhatsApp</span>
+              </span>
+            ) : (
+              <Link
+                href="/settings/whatsapp"
+                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 border border-amber-200 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                title="WhatsApp is not connected. Open settings to scan the QR code."
               >
-                <Icon className={`w-4 h-4 ${colors.text}`} style={(item.type === 'label' && 'color' in item) ? { color: (item as any).color } : {}} />
-                <span className={`text-sm font-medium ${colors.text}`} style={(item.type === 'label' && 'color' in item) ? { color: (item as any).color } : {}}>{item.label}</span>
-                {item.count !== undefined && (
-                  <span 
-                    className={`
-                      px-2.5 py-0.5 rounded-full text-xs font-bold
-                      ${isActive ? colors.active : colors.bg} ${colors.text}
-                      min-w-[24px] text-center
-                    `}
-                    style={(item.type as string) === 'label' ? { 
-                      backgroundColor: isActive ? `${(item as any).color}30` : `${(item as any).color}15`,
-                      color: (item as any).color 
-                    } : {}}
-                  >
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-amber-500" />
+                Offline — connect
+              </Link>
+            )
+          )}
+
+          {onClearCache && process.env.NODE_ENV === 'development' && (
+            <button
+              type="button"
+              onClick={onClearCache}
+              className="text-[11px] text-primary-600 hover:underline"
+            >
+              Clear cache
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Customize Modal */}
       {showCustomize && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <div className="bg-white rounded-lg p-4 shadow-lg border border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Customize Overview Filters</h4>
-            
-            {/* Status Filters */}
-            <div className="mb-4">
-              <label className="text-xs font-medium text-gray-700 mb-2 block">Status Filters</label>
+        <div className="mt-2 pt-2 border-t border-gray-200">
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <h4 className="text-xs font-semibold text-gray-900 mb-2">Customize Overview Filters</h4>
+            <p className="text-[11px] text-gray-500 mb-3">
+              Status and lead filters with a count of 0 stay hidden until they have conversations (Unread always shows).
+            </p>
+
+            <div className="mb-3">
+              <label className="text-[11px] font-medium text-gray-700 mb-1.5 block">Status Filters</label>
               <div className="flex flex-wrap gap-2">
-                {statusItems.map(item => (
-                  <label key={item.key} className="flex items-center gap-2 cursor-pointer">
+                {statusItems.map((item) => (
+                  <label key={item.key} className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={visibleItems.statuses.includes(item.key)}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setVisibleItems(prev => ({
+                          setVisibleItems((prev) => ({
                             ...prev,
-                            statuses: [...prev.statuses, item.key]
+                            statuses: [...prev.statuses, item.key],
                           }));
                         } else {
-                          setVisibleItems(prev => ({
+                          setVisibleItems((prev) => ({
                             ...prev,
-                            statuses: prev.statuses.filter(s => s !== item.key)
+                            statuses: prev.statuses.filter((s) => s !== item.key),
                           }));
                         }
                       }}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-xs text-gray-700">{item.label}</span>
+                    <span className="text-[11px] text-gray-700">{item.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            {/* Lead Status Filters */}
-            <div className="mb-4">
-              <label className="text-xs font-medium text-gray-700 mb-2 block">Lead Status Filters</label>
+            <div className="mb-3">
+              <label className="text-[11px] font-medium text-gray-700 mb-1.5 block">Lead Status Filters</label>
               <div className="flex flex-wrap gap-2">
-                {leadStatusOptions.map(status => (
-                  <label key={status.value} className="flex items-center gap-2 cursor-pointer">
+                {leadStatusOptions.map((status) => (
+                  <label key={status.value} className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={visibleItems.leadStatuses.includes(status.value)}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setVisibleItems(prev => ({
+                          setVisibleItems((prev) => ({
                             ...prev,
-                            leadStatuses: [...prev.leadStatuses, status.value]
+                            leadStatuses: [...prev.leadStatuses, status.value],
                           }));
                         } else {
-                          setVisibleItems(prev => ({
+                          setVisibleItems((prev) => ({
                             ...prev,
-                            leadStatuses: prev.leadStatuses.filter(s => s !== status.value)
+                            leadStatuses: prev.leadStatuses.filter((s) => s !== status.value),
                           }));
                         }
                       }}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-xs text-gray-700">{status.label}</span>
+                    <span className="text-[11px] text-gray-700">{status.label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
-            {/* Label Filters */}
-            {labels.length > 0 && (
+            {labels.length > 0 ? (
               <div>
-                <label className="text-xs font-medium text-gray-700 mb-2 block">Label Filters</label>
+                <label className="text-[11px] font-medium text-gray-700 mb-1.5 block">Label Filters</label>
                 <div className="flex flex-wrap gap-2">
-                  {labels.map(label => (
-                    <label key={label.id} className="flex items-center gap-2 cursor-pointer">
+                  {labels.map((label) => (
+                    <label key={label.id} className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={visibleItems.labels.includes(label.id)}
                         onChange={(e) => {
                           if (e.target.checked) {
-                            setVisibleItems(prev => ({
+                            setVisibleItems((prev) => ({
                               ...prev,
-                              labels: [...prev.labels, label.id]
+                              labels: [...prev.labels, label.id],
                             }));
                           } else {
-                            setVisibleItems(prev => ({
+                            setVisibleItems((prev) => ({
                               ...prev,
-                              labels: prev.labels.filter(l => l !== label.id)
+                              labels: prev.labels.filter((l) => l !== label.id),
                             }));
                           }
                         }}
                         className="rounded border-gray-300"
                       />
-                      <span 
-                        className="text-xs px-2 py-0.5 rounded"
-                        style={{ 
+                      <span
+                        className="text-[11px] px-1.5 py-0.5 rounded"
+                        style={{
                           backgroundColor: `${label.color}20`,
-                          color: label.color 
+                          color: label.color,
                         }}
                       >
                         {label.name}
@@ -614,10 +699,10 @@ export function SummaryBar({ businessId, activeFilter, onFilterClick, inboxFilte
                   ))}
                 </div>
               </div>
-            )}
-
-            {labels.length === 0 && (
-              <p className="text-xs text-gray-500 italic">No labels created yet. Create labels from the conversation list.</p>
+            ) : (
+              <p className="text-[11px] text-gray-500 italic">
+                No labels created yet. Create labels from the conversation list.
+              </p>
             )}
           </div>
         </div>

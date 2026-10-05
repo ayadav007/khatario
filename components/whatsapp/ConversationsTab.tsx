@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ConversationList, Conversation as ConversationType, FilterState, effectiveInboxState } from './conversations/ConversationList';
@@ -1499,53 +1498,17 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
     <div className="flex flex-col h-full bg-white overflow-hidden" style={{ minHeight: 0 }}>
       {/* Summary Bar */}
       {business?.id && (
-        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
-          <div className="flex-1">
-            <SummaryBar
-              businessId={business.id}
-              activeFilter={filters.lead_status || filters.label_id || activeSummaryFilter || null}
-              onFilterClick={handleSummaryFilterClick}
-              inboxFilter={inboxFilter}
-              onInboxFilter={handleInboxFilter}
-            />
-          </div>
-          <div className="flex items-center flex-wrap justify-end gap-3 ml-4 text-sm text-gray-600">
-            <span className="inline-flex items-center gap-1.5" title="Server-sent events for new messages and list updates">
-              <span
-                className={`h-2 w-2 rounded-full shrink-0 ${
-                  wsConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
-                }`}
-              />
-              {wsConnected ? 'Live updates' : 'Reconnecting…'}
-            </span>
-            {whatsappConnected ? (
-              <span
-                className="inline-flex items-center gap-1.5"
-                title="Your WhatsApp number is connected"
-              >
-                <span className="h-2 w-2 rounded-full shrink-0 bg-emerald-500" />
-                WhatsApp online
-              </span>
-            ) : (
-              <Link
-                href="/settings/whatsapp"
-                className="inline-flex items-center gap-1.5 link-primary hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1"
-                title="WhatsApp is not connected. Open integration settings to scan the QR code and connect."
-              >
-                <span className="h-2 w-2 rounded-full shrink-0 bg-gray-400" />
-                WhatsApp offline — connect
-              </Link>
-            )}
-            {process.env.NODE_ENV === 'development' && (
-              <button
-                type="button"
-                onClick={handleClearCache}
-                className="text-xs text-primary-600 hover:underline"
-              >
-                Clear cache
-              </button>
-            )}
-          </div>
+        <div className="border-b border-gray-200 bg-gray-50 px-3 py-1.5 flex-shrink-0">
+          <SummaryBar
+            businessId={business.id}
+            activeFilter={filters.lead_status || filters.label_id || activeSummaryFilter || null}
+            onFilterClick={handleSummaryFilterClick}
+            inboxFilter={inboxFilter}
+            onInboxFilter={handleInboxFilter}
+            wsConnected={wsConnected}
+            whatsappConnected={whatsappConnected}
+            onClearCache={handleClearCache}
+          />
         </div>
       )}
       
