@@ -1,8 +1,8 @@
 import { isHardStartMatch, matchOption, validateAsk } from './match';
-import { startWalk, walkFrom, nodeById } from './walk';
+import { startWalk, walkFrom, nodeById, messageLeadsOnlyToEnd } from './walk';
 import { runFlowActions } from './actions';
 import { renderNode } from './render';
-import { replyToCrm, type CrmBotResult } from './send';
+import { isSilentHandledResult, replyToCrm, type CrmBotResult } from './send';
 import { logRouting } from './log';
 import {
   endSession,
@@ -15,6 +15,8 @@ import {
   type SessionRow,
 } from './store';
 import type { FlowDefinition, FlowNode } from './schema';
+
+export { isSilentHandledResult };
 
 export type FlowInbound = {
   businessId: string;
@@ -60,8 +62,14 @@ async function applyWalk(
 
   const reply = renderNode(walk.node, context);
   const currentNodeId = walk.node.id;
-  if (session) await updateSession(session.id, { currentNodeId, context });
-  else {
+  // Terminal messages (e.g. "Connecting you with our team" → End): do not keep a session.
+  // Otherwise the customer's next real question only advances End and never reaches the AI.
+  const terminal = messageLeadsOnlyToEnd(flow.definition, currentNodeId);
+  if (terminal) {
+    if (session) await endSession(session.id);
+  } else if (session) {
+    await updateSession(session.id, { currentNodeId, context });
+  } else {
     await startSession({
       businessId,
       conversationId,
@@ -130,7 +138,7 @@ export async function handleActiveSession(input: FlowInbound): Promise<CrmBotRes
   }
 
   const walk = walkFrom(flow.definition, node.id, context, handle);
-  return applyWalk(
+  const result = await applyWalk(
     input.businessId,
     input.conversationId,
     flow,
@@ -141,6 +149,9 @@ export async function handleActiveSession(input: FlowInbound): Promise<CrmBotRes
     input.messageId,
     input.phone,
   );
+  // Stuck sessions parked on a terminal message used to end with handled+no text and block the AI.
+  if (isSilentHandledResult(result)) return null;
+  return result;
 }
 
 export async function handleHardStart(input: FlowInbound): Promise<CrmBotResult | { openShop: true } | null> {

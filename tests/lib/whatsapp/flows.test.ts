@@ -1,7 +1,8 @@
 import { isHardStartMatch, matchOption, validateAsk } from '@/lib/whatsapp/flows/match';
 import { extractTriggers, parseFlowDefinition, canPublish, emptyFlowDefinition } from '@/lib/whatsapp/flows/schema';
 import { shopOrderStarterDefinition } from '@/lib/whatsapp/flows/starter';
-import { startWalk } from '@/lib/whatsapp/flows/walk';
+import { messageLeadsOnlyToEnd, startWalk, walkFrom } from '@/lib/whatsapp/flows/walk';
+import { isSilentHandledResult } from '@/lib/whatsapp/flows/send';
 import { botRulesToDefinition } from '@/lib/whatsapp/flows/import-bot-rules';
 import { createSimState, simStep } from '@/lib/whatsapp/flows/simulate';
 
@@ -89,6 +90,32 @@ describe('bot rule import', () => {
   });
 });
 
+describe('terminal handoff message', () => {
+  it('marks handoff_msg → end as terminal so no session should stay open', () => {
+    const def = shopOrderStarterDefinition();
+    expect(messageLeadsOnlyToEnd(def, 'handoff_msg')).toBe(true);
+    expect(messageLeadsOnlyToEnd(def, 'status_msg')).toBe(true);
+    expect(messageLeadsOnlyToEnd(def, 'welcome')).toBe(false);
+  });
+
+  it('Talk to team walks handoff then a terminal message', () => {
+    const def = shopOrderStarterDefinition();
+    const walk = walkFrom(def, 'welcome', {}, 'human');
+    expect(walk.kind).toBe('send');
+    if (walk.kind !== 'send') return;
+    expect(walk.actions.some((a) => a.data.kind === 'handoff')).toBe(true);
+    expect(walk.node.id).toBe('handoff_msg');
+    expect(messageLeadsOnlyToEnd(def, walk.node.id)).toBe(true);
+  });
+
+  it('silent handled results are detected so the AI can take over', () => {
+    expect(isSilentHandledResult({ shouldStore: true, handled: true })).toBe(true);
+    expect(isSilentHandledResult({ shouldStore: true, handled: true, response: 'Hi' })).toBe(false);
+    expect(isSilentHandledResult({ openShop: true })).toBe(false);
+    expect(isSilentHandledResult(null)).toBe(false);
+  });
+});
+
 describe('flow simulate (draft preview)', () => {
   it('does not start on a non-matching keyword', () => {
     const def = shopOrderStarterDefinition();
@@ -109,5 +136,14 @@ describe('flow simulate (draft preview)', () => {
     expect(first).toBeTruthy();
     state = simStep(def, state, { text: first!.title, replyId: first!.id });
     expect(state.bubbles.length).toBeGreaterThan(2);
+  });
+
+  it('Talk to team ends the preview session after the handoff message', () => {
+    const def = shopOrderStarterDefinition();
+    let state = simStep(def, createSimState(), { text: 'order' });
+    state = simStep(def, state, { text: 'Talk to team', replyId: 'human' });
+    expect(state.status).toBe('ended');
+    expect(state.currentNodeId).toBeNull();
+    expect(state.bubbles.some((b) => b.role === 'bot' && b.reply.text.includes('Connecting you'))).toBe(true);
   });
 });

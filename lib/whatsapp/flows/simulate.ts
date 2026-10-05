@@ -6,7 +6,7 @@ import { matchHardStart, matchOption, validateAsk } from './match';
 import { renderNode } from './render';
 import { extractTriggers, type FlowDefinition, type FlowNode } from './schema';
 import type { FlowReply } from './send';
-import { nodeById, startWalk, walkFrom, type WalkStop } from './walk';
+import { messageLeadsOnlyToEnd, nodeById, startWalk, walkFrom, type WalkStop } from './walk';
 
 export type SimBubble =
   | { id: string; role: 'user'; text: string }
@@ -47,7 +47,7 @@ function actionNotes(actions: Extract<FlowNode, { type: 'action' }>[]): string[]
   });
 }
 
-function applyWalk(state: SimState, walk: WalkStop): SimState {
+function applyWalk(definition: FlowDefinition, state: SimState, walk: WalkStop): SimState {
   const notes = actionNotes(walk.actions);
   const systemBubbles: SimBubble[] = notes.map((text) => ({
     id: `sys_${Math.random().toString(36).slice(2, 9)}`,
@@ -85,6 +85,18 @@ function applyWalk(state: SimState, walk: WalkStop): SimState {
   const bubbles = [...state.bubbles, ...systemBubbles];
   if (reply) {
     bubbles.push({ id: `bot_${Math.random().toString(36).slice(2, 9)}`, role: 'bot', reply });
+  }
+
+  if (messageLeadsOnlyToEnd(definition, walk.node.id)) {
+    return {
+      ...state,
+      status: 'ended',
+      currentNodeId: null,
+      bubbles: [
+        ...bubbles,
+        { id: `sys_${Math.random().toString(36).slice(2, 9)}`, role: 'system', text: 'Flow ended.' },
+      ],
+    };
   }
 
   return {
@@ -164,7 +176,7 @@ export function simStep(
       };
     }
     const withUser = { ...state, bubbles: [...state.bubbles, userBubble], context: {} };
-    return applyWalk(withUser, startWalk(definition, {}));
+    return applyWalk(definition, withUser, startWalk(definition, {}));
   }
 
   const node = nodeById(definition, state.currentNodeId);
@@ -223,5 +235,5 @@ export function simStep(
     withUser = { ...withUser, context };
   }
 
-  return applyWalk(withUser, walkFrom(definition, node.id, context, handle));
+  return applyWalk(definition, withUser, walkFrom(definition, node.id, context, handle));
 }

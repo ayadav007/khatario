@@ -38,6 +38,18 @@ export function replyToCrm(reply: FlowReply): CrmBotResult {
   };
 }
 
+/** Flow claimed the turn but sent nothing — the AI agent should answer instead. */
+export function isSilentHandledResult(
+  result: CrmBotResult | { openShop: true } | null,
+): result is CrmBotResult {
+  if (!result || 'openShop' in result) return false;
+  if (!result.handled) return false;
+  if (result.response?.trim()) return false;
+  if (result.list?.rows?.length) return false;
+  if (result.buttons?.length) return false;
+  return true;
+}
+
 export async function sendFlowReply(
   businessId: string,
   to: string,

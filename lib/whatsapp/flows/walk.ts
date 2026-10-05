@@ -63,3 +63,16 @@ export function startWalk(def: FlowDefinition, context: Record<string, unknown>)
   if (!start) return { kind: 'end', actions: [] };
   return walkFrom(def, start.id, context);
 }
+
+/**
+ * A plain message whose only next step is End (or nothing). After sending it the flow is done —
+ * keep no session, or the customer's next real question gets swallowed as "flow ended".
+ */
+export function messageLeadsOnlyToEnd(def: FlowDefinition, nodeId: string): boolean {
+  const node = nodeById(def, nodeId);
+  if (!node || node.type !== 'message') return false;
+  const edge = outgoing(def, nodeId, null);
+  if (!edge) return true;
+  const next = nodeById(def, edge.target);
+  return !next || next.type === 'end';
+}

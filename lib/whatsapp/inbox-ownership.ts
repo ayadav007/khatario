@@ -354,6 +354,9 @@ export async function intervene(viewer: InboxViewer, conversationId: string): Pr
     if (now && liveOwnerId(now) === viewer.userId) return;
     throw alreadyTaken(now);
   }
+  // Person owns the chat — drop any leftover bot flow so it cannot swallow later messages.
+  const { endActiveSessionsForConversation } = await import('@/lib/whatsapp/flows/store');
+  await endActiveSessionsForConversation(viewer.businessId, conversationId).catch(() => undefined);
   await broadcastOwnership(viewer.businessId, conversationId, {
     type: 'intervened',
     actor_user_id: viewer.userId,
@@ -470,6 +473,9 @@ export async function resolve(viewer: InboxViewer, conversationId: string): Prom
     return true;
   });
   if (!done) throw new OwnershipError('This chat is no longer yours to resolve', 409, 'NOT_OWNER');
+  // Hand back to the bot without a parked flow session from "Talk to team" / handoff.
+  const { endActiveSessionsForConversation } = await import('@/lib/whatsapp/flows/store');
+  await endActiveSessionsForConversation(viewer.businessId, conversationId).catch(() => undefined);
   await broadcastOwnership(viewer.businessId, conversationId, { type: 'resolved', actor_user_id: viewer.userId, target_user_id: null });
 }
 
@@ -536,6 +542,8 @@ export async function autoResolveStale(limit = 500): Promise<number> {
     });
     if (done) {
       count++;
+      const { endActiveSessionsForConversation } = await import('@/lib/whatsapp/flows/store');
+      await endActiveSessionsForConversation(r.business_id, r.id).catch(() => undefined);
       await broadcastOwnership(r.business_id, r.id, { type: 'auto_resolved', actor_user_id: null, target_user_id: null });
     }
   }

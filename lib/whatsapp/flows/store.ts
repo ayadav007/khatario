@@ -255,3 +255,15 @@ export async function endSession(sessionId: string, status: 'ended' | 'expired' 
     [sessionId, status],
   );
 }
+
+/** End every active flow for this chat (e.g. when a person resolves / takes over). */
+export async function endActiveSessionsForConversation(
+  businessId: string,
+  conversationId: string,
+): Promise<void> {
+  await query(
+    `UPDATE whatsapp_flow_sessions SET status = 'ended', updated_at = NOW()
+      WHERE business_id = $1 AND conversation_id = $2 AND status = 'active'`,
+    [businessId, conversationId],
+  );
+}
