@@ -8,15 +8,21 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import Link from 'next/link';
+import {
+  isConnectAgentSeat,
+  resolveHomePathForUser,
+} from '@/lib/users/connect-seats';
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const { login, user, loading: authLoading, platformSession } = useAuth();
   const { isOffline } = useNetworkStatus();
   const redirectFromQuery = searchParams.get('redirect');
-  const defaultHome = platformSession?.defaultHomePath ?? '/dashboard';
+  const defaultHome = resolveHomePathForUser(platformSession, user);
   const redirectTarget =
-    redirectFromQuery && redirectFromQuery !== '/dashboard'
+    redirectFromQuery &&
+    redirectFromQuery !== '/dashboard' &&
+    !(isConnectAgentSeat(user) && redirectFromQuery.startsWith('/dashboard'))
       ? redirectFromQuery
       : defaultHome;
 

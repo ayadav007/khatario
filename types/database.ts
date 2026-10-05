@@ -74,6 +74,11 @@ export interface User {
   auth_session_version?: string | number;
   /** Set when the user finishes or dismisses the first-run sidebar tour */
   product_tour_completed_at?: string | null;
+  /**
+   * Seat pool: `connect` = WhatsApp agent (Connect plan seats); `billing` = full Billing/HR user.
+   * Omitted/null treated as billing for older cached sessions.
+   */
+  seat_type?: 'billing' | 'connect' | null;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;

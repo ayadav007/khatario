@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Store,
   Loader2,
+  MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -30,6 +31,7 @@ import { MORE_SECTION_QUERY_KEY } from '@/lib/navigation/more-menu-back';
 import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { MobileAccountCard } from '@/components/layout/MobileAccountCard';
+import { isConnectAgentSeat } from '@/lib/users/connect-seats';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   Supplier: Store,
@@ -39,6 +41,8 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   Accounting: DollarSign,
   Reports: BarChart3,
   'HR & Employees': UserCheck,
+  Connect: MessageSquare,
+  WhatsApp: MessageSquare,
   Tools: Wrench,
   'Settings & data': Settings,
   Support: HelpCircle,
@@ -54,6 +58,8 @@ function sectionIconBg(title: string): string {
     Accounting: 'bg-violet-100 text-violet-800',
     Reports: 'bg-cyan-100 text-cyan-800',
     'HR & Employees': 'bg-pink-100 text-pink-800',
+    Connect: 'bg-emerald-100 text-emerald-800',
+    WhatsApp: 'bg-emerald-100 text-emerald-800',
     Tools: 'bg-indigo-100 text-indigo-800',
     'Settings & data': 'bg-slate-200 text-slate-800',
     Support: 'bg-rose-100 text-rose-800',
@@ -63,7 +69,7 @@ function sectionIconBg(title: string): string {
 
 export default function MorePage() {
   const searchParams = useSearchParams();
-  const { logout, business, platformSession } = useAuth();
+  const { logout, business, platformSession, user } = useAuth();
   const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
   const { isOffline } = useNetworkStatus();
   const { hasCapability } = useCapabilityCheck();
@@ -131,16 +137,23 @@ export default function MorePage() {
     setOpenSection(section);
   }, [searchParams]);
 
-  // Default once: expand Sales (billing), HR (hr-only), or first section
+  // Default once: Connect (agents / connect-primary), HR (hr-only), Sales, or first section
   useEffect(() => {
     if (!sections.length || defaultSectionApplied.current) return;
     defaultSectionApplied.current = true;
     const hrOnly =
       enabledModules.includes('hr') && !enabledModules.includes('billing');
-    const preferredTitle = hrOnly ? 'HR & Employees' : 'Sales';
+    const connectFocused =
+      isConnectAgentSeat(user) ||
+      (enabledModules.includes('connect') && !enabledModules.includes('billing'));
+    const preferredTitle = connectFocused
+      ? 'Connect'
+      : hrOnly
+        ? 'HR & Employees'
+        : 'Sales';
     const preferred = sections.find((s) => s.title === preferredTitle);
     setOpenSection(preferred?.title ?? sections[0].title);
-  }, [sections, enabledModules]);
+  }, [sections, enabledModules, user]);
 
   const toggleSection = (title: string) => {
     setOpenSection((prev) => (prev === title ? null : title));

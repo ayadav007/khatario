@@ -3,17 +3,33 @@
 import React, { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, FileText, Package, Users, MoreHorizontal, CalendarCheck } from 'lucide-react';
+import {
+  Home,
+  FileText,
+  Package,
+  Users,
+  MoreHorizontal,
+  CalendarCheck,
+  MessageSquare,
+  Contact,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { useBadges } from '@/contexts/BadgeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  CONNECT_AGENT_HOME_PATH,
+  isConnectAgentSeat,
+} from '@/lib/users/connect-seats';
 
 export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { badgeCounts, refreshBadgeCounts } = useBadges();
-  const { platformSession, hasPlatformModule } = useAuth();
+  const { user, platformSession, hasPlatformModule } = useAuth();
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const hrOnly = hasPlatformModule('hr') && !hasPlatformModule('billing');
+  const connectOnly = hasPlatformModule('connect') && !hasPlatformModule('billing');
+  const hasConnect = hasPlatformModule('connect');
+  const isConnectAgent = isConnectAgentSeat(user);
   const attendanceHref = '/employees/attendance';
 
   useEffect(() => {
@@ -26,11 +42,48 @@ export const BottomNav: React.FC = () => {
   }, [refreshBadgeCounts]);
 
   const navItems = useMemo(() => {
+    if (isConnectAgent) {
+      return [
+        {
+          href: homeHref === '/dashboard' ? CONNECT_AGENT_HOME_PATH : homeHref,
+          label: 'Chats',
+          icon: MessageSquare,
+        },
+        { href: '/whatsapp/contacts', label: 'Contacts', icon: Contact },
+        { href: '/customers', label: 'Parties', icon: Users },
+        { href: '/more', label: 'More', icon: MoreHorizontal },
+      ];
+    }
+
     if (hrOnly) {
       return [
         { href: homeHref, label: 'Home', icon: Home },
         { href: '/employees', label: 'Team', icon: Users },
         { href: attendanceHref, label: 'Attendance', icon: CalendarCheck },
+        { href: '/more', label: 'More', icon: MoreHorizontal },
+      ];
+    }
+
+    if (connectOnly) {
+      return [
+        { href: homeHref, label: 'Home', icon: Home },
+        { href: '/whatsapp/conversations', label: 'Chats', icon: MessageSquare },
+        { href: '/whatsapp/contacts', label: 'Contacts', icon: Contact },
+        { href: '/more', label: 'More', icon: MoreHorizontal },
+      ];
+    }
+
+    if (hasConnect) {
+      return [
+        { href: homeHref, label: 'Home', icon: Home },
+        {
+          href: '/invoices',
+          label: 'Invoices',
+          icon: FileText,
+          badge: badgeCounts.unpaid_invoices > 0 ? badgeCounts.unpaid_invoices : null,
+        },
+        { href: '/whatsapp/conversations', label: 'Chats', icon: MessageSquare },
+        { href: '/customers', label: 'Parties', icon: Users },
         { href: '/more', label: 'More', icon: MoreHorizontal },
       ];
     }
@@ -52,7 +105,16 @@ export const BottomNav: React.FC = () => {
       { href: '/customers', label: 'Parties', icon: Users },
       { href: '/more', label: 'More', icon: MoreHorizontal },
     ];
-  }, [hrOnly, homeHref, badgeCounts.unpaid_invoices, badgeCounts.low_stock_items, attendanceHref]);
+  }, [
+    isConnectAgent,
+    hrOnly,
+    connectOnly,
+    hasConnect,
+    homeHref,
+    badgeCounts.unpaid_invoices,
+    badgeCounts.low_stock_items,
+    attendanceHref,
+  ]);
 
   return (
     <>
@@ -69,7 +131,7 @@ export const BottomNav: React.FC = () => {
 
           return (
             <Link
-              key={item.href}
+              key={`${item.label}:${item.href}`}
               href={item.href}
               className={clsx(
                 'flex flex-col items-center justify-center gap-1 flex-1 h-full relative',

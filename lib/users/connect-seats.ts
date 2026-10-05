@@ -35,6 +35,33 @@ export const CONNECT_AGENT_HOME_PATH = '/whatsapp/conversations';
 export const CONNECT_SEAT_PAUSED_MESSAGE =
   "Your WhatsApp agent login is paused because this business's Connect plan is not active. Ask the owner to renew Connect.";
 
+/** Whether this session user is a WhatsApp/Connect agent seat. */
+export function isConnectAgentSeat(user: { seat_type?: string | null } | null | undefined): boolean {
+  return user?.seat_type === 'connect';
+}
+
+/**
+ * Agents always land in Conversations — never the billing or Connect owner dashboard.
+ * Use when hydrating cached platformSession or choosing a client-side redirect target.
+ */
+export function resolveHomePathForUser(
+  platform: { defaultHomePath?: string | null } | null | undefined,
+  user: { seat_type?: string | null } | null | undefined,
+): string {
+  if (isConnectAgentSeat(user)) return CONNECT_AGENT_HOME_PATH;
+  return platform?.defaultHomePath || '/dashboard';
+}
+
+/** Force Connect-agent home onto a platform session object (cache / offline). */
+export function withConnectAgentHomePath<T extends { defaultHomePath: string }>(
+  platform: T,
+  user: { seat_type?: string | null } | null | undefined,
+): T {
+  if (!isConnectAgentSeat(user)) return platform;
+  if (platform.defaultHomePath === CONNECT_AGENT_HOME_PATH) return platform;
+  return { ...platform, defaultHomePath: CONNECT_AGENT_HOME_PATH };
+}
+
 export type SeatPermissionFlags = {
   can_view: boolean;
   can_add: boolean;

@@ -26,11 +26,15 @@ import {
 } from '@/lib/security/whatsapp-api-gates';
 import { getLimitOwnerModule } from '@/lib/subscription/module-entitlements';
 import {
+  CONNECT_AGENT_HOME_PATH,
   connectSeatViolations,
   ensureWhatsAppAgentRole,
+  isConnectAgentSeat,
   isSeatType,
+  resolveHomePathForUser,
   seatLimitMessage,
   seatLimitType,
+  withConnectAgentHomePath,
   WHATSAPP_AGENT_PERMISSIONS,
 } from '@/lib/users/connect-seats';
 import { isRbacModuleVisibleForPlatform } from '@/lib/rbac-permission-catalog';
@@ -77,6 +81,26 @@ describe('Connect agent seats', () => {
     expect(seatLimitType('connect')).toBe('connect_agents');
     expect(isSeatType('connect')).toBe(true);
     expect(isSeatType('admin')).toBe(false);
+  });
+
+  it('never lands Connect agents on the billing dashboard', () => {
+    expect(isConnectAgentSeat({ seat_type: 'connect' })).toBe(true);
+    expect(isConnectAgentSeat({ seat_type: 'billing' })).toBe(false);
+    expect(resolveHomePathForUser({ defaultHomePath: '/dashboard' }, { seat_type: 'connect' })).toBe(
+      CONNECT_AGENT_HOME_PATH,
+    );
+    expect(
+      withConnectAgentHomePath(
+        { enabledModules: ['billing', 'connect'] as const, primaryModule: 'billing' as const, defaultHomePath: '/dashboard' },
+        { seat_type: 'connect' },
+      ).defaultHomePath,
+    ).toBe(CONNECT_AGENT_HOME_PATH);
+    expect(
+      withConnectAgentHomePath(
+        { enabledModules: ['billing'] as const, primaryModule: 'billing' as const, defaultHomePath: '/dashboard' },
+        { seat_type: 'billing' },
+      ).defaultHomePath,
+    ).toBe('/dashboard');
   });
 
   it('owns connect_agents under the Connect module', () => {

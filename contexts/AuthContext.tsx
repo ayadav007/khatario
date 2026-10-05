@@ -24,6 +24,7 @@ import {
   type PlatformModule,
 } from '@/lib/platform-modules';
 import type { BusinessPlatformContext } from '@/lib/business-modules';
+import { withConnectAgentHomePath } from '@/lib/users/connect-seats';
 
 /** Legacy unscoped key — migrated away on successful session fetch to prevent cross-business bleed. */
 const PORTAL_THEME_LEGACY_KEY = 'portalTheme';
@@ -222,18 +223,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsPrimaryAdmin((prev) => (prev === parsedAdmin ? prev : parsedAdmin));
     }
     const storedPlatform = localStorage.getItem(PLATFORM_SESSION_STORAGE_KEY);
+    const cachedUserForHome = storedUser
+      ? (() => {
+          try {
+            return JSON.parse(storedUser) as User;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
     if (storedPlatform) {
       const parsedPlatform = parsePlatformSession(JSON.parse(storedPlatform));
       if (parsedPlatform) {
+        const nextPlatform = withConnectAgentHomePath(parsedPlatform, cachedUserForHome);
         setPlatformSession((prev) =>
-          prev && JSON.stringify(prev) === JSON.stringify(parsedPlatform) ? prev : parsedPlatform,
+          prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
         );
+        // Persist corrected agent home so login / BottomNav do not bounce to /dashboard offline.
+        if (nextPlatform.defaultHomePath !== parsedPlatform.defaultHomePath) {
+          try {
+            localStorage.setItem(PLATFORM_SESSION_STORAGE_KEY, JSON.stringify(nextPlatform));
+          } catch {
+            /* ignore */
+          }
+        }
       }
     } else if (storedBusiness) {
       try {
         const b = JSON.parse(storedBusiness) as Business;
         setPlatformSession((prev) => {
-          const next = derivePlatformSessionFromBusiness(b);
+          const next = withConnectAgentHomePath(
+            derivePlatformSessionFromBusiness(b),
+            cachedUserForHome,
+          );
           return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
         });
       } catch {
@@ -427,9 +449,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           removeAllPortalThemeClientStorage();
         }
 
-        const nextPlatform =
+        const nextPlatform = withConnectAgentHomePath(
           parsePlatformSession(data.platform) ??
-          derivePlatformSessionFromBusiness(data.business ?? null);
+            derivePlatformSessionFromBusiness(data.business ?? null),
+          data.user,
+        );
         setPlatformSession((prev) =>
           prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
         );
@@ -606,9 +630,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 removeAllPortalThemeClientStorage();
               }
 
-              const nextPlatform =
+              const nextPlatform = withConnectAgentHomePath(
                 parsePlatformSession(data.platform) ??
-                derivePlatformSessionFromBusiness(data.business ?? null);
+                  derivePlatformSessionFromBusiness(data.business ?? null),
+                data.user,
+              );
               setPlatformSession((prev) =>
                 prev && JSON.stringify(prev) === JSON.stringify(nextPlatform) ? prev : nextPlatform,
               );
@@ -700,9 +726,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.business) setBusiness(data.business);
     if (data.branch) setBranch(data.branch);
 
-    const nextPlatform =
+    const nextPlatform = withConnectAgentHomePath(
       parsePlatformSession(data.platform) ??
-      derivePlatformSessionFromBusiness(data.business ?? null);
+        derivePlatformSessionFromBusiness(data.business ?? null),
+      data.user,
+    );
     setPlatformSession(nextPlatform);
 
     localStorage.setItem('user', JSON.stringify(data.user));

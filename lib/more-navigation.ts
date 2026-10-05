@@ -212,6 +212,110 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   );
   if (hr) out.push(hr);
 
+  // Mirror desktop Sidebar: Connect tree, or billing-only WhatsApp settings link.
+  const hasConnect = ctx.enabledModules.includes('connect');
+  const hasBilling = ctx.enabledModules.includes('billing');
+  const whatsappUnlocked = hasFeature(hasCapability, 'whatsapp_bot');
+
+  if (hasConnect) {
+    const connect = section(
+      'Connect',
+      [
+        {
+          href: '/whatsapp/dashboard',
+          label: 'Dashboard',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/conversations',
+          label: 'Conversations',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/reminders',
+          label: 'Payment Reminders',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/orders',
+          label: 'Order Verification',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/flows',
+          label: 'Flows',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/send-message',
+          label: 'Send Message',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/campaigns',
+          label: 'Campaigns',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/contacts',
+          label: 'Contacts',
+          module: 'whatsapp_inbox',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/contacts/groups',
+          label: 'Contact Groups',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/group-extractor',
+          label: 'Group Extractor',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/unsubscribes',
+          label: 'Unsubscribes',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/settings/whatsapp',
+          label: 'WhatsApp Settings',
+          module: 'whatsapp',
+        },
+      ],
+      ctx
+    );
+    if (connect) out.push(connect);
+  } else if (hasBilling) {
+    // Sidebar: billing-only businesses get a WhatsApp settings link under More (not Connect).
+    const items = filterItems(
+      [{ href: '/settings/whatsapp', label: 'WhatsApp', module: 'whatsapp' }],
+      ctx
+    );
+    if (items.length) out.push({ title: 'WhatsApp', items });
+  }
+
   const toolsItems: MoreNavItem[] = [
     { href: '/search', label: 'Search' },
     { href: '/tools', label: 'All Tools' },
