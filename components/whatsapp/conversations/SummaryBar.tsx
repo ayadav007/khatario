@@ -481,8 +481,8 @@ export function SummaryBar({
               active: 'bg-slate-100 border-primary-300',
             };
 
-            if (item.type === 'label' && 'color' in item) {
-              const labelColor = item.color;
+            const labelColor = 'color' in item ? item.color : undefined;
+            if (labelColor) {
               colors = {
                 bg: `${labelColor}15`,
                 text: labelColor,
@@ -502,29 +502,25 @@ export function SummaryBar({
                 }`}
                 title={`Filter by ${item.label}`}
                 style={
-                  item.type === 'label' && 'color' in item
-                    ? { borderColor: isActive ? (item as { color: string }).color : 'transparent' }
+                  labelColor
+                    ? { borderColor: isActive ? labelColor : 'transparent' }
                     : undefined
                 }
               >
                 <Icon
                   className={`w-3 h-3 ${colors.text}`}
-                  style={item.type === 'label' && 'color' in item ? { color: (item as { color: string }).color } : undefined}
+                  style={labelColor ? { color: labelColor } : undefined}
                 />
                 <span
                   className={colors.text}
-                  style={item.type === 'label' && 'color' in item ? { color: (item as { color: string }).color } : undefined}
+                  style={labelColor ? { color: labelColor } : undefined}
                 >
                   {item.label}
                 </span>
                 {item.count !== undefined && (
                   <span
                     className={`font-bold tabular-nums ${colors.text}`}
-                    style={
-                      item.type === 'label' && 'color' in item
-                        ? { color: (item as { color: string }).color }
-                        : undefined
-                    }
+                    style={labelColor ? { color: labelColor } : undefined}
                   >
                     {item.count}
                   </span>
