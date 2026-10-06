@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { FormSection } from '@/components/ui/FormSection';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { Input } from '@/components/ui/Input';
 import { NumericBlurField } from '@/components/ui/NumericBlurField';
 import { Button } from '@/components/ui/Button';
@@ -1310,10 +1310,9 @@ export default function NewPurchasePage() {
   }
 
   const renderDesktopForm = () => (
-    <Card className="p-6 sm:p-8 lg:p-10">
       <form onSubmit={(e) => { e.preventDefault(); handleSubmit('draft'); }}>
-        <div className="form-page-shell">
-        <FormSection
+        <div className="space-y-6">
+        <AnnotatedFormSection
           title="Quick fill from invoice"
           description="Upload a supplier bill — extracted supplier, lines, and amounts are filled straight into this form for you to edit (no separate review popup)."
         >
@@ -1347,9 +1346,9 @@ export default function NewPurchasePage() {
           )}
           {invoiceFillTracePanel}
         </div>
-        </FormSection>
+        </AnnotatedFormSection>
 
-        <FormSection
+        <AnnotatedFormSection
           title="Supplier and bill"
           description="Pick a supplier from the list (click a row). Enter bill ID, dates, place of supply, and document type."
         >
@@ -1599,10 +1598,10 @@ export default function NewPurchasePage() {
             <span className="text-sm text-text-secondary">ITC Eligible</span>
           </label>
         </div>
-        </FormSection>
+        </AnnotatedFormSection>
 
         {warehouses.length > 0 && (
-        <FormSection
+        <AnnotatedFormSection
           title="Receiving warehouse"
           description="Stock for goods lines is received here when you finalize (branch follows your access)."
         >
@@ -1628,17 +1627,17 @@ export default function NewPurchasePage() {
               </>
             )}
           </div>
-        </FormSection>
+        </AnnotatedFormSection>
         )}
         {warehousesEnabled && effectivePurchaseBranchId && !warehousesLoading && warehouses.length === 0 && (
-          <FormSection title="Receiving warehouse" description="Set up storage locations before finalizing goods purchases.">
+          <AnnotatedFormSection title="Receiving warehouse" description="Set up storage locations before finalizing goods purchases.">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             No warehouses are linked to this branch. If warehouse stock is enabled, finalize may fail for goods until you add warehouses in Settings.
           </div>
-          </FormSection>
+          </AnnotatedFormSection>
         )}
 
-        <FormSection
+        <AnnotatedFormSection
           title="Line items"
           description="Add goods or services, adjust quantities, tax, and discounts. Expand rows for batch or serial details when tracking is enabled."
         >
@@ -2029,9 +2028,9 @@ export default function NewPurchasePage() {
             </div>
           )}
         </div>
-        </FormSection>
+        </AnnotatedFormSection>
 
-        <FormSection title="Amount summary" description="Totals follow Indian GST: supplier state vs your business state sets CGST+SGST vs IGST. Use price mode for inclusive retail bills.">
+        <AnnotatedFormSection title="Amount summary" description="Totals follow Indian GST: supplier state vs your business state sets CGST+SGST vs IGST. Use price mode for inclusive retail bills.">
         <div className="border-t border-border pt-4 flex justify-end">
           <div className="w-full max-w-2xl space-y-3 text-sm">
             <div className="flex justify-between text-text-secondary"><span>Subtotal (taxable):</span><span>₹{totals.subtotal.toFixed(2)}</span></div>
@@ -2090,9 +2089,9 @@ export default function NewPurchasePage() {
             <div className="flex justify-between text-lg font-bold text-text-primary border-t border-border pt-2"><span>Grand Total:</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
           </div>
         </div>
-        </FormSection>
+        </AnnotatedFormSection>
 
-        <FormSection title="Payment and notes" description="Optional payment recorded now and internal notes for this bill.">
+        <AnnotatedFormSection title="Payment and notes" description="Optional payment recorded now and internal notes for this bill.">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
           <NumericBlurField
             label="Paid Amount"
@@ -2113,11 +2112,11 @@ export default function NewPurchasePage() {
             <textarea className="input w-full min-h-[5rem]" rows={3} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
           </div>
         </div>
-        </FormSection>
+        </AnnotatedFormSection>
 
         </div>
 
-        <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
           <Button type="button" variant="secondary" onClick={() => handleSubmit('draft')} disabled={loading}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save as Draft
           </Button>
@@ -2135,7 +2134,6 @@ export default function NewPurchasePage() {
           </div>
         </div>
       </form>
-    </Card>
   );
 
 

@@ -3,12 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
 import { Input } from '@/components/ui/Input';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,6 +29,22 @@ interface FormState {
   opening_balance_type: 'debit' | 'credit';
   description: string;
   is_active: boolean;
+}
+
+function AccountSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
 }
 
 function toForm(a: AccountRow, groups: AccountGroup[]): FormState {
@@ -178,25 +194,17 @@ export default function EditAccountPage() {
     }
   };
 
-  return (
-    <FormPageContainer className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href={`/accounts/${accountId}`} className="p-2 hover:bg-surface rounded-lg transition border border-border">
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Edit Account</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            {account.account_code} · {account.account_type}
-            {isSystem && ' · System account: only the description and status can be changed.'}
-          </p>
-        </div>
-      </div>
+  const editDescription = `${account.account_code} · ${account.account_type}${
+    isSystem ? ' · System account: only the description and status can be changed.' : ''
+  }`;
 
-      <FormCard>
+  return (
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <MobileDuplicatePageChrome title="Edit account" description={editDescription} />
+
         <form onSubmit={handleSubmit}>
-          <div className="form-page-shell">
-            <FormSection title="Identity" description="Unique code and display name for this account.">
+          <div className="space-y-6">
+            <AccountSection title="Identity" description="Unique code and display name for this account.">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
                 <Input
                   label="Account Code *"
@@ -214,9 +222,9 @@ export default function EditAccountPage() {
                   required
                 />
               </div>
-            </FormSection>
+            </AccountSection>
 
-            <FormSection title="Classification" description="Group, optional parent, and where it shows in Profit & Loss.">
+            <AccountSection title="Classification" description="Group, optional parent, and where it shows in Profit & Loss.">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-1">Account Group *</label>
@@ -262,10 +270,10 @@ export default function EditAccountPage() {
                   />
                 </div>
               )}
-            </FormSection>
+            </AccountSection>
 
             {!isSystem && (
-              <FormSection title="Opening balance" description="Starting amount and whether it is debit or credit.">
+              <AccountSection title="Opening balance" description="Starting amount and whether it is debit or credit.">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
                   <Input
                     label="Opening Balance"
@@ -287,10 +295,10 @@ export default function EditAccountPage() {
                     </select>
                   </div>
                 </div>
-              </FormSection>
+              </AccountSection>
             )}
 
-            <FormSection title="Description and status">
+            <AccountSection title="Description and status">
               <label className="block text-sm font-medium text-text-secondary mb-1">Description</label>
               <textarea
                 value={form.description}
@@ -307,7 +315,7 @@ export default function EditAccountPage() {
                   Inactive accounts can't be picked for new entries. Their past amounts still appear in reports.
                 </p>
               )}
-            </FormSection>
+            </AccountSection>
           </div>
 
           {error && (
@@ -316,17 +324,16 @@ export default function EditAccountPage() {
             </div>
           )}
 
-          <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
-            <Link href={`/accounts/${accountId}`}>
-              <Button type="button" variant="outline">Cancel</Button>
-            </Link>
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.push(`/accounts/${accountId}`)}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Save Changes
             </Button>
           </div>
         </form>
-      </FormCard>
-    </FormPageContainer>
+    </div>
   );
 }

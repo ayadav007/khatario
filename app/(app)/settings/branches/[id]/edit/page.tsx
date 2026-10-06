@@ -1,17 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
-import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useRouter, useParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
-import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
-import { Building2 } from 'lucide-react';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -34,6 +32,22 @@ interface Branch {
   branch_type: string;
   is_primary: boolean;
   invoice_prefix: string | null;
+}
+
+function BranchSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
 }
 
 export default function EditBranchPage() {
@@ -173,16 +187,15 @@ export default function EditBranchPage() {
   }
 
   return (
-    <SettingsPageShell
-      title="Edit branch"
-      description="Update branch information and settings"
-      icon={Building2}
-      className="py-6"
-    >
-        <FormCard>
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="Edit branch"
+          description="Update branch information and settings."
+        />
+
         <form onSubmit={handleSubmit}>
-        <div className="form-page-shell">
-          <FormSection title="Basic information" description="Branch name, code, and primary flag.">
+        <div className="space-y-6">
+          <BranchSection title="Basic information" description="Branch name, code, and primary flag.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="Branch Name *"
@@ -212,9 +225,9 @@ export default function EditBranchPage() {
                 </div>
               </div>
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="GST & tax" description="GSTIN and state for compliance.">
+          <BranchSection title="GST & tax" description="GSTIN and state for compliance.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="GSTIN"
@@ -254,9 +267,9 @@ export default function EditBranchPage() {
                 />
               </div>
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Address" description="Registered or operating address.">
+          <BranchSection title="Address" description="Registered or operating address.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="Address Line 1"
@@ -292,9 +305,9 @@ export default function EditBranchPage() {
                 placeholder="Country"
               />
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Contact" description="Branch phone and email.">
+          <BranchSection title="Contact" description="Branch phone and email.">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 gap-y-6">
               <IntlPhoneInput
                 label="Phone"
@@ -310,9 +323,9 @@ export default function EditBranchPage() {
                 placeholder="Email address"
               />
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Invoice settings" description="Optional prefix for invoice series.">
+          <BranchSection title="Invoice settings" description="Optional prefix for invoice series.">
             <div className="w-full max-w-2xl">
               <Input
                 label="Invoice Prefix"
@@ -322,20 +335,19 @@ export default function EditBranchPage() {
                 helperText="Prefix for branch-specific invoice numbering"
               />
             </div>
-          </FormSection>
+          </BranchSection>
         </div>
 
-          <SettingsFloatingSaveBar align="between">
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
             <Button
               type="button"
               variant="secondary"
               onClick={() => router.push('/settings/branches')}
               disabled={saving}
-              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="flex-1 sm:flex-none">
+            <Button type="submit" disabled={saving}>
               {saving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -345,9 +357,8 @@ export default function EditBranchPage() {
                 'Save Changes'
               )}
             </Button>
-          </SettingsFloatingSaveBar>
+          </div>
         </form>
-        </FormCard>
-    </SettingsPageShell>
+    </div>
   );
 }

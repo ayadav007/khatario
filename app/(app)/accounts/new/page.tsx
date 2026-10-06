@@ -5,17 +5,33 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { AccountGroup } from '@/types/database';
-import Link from 'next/link';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
 import { plSectionFromGroup, type PlSection } from '@/lib/accounting/pl-sections';
+
+function AccountSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
+}
 
 export default function NewAccountPage() {
   const router = useRouter();
@@ -179,26 +195,15 @@ export default function NewAccountPage() {
   }
 
   return (
-    <FormPageContainer className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link
-          href="/accounts"
-          className="p-2 hover:bg-surface rounded-lg transition border border-border"
-        >
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Create New Account</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Add a ledger account with code, classification, and optional opening balance.
-          </p>
-        </div>
-      </div>
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <MobileDuplicatePageChrome
+        title="Create new account"
+        description="Add a ledger account with code, classification, and optional opening balance."
+      />
 
-      <FormCard>
-          <form onSubmit={handleSubmit}>
-          <div className="form-page-shell">
-            <FormSection title="Identity" description="Unique code and display name for this account.">
+      <form onSubmit={handleSubmit}>
+          <div className="space-y-6">
+            <AccountSection title="Identity" description="Unique code and display name for this account.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
               <Input
                 label="Account Code *"
@@ -218,9 +223,9 @@ export default function NewAccountPage() {
                 placeholder="e.g., Cash, Bank Account"
               />
             </div>
-            </FormSection>
+            </AccountSection>
 
-            <FormSection title="Classification" description="Type, group, optional parent, and debit/credit nature.">
+            <AccountSection title="Classification" description="Type, group, optional parent, and debit/credit nature.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">
@@ -328,9 +333,9 @@ export default function NewAccountPage() {
                 />
               </div>
             )}
-            </FormSection>
+            </AccountSection>
 
-            <FormSection title="Opening balance" description="Starting amount and whether it is debit or credit.">
+            <AccountSection title="Opening balance" description="Starting amount and whether it is debit or credit.">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
               <Input
                 label="Opening Balance"
@@ -355,9 +360,9 @@ export default function NewAccountPage() {
                 </select>
               </div>
             </div>
-            </FormSection>
+            </AccountSection>
 
-            <FormSection title="Description" description="Optional notes shown on reports or account detail.">
+            <AccountSection title="Description" description="Optional notes shown on reports or account detail.">
               <label className="block text-sm font-medium text-text-secondary mb-1">
                 Description
               </label>
@@ -368,7 +373,7 @@ export default function NewAccountPage() {
                 rows={3}
                 placeholder="Optional description for this account"
               />
-            </FormSection>
+            </AccountSection>
           </div>
 
             {errors.submit && (
@@ -377,18 +382,17 @@ export default function NewAccountPage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
-              <Link href="/accounts">
-                <Button type="button" variant="outline">Cancel</Button>
-              </Link>
+            <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+              <Button type="button" variant="secondary" onClick={() => router.back()}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Create Account
               </Button>
             </div>
           </form>
-      </FormCard>
-    </FormPageContainer>
+    </div>
   );
 }
 

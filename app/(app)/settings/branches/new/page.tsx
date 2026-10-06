@@ -2,24 +2,38 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
-import { FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
-import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
-import { Building2 } from 'lucide-react';
 import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { SETTINGS_CONTENT_WIDTH } from '@/lib/settings-page-layout';
+
+function BranchSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
+}
 
 export default function NewBranchPage() {
   const router = useRouter();
@@ -148,16 +162,15 @@ export default function NewBranchPage() {
   }
 
   return (
-    <SettingsPageShell
-      title="Create branch"
-      description="Add a new branch office for accounting and compliance purposes"
-      icon={Building2}
-      className="py-6"
-    >
-        <FormCard>
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="Create branch"
+          description="Add a branch office for accounting, GST, and invoicing."
+        />
+
         <form onSubmit={handleSubmit}>
-        <div className="form-page-shell">
-          <FormSection title="Basic information" description="Branch identity and whether it is the primary branch.">
+        <div className="space-y-6">
+          <BranchSection title="Basic information" description="Branch identity and whether it is the primary branch.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="Branch Name *"
@@ -187,9 +200,9 @@ export default function NewBranchPage() {
                 </div>
               </div>
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="GST & tax" description="GSTIN and state for returns and e-invoicing.">
+          <BranchSection title="GST & tax" description="GSTIN and state for returns and e-invoicing.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="GSTIN"
@@ -229,9 +242,9 @@ export default function NewBranchPage() {
                 />
               </div>
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Address" description="Registered or operating address for this branch.">
+          <BranchSection title="Address" description="Registered or operating address for this branch.">
             <div className="grid grid-cols-1 gap-4 gap-y-6">
               <Input
                 label="Address Line 1"
@@ -267,9 +280,9 @@ export default function NewBranchPage() {
                 placeholder="Country"
               />
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Contact" description="Branch phone and email for correspondence.">
+          <BranchSection title="Contact" description="Branch phone and email for correspondence.">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 gap-y-6">
               <IntlPhoneInput
                 label="Phone"
@@ -285,9 +298,9 @@ export default function NewBranchPage() {
                 placeholder="Email address"
               />
             </div>
-          </FormSection>
+          </BranchSection>
 
-          <FormSection title="Invoice settings" description="Optional prefix for branch-specific invoice series.">
+          <BranchSection title="Invoice settings" description="Optional prefix for branch-specific invoice series.">
             <div className="w-full max-w-2xl">
               <Input
                 label="Invoice Prefix"
@@ -297,20 +310,19 @@ export default function NewBranchPage() {
                 helperText="Prefix for branch-specific invoice numbering (e.g., MUM-001, DEL-001)"
               />
             </div>
-          </FormSection>
+          </BranchSection>
         </div>
 
-          <SettingsFloatingSaveBar align="between">
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
             <Button
               type="button"
               variant="secondary"
               onClick={() => router.push('/settings/branches')}
               disabled={saving}
-              className="flex-1 sm:flex-none"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving} className="flex-1 sm:flex-none">
+            <Button type="submit" disabled={saving}>
               {saving ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -320,9 +332,8 @@ export default function NewBranchPage() {
                 'Create Branch'
               )}
             </Button>
-          </SettingsFloatingSaveBar>
+          </div>
         </form>
-        </FormCard>
-    </SettingsPageShell>
+    </div>
   );
 }

@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Input } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
-import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { Button } from '@/components/ui/Button';
 import { HSNLookup } from '@/components/ui/HSNLookup';
 import { GST_RATE_SLABS, isAllowedGstRate } from '@/lib/gst/rates';
@@ -48,22 +48,6 @@ const ITEM_TYPES = [
   { value: 'goods', label: 'Goods', hint: 'Physical products. Stock is tracked.' },
   { value: 'service', label: 'Service', hint: 'Work or time you bill for. No stock.' },
 ] as const;
-
-function ItemSection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <ProfileSection title={title} description={description}>
-      <div className="card space-y-4 p-4 md:p-5">{children}</div>
-    </ProfileSection>
-  );
-}
 
 export default function NewItemPage() {
   const router = useRouter();
@@ -1022,7 +1006,7 @@ export default function NewItemPage() {
           ) : (
             <form onSubmit={handleSubmit}>
             <div className="space-y-6">
-              <ItemSection
+              <AnnotatedFormSection
                 title="Item type"
                 description="Goods are stock-tracked. Services have no stock."
               >
@@ -1056,9 +1040,9 @@ export default function NewItemPage() {
                     );
                   })}
                 </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Basic details"
                 description="Name and identifiers shown on invoices, labels and the catalogue."
               >
@@ -1165,9 +1149,9 @@ export default function NewItemPage() {
                         )}
                       </div>
                     </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Images"
                 description="Main image for catalogues and labels. Extra photos show on your online store."
               >
@@ -1235,9 +1219,9 @@ export default function NewItemPage() {
                     ) : null}
                   </div>
                 </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Pricing"
                 description="Default unit and rates when this item has no variants."
               >
@@ -1297,9 +1281,9 @@ export default function NewItemPage() {
                   For services you buy but don&apos;t sell, you can leave the selling price empty.
                 </p>
               )}
-              </ItemSection>
+              </AnnotatedFormSection>
               
-              <ItemSection
+              <AnnotatedFormSection
                 title="Supplier and HSN/SAC"
                 description="Default vendor for purchases, and the tax classification printed on GST invoices."
               >
@@ -1380,9 +1364,9 @@ export default function NewItemPage() {
                   placeholder="Type product name or HSN/SAC code (e.g. 'biscuit', 'software', '19053100')"
                 />
               </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Tax and GST"
                 description="GST rate and MRP used when this item is billed. Applies when the item has no variants."
               >
@@ -1429,10 +1413,10 @@ export default function NewItemPage() {
                     onChange={(checked) => setFormData({ ...formData, gst_included: checked })}
                   />
                 </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
               {formData.item_type === 'goods' && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Bundle (combo)"
                   description="Sell several items as one invoice line. Stock is reduced from each component when the bundle sells."
                 >
@@ -1623,11 +1607,11 @@ export default function NewItemPage() {
                         </div>
                       )}
                     </div>
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {itemCustomFieldDefs.length > 0 && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Custom fields"
                   description="Extra details for this item. Set up fields in Settings → Custom fields."
                 >
@@ -1636,12 +1620,12 @@ export default function NewItemPage() {
                     values={itemCustomFieldValues}
                     onChange={setItemCustomFieldValues}
                   />
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {/* Retail / Legal Metrology compliance fields (shown on labels) */}
               {formData.item_type === 'goods' && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Retail label"
                   description="Optional. Printed on barcode labels for Legal Metrology and FSSAI rules."
                 >
@@ -1765,11 +1749,11 @@ export default function NewItemPage() {
                     )}
                   </div>
                   </div>
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {formData.item_type === 'goods' && !formData.has_variants && !formData.is_bundle && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Stock"
                   description="Opening balance and the low-stock alert level. Applies when the item has no variants."
                 >
@@ -1790,11 +1774,11 @@ export default function NewItemPage() {
                   )}
                   <Input label="Low stock alert (qty)" name="min_stock" type="number" inputMode="decimal" value={formData.min_stock} onChange={handleChange} placeholder="5" />
                 </div>
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {formData.item_type === 'goods' && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Invoice stock policy"
                   description="Whether final invoices can include this item when there isn't enough stock. Applies to all variants too."
                 >
@@ -1826,12 +1810,12 @@ export default function NewItemPage() {
                       Change the default for new items in Settings → Business profile → Billing preferences.
                     </p>
                   </div>
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {/* Advanced Inventory Settings */}
               {formData.item_type === 'goods' && !formData.is_bundle && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Advanced inventory"
                   description="Batch, serial and valuation options for stock-tracked goods."
                 >
@@ -1872,12 +1856,12 @@ export default function NewItemPage() {
                       </p>
                     </div>
                   </div>
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
               {/* Variants Section */}
               {formData.item_type === 'goods' && productVariantsEnabled && !formData.is_bundle && (
-                <ItemSection
+                <AnnotatedFormSection
                   title="Variants"
                   description="Sizes, colours and other options, each with its own SKU, barcode, stock and price."
                 >
@@ -2068,10 +2052,10 @@ export default function NewItemPage() {
                       )}
                     </div>
                   )}
-                </ItemSection>
+                </AnnotatedFormSection>
               )}
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Description"
                 description="Optional. The WhatsApp AI assistant uses it when customers ask about this product."
               >
@@ -2087,9 +2071,9 @@ export default function NewItemPage() {
                     placeholder="Features, benefits, specifications, usage instructions, and anything a sales person should know."
                   />
                 </div>
-              </ItemSection>
+              </AnnotatedFormSection>
 
-              <ItemSection
+              <AnnotatedFormSection
                 title="Online store"
                 description="Show this item on your public store, feature it on the homepage, and set how it looks in Google and when shared."
               >
@@ -2138,7 +2122,7 @@ export default function NewItemPage() {
                     />
                   </div>
                 ) : null}
-              </ItemSection>
+              </AnnotatedFormSection>
             </div>
 
             <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">

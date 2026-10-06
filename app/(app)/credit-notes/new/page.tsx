@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { Plus, Trash2 } from 'lucide-react';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -405,29 +405,19 @@ export default function NewCreditNotePage() {
   }
 
   return (
-    
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/credit-notes">
-              <Button type="button" variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">New Credit Note</h1>
-              <p className="text-sm text-text-secondary mt-1">Sales return - Customer returns goods</p>
-            </div>
-          </div>
-          <Button type="submit" disabled={loading}>
-            {loading ? 'Creating...' : 'Create Credit Note'}
-          </Button>
-        </div>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="New credit note"
+          description="Sales return — customer returns goods."
+          onBack={() => router.push('/credit-notes')}
+        />
 
-        {/* Basic Details */}
-        <Card padding="md">
-          <h2 className="text-lg font-semibold mb-4">Credit Note Details</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Credit note details"
+              description="Document reference, customer, and link to the original invoice when applicable."
+            >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -507,12 +497,13 @@ export default function NewCreditNotePage() {
               />
             </div>
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Credit Note Items */}
-        <Card padding="md">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Return Items</h2>
+            <AnnotatedFormSection
+              title="Return items"
+              description="Lines returned to stock; quantities can differ from the original invoice."
+            >
+          <div className="flex justify-end mb-4">
             <Button type="button" onClick={addCreditNoteItem} size="sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Item
@@ -599,11 +590,13 @@ export default function NewCreditNotePage() {
               </div>
             )}
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Totals */}
         {creditNoteItems.length > 0 && (
-          <Card padding="md">
+            <AnnotatedFormSection
+              title="Totals"
+              description="GST breakdown based on place of supply."
+            >
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
@@ -632,10 +625,20 @@ export default function NewCreditNotePage() {
                 <span>₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
-          </Card>
+            </AnnotatedFormSection>
         )}
-      </form>
-    
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.push('/credit-notes')}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Creating...' : 'Create credit note'}
+            </Button>
+          </div>
+        </form>
+      </div>
   );
 }
 

@@ -5,22 +5,14 @@ export const dynamic = 'force-dynamic';
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import {
-  Loader2,
-  User,
-  Briefcase,
-  Phone,
-  CreditCard,
-  FileText,
-  AlertCircle,
-} from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { Toast, ToastType } from '@/components/ui/Toast';
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
@@ -295,27 +287,24 @@ export default function EditEmployeePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
       <MobileDuplicatePageChrome
         title="Edit employee"
-        description={employeeName || undefined}
-        trailing={
-          <Link href={`/employees/${employeeId}`}>
-            <Button variant="ghost" size="sm">
-              Cancel
-            </Button>
-          </Link>
+        description={
+          employeeName
+            ? fullHr
+              ? `${employeeName} — updates apply immediately. Salary structure is managed on the profile.`
+              : employeeName
+            : 'Updates apply immediately.'
         }
       />
 
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <User className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Basic Information</h2>
-              </div>
+        <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Basic information"
+              description="Name and contact details on attendance and HR records."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <Input
@@ -348,13 +337,12 @@ export default function EditEmployeePage() {
                   required
                 />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Employment Details</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Employment"
+              description="Role, branch, schedule, and compensation."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <HrOrgCatalogField
                   businessId={business?.id}
@@ -473,13 +461,12 @@ export default function EditEmployeePage() {
                   onChange={handleChange}
                 />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <Phone className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Emergency Contact</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Emergency contact"
+              description="Person to reach if the employee cannot be contacted."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="Contact Name"
@@ -496,13 +483,12 @@ export default function EditEmployeePage() {
                   nationalPlaceholder="Emergency mobile"
                 />
               </div>
-            </Card>
+            </AnnotatedFormSection>
 
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Bank Details</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Bank details"
+              description="Used for salary payouts. Fields may be hidden if your role lacks permission."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="Account Number"
@@ -525,18 +511,13 @@ export default function EditEmployeePage() {
                   />
                 </div>
               </div>
-              <p className="mt-3 flex items-center gap-1 text-xs text-text-secondary">
-                <AlertCircle className="h-3 w-3" />
-                Salary and bank fields may be hidden if your role lacks permission.
-              </p>
-            </Card>
+            </AnnotatedFormSection>
 
             {fullHr ? (
-            <Card>
-              <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-text-primary">Documents</h2>
-              </div>
+            <AnnotatedFormSection
+              title="Documents"
+              description="Identity, tax, and statutory identifiers."
+            >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="PAN Number"
@@ -596,34 +577,25 @@ export default function EditEmployeePage() {
                   ESI applicable
                 </label>
               </div>
-            </Card>
+            </AnnotatedFormSection>
             ) : null}
-          </div>
 
-          <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <h3 className="mb-4 font-semibold text-text-primary">Save changes</h3>
-              <p className="mb-4 text-sm text-text-secondary">
-                {fullHr
-                  ? 'Updates apply immediately. Salary structure is managed on the employee profile.'
-                  : 'Updates apply immediately.'}
-              </p>
-              <Button type="submit" className="w-full" disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  'Save Employee'
-                )}
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Link href={`/employees/${employeeId}`}>
+              <Button type="button" variant="secondary">
+                Cancel
               </Button>
-              <Link href={`/employees/${employeeId}`} className="mt-2 block">
-                <Button type="button" variant="ghost" className="w-full">
-                  Back to profile
-                </Button>
-              </Link>
-            </Card>
+            </Link>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save employee'
+              )}
+            </Button>
           </div>
         </div>
       </form>

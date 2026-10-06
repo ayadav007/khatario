@@ -2,19 +2,19 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Plus, Trash2, Package } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2, Plus, Trash2, Package } from 'lucide-react';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { UpgradePrompt } from '@/components/subscription/UpgradePrompt';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
-import { FormPageContainer, FormCard, FormSection } from '@/components/ui/FormPageScaffold';
+import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { format } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
@@ -31,6 +31,22 @@ interface TransferItem {
   qty: number;
   unit: string;
   notes?: string;
+}
+
+function TransferSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <ProfileSection title={title} description={description}>
+      <div className="card space-y-4 p-4 md:p-5">{children}</div>
+    </ProfileSection>
+  );
 }
 
 export default function NewStockTransferPage() {
@@ -260,24 +276,15 @@ export default function NewStockTransferPage() {
   }
 
   return (
-    <FormPageContainer className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <Link
-          href="/stock-transfers"
-          className="p-2 hover:bg-surface rounded-lg transition border border-border"
-        >
-          <ArrowLeft className="w-5 h-5 text-text-secondary" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">New Stock Transfer</h1>
-          <p className="text-text-secondary text-sm mt-1">Transfer inventory between warehouses</p>
-        </div>
-      </div>
+    <div className="w-full min-w-0 max-w-5xl space-y-6">
+      <MobileDuplicatePageChrome
+        title="New stock transfer"
+        description="Transfer inventory between warehouses."
+      />
 
-      <FormCard>
       <form onSubmit={handleSubmit}>
-      <div className="form-page-shell">
-        <FormSection title="Transfer details" description="Number, date, source and destination warehouses, and optional notes.">
+      <div className="space-y-6">
+        <TransferSection title="Transfer details" description="Number, date, source and destination warehouses, and optional notes.">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
             <Input
               label="Transfer Number *"
@@ -342,9 +349,9 @@ export default function NewStockTransferPage() {
               />
             </div>
           </div>
-        </FormSection>
+        </TransferSection>
 
-        <FormSection title="Line items" description="Add goods to move; quantities must be positive.">
+        <TransferSection title="Line items" description="Add goods to move; quantities must be positive.">
           <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <span className="sr-only">Items</span>
             <Button
@@ -435,14 +442,14 @@ export default function NewStockTransferPage() {
               ))}
             </div>
           )}
-        </FormSection>
+        </TransferSection>
       </div>
 
-        <div className="flex justify-end gap-4 pt-4 mt-6 border-t border-border">
+        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
           <Button
             type="button"
             onClick={() => router.push('/stock-transfers')}
-            variant="outline"
+            variant="secondary"
           >
             Cancel
           </Button>
@@ -461,9 +468,7 @@ export default function NewStockTransferPage() {
           </Button>
         </div>
       </form>
-      </FormCard>
 
-      {/* Upgrade Prompt Modal */}
       {showUpgradePrompt && (
         <UpgradePrompt
           limitType="feature"
@@ -475,6 +480,6 @@ export default function NewStockTransferPage() {
           }}
         />
       )}
-    </FormPageContainer>
+    </div>
   );
 }

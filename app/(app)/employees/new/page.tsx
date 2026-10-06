@@ -4,15 +4,15 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { Loader2, User, Briefcase, Building, Calendar, DollarSign, Phone, Mail, CreditCard, FileText, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import Link from 'next/link';
 import { Toast, ToastType } from '@/components/ui/Toast';
@@ -216,22 +216,18 @@ export default function NewEmployeePage() {
 
   return (
     
-      <div className="space-y-6">
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
         <MobileDuplicatePageChrome
           title="New employee"
-          description="Create a new employee record"
+          description="Staff record for attendance and salary. Console users are added under Settings → Users."
         />
 
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Form */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Basic Information */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <User className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Basic Information</h2>
-                </div>
+          <div className="space-y-6">
+              <AnnotatedFormSection
+                title="Basic information"
+                description="Name and contact details used on attendance and HR records."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <Input
@@ -274,14 +270,12 @@ export default function NewEmployeePage() {
                     </p>
                   </div>
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Employment Details */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Briefcase className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Employment Details</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Employment"
+                description="Role, schedule, and compensation details."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <HrOrgCatalogField
                     businessId={business?.id}
@@ -369,14 +363,12 @@ export default function NewEmployeePage() {
                     placeholder="0.00"
                   />
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Emergency Contact */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Phone className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Emergency Contact</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Emergency contact"
+                description="Person to reach if the employee cannot be contacted."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Contact Name"
@@ -394,14 +386,12 @@ export default function NewEmployeePage() {
                     nationalPlaceholder="Emergency mobile"
                   />
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
-              {/* Bank Details */}
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <CreditCard className="w-5 h-5 text-primary-600" />
-                  <h2 className="text-lg font-semibold text-text-primary">Bank Details (Optional)</h2>
-                </div>
+              <AnnotatedFormSection
+                title="Bank details"
+                description="Optional — used for salary payouts."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Account Number"
@@ -427,14 +417,13 @@ export default function NewEmployeePage() {
                     />
                   </div>
                 </div>
-              </Card>
+              </AnnotatedFormSection>
 
               {fullHr ? (
-                <Card>
-                  <div className="flex items-center gap-2 mb-4">
-                    <FileText className="w-5 h-5 text-primary-600" />
-                    <h2 className="text-lg font-semibold text-text-primary">Documents (Optional)</h2>
-                  </div>
+                <AnnotatedFormSection
+                  title="Documents"
+                  description="Optional identity and tax identifiers."
+                >
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input
                       label="PAN Number"
@@ -453,7 +442,7 @@ export default function NewEmployeePage() {
                       maxLength={12}
                     />
                   </div>
-                </Card>
+                </AnnotatedFormSection>
               ) : null}
 
               {fullHr && business?.id ? (
@@ -469,58 +458,22 @@ export default function NewEmployeePage() {
                   onPortalInviteViaChange={setPortalInviteVia}
                 />
               ) : null}
-            </div>
 
-            {/* Sidebar - Summary */}
-            <div className="lg:col-span-1">
-              <Card className="sticky top-4">
-                <h3 className="font-semibold text-text-primary mb-4">Summary</h3>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <span className="text-text-secondary">Name:</span>
-                    <p className="font-medium text-text-primary">{formData.name || '—'}</p>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary">Phone:</span>
-                    <p className="font-medium text-text-primary">{formData.phone || '—'}</p>
-                  </div>
-                  {fullHr ? (
-                    <div>
-                      <span className="text-text-secondary">Access Type:</span>
-                      <p className="font-medium text-text-primary">Attendance Only</p>
-                    </div>
-                  ) : null}
-                  {formData.designation && (
-                    <div>
-                      <span className="text-text-secondary">Designation:</span>
-                      <p className="font-medium text-text-primary">{formData.designation}</p>
-                    </div>
-                  )}
-                  {formData.department && (
-                    <div>
-                      <span className="text-text-secondary">Department:</span>
-                      <p className="font-medium text-text-primary">{formData.department}</p>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-6 pt-6 border-t border-border">
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Employee'
-                    )}
-                  </Button>
-                </div>
-              </Card>
-            </div>
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.back()}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create employee'
+              )}
+            </Button>
+          </div>
           </div>
         </form>
 

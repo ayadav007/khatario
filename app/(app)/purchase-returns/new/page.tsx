@@ -5,10 +5,10 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { Plus, Trash2 } from 'lucide-react';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -418,29 +418,19 @@ export default function NewPurchaseReturnPage() {
   }
 
   return (
-    
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/purchase-returns">
-              <Button type="button" variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">New Purchase Return</h1>
-              <p className="text-sm text-text-secondary mt-1">Return goods to supplier</p>
-            </div>
-          </div>
-          <Button type="submit" disabled={loading}>
-            {loading ? 'Creating...' : 'Create Purchase Return'}
-          </Button>
-        </div>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="New purchase return"
+          description="Return goods to supplier."
+          onBack={() => router.push('/purchase-returns')}
+        />
 
-        {/* Basic Details */}
-        <Card padding="md">
-          <h2 className="text-lg font-semibold mb-4">Return Details</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Return details"
+              description="Document reference, supplier, and optional link to the original purchase."
+            >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -520,12 +510,13 @@ export default function NewPurchaseReturnPage() {
               />
             </div>
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Return Items */}
-        <Card padding="md">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Return Items</h2>
+            <AnnotatedFormSection
+              title="Return items"
+              description="Lines sent back to the supplier; adjust quantities as needed."
+            >
+          <div className="flex justify-end mb-4">
             <Button type="button" onClick={addReturnItem} size="sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Item
@@ -612,11 +603,13 @@ export default function NewPurchaseReturnPage() {
               </div>
             )}
           </div>
-        </Card>
+            </AnnotatedFormSection>
 
-        {/* Totals */}
         {returnItems.length > 0 && (
-          <Card padding="md">
+            <AnnotatedFormSection
+              title="Totals"
+              description="GST breakdown for this return."
+            >
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
@@ -645,10 +638,20 @@ export default function NewPurchaseReturnPage() {
                 <span>₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
-          </Card>
+            </AnnotatedFormSection>
         )}
-      </form>
-    
+          </div>
+
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.push('/purchase-returns')}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Creating...' : 'Create purchase return'}
+            </Button>
+          </div>
+        </form>
+      </div>
   );
 }
 

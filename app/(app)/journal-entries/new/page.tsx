@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
 import { Loader2, Plus, X, AlertCircle } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
@@ -354,166 +355,175 @@ export default function NewJournalEntryPage() {
 
   return (
     
-      <div className="space-y-6">
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
         <MobileDuplicatePageChrome
           className="mb-0"
           title="New journal entry"
-          description="Record debits and credits"
+          description="Record debits and credits that must balance."
         />
 
-        <Card padding="md">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Template Selection */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">
-                Use Template (Optional)
-              </label>
-              <select
-                value={formData.template_id}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleTemplateSelect(e.target.value);
-                  } else {
-                    setFormData((prev) => ({ ...prev, template_id: '' }));
-                  }
-                }}
-                className="input w-full"
-              >
-                <option value="">Select a template...</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Reversing Entry Option */}
-            <div className="border border-border rounded-lg p-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.is_reversing}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      is_reversing: e.target.checked,
-                      reverses_entry_id: e.target.checked ? prev.reverses_entry_id : '',
-                    }))
-                  }
-                  className="w-4 h-4"
-                />
-                <span className="text-sm font-medium text-text-primary">Create Reversing Entry</span>
-              </label>
-              {formData.is_reversing && (
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">
-                      Entry to Reverse
-                    </label>
-                    <select
-                      value={formData.reverses_entry_id}
-                      onChange={(e) => handleReversingEntrySelect(e.target.value)}
-                      className="input w-full"
-                      required
-                    >
-                      <option value="">Select entry to reverse...</option>
-                      {availableEntries.map((entry) => (
-                        <option key={entry.voucher_id} value={entry.voucher_id}>
-                          {entry.voucher_number} - {format(new Date(entry.entry_date), 'dd MMM yyyy')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">
-                      Reversal Date (Optional - for scheduled reversals)
-                    </label>
-                    <Input
-                      type="date"
-                      value={formData.reversal_date}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, reversal_date: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">Tags</label>
-              <div className="flex gap-2 mb-2">
-                <Input
-                  placeholder="Add a tag"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addTag();
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Template & reversing"
+              description="Start from a saved template or create an entry that reverses a prior voucher."
+            >
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">
+                  Use Template (Optional)
+                </label>
+                <select
+                  value={formData.template_id}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleTemplateSelect(e.target.value);
+                    } else {
+                      setFormData((prev) => ({ ...prev, template_id: '' }));
                     }
                   }}
-                  className="flex-1"
-                />
-                <Button type="button" onClick={addTag} variant="secondary">
-                  Add
-                </Button>
-              </div>
-              {formData.tags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {formData.tags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="px-3 py-1 bg-slate-100 text-primary-800 rounded-full text-sm flex items-center gap-2"
-                    >
-                      {tag}
-                      <button
-                        type="button"
-                        onClick={() => removeTag(tag)}
-                        className="hover:text-primary-900"
-                      >
-                        ×
-                      </button>
-                    </span>
+                  className="input w-full"
+                >
+                  <option value="">Select a template...</option>
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
                   ))}
+                </select>
+              </div>
+
+              <div className="border border-border rounded-lg p-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_reversing}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        is_reversing: e.target.checked,
+                        reverses_entry_id: e.target.checked ? prev.reverses_entry_id : '',
+                      }))
+                    }
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm font-medium text-text-primary">Create Reversing Entry</span>
+                </label>
+                {formData.is_reversing && (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        Entry to Reverse
+                      </label>
+                      <select
+                        value={formData.reverses_entry_id}
+                        onChange={(e) => handleReversingEntrySelect(e.target.value)}
+                        className="input w-full"
+                        required
+                      >
+                        <option value="">Select entry to reverse...</option>
+                        {availableEntries.map((entry) => (
+                          <option key={entry.voucher_id} value={entry.voucher_id}>
+                            {entry.voucher_number} - {format(new Date(entry.entry_date), 'dd MMM yyyy')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">
+                        Reversal Date (Optional - for scheduled reversals)
+                      </label>
+                      <Input
+                        type="date"
+                        value={formData.reversal_date}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, reversal_date: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AnnotatedFormSection>
+
+            <AnnotatedFormSection
+              title="Entry details"
+              description="Date, reference, narration, and optional tags for this voucher."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Entry Date *"
+                  type="date"
+                  value={formData.entry_date}
+                  onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })}
+                  required
+                />
+                <Input
+                  label="Reference Number"
+                  value={formData.reference_number}
+                  onChange={(e) => setFormData({ ...formData, reference_number: e.target.value })}
+                  placeholder="Optional reference number"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">
+                  Narration
+                </label>
+                <textarea
+                  value={formData.narration}
+                  onChange={(e) => setFormData({ ...formData, narration: e.target.value })}
+                  className="input"
+                  rows={2}
+                  placeholder="Overall narration for this journal entry"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">Tags</label>
+                <div className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Add a tag"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addTag();
+                      }
+                    }}
+                    className="flex-1"
+                  />
+                  <Button type="button" onClick={addTag} variant="secondary">
+                    Add
+                  </Button>
                 </div>
-              )}
-            </div>
+                {formData.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {formData.tags.map((tag, idx) => (
+                      <span
+                        key={idx}
+                        className="px-3 py-1 bg-slate-100 text-primary-800 rounded-full text-sm flex items-center gap-2"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="hover:text-primary-900"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </AnnotatedFormSection>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Entry Date *"
-                type="date"
-                value={formData.entry_date}
-                onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })}
-                required
-              />
-              <Input
-                label="Reference Number"
-                value={formData.reference_number}
-                onChange={(e) => setFormData({ ...formData, reference_number: e.target.value })}
-                placeholder="Optional reference number"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">
-                Narration
-              </label>
-              <textarea
-                value={formData.narration}
-                onChange={(e) => setFormData({ ...formData, narration: e.target.value })}
-                className="input"
-                rows={2}
-                placeholder="Overall narration for this journal entry"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-text-primary">Entry Lines</h2>
+            <AnnotatedFormSection
+              title="Entry lines"
+              description="Each line is a debit or credit to one account. Debits must equal credits."
+            >
+              <div className="flex items-center justify-end mb-4">
                 <Button type="button" onClick={addLine} size="sm">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Line
@@ -621,9 +631,7 @@ export default function NewJournalEntryPage() {
                   </Card>
                 ))}
               </div>
-            </div>
 
-            {/* Totals Summary */}
             <Card className="p-4 bg-gray-50">
               <div className="flex justify-between items-center">
                 <div className="flex gap-6">
@@ -656,6 +664,7 @@ export default function NewJournalEntryPage() {
                 )}
               </div>
             </Card>
+            </AnnotatedFormSection>
 
             {errors.submit && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -663,17 +672,17 @@ export default function NewJournalEntryPage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-4">
+            <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
               <Link href="/journal-entries">
-                <Button type="button" variant="ghost">Cancel</Button>
+                <Button type="button" variant="secondary">Cancel</Button>
               </Link>
               <Button type="submit" disabled={loading || totals.difference > 0.01}>
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Create Journal Entry
               </Button>
             </div>
+            </div>
           </form>
-        </Card>
       </div>
     
   );

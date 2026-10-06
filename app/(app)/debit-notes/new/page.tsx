@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
@@ -173,132 +175,144 @@ export default function NewDebitNotePage() {
   };
 
   return (
-    
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">New Debit Note</h1>
-            <p className="text-gray-600 text-sm mt-1">Create a debit note for upward adjustments.</p>
-          </div>
-        </div>
+      <div className="w-full min-w-0 max-w-5xl space-y-6">
+        <MobileDuplicatePageChrome
+          title="New debit note"
+          description="Create a debit note for upward adjustments."
+          onBack={() => router.push('/debit-notes')}
+        />
 
-        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Customer</label>
-              <select
-                className="input w-full mt-1"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-              >
-                <option value="">Select customer</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">
-                Original Invoice {isRegisteredCustomer ? '(required for GSTIN customer)' : '(optional)'}
-              </label>
-              <select
-                className="input w-full mt-1"
-                value={invoiceId}
-                onChange={(e) => setInvoiceId(e.target.value)}
-                disabled={!customerId}
-              >
-                <option value="">{customerId ? 'None' : 'Select a customer first'}</option>
-                {customerInvoices.map((inv) => (
-                  <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Debit Note Number</label>
-              <Input
-                value={debitNoteNumber}
-                onChange={(e) => setDebitNoteNumber(e.target.value)}
-                placeholder="Auto-numbered if left blank"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Date</label>
-              <Input type="date" value={debitNoteDate} onChange={(e) => setDebitNoteDate(e.target.value)} />
-            </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave();
+          }}
+        >
+          <div className="space-y-6">
+            <AnnotatedFormSection
+              title="Debit note details"
+              description="Customer, document number, and link to the original invoice when required."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Customer</label>
+                  <select
+                    className="input w-full mt-1"
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                  >
+                    <option value="">Select customer</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">
+                    Original Invoice {isRegisteredCustomer ? '(required for GSTIN customer)' : '(optional)'}
+                  </label>
+                  <select
+                    className="input w-full mt-1"
+                    value={invoiceId}
+                    onChange={(e) => setInvoiceId(e.target.value)}
+                    disabled={!customerId}
+                  >
+                    <option value="">{customerId ? 'None' : 'Select a customer first'}</option>
+                    {customerInvoices.map((inv) => (
+                      <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Debit Note Number</label>
+                  <Input
+                    value={debitNoteNumber}
+                    onChange={(e) => setDebitNoteNumber(e.target.value)}
+                    placeholder="Auto-numbered if left blank"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Date</label>
+                  <Input type="date" value={debitNoteDate} onChange={(e) => setDebitNoteDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600">Reason / Notes</label>
+                <textarea
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={3}
+                  placeholder="Describe the adjustment"
+                />
+              </div>
+            </AnnotatedFormSection>
+
+            <AnnotatedFormSection
+              title="Line item"
+              description="Single adjustment line (simplified entry)."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Description</label>
+                  <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">HSN/SAC</label>
+                  <Input
+                    value={hsnSac}
+                    inputMode="numeric"
+                    maxLength={8}
+                    onChange={(e) => setHsnSac(e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Quantity</label>
+                  <Input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Unit Price</label>
+                  <Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600">Tax %</label>
+                  <select
+                    className="input w-full"
+                    value={String(taxRate)}
+                    onChange={(e) => setTaxRate(Number(e.target.value))}
+                  >
+                    {[...GST_RATE_SLABS, 28].map((r) => (
+                      <option key={r} value={String(r)}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="flex justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <span>Subtotal</span>
+                  <span>₹ {subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <span>Tax</span>
+                  <span>₹ {taxAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-semibold bg-slate-50 border border-primary-200 rounded-lg px-3 py-2 text-primary-900">
+                  <span>Total</span>
+                  <span>₹ {grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </AnnotatedFormSection>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-gray-600">Reason / Notes</label>
-            <textarea
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mt-1"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-              placeholder="Describe the adjustment"
-            />
+          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
+            <Button type="button" variant="secondary" onClick={() => router.push('/debit-notes')}>
+              Cancel
+            </Button>
+            <Button type="submit">Save debit note</Button>
           </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
-          <h3 className="text-sm font-semibold text-gray-800">Line Item (simplified)</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Description</label>
-              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">HSN/SAC</label>
-              <Input
-                value={hsnSac}
-                inputMode="numeric"
-                maxLength={8}
-                onChange={(e) => setHsnSac(e.target.value.replace(/\D/g, ''))}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Quantity</label>
-              <Input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Unit Price</label>
-              <Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600">Tax %</label>
-              <select
-                className="input w-full"
-                value={String(taxRate)}
-                onChange={(e) => setTaxRate(Number(e.target.value))}
-              >
-                {[...GST_RATE_SLABS, 28].map((r) => (
-                  <option key={r} value={String(r)}>{r}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-            <div className="flex justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <span>Subtotal</span>
-              <span>₹ {subtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <span>Tax</span>
-              <span>₹ {taxAmount.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-semibold bg-slate-50 border border-primary-200 rounded-lg px-3 py-2 text-primary-900">
-              <span>Total</span>
-              <span>₹ {grandTotal.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => router.push('/debit-notes')}>Cancel</Button>
-          <Button onClick={handleSave}>Save Debit Note</Button>
-        </div>
+        </form>
       </div>
-    
   );
 }
-
 
