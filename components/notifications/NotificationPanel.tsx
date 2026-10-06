@@ -115,15 +115,19 @@ export function NotificationPanel() {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[60] bg-black/20 lg:bg-transparent"
             onClick={() => setIsOpen(false)}
           />
 
-          {/* Notification Panel */}
-          <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-2xl border border-gray-200 z-50 max-h-[600px] flex flex-col">
+          {/* Notification Panel — fixed + inset on mobile so it cannot clip off-screen */}
+          <div
+            className="fixed z-[70] flex max-h-[min(70dvh,32rem)] w-auto flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl
+              left-3 right-3 top-[calc(env(safe-area-inset-top,0px)+3.75rem)]
+              lg:absolute lg:left-auto lg:right-0 lg:top-full lg:mt-2 lg:w-96 lg:max-h-[600px]"
+          >
             {/* Header */}
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+            <div className="flex items-center justify-between gap-2 border-b border-gray-200 p-4">
+              <h3 className="text-base font-semibold text-gray-900 lg:text-lg">Notifications</h3>
               <div className="flex items-center gap-2">
                 {unreadNotificationCount > 0 && (
                   <button

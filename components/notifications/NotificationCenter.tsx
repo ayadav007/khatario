@@ -65,8 +65,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 hover:bg-slate-50 rounded-lg transition-colors"
+        aria-label="Notifications"
+        aria-expanded={isOpen}
       >
         <Bell className="w-5 h-5 text-text-secondary" />
         {unreadNotificationCount > 0 && (
@@ -79,34 +82,43 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
       {isOpen && (
         <>
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-[60] bg-black/20 lg:bg-transparent"
             onClick={() => setIsOpen(false)}
+            aria-hidden
           />
+          {/*
+            Mobile: fixed panel inset from viewport edges (escapes overflow-x-hidden shell).
+            Desktop: anchored dropdown under the bell.
+          */}
           <Card
             padding="md"
-            className="absolute right-0 top-full mt-2 w-96 max-h-[600px] overflow-hidden flex flex-col z-50 shadow-lg"
+            className="fixed z-[70] flex max-h-[min(70dvh,32rem)] w-auto flex-col overflow-hidden shadow-lg
+              left-3 right-3 top-[calc(env(safe-area-inset-top,0px)+3.75rem)]
+              lg:absolute lg:left-auto lg:right-0 lg:top-full lg:mt-2 lg:w-96 lg:max-h-[600px]"
           >
-            <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-text-primary">Notifications</h3>
-              <div className="flex items-center gap-2">
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-gray-200 pb-3 lg:mb-4 lg:pb-4">
+              <h3 className="text-base font-semibold text-text-primary lg:text-lg">Notifications</h3>
+              <div className="flex shrink-0 items-center gap-1">
                 {unreadNotificationCount > 0 && (
                   <Button variant="ghost" size="sm" onClick={markAllNotificationsAsRead}>
                     Mark all read
                   </Button>
                 )}
                 <button
+                  type="button"
                   onClick={() => setIsOpen(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
+                  className="rounded p-1 transition-colors hover:bg-gray-100"
+                  aria-label="Close notifications"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
               {notifications.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <div className="py-8 text-center text-gray-500">
+                  <Bell className="mx-auto mb-2 h-12 w-12 text-gray-300" />
                   <p>No notifications</p>
                 </div>
               ) : (
@@ -115,26 +127,26 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                   return (
                     <div
                       key={notification.id}
-                      className={`p-3 rounded-lg border ${
+                      className={`rounded-lg border p-3 ${
                         notification.is_read
-                          ? 'bg-gray-50 border-gray-200'
-                          : 'bg-white border-primary-200'
+                          ? 'border-gray-200 bg-gray-50'
+                          : 'border-primary-200 bg-white'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg ${getColor(notification.type as Notification['type'])}`}>
-                          <Icon className="w-4 h-4" />
+                        <div className={`rounded-lg p-2 ${getColor(notification.type as Notification['type'])}`}>
+                          <Icon className="h-4 w-4" />
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <p className="font-medium text-text-primary text-sm">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-text-primary break-words">
                                 {notification.title}
                               </p>
-                              <p className="text-sm text-text-secondary mt-1">
+                              <p className="mt-1 text-sm text-text-secondary break-words">
                                 {notification.message}
                               </p>
-                              <p className="text-xs text-gray-400 mt-1">
+                              <p className="mt-1 text-xs text-gray-400">
                                 {format(
                                   new Date(
                                     notification.created_at ||
@@ -148,10 +160,12 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                             </div>
                             {!notification.is_read && (
                               <button
+                                type="button"
                                 onClick={() => markNotificationAsRead(notification.id)}
-                                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                className="shrink-0 rounded p-1 transition-colors hover:bg-gray-100"
+                                aria-label="Mark as read"
                               >
-                                <Check className="w-4 h-4 text-gray-400" />
+                                <Check className="h-4 w-4 text-gray-400" />
                               </button>
                             )}
                           </div>
@@ -182,4 +196,3 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
     </div>
   );
 };
-
