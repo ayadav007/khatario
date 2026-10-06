@@ -219,7 +219,17 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
               PDF
             </Button>
             {(!canEdit || canEdit(documentData)) && (
-              <Button variant="secondary" size="sm" onClick={() => router.push(`${editUrlPrefix}/${documentId}?edit=true`)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  router.push(
+                    editUrlPrefix.endsWith('/new')
+                      ? `${editUrlPrefix}?edit=${documentId}`
+                      : `${editUrlPrefix}/${documentId}`
+                  )
+                }
+              >
                 <Edit className="w-4 h-4 mr-2" />
                 Edit
               </Button>

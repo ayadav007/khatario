@@ -13,6 +13,7 @@ import {
   PAYMENT_AMOUNT_EPS,
   remainingOrderAmountAfterSuccessSum,
 } from '@/lib/services/payment-transactions';
+import { hasTableColumn } from '@/lib/schema-columns';
 
 function parseAmount(v: string | number): number {
   const n = typeof v === 'number' ? v : parseFloat(String(v));
@@ -44,6 +45,7 @@ export async function GET(
       );
     }
 
+    const hasBranchId = await hasTableColumn('sales_orders', 'branch_id');
     const order = await queryOne<{
       id: string;
       business_id: string;
@@ -53,9 +55,13 @@ export async function GET(
       status: string;
       order_number: string;
     }>(
-      `SELECT id, business_id, grand_total::text, branch_id, payment_status, status, order_number
-       FROM sales_orders
-       WHERE id = $1 AND business_id = $2`,
+      hasBranchId
+        ? `SELECT id, business_id, grand_total::text, branch_id, payment_status, status, order_number
+           FROM sales_orders
+           WHERE id = $1 AND business_id = $2`
+        : `SELECT id, business_id, grand_total::text, NULL::uuid AS branch_id, payment_status, status, order_number
+           FROM sales_orders
+           WHERE id = $1 AND business_id = $2`,
       [orderId, businessId]
     );
 

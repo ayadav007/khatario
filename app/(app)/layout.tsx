@@ -86,6 +86,8 @@ function AppRouteLayoutInner({
     pathname === '/dashboard' || pathname === '/hr/dashboard';
   const isInvoicePage = pathname === '/invoices/new';
   const isInvoiceComposer = pathname === '/invoices/new';
+  const isSalesOrderComposer = pathname === '/sales-orders/new';
+  const isDocumentComposer = isInvoiceComposer || isSalesOrderComposer;
   const isSettingsRoute =
     pathname === '/settings' || (pathname?.startsWith('/settings/') ?? false);
 
@@ -144,7 +146,7 @@ function AppRouteLayoutInner({
                   'min-h-0 min-w-0 flex-1',
                   isFullWidthPage
                     ? 'h-[calc(100dvh-4rem)] lg:h-screen'
-                    : isInvoiceComposer
+                    : isDocumentComposer
                       ? APP_MAIN_PADDING_COMPACT_CLASS
                       : APP_MAIN_PADDING_CLASS,
                   isSettingsRoute && 'settings-ui-scale'
@@ -159,7 +161,7 @@ function AppRouteLayoutInner({
           <PromotionModal />
           <ProductTour />
           <TrialExtensionModal />
-          {!isFullWidthPage && !isInvoiceComposer ? (
+          {!isFullWidthPage && !isDocumentComposer ? (
             <AssistantWidget mode="app" channel="trial_app" bottomOffset={76} mobileBottomOffset={90} />
           ) : null}
         </div>

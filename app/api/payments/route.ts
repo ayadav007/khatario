@@ -38,6 +38,7 @@ import {
   scopedPaymentIdempotencyKey,
   type PaymentIdempotencyOutcome,
 } from '@/lib/accounting/payment-idempotency';
+import { hasTableColumn } from '@/lib/schema-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,8 +51,11 @@ async function getPaymentTransactionsForOrder(
   userId: string,
   orderId: string
 ): Promise<NextResponse> {
+  const hasBranchId = await hasTableColumn('sales_orders', 'branch_id');
   const order = await queryOne<{ id: string; branch_id: string | null }>(
-    `SELECT id, branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`,
+    hasBranchId
+      ? `SELECT id, branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`
+      : `SELECT id, NULL::uuid AS branch_id FROM sales_orders WHERE id = $1 AND business_id = $2`,
     [orderId, businessId]
   );
 
