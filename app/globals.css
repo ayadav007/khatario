@@ -1382,7 +1382,7 @@
   }
 
   .mobile-app-bar {
-    @apply sticky top-0 z-40 bg-surface/95 backdrop-blur-md lg:hidden;
+    @apply sticky top-0 z-40 bg-surface backdrop-blur-md lg:hidden;
     padding-top: env(safe-area-inset-top, 0px);
     box-shadow: var(--mobile-elev-appbar, 0 1px 0 rgba(15, 23, 42, 0.06));
   }
@@ -1394,12 +1394,12 @@
 
   .mobile-icon-btn {
     @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full
-      text-text-secondary transition-colors active:bg-slate-100/90 dark:active:bg-slate-800/80;
+      text-text-secondary transition-colors active:bg-slate-100 dark:active:bg-slate-800;
   }
 
   .mobile-bottom-nav {
     @apply fixed bottom-0 left-0 right-0 z-30 flex items-stretch justify-around
-      border-t border-border/80 bg-surface/95 backdrop-blur-md lg:hidden;
+      border-t border-border bg-surface backdrop-blur-md lg:hidden;
     height: calc(var(--mobile-nav-h, 4rem) + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
     box-shadow: var(--mobile-elev-nav, 0 -4px 16px rgba(15, 23, 42, 0.05));
@@ -1407,7 +1407,7 @@
 
   .mobile-nav-item {
     @apply relative flex flex-1 flex-col items-center justify-center gap-0.5
-      px-1 text-text-muted transition-colors active:bg-slate-50/70 dark:active:bg-slate-800/40;
+      px-1 text-text-muted transition-colors active:bg-slate-50 dark:active:bg-slate-800;
     min-height: var(--mobile-nav-h, 4rem);
   }
 
@@ -1417,7 +1417,7 @@
 
   .mobile-nav-pill {
     @apply absolute inset-y-0 left-1/2 w-14 -translate-x-1/2 rounded-full
-      bg-primary-100/90 dark:bg-primary-900/40;
+      bg-primary-100 dark:bg-primary-900;
   }
 
   .mobile-chip-row {
@@ -1431,13 +1431,16 @@
 
   .mobile-chip {
     @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-transparent
-      bg-slate-100/90 px-3 py-1.5 text-xs font-medium text-slate-700
-      transition-colors active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200;
+      bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700
+      transition-colors dark:bg-slate-800 dark:text-slate-200;
+  }
+  .mobile-chip:active {
+    transform: scale(0.98);
   }
 
   .mobile-chip-active {
     @apply border-primary-200 bg-primary-50 text-primary-800 shadow-sm
-      dark:border-primary-700 dark:bg-primary-900/50 dark:text-primary-100;
+      dark:border-primary-700 dark:bg-primary-900 dark:text-primary-100;
   }
 
   .mobile-screen {
@@ -1445,13 +1448,13 @@
   }
 
   .mobile-inset-group {
-    @apply overflow-hidden rounded-[var(--mobile-radius-sheet,18px)] border border-border/70
-      bg-surface shadow-small divide-y divide-border/60;
+    @apply overflow-hidden border border-border bg-surface shadow-small divide-y divide-border;
+    border-radius: var(--mobile-radius-sheet, 18px);
   }
 
   .mobile-list-row {
     @apply flex min-h-[4.25rem] items-center gap-3 px-4 py-3 transition-colors
-      active:bg-slate-50 dark:active:bg-slate-800/50;
+      active:bg-slate-50 dark:active:bg-slate-800;
   }
 
   .mobile-fab {
@@ -1463,7 +1466,7 @@
 
   .mobile-search-field {
     @apply w-full rounded-full border-0 bg-slate-100 py-2.5 pl-10 pr-4 text-sm text-text-primary
-      placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500/30
+      placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary-500
       dark:bg-slate-800;
   }
 }
