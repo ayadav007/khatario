@@ -6,12 +6,13 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { shouldHideGlobalBanners } from '@/lib/mobile-navigation';
+import { isConnectAgentSeat } from '@/lib/users/connect-seats';
 import type { Promotion } from '@/contexts/LayoutDataContext';
 
 export function PromotionBanner() {
   const router = useRouter();
   const pathname = usePathname();
-  const { business } = useAuth();
+  const { business, user } = useAuth();
   const { promotions, refreshPromotion } = useLayoutData();
   const [promo, setPromo] = useState<Promotion | null>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -86,7 +87,14 @@ export function PromotionBanner() {
     }
   };
 
-  if (shouldHideGlobalBanners(pathname) || !isVisible || !promo) return null;
+  if (
+    isConnectAgentSeat(user) ||
+    shouldHideGlobalBanners(pathname) ||
+    !isVisible ||
+    !promo
+  ) {
+    return null;
+  }
 
   return (
     <div

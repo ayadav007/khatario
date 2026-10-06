@@ -160,20 +160,22 @@ export default function MorePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-5rem)] pb-stack-section">
+    <div className="mobile-screen flex min-h-[calc(100vh-5rem)] flex-col pb-2">
       {!menuReady ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-stack-tight text-text-muted">
-          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        <div className="flex flex-col items-center justify-center gap-stack-tight py-12 text-text-muted">
+          <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
           <p className="text-sm">Loading menu…</p>
         </div>
       ) : (
         <>
-          <MobileAccountCard className="mb-6 lg:hidden" />
+          <MobileAccountCard className="mb-1 lg:hidden" />
 
-          <div>
-            <h2 className="text-lg font-bold text-text-primary mb-2">My Business</h2>
+          <div className="space-y-3">
+            <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
+              My business
+            </h2>
 
-            <div className="divide-y divide-border border-y border-border">
+            <div className="mobile-inset-group">
               {sections.map((section) => {
                 const Icon = SECTION_ICONS[section.title] || FileText;
                 const iconRound = sectionIconBg(section.title);
@@ -184,36 +186,36 @@ export default function MorePage() {
                     <button
                       type="button"
                       onClick={() => toggleSection(section.title)}
-                      className="w-full flex items-center gap-3 py-2.5 text-left transition-colors active:bg-slate-50/60 dark:active:bg-slate-800/40"
+                      className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
                       aria-expanded={expanded}
                     >
                       <div
                         className={clsx(
-                          'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
                           iconRound,
                         )}
                       >
-                        <Icon className="w-4 h-4" />
+                        <Icon className="h-4.5 w-4.5 h-[18px] w-[18px]" />
                       </div>
-                      <span className="flex-1 font-semibold text-text-primary text-sm leading-snug">
+                      <span className="flex-1 text-[15px] font-semibold leading-snug text-text-primary">
                         {section.title}
                       </span>
                       {expanded ? (
-                        <ChevronUp className="w-4 h-4 text-text-muted shrink-0" />
+                        <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 text-text-muted shrink-0" />
+                        <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" />
                       )}
                     </button>
 
                     {expanded && (
-                      <ul className="divide-y divide-border border-t border-border">
+                      <ul className="border-t border-border/60 bg-slate-50/40 dark:bg-slate-900/30">
                         {section.items.map((item) => (
                           <li key={`${section.title}-${item.href}-${item.label}`}>
                             <Link
                               href={item.href}
-                              className="flex items-center justify-between pl-11 pr-0 py-2 active:bg-slate-50/80 dark:active:bg-slate-800/40"
+                              className="flex items-center justify-between py-3 pl-14 pr-3.5 active:bg-slate-100/80 dark:active:bg-slate-800/50"
                             >
-                              <span className="text-sm leading-snug text-text-primary pr-2">
+                              <span className="pr-2 text-sm leading-snug text-text-primary">
                                 {item.label}
                                 {item.isLocked ? (
                                   <span className="ml-2 text-2xs font-semibold uppercase text-amber-700">
@@ -221,7 +223,7 @@ export default function MorePage() {
                                   </span>
                                 ) : null}
                               </span>
-                              <ChevronRight className="w-3.5 h-3.5 text-text-muted shrink-0 opacity-60" />
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-muted opacity-60" />
                             </Link>
                           </li>
                         ))}
@@ -236,9 +238,9 @@ export default function MorePage() {
           <button
             type="button"
             onClick={logout}
-            className="w-full py-2.5 mt-4 bg-rose-50 text-rose-600 font-semibold text-sm rounded-xl border border-rose-100 flex items-center justify-center gap-2 active:bg-rose-100 transition-colors"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-[var(--mobile-radius-sheet,18px)] border border-rose-100 bg-rose-50 py-3.5 text-sm font-semibold text-rose-600 transition-colors active:bg-rose-100"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="h-4 w-4" />
             Log out
           </button>
 

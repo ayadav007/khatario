@@ -1498,7 +1498,7 @@ export function ConversationsTab({ initialPhoneNumber, openConversationId }: Con
     <div className="flex flex-col h-full bg-white overflow-hidden" style={{ minHeight: 0 }}>
       {/* Summary Bar */}
       {business?.id && (
-        <div className="border-b border-gray-200 bg-gray-50 px-3 py-1.5 flex-shrink-0">
+        <div className="flex-shrink-0 border-b border-border/70 bg-slate-50/90 px-3 py-2 backdrop-blur-sm">
           <SummaryBar
             businessId={business.id}
             activeFilter={filters.lead_status || filters.label_id || activeSummaryFilter || null}

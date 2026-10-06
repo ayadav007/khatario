@@ -33,7 +33,6 @@ export const BottomNav: React.FC = () => {
   const attendanceHref = '/employees/attendance';
 
   useEffect(() => {
-    // Refresh counts every 10 minutes on mobile (where BottomNav is visible)
     const isMobile = window.innerWidth < 1024;
     if (isMobile) {
       const interval = setInterval(refreshBadgeCounts, 10 * 60 * 1000);
@@ -117,45 +116,44 @@ export const BottomNav: React.FC = () => {
   ]);
 
   return (
-    <>
-      {/* Quick-actions + FAB lives on dashboard only (QuickActionsFAB) */}
+    <nav data-mobile-bottom-nav className="mobile-bottom-nav">
+      {navItems.map((item) => {
+        const Icon = item.icon;
+        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
 
-      {/* Bottom Navigation - Hidden on desktop (lg) */}
-      <nav
-        data-mobile-bottom-nav
-        className="fixed bottom-0 left-0 right-0 h-16 bg-surface border-t border-border flex items-center justify-around z-30 lg:hidden"
-      >
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-
-          return (
-            <Link
-              key={`${item.label}:${item.href}`}
-              href={item.href}
+        return (
+          <Link
+            key={`${item.label}:${item.href}`}
+            href={item.href}
+            className={clsx('mobile-nav-item', isActive && 'mobile-nav-item-active')}
+            aria-current={isActive ? 'page' : undefined}
+          >
+            <span className="relative z-[1] flex h-8 w-14 items-center justify-center">
+              {isActive ? <span className="mobile-nav-pill" aria-hidden /> : null}
+              <Icon
+                className={clsx(
+                  'relative z-[1] h-[22px] w-[22px] transition-transform',
+                  isActive && 'scale-105'
+                )}
+                strokeWidth={isActive ? 2.35 : 1.9}
+              />
+              {'badge' in item && item.badge ? (
+                <span className="absolute -right-0.5 -top-0.5 z-[2] flex h-4 min-w-[16px] items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              ) : null}
+            </span>
+            <span
               className={clsx(
-                'flex flex-col items-center justify-center gap-1 flex-1 h-full relative',
-                'transition-colors active:bg-slate-50',
-                isActive
-                  ? 'text-primary-500'
-                  : 'text-text-muted'
+                'text-[10px] leading-none tracking-wide',
+                isActive ? 'font-semibold text-primary-700' : 'font-medium'
               )}
             >
-              <div className="relative">
-                <Icon className={clsx('w-5 h-5', isActive && 'text-primary-500')} />
-                {'badge' in item && item.badge && (
-                  <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 bg-error text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
-                )}
-              </div>
-              <span className={clsx('text-[10px] font-medium', isActive && 'text-primary-500')}>
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
-    </>
+              {item.label}
+            </span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 };

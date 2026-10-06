@@ -6,10 +6,15 @@ import { getMoreMenuBackHref } from '@/lib/navigation/more-menu-back';
 
 export const MOBILE_TAB_ROOTS = [
   '/dashboard',
+  '/hr/dashboard',
   '/invoices',
   '/items',
   '/customers',
   '/more',
+  '/whatsapp/conversations',
+  '/whatsapp/contacts',
+  '/employees',
+  '/employees/attendance',
 ] as const;
 
 /** Used by PullToRefresh to ignore bottom-tab taps. */
@@ -120,7 +125,8 @@ export function getMobileListCreateAction(pathname: string | null): MobileListCr
 /** Routes where global trial/subscription strips are hidden (max form space). */
 export function shouldHideGlobalBanners(pathname: string | null): boolean {
   const p = normalizePath(pathname);
-  if (p.includes('/whatsapp/conversations')) return true;
+  // Connect inbox / contacts are agent-primary surfaces — keep chrome thin on mobile.
+  if (p === '/whatsapp' || p.startsWith('/whatsapp/')) return true;
   return COMPOSER_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
 }
 

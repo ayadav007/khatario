@@ -79,7 +79,9 @@ function AppRouteLayoutInner({
     };
   }, []);
 
-  const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
+  const isConversationsPage = pathname?.includes('/whatsapp/conversations') ?? false;
+  /** Full-bleed chat chrome (no TopBar/banners); BottomNav still shows on mobile for agents. */
+  const isFullWidthPage = isConversationsPage;
   const showDateRange =
     pathname === '/dashboard' || pathname === '/hr/dashboard';
   const isInvoicePage = pathname === '/invoices/new';
@@ -141,7 +143,7 @@ function AppRouteLayoutInner({
                 className={clsx(
                   'min-h-0 min-w-0 flex-1',
                   isFullWidthPage
-                    ? 'h-screen'
+                    ? 'h-[calc(100dvh-4rem)] lg:h-screen'
                     : isInvoiceComposer
                       ? APP_MAIN_PADDING_COMPACT_CLASS
                       : APP_MAIN_PADDING_CLASS,
@@ -153,7 +155,7 @@ function AppRouteLayoutInner({
               {!isFullWidthPage && <TodoScheduleRail />}
             </div>
           </div>
-          {!isFullWidthPage && <BottomNav />}
+          <BottomNav />
           <PromotionModal />
           <ProductTour />
           <TrialExtensionModal />

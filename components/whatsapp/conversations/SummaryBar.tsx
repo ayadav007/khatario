@@ -393,7 +393,7 @@ export function SummaryBar({
   }
 
   return (
-    <div className="w-full min-w-0">
+    <div className="w-full min-w-0 space-y-1.5">
       <div className="flex items-center gap-2 min-w-0">
         <div className="flex items-center gap-1 shrink-0">
           <span className="text-xs font-semibold text-gray-600">Overview</span>
@@ -407,7 +407,72 @@ export function SummaryBar({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
+        <div className="flex-1 min-w-0" />
+
+        <div className="flex items-center gap-1.5 shrink-0 text-xs text-gray-600">
+          {onInboxFilter && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !soundOn;
+                setSoundOn(next);
+                setInboxSoundOn(next);
+                if (next) requestInboxNotificationPermission();
+              }}
+              className="p-1 rounded-md text-gray-500 hover:bg-gray-200"
+              title={soundOn ? 'Sound alerts on. Click to mute.' : 'Sound alerts off. Click to turn on.'}
+              aria-label={soundOn ? 'Mute inbox alerts' : 'Turn on inbox alerts'}
+            >
+              {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
+          {wsConnectedProp !== undefined && (
+            <span
+              className="inline-flex items-center gap-1"
+              title="Server-sent events for new messages and list updates"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  liveConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                }`}
+              />
+              <span className="hidden md:inline">{liveConnected ? 'Live' : 'Reconnecting…'}</span>
+            </span>
+          )}
+
+          {whatsappConnected !== undefined && (
+            whatsappConnected ? (
+              <span className="inline-flex items-center gap-1" title="Your WhatsApp number is connected">
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-500" />
+                <span className="hidden md:inline">WhatsApp</span>
+              </span>
+            ) : (
+              <Link
+                href="/settings/whatsapp"
+                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-amber-800 border border-amber-200 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                title="WhatsApp is not connected. Open settings to scan the QR code."
+              >
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-amber-500" />
+                <span className="md:hidden">Connect</span>
+                <span className="hidden md:inline">Offline — connect</span>
+              </Link>
+            )
+          )}
+
+          {onClearCache && process.env.NODE_ENV === 'development' && (
+            <button
+              type="button"
+              onClick={onClearCache}
+              className="text-[11px] text-primary-600 hover:underline"
+            >
+              Clear cache
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mobile-chip-row -mx-0.5 px-0.5">
           {onInboxFilter && inboxItems.map((item) => {
             const Icon = item.icon;
             const isActive = inboxFilter?.state === item.key;
@@ -416,16 +481,14 @@ export function SummaryBar({
                 key={`inbox:${item.key}`}
                 type="button"
                 onClick={() => onInboxFilter(isActive ? { state: null } : { state: item.key })}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                  isActive
-                    ? `${item.colors.active} shadow-sm`
-                    : `${item.colors.bg} border-transparent hover:border-gray-300`
+                className={`mobile-chip ${isActive ? 'mobile-chip-active' : ''} ${
+                  isActive ? item.colors.active : item.colors.bg
                 }`}
                 title={item.title}
               >
-                <Icon className={`w-3.5 h-3.5 ${item.colors.text}`} />
+                <Icon className={`h-3.5 w-3.5 ${item.colors.text}`} />
                 <span className={item.colors.text}>{item.label}</span>
-                <span className={`min-w-[1.25rem] text-center font-bold ${item.colors.text}`}>
+                <span className={`min-w-[1.1rem] text-center font-bold tabular-nums ${item.colors.text}`}>
                   {item.count}
                 </span>
               </button>
@@ -433,7 +496,7 @@ export function SummaryBar({
           })}
 
           {onInboxFilter && isSupervisor && inboxFilter?.state === 'intervened' && (
-            <div className="flex items-center gap-0.5 rounded-lg border border-blue-200 bg-white p-0.5 text-[11px]">
+            <div className="flex items-center gap-0.5 rounded-lg border border-blue-200 bg-white p-0.5 text-[11px] shrink-0">
               {[
                 { key: undefined as string | undefined, label: 'Anyone' },
                 { key: 'me', label: `Me (${summary.intervened_by_me ?? 0})` },
@@ -452,7 +515,7 @@ export function SummaryBar({
               ))}
               {agents.length > 0 && (
                 <select
-                  className="rounded-md border-0 bg-transparent py-0.5 pl-1 pr-5 text-[11px] text-gray-700 focus:ring-0"
+                  className="rounded-md border-0 bg-transparent py-0.5 pl-1 pr-5 text-[11px] text-gray-700 focus:ring-0 max-w-[7rem]"
                   value={inboxFilter.intervenedBy && !['me', 'others'].includes(inboxFilter.intervenedBy) ? inboxFilter.intervenedBy : ''}
                   onChange={(e) => onInboxFilter({ state: 'intervened', intervenedBy: e.target.value || undefined })}
                   aria-label="Intervened by agent"
@@ -495,10 +558,8 @@ export function SummaryBar({
                 key={item.key}
                 type="button"
                 onClick={() => onFilterClick(isActive ? null : filterKey, item.type)}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border transition-colors ${
-                  isActive
-                    ? `${colors.active} shadow-sm`
-                    : `${colors.bg} border-transparent hover:border-gray-300`
+                className={`mobile-chip ${isActive ? 'mobile-chip-active' : ''} ${
+                  isActive ? colors.active : colors.bg
                 }`}
                 title={`Filter by ${item.label}`}
                 style={
@@ -528,68 +589,6 @@ export function SummaryBar({
               </button>
             );
           })}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 text-xs text-gray-600 ml-1">
-          {onInboxFilter && (
-            <button
-              type="button"
-              onClick={() => {
-                const next = !soundOn;
-                setSoundOn(next);
-                setInboxSoundOn(next);
-                if (next) requestInboxNotificationPermission();
-              }}
-              className="p-1 rounded-md text-gray-500 hover:bg-gray-200"
-              title={soundOn ? 'Sound alerts on. Click to mute.' : 'Sound alerts off. Click to turn on.'}
-              aria-label={soundOn ? 'Mute inbox alerts' : 'Turn on inbox alerts'}
-            >
-              {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-          )}
-
-          {wsConnectedProp !== undefined && (
-            <span
-              className="inline-flex items-center gap-1"
-              title="Server-sent events for new messages and list updates"
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                  liveConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
-                }`}
-              />
-              <span className="hidden md:inline">{liveConnected ? 'Live' : 'Reconnecting…'}</span>
-            </span>
-          )}
-
-          {whatsappConnected !== undefined && (
-            whatsappConnected ? (
-              <span className="inline-flex items-center gap-1" title="Your WhatsApp number is connected">
-                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-500" />
-                <span className="hidden md:inline">WhatsApp</span>
-              </span>
-            ) : (
-              <Link
-                href="/settings/whatsapp"
-                className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 border border-amber-200 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                title="WhatsApp is not connected. Open settings to scan the QR code."
-              >
-                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-amber-500" />
-                Offline — connect
-              </Link>
-            )
-          )}
-
-          {onClearCache && process.env.NODE_ENV === 'development' && (
-            <button
-              type="button"
-              onClick={onClearCache}
-              className="text-[11px] text-primary-600 hover:underline"
-            >
-              Clear cache
-            </button>
-          )}
-        </div>
       </div>
 
       {showCustomize && (

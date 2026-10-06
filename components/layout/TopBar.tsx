@@ -303,7 +303,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onDateRangeChange,
 }) => {
   const { setDateRange: setDateRangeFromContext } = useDateRange();
-  const { business, user, logout, isPrimaryAdmin } = useAuth();
+  const { business, user, logout, isPrimaryAdmin, platformSession } = useAuth();
+  const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const {
     currentBranchId,
     accessibleBranches,
@@ -455,46 +456,48 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      {/* Mobile: canonical chrome — brand | business name | notifications + settings */}
-      <div className="sticky top-0 z-40 bg-surface pt-[env(safe-area-inset-top,0px)] lg:hidden">
-        <div className="flex h-14 items-center gap-2 border-b border-border px-4">
+      {/* Mobile app bar — native density, brand home, quiet actions */}
+      <div className="mobile-app-bar">
+        <div className="mobile-app-bar-inner">
           {showMobileBack ? (
             <button
               type="button"
               onClick={() => router.push(mobileBackHref)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+              className="mobile-icon-btn"
               aria-label="Go back"
             >
-              <ArrowLeft className="h-6 w-6" />
+              <ArrowLeft className="h-5 w-5" />
             </button>
           ) : (
             <Link
-              href="/dashboard"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-600"
+              href={homeHref}
+              className="mobile-icon-btn hover:text-primary-600"
               aria-label="Home"
             >
               {business?.logo_url ? (
-                <img src={business.logo_url} alt="" className="h-8 w-8 object-contain" />
+                <img src={business.logo_url} alt="" className="h-8 w-8 rounded-full object-cover" />
               ) : (
-                <FileText className="h-6 w-6" />
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">
+                  {(business?.name || 'K').charAt(0).toUpperCase()}
+                </span>
               )}
             </Link>
           )}
           <p
             className={clsx(
-              'min-w-0 flex-1 truncate text-center font-semibold text-text-primary',
-              isSettingsRoute ? 'text-caption' : 'text-sm'
+              'min-w-0 flex-1 truncate text-center font-semibold tracking-tight text-text-primary',
+              isSettingsRoute ? 'text-caption' : 'text-[15px]'
             )}
             title={mobileCenterLabel}
           >
             {mobileCenterLabel}
           </p>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             {mobileHeaderCtx?.rightAccessory}
             {mobileListCreate ? (
               <Link
                 href={mobileListCreate.href}
-                className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white transition-colors hover:bg-primary-700"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white shadow-small transition-transform active:scale-95"
                 aria-label={mobileListCreate.ariaLabel}
                 title={mobileListCreate.ariaLabel}
               >
@@ -504,7 +507,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             {business?.id && <NotificationCenter businessId={business.id} />}
             <Link
               href="/more#account"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-900"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 text-sm font-bold text-primary-800 ring-1 ring-primary-100"
               aria-label="Your account"
               title={user?.name || 'Account'}
             >
@@ -514,7 +517,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 type="button"
                 onClick={() => setSettingsNavOpen(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="mobile-icon-btn"
                 aria-label="Settings menu"
                 title="Settings menu"
               >
@@ -524,7 +527,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               <button
                 type="button"
                 onClick={() => setModuleSettingsOpen(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="mobile-icon-btn"
                 aria-label={mobileQuickSettings.ariaLabel}
                 title={mobileQuickSettings.ariaLabel}
               >
@@ -533,7 +536,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             ) : (
               <Link
                 href={mobileQuickSettings.href}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="mobile-icon-btn"
                 aria-label={mobileQuickSettings.ariaLabel}
                 title={mobileQuickSettings.ariaLabel}
               >

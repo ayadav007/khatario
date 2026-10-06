@@ -11,6 +11,7 @@ import {
   parseLocalDateOnly,
   startOfLocalToday,
 } from '@/lib/subscription/date-only';
+import { isConnectAgentSeat } from '@/lib/users/connect-seats';
 
 interface SubscriptionStatus {
   plan_id: string;
@@ -24,15 +25,17 @@ interface SubscriptionStatus {
 type BannerType = 'trial_ending' | 'trial_expired' | 'grace_expiring' | 'grace_expired' | 'cancelled' | null;
 
 export function SubscriptionBanner() {
-  const { business } = useAuth();
+  const { business, user } = useAuth();
   const pathname = usePathname();
   const placement = getSubscriptionBannerPlacement(pathname);
   const [dismissed, setDismissed] = useState(false);
   const [bannerType, setBannerType] = useState<BannerType>(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
   const [cancelDate, setCancelDate] = useState('');
+  const hideForConnectAgent = isConnectAgentSeat(user);
 
   useEffect(() => {
+    if (hideForConnectAgent || placement === 'hidden') return;
     if (!business?.id) return;
 
     fetch(`/api/subscriptions/current?business_id=${business.id}`)
@@ -95,9 +98,9 @@ export function SubscriptionBanner() {
         }
       })
       .catch(() => {});
-  }, [business?.id]);
+  }, [business?.id, hideForConnectAgent, placement]);
 
-  if (placement === 'hidden' || dismissed || !bannerType) return null;
+  if (hideForConnectAgent || placement === 'hidden' || dismissed || !bannerType) return null;
 
   /** Compact strip on non-dashboard routes; full strip on dashboard only */
   if (placement === 'compact' && bannerType !== 'trial_ending' && bannerType !== 'grace_expiring') {
