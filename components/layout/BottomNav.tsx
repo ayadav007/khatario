@@ -12,10 +12,12 @@ import {
   CalendarCheck,
   MessageSquare,
   Contact,
+  Truck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useBadges } from '@/contexts/BadgeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 import {
   CONNECT_AGENT_HOME_PATH,
   isConnectAgentSeat,
@@ -25,11 +27,13 @@ export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const { badgeCounts, refreshBadgeCounts } = useBadges();
   const { user, platformSession, hasPlatformModule } = useAuth();
+  const { hasCapability } = useCapabilityCheck();
   const homeHref = platformSession?.defaultHomePath ?? '/dashboard';
   const hrOnly = hasPlatformModule('hr') && !hasPlatformModule('billing');
   const connectOnly = hasPlatformModule('connect') && !hasPlatformModule('billing');
   const hasConnect = hasPlatformModule('connect');
   const isConnectAgent = isConnectAgentSeat(user);
+  const agentCanViewOrders = isConnectAgent && hasCapability('invoices', 'view');
   const attendanceHref = '/employees/attendance';
 
   useEffect(() => {
@@ -42,16 +46,21 @@ export const BottomNav: React.FC = () => {
 
   const navItems = useMemo(() => {
     if (isConnectAgent) {
-      return [
+      const items = [
         {
           href: homeHref === '/dashboard' ? CONNECT_AGENT_HOME_PATH : homeHref,
           label: 'Chats',
           icon: MessageSquare,
         },
         { href: '/whatsapp/contacts', label: 'Contacts', icon: Contact },
-        { href: '/customers', label: 'Parties', icon: Users },
-        { href: '/more', label: 'More', icon: MoreHorizontal },
       ];
+      if (agentCanViewOrders) {
+        items.push({ href: '/orders', label: 'Orders', icon: Truck });
+      } else {
+        items.push({ href: '/customers', label: 'Parties', icon: Users });
+      }
+      items.push({ href: '/more', label: 'More', icon: MoreHorizontal });
+      return items;
     }
 
     if (hrOnly) {
@@ -106,6 +115,7 @@ export const BottomNav: React.FC = () => {
     ];
   }, [
     isConnectAgent,
+    agentCanViewOrders,
     hrOnly,
     connectOnly,
     hasConnect,

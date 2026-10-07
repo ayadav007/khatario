@@ -187,6 +187,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
 0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron-staging.log 2>&1
+*/10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
 30 3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/check-subscriptions >> /var/log/khatario-cron.log 2>&1
 50 0 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/recurring-invoices >> /var/log/khatario-cron.log 2>&1
@@ -196,6 +197,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
 0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron.log 2>&1
+*/10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron.log 2>&1
 ```
 
 `/api/cron/whatsapp-auto-resolve` keeps the WhatsApp inbox tidy: chats owned by a removed or deactivated agent go back to Requesting, and chats an agent intervened in are resolved (handed back to the bot) once the customer has been silent for 24 hours. Businesses can switch auto-resolve off in Settings > WhatsApp > Inbox. Both steps only touch chats that still qualify, so repeated runs are safe.

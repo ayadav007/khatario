@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { SalesOrderPaymentSection } from '@/components/documents/SalesOrderPaymentSection';
 import { SalesOrderPaymentTransactionsPanel } from '@/components/documents/SalesOrderPaymentTransactionsPanel';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
-import { getApiErrorMessage } from '@/lib/api-utils';
+import { ConvertSalesOrderModal } from '@/components/sales-orders/ConvertSalesOrderModal';
+import { isSalesOrderConvertibleStatus } from '@/lib/sales-orders/billing-status';
 import { isSalesOrderEditable } from '@/lib/sales-orders/editability';
 
 type SalesOrderSummary = {
@@ -100,7 +101,7 @@ function canEditOrder(order: SalesOrderSummary | null): boolean {
 
 function canConvertOrder(order: SalesOrderSummary | null): boolean {
   if (!order) return false;
-  return isSalesOrderEditable(order);
+  return isSalesOrderConvertibleStatus(order.status);
 }
 
 export default function SalesOrderDetailPage() {
@@ -113,7 +114,7 @@ export default function SalesOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState('');
   const [order, setOrder] = useState<SalesOrderSummary | null>(null);
-  const [converting, setConverting] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -173,35 +174,6 @@ export default function SalesOrderDetailPage() {
   const statusLabel = order?.status
     ? order.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     : '';
-
-  const handleConvert = async () => {
-    if (!order || !convertible) return;
-    setConverting(true);
-    try {
-      const res = await fetch(`/api/sales-orders/${order.id}/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(getApiErrorMessage(data, 'Failed to convert to invoice'));
-        return;
-      }
-      toast.success('Sales order converted to invoice');
-      const invoiceId = data.invoice_id || data.invoice?.id;
-      if (invoiceId) {
-        router.push(`/invoices/${invoiceId}/view`);
-      } else {
-        void load();
-      }
-    } catch {
-      toast.error('Failed to convert to invoice');
-    } finally {
-      setConverting(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -290,11 +262,7 @@ export default function SalesOrderDetailPage() {
             <ActionButton icon={Download} label="PDF" onClick={() => window.open(pdfUrl, '_blank')} />
             <ActionButton icon={Mail} label="Email" onClick={() => setEmailOpen(true)} />
             {convertible && (
-              <ActionButton
-                icon={FileText}
-                label={converting ? '…' : 'Invoice'}
-                onClick={() => void handleConvert()}
-              />
+              <ActionButton icon={FileText} label="Invoice" onClick={() => setConvertOpen(true)} />
             )}
           </div>
 
@@ -352,7 +320,7 @@ export default function SalesOrderDetailPage() {
                 </Button>
               )}
               {convertible && (
-                <Button variant="primary" onClick={() => void handleConvert()} isLoading={converting}>
+                <Button variant="primary" onClick={() => setConvertOpen(true)}>
                   <FileText className="mr-2 h-4 w-4" />
                   Convert to invoice
                 </Button>
@@ -393,6 +361,26 @@ export default function SalesOrderDetailPage() {
           fromName={business.name || undefined}
         />
       )}
+
+      <ConvertSalesOrderModal
+        open={convertOpen}
+        orderId={orderId}
+        orderNumber={order.order_number}
+        onClose={() => setConvertOpen(false)}
+        onSuccess={({ invoiceId, invoiceNumber, partial }) => {
+          setConvertOpen(false);
+          toast.success(
+            partial
+              ? `Partial invoice created — order still open (${invoiceNumber || 'invoice'})`
+              : 'Sales order converted to invoice',
+          );
+          if (invoiceId && !partial) {
+            router.push(`/invoices/${invoiceId}/view`);
+          } else {
+            void load();
+          }
+        }}
+      />
     </div>
   );
 }

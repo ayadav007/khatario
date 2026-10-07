@@ -85,7 +85,16 @@ export async function GET(request: NextRequest) {
                AND bis.branch_id = ANY($2::uuid[])),
             i.current_stock,
             0
-          ) as current_stock
+          ) as current_stock,
+          COALESCE(
+            (SELECT SUM(sr.quantity)::numeric
+             FROM stock_reservations sr
+             WHERE sr.business_id = i.business_id
+               AND sr.item_id = i.id
+               AND sr.status = 'active'
+               AND (sr.expires_at IS NULL OR sr.expires_at > CURRENT_TIMESTAMP)),
+            0
+          ) as reserved_qty
         FROM items i
         -- Soft delete: exclude records where deleted_at is set
         WHERE i.business_id = $1
@@ -96,7 +105,18 @@ export async function GET(request: NextRequest) {
     } else {
       // No branch filtering - use business-level stock
       sql = `
-        SELECT * FROM items 
+        SELECT
+          items.*,
+          COALESCE(
+            (SELECT SUM(sr.quantity)::numeric
+             FROM stock_reservations sr
+             WHERE sr.business_id = items.business_id
+               AND sr.item_id = items.id
+               AND sr.status = 'active'
+               AND (sr.expires_at IS NULL OR sr.expires_at > CURRENT_TIMESTAMP)),
+            0
+          ) as reserved_qty
+        FROM items
         -- Soft delete: exclude records where deleted_at is set
         WHERE business_id = $1
           AND deleted_at IS NULL
@@ -149,9 +169,18 @@ export async function GET(request: NextRequest) {
     sql += ` ORDER BY name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
-    const items = await queryRows<Item>(sql, params);
+    const items = await queryRows<Item & { reserved_qty?: number | string }>(sql, params);
+    const withAvailable = items.map((item) => {
+      const onHand = Number(item.current_stock) || 0;
+      const reserved = Number(item.reserved_qty) || 0;
+      return {
+        ...item,
+        reserved_qty: reserved,
+        available_stock: onHand - reserved,
+      };
+    });
     return NextResponse.json({ 
-      items,
+      items: withAvailable,
       pagination: {
         page,
         limit,

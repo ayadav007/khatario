@@ -48,6 +48,11 @@ export interface PaymentLinkOptions {
   invoiceNumber?: string;
   transactionNote?: string;
   currency?: string;
+  /**
+   * When true (WhatsApp shop / prepaid orders), never fall back to manual UPI.
+   * Returns null if no payment-gateway hosted link can be created.
+   */
+  pspOnly?: boolean;
 }
 
 /**
@@ -313,9 +318,21 @@ export async function generatePaymentLinkForBusiness(
     }
   }
 
-  // 2) Fallback: manual payment method (UPI deep link)
+  // 2) Fallback: manual payment method (UPI deep link) — skipped for prepaid WhatsApp orders
+  if (options.pspOnly) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[payments] pspOnly: no hosted gateway link available', {
+        businessId,
+        preferred,
+        configuredProviders: configuredProviders.map((p) => p.provider),
+        hasOrderId: !!options.orderId,
+      });
+    }
+    return null;
+  }
+
   const method = await getDefaultPaymentMethod(businessId);
-  
+
   if (!method) {
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[payments] no default payment method; cannot build manual link', {
@@ -327,7 +344,7 @@ export async function generatePaymentLinkForBusiness(
     }
     return null;
   }
-  
+
   if (method.method_type === 'upi' && method.upi_id) {
     // WhatsApp doesn't make upi:// tappable; for an order send our https page that opens the UPI app.
     const page = options.orderId ? upiPayPageUrl(options.orderId) : null;
@@ -336,7 +353,7 @@ export async function generatePaymentLinkForBusiness(
     const link = generateUPIPaymentLink(method.upi_id, { ...options, payeeName: shop?.name || undefined });
     return { link, source: 'manual', method };
   }
-  
+
   // For other payment methods (bank transfer, etc.), generate appropriate link
   // This can be extended for other payment types
   return null;

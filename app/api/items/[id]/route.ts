@@ -81,7 +81,26 @@ export async function GET(
       console.log(`[Items API] Item ${itemId} does not have variants (has_variants = ${item.has_variants})`);
     }
 
-    return NextResponse.json({ item, variants, variantCount: variants.length });
+    const reservedRow = await queryOne<{ reserved_qty: string }>(
+      `SELECT COALESCE(SUM(quantity), 0)::text AS reserved_qty
+         FROM stock_reservations
+        WHERE business_id = $1 AND item_id = $2 AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`,
+      [businessId, itemId],
+    ).catch(() => null);
+    const onHand = Number(item.current_stock) || 0;
+    const reservedQty = Number(reservedRow?.reserved_qty) || 0;
+    const itemWithAvailability = {
+      ...item,
+      reserved_qty: reservedQty,
+      available_stock: onHand - reservedQty,
+    };
+
+    return NextResponse.json({
+      item: itemWithAvailability,
+      variants,
+      variantCount: variants.length,
+    });
   } catch (error: any) {
     console.error('Error fetching item', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

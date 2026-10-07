@@ -11,6 +11,7 @@ import {
   getHrNavSectionTitle,
   getVisibleHrAdminNavItems,
 } from '@/lib/hr/hr-admin-nav';
+import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
 
 export type MoreNavItem = {
   href: string;
@@ -26,10 +27,21 @@ export type MoreNavSection = {
   items: MoreNavItem[];
 };
 
+export type MoreCapabilityResult = {
+  allowed: boolean;
+  denialReason?: string | null;
+  indeterminate?: boolean;
+};
+
 export type MoreNavContext = {
   isSupplier: boolean;
   warehousesEnabled: boolean;
   hasCapability: (resource: string, action?: string) => boolean;
+  /**
+   * Prefer this when available — matches Sidebar: allow nav when role grants
+   * the module even if the plan feature is missing (upgrade-locked UI).
+   */
+  checkCapability?: (resource: string, action?: string) => MoreCapabilityResult;
   /** Enabled platform modules (billing, hr, connect, crm). Tools always shown. */
   enabledModules: PlatformModule[];
 };
@@ -42,26 +54,26 @@ function hasFeature(
   return hasCapability(featureKey, 'view');
 }
 
-/** Same rules as Sidebar `isItemVisible` */
+/** Match Sidebar `roleAllowsModule` */
+function roleAllowsModule(
+  ctx: MoreNavContext,
+  moduleKey: string,
+  action: string
+): boolean {
+  if (ctx.checkCapability) {
+    const result = ctx.checkCapability(moduleKey, action);
+    return result.allowed || result.denialReason === 'FEATURE_NOT_IN_PLAN';
+  }
+  return ctx.hasCapability(moduleKey, action);
+}
+
+/** Same rules as Sidebar `isItemVisible` + `roleAllowsModule` */
 export function isMoreNavItemVisible(
   item: MoreNavItem,
   ctx: MoreNavContext
 ): boolean {
-  const { hasCapability, warehousesEnabled } = ctx;
-
   if (!item.module) return true;
-
-  // Match Sidebar: warehouses entry visible when feature is enabled in settings
-  if (item.module === 'warehouses' && warehousesEnabled) return true;
-
-  if (
-    item.isLocked ||
-    (item.featureKey && !hasFeature(hasCapability, item.featureKey))
-  ) {
-    return true;
-  }
-
-  return hasCapability(item.module, 'view');
+  return roleAllowsModule(ctx, item.module, 'view');
 }
 
 function filterItems(items: MoreNavItem[], ctx: MoreNavContext): MoreNavItem[] {
@@ -71,9 +83,12 @@ function filterItems(items: MoreNavItem[], ctx: MoreNavContext): MoreNavItem[] {
 function section(
   title: string,
   items: MoreNavItem[],
-  ctx: MoreNavContext
+  ctx: MoreNavContext,
+  options?: { skipModuleGate?: boolean }
 ): MoreNavSection | null {
-  if (!isNavSectionVisible(title, ctx.enabledModules)) return null;
+  if (!options?.skipModuleGate && !isNavSectionVisible(title, ctx.enabledModules)) {
+    return null;
+  }
   const vis = filterItems(items, ctx);
   if (vis.length === 0) return null;
   return { title, items: vis };
@@ -98,26 +113,26 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     if (s) out.push(s);
   }
 
-  const sales = section(
-    'Sales',
-    [
-      { href: '/customers', label: 'Customers', module: 'customers' },
-      { href: '/invoices', label: 'All Invoices', module: 'invoices' },
-      { href: '/estimates', label: 'Quotations', module: 'invoices' },
-      { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
-      { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices' },
-      { href: '/work-orders', label: 'Work Orders', module: 'work_orders' },
-      { href: '/credit-notes', label: 'Credit Notes', module: 'credit_notes' },
-      { href: '/debit-notes', label: 'Debit Notes', module: 'debit_notes' },
-    ],
-    ctx
-  );
+  const salesItems: MoreNavItem[] = SALES_NAV_ITEMS.map((item) => ({
+    href: item.href,
+    label: item.label,
+    module: item.module,
+  }));
+  let sales = section('Sales', salesItems, ctx);
+  // Connect agents on connect-only accounts still need sales lookups when RBAC allows.
+  if (!sales) {
+    const lookup = filterItems(salesItems, ctx);
+    if (lookup.length > 0) {
+      sales = { title: 'Sales', items: lookup };
+    }
+  }
   if (sales) out.push(sales);
 
   const purchases = section(
     'Purchases',
     [
       { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
+      { href: '/suppliers/hub', label: 'Suppliers Hub', module: 'purchases' },
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
       { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
@@ -130,6 +145,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
 
   const invItems: MoreNavItem[] = [
     { href: '/items', label: 'Items', module: 'items' },
+    { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
   ];
   if (hasFeature(hasCapability, 'barcode_label_printing')) {
     invItems.push({
@@ -160,7 +176,19 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/reports/stock/summary', label: 'Stock Summary', module: 'reports' },
     { href: '/reports/stock/closing-stock', label: 'Closing Stock', module: 'reports' }
   );
-  const inventory = section('Inventory', invItems, ctx);
+  let inventory = section('Inventory', invItems, ctx);
+  if (!inventory) {
+    const lookup = filterItems(
+      [
+        { href: '/items', label: 'Items', module: 'items' },
+        { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
+      ],
+      ctx
+    );
+    if (lookup.length > 0) {
+      inventory = { title: 'Inventory', items: lookup };
+    }
+  }
   if (inventory) out.push(inventory);
 
   const accounting = section(

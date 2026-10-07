@@ -155,13 +155,21 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
     >
       <div className="space-y-5">
         <Switch
-          checked={draft.enabled}
-          onChange={(enabled) => patch({ enabled })}
+          checked={draft.enabled && status.gatewayConfigured}
+          onChange={(enabled) => {
+            if (enabled && !status.gatewayConfigured) {
+              toast.error('Connect a payment gateway in Settings → Payments before taking WhatsApp orders.');
+              return;
+            }
+            patch({ enabled });
+          }}
           label="Take orders on WhatsApp"
           description={
-            cloud
-              ? 'Your number uses the Cloud API: customers get WhatsApp’s own catalog and cart once a Meta catalog is synced. Until then they get a shop link.'
-              : 'Your number is connected by QR code: customers get a link to a shop page with a cart. WhatsApp’s built-in catalog needs the Cloud API.'
+            !status.gatewayConfigured
+              ? 'Requires a payment gateway (Razorpay etc.). Manual UPI alone cannot confirm prepaid WhatsApp orders.'
+              : cloud
+                ? 'Your number uses the Cloud API: customers get WhatsApp’s own catalog and cart once a Meta catalog is synced. Until then they get a shop link.'
+                : 'Your number is connected by QR code: customers get a link to a shop page with a cart. WhatsApp’s built-in catalog needs the Cloud API.'
           }
         />
 
@@ -180,17 +188,11 @@ export function WhatsAppShopSection({ businessId }: { businessId: string }) {
           </div>
         </div>
 
-        {!status.paymentsConfigured && (
+        {!status.gatewayConfigured && (
           <Notice tone="warn">
-            No payment method is set up, so orders will wait for you to send payment details.{' '}
-            <Link href="/settings/payments" className="font-medium underline">Set up payments</Link>
-          </Notice>
-        )}
-        {status.paymentsConfigured && !status.gatewayConfigured && (
-          <Notice tone="warn">
-            Only UPI is set up, so customers send a screenshot and you confirm the order yourself. Connect Razorpay to confirm and
-            invoice paid orders automatically.{' '}
-            <Link href="/settings/payments" className="font-medium underline">Payment settings</Link>
+            WhatsApp orders need a payment gateway (e.g. Razorpay). Manual UPI alone is not enough — customers must pay via a
+            hosted payment link so payment can be confirmed automatically.{' '}
+            <Link href="/settings/payments" className="font-medium underline">Connect a payment gateway</Link>
           </Notice>
         )}
       </div>

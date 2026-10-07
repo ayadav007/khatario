@@ -247,6 +247,21 @@ export async function invoicePaidWhatsAppOrder(
       );
     }
 
+    await client.query(
+      `UPDATE sales_order_items
+          SET fulfilled_qty = qty
+        WHERE sales_order_id = $1`,
+      [orderId],
+    );
+
+    await client.query(
+      `UPDATE stock_reservations
+          SET status = 'fulfilled', fulfilled_at = CURRENT_TIMESTAMP
+        WHERE business_id = $1 AND reserved_for_type = 'sales_order' AND reserved_for_id = $2
+          AND status = 'active'`,
+      [businessId, orderId],
+    );
+
     const linked = await client.query(
       `UPDATE sales_orders
           SET status = 'fulfilled', converted_invoice_id = $1, updated_at = CURRENT_TIMESTAMP

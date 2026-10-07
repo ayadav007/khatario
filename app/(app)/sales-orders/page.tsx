@@ -9,6 +9,8 @@ import { useRouter } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { PageToolbar, PageToolbarChip } from '@/components/layout/PageToolbar';
+import { BulkConvertSalesOrdersModal } from '@/components/sales-orders/BulkConvertSalesOrdersModal';
+import { ConvertSalesOrderModal } from '@/components/sales-orders/ConvertSalesOrderModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface SalesOrder {
@@ -24,6 +26,9 @@ interface SalesOrder {
   payment_status?: string | null;
   total_paid?: string | number | null;
   payment_remaining?: string | number | null;
+  linked_invoice_count?: number | null;
+  latest_invoice_id?: string | null;
+  latest_invoice_number?: string | null;
 }
 
 export default function SalesOrdersPage() {
@@ -33,6 +38,8 @@ export default function SalesOrdersPage() {
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [convertOrder, setConvertOrder] = useState<SalesOrder | null>(null);
 
   useEffect(() => {
     if (business?.id) {
@@ -67,9 +74,9 @@ export default function SalesOrdersPage() {
   const getStatusBadge = (status: string) => {
     const badges: Record<string, { color: string; icon: any; label: string }> = {
       draft: { color: 'bg-gray-100 text-gray-800', icon: Clock, label: 'Draft' },
-      confirmed: { color: 'bg-slate-100 text-primary-800', icon: CheckCircle, label: 'Confirmed' },
-      partially_fulfilled: { color: 'bg-yellow-100 text-yellow-800', icon: Package, label: 'Partially Fulfilled' },
-      fulfilled: { color: 'bg-green-100 text-green-800', icon: CheckCircle, label: 'Fulfilled' },
+      confirmed: { color: 'bg-slate-100 text-primary-800', icon: CheckCircle, label: 'Open' },
+      partially_fulfilled: { color: 'bg-yellow-100 text-yellow-800', icon: Package, label: 'Partial Open' },
+      fulfilled: { color: 'bg-green-100 text-green-800', icon: CheckCircle, label: 'Completed' },
       cancelled: { color: 'bg-red-100 text-red-800', icon: XCircle, label: 'Cancelled' },
     };
     const badge = badges[status] || badges.draft;
@@ -82,6 +89,9 @@ export default function SalesOrdersPage() {
     );
   };
 
+  const canConvert = (status: string) =>
+    !['fulfilled', 'cancelled', 'rejected'].includes(String(status || '').toLowerCase());
+
   return (
     
       <div className="space-y-3 md:space-y-6">
@@ -89,25 +99,45 @@ export default function SalesOrdersPage() {
           title="Sales Orders"
           description="Manage customer orders before invoicing"
           actions={
-            <button
-              type="button"
-              onClick={() => router.push('/sales-orders/new')}
-              className="hidden md:flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
-            >
-              <Plus className="w-5 h-5" />
-              <span>New Sales Order</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkOpen(true)}
+                className="flex items-center space-x-2 px-3 py-2 border border-border bg-surface text-text-primary rounded-lg hover:bg-slate-50 transition h-10 text-sm"
+              >
+                <ArrowRight className="w-4 h-4" />
+                <span className="hidden sm:inline">Bulk Convert</span>
+                <span className="sm:hidden">Bulk</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/sales-orders/new')}
+                className="hidden md:flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition h-10"
+              >
+                <Plus className="w-5 h-5" />
+                <span>New Sales Order</span>
+              </button>
+            </div>
           }
         />
 
         <PageToolbar>
-          {['', 'draft', 'confirmed', 'partially_fulfilled', 'fulfilled', 'cancelled'].map((status) => (
+          {(
+            [
+              ['', 'All'],
+              ['draft', 'Draft'],
+              ['confirmed', 'Open'],
+              ['partially_fulfilled', 'Partial Open'],
+              ['fulfilled', 'Completed'],
+              ['cancelled', 'Cancelled'],
+            ] as const
+          ).map(([status, label]) => (
             <PageToolbarChip
               key={status}
               active={statusFilter === status}
               onClick={() => setStatusFilter(status)}
             >
-              {status === '' ? 'All' : status.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+              {label}
             </PageToolbarChip>
           ))}
         </PageToolbar>
@@ -210,33 +240,27 @@ export default function SalesOrdersPage() {
                       </td>
                       <td className="py-4 px-4">{getStatusBadge(order.status)}</td>
                       <td className="py-4 px-4">
-                        <div className="flex items-center space-x-2">
-                          {order.status !== 'fulfilled' && order.status !== 'cancelled' && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {canConvert(order.status) && (
                             <button
-                              onClick={async () => {
-                                if (!confirm('Convert this sales order to an invoice? Stock will be deducted.')) return;
-                                try {
-                                  const res = await fetch(`/api/sales-orders/${order.id}/convert`, {
-                                    method: 'POST'
-                                  });
-                                  const data = await res.json();
-                                  if (res.ok) {
-                                    toast.success(`Sales order converted! Invoice created: ${data.invoice.invoice_number}`);
-                                    fetchSalesOrders(); // Refresh list
-                                  } else {
-                                    toast.error(data.error || 'Failed to convert');
-                                  }
-                                } catch (err) {
-                                  toast.error('Error converting sales order');
-                                }
-                              }}
+                              onClick={() => setConvertOrder(order)}
                               className="text-sm text-primary-600 hover:underline flex items-center gap-1"
                             >
                               <ArrowRight className="w-4 h-4" />
                               Convert
                             </button>
                           )}
-                          {order.converted_invoice_id && (
+                          {(order.linked_invoice_count ?? 0) > 0 && order.latest_invoice_id && (
+                            <button
+                              onClick={() => router.push(`/invoices/${order.latest_invoice_id}`)}
+                              className="text-sm text-green-600 hover:underline"
+                            >
+                              {(order.linked_invoice_count ?? 0) > 1
+                                ? `${order.linked_invoice_count} invoices`
+                                : order.latest_invoice_number || 'View Invoice'}
+                            </button>
+                          )}
+                          {!order.linked_invoice_count && order.converted_invoice_id && (
                             <button
                               onClick={() => router.push(`/invoices/${order.converted_invoice_id}`)}
                               className="text-sm text-green-600 hover:underline"
@@ -259,6 +283,35 @@ export default function SalesOrdersPage() {
             </div>
           )}
         </div>
+
+        <BulkConvertSalesOrdersModal
+          open={bulkOpen}
+          businessId={business?.id || ''}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => {
+            setBulkOpen(false);
+            toast.success('Selected sales orders converted to invoices');
+            fetchSalesOrders();
+          }}
+        />
+
+        {convertOrder && (
+          <ConvertSalesOrderModal
+            open={!!convertOrder}
+            orderId={convertOrder.id}
+            orderNumber={convertOrder.order_number}
+            onClose={() => setConvertOrder(null)}
+            onSuccess={({ invoiceNumber, partial }) => {
+              setConvertOrder(null);
+              toast.success(
+                partial
+                  ? `Partial invoice created${invoiceNumber ? `: ${invoiceNumber}` : ''} (order still open)`
+                  : `Invoice created${invoiceNumber ? `: ${invoiceNumber}` : ''}`,
+              );
+              fetchSalesOrders();
+            }}
+          />
+        )}
       </div>
     
   );

@@ -72,7 +72,7 @@ export default function MorePage() {
   const { logout, business, platformSession, user } = useAuth();
   const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
   const { isOffline } = useNetworkStatus();
-  const { hasCapability } = useCapabilityCheck();
+  const { hasCapability, checkCapability } = useCapabilityCheck();
   const [isSupplier, setIsSupplier] = useState(false);
   const [openSection, setOpenSection] = useState<string | null>(null);
   const defaultSectionApplied = useRef(false);
@@ -125,9 +125,17 @@ export default function MorePage() {
       isSupplier,
       warehousesEnabled: !!warehousesEnabled,
       hasCapability,
+      checkCapability,
       enabledModules,
     });
-  }, [menuReady, isSupplier, warehousesEnabled, hasCapability, enabledModules]);
+  }, [
+    menuReady,
+    isSupplier,
+    warehousesEnabled,
+    hasCapability,
+    checkCapability,
+    enabledModules,
+  ]);
 
   // Expand section from ?section= query (mobile back from a More menu page)
   useEffect(() => {
@@ -137,20 +145,24 @@ export default function MorePage() {
     setOpenSection(section);
   }, [searchParams]);
 
-  // Default once: Connect (agents / connect-primary), HR (hr-only), Sales, or first section
+  // Default once: agents with Sales → Sales; else Connect / HR / Sales / first
   useEffect(() => {
     if (!sections.length || defaultSectionApplied.current) return;
     defaultSectionApplied.current = true;
     const hrOnly =
       enabledModules.includes('hr') && !enabledModules.includes('billing');
+    const hasSales = sections.some((s) => s.title === 'Sales');
     const connectFocused =
       isConnectAgentSeat(user) ||
       (enabledModules.includes('connect') && !enabledModules.includes('billing'));
-    const preferredTitle = connectFocused
-      ? 'Connect'
-      : hrOnly
-        ? 'HR & Employees'
-        : 'Sales';
+    const preferredTitle =
+      isConnectAgentSeat(user) && hasSales
+        ? 'Sales'
+        : connectFocused
+          ? 'Connect'
+          : hrOnly
+            ? 'HR & Employees'
+            : 'Sales';
     const preferred = sections.find((s) => s.title === preferredTitle);
     setOpenSection(preferred?.title ?? sections[0].title);
   }, [sections, enabledModules, user]);

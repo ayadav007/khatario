@@ -79,9 +79,13 @@ export async function GET(
     );
 
     salesOrder.items = itemsResult.rows;
+    const hasFulfilledQty = itemsResult.rows.some(
+      (r: { fulfilled_qty?: number | string | null }) => Number(r.fulfilled_qty || 0) > 0.0001
+    );
     salesOrder.editable = isSalesOrderEditable({
       status: salesOrder.status as string | null,
       converted_invoice_id: salesOrder.converted_invoice_id as string | null,
+      has_fulfilled_qty: hasFulfilledQty,
     });
 
     return NextResponse.json({ salesOrder });
@@ -167,7 +171,18 @@ export async function PUT(
     }
 
     const existing = existingRes.rows[0];
-    if (!isSalesOrderEditable(existing)) {
+    const fulfilledCheck = await client.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM sales_order_items
+        WHERE sales_order_id = $1 AND COALESCE(fulfilled_qty, 0) > 0`,
+      [orderId]
+    );
+    if (
+      !isSalesOrderEditable({
+        status: existing.status,
+        converted_invoice_id: existing.converted_invoice_id,
+        has_fulfilled_qty: (fulfilledCheck.rows[0]?.n ?? 0) > 0,
+      })
+    ) {
       await client.query('ROLLBACK');
       return NextResponse.json(
         {
@@ -273,6 +288,29 @@ export async function PUT(
       );
     }
 
+    const { syncSalesOrderReservations, cancelSalesOrderReservations } = await import(
+      '@/lib/stock/sales-order-reservations'
+    );
+    if (nextStatus === 'confirmed') {
+      await syncSalesOrderReservations(client, {
+        businessId: tenant.businessId,
+        salesOrderId: orderId,
+        branchId,
+        userId,
+        lines: items.map((item: any) => ({
+          item_id: item.item_id || null,
+          variant_id: item.variant_id || null,
+          qty: Number(item.qty ?? item.quantity) || 0,
+        })),
+      });
+    } else {
+      await cancelSalesOrderReservations(client, {
+        businessId: tenant.businessId,
+        salesOrderId: orderId,
+        userId,
+      });
+    }
+
     await client.query('COMMIT');
 
     const salesOrder = updateRes.rows[0];
@@ -281,7 +319,11 @@ export async function PUT(
       [orderId]
     );
     salesOrder.items = itemsResult.rows;
-    salesOrder.editable = isSalesOrderEditable(salesOrder);
+    salesOrder.editable = isSalesOrderEditable({
+      status: salesOrder.status,
+      converted_invoice_id: salesOrder.converted_invoice_id,
+      has_fulfilled_qty: false,
+    });
 
     return NextResponse.json({ salesOrder });
   } catch (error: unknown) {

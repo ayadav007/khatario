@@ -422,9 +422,18 @@ export default function ItemDetailPage() {
                 {item.item_type === 'goods' && (
                   <>
                     <div>
-                      <label className="text-sm font-medium text-text-secondary">Current Stock</label>
+                      <label className="text-sm font-medium text-text-secondary">Available</label>
                       <p className="mt-1 text-lg font-semibold text-text-primary">
-                        {item.current_stock} {item.unit}
+                        {item.available_stock != null
+                          ? item.available_stock
+                          : Number(item.current_stock || 0) - Number(item.reserved_qty || 0)}{' '}
+                        {item.unit}
+                      </p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        On hand {item.current_stock ?? 0}
+                        {Number(item.reserved_qty) > 0
+                          ? ` · Reserved ${item.reserved_qty}`
+                          : ''}
                       </p>
                     </div>
                     <div>

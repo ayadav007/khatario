@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const businessId = getBusinessIdFromRequest(request);
     const userId = getUserIdFromRequest(request); // REQUIRED for authorization
     const status = searchParams.get('status');
+    const customerId = searchParams.get('customer_id');
 
     if (!businessId) {
       return NextResponse.json(
@@ -76,7 +77,10 @@ export async function GET(request: NextRequest) {
         GREATEST(
           0::numeric,
           COALESCE(so.grand_total, 0) - COALESCE(pay.paid_sum, 0)
-        )::text AS payment_remaining
+        )::text AS payment_remaining,
+        COALESCE(inv.invoice_count, 0)::int AS linked_invoice_count,
+        inv.latest_invoice_id,
+        inv.latest_invoice_number
       FROM sales_orders so
       LEFT JOIN customers c ON so.customer_id = c.id
       LEFT JOIN LATERAL (
@@ -88,6 +92,16 @@ export async function GET(request: NextRequest) {
         WHERE pt.business_id = so.business_id
           AND pt.order_id = so.id
       ) pay ON true
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)::int AS invoice_count,
+          (ARRAY_AGG(i.id ORDER BY i.created_at DESC NULLS LAST))[1] AS latest_invoice_id,
+          (ARRAY_AGG(i.invoice_number ORDER BY i.created_at DESC NULLS LAST))[1] AS latest_invoice_number
+        FROM invoices i
+        WHERE i.business_id = so.business_id
+          AND i.sales_order_id = so.id
+          AND COALESCE(i.status, '') <> 'cancelled'
+      ) inv ON true
       WHERE so.business_id = $1
         ${branchFilter}
     `;
@@ -100,6 +114,11 @@ export async function GET(request: NextRequest) {
     if (status) {
       query += ` AND so.status = $${params.length + 1}`;
       params.push(status);
+    }
+
+    if (customerId) {
+      query += ` AND so.customer_id = $${params.length + 1}`;
+      params.push(customerId);
     }
 
     query += ` ORDER BY so.order_date DESC, so.created_at DESC`;
@@ -298,6 +317,21 @@ export async function POST(request: NextRequest) {
         item.cgst_amount || 0, item.sgst_amount || 0, item.igst_amount || 0,
         item.line_total || item.total || 0, i
       ]);
+    }
+
+    if (String(status || '').toLowerCase() === 'confirmed') {
+      const { syncSalesOrderReservations } = await import('@/lib/stock/sales-order-reservations');
+      await syncSalesOrderReservations(client, {
+        businessId: business_id,
+        salesOrderId: salesOrder.id,
+        branchId: finalBranchId,
+        userId: created_by || null,
+        lines: items.map((item: any) => ({
+          item_id: item.item_id || null,
+          variant_id: item.variant_id || null,
+          qty: Number(item.qty ?? item.quantity) || 0,
+        })),
+      });
     }
 
     await client.query('COMMIT');

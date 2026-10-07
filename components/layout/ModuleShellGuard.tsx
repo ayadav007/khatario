@@ -8,6 +8,7 @@ import {
   CONNECT_AGENT_HOME_PATH,
   isConnectAgentSeat,
 } from '@/lib/users/connect-seats';
+import { isConnectAgentLookupPath } from '@/lib/navigation/sales-nav-items';
 
 const ALWAYS_ALLOWED_PREFIXES = ['/settings', '/more', '/profile', '/hr/dashboard'];
 
@@ -46,6 +47,12 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
 
     if (!platformSession) return;
     if (isAlwaysAllowed(pathname)) return;
+
+    // Agents may open invoice/order/customer lookups even when Billing is not the
+    // primary product; page-level withPageAuth still enforces RBAC.
+    if (isConnectAgentSeat(user) && isConnectAgentLookupPath(pathname)) {
+      return;
+    }
 
     const requiredModule = moduleForPath(pathname);
     if (!requiredModule) return;

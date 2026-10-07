@@ -25,11 +25,20 @@ jest.mock('@/lib/whatsapp-crm', () => ({
   createSalesOrderFromWhatsApp: (...a: unknown[]) => mockCreateOrder(...a),
   updateConversationState: (...a: unknown[]) => mockUpdateState(...a),
 }));
+const mockListProviders = jest.fn();
+
 jest.mock('@/lib/services/payment-service', () => ({
   generatePaymentLinkForBusiness: (...a: unknown[]) => mockPayLink(...a),
 }));
+jest.mock('@/lib/payments', () => ({
+  listBusinessPaymentProviderIds: (...a: unknown[]) => mockListProviders(...a),
+}));
 jest.mock('@/lib/whatsapp/business-transport', () => ({ sendBusinessLink: jest.fn(), sendBusinessText: jest.fn() }));
 jest.mock('@/lib/meta-whatsapp-credentials', () => ({ getMetaWaConfig: jest.fn() }));
+jest.mock('@/lib/whatsapp-shop/reserve', () => ({
+  reserveWhatsAppShopOrder: jest.fn().mockResolvedValue(undefined),
+  WHATSAPP_RESERVE_TTL_MINUTES: 45,
+}));
 
 import { buildCatalogMessagePayload, buildCtaUrlPayload } from '@/lib/meta-whatsapp';
 import { isShopRequest } from '@/lib/whatsapp-shop/intent';
@@ -160,6 +169,7 @@ describe('placeShopOrder', () => {
     mockQueryRows.mockResolvedValue([{ name: 'Old Item' }]);
     mockCreateOrder.mockResolvedValue({ order_id: 'order-1', order_number: 'SO-INV-0007', total_amount: 139 });
     mockPayLink.mockResolvedValue({ link: 'https://rzp.io/l/abc', source: 'psp', provider: 'razorpay' });
+    mockListProviders.mockResolvedValue([{ provider: 'razorpay' }]);
   });
 
   it('prices from the catalogue, skips unknown items and returns the gateway link', async () => {
@@ -206,12 +216,21 @@ describe('placeShopOrder', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled();
   });
 
-  it('still places the order when the payment link fails', async () => {
-    mockPayLink.mockRejectedValue(new Error('gateway down'));
-    const out = (await placeShopOrder({ businessId: BIZ, phone: '919811111111', lines: [{ itemId: A, quantity: 1 }] })) as PlacedShopOrder;
-    expect(out.ok).toBe(true);
-    expect(out.paymentLink).toBeNull();
-    expect(shopOrderReplyText(out)).toContain("We'll share the payment details");
+  it('refuses when no payment gateway is configured', async () => {
+    mockListProviders.mockResolvedValue([]);
+    const out = await placeShopOrder({ businessId: BIZ, phone: '919811111111', lines: [{ itemId: A, quantity: 1 }] });
+    expect(out).toEqual({ ok: false, reason: 'NO_GATEWAY', unavailable: [] });
+    expect(mockCreateOrder).not.toHaveBeenCalled();
+  });
+
+  it('cancels the draft and fails when the gateway link cannot be created', async () => {
+    mockPayLink.mockResolvedValue(null);
+    const out = await placeShopOrder({ businessId: BIZ, phone: '919811111111', lines: [{ itemId: A, quantity: 1 }] });
+    expect(out).toEqual({ ok: false, reason: 'NO_GATEWAY', unavailable: [] });
+    const cancelDraft = mockQuery.mock.calls.find(
+      ([sql]) => String(sql).includes("SET status = 'cancelled'") && String(sql).includes('no payment gateway link'),
+    );
+    expect(cancelDraft?.[1]).toEqual(['order-1', BIZ]);
   });
 });
 

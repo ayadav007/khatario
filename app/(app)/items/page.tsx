@@ -480,10 +480,15 @@ function ItemsPage() {
                 {paginatedItems.length > 0 ? (
                   paginatedItems.map((item) => {
                     const stock = Number(item.current_stock);
+                    const reserved = Number((item as { reserved_qty?: number }).reserved_qty || 0);
+                    const available =
+                      (item as { available_stock?: number }).available_stock != null
+                        ? Number((item as { available_stock?: number }).available_stock)
+                        : stock - reserved;
                     const minStock = Number(item.min_stock);
                     let stockStatus = 'success';
-                    if (stock <= 0) stockStatus = 'error';
-                    else if (stock <= minStock) stockStatus = 'warning';
+                    if (available <= 0) stockStatus = 'error';
+                    else if (available <= minStock) stockStatus = 'warning';
 
                     return (
                       <tr
@@ -544,9 +549,16 @@ function ItemsPage() {
                           {item.item_type === 'service' ? (
                             <span className="text-text-muted text-xs italic">N/A</span>
                           ) : (
-                            <Chip variant={stockStatus as any}>
-                              {stock} {item.unit}
-                            </Chip>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Chip variant={stockStatus as any}>
+                                {available} {item.unit}
+                              </Chip>
+                              {reserved > 0 ? (
+                                <span className="text-2xs text-text-muted">
+                                  On hand {stock} · Reserved {reserved}
+                                </span>
+                              ) : null}
+                            </div>
                           )}
                         </td>
                         ) : null}

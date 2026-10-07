@@ -35,6 +35,17 @@ export const PUT = withWhatsAppPremiumApi(
     const warnings: string[] = [];
     try {
       const before = await loadShopStatus(businessId);
+      const enabling = input.enabled === true || (input.enabled === undefined && before.settings.enabled);
+      if (enabling && !before.gatewayConfigured) {
+        return NextResponse.json(
+          {
+            error:
+              'Connect a payment gateway (e.g. Razorpay) before taking WhatsApp orders. Manual UPI alone is not enough.',
+            code: 'NO_GATEWAY',
+          },
+          { status: 400 },
+        );
+      }
       const catalogId = typeof input.metaCatalogId === 'string' ? input.metaCatalogId.trim() : null;
       if (catalogId && catalogId !== before.settings.metaCatalogId) {
         if (!(await getMetaWaConfig(businessId))) {

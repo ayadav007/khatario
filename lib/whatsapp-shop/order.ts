@@ -1,4 +1,5 @@
 import { query, queryOne, queryRows } from '@/lib/db';
+import { listBusinessPaymentProviderIds } from '@/lib/payments';
 import { generatePaymentLinkForBusiness } from '@/lib/services/payment-service';
 import { sendBusinessLink, sendBusinessText } from '@/lib/whatsapp/business-transport';
 import { inr, loadShopItems } from './items';
@@ -24,7 +25,7 @@ export type PlacedShopOrder = {
 
 export type ShopOrderOutcome =
   | PlacedShopOrder
-  | { ok: false; reason: 'SHOP_OFF' | 'NO_ITEMS'; unavailable: string[] };
+  | { ok: false; reason: 'SHOP_OFF' | 'NO_ITEMS' | 'NO_GATEWAY'; unavailable: string[] };
 
 /** Same item twice adds up; quantities are whole numbers between 1 and SHOP_MAX_QTY. */
 export function normalizeShopLines(lines: ShopOrderLine[]): ShopOrderLine[] {
@@ -73,6 +74,12 @@ export async function placeShopOrder(input: {
   const phone = input.phone.replace(/\D/g, '');
   const settings = await getShopSettings(businessId);
   if (!settings.enabled) return { ok: false, reason: 'SHOP_OFF', unavailable: [] };
+
+  // Prepaid WhatsApp shop requires a payment gateway (no manual UPI / screenshot path).
+  const providers = await listBusinessPaymentProviderIds(businessId).catch(() => []);
+  if (providers.length === 0) {
+    return { ok: false, reason: 'NO_GATEWAY', unavailable: [] };
+  }
 
   const lines = normalizeShopLines(input.lines);
   const items = await loadShopItems(businessId, settings, { ids: lines.map((l) => l.itemId) });
@@ -143,10 +150,29 @@ export async function placeShopOrder(input: {
       orderId: created.order_id,
       amount: created.total_amount,
       customerName: input.customerName?.trim() || phone,
+      pspOnly: true,
     });
   } catch (e) {
     console.error('[whatsapp-shop] payment link failed:', e instanceof Error ? e.message : e);
   }
+
+  if (!payment || payment.source !== 'psp' || !payment.link) {
+    // Do not leave unpaid drafts without a gateway link.
+    await query(
+      `UPDATE sales_orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP,
+          notes = COALESCE(notes, '') || E'\n[cancelled: no payment gateway link]'
+        WHERE id = $1 AND business_id = $2 AND status = 'draft'`,
+      [created.order_id, businessId],
+    ).catch(() => undefined);
+    return { ok: false, reason: 'NO_GATEWAY', unavailable };
+  }
+
+  const { reserveWhatsAppShopOrder } = await import('@/lib/whatsapp-shop/reserve');
+  await reserveWhatsAppShopOrder({
+    businessId,
+    orderId: created.order_id,
+    lines: orderItems.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+  });
 
   return {
     ok: true,
@@ -155,8 +181,8 @@ export async function placeShopOrder(input: {
     total: created.total_amount,
     lines: orderItems.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price, lineTotal: i.price * i.quantity })),
     unavailable,
-    paymentLink: payment?.link ?? null,
-    manualPayment: !!payment && payment.source !== 'psp',
+    paymentLink: payment.link,
+    manualPayment: false,
   };
 }
 
@@ -174,7 +200,12 @@ export function shopOrderReplyText(order: PlacedShopOrder): string {
 }
 
 export function shopOrderFailureText(outcome: Extract<ShopOrderOutcome, { ok: false }>): string {
-  if (outcome.reason === 'SHOP_OFF') return "Sorry, we're not taking orders on WhatsApp right now. Please message us and we'll help you.";
+  if (outcome.reason === 'SHOP_OFF') {
+    return "Sorry, we're not taking orders on WhatsApp right now. Please message us and we'll help you.";
+  }
+  if (outcome.reason === 'NO_GATEWAY') {
+    return "Sorry, online ordering isn't available right now because payments aren't set up. Please message us and we'll help you place the order.";
+  }
   const which = outcome.unavailable.length ? ` (${outcome.unavailable.join(', ')})` : '';
   return `Sorry, the items in your cart${which} aren't available right now. Please pick something else from our catalog.`;
 }

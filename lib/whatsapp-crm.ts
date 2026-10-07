@@ -2969,6 +2969,22 @@ export async function processIncomingMessage(
               // The model already told the customer the order is placed; if it isn't, that must not go out.
               let orderSaved = false;
               try {
+                // Prepaid WhatsApp orders require a payment gateway (no manual UPI / screenshot path).
+                const { listBusinessPaymentProviderIds } = await import('@/lib/payments');
+                const gatewayProviders = await listBusinessPaymentProviderIds(businessId).catch(() => []);
+                if (gatewayProviders.length === 0) {
+                  finalAiResponse = finalAiResponse.replace(/CREATE_ORDER:.*$/m, '').trim();
+                  const phone = String(businessInfo?.phone || '').trim();
+                  const callLine = phone
+                    ? `Please call us at ${phone} and we'll help you place the order.`
+                    : `Please message us and we'll help you place the order.`;
+                  return {
+                    response: `Sorry — online ordering isn't available right now because payments aren't set up.\n\n${callLine}`,
+                    shouldStore: true,
+                    delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0,
+                  };
+                }
+
                 // Check if there's already a draft order for this conversation (prevent duplicates)
                 const existingOrder = await queryOne<any>(
                   `SELECT id, order_number, grand_total, status, customer_id
@@ -3330,7 +3346,8 @@ export async function processIncomingMessage(
                   paymentInfo = await generatePaymentLinkForBusiness(businessId, {
                     orderId,
                     amount: orderAmount,
-                    customerName: whatsappDisplayName || normalizedFrom
+                    customerName: whatsappDisplayName || normalizedFrom,
+                    pspOnly: true,
                   });
                 } catch (e: any) {
                   console.error('[CRM] ⚠️ Payment link generation failed:', e);
@@ -3357,6 +3374,26 @@ export async function processIncomingMessage(
                 }
 
                 if (paymentInfo) {
+                  if (paymentInfo.source === 'psp' && orderId) {
+                    try {
+                      const items = await queryRows<{ item_id: string | null; qty: string }>(
+                        `SELECT item_id, qty::text FROM sales_order_items WHERE sales_order_id = $1`,
+                        [orderId],
+                      );
+                      const { reserveWhatsAppShopOrder } = await import('@/lib/whatsapp-shop/reserve');
+                      await reserveWhatsAppShopOrder({
+                        businessId,
+                        orderId,
+                        lines: items.map((r) => ({
+                          item_id: r.item_id,
+                          quantity: Number(r.qty) || 0,
+                        })),
+                      });
+                    } catch (reserveErr) {
+                      console.error('[CRM] WhatsApp stock reserve failed:', reserveErr);
+                    }
+                  }
+
                   // Remove placeholder if exists from text
                   if (finalAiResponse.includes('[insert payment link]')) {
                     finalAiResponse = finalAiResponse.replace('[insert payment link]', '').trim();
