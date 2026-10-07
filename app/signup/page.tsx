@@ -121,8 +121,25 @@ function SignupPageContent() {
   });
 
   const leadToken = searchParams.get('lead');
+  const refFromUrl = searchParams.get('ref');
+  const [partnerRef, setPartnerRef] = useState<string | null>(null);
   const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [leadNotice, setLeadNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      if (refFromUrl?.trim()) {
+        const code = refFromUrl.trim().toUpperCase();
+        sessionStorage.setItem('khatario_partner_ref', code);
+        setPartnerRef(code);
+        return;
+      }
+      const stored = sessionStorage.getItem('khatario_partner_ref');
+      if (stored) setPartnerRef(stored);
+    } catch {
+      if (refFromUrl?.trim()) setPartnerRef(refFromUrl.trim().toUpperCase());
+    }
+  }, [refFromUrl]);
 
   useEffect(() => {
     if (!leadToken) return;
@@ -169,7 +186,12 @@ function SignupPageContent() {
       const res = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, productLine, ...(leadToken ? { leadToken } : {}) }),
+        body: JSON.stringify({
+          ...formData,
+          productLine,
+          ...(leadToken ? { leadToken } : {}),
+          ...(partnerRef ? { ref: partnerRef } : {}),
+        }),
         credentials: 'include',
       });
 

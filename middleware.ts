@@ -8,6 +8,7 @@ import {
   EMPLOYEE_PORTAL_SESSION_HEADER,
   EMPLOYEE_PORTAL_COOKIE,
 } from './lib/employee-portal';
+import { PARTNER_SESSION_COOKIE } from './lib/partners/constants';
 import { extractStoreSubdomain } from './lib/store/subdomain';
 import { resolvePublicRequestOrigin } from './lib/http/public-request-origin';
 
@@ -73,6 +74,7 @@ const PUBLIC_PATHS = new Set([
   '/privacy',
   '/admin/login',
   '/admin/pwa-manifest',
+  '/partners/login',
   '/attendance/login',
   '/attendance/kiosk',
   '/auth/impersonate',
@@ -100,6 +102,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/bookings/available-slots',
   '/api/admin/auth/login',
   '/api/admin/auth/logout',
+  '/api/partners/auth/login',
+  '/api/partners/auth/logout',
   '/api/cron/',
   '/api/webhooks/',
   '/api/webhooks/meta-whatsapp',
@@ -154,6 +158,18 @@ function isPlatformAdminProtectedPath(pathname: string): boolean {
     return true;
   }
   if (pathname === '/api/policies') return true;
+  return false;
+}
+
+/** Partner portal pages/APIs (separate cookie from business + platform admin). */
+function isPartnerProtectedPath(pathname: string): boolean {
+  if (pathname.startsWith('/partners/login')) return false;
+  if (pathname.startsWith('/partners')) return true;
+  if (pathname.startsWith('/api/partners/')) {
+    if (pathname.startsWith('/api/partners/auth/login')) return false;
+    if (pathname.startsWith('/api/partners/auth/logout')) return false;
+    return true;
+  }
   return false;
 }
 
@@ -264,6 +280,20 @@ export async function middleware(request: NextRequest) {
       );
     }
     return redirectToBrowserLogin(request, '/admin/login', pathname);
+  }
+
+  if (isPartnerProtectedPath(pathname)) {
+    const partnerToken = request.cookies.get(PARTNER_SESSION_COOKIE)?.value;
+    if (partnerToken) {
+      return nextWithoutSpoofedIdentity(request);
+    }
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Partner authentication required', code: 'UNAUTHENTICATED_PARTNER' },
+        { status: 401 },
+      );
+    }
+    return redirectToBrowserLogin(request, '/partners/login', pathname);
   }
 
   const { rotate, payload } = await shouldRotateTokens(request);

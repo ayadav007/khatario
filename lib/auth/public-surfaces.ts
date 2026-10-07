@@ -24,6 +24,8 @@ export function isPublicMarketingSurface(
   if (p.startsWith('/login')) return true;
   // Entire platform-admin tree: business AuthContext must not 401 → /login.
   if (p.startsWith('/admin')) return true;
+  // Partner portal: separate session from business app.
+  if (p.startsWith('/partners')) return true;
   if (p.startsWith('/attendance/login')) return true;
   if (p.startsWith('/attendance/kiosk')) return true;
   if (p === '/offline') return true;

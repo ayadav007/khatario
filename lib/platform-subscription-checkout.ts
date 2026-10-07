@@ -528,6 +528,24 @@ export async function completeSubscriptionCheckoutPayment(params: {
 
   });
 
+  // Partner commission: only when payment settled (not on free trial).
+  try {
+    const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
+    const saleAmount =
+      (await queryOne<{ total_amount: string | number }>(
+        `SELECT COALESCE(total_amount, amount, 0) AS total_amount
+         FROM billing_transactions WHERE id = $1`,
+        [params.billingTransactionId],
+      ))?.total_amount ?? params.amount;
+    await maybeCreatePartnerCommissionOnPayment({
+      businessId: params.businessId,
+      billingTransactionId: params.billingTransactionId,
+      saleAmount: Number(saleAmount) || params.amount,
+    });
+  } catch (partnerErr) {
+    console.error('Partner commission on checkout settlement failed:', partnerErr);
+  }
+
 }
 
 

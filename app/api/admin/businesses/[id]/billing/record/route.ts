@@ -31,17 +31,31 @@ export async function POST(
       return NextResponse.json({ error: 'plan_id is required' }, { status: 400 });
     }
 
+    const amount = Number(body.amount) || 0;
     const result = await recordBillingTransaction({
       businessId: params.id,
       planId,
       moduleKey: normalizePlatformModule(body.module_key),
-      amount: Number(body.amount) || 0,
+      amount,
       billingCycle: normalizeBillingCycle(body.billing_cycle),
       paymentMethod: body.payment_method || 'manual',
       paymentReference: body.payment_reference,
       status,
       description: body.description || `Manual record by admin`,
     });
+
+    if (status === 'completed' && amount > 0) {
+      try {
+        const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
+        await maybeCreatePartnerCommissionOnPayment({
+          businessId: params.id,
+          billingTransactionId: result.id,
+          saleAmount: amount,
+        });
+      } catch (partnerErr) {
+        console.error('Partner commission on admin billing record failed:', partnerErr);
+      }
+    }
 
     return NextResponse.json({ success: true, transaction: result });
   } catch (error: unknown) {

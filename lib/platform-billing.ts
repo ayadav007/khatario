@@ -233,6 +233,18 @@ export async function updateBillingTransactionStatus(
     [transactionId, status, gatewayResponse ? JSON.stringify(gatewayResponse) : null],
   );
   await dispatchBillingEmails(transactionId, status);
+
+  if (status === 'refunded') {
+    try {
+      const { cancelPartnerCommissionForRefund } = await import('@/lib/partners/commission');
+      await cancelPartnerCommissionForRefund({
+        billingTransactionId: transactionId,
+        reason: 'billing_transaction_refunded',
+      });
+    } catch (partnerErr) {
+      console.error('Partner commission cancel on refund failed:', partnerErr);
+    }
+  }
 }
 
 async function dispatchBillingEmails(
@@ -360,7 +372,7 @@ export async function recordUpgradeBilling(params: {
     return;
   }
 
-  await recordBillingTransaction({
+  const recorded = await recordBillingTransaction({
     businessId: params.businessId,
     planId: params.planId,
     moduleKey,
@@ -376,6 +388,19 @@ export async function recordUpgradeBilling(params: {
     ),
     skipEmails: false,
   });
+
+  if (status === 'completed' && params.amount > 0) {
+    try {
+      const { maybeCreatePartnerCommissionOnPayment } = await import('@/lib/partners/commission');
+      await maybeCreatePartnerCommissionOnPayment({
+        businessId: params.businessId,
+        billingTransactionId: recorded.id,
+        saleAmount: params.amount,
+      });
+    } catch (partnerErr) {
+      console.error('Partner commission on upgrade billing failed:', partnerErr);
+    }
+  }
 }
 
 function extractBusinessIdFromWebhook(verified: VerifyWebhookResult): string | null {

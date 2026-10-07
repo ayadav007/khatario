@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
       password,
       productLine: productLineRaw,
       leadToken,
+      ref: referralRef,
     } = body;
 
     const productLine = normalizeProductLine(productLineRaw);
@@ -440,6 +441,20 @@ export async function POST(request: NextRequest) {
     committed = true;
     clearSubscriptionCache(businessId);
     await linkSignupToLead({ businessId, phone10, leadId: funnelLeadId });
+
+    // Partner attribution from ?ref= (trial signup — commission only after paid conversion).
+    if (referralRef) {
+      try {
+        const { attributeBusinessFromReferralCode } = await import('@/lib/partners/attribution');
+        await attributeBusinessFromReferralCode({
+          businessId,
+          ref: referralRef,
+          source: 'ref_link',
+        });
+      } catch (attrErr) {
+        console.error('Signup partner attribution failed:', attrErr);
+      }
+    }
 
     const tokenPayload = { userId: primaryAdminUserId, businessId, sessionVersion: 1 };
     const [accessToken, refreshToken] = await Promise.all([
