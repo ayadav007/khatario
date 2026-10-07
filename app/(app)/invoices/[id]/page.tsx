@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail } from 'lucide-react';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { CancelInvoiceModal } from '@/components/modals/CancelInvoiceModal';
@@ -49,7 +51,16 @@ export default function InvoiceDetailPage() {
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [shareModalOpen, setShareModalOpen] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailModalOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
@@ -439,7 +450,12 @@ export default function InvoiceDetailPage() {
                     Record Payment
                   </Button>
                 )}
-                <Button variant="secondary" onClick={() => setEmailModalOpen(true)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void requestSendEmail()}
+                  disabled={emailChecking}
+                  isLoading={emailChecking}
+                >
                   <Mail className="w-4 h-4 mr-2" />
                   Send Email
                 </Button>
@@ -681,10 +697,20 @@ export default function InvoiceDetailPage() {
         />
       )}
 
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={closeEmailConfigure}
+          onConfigured={onEmailConfigured}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
+
       {emailModalOpen && invoice && (
         <SendDocumentEmailModal
           open={emailModalOpen}
-          onClose={() => setEmailModalOpen(false)}
+          onClose={closeEmailCompose}
           documentTable="invoices"
           documentId={invoice.id}
           partyName={invoice.customer?.name || invoice.customer_name || 'Customer'}

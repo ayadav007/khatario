@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { SalesOrderPaymentSection } from '@/components/documents/SalesOrderPaymentSection';
 import { SalesOrderPaymentTransactionsPanel } from '@/components/documents/SalesOrderPaymentTransactionsPanel';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ConvertSalesOrderModal } from '@/components/sales-orders/ConvertSalesOrderModal';
 import { isSalesOrderConvertibleStatus } from '@/lib/sales-orders/billing-status';
 import { isSalesOrderEditable } from '@/lib/sales-orders/editability';
@@ -74,19 +76,26 @@ function ActionButton({
   icon: Icon,
   label,
   onClick,
+  disabled,
 }: {
   icon: typeof Printer;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-[72px] flex-col items-center gap-2 touch-manipulation"
+      disabled={disabled}
+      className="flex min-w-[72px] flex-col items-center gap-2 touch-manipulation disabled:opacity-50"
     >
       <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-primary-200 bg-white text-primary-600 shadow-sm dark:border-primary-800 dark:bg-surface">
-        <Icon className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+        {disabled ? (
+          <Loader2 className="h-6 w-6 animate-spin" strokeWidth={1.75} aria-hidden />
+        ) : (
+          <Icon className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+        )}
       </span>
       <span className="text-sm font-medium text-primary-700 dark:text-primary-300">{label}</span>
     </button>
@@ -115,7 +124,16 @@ export default function SalesOrderDetailPage() {
   const [html, setHtml] = useState('');
   const [order, setOrder] = useState<SalesOrderSummary | null>(null);
   const [convertOpen, setConvertOpen] = useState(false);
-  const [emailOpen, setEmailOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
 
   const load = useCallback(async () => {
     if (!orderId || !business?.id) return;
@@ -260,7 +278,12 @@ export default function SalesOrderDetailPage() {
           <div className="flex items-center justify-center gap-6 px-6 pb-2 pt-8 sm:gap-10">
             <ActionButton icon={Printer} label="Print" onClick={() => window.open(pdfUrl, '_blank')} />
             <ActionButton icon={Download} label="PDF" onClick={() => window.open(pdfUrl, '_blank')} />
-            <ActionButton icon={Mail} label="Email" onClick={() => setEmailOpen(true)} />
+            <ActionButton
+              icon={Mail}
+              label="Email"
+              onClick={() => void requestSendEmail()}
+              disabled={emailChecking}
+            />
             {convertible && (
               <ActionButton icon={FileText} label="Invoice" onClick={() => setConvertOpen(true)} />
             )}
@@ -309,7 +332,12 @@ export default function SalesOrderDetailPage() {
                 <Download className="mr-2 h-4 w-4" />
                 PDF
               </Button>
-              <Button variant="secondary" onClick={() => setEmailOpen(true)}>
+              <Button
+                variant="secondary"
+                onClick={() => void requestSendEmail()}
+                disabled={emailChecking}
+                isLoading={emailChecking}
+              >
                 <Mail className="mr-2 h-4 w-4" />
                 Email
               </Button>
@@ -345,10 +373,20 @@ export default function SalesOrderDetailPage() {
         </div>
       </div>
 
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={closeEmailConfigure}
+          onConfigured={onEmailConfigured}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
+
       {emailOpen && business && (
         <SendDocumentEmailModal
           open={emailOpen}
-          onClose={() => setEmailOpen(false)}
+          onClose={closeEmailCompose}
           documentTable="sales_orders"
           documentId={orderId}
           partyName={order.customer_name || 'Customer'}

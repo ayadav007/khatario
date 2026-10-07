@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
+import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import type { DocumentTable } from '@/lib/pdf-generator';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -57,7 +59,16 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
-  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const {
+    checking: emailChecking,
+    composeOpen: emailModalOpen,
+    configureOpen: emailConfigureOpen,
+    configureForbidden: emailConfigureForbidden,
+    requestSendEmail,
+    onEmailConfigured,
+    closeConfigure: closeEmailConfigure,
+    closeCompose: closeEmailCompose,
+  } = useGatedDocumentEmail();
 
   const emailableTables: DocumentTable[] = [
     'invoices',
@@ -236,7 +247,13 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
             )}
             {headerActions?.(documentData, fetchData)}
             {canEmail && (
-              <Button variant="secondary" size="sm" onClick={() => setEmailModalOpen(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void requestSendEmail()}
+                disabled={emailChecking}
+                isLoading={emailChecking}
+              >
                 <Mail className="w-4 h-4 mr-2" />
                 Send Email
               </Button>
@@ -262,10 +279,20 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
           )}
         </Card>
 
+        {canEmail && business?.id && (
+          <ConfigureBusinessEmailModal
+            open={emailConfigureOpen}
+            businessId={business.id}
+            onClose={closeEmailConfigure}
+            onConfigured={onEmailConfigured}
+            forbidden={emailConfigureForbidden}
+          />
+        )}
+
         {canEmail && emailModalOpen && (
           <SendDocumentEmailModal
             open={emailModalOpen}
-            onClose={() => setEmailModalOpen(false)}
+            onClose={closeEmailCompose}
             documentTable={table as DocumentTable}
             documentId={documentId}
             partyName={documentData.party_name || 'Recipient'}

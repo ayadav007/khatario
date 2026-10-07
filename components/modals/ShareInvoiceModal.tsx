@@ -21,6 +21,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { fetchBusinessEmailReady } from '@/lib/business-email-client';
+import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
 
 interface ShareInvoiceModalProps {
   invoiceId: string;
@@ -53,6 +55,8 @@ export function ShareInvoiceModal({
   const [nativeFormatLoading, setNativeFormatLoading] = useState<InvoiceShareFormat | null>(null);
   const [waConnected, setWaConnected] = useState<boolean | null>(null);
   const [cloudReady, setCloudReady] = useState(false);
+  const [emailConfigureOpen, setEmailConfigureOpen] = useState(false);
+  const [emailConfigureForbidden, setEmailConfigureForbidden] = useState(false);
   const showNativeShare = canUseNativeInvoiceShare();
 
   const resolvePublicUrl = useCallback(async (): Promise<string | null> => {
@@ -111,7 +115,7 @@ export function ShareInvoiceModal({
     };
   }, [business?.id]);
 
-  async function handleEmailSend() {
+  async function sendInvoiceEmailNow() {
     if (!customerEmail) {
       toast.warning('Customer email not available');
       return;
@@ -134,15 +138,55 @@ export function ShareInvoiceModal({
         }, 3000);
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to send email');
+        if (error.code === 'EMAIL_NOT_CONFIGURED') {
+          setEmailConfigureForbidden(false);
+          setEmailConfigureOpen(true);
+        } else {
+          toast.error(error.error || 'Failed to send email');
+        }
       }
     } catch (error) {
       console.error('Error sending email:', error);
-        toast.error(
-          'Failed to send email. Configure SMTP under Settings → Email for your business.'
-        );
+      toast.error(
+        'Failed to send email. Configure SMTP under Settings → Email for your business.'
+      );
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleEmailSend() {
+    if (!customerEmail) {
+      toast.warning('Customer email not available');
+      return;
+    }
+    if (!business?.id) {
+      toast.error('Business not loaded');
+      return;
+    }
+
+    setSending(true);
+    setEmailConfigureForbidden(false);
+    try {
+      const result = await fetchBusinessEmailReady(business.id);
+      if (result.ready) {
+        await sendInvoiceEmailNow();
+        return;
+      }
+      setSending(false);
+      if (result.forbidden) {
+        setEmailConfigureForbidden(true);
+        setEmailConfigureOpen(true);
+        return;
+      }
+      if (result.error && !result.config) {
+        toast.error(result.error);
+        return;
+      }
+      setEmailConfigureOpen(true);
+    } catch {
+      setSending(false);
+      toast.error('Failed to check email settings');
     }
   }
 
@@ -432,6 +476,23 @@ export function ShareInvoiceModal({
           </div>
         )}
       </div>
+
+      {business?.id && (
+        <ConfigureBusinessEmailModal
+          open={emailConfigureOpen}
+          businessId={business.id}
+          onClose={() => {
+            setEmailConfigureOpen(false);
+            setEmailConfigureForbidden(false);
+          }}
+          onConfigured={() => {
+            setEmailConfigureOpen(false);
+            setEmailConfigureForbidden(false);
+            void sendInvoiceEmailNow();
+          }}
+          forbidden={emailConfigureForbidden}
+        />
+      )}
     </div>
   );
 }
