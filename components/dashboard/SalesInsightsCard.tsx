@@ -3,18 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { getChartPalette } from '@/lib/chartTheme';
 import { useDashboardChartHeight } from '@/hooks/useDashboardChartHeight';
 import { buildApiUrl } from '@/lib/api-helpers';
-import {
-  canStepSalesTrendForward,
-  deriveSalesTrendPreset,
-  formatSalesTrendNavLabel,
-  stepSalesTrendRange,
-} from '@/lib/dashboard/sales-trend-range';
+import { deriveSalesTrendPreset } from '@/lib/dashboard/sales-trend-range';
 import { probeDashboardRefresh } from '@/lib/debug/dashboard-refresh-probe';
 
 type DashboardDateRange = { start: string; end: string; label: string };
@@ -65,16 +60,8 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     [dateRange.label, dateRange.start, dateRange.end]
   );
 
-  const [focusRange, setFocusRange] = useState({ start: dateRange.start, end: dateRange.end });
   const [data, setData] = useState<SalesTrendResponse | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setFocusRange({ start: dateRange.start, end: dateRange.end });
-  }, [dateRange.start, dateRange.end, dateRange.label]);
-
-  const navLabel = formatSalesTrendNavLabel(preset, focusRange.start, focusRange.end);
-  const canGoForward = canStepSalesTrendForward(focusRange.end);
 
   const chartSubtitle = useMemo(() => {
     if (!data) return '';
@@ -86,12 +73,12 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
   const fetchData = useCallback(async () => {
     if (!businessId) return;
     setLoading(true);
-    probeDashboardRefresh('sales-trend-fetch', `${focusRange.start}-${focusRange.end}`);
+    probeDashboardRefresh('sales-trend-fetch', `${dateRange.start}-${dateRange.end}`);
     try {
       const url = buildApiUrl('/api/dashboard/sales-trend', {
         business_id: businessId,
-        start_date: focusRange.start,
-        end_date: focusRange.end,
+        start_date: dateRange.start,
+        end_date: dateRange.end,
       });
       const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
@@ -105,21 +92,17 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     } finally {
       setLoading(false);
     }
-  }, [businessId, focusRange.end, focusRange.start]);
+  }, [businessId, dateRange.end, dateRange.start]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
 
-  const handleStep = (direction: -1 | 1) => {
-    setFocusRange((prev) => stepSalesTrendRange(preset, prev.start, prev.end, direction));
-  };
-
   const handleBarClick = useCallback(
     (bucket: SalesTrendBucket) => {
       if (bucket.sales <= 0) return;
       if (data?.granularity === 'hour' && preset === 'day') {
-        router.push(`/invoices?date_from=${focusRange.start}&date_to=${focusRange.end}`);
+        router.push(`/invoices?date_from=${dateRange.start}&date_to=${dateRange.end}`);
         return;
       }
       if (data?.granularity === 'week') {
@@ -129,7 +112,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
       }
       router.push(`/invoices?date_from=${bucket.key}&date_to=${bucket.key}`);
     },
-    [data?.granularity, focusRange.end, focusRange.start, preset, router]
+    [data?.granularity, dateRange.end, dateRange.start, preset, router]
   );
 
   const bucketsRef = useRef(data?.buckets);
@@ -265,28 +248,6 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-1 sm:justify-end">
-          <button
-            type="button"
-            onClick={() => handleStep(-1)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:bg-gray-50 dark:hover:bg-slate-800"
-            aria-label="Previous period"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <span className="min-w-[9rem] px-2 text-center text-sm font-medium text-text-primary md:min-w-[11rem] md:text-base">
-            {navLabel}
-          </span>
-          <button
-            type="button"
-            onClick={() => handleStep(1)}
-            disabled={!canGoForward}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800"
-            aria-label="Next period"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        </div>
       </div>
 
       {loading ? (
