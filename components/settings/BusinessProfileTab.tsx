@@ -167,6 +167,7 @@ export const BusinessProfileTab: React.FC = () => {
   const saved = useMemo(() => profileFrom(business, branch, activeBranchCount), [business, branch, activeBranchCount]);
   const [form, setForm] = useState<ProfileForm>(saved);
   const [editing, setEditing] = useState<SectionKey | null>(null);
+  const [mobilePane, setMobilePane] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState<'logo' | 'signature' | null>(null);
@@ -224,6 +225,13 @@ export const BusinessProfileTab: React.FC = () => {
     setForm(base);
     setErrors({});
     setEditing(section);
+    setMobilePane(section === 'tax' && !hasBilling ? 'bp-tax-hr' : {
+      basic: 'bp-basic',
+      address: 'bp-address',
+      tax: 'bp-gst',
+      about: 'bp-about',
+      export: 'bp-export',
+    }[section]);
     if (focus) focusField(focus);
   };
 
@@ -249,6 +257,12 @@ export const BusinessProfileTab: React.FC = () => {
     startEdit(section, h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, business?.id]);
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    setMobilePane(hash === 'pos-mode' ? 'bp-features' : hash);
+  }, []);
 
   useEffect(() => {
     if (!business?.id) return;
@@ -547,7 +561,38 @@ export const BusinessProfileTab: React.FC = () => {
         </div>
       )}
 
+      {mobilePane === null ? (
+        <div className="-mx-page-x lg:hidden">
+          <MobileBusinessMenu
+            items={[
+              { id: 'bp-basic', label: isBranchView ? 'Branch details' : 'Business details' },
+              { id: 'bp-address', label: 'Address' },
+              hasBilling
+                ? { id: 'bp-gst', label: 'GST registration' }
+                : hasHr
+                  ? { id: 'bp-tax-hr', label: 'Tax details' }
+                  : null,
+              { id: 'bp-branding', label: 'Logo and signature' },
+              hasBilling ? { id: 'bp-payments', label: 'Bank and UPI' } : null,
+              showAbout ? { id: 'bp-about', label: 'About your business' } : null,
+              hasBilling ? { id: 'bp-export', label: 'Exporter details' } : null,
+              hasBilling ? { id: 'bp-features', label: 'Billing preferences' } : null,
+            ].filter((item): item is { id: string; label: string } => item !== null)}
+            onOpen={setMobilePane}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setMobilePane(null)}
+          className="mb-2 text-sm font-medium text-primary-700 lg:hidden"
+        >
+          All business settings
+        </button>
+      )}
+
       <div className="space-y-6">
+        <div className={mobilePane === 'bp-basic' ? undefined : 'max-lg:hidden'}>
         <ProfileSection
           id="bp-basic"
           tour="bp-basic"
@@ -606,7 +651,9 @@ export const BusinessProfileTab: React.FC = () => {
             </div>
           </EditableCard>
         </ProfileSection>
+        </div>
 
+        <div className={mobilePane === 'bp-address' ? undefined : 'max-lg:hidden'}>
         <ProfileSection
           id="bp-address"
           tour="bp-address"
@@ -679,7 +726,9 @@ export const BusinessProfileTab: React.FC = () => {
             </div>
           </EditableCard>
         </ProfileSection>
+        </div>
 
+        <div className={(hasBilling ? mobilePane === 'bp-gst' : mobilePane === 'bp-tax-hr') ? undefined : 'max-lg:hidden'}>
         {hasBilling ? (
           <ProfileSection
             id="bp-gst"
@@ -808,7 +857,9 @@ export const BusinessProfileTab: React.FC = () => {
             </EditableCard>
           </ProfileSection>
         ) : null}
+        </div>
 
+        <div className={mobilePane === 'bp-branding' ? undefined : 'max-lg:hidden'}>
         <ProfileSection
           id="bp-branding"
           title="Logo and signature"
@@ -839,8 +890,10 @@ export const BusinessProfileTab: React.FC = () => {
             />
           </div>
         </ProfileSection>
+        </div>
 
         {hasBilling && (
+        <div className={mobilePane === 'bp-payments' ? undefined : 'max-lg:hidden'}>
           <ProfileSection
             id="bp-payments"
             title="Bank and UPI"
@@ -849,9 +902,11 @@ export const BusinessProfileTab: React.FC = () => {
             <BankAccountsCard businessId={business?.id} userId={user?.id} />
             <ManualPaymentMethodsSettings businessId={business?.id ?? null} userId={user?.id ?? null} embedded />
           </ProfileSection>
+        </div>
         )}
 
         {showAbout && (
+        <div className={mobilePane === 'bp-about' ? undefined : 'max-lg:hidden'}>
           <ProfileSection
             id="bp-about"
             tour="bp-type"
@@ -902,9 +957,11 @@ export const BusinessProfileTab: React.FC = () => {
               </div>
             </EditableCard>
           </ProfileSection>
+        </div>
         )}
 
         {hasBilling && (
+        <div className={mobilePane === 'bp-export' ? undefined : 'max-lg:hidden'}>
           <ProfileSection
             id="bp-export"
             tour="bp-export"
@@ -947,9 +1004,11 @@ export const BusinessProfileTab: React.FC = () => {
               </div>
             </EditableCard>
           </ProfileSection>
+        </div>
         )}
 
         {hasBilling && (
+        <div className={mobilePane === 'bp-features' ? undefined : 'max-lg:hidden'}>
           <ProfileSection
             id="bp-features"
             tour="bp-features"
@@ -1008,11 +1067,36 @@ export const BusinessProfileTab: React.FC = () => {
               />
             )}
           </ProfileSection>
+        </div>
         )}
       </div>
     </div>
   );
 };
+
+function MobileBusinessMenu({
+  items,
+  onOpen,
+}: {
+  items: { id: string; label: string }[];
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <div className="divide-y divide-border border-y border-border bg-surface">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onOpen(item.id)}
+          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-text-primary active:bg-slate-50"
+        >
+          {item.label}
+          <span className="text-text-muted" aria-hidden>›</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function SelectField({
   label,

@@ -35,6 +35,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { MobileListRow, MobileListSection } from '@/components/layout/MobileList';
 
 const COLUMN_ICONS: Record<string, LucideIcon> = {
   account: Building2,
@@ -273,14 +274,36 @@ export function SettingsHub() {
 
           {filtered.map((section) => (
             <section key={section.id} className="space-y-5" aria-labelledby={`hub-${section.id}`}>
-              <div className="px-0.5">
+              <div className="hidden px-0.5 lg:block">
                 <h2 id={`hub-${section.id}`} className="settings-section-title mb-0">
                   {section.title}
                 </h2>
                 <p className="type-body-secondary mt-0.5">{section.description}</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              <div className="-mx-4 lg:hidden">
+                {section.columns.map((col) => {
+                  const Icon = COLUMN_ICONS[col.id] ?? SlidersHorizontal;
+                  return (
+                    <MobileListSection key={col.id} title={col.title}>
+                      {col.links.map((link) => {
+                        const locked = link.featureKey != null && !hasCapability(link.featureKey, 'view');
+                        return (
+                          <MobileListRow
+                            key={`${link.href}-${link.label}`}
+                            href={link.href}
+                            label={link.label}
+                            icon={Icon}
+                            locked={locked}
+                          />
+                        );
+                      })}
+                    </MobileListSection>
+                  );
+                })}
+              </div>
+
+              <div className="hidden grid-cols-1 gap-5 sm:grid-cols-2 lg:grid lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {section.columns.map((col) => {
                   const Icon = COLUMN_ICONS[col.id] ?? SlidersHorizontal;
                   return (

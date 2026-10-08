@@ -55,6 +55,7 @@ export default function MorePage() {
   const { isOffline } = useNetworkStatus();
   const { hasCapability, checkCapability } = useCapabilityCheck();
   const [isSupplier, setIsSupplier] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -116,12 +117,17 @@ export default function MorePage() {
     enabledModules,
   ]);
 
-  // Back from a More destination lands on that section (?section=).
+  // Back from a More destination opens that section (?section=).
   useEffect(() => {
     const section = searchParams.get(MORE_SECTION_QUERY_KEY);
     if (!section || !sections.length) return;
+    setOpenSections((prev) => ({ ...prev, [section]: true }));
     document.getElementById(moreSectionId(section))?.scrollIntoView({ block: 'start' });
   }, [searchParams, sections]);
+
+  const toggleSection = (title: string) => {
+    setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }));
+  };
 
   return (
     <div className="mobile-screen flex min-h-[calc(100vh-5rem)] flex-col pb-2">
@@ -138,7 +144,13 @@ export default function MorePage() {
             {sections.map((section) => {
               const Icon = SECTION_ICONS[section.title] || FileText;
               return (
-                <MobileListSection key={section.title} id={moreSectionId(section.title)} title={section.title}>
+                <MobileListSection
+                  key={section.title}
+                  id={moreSectionId(section.title)}
+                  title={section.title}
+                  open={openSections[section.title] !== false}
+                  onToggle={() => toggleSection(section.title)}
+                >
                   {section.items.map((item) => (
                     <MobileListRow
                       key={`${section.title}-${item.href}-${item.label}`}

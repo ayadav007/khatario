@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -13,15 +13,32 @@ export function MobileListSection({
   title,
   children,
   id,
+  open = true,
+  onToggle,
 }: {
   title: string;
   children: ReactNode;
   id?: string;
+  /** When set, the heading collapses the rows. Omitted headings stay open. */
+  open?: boolean;
+  onToggle?: () => void;
 }) {
   return (
     <section id={id} className="scroll-mt-4">
-      <h2 className="px-4 pb-1 pt-4 text-xs font-medium text-text-secondary">{title}</h2>
-      <div className="divide-y divide-border border-y border-border bg-surface">{children}</div>
+      {onToggle ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-h-11 w-full items-center justify-between gap-3 bg-slate-50 px-4 py-2 text-left dark:bg-slate-900/40"
+        >
+          <span className="text-xs font-medium text-text-secondary">{title}</span>
+          <ChevronDown className={clsx('h-4 w-4 shrink-0 text-text-muted transition-transform', open ? 'rotate-0' : '-rotate-90')} />
+        </button>
+      ) : (
+        <h2 className="px-4 pb-1 pt-4 text-xs font-medium text-text-secondary">{title}</h2>
+      )}
+      {open ? <div className="divide-y divide-border border-y border-border bg-surface">{children}</div> : null}
     </section>
   );
 }
