@@ -36,7 +36,13 @@ export async function POST(request: NextRequest) {
     let displayName = '';
     let role: 'owner' | 'member' = 'owner';
 
-    const teamUser = await authenticatePartnerUser(email, password);
+    let teamUser: Awaited<ReturnType<typeof authenticatePartnerUser>> = null;
+    try {
+      teamUser = await authenticatePartnerUser(email, password);
+    } catch (teamErr) {
+      // Owner login still works off platform_partners if team seats are not migrated yet.
+      console.error('[partners/auth/login] team lookup skipped:', teamErr);
+    }
     if (teamUser) {
       partnerId = teamUser.partnerId;
       partnerUserId = teamUser.userId;
@@ -57,20 +63,24 @@ export async function POST(request: NextRequest) {
         [partner.id],
       );
       if (hashRow) {
-        await ensureOwnerUserForPartner({
-          partnerId: partner.id,
-          name: partner.name,
-          email: partner.email,
-          phone: partner.phone,
-          passwordHash: hashRow.password_hash,
-        });
-        const owner = await queryOne<{ id: string }>(
-          `SELECT id FROM platform_partner_users
-           WHERE partner_id = $1 AND role = 'owner' AND lower(email) = lower($2)
-           LIMIT 1`,
-          [partner.id, partner.email],
-        );
-        partnerUserId = owner?.id ?? null;
+        try {
+          await ensureOwnerUserForPartner({
+            partnerId: partner.id,
+            name: partner.name,
+            email: partner.email,
+            phone: partner.phone,
+            passwordHash: hashRow.password_hash,
+          });
+          const owner = await queryOne<{ id: string }>(
+            `SELECT id FROM platform_partner_users
+             WHERE partner_id = $1 AND role = 'owner' AND lower(email) = lower($2)
+             LIMIT 1`,
+            [partner.id, partner.email],
+          );
+          partnerUserId = owner?.id ?? null;
+        } catch (seatErr) {
+          console.error('[partners/auth/login] owner seat skipped:', seatErr);
+        }
       }
     }
 

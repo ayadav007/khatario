@@ -137,7 +137,12 @@ export async function authenticatePartnerUser(
     [email.trim()],
   );
   if (!row || row.partner_status !== 'active') return null;
-  const ok = await bcrypt.compare(password, row.password_hash);
+  let ok = false;
+  try {
+    ok = await bcrypt.compare(password, row.password_hash);
+  } catch {
+    return null;
+  }
   if (!ok) return null;
 
   await query(

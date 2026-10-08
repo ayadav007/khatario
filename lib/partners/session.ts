@@ -31,11 +31,22 @@ export async function createPartnerSession(params: {
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + SESSION_HOURS);
 
-  await query(
-    `INSERT INTO platform_partner_sessions (partner_id, partner_user_id, session_token, expires_at)
-     VALUES ($1, $2, $3, $4)`,
-    [params.partnerId, params.partnerUserId ?? null, token, expiresAt.toISOString()],
-  );
+  try {
+    await query(
+      `INSERT INTO platform_partner_sessions (partner_id, partner_user_id, session_token, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [params.partnerId, params.partnerUserId ?? null, token, expiresAt.toISOString()],
+    );
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+    // 42703 = column missing (migration 368 not applied yet)
+    if (code !== '42703') throw err;
+    await query(
+      `INSERT INTO platform_partner_sessions (partner_id, session_token, expires_at)
+       VALUES ($1, $2, $3)`,
+      [params.partnerId, token, expiresAt.toISOString()],
+    );
+  }
 
   await query(
     `UPDATE platform_partners SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -51,7 +62,32 @@ export async function resolvePartnerSession(
 ): Promise<PartnerSession | null> {
   if (!token?.trim()) return null;
 
-  const row = await queryOne<{
+  const sqlWithSeats = `
+    SELECT
+       s.session_token, s.partner_id, s.partner_user_id, s.expires_at,
+       p.id, p.partner_type, p.name, p.email, p.phone, p.referral_code, p.status,
+       p.commission_type, p.commission_value, p.commission_basis, p.hold_days,
+       u.role AS user_role, u.name AS user_name, u.is_active AS user_active
+     FROM platform_partner_sessions s
+     INNER JOIN platform_partners p ON p.id = s.partner_id
+     LEFT JOIN platform_partner_users u ON u.id = s.partner_user_id
+     WHERE s.session_token = $1
+       AND s.expires_at > CURRENT_TIMESTAMP
+       AND p.status = 'active'`;
+
+  const sqlWithoutSeats = `
+    SELECT
+       s.session_token, s.partner_id, NULL::uuid AS partner_user_id, s.expires_at,
+       p.id, p.partner_type, p.name, p.email, p.phone, p.referral_code, p.status,
+       p.commission_type, p.commission_value, p.commission_basis, p.hold_days,
+       NULL::varchar AS user_role, NULL::varchar AS user_name, NULL::boolean AS user_active
+     FROM platform_partner_sessions s
+     INNER JOIN platform_partners p ON p.id = s.partner_id
+     WHERE s.session_token = $1
+       AND s.expires_at > CURRENT_TIMESTAMP
+       AND p.status = 'active'`;
+
+  type SessionRow = {
     session_token: string;
     partner_id: string;
     partner_user_id: string | null;
@@ -70,20 +106,16 @@ export async function resolvePartnerSession(
     user_role: PartnerUserRole | null;
     user_name: string | null;
     user_active: boolean | null;
-  }>(
-    `SELECT
-       s.session_token, s.partner_id, s.partner_user_id, s.expires_at,
-       p.id, p.partner_type, p.name, p.email, p.phone, p.referral_code, p.status,
-       p.commission_type, p.commission_value, p.commission_basis, p.hold_days,
-       u.role AS user_role, u.name AS user_name, u.is_active AS user_active
-     FROM platform_partner_sessions s
-     INNER JOIN platform_partners p ON p.id = s.partner_id
-     LEFT JOIN platform_partner_users u ON u.id = s.partner_user_id
-     WHERE s.session_token = $1
-       AND s.expires_at > CURRENT_TIMESTAMP
-       AND p.status = 'active'`,
-    [token.trim()],
-  );
+  };
+
+  let row: SessionRow | null = null;
+  try {
+    row = await queryOne<SessionRow>(sqlWithSeats, [token.trim()]);
+  } catch (err) {
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+    if (code !== '42P01' && code !== '42703') throw err;
+    row = await queryOne<SessionRow>(sqlWithoutSeats, [token.trim()]);
+  }
 
   if (!row) return null;
   if (row.partner_user_id && row.user_active === false) return null;
