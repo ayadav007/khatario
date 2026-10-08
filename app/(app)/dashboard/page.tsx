@@ -401,7 +401,6 @@ function DashboardPage() {
           onOpen={handleCardClick}
         />
 
-        <div className="hidden lg:contents">
         <DashboardFinancialSnapshot
           items={financialSnapshotItems}
           onItemClick={handleKpiClick}
@@ -588,7 +587,6 @@ function DashboardPage() {
         </div>
         </>
         ) : null}
-        </div>
       </div>
 
       {selectedCard && (
