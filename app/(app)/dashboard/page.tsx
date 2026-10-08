@@ -19,6 +19,8 @@ import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
 import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSection';
 import { DashboardSalesInsightsSection } from '@/components/dashboard/DashboardSalesInsightsSection';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
+import { MobileCreateSheet } from '@/components/dashboard/MobileCreateSheet';
+import { MobileDashboardHome } from '@/components/dashboard/MobileDashboardHome';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
@@ -387,7 +389,19 @@ function DashboardPage() {
         <SubscriptionUsageBanner businessId={business?.id} variant="dashboard" />
 
         <QuickActionsFAB />
+        <MobileCreateSheet />
 
+        <MobileDashboardHome
+          periodLabel={periodLabel}
+          sales={sales}
+          purchases={purchases}
+          toCollect={Number(receivablesTotal)}
+          toPay={Number(payablesTotal)}
+          recentInvoices={data?.recentInvoices ?? []}
+          onOpen={handleCardClick}
+        />
+
+        <div className="hidden lg:contents">
         <DashboardFinancialSnapshot
           items={financialSnapshotItems}
           onItemClick={handleKpiClick}
@@ -408,30 +422,6 @@ function DashboardPage() {
         ) : null}
 
         {!hideBody && !minimal ? <PromotionCarousel /> : null}
-
-        {/* Card Details Modal */}
-        {selectedCard && (
-          <DashboardCardDetails
-            type={selectedCard}
-            title={
-              selectedCard === 'sales'
-                ? `${periodPrefix} Sales`
-                : selectedCard === 'collection'
-                  ? `${periodPrefix} Collection`
-                  : selectedCard === 'purchases'
-                    ? `${periodPrefix} Purchases`
-                    : selectedCard === 'receivables'
-                      ? 'Receivables'
-                      : 'Payables'
-            }
-            data={cardDetails}
-            loading={loadingDetails}
-            onClose={() => {
-              setSelectedCard(null);
-              setCardDetails([]);
-            }}
-          />
-        )}
 
         {/* Pending Actions Button - Sticky in top-right */}
         {!hideBody && data ? <PendingActionsButton data={data} /> : null}
@@ -598,7 +588,31 @@ function DashboardPage() {
         </div>
         </>
         ) : null}
+        </div>
       </div>
+
+      {selectedCard && (
+        <DashboardCardDetails
+          type={selectedCard}
+          title={
+            selectedCard === 'sales'
+              ? `${periodPrefix} Sales`
+              : selectedCard === 'collection'
+                ? `${periodPrefix} Collection`
+                : selectedCard === 'purchases'
+                  ? `${periodPrefix} Purchases`
+                  : selectedCard === 'receivables'
+                    ? 'Receivables'
+                    : 'Payables'
+          }
+          data={cardDetails}
+          loading={loadingDetails}
+          onClose={() => {
+            setSelectedCard(null);
+            setCardDetails([]);
+          }}
+        />
+      )}
 
       {shareFormatInvoice && (
         <ShareInvoiceFormatSheet
