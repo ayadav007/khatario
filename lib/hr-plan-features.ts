@@ -7,7 +7,8 @@ export type HrRegistryFeatureId =
   | 'hr_employees'
   | 'hr_attendance'
   | 'hr_payroll'
-  | 'hr_leaves';
+  | 'hr_leaves'
+  | 'hr_employee_portal';
 
 const HR_AUTH_MODULE_TO_FEATURE: Record<string, HrRegistryFeatureId> = {
   employees: 'hr_employees',
@@ -25,6 +26,7 @@ const HR_REGISTRY_IDS = new Set<string>([
   'hr_attendance',
   'hr_payroll',
   'hr_leaves',
+  'hr_employee_portal',
 ]);
 
 /**

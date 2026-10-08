@@ -180,6 +180,24 @@ describe('evaluateCapabilityAccess', () => {
     });
   });
 
+  it('does not treat the account owner as having the employee portal on HR Lite', () => {
+    loadSnapshot.mockReturnValue({
+      permissions: {},
+      isPrimaryAdmin: true,
+      enabledFeatures: ['hr_employees', 'hr_attendance', 'hr_payroll'],
+    } as any);
+    const result = evaluateCapabilityAccess({
+      resource: 'hr_employee_portal',
+      action: 'view',
+      businessId: 'b1',
+      userId: 'u1',
+      sessionIsPrimaryAdmin: true,
+      sessionPermissions: null,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.denialReason).toBe('FEATURE_NOT_IN_PLAN');
+  });
+
   it('allows primary admin without waiting for module permissions', () => {
     const result = evaluateCapabilityAccess({
       resource: 'items',
