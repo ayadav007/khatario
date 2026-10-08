@@ -20,7 +20,6 @@ import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSe
 import { DashboardSalesInsightsSection } from '@/components/dashboard/DashboardSalesInsightsSection';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
 import { MobileCreateSheet } from '@/components/dashboard/MobileCreateSheet';
-import { MobileDashboardHome } from '@/components/dashboard/MobileDashboardHome';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
@@ -390,16 +389,6 @@ function DashboardPage() {
 
         <QuickActionsFAB />
         <MobileCreateSheet />
-
-        <MobileDashboardHome
-          periodLabel={periodLabel}
-          sales={sales}
-          purchases={purchases}
-          toCollect={Number(receivablesTotal)}
-          toPay={Number(payablesTotal)}
-          recentInvoices={data?.recentInvoices ?? []}
-          onOpen={handleCardClick}
-        />
 
         <DashboardFinancialSnapshot
           items={financialSnapshotItems}
