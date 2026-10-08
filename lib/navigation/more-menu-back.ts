@@ -1,6 +1,6 @@
 /**
  * Mobile back targets for routes reached from the /more menu.
- * Back from a section list page returns to /more with that section expanded.
+ * Back from a section list page returns to /more and scrolls that section into view.
  */
 
 export const MORE_SECTION_QUERY_KEY = 'section';

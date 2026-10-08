@@ -2,12 +2,10 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Settings,
   LogOut,
-  ChevronRight,
-  ChevronUp,
   FileText,
   ShoppingCart,
   Package,
@@ -20,7 +18,6 @@ import {
   Loader2,
   MessageSquare,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
@@ -29,9 +26,8 @@ import { useCapabilityCheck } from '@/hooks/useCapability';
 import { buildMoreMenuSections, type MoreNavSection } from '@/lib/more-navigation';
 import { MORE_SECTION_QUERY_KEY } from '@/lib/navigation/more-menu-back';
 import type { LucideIcon } from 'lucide-react';
-import { clsx } from 'clsx';
 import { MobileAccountCard } from '@/components/layout/MobileAccountCard';
-import { isConnectAgentSeat } from '@/lib/users/connect-seats';
+import { MobileListRow, MobileListSection } from '@/components/layout/MobileList';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   Supplier: Store,
@@ -48,34 +44,17 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   Support: HelpCircle,
 };
 
-function sectionIconBg(title: string): string {
-  const key = title.split('&')[0].trim();
-  const map: Record<string, string> = {
-    Supplier: 'bg-amber-100 text-amber-800',
-    Sales: 'bg-slate-100 text-primary-700',
-    Purchases: 'bg-orange-100 text-orange-800',
-    Inventory: 'bg-emerald-100 text-emerald-800',
-    Accounting: 'bg-violet-100 text-violet-800',
-    Reports: 'bg-cyan-100 text-cyan-800',
-    'HR & Employees': 'bg-pink-100 text-pink-800',
-    Connect: 'bg-emerald-100 text-emerald-800',
-    WhatsApp: 'bg-emerald-100 text-emerald-800',
-    Tools: 'bg-indigo-100 text-indigo-800',
-    'Settings & data': 'bg-slate-200 text-slate-800',
-    Support: 'bg-rose-100 text-rose-800',
-  };
-  return map[key] || 'bg-slate-100 text-primary-800';
+function moreSectionId(title: string) {
+  return `more-${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`;
 }
 
 export default function MorePage() {
   const searchParams = useSearchParams();
-  const { logout, business, platformSession, user } = useAuth();
+  const { logout, business, platformSession } = useAuth();
   const { warehousesEnabled, snapshotLoaded } = useShellLayoutSettings();
   const { isOffline } = useNetworkStatus();
   const { hasCapability, checkCapability } = useCapabilityCheck();
   const [isSupplier, setIsSupplier] = useState(false);
-  const [openSection, setOpenSection] = useState<string | null>(null);
-  const defaultSectionApplied = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,39 +116,12 @@ export default function MorePage() {
     enabledModules,
   ]);
 
-  // Expand section from ?section= query (mobile back from a More menu page)
+  // Back from a More destination lands on that section (?section=).
   useEffect(() => {
     const section = searchParams.get(MORE_SECTION_QUERY_KEY);
-    if (!section) return;
-    defaultSectionApplied.current = true;
-    setOpenSection(section);
-  }, [searchParams]);
-
-  // Default once: agents with Sales → Sales; else Connect / HR / Sales / first
-  useEffect(() => {
-    if (!sections.length || defaultSectionApplied.current) return;
-    defaultSectionApplied.current = true;
-    const hrOnly =
-      enabledModules.includes('hr') && !enabledModules.includes('billing');
-    const hasSales = sections.some((s) => s.title === 'Sales');
-    const connectFocused =
-      isConnectAgentSeat(user) ||
-      (enabledModules.includes('connect') && !enabledModules.includes('billing'));
-    const preferredTitle =
-      isConnectAgentSeat(user) && hasSales
-        ? 'Sales'
-        : connectFocused
-          ? 'Connect'
-          : hrOnly
-            ? 'HR & Employees'
-            : 'Sales';
-    const preferred = sections.find((s) => s.title === preferredTitle);
-    setOpenSection(preferred?.title ?? sections[0].title);
-  }, [sections, enabledModules, user]);
-
-  const toggleSection = (title: string) => {
-    setOpenSection((prev) => (prev === title ? null : title));
-  };
+    if (!section || !sections.length) return;
+    document.getElementById(moreSectionId(section))?.scrollIntoView({ block: 'start' });
+  }, [searchParams, sections]);
 
   return (
     <div className="mobile-screen flex min-h-[calc(100vh-5rem)] flex-col pb-2">
@@ -182,69 +134,23 @@ export default function MorePage() {
         <>
           <MobileAccountCard className="mb-1 lg:hidden" />
 
-          <div className="space-y-3">
-            <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
-              My business
-            </h2>
-
-            <div className="mobile-inset-group">
-              {sections.map((section) => {
-                const Icon = SECTION_ICONS[section.title] || FileText;
-                const iconRound = sectionIconBg(section.title);
-                const expanded = openSection === section.title;
-
-                return (
-                  <div key={section.title}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSection(section.title)}
-                      className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
-                      aria-expanded={expanded}
-                    >
-                      <div
-                        className={clsx(
-                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
-                          iconRound,
-                        )}
-                      >
-                        <Icon className="h-4.5 w-4.5 h-[18px] w-[18px]" />
-                      </div>
-                      <span className="flex-1 text-[15px] font-semibold leading-snug text-text-primary">
-                        {section.title}
-                      </span>
-                      {expanded ? (
-                        <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" />
-                      )}
-                    </button>
-
-                    {expanded && (
-                      <ul className="border-t border-border/60 bg-slate-50/40 dark:bg-slate-900/30">
-                        {section.items.map((item) => (
-                          <li key={`${section.title}-${item.href}-${item.label}`}>
-                            <Link
-                              href={item.href}
-                              className="flex items-center justify-between py-3 pl-14 pr-3.5 active:bg-slate-100/80 dark:active:bg-slate-800/50"
-                            >
-                              <span className="pr-2 text-sm leading-snug text-text-primary">
-                                {item.label}
-                                {item.isLocked ? (
-                                  <span className="ml-2 text-2xs font-semibold uppercase text-amber-700">
-                                    (Upgrade)
-                                  </span>
-                                ) : null}
-                              </span>
-                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-muted opacity-60" />
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <div className="-mx-page-x">
+            {sections.map((section) => {
+              const Icon = SECTION_ICONS[section.title] || FileText;
+              return (
+                <MobileListSection key={section.title} id={moreSectionId(section.title)} title={section.title}>
+                  {section.items.map((item) => (
+                    <MobileListRow
+                      key={`${section.title}-${item.href}-${item.label}`}
+                      href={item.href}
+                      label={item.label}
+                      icon={Icon}
+                      locked={item.isLocked}
+                    />
+                  ))}
+                </MobileListSection>
+              );
+            })}
           </div>
 
           <button

@@ -6,9 +6,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
-import { Search, Plus, Loader2, Phone, Edit, Eye, Filter, X, MessageCircle } from 'lucide-react';
+import { Search, Plus, Loader2, Edit, Eye, Filter, X, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Customer } from '@/types/database';
 import { Toast, ToastType } from '@/components/ui/Toast';
@@ -21,6 +20,7 @@ import {
   PARTY_BALANCE_COLUMN_HEADER,
 } from '@/lib/party-balance-ui';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { MobileListRow } from '@/components/layout/MobileList';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { CustomerDetailPanel } from '@/components/customers/CustomerDetailPanel';
 import { clsx } from 'clsx';
@@ -30,7 +30,6 @@ const PAGE_SIZE = 50;
 
 export default function CustomersPage() {
   const { business, user } = useAuth();
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'with-balance' | 'zero-balance'>('all');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
@@ -380,98 +379,55 @@ export default function CustomersPage() {
             </div>
           </Card>
 
-          {/* Mobile Card View — individual compact cards with gap (no outer list shell) */}
-          <div className="md:hidden space-y-2">
+          <div className="-mx-page-x divide-y divide-border border-y border-border bg-surface md:hidden">
             {paginatedCustomers.length > 0 ? (
               paginatedCustomers.map((customer) => {
                 const balance = Number(customer.current_balance ?? customer.opening_balance ?? 0);
                 return (
-                  <div
+                  <MobileListRow
                     key={customer.id}
-                    className="rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm transition-colors active:bg-slate-50/80 dark:active:bg-slate-800/40"
+                    label={customer.name}
+                    hint={customer.phone || undefined}
                     onClick={() => setSelectedCustomerId(customer.id)}
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800/40 text-primary-700 dark:text-primary-300 rounded-full flex items-center justify-center font-semibold text-xs shrink-0">
-                          {customer.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-sm text-text-primary truncate leading-snug">
-                            {customer.name}
-                          </p>
-                          {customer.phone && (
-                            <div className="flex items-center gap-1 text-xs text-text-muted mt-0.5">
-                              <Phone className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{customer.phone}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-2xs text-text-muted font-medium uppercase tracking-wide">
-                          {PARTY_BALANCE_COLUMN_HEADER}
-                        </p>
-                        <p
-                          className={`text-sm font-semibold leading-tight ${
+                    trailing={
+                      <span className="text-right">
+                        <span
+                          className={clsx(
+                            'block text-sm font-semibold tabular-nums',
                             balance > 0
-                              ? 'text-amber-600 dark:text-amber-400'
+                              ? 'text-amber-700'
                               : balance < 0
-                                ? 'text-emerald-700 dark:text-emerald-400'
-                                : 'text-text-muted'
-                          }`}
+                                ? 'text-emerald-700'
+                                : 'text-text-muted',
+                          )}
                         >
-                          ₹{balance.toLocaleString('en-IN')}
-                        </p>
-                        <p className="text-2xs text-text-muted leading-none mt-0.5">
-                          {customerBalanceHint(balance)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`grid gap-1.5 mt-2 ${balance > 0 && customer.phone ? 'grid-cols-3' : 'grid-cols-2'}`}
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCustomerId(customer.id);
-                        }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-text-secondary rounded-lg border border-border hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        View
-                      </button>
-                      {balance > 0 && customer.phone && (
+                          ₹{Math.abs(balance).toLocaleString('en-IN')}
+                        </span>
+                        <span className="block text-xs text-text-muted">{customerBalanceHint(balance)}</span>
+                      </span>
+                    }
+                    actions={
+                      balance > 0 && customer.phone ? (
                         <button
+                          type="button"
                           onClick={(e) => handleSendReminder(customer.id, e)}
                           disabled={sendingReminder === customer.id}
-                          className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/35 rounded-lg border border-green-200 dark:border-green-900 disabled:opacity-50"
+                          className="inline-flex h-9 w-9 items-center justify-center text-emerald-700 disabled:opacity-50"
+                          aria-label={`Remind ${customer.name}`}
                         >
                           {sendingReminder === customer.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <MessageCircle className="w-3.5 h-3.5" />
+                            <MessageCircle className="h-4 w-4" />
                           )}
-                          Remind
                         </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/customers/${customer.id}/edit`);
-                        }}
-                        className="flex items-center justify-center gap-1.5 py-1.5 text-caption font-medium text-primary-700 dark:text-primary-300 bg-slate-50 dark:bg-primary-900/30 rounded-lg border border-border dark:border-primary-800/60"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                    </div>
-                  </div>
+                      ) : null
+                    }
+                  />
                 );
               })
             ) : (
-              <div className="text-center py-10 text-sm text-text-secondary">No customers found.</div>
+              <div className="px-4 py-10 text-center text-sm text-text-secondary">No customers found.</div>
             )}
           </div>
         </>

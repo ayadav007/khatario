@@ -7,6 +7,7 @@ import { TrendingUp, ShoppingCart, Package, FileText, Download, Calendar } from 
 import { useAuth } from '@/contexts/AuthContext';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import Link from 'next/link';
+import { MobileReportsIndex } from '@/components/reports/MobileReportsIndex';
 
 interface SalesSummary {
   total_invoices: number;
@@ -46,9 +47,9 @@ function ReportsPage() {
   });
 
   useEffect(() => {
-    if (business?.id && user?.id) {
-      fetchReports();
-    }
+    if (!business?.id || !user?.id) return;
+    if (window.matchMedia('(max-width: 767px)').matches) return;
+    fetchReports();
   }, [business, user, activeTab, dateRange]);
 
   async function fetchReports() {
@@ -120,8 +121,9 @@ function ReportsPage() {
   }
 
   return (
-    
-      <div className="space-y-6">
+      <div>
+      <MobileReportsIndex />
+      <div className="hidden space-y-6 md:block">
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
@@ -350,7 +352,7 @@ function ReportsPage() {
           </>
         )}
       </div>
-    
+      </div>
   );
 }
 

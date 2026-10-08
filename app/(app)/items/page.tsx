@@ -452,7 +452,7 @@ function ItemsPage() {
 
   // Full list (table + mobile cards) — original experience when no detail panel is open
   const fullList = (
-    <Card padding="none" className="overflow-hidden">
+    <Card padding="none" className="overflow-hidden max-md:overflow-visible max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:shadow-none">
       {loading ? (
         <div className="p-12 flex justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
@@ -653,7 +653,7 @@ function ItemsPage() {
           </div>
 
           {/* Mobile Card View */}
-          <div className="space-y-2 bg-gray-50/80 p-2 md:hidden dark:bg-slate-950/40">
+          <div className="-mx-page-x divide-y divide-border border-y border-border bg-surface md:hidden">
             {paginatedItems.length > 0 ? (
               paginatedItems.map((item) => (
                 <ItemMobileCard
@@ -667,7 +667,7 @@ function ItemsPage() {
                 />
               ))
             ) : (
-              <div className="rounded-xl border border-border bg-white py-12 text-center text-text-secondary dark:bg-surface">
+              <div className="px-4 py-12 text-center text-sm text-text-secondary">
                 No items found.
               </div>
             )}
