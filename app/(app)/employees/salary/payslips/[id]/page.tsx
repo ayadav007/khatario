@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useParams, useRouter } from 'next/navigation';
 import { useToastContext } from '@/contexts/ToastContext';
 import Link from 'next/link';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 export default function PayslipViewPage() {
   const params = useParams();
@@ -81,16 +82,9 @@ export default function PayslipViewPage() {
           </div>
         </div>
 
-        <Card>
-          <div className="p-6">
-            <div
-              className="payslip-content"
-              dangerouslySetInnerHTML={{ __html: htmlContent }}
-              style={{
-                maxWidth: '100%',
-                overflow: 'auto',
-              }}
-            />
+        <Card padding="none" className="overflow-hidden bg-slate-100">
+          <div className="p-3 lg:p-6">
+            {htmlContent ? <ScaledA4Preview html={htmlContent} title="Payslip preview" /> : null}
           </div>
         </Card>
       </div>

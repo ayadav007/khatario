@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
@@ -407,10 +408,7 @@ export function PurchaseOrderDetailPanel({
               <p className="mt-1 text-amber-800/90">{previewError}</p>
             </div>
           ) : (
-            <div
-              className="mx-auto w-full max-w-[210mm] bg-white p-8 shadow-lg print:shadow-none"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <ScaledA4Preview html={html} title="Purchase order preview" />
           )
         ) : (
           <PurchaseOrderSummaryView order={order} items={items} />

@@ -7,6 +7,7 @@ import { clsx } from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 type InvoiceSummary = {
   id: string;
@@ -18,42 +19,6 @@ type InvoiceSummary = {
   customer_phone?: string;
   document_type?: string;
 };
-
-/** A4-ish preview scaled to fit a phone-width card */
-const PREVIEW_PAGE_W = 794;
-const PREVIEW_PAGE_H = 1123;
-const PREVIEW_CARD_W = 280;
-const PREVIEW_SCALE = PREVIEW_CARD_W / PREVIEW_PAGE_W;
-const PREVIEW_CARD_H = Math.round(PREVIEW_PAGE_H * PREVIEW_SCALE);
-
-function MinifiedInvoicePreview({ html }: { html: string }) {
-  if (!html) {
-    return (
-      <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
-        Preview unavailable
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="relative mx-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md"
-      style={{ width: PREVIEW_CARD_W, height: PREVIEW_CARD_H }}
-    >
-      <iframe
-        srcDoc={html}
-        title="Invoice preview"
-        className="absolute left-0 top-0 border-0 pointer-events-none"
-        style={{
-          width: PREVIEW_PAGE_W,
-          height: PREVIEW_PAGE_H,
-          transform: `scale(${PREVIEW_SCALE})`,
-          transformOrigin: '0 0',
-        }}
-      />
-    </div>
-  );
-}
 
 function PostGenerateAction({
   icon: Icon,
@@ -196,8 +161,14 @@ export default function PublicInvoiceViewPage() {
 
         <div className="flex-1 overflow-y-auto">
           {/* Minified document preview */}
-          <div className="bg-slate-200/70 dark:bg-slate-900/50 px-4 py-6 flex justify-center">
-            <MinifiedInvoicePreview html={html} />
+          <div className="bg-slate-200/70 px-3 py-4 dark:bg-slate-900/50">
+            {html ? (
+              <ScaledA4Preview html={html} title="Invoice preview" />
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
+                Preview unavailable
+              </div>
+            )}
           </div>
 
           {invoice ? (
@@ -279,12 +250,14 @@ export default function PublicInvoiceViewPage() {
             </div>
           </div>
 
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
-            <iframe
-              srcDoc={html}
-              className="w-full h-[842px] border-0"
-              title="Invoice Preview"
-            />
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-slate-100 p-6 shadow-lg">
+            {html ? (
+              <ScaledA4Preview html={html} title="Invoice preview" />
+            ) : (
+              <div className="flex h-64 items-center justify-center text-sm text-text-muted">
+                Preview unavailable
+              </div>
+            )}
           </div>
         </div>
       </div>

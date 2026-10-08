@@ -43,6 +43,7 @@ import { CreateItemModal } from '@/components/modals/CreateItemModal';
 import { CustomFieldValuesForm } from '@/components/custom-fields/CustomFieldValuesForm';
 import { useCustomFieldDefinitions, parseItemCustomFieldsFromApi } from '@/components/custom-fields/CustomFieldsManager';
 import type { CustomFieldValues } from '@/types/custom-fields';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import {
   isThermalTemplateId,
   thermalPreviewIframeWidthClass,
@@ -4053,24 +4054,22 @@ function NewInvoiceContent() {
               </button>
             </div>
             <div
-              className={`flex-1 overflow-auto bg-gray-200 dark:bg-slate-800 ${
-                isThermalTemplateId(previewTemplateId) ? 'flex justify-center items-start py-4 px-3' : ''
+              className={`flex-1 overflow-auto bg-gray-200 px-3 dark:bg-slate-800 ${
+                isThermalTemplateId(previewTemplateId) ? 'flex items-start justify-center py-4' : ''
               }`}
             >
-              <iframe
-                srcDoc={previewHtml}
-                title="Invoice Preview"
-                className={`border-0 bg-transparent ${
-                  isThermalTemplateId(previewTemplateId)
-                    ? `${thermalPreviewIframeWidthClass(previewTemplateId)} min-h-[120px]`
-                    : 'w-full min-h-[70vh]'
-                }`}
-                style={
-                  isThermalTemplateId(previewTemplateId)
-                    ? { height: 'calc(95vh - 140px)', maxHeight: 'calc(95vh - 140px)' }
-                    : undefined
-                }
-              />
+              {isThermalTemplateId(previewTemplateId) ? (
+                <iframe
+                  srcDoc={previewHtml}
+                  title="Invoice Preview"
+                  className={`border-0 bg-transparent ${thermalPreviewIframeWidthClass(previewTemplateId)} min-h-[120px]`}
+                  style={{ height: 'calc(95vh - 140px)', maxHeight: 'calc(95vh - 140px)' }}
+                />
+              ) : (
+                <div className="mx-auto w-full max-w-[850px] py-4">
+                  <ScaledA4Preview html={previewHtml} title="Invoice Preview" />
+                </div>
+              )}
             </div>
             <div className="p-4 border-t flex justify-end flex-shrink-0">
               <Button variant="secondary" onClick={() => setPreviewModalOpen(false)}>Close</Button>

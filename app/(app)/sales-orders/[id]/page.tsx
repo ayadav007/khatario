@@ -22,6 +22,7 @@ import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import { ConvertSalesOrderModal } from '@/components/sales-orders/ConvertSalesOrderModal';
 import { isSalesOrderConvertibleStatus } from '@/lib/sales-orders/billing-status';
 import { isSalesOrderEditable } from '@/lib/sales-orders/editability';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 type SalesOrderSummary = {
   id: string;
@@ -36,41 +37,6 @@ type SalesOrderSummary = {
   converted_invoice_id?: string | null;
   editable?: boolean;
 };
-
-const PREVIEW_PAGE_W = 794;
-const PREVIEW_PAGE_H = 1123;
-const PREVIEW_CARD_W = 280;
-const PREVIEW_SCALE = PREVIEW_CARD_W / PREVIEW_PAGE_W;
-const PREVIEW_CARD_H = Math.round(PREVIEW_PAGE_H * PREVIEW_SCALE);
-
-function MinifiedPreview({ html }: { html: string }) {
-  if (!html) {
-    return (
-      <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
-        Preview unavailable
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="relative mx-auto overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md"
-      style={{ width: PREVIEW_CARD_W, height: PREVIEW_CARD_H }}
-    >
-      <iframe
-        srcDoc={html}
-        title="Sales order preview"
-        className="pointer-events-none absolute left-0 top-0 border-0"
-        style={{
-          width: PREVIEW_PAGE_W,
-          height: PREVIEW_PAGE_H,
-          transform: `scale(${PREVIEW_SCALE})`,
-          transformOrigin: '0 0',
-        }}
-      />
-    </div>
-  );
-}
 
 function ActionButton({
   icon: Icon,
@@ -246,8 +212,14 @@ export default function SalesOrderDetailPage() {
         </header>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="flex justify-center bg-slate-200/70 px-4 py-6 dark:bg-slate-900/50">
-            <MinifiedPreview html={html} />
+          <div className="bg-slate-200/70 px-3 py-4 dark:bg-slate-900/50">
+            {html ? (
+              <ScaledA4Preview html={html} title="Sales order preview" />
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-text-muted">
+                Preview unavailable
+              </div>
+            )}
           </div>
 
           <div className="mx-4 -mt-2 rounded-xl border border-border bg-surface p-4 shadow-sm">
@@ -361,9 +333,9 @@ export default function SalesOrderDetailPage() {
             <SalesOrderPaymentTransactionsPanel orderId={orderId} />
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-slate-100 p-6 shadow-lg">
             {html ? (
-              <iframe srcDoc={html} className="h-[842px] w-full border-0" title="Sales order preview" />
+              <ScaledA4Preview html={html} title="Sales order preview" />
             ) : (
               <div className="flex h-64 items-center justify-center text-sm text-text-muted">
                 Preview unavailable

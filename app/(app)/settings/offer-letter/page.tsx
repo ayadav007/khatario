@@ -26,6 +26,8 @@ import { Card } from '@/components/ui/Card';
 
 import { Button } from '@/components/ui/Button';
 
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
+
 import { Input } from '@/components/ui/Input';
 
 import type { OfferLetterTemplateSettings } from '@/lib/hr/offer-letter-template-settings';
@@ -568,19 +570,15 @@ export default function OfferLetterSettingsPage() {
 
               )}
 
-              <div className="overflow-hidden rounded-lg border border-border bg-white shadow-md">
+              <div className="overflow-hidden rounded-lg border border-border bg-slate-100 p-3 shadow-md">
 
-                <iframe
+                <ScaledA4Preview
 
                   key={`${previewKey}-${templateId}`}
 
                   src={getPreviewUrl()}
 
                   title="Offer letter preview"
-
-                  className="w-full border-0"
-
-                  style={{ height: 'min(80vh, 1123px)', minHeight: '560px' }}
 
                 />
 

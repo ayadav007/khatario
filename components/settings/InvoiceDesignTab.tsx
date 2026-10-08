@@ -15,6 +15,7 @@ import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/templat
 import { useApiErrorHandler } from '@/hooks/useApiErrorHandler';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SettingsFloatingSaveBar } from '@/components/settings/SettingsFloatingSaveBar';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 interface Template {
   id: string;
@@ -870,21 +871,19 @@ export const InvoiceDesignTab: React.FC = () => {
           <span className="text-xs font-bold text-text-secondary uppercase tracking-wider">Live Preview</span>
           {refreshing && <span className="text-xs text-primary-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Updating...</span>}
         </div>
-        <div className="flex-1 overflow-auto p-4 xl:p-8 flex justify-center items-start bg-gray-50/50 dark:bg-slate-950/40">
-          <iframe 
-            className={`bg-white shadow-xl transition-all origin-top ${selectedTemplate?.id === 'thermal_80mm' ? 'w-[85mm] min-h-[400px]' : selectedTemplate?.id === 'thermal_58mm' ? 'w-[60mm] min-h-[400px]' : 'w-[210mm] min-h-[297mm]'}`}
-            style={{ 
-              transform: selectedTemplate?.id === 'thermal_80mm' || selectedTemplate?.id === 'thermal_58mm' 
-                ? 'scale(1)' 
-                : 'scale(0.75)', 
-              transformOrigin: 'top center', 
-              border: 'none',
-              maxWidth: '100%',
-              height: 'auto'
-            }} 
-            srcDoc={previewHtml}
-            title="Invoice Preview"
-          />
+        <div className="flex flex-1 items-start justify-center overflow-auto bg-gray-50/50 p-4 dark:bg-slate-950/40 xl:p-8">
+          {selectedTemplate?.id === 'thermal_80mm' || selectedTemplate?.id === 'thermal_58mm' ? (
+            <iframe
+              className={`origin-top bg-white shadow-xl ${selectedTemplate?.id === 'thermal_80mm' ? 'min-h-[400px] w-[85mm]' : 'min-h-[400px] w-[60mm]'}`}
+              style={{ border: 'none' }}
+              srcDoc={previewHtml}
+              title="Invoice Preview"
+            />
+          ) : (
+            <div className="w-full">
+              <ScaledA4Preview html={previewHtml} title="Invoice Preview" />
+            </div>
+          )}
         </div>
       </div>
 

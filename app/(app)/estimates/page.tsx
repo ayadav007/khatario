@@ -13,6 +13,7 @@ import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { PageToolbar, PageToolbarChip } from '@/components/layout/PageToolbar';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { Card } from '@/components/ui/Card';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { clsx } from 'clsx';
 
 interface Estimate {
@@ -74,6 +75,8 @@ export default function EstimatesPage() {
   const [estimateDetails, setEstimateDetails] = useState<EstimateDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [showPdfView, setShowPdfView] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [showConvertMenu, setShowConvertMenu] = useState(false);
@@ -189,6 +192,27 @@ export default function EstimatesPage() {
       setLoadingDetails(false);
     }
   }
+
+  useEffect(() => {
+    if (!showPdfView || !selectedEstimateId) return;
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewHtml('');
+    fetch(`/api/invoices/${selectedEstimateId}/preview`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!cancelled && res.ok) setPreviewHtml(data.html || '');
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewHtml('');
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showPdfView, selectedEstimateId]);
 
   const handleEstimateSelect = (estimateId: string) => {
     setSelectedEstimateId(estimateId);
@@ -664,12 +688,19 @@ export default function EstimatesPage() {
               {/* Content Area - Optimized for Space */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 {showPdfView ? (
-                  /* PDF View */
-                  <iframe
-                    src={`/api/invoices/${selectedEstimateId}/pdf?user_id=${user?.id}`}
-                    className="w-full h-full border-0"
-                    title="Estimate PDF"
-                  />
+                  <div className="bg-slate-100 p-3">
+                    {previewLoading ? (
+                      <div className="flex h-64 items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+                      </div>
+                    ) : previewHtml ? (
+                      <ScaledA4Preview html={previewHtml} title="Quotation preview" />
+                    ) : (
+                      <div className="flex h-64 items-center justify-center text-sm text-text-muted">
+                        Preview unavailable
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   /* Details View - Reduced Padding */
                   <div className="p-4 space-y-4">

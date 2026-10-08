@@ -21,6 +21,7 @@ import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModa
 import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
 import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
 import type { DocumentTable } from '@/lib/pdf-generator';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { useToastContext } from '@/contexts/ToastContext';
 
@@ -272,10 +273,9 @@ export const UnifiedDocumentDetail: React.FC<UnifiedDocumentDetailProps> = ({
               <p className="text-xs text-amber-700/80">PDF may still work if generation uses a different path. Try Download PDF or check the server log.</p>
             </div>
           ) : (
-            <div
-              className="bg-white shadow-lg my-8 p-[1in] w-[210mm] min-h-[297mm] print:shadow-none print:my-0 print:p-0 print:w-full"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <div className="p-3 lg:p-8">
+              {html ? <ScaledA4Preview html={html} title={`${title} preview`} /> : null}
+            </div>
           )}
         </Card>
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { PublicBusinessSurface, PublicInvoiceSummary } from '@/lib/customer-surface/types';
 import { CustomerSurfaceShell } from './CustomerSurfaceShell';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 
 interface PublicBillPayload {
   summary: PublicInvoiceSummary;
@@ -138,11 +139,8 @@ export function PublicBillView({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-border bg-white shadow-sm">
-        <div
-          className="invoice-preview p-2 sm:p-4 [&_img]:max-w-full"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+      <section className="overflow-hidden rounded-lg border border-border bg-slate-100 p-3 shadow-sm">
+        <ScaledA4Preview html={html} title="Bill preview" />
       </section>
     </CustomerSurfaceShell>
   );

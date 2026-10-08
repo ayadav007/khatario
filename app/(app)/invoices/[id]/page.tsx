@@ -28,6 +28,7 @@ import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
 import { invoicePayloadToReceipt } from '@/lib/bluetooth/invoice-payload-to-receipt';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
+import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
@@ -659,14 +660,9 @@ export default function InvoiceDetailPage() {
           <div className="bg-background/80 p-4 border-b border-border flex justify-between items-center dark:bg-slate-900/40">
             <span className="text-sm font-medium text-text-secondary">Live Preview</span>
           </div>
-          <div className="flex justify-center bg-slate-100 p-8 dark:bg-slate-950/80">
+          <div className="bg-slate-100 p-3 dark:bg-slate-950/80 lg:p-8">
             {html ? (
-              <iframe
-                srcDoc={html}
-                className="w-full max-w-[210mm] h-[297mm] shadow-lg bg-white"
-                style={{ border: 'none' }}
-                title="Invoice Preview"
-              />
+              <ScaledA4Preview html={html} title="Invoice Preview" />
             ) : (
               <div className="flex items-center justify-center h-[297mm] text-text-muted">
                 {loading ? (
