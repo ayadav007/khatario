@@ -1471,3 +1471,25 @@
   }
 }
 
+/*
+ * Phone dialogs are often taller than the screen. Centering them clips the
+ * title and the buttons. Keep the card on screen and scroll inside it.
+ * Unlayered so this wins over Tailwind's items-center.
+ */
+@media (max-width: 1023px) {
+  .fixed.inset-0.flex.items-center:not(.flex-col) {
+    align-items: flex-start;
+    align-items: safe center;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .fixed.inset-0.flex.items-center:not(.flex-col) > :not(.fixed) {
+    max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
