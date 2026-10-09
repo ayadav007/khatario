@@ -56,8 +56,15 @@ export function useAuthorizationGuard(
   const [code, setCode] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (options.skipCheck || !user?.id || !business?.id) {
+    if (!user?.id || !business?.id) {
       setStatus('loading');
+      setReason(undefined);
+      setCode(undefined);
+      return;
+    }
+
+    if (options.skipCheck) {
+      setStatus('allowed');
       setReason(undefined);
       setCode(undefined);
       return;
