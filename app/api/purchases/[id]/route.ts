@@ -12,6 +12,7 @@ import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 import { cancelFinalPurchase, PurchaseCancelError } from '@/lib/purchases/cancel-purchase';
 import { deleteDraftPurchase } from '@/lib/purchases/delete-draft-purchase';
+import { purchaseReturnLineKey } from '@/lib/purchases/purchase-return-lines';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,6 +97,25 @@ export async function GET(
     );
 
     purchase.items = itemsResult.rows;
+
+    const returned = await pool.query(
+      `SELECT pri.item_id, pri.description, SUM(pri.qty)::float8 AS qty
+         FROM purchase_return_items pri
+         JOIN purchase_returns pr ON pr.id = pri.return_id
+        WHERE pr.purchase_id = $1 AND pr.business_id = $2
+          AND COALESCE(pr.status, 'final') <> 'cancelled'
+        GROUP BY pri.item_id, pri.description`,
+      [purchaseId, purchase.business_id]
+    );
+    const alreadyReturned = new Map<string, number>();
+    for (const row of returned.rows) {
+      const key = purchaseReturnLineKey(row.item_id, row.description);
+      alreadyReturned.set(key, (alreadyReturned.get(key) || 0) + Number(row.qty));
+    }
+    for (const item of purchase.items) {
+      const key = purchaseReturnLineKey(item.item_id, item.item_name);
+      item.returned_qty = alreadyReturned.get(key) || 0;
+    }
 
     // PHASE 4.3: Calculate credit metrics for supplier (if applicable)
     let creditMetrics = null;

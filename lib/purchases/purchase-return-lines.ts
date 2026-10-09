@@ -212,4 +212,147 @@ export function buildStandaloneReturnLines(p: {
   return finish(lines, p.roundOff ?? 0);
 }
 
+export type PurchaseItemForReturn = {
+  item_id?: string | null;
+  item_name?: string | null;
+  catalog_item_name?: string | null;
+  hsn_sac?: string | null;
+  unit?: string | null;
+  quantity?: number | string | null;
+  unit_price?: number | string | null;
+  discount_percent?: number | string | null;
+  taxable_value?: number | string | null;
+  tax_rate?: number | string | null;
+  cgst_amount?: number | string | null;
+  sgst_amount?: number | string | null;
+  igst_amount?: number | string | null;
+  /** Already returned for this item on this bill. Repeated on each split line as the group total. */
+  returned_qty?: number | string | null;
+};
+
+/** One row on the purchase-return form, including the cap taken from the bill. */
+export type PurchaseReturnFormLine = ComputedReturnLine & {
+  item_name: string;
+  discount_percent: number;
+  discount_amount: number;
+  purchased_qty: number;
+  already_returned: number;
+  max_qty: number;
+  inter_state: boolean;
+};
+
+function billTaxable(item: PurchaseItemForReturn, qty: number): number {
+  const stored = Number(item.taxable_value);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  const subtotal = qty * (Number(item.unit_price) || 0);
+  const discount = (subtotal * (Number(item.discount_percent) || 0)) / 100;
+  return subtotal - discount;
+}
+
+/**
+ * Lines for a return opened from a purchase bill. Same item on several bill rows is one line.
+ * Quantity defaults to what is still returnable. Price is the bill's net cost, not the catalog price.
+ */
+export function formLinesFromPurchase(items: PurchaseItemForReturn[]): PurchaseReturnFormLine[] {
+  const groups = new Map<
+    string,
+    {
+      item_id: string | null;
+      item_name: string;
+      hsn: string | null;
+      unit: string;
+      qty: number;
+      taxable: number;
+      rate: number;
+      cgst: number;
+      sgst: number;
+      igst: number;
+      returned: number;
+    }
+  >();
+
+  for (const item of items) {
+    const name = String(item.item_name || '').trim() || String(item.catalog_item_name || '').trim() || 'Item';
+    const key = lineKey(item.item_id, name);
+    const qty = Number(item.quantity) || 0;
+    const taxable = billTaxable(item, qty);
+    const returned = Number(item.returned_qty) || 0;
+    const cur = groups.get(key);
+    if (!cur) {
+      groups.set(key, {
+        item_id: item.item_id || null,
+        item_name: name,
+        hsn: item.hsn_sac || null,
+        unit: item.unit || 'PCS',
+        qty,
+        taxable,
+        rate: Number(item.tax_rate) || 0,
+        cgst: Number(item.cgst_amount) || 0,
+        sgst: Number(item.sgst_amount) || 0,
+        igst: Number(item.igst_amount) || 0,
+        returned,
+      });
+    } else {
+      cur.qty += qty;
+      cur.taxable += taxable;
+      cur.cgst += Number(item.cgst_amount) || 0;
+      cur.sgst += Number(item.sgst_amount) || 0;
+      cur.igst += Number(item.igst_amount) || 0;
+      cur.returned = Math.max(cur.returned, returned);
+    }
+  }
+
+  const lines: PurchaseReturnFormLine[] = [];
+  for (const g of groups.values()) {
+    const purchased = q3(g.qty);
+    const already = q3(Math.min(g.returned, purchased));
+    const max = q3(Math.max(0, purchased - already));
+    const unitCost = g.qty > 0 ? g.taxable / g.qty : 0;
+    const taxable = r2(unitCost * max);
+    const inter = g.igst > 0;
+    const split = taxSplit(taxable, g.rate, inter);
+    lines.push({
+      item_id: g.item_id,
+      item_name: g.item_name,
+      description: g.item_name,
+      hsn_sac: g.hsn,
+      unit: g.unit,
+      qty: max,
+      unit_price: r2(unitCost),
+      discount_percent: 0,
+      discount_amount: 0,
+      taxable_value: taxable,
+      tax_rate: g.rate,
+      tax_amount: split.tax,
+      cgst_amount: split.cgst,
+      sgst_amount: split.sgst,
+      igst_amount: split.igst,
+      line_total: r2(taxable + split.tax),
+      purchased_qty: purchased,
+      already_returned: already,
+      max_qty: max,
+      inter_state: inter,
+    });
+  }
+  return lines;
+}
+
+/** Change only the quantity on a bill-linked line. Price and tax stay on the bill's net cost and rate. */
+export function scaleLinkedReturnLine(line: PurchaseReturnFormLine, rawQty: number): PurchaseReturnFormLine {
+  const qty = q3(Math.min(Math.max(0, Number(rawQty) || 0), line.max_qty));
+  const taxable = r2(line.unit_price * qty);
+  const split = taxSplit(taxable, line.tax_rate, line.inter_state);
+  return {
+    ...line,
+    qty,
+    discount_amount: 0,
+    taxable_value: taxable,
+    tax_amount: split.tax,
+    cgst_amount: split.cgst,
+    sgst_amount: split.sgst,
+    igst_amount: split.igst,
+    line_total: r2(taxable + split.tax),
+  };
+}
+
 export { lineKey as purchaseReturnLineKey };

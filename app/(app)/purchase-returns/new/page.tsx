@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,11 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { useToastContext } from '@/contexts/ToastContext';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
+import {
+  formLinesFromPurchase,
+  scaleLinkedReturnLine,
+  type PurchaseReturnFormLine,
+} from '@/lib/purchases/purchase-return-lines';
 
 interface Supplier {
   id: string;
@@ -27,6 +32,7 @@ interface Purchase {
   bill_number: string;
   bill_date: string;
   grand_total: number;
+  supplier_id?: string;
 }
 
 interface Item {
@@ -39,24 +45,7 @@ interface Item {
   current_stock: number;
 }
 
-interface ReturnItem {
-  item_id: string;
-  item_name: string;
-  description: string;
-  hsn_sac: string;
-  qty: number;
-  unit: string;
-  unit_price: number;
-  discount_percent: number;
-  discount_amount: number;
-  taxable_value: number;
-  tax_rate: number;
-  tax_amount: number;
-  cgst_amount: number;
-  sgst_amount: number;
-  igst_amount: number;
-  line_total: number;
-}
+type ReturnItem = PurchaseReturnFormLine;
 
 export default function NewPurchaseReturnPage() {
   const router = useRouter();
@@ -87,6 +76,9 @@ export default function NewPurchaseReturnPage() {
 
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [linesLoading, setLinesLoading] = useState(false);
+  const linkedPurchaseRef = useRef<Purchase | null>(null);
+  const appliedPurchaseIdRef = useRef('');
 
   // Parse URL params on mount
   useEffect(() => {
@@ -109,19 +101,22 @@ export default function NewPurchaseReturnPage() {
 
   // Pre-select supplier from URL params
   useEffect(() => {
-    if (urlParams.supplier_id && suppliers.length > 0) {
-      setFormData(prev => ({ ...prev, supplier_id: urlParams.supplier_id || '' }));
-      const supplier = suppliers.find(s => s.id === urlParams.supplier_id);
-      setSelectedSupplier(supplier || null);
+    const supplierId = formData.supplier_id || urlParams.supplier_id;
+    if (!supplierId || suppliers.length === 0) return;
+    if (!formData.supplier_id) {
+      setFormData((prev) => ({ ...prev, supplier_id: supplierId }));
     }
-  }, [urlParams.supplier_id, suppliers]);
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    if (supplier) setSelectedSupplier(supplier);
+  }, [urlParams.supplier_id, formData.supplier_id, suppliers]);
 
-  // Pre-select purchase from URL params
+  // Open the bill from the Return button without waiting for the latest-50 purchase list.
   useEffect(() => {
-    if (urlParams.purchase_id && purchases.length > 0) {
-      setFormData(prev => ({ ...prev, purchase_id: urlParams.purchase_id || '' }));
-    }
-  }, [urlParams.purchase_id, purchases]);
+    if (!urlParams.purchase_id) return;
+    setFormData((prev) =>
+      prev.purchase_id === urlParams.purchase_id ? prev : { ...prev, purchase_id: urlParams.purchase_id || '' }
+    );
+  }, [urlParams.purchase_id]);
 
   useEffect(() => {
     if (formData.supplier_id) {
@@ -131,7 +126,14 @@ export default function NewPurchaseReturnPage() {
 
   useEffect(() => {
     if (formData.purchase_id) {
+      appliedPurchaseIdRef.current = formData.purchase_id;
       loadPurchaseItems(formData.purchase_id);
+      return;
+    }
+    if (appliedPurchaseIdRef.current) {
+      appliedPurchaseIdRef.current = '';
+      linkedPurchaseRef.current = null;
+      setReturnItems([]);
     }
   }, [formData.purchase_id]);
 
@@ -152,9 +154,17 @@ export default function NewPurchaseReturnPage() {
       const response = await fetch(`/api/purchases?business_id=${business?.id}&user_id=${user?.id}`);
       if (response.ok) {
         const data = await response.json();
-        const supplierPurchases = data.purchases.filter(
-          (p: Purchase) => (p as any).supplier_id === supplierId && (p as any).status !== 'cancelled'
+        const supplierPurchases = (data.purchases || []).filter(
+          (p: Purchase) => p.supplier_id === supplierId && (p as any).status !== 'cancelled'
         );
+        const linked = linkedPurchaseRef.current;
+        if (
+          linked &&
+          linked.supplier_id === supplierId &&
+          !supplierPurchases.some((p: Purchase) => p.id === linked.id)
+        ) {
+          supplierPurchases.unshift(linked);
+        }
         setPurchases(supplierPurchases);
       }
     } catch (error) {
@@ -175,6 +185,7 @@ export default function NewPurchaseReturnPage() {
   };
 
   const handleSupplierChange = (supplierId: string) => {
+    linkedPurchaseRef.current = null;
     setFormData({ ...formData, supplier_id: supplierId, purchase_id: '' });
     const supplier = suppliers.find(s => s.id === supplierId);
     setSelectedSupplier(supplier || null);
@@ -183,52 +194,54 @@ export default function NewPurchaseReturnPage() {
   };
 
   const loadPurchaseItems = async (purchaseId: string) => {
+    setLinesLoading(true);
     try {
-      const response = await fetch(`/api/purchases/${purchaseId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const purchase = data.purchase;
-        
-        // Auto-populate items from the purchase
-        const loadedItems = purchase.items.map((item: any) => {
-          const subtotal = Number(item.quantity) * Number(item.unit_price);
-          const discountAmount = (subtotal * Number(item.discount_percent || 0)) / 100;
-          const taxableValue = subtotal - discountAmount;
-          
-          // Use the same GST breakdown as the original purchase item
-          const cgstAmount = Number(item.cgst_amount || 0);
-          const sgstAmount = Number(item.sgst_amount || 0);
-          const igstAmount = Number(item.igst_amount || 0);
-          const taxAmount = cgstAmount + sgstAmount + igstAmount;
-          const lineTotal = taxableValue + taxAmount;
+      const response = await fetch(`/api/purchases/${purchaseId}`, { credentials: 'include' });
+      if (!response.ok) {
+        const error = await safeJsonParse(response);
+        toast.error(getApiErrorMessage(error, 'Could not load items from this purchase'));
+        setReturnItems([]);
+        return;
+      }
+      const data = await response.json();
+      const purchase = data.purchase;
+      const loadedItems = formLinesFromPurchase(purchase.items || []);
+      const linkedPurchase: Purchase = {
+        id: purchase.id,
+        bill_number: purchase.bill_number,
+        bill_date: purchase.bill_date,
+        grand_total: purchase.grand_total,
+        supplier_id: purchase.supplier_id,
+      };
+      linkedPurchaseRef.current = linkedPurchase;
 
-          return {
-            item_id: item.item_id || '',
-            item_name: item.item_name,
-            description: item.item_name,
-            hsn_sac: item.hsn_sac || '',
-            qty: Number(item.quantity), // User can adjust this
-            unit: item.unit || 'PCS',
-            unit_price: Number(item.unit_price),
-            discount_percent: Number(item.discount_percent || 0),
-            discount_amount: discountAmount,
-            taxable_value: taxableValue,
-            tax_rate: Number(item.tax_rate || 0),
-            tax_amount: taxAmount,
-            cgst_amount: cgstAmount,
-            sgst_amount: sgstAmount,
-            igst_amount: igstAmount,
-            line_total: lineTotal,
-          };
-        });
+      setPurchases((prev) => {
+        if (prev.some((p) => p.id === linkedPurchase.id)) return prev;
+        return [linkedPurchase, ...prev];
+      });
+      if (purchase.supplier_id) {
+        setFormData((prev) =>
+          prev.supplier_id ? prev : { ...prev, supplier_id: purchase.supplier_id }
+        );
+        setSelectedSupplier((prev) => prev || suppliers.find((s) => s.id === purchase.supplier_id) || null);
+      }
 
-        setReturnItems(loadedItems);
-        toast.info(`Loaded ${loadedItems.length} items from purchase. You can adjust quantities as needed.`);
+      setReturnItems(loadedItems);
+      if (loadedItems.length === 0) {
+        toast.error('This purchase has no items to return.');
+      } else if (loadedItems.every((line) => line.max_qty <= 0)) {
+        toast.info('Every item on this purchase has already been returned.');
       } else {
-        console.error('Failed to fetch purchase details');
+        toast.info(
+          `Loaded ${loadedItems.length} item${loadedItems.length === 1 ? '' : 's'} from this purchase. Adjust the quantity to return.`
+        );
       }
     } catch (error) {
       console.error('Error loading purchase items:', error);
+      toast.error('Could not load items from this purchase');
+      setReturnItems([]);
+    } finally {
+      setLinesLoading(false);
     }
   };
 
@@ -236,7 +249,7 @@ export default function NewPurchaseReturnPage() {
     setReturnItems([
       ...returnItems,
       {
-        item_id: '',
+        item_id: null,
         item_name: '',
         description: '',
         hsn_sac: '',
@@ -252,6 +265,10 @@ export default function NewPurchaseReturnPage() {
         sgst_amount: 0,
         igst_amount: 0,
         line_total: 0,
+        purchased_qty: 0,
+        already_returned: 0,
+        max_qty: 0,
+        inter_state: false,
       },
     ]);
   };
@@ -261,6 +278,14 @@ export default function NewPurchaseReturnPage() {
   };
 
   const updateReturnItem = (index: number, field: string, value: any) => {
+    if (formData.purchase_id) {
+      if (field !== 'qty') return;
+      setReturnItems((prev) =>
+        prev.map((line, i) => (i === index ? scaleLinkedReturnLine(line, Number(value)) : line))
+      );
+      return;
+    }
+
     const updatedItems = [...returnItems];
     updatedItems[index] = { ...updatedItems[index], [field]: value };
 
@@ -328,8 +353,16 @@ export default function NewPurchaseReturnPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.supplier_id || !formData.return_number || returnItems.length === 0) {
-      toast.error('Please fill all required fields and add at least one item');
+    const linesToSave = formData.purchase_id
+      ? returnItems.filter((item) => Number(item.qty) > 0)
+      : returnItems;
+
+    if (!formData.supplier_id || !formData.return_number || linesToSave.length === 0) {
+      toast.error(
+        formData.purchase_id && returnItems.length > 0
+          ? 'Enter a quantity on at least one item from this purchase'
+          : 'Please fill all required fields and add at least one item'
+      );
       return;
     }
 
@@ -343,7 +376,7 @@ export default function NewPurchaseReturnPage() {
       return_date: formData.return_date,
       reason: formData.reason,
       place_of_supply_state_code: selectedSupplier?.state_code,
-      items: returnItems.map(item => ({
+      items: linesToSave.map(item => ({
         item_id: item.item_id || null,
         item_name: item.item_name,
         description: item.description,
@@ -514,14 +547,20 @@ export default function NewPurchaseReturnPage() {
 
             <AnnotatedFormSection
               title="Return items"
-              description="Lines sent back to the supplier; adjust quantities as needed."
+              description={
+                formData.purchase_id
+                  ? 'Items from this purchase. Change the quantity to return. Price and tax stay as on the bill.'
+                  : 'Lines sent back to the supplier.'
+              }
             >
+          {!formData.purchase_id && (
           <div className="flex justify-end mb-4">
             <Button type="button" onClick={addReturnItem} size="sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Item
             </Button>
           </div>
+          )}
 
           <div className="space-y-4">
             {returnItems.map((item, index) => (
@@ -541,18 +580,30 @@ export default function NewPurchaseReturnPage() {
                 <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-12 md:gap-4">
                   <div className="col-span-2 md:col-span-3">
                     <label className="mb-1 block text-xs font-medium text-gray-700">Item</label>
+                    {formData.purchase_id ? (
+                      <div className="py-2 text-sm font-medium text-gray-900 md:py-1">
+                        {item.item_name || item.description || 'Item'}
+                        {item.hsn_sac ? (
+                          <span className="mt-0.5 block text-xs font-normal text-gray-500">HSN {item.hsn_sac}</span>
+                        ) : null}
+                      </div>
+                    ) : (
                     <select
-                      value={item.item_id}
+                      value={item.item_id || ''}
                       onChange={(e) => updateReturnItem(index, 'item_id', e.target.value)}
                       className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     >
                       <option value="">Select Item</option>
+                      {item.item_id && !items.some((i) => i.id === item.item_id) ? (
+                        <option value={item.item_id}>{item.item_name || 'Item'}</option>
+                      ) : null}
                       {items.map((i) => (
                         <option key={i.id} value={i.id}>
                           {i.name}
                         </option>
                       ))}
                     </select>
+                    )}
                   </div>
 
                   <div className="min-w-0 md:col-span-2">
@@ -560,10 +611,20 @@ export default function NewPurchaseReturnPage() {
                     <input
                       type="number"
                       step="0.01"
+                      min="0"
+                      max={formData.purchase_id ? item.max_qty : undefined}
                       value={item.qty}
+                      disabled={!!formData.purchase_id && item.max_qty <= 0}
                       onChange={(e) => updateReturnItem(index, 'qty', e.target.value)}
-                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm disabled:bg-gray-50 md:py-1"
                     />
+                    {formData.purchase_id ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.max_qty <= 0
+                          ? 'Already fully returned'
+                          : `Purchased ${item.purchased_qty}${item.already_returned > 0 ? `, already returned ${item.already_returned}` : ''}. Up to ${item.max_qty}.`}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="min-w-0 md:col-span-2">
@@ -572,8 +633,9 @@ export default function NewPurchaseReturnPage() {
                       type="number"
                       step="0.01"
                       value={item.unit_price}
+                      readOnly={!!formData.purchase_id}
                       onChange={(e) => updateReturnItem(index, 'unit_price', e.target.value)}
-                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm read-only:bg-gray-50 md:py-1"
                     />
                   </div>
 
@@ -583,8 +645,9 @@ export default function NewPurchaseReturnPage() {
                       type="number"
                       step="0.01"
                       value={item.tax_rate}
+                      readOnly={!!formData.purchase_id}
                       onChange={(e) => updateReturnItem(index, 'tax_rate', e.target.value)}
-                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm read-only:bg-gray-50 md:py-1"
                     />
                   </div>
 
@@ -612,7 +675,11 @@ export default function NewPurchaseReturnPage() {
 
             {returnItems.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                No items added. Click "Add Item" to begin.
+                {linesLoading
+                  ? 'Loading items from this purchase…'
+                  : formData.purchase_id
+                    ? 'No items found on this purchase.'
+                    : 'No items added. Click "Add Item" to begin.'}
               </div>
             )}
           </div>

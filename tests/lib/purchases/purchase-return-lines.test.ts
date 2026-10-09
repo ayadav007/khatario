@@ -1,7 +1,9 @@
 import {
   buildReturnLinesFromBill,
   buildStandaloneReturnLines,
+  formLinesFromPurchase,
   PurchaseReturnValidationError,
+  scaleLinkedReturnLine,
 } from '@/lib/purchases/purchase-return-lines';
 
 const bill = [
@@ -76,6 +78,50 @@ describe('buildReturnLinesFromBill', () => {
         alreadyReturned: new Map(),
       })
     ).toThrow(expect.objectContaining({ code: 'RETURN_ITEM_NOT_ON_BILL' }));
+  });
+});
+
+describe('formLinesFromPurchase', () => {
+  it('lists each purchased item by its bill name, even without a catalog match', () => {
+    const lines = formLinesFromPurchase([
+      {
+        item_id: 'almirah',
+        item_name: 'Steel Almirah',
+        hsn_sac: '9403',
+        quantity: 10,
+        unit_price: 1000,
+        discount_percent: 10,
+        taxable_value: 9000,
+        tax_rate: 18,
+        cgst_amount: 810,
+        sgst_amount: 810,
+        igst_amount: 0,
+      },
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      item_name: 'Steel Almirah',
+      qty: 10,
+      max_qty: 10,
+      unit_price: 900,
+      tax_rate: 18,
+    });
+  });
+
+  it('uses the catalog name when the bill line name is blank', () => {
+    const lines = formLinesFromPurchase([
+      { item_id: 'chair', item_name: '  ', catalog_item_name: 'Office Chair', quantity: 2, taxable_value: 200, tax_rate: 5 },
+    ]);
+    expect(lines[0].item_name).toBe('Office Chair');
+  });
+
+  it('defaults quantity to what is still returnable', () => {
+    const lines = formLinesFromPurchase([
+      { item_id: 'almirah', item_name: 'Steel Almirah', quantity: 10, taxable_value: 9000, tax_rate: 18, returned_qty: 4 },
+    ]);
+    expect(lines[0]).toMatchObject({ qty: 6, purchased_qty: 10, already_returned: 4, max_qty: 6 });
+    expect(scaleLinkedReturnLine(lines[0], 99).qty).toBe(6);
+    expect(scaleLinkedReturnLine(lines[0], 2)).toMatchObject({ qty: 2, taxable_value: 1800, unit_price: 900 });
   });
 });
 
