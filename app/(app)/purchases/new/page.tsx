@@ -572,6 +572,7 @@ export default function NewPurchasePage() {
   const handleExtractionCompleteRef = useRef(handleExtractionComplete);
   handleExtractionCompleteRef.current = handleExtractionComplete;
   const pendingImportRanRef = useRef(false);
+  const itemPrefillRanRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !business?.id || pendingImportRanRef.current) return;
@@ -649,6 +650,33 @@ export default function NewPurchasePage() {
       cancelled = true;
     };
   }, [business?.id, user?.id, toast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !business?.id || itemPrefillRanRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const itemId = (params.get('item_id') || '').trim();
+    if (!itemId) return;
+    itemPrefillRanRef.current = true;
+    const qty = parseFloat(params.get('qty') || '') || 1;
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/items/${encodeURIComponent(itemId)}?business_id=${business.id}`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!res.ok || !data.item) return;
+        const row = purchaseLineFromCatalogPick(data.item as Record<string, unknown>);
+        row.quantity = roundRetailQty(qty);
+        setPurchaseItems((prev) => (prev.length > 0 ? prev : [row]));
+        if (row.track_batch || row.track_serial) {
+          setExpandedItems((open) => new Set([...open, row.id]));
+        }
+      } catch {
+        /* leave the form empty if the item cannot be loaded */
+      }
+    })();
+  }, [business?.id]);
 
   /** @param envelopeForMeta — pass latest extract envelope; React state may not have updated yet. */
   const handleAcceptExtractedData = (reviewedData: any, envelopeForMeta?: any) => {

@@ -20,6 +20,10 @@ import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSe
 import { DashboardSalesInsightsSection } from '@/components/dashboard/DashboardSalesInsightsSection';
 import { QuickActionsFAB } from '@/components/dashboard/QuickActionsFAB';
 import { MobileCreateSheet } from '@/components/dashboard/MobileCreateSheet';
+import {
+  LowStockRestockMenu,
+  suggestedRestockQty,
+} from '@/components/dashboard/LowStockRestockMenu';
 import { PendingActionsButton } from '@/components/dashboard/PendingActionsButton';
 import { ReceivablesCard } from '@/components/dashboard/ReceivablesCard';
 import { PayablesCard } from '@/components/dashboard/PayablesCard';
@@ -548,12 +552,11 @@ function DashboardPage() {
                       <p className="truncate">
                         Min: {item.min_stock} {item.unit}
                       </p>
-                      <Link
-                        href={`/inventory-adjustments/new?item_id=${encodeURIComponent(item.id)}`}
-                        className="link-primary shrink-0 font-medium"
-                      >
-                        Update →
-                      </Link>
+                      <LowStockRestockMenu
+                        itemId={String(item.id)}
+                        itemName={String(item.name || 'item')}
+                        suggestedQty={suggestedRestockQty(item.current_stock, item.min_stock)}
+                      />
                     </div>
                   </div>
                 ))

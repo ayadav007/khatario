@@ -267,14 +267,16 @@ export default function NewPurchaseOrderPage() {
     setRows(prev => prev.map(r => calculateRow(r)));
   }, [calculateRow]);
 
-  // Pre-fill form from query parameters (when coming from requests page)
+  // Pre-fill form from query parameters (requests page or low-stock restock)
   useEffect(() => {
-    if (!searchParams || suppliers.length === 0 || prefilled || !calculateRow) return;
-    
+    if (!searchParams || prefilled || !calculateRow) return;
+
     const supplierIdParam = searchParams.get('supplier_id');
     const itemIdParam = searchParams.get('item_id');
     const qtyParam = searchParams.get('qty');
-    
+
+    if (supplierIdParam && suppliers.length === 0) return;
+
     // Pre-fill supplier
     if (supplierIdParam && !supplierId) {
       const supplier = suppliers.find(s => s.id === supplierIdParam);
@@ -282,15 +284,16 @@ export default function NewPurchaseOrderPage() {
         setSupplierId(supplierIdParam);
       }
     }
-    
-    // Pre-fill item and quantity
-    if (itemIdParam && qtyParam && business?.id) {
-      fetch(`/api/items/${itemIdParam}?business_id=${business.id}`)
+
+    // Pre-fill item and quantity. Qty defaults to 1 when the link only names the item.
+    if (itemIdParam && business?.id) {
+      setPrefilled(true);
+      fetch(`/api/items/${encodeURIComponent(itemIdParam)}?business_id=${business.id}`)
         .then(res => res.json())
         .then(data => {
           if (data.item) {
             const item = data.item;
-            const quantity = parseFloat(qtyParam) || 1;
+            const quantity = parseFloat(qtyParam || '') || 1;
             const newRow = calculateRow({
               itemId: item.id,
               name: item.name,
@@ -309,7 +312,6 @@ export default function NewPurchaseOrderPage() {
               total: 0
             });
             setRows([newRow]);
-            setPrefilled(true);
           }
         })
         .catch(err => console.error('Error fetching item:', err));
