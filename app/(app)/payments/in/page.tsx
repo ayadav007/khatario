@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,8 +19,14 @@ import { useBadges } from '@/contexts/BadgeContext';
 import {
   createPaymentSubmissionKeys,
   submitPaymentIn,
+  type PaymentInRequestBody,
   type PaymentSubmissionKeys,
 } from '@/lib/payments/payment-in-submission';
+import {
+  LinkPaymentDialog,
+  type LinkableInvoice,
+  type PaymentLink,
+} from '@/components/payments/LinkPaymentDialog';
 
 interface Payment {
   id: string;
@@ -36,25 +42,11 @@ interface Payment {
   status?: 'active' | 'reversed';
 }
 
-interface Invoice {
-  id: string;
-  invoice_number: string;
-  customer_id: string | null;
-  customer_name: string | null;
-  grand_total: number;
-  paid_amount: number;
-  balance_amount: number;
-  invoice_date: string;
-}
-
 interface Customer {
   id: string;
   name: string;
   phone: string | null;
 }
-
-/** balance_amount is already net of receipts, notes and TDS. */
-const outstandingOf = (inv: Invoice) => Number(inv.balance_amount ?? inv.grand_total) || 0;
 
 export default function PaymentInPage() {
   const router = useRouter();
@@ -66,7 +58,7 @@ export default function PaymentInPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -75,6 +67,7 @@ export default function PaymentInPage() {
   const [formData, setFormData] = useState({
     customer_id: '',
     invoice_id: '',
+    links: [] as PaymentLink[],
     amount: '',
     tds_amount: '',
     tds_section: '194C',
@@ -91,13 +84,30 @@ export default function PaymentInPage() {
     }
   }, [business, currentBranchId, branchLoading]);
 
-  useEffect(() => {
-    if (formData.customer_id && business?.id) {
-      fetchCustomerInvoices(formData.customer_id);
-    } else {
-      setInvoices([]);
-    }
-  }, [formData.customer_id, business?.id]);
+  const loadOpenInvoices = useCallback(
+    async (search: string): Promise<LinkableInvoice[]> => {
+      if (!business?.id || !formData.customer_id) return [];
+      const params = new URLSearchParams({
+        business_id: business.id,
+        user_id: user?.id || '',
+        customer_id: formData.customer_id,
+        status: 'unpaid',
+        limit: '200',
+      });
+      if (search) params.set('search', search);
+      const response = await fetch(`/api/invoices?${params}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to load invoices');
+      return (data.invoices || []).map((inv: LinkableInvoice) => ({
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        invoice_date: inv.invoice_date,
+        grand_total: Number(inv.grand_total) || 0,
+        balance_amount: Number(inv.balance_amount ?? inv.grand_total) || 0,
+      }));
+    },
+    [business?.id, formData.customer_id, user?.id]
+  );
 
   async function fetchPayments() {
     if (!business?.id) return;
@@ -123,40 +133,72 @@ export default function PaymentInPage() {
     }
   }
 
-  async function fetchCustomerInvoices(customerId: string) {
-    if (!business?.id) return;
-    try {
-      const response = await fetch(`/api/invoices?business_id=${business.id}&status=all&user_id=${user?.id}`);
-      const data = await response.json();
-      // Filter invoices for this customer with balance
-      const filteredInvoices = (data.invoices || []).filter((inv: Invoice) =>
-        inv.customer_id === customerId && outstandingOf(inv) > 0
-      );
-      setInvoices(filteredInvoices);
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!business?.id) return;
 
     const paymentAmount = parseFloat(formData.amount || '0') || 0;
     const tdsAmount = parseFloat(formData.tds_amount || '0') || 0;
+    const links = formData.links.filter((link) => link.amount > 0);
+    const linkedSum = Math.round(links.reduce((sum, link) => sum + link.amount, 0) * 100) / 100;
     if (paymentAmount < 0 || tdsAmount < 0 || paymentAmount + tdsAmount <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
+    if (linkedSum - paymentAmount > 0.01) {
+      toast.error('Linked amounts cannot exceed the amount received');
+      return;
+    }
+    if (links.length > 1 && tdsAmount > 0) {
+      toast.error('TDS can be recorded when the receipt is linked to one invoice');
+      return;
+    }
+    if (links.length === 1 && links[0].amount + tdsAmount > links[0].balance + 0.01) {
+      toast.error(`Amount received plus TDS cannot exceed balance of ₹${links[0].balance.toLocaleString('en-IN')}`);
+      return;
+    }
 
-    if (formData.invoice_id) {
-      const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
-      if (selectedInvoice) {
-        const balance = outstandingOf(selectedInvoice);
-        if (paymentAmount + tdsAmount > balance + 0.01) {
-          toast.error(`Amount received plus TDS cannot exceed balance of ₹${balance.toLocaleString()}`);
-          return;
-        }
+    const unused = Math.round((paymentAmount - linkedSum) * 100) / 100;
+    const base = {
+      business_id: business.id,
+      type: 'receivable' as const,
+      customer_id: formData.customer_id || null,
+      created_by: user?.id,
+      payment_mode: formData.payment_mode,
+      payment_date: formData.payment_date,
+      notes: formData.notes || null,
+    };
+    const jobs: PaymentInRequestBody[] = [];
+    if (links.length === 0) {
+      jobs.push({
+        ...base,
+        reference_type: null,
+        reference_id: null,
+        amount: paymentAmount,
+        tds_amount: tdsAmount,
+        tds_section: tdsAmount > 0 ? formData.tds_section : null,
+      });
+    } else {
+      links.forEach((link, index) => {
+        const withTds = links.length === 1 && index === 0;
+        jobs.push({
+          ...base,
+          reference_type: 'invoice',
+          reference_id: link.id,
+          amount: link.amount,
+          tds_amount: withTds ? tdsAmount : 0,
+          tds_section: withTds && tdsAmount > 0 ? formData.tds_section : null,
+        });
+      });
+      if (unused > 0.009) {
+        jobs.push({
+          ...base,
+          reference_type: null,
+          reference_id: null,
+          amount: unused,
+          tds_amount: 0,
+          tds_section: null,
+        });
       }
     }
 
@@ -164,46 +206,31 @@ export default function PaymentInPage() {
     if (keys.inFlight) return;
     setSubmitting(true);
     try {
-      const attempt = await submitPaymentIn(
-        keys,
-        {
-          business_id: business.id,
-          type: 'receivable',
-          customer_id: formData.customer_id || null,
-          reference_type: formData.invoice_id ? 'invoice' : null,
-          created_by: user?.id, // Required for authorization
-          reference_id: formData.invoice_id || null,
-          amount: paymentAmount,
-          payment_mode: formData.payment_mode,
-          payment_date: formData.payment_date,
-          notes: formData.notes || null,
-          tds_amount: tdsAmount,
-          tds_section: tdsAmount > 0 ? formData.tds_section : null,
-        },
-        (init) => fetch('/api/payments', init)
-      );
-
-      if (attempt.kind === 'success') {
-        toast.success('Payment recorded successfully');
-        setShowForm(false);
-        setFormData({
-          customer_id: '',
-          invoice_id: '',
-          amount: '',
-          tds_amount: '',
-          tds_section: '194C',
-          payment_mode: 'cash',
-          payment_date: new Date().toISOString().split('T')[0],
-          notes: ''
-        });
+      for (let index = 0; index < jobs.length; index += 1) {
+        const attempt = await submitPaymentIn(keys, jobs[index], (init) => fetch('/api/payments', init));
+        if (attempt.kind === 'success') continue;
+        const saved = index > 0 ? ' Part of this receipt was already saved.' : '';
+        if (attempt.kind === 'failed') toast.error((attempt.body?.error || 'Failed to record payment') + saved);
+        else if (attempt.kind === 'network-error') toast.error('Failed to record payment.' + saved);
         await refreshBadgeCounts();
         fetchPayments();
-      } else if (attempt.kind === 'failed') {
-        toast.error(attempt.body?.error || 'Failed to record payment');
-      } else if (attempt.kind === 'network-error') {
-        console.error('Error recording payment:', attempt.error);
-        toast.error('Failed to record payment');
+        return;
       }
+      toast.success(jobs.length > 1 ? `Recorded ${jobs.length} payments` : 'Payment recorded successfully');
+      setShowForm(false);
+      setFormData({
+        customer_id: '',
+        invoice_id: '',
+        links: [],
+        amount: '',
+        tds_amount: '',
+        tds_section: '194C',
+        payment_mode: 'cash',
+        payment_date: new Date().toISOString().split('T')[0],
+        notes: ''
+      });
+      await refreshBadgeCounts();
+      fetchPayments();
     } finally {
       setSubmitting(false);
     }
@@ -271,8 +298,13 @@ export default function PaymentInPage() {
     );
   });
 
-  const selectedInvoice = invoices.find(inv => inv.id === formData.invoice_id);
-  const invoiceBalance = selectedInvoice ? outstandingOf(selectedInvoice) : null;
+  const linkedBalance = formData.links.length === 1 ? formData.links[0].balance : null;
+  const linkSummary =
+    formData.links.length === 0
+      ? 'No invoice linked'
+      : formData.links.length === 1
+        ? `${formData.links[0].number} · ₹${formData.links[0].amount.toLocaleString('en-IN')}`
+        : `${formData.links.length} invoices · ₹${formData.links.reduce((sum, link) => sum + link.amount, 0).toLocaleString('en-IN')}`;
 
   const referenceLabel = (p: Payment) => {
     if (p.reference_type === 'invoice') return 'Invoice';
@@ -382,7 +414,7 @@ export default function PaymentInPage() {
                   <select
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                     value={formData.customer_id}
-                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value, invoice_id: '' })}
+                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value, invoice_id: '', links: [] })}
                     required
                   >
                     <option value="">Select Customer</option>
@@ -396,30 +428,17 @@ export default function PaymentInPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Invoice (Optional)
+                    Link to invoices
                   </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                    value={formData.invoice_id}
-                    onChange={(e) => {
-                      setFormData({ ...formData, invoice_id: e.target.value });
-                      const inv = invoices.find(i => i.id === e.target.value);
-                      if (inv) {
-                        setFormData(prev => ({ ...prev, amount: outstandingOf(inv).toString(), tds_amount: '' }));
-                      }
-                    }}
+                  <button
+                    type="button"
                     disabled={!formData.customer_id}
+                    onClick={() => setLinkOpen(true)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-left text-sm disabled:bg-gray-50 disabled:text-gray-400"
                   >
-                    <option value="">No specific invoice</option>
-                    {invoices.map(invoice => {
-                      const balance = outstandingOf(invoice);
-                      return (
-                        <option key={invoice.id} value={invoice.id}>
-                          {invoice.invoice_number} - Balance: ₹{balance.toLocaleString()}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    {linkSummary}
+                  </button>
+                  <p className="mt-1 text-xs text-gray-500">Search and split this receipt across open sales invoices.</p>
                 </div>
 
                 <div>
@@ -435,9 +454,9 @@ export default function PaymentInPage() {
                     required
                     placeholder="0.00"
                   />
-                  {invoiceBalance !== null && (
+                  {linkedBalance !== null && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Invoice Balance: ₹{invoiceBalance.toLocaleString()}
+                      Invoice Balance: ₹{linkedBalance.toLocaleString('en-IN')}
                     </p>
                   )}
                 </div>
@@ -728,6 +747,23 @@ export default function PaymentInPage() {
             }
           />
         )}
+        <LinkPaymentDialog
+          open={linkOpen}
+          customerName={customers.find((customer) => customer.id === formData.customer_id)?.name || 'Customer'}
+          received={parseFloat(formData.amount || '0') || 0}
+          initialLinks={formData.links}
+          loadInvoices={loadOpenInvoices}
+          onClose={() => setLinkOpen(false)}
+          onDone={(received, links) => {
+            setFormData((prev) => ({
+              ...prev,
+              amount: received > 0 ? String(received) : prev.amount,
+              links,
+              invoice_id: links.length === 1 ? links[0].id : '',
+            }));
+            setLinkOpen(false);
+          }}
+        />
       </div>
     
   );
