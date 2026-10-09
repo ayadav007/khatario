@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
 import { Supplier, Account } from '@/types/database';
-import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
+import { INDIAN_STATES, getStateCode, getStateName } from '@/lib/gst-utils';
 import { PurchaseDocumentTotals } from '@/lib/purchase-gst-calculator';
 import { round2, roundExclusiveUnitPrice, roundRetailQty } from '@/lib/numeric-precision';
 import { NumericBlurField } from '@/components/ui/NumericBlurField';
@@ -20,6 +20,7 @@ export interface PurchaseFormState {
   supplier_id: string;
   bill_number: string;
   bill_date: string;
+  due_date: string;
   place_of_supply_state_code: string;
   is_reverse_charge: boolean;
   document_type: string;
@@ -156,6 +157,35 @@ const SEL_CLASS =
 const SEL_CLASS_DENSE =
   'focus-primary w-full min-w-0 border-0 border-b border-border bg-transparent pb-1.5 text-sm font-medium text-text-primary shadow-none outline-none ring-0';
 
+const DOCUMENT_LABELS: Record<string, string> = {
+  tax_invoice: 'Tax invoice',
+  bill_of_supply: 'Bill of supply',
+  bill_of_entry: 'Bill of entry',
+  import_service: 'Import of services',
+};
+
+function formatShortDate(iso: string): string {
+  if (!iso) return '';
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return iso;
+  return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function daysUntil(iso: string): number | null {
+  if (!iso) return null;
+  const [year, month, day] = iso.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const target = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
 /** Flat section title (no white panel — title + rule only). */
 function MobileSectionHeading({
   children,
@@ -222,8 +252,7 @@ export interface MobileNewPurchaseScrollFormProps {
 
 export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormProps) {
   const itemWrapRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  /** Start open so ITC / reverse charge defaults stay visible; user can collapse. */
-  const [billMoreOptionsOpen, setBillMoreOptionsOpen] = useState(true);
+  const [billEditOpen, setBillEditOpen] = useState(false);
   const [itemsSectionOpen, setItemsSectionOpen] = useState(true);
   /** Null = compact line summary; set to line id to show full editor card. */
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -235,6 +264,22 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
   );
 
   const balanceDue = props.totals.grandTotal - (Number(props.formData.paid_amount) || 0);
+  const billNo = props.formData.bill_number.trim();
+  const dateLabel = formatShortDate(props.formData.bill_date) || 'Date not set';
+  const dueIn = daysUntil(props.formData.due_date);
+  const dueLabel = !props.formData.due_date
+    ? 'No due date'
+    : dueIn == null
+      ? `Due ${formatShortDate(props.formData.due_date)}`
+      : dueIn === 0
+        ? 'Due today'
+        : dueIn > 0
+          ? `${dueIn} day(s) to due`
+          : `${Math.abs(dueIn)} day(s) overdue`;
+  const placeCode = props.formData.place_of_supply_state_code || props.businessStateCode || '';
+  const placeName = getStateName(placeCode) || 'Place of supply not set';
+  const priceLabel = props.formData.price_mode === 'inclusive' ? 'Inclusive' : 'Exclusive';
+  const docLabel = DOCUMENT_LABELS[props.formData.document_type] || 'Tax invoice';
 
   const fillPanel = props.invoiceFillTracePanel ? (
     <div className="space-y-3 border-b border-border pb-5">{props.invoiceFillTracePanel}</div>
@@ -244,92 +289,30 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
     <div className="space-y-8 bg-background pb-36 md:hidden">
       {fillPanel}
 
-      <section className="space-y-3 pb-5">
-        <MobileSectionHeading compact>Bill details</MobileSectionHeading>
-
-        <div className="space-y-3">
-          <div>
-            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <span className={SLABEL_DENSE}>Supplier · required</span>
-              {props.supplierNeedsCatalogLink && (
-                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-green-800">
-                  New party
-                </span>
-              )}
-            </div>
-            <div className="relative supplier-dropdown-container">
-              <input
-                type="text"
-                placeholder="Search or type party name…"
-                value={props.supplierSearch}
-                className={`${SEL_CLASS_DENSE} px-0`}
-                onChange={(e) => {
-                  props.setSupplierSearch(e.target.value);
-                  props.setShowSupplierDropdown(true);
-                }}
-                onFocus={() => props.setShowSupplierDropdown(true)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  if (props.filteredSuppliers.length !== 1) return;
-                  e.preventDefault();
-                  props.pickSupplier(props.filteredSuppliers[0]);
-                }}
-              />
-              {props.showSupplierDropdown &&
-                (props.filteredSuppliers.length > 0 || props.supplierSearch.trim().length > 0) && (
-                  <div className="absolute z-[60] mt-1 flex max-h-56 w-full flex-col overflow-auto rounded-xl border border-border bg-white shadow-lg">
-                    {props.filteredSuppliers.length === 0 && props.supplierSearch.trim().length > 0 && (
-                      <div className="border-b border-border px-3 py-2.5 text-sm text-text-secondary">
-                        No matches for &quot;{props.supplierSearch.trim()}&quot;
-                      </div>
-                    )}
-                    {props.filteredSuppliers.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                        onClick={() => props.pickSupplier(s)}
-                      >
-                        <span className="font-medium text-text-primary">{s.name}</span>
-                        {s.phone && <span className="block text-xs text-text-muted">{s.phone}</span>}
-                      </button>
-                    ))}
-                    <div className="sticky bottom-0 border-t border-border bg-surface px-3 py-2">
-                      <button
-                        type="button"
-                        className="link-primary text-sm font-medium"
-                        onClick={() => {
-                          props.setShowSupplierDropdown(false);
-                          props.openAddSupplierModal();
-                        }}
-                      >
-                        + Add new supplier
-                      </button>
-                    </div>
-                  </div>
-                )}
-            </div>
-            {props.supplierNeedsCatalogLink && props.supplierSearch.trim().length > 0 && (
-              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary">
-                <button
-                  type="button"
-                  className="font-medium link-primary whitespace-nowrap"
-                  onClick={() => props.setShowSupplierDropdown(true)}
-                >
-                  Choose existing supplier
-                </button>
-                <span className="text-text-muted">·</span>
-                <button
-                  type="button"
-                  className="font-medium link-primary whitespace-nowrap"
-                  onClick={() => props.openAddSupplierModal()}
-                >
-                  Create supplier record
-                </button>
-              </p>
-            )}
+      <section className="space-y-4 pb-5">
+        <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
+          <div className="min-w-0">
+            <p className="text-base font-semibold text-primary-700">
+              {billNo ? `Supplier bill #${billNo}` : 'Supplier bill # —'}
+            </p>
+            <p className="mt-0.5 text-sm text-text-secondary">
+              {dateLabel} · {dueLabel}
+            </p>
+            <p className="mt-0.5 text-sm text-text-secondary">
+              {docLabel} · {priceLabel} · {placeName}
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setBillEditOpen((open) => !open)}
+            className="shrink-0 rounded-full border border-primary-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary-700"
+          >
+            {billEditOpen ? 'Done' : 'Edit'}
+          </button>
+        </div>
 
+          {billEditOpen && (
+          <div className="space-y-3">
           <div className="grid grid-cols-2 gap-x-3 gap-y-3">
             <FL
               dense
@@ -347,6 +330,18 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
                 type="date"
                 value={props.formData.bill_date}
                 onChange={(e) => props.setFormData({ ...props.formData, bill_date: e.target.value })}
+                className={`${SEL_CLASS_DENSE} cursor-pointer`}
+              />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <label className={`${SLABEL_DENSE} block`} htmlFor="mduedate">
+                Due date
+              </label>
+              <input
+                id="mduedate"
+                type="date"
+                value={props.formData.due_date}
+                onChange={(e) => props.setFormData({ ...props.formData, due_date: e.target.value })}
                 className={`${SEL_CLASS_DENSE} cursor-pointer`}
               />
             </div>
@@ -462,35 +457,111 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             />
           )}
 
-          <details
-            className="rounded-lg border border-border bg-surface px-3 py-2"
-            open={billMoreOptionsOpen}
-            onToggle={(e) => setBillMoreOptionsOpen((e.target as HTMLDetailsElement).open)}
-          >
-            <summary className="cursor-pointer list-none text-sm font-medium text-text-primary [&::-webkit-details-marker]:hidden">
-              More bill options
-            </summary>
-            <div className="mt-2 grid grid-cols-2 gap-3 border-t border-dashed border-border pt-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
-                <input
-                  type="checkbox"
-                  className="rounded border-border text-primary-600 focus:ring-primary-500"
-                  checked={props.formData.is_reverse_charge}
-                  onChange={(e) => props.setFormData({ ...props.formData, is_reverse_charge: e.target.checked })}
-                />
-                Reverse charge
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
-                <input
-                  type="checkbox"
-                  className="rounded border-border text-primary-600 focus:ring-primary-500"
-                  checked={props.formData.itc_eligible}
-                  onChange={(e) => props.setFormData({ ...props.formData, itc_eligible: e.target.checked })}
-                />
-                ITC eligible
-              </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                className="rounded border-border text-primary-600 focus:ring-primary-500"
+                checked={props.formData.is_reverse_charge}
+                onChange={(e) => props.setFormData({ ...props.formData, is_reverse_charge: e.target.checked })}
+              />
+              Reverse charge
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
+              <input
+                type="checkbox"
+                className="rounded border-border text-primary-600 focus:ring-primary-500"
+                checked={props.formData.itc_eligible}
+                onChange={(e) => props.setFormData({ ...props.formData, itc_eligible: e.target.checked })}
+              />
+              ITC eligible
+            </label>
+          </div>
+          </div>
+          )}
+
+        <div className="space-y-3">
+          <div>
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className={SLABEL_DENSE}>Supplier · required</span>
+              {props.supplierNeedsCatalogLink && (
+                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-green-800">
+                  New party
+                </span>
+              )}
             </div>
-          </details>
+            <div className="relative supplier-dropdown-container">
+              <input
+                type="text"
+                placeholder="Search or type party name…"
+                value={props.supplierSearch}
+                className={`${SEL_CLASS_DENSE} px-0`}
+                onChange={(e) => {
+                  props.setSupplierSearch(e.target.value);
+                  props.setShowSupplierDropdown(true);
+                }}
+                onFocus={() => props.setShowSupplierDropdown(true)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  if (props.filteredSuppliers.length !== 1) return;
+                  e.preventDefault();
+                  props.pickSupplier(props.filteredSuppliers[0]);
+                }}
+              />
+              {props.showSupplierDropdown &&
+                (props.filteredSuppliers.length > 0 || props.supplierSearch.trim().length > 0) && (
+                  <div className="absolute z-[60] mt-1 flex max-h-56 w-full flex-col overflow-auto rounded-xl border border-border bg-white shadow-lg">
+                    {props.filteredSuppliers.length === 0 && props.supplierSearch.trim().length > 0 && (
+                      <div className="border-b border-border px-3 py-2.5 text-sm text-text-secondary">
+                        No matches for &quot;{props.supplierSearch.trim()}&quot;
+                      </div>
+                    )}
+                    {props.filteredSuppliers.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                        onClick={() => props.pickSupplier(s)}
+                      >
+                        <span className="font-medium text-text-primary">{s.name}</span>
+                        {s.phone && <span className="block text-xs text-text-muted">{s.phone}</span>}
+                      </button>
+                    ))}
+                    <div className="sticky bottom-0 border-t border-border bg-surface px-3 py-2">
+                      <button
+                        type="button"
+                        className="link-primary text-sm font-medium"
+                        onClick={() => {
+                          props.setShowSupplierDropdown(false);
+                          props.openAddSupplierModal();
+                        }}
+                      >
+                        + Add new supplier
+                      </button>
+                    </div>
+                  </div>
+                )}
+            </div>
+            {props.supplierNeedsCatalogLink && props.supplierSearch.trim().length > 0 && (
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary">
+                <button
+                  type="button"
+                  className="font-medium link-primary whitespace-nowrap"
+                  onClick={() => props.setShowSupplierDropdown(true)}
+                >
+                  Choose existing supplier
+                </button>
+                <span className="text-text-muted">·</span>
+                <button
+                  type="button"
+                  className="font-medium link-primary whitespace-nowrap"
+                  onClick={() => props.openAddSupplierModal()}
+                >
+                  Create supplier record
+                </button>
+              </p>
+            )}
+          </div>
         </div>
       </section>
 

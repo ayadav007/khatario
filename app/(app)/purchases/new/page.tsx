@@ -45,6 +45,7 @@ import { useOfflineSync } from '@/contexts/OfflineSyncContext';
 import { canQueueOfflineActions } from '@/lib/offline/connectivity/state-machine';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
+import { MobileItemPickerPanel, type ItemLite } from '@/components/invoices/MobileItemPickerPanel';
 import {
   inclusiveLineTotal,
   inclusiveLineTotalWithDiscountAmount,
@@ -178,6 +179,7 @@ export default function NewPurchasePage() {
   const [items, setItems] = useState<Item[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isMobile, setIsMobile] = useState(false);
+  const [itemPickerKind, setItemPickerKind] = useState<'goods' | 'service' | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -247,15 +249,68 @@ export default function NewPurchasePage() {
     initial?: { name?: string; phone?: string; email?: string; gstin?: string };
   }>({ open: false });
 
-  const onOpenItemPicker = useCallback(
-    (kind: 'goods' | 'service') => {
-      const params = new URLSearchParams();
-      params.set('kind', kind);
-      params.set('returnTo', encodeURIComponent('/purchases/new'));
-      if (selectedWarehouseId) params.set('warehouse_id', selectedWarehouseId);
-      router.push(`/purchases/new/select-item?${params.toString()}`);
+  const onOpenItemPicker = useCallback((kind: 'goods' | 'service') => {
+    setItemPickerKind(kind);
+  }, []);
+
+  const handlePurchasePickerApply = useCallback(
+    (selections: Array<{ item: ItemLite; quantity: number }>) => {
+      const merged = new Map<string, { item: ItemLite; quantity: number }>();
+      for (const sel of selections) {
+        const vid = sel.item.variantId ? String(sel.item.variantId) : '';
+        const key = `${String(sel.item.id)}::${vid}`;
+        const prev = merged.get(key);
+        merged.set(key, {
+          item: sel.item,
+          quantity: (prev?.quantity || 0) + sel.quantity,
+        });
+      }
+
+      setPurchaseItems((prev) => {
+        const next = [...prev];
+        const trackedIds: string[] = [];
+        for (const { item, quantity } of merged.values()) {
+          if (quantity <= 0) continue;
+          const variantName = item.variantName?.trim();
+          const displayName = variantName ? `${item.name} — ${variantName}` : String(item.name || '');
+          const itemId = String(item.id || '');
+          const existingIndex = next.findIndex(
+            (row) => row.item_id === itemId && row.item_name === displayName
+          );
+          if (existingIndex >= 0) {
+            next[existingIndex] = {
+              ...next[existingIndex],
+              quantity: roundRetailQty(Number(next[existingIndex].quantity) + quantity),
+            };
+            continue;
+          }
+          const row = purchaseLineFromCatalogPick({
+            ...(item as unknown as Record<string, unknown>),
+            id: item.id,
+            name: displayName,
+            purchase_price: item.purchase_price,
+            item_type: item.item_type,
+          });
+          row.quantity = roundRetailQty(quantity);
+          next.push(row);
+          if (row.track_batch || row.track_serial) trackedIds.push(row.id);
+        }
+        if (trackedIds.length > 0) {
+          const ids = trackedIds;
+          queueMicrotask(() => {
+            setExpandedItems((open) => new Set([...open, ...ids]));
+          });
+        }
+        return next;
+      });
+      setItemPickerKind(null);
+      queueMicrotask(() => {
+        document.getElementById('purchase-mobile-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      const added = merged.size;
+      toast.success(added === 1 ? 'Added to purchase' : `Added ${added} items to purchase`);
     },
-    [router, selectedWarehouseId],
+    [toast]
   );
 
   useEffect(() => {
@@ -2192,6 +2247,21 @@ export default function NewPurchasePage() {
           renderDesktopForm()
         )}
       </div>
+
+      {business?.id && (
+        <MobileItemPickerPanel
+          open={itemPickerKind !== null}
+          onClose={() => setItemPickerKind(null)}
+          businessId={business.id}
+          userId={user?.id}
+          warehouseId={selectedWarehouseId || undefined}
+          branchId={currentBranchId && currentBranchId !== 'ALL' ? currentBranchId : undefined}
+          itemType={itemPickerKind ?? undefined}
+          priceField="purchase_price"
+          confirmLabel="Add to purchase"
+          onApply={handlePurchasePickerApply}
+        />
+      )}
 
       <CreateSupplierModal
         isOpen={supplierCreateModal.open}

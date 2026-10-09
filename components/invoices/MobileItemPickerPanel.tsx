@@ -11,6 +11,8 @@ export type ItemLite = {
   name: string;
   code?: string;
   selling_price?: number;
+  purchase_price?: number;
+  item_type?: 'goods' | 'service';
   tax_rate?: number;
   hsn_sac?: string;
   unit?: string;
@@ -98,9 +100,29 @@ interface MobileItemPickerPanelProps {
   userId?: string;
   warehouseId?: string;
   branchId?: string;
+  /** Limit the list. Invoices omit this and show every item. */
+  itemType?: 'goods' | 'service';
+  /** Purchase bills show the buy price; invoices show the sell price. */
+  priceField?: 'selling_price' | 'purchase_price';
+  confirmLabel?: string;
   onApply: (selections: Array<{ item: ItemLite; quantity: number }>) => void;
   onCreateNewItem?: () => void;
   onOpenScanner?: () => void;
+}
+
+function keepItemType(rows: ItemLite[], itemType?: 'goods' | 'service'): ItemLite[] {
+  if (!itemType) return rows;
+  return rows.filter((it) =>
+    itemType === 'service' ? it.item_type === 'service' : it.item_type !== 'service'
+  );
+}
+
+function linePrice(
+  item: { selling_price?: number; purchase_price?: number },
+  field: 'selling_price' | 'purchase_price'
+): number {
+  if (field === 'purchase_price') return Number(item.purchase_price ?? 0);
+  return Number(item.selling_price ?? 0);
 }
 
 function QtyStepper({
@@ -142,6 +164,7 @@ function VariantSheet({
   businessId,
   userId,
   warehouseId,
+  priceField,
   quantities,
   onDelta,
   onClose,
@@ -151,6 +174,7 @@ function VariantSheet({
   businessId: string;
   userId?: string;
   warehouseId?: string;
+  priceField: 'selling_price' | 'purchase_price';
   quantities: Record<string, number>;
   onDelta: (item: ItemLite, delta: number) => void;
   onClose: () => void;
@@ -206,6 +230,7 @@ function VariantSheet({
               variantId: v.id,
               variantName: v.name || v.variant_name,
               selling_price: parseFloat(String(v.selling_price ?? parent.selling_price ?? 0)),
+              purchase_price: parseFloat(String(v.purchase_price ?? parent.purchase_price ?? 0)),
               current_stock: v.current_stock != null ? Number(v.current_stock) : parent.current_stock,
               has_variants: false,
               variants: [],
@@ -221,7 +246,7 @@ function VariantSheet({
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-text-primary text-sm">{row.variantName || 'Variant'}</p>
                   <p className="text-xs text-text-muted mt-0.5">
-                    ₹ {Number(row.selling_price ?? 0).toLocaleString('en-IN', {
+                    ₹ {linePrice(row, priceField).toLocaleString('en-IN', {
                       minimumFractionDigits: 0,
                       maximumFractionDigits: 2,
                     })}
@@ -258,6 +283,9 @@ export function MobileItemPickerPanel({
   userId,
   warehouseId,
   branchId,
+  itemType,
+  priceField = 'selling_price',
+  confirmLabel = 'Add to invoice',
   onApply,
   onCreateNewItem,
   onOpenScanner,
@@ -302,7 +330,7 @@ export function MobileItemPickerPanel({
           };
           return it.has_variants ? { ...row, _pickerNeedsVariant: true } : row;
         });
-        setListRows(mapped);
+        setListRows(keepItemType(mapped, itemType));
         setBrowseLoading(false);
         return;
       }
@@ -318,7 +346,7 @@ export function MobileItemPickerPanel({
           const mapped: ItemLite[] = raw.map((it: any) =>
             it.has_variants ? { ...it, _pickerNeedsVariant: true } : it
           );
-          setListRows(mapped);
+          setListRows(keepItemType(mapped, itemType));
         })
         .catch(() => {
           if (!cancelled) setListRows([]);
@@ -332,7 +360,7 @@ export function MobileItemPickerPanel({
     return () => {
       cancelled = true;
     };
-  }, [open, businessId, userId, resetState, q]);
+  }, [open, businessId, userId, resetState, q, itemType]);
 
   useEffect(() => {
     if (!open || !businessId) return;
@@ -348,7 +376,7 @@ export function MobileItemPickerPanel({
           { warehouseId, branchId, limit: 80 }
         );
         if (offlineRows != null) {
-          setListRows(flattenSearchItems(offlineRows));
+          setListRows(keepItemType(flattenSearchItems(offlineRows), itemType));
           return;
         }
 
@@ -362,7 +390,7 @@ export function MobileItemPickerPanel({
         );
         if (res.ok) {
           const data = await res.json();
-          const flat = flattenSearchItems(data.items || []);
+          const flat = keepItemType(flattenSearchItems(data.items || []), itemType);
           setListRows(flat);
         } else {
           // API failed — try catalog as last resort
@@ -371,7 +399,7 @@ export function MobileItemPickerPanel({
             trimmed,
             { warehouseId, branchId, limit: 80 }
           );
-          setListRows(fallback != null ? flattenSearchItems(fallback) : []);
+          setListRows(fallback != null ? keepItemType(flattenSearchItems(fallback), itemType) : []);
         }
       } catch {
         setListRows([]);
@@ -380,7 +408,7 @@ export function MobileItemPickerPanel({
       }
     }, 280);
     return () => clearTimeout(t);
-  }, [open, q, businessId, userId, warehouseId, branchId]);
+  }, [open, q, businessId, userId, warehouseId, branchId, itemType]);
 
   const changeQty = useCallback((item: ItemLite, delta: number) => {
     const key = makeKey(item);
@@ -484,7 +512,7 @@ export function MobileItemPickerPanel({
             {listRows.map((item) => {
               const k = makeKey(item);
               const qty = picked[k]?.qty ?? 0;
-              const price = Number(item.selling_price ?? 0);
+              const price = linePrice(item, priceField);
               const unit = item.unit || 'PCS';
               const stock = item.current_stock;
               const needsVariant = item._pickerNeedsVariant;
@@ -557,7 +585,7 @@ export function MobileItemPickerPanel({
             onClick={handleDone}
             disabled={totalPicked === 0}
           >
-            {totalPicked === 0 ? 'Add to invoice' : `Add to invoice · ${totalPicked} pcs`}
+            {totalPicked === 0 ? confirmLabel : `${confirmLabel} · ${totalPicked} pcs`}
           </Button>
           <p className="text-caption text-center text-text-muted">Adjust quantities above, then confirm here.</p>
         </div>
@@ -569,6 +597,7 @@ export function MobileItemPickerPanel({
         businessId={businessId}
         userId={userId}
         warehouseId={warehouseId}
+        priceField={priceField}
         quantities={quantityMap}
         onDelta={changeQty}
         onClose={() => setVariantParent(null)}
