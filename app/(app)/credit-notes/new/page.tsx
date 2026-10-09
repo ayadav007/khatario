@@ -512,14 +512,26 @@ export default function NewCreditNotePage() {
 
           <div className="space-y-4">
             {creditNoteItems.map((item, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="grid grid-cols-12 gap-4">
-                  <div className="col-span-3">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
+              <div key={index} className="space-y-3 rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between md:hidden">
+                  <span className="text-sm font-medium text-gray-900">Item {index + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeCreditNoteItem(index)}
+                    aria-label={`Remove item ${index + 1}`}
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-12 md:gap-4">
+                  <div className="col-span-2 md:col-span-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Item</label>
                     <select
                       value={item.item_id}
                       onChange={(e) => updateCreditNoteItem(index, 'item_id', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     >
                       <option value="">Select Item</option>
                       {items.map((i) => (
@@ -530,52 +542,53 @@ export default function NewCreditNotePage() {
                     </select>
                   </div>
 
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Qty</label>
+                  <div className="min-w-0 md:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Qty</label>
                     <input
                       type="number"
                       step="0.01"
                       value={item.qty}
                       onChange={(e) => updateCreditNoteItem(index, 'qty', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     />
                   </div>
 
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Price</label>
+                  <div className="min-w-0 md:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Price</label>
                     <input
                       type="number"
                       step="0.01"
                       value={item.unit_price}
                       onChange={(e) => updateCreditNoteItem(index, 'unit_price', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     />
                   </div>
 
-                  <div className="col-span-1">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Tax %</label>
+                  <div className="min-w-0 md:col-span-1">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Tax %</label>
                     <input
                       type="number"
                       step="0.01"
                       value={item.tax_rate}
                       onChange={(e) => updateCreditNoteItem(index, 'tax_rate', e.target.value)}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      className="w-full min-w-0 rounded border border-gray-300 px-2 py-2 text-sm md:py-1"
                     />
                   </div>
 
-                  <div className="col-span-3">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Total</label>
-                    <div className="text-sm font-medium py-1">
+                  <div className="min-w-0 md:col-span-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Total</label>
+                    <div className="py-2 text-sm font-medium md:py-1">
                       ₹{item.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </div>
                   </div>
 
-                  <div className="col-span-1 flex items-end">
+                  <div className="hidden items-end md:col-span-1 md:flex">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => removeCreditNoteItem(index)}
+                      aria-label={`Remove item ${index + 1}`}
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </Button>
@@ -629,11 +642,11 @@ export default function NewCreditNotePage() {
         )}
           </div>
 
-          <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
-            <Button type="button" variant="secondary" onClick={() => router.push('/credit-notes')}>
+          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end dark:border-border-dark">
+            <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => router.push('/credit-notes')}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading} className="w-full sm:w-auto">
               {loading ? 'Creating...' : 'Create credit note'}
             </Button>
           </div>
