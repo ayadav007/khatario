@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, query } from '@/lib/db';
 import { SalaryAdvance } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { postSalaryAdvanceToBooks } from '@/lib/hr/staff-wage-posting';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,31 @@ export async function PATCH(
           advanceId,
         ]
       );
+
+      const employee = await queryOne<{ name: string }>(
+        `SELECT u.name FROM users u WHERE u.id = $1`,
+        [existing.employee_id],
+      );
+      const rawDate = existing.advance_date;
+      const advanceDate = rawDate instanceof Date
+        ? `${rawDate.getFullYear()}-${String(rawDate.getMonth() + 1).padStart(2, '0')}-${String(rawDate.getDate()).padStart(2, '0')}`
+        : String(rawDate).slice(0, 10);
+      try {
+        await postSalaryAdvanceToBooks({
+          businessId,
+          advanceId,
+          amount: Number(existing.advance_amount),
+          advanceDate,
+          employeeName: employee?.name || 'Employee',
+          paymentMode: payment_mode || 'cash',
+        });
+      } catch (booksError) {
+        console.error('Salary advance ledger post failed', booksError);
+        const message = booksError instanceof Error
+          ? booksError.message
+          : 'Could not post the advance to the books';
+        return NextResponse.json({ error: message, advance: updated }, { status: 500 });
+      }
 
       return NextResponse.json({ advance: updated });
     } else {

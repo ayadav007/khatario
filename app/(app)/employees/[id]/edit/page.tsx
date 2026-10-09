@@ -65,6 +65,7 @@ export default function EditEmployeePage() {
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
     access_type: 'attendance_only' as 'attendance_only',
+    pay_basis: 'monthly' as 'daily' | 'monthly',
     salary: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
@@ -145,6 +146,7 @@ export default function EditEmployeePage() {
           reporting_manager_id: emp.reporting_manager_id || '',
           employment_type: emp.employment_type || 'full_time',
           access_type: emp.access_type || 'attendance_only',
+          pay_basis: emp.pay_basis === 'daily' ? 'daily' : 'monthly',
           salary: emp.salary != null ? String(emp.salary) : '',
           emergency_contact_name: emp.emergency_contact_name || '',
           emergency_contact_phone: emp.emergency_contact_phone || '',
@@ -214,6 +216,7 @@ export default function EditEmployeePage() {
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
+        pay_basis: formData.pay_basis,
         emergency_contact_name: formData.emergency_contact_name.trim() || null,
         emergency_contact_phone: formData.emergency_contact_phone.replace(/\D/g, '') || null,
         bank_account_number: formData.bank_account_number.trim() || null,
@@ -452,8 +455,21 @@ export default function EditEmployeePage() {
                     }
                   />
                 ) : null}
+                <div>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="pay_basis">Pay type</label>
+                  <select
+                    id="pay_basis"
+                    name="pay_basis"
+                    className="input"
+                    value={formData.pay_basis}
+                    onChange={handleChange}
+                  >
+                    <option value="daily">Daily wages</option>
+                    <option value="monthly">Monthly salary</option>
+                  </select>
+                </div>
                 <Input
-                  label="Salary"
+                  label={formData.pay_basis === 'daily' ? 'Daily wage' : 'Monthly salary'}
                   name="salary"
                   type="number"
                   inputMode="decimal"

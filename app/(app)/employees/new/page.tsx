@@ -74,6 +74,7 @@ export default function NewEmployeePage() {
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
     access_type: 'attendance_only' as 'attendance_only', // Employees only have attendance access
+    pay_basis: 'monthly' as 'daily' | 'monthly',
     salary: '',
     
     // Contact & Emergency
@@ -152,6 +153,7 @@ export default function NewEmployeePage() {
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
+        pay_basis: formData.pay_basis,
         emergency_contact_name: formData.emergency_contact_name || null,
         emergency_contact_phone: formData.emergency_contact_phone.replace(/\D/g, '') || null,
         bank_account_number: formData.bank_account_number || null,
@@ -353,8 +355,23 @@ export default function NewEmployeePage() {
                       }
                     />
                   ) : null}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-primary" htmlFor="pay_basis">
+                      Pay type
+                    </label>
+                    <select
+                      id="pay_basis"
+                      name="pay_basis"
+                      className="input w-full"
+                      value={formData.pay_basis}
+                      onChange={handleChange}
+                    >
+                      <option value="daily">Daily wages</option>
+                      <option value="monthly">Monthly salary</option>
+                    </select>
+                  </div>
                   <Input
-                    label="Salary (Optional)"
+                    label={formData.pay_basis === 'daily' ? 'Daily wage' : 'Monthly salary'}
                     name="salary"
                     type="number"
                     inputMode="decimal"

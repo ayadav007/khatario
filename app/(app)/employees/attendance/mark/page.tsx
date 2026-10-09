@@ -14,7 +14,7 @@ export default function MarkAttendancePage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-text-secondary">
-          Tap Present or Absent for each person — saves automatically.
+          Tap P, A, half, or Off, then save the day.
         </p>
         <Link
           href="/employees/attendance/mark/advanced"

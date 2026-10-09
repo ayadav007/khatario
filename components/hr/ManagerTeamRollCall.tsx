@@ -2,13 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Loader2, Search, Check } from 'lucide-react';
+import { Loader2, Search, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { shiftYmd } from '@/lib/hr/staff-wage';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { clsx } from 'clsx';
 
-type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave';
+type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'off';
 
 type TeamRow = {
   id: string;
@@ -20,11 +21,15 @@ type TeamRow = {
   is_late?: boolean | null;
   late_excused?: boolean | null;
   late_minutes?: number | null;
+  pay_basis?: 'daily' | 'monthly' | null;
+  rate?: number | null;
 };
 
 type Summary = {
   present: number;
   absent: number;
+  half?: number;
+  off?: number;
   pending: number;
   total: number;
 };
@@ -36,10 +41,11 @@ const FULL_STATUS_OPTIONS: { value: AttendanceStatus; label: string; short: stri
   { value: 'absent', label: 'Absent', short: 'A' },
   { value: 'half_day', label: 'Half day', short: '½' },
   { value: 'leave', label: 'Leave', short: 'L' },
+  { value: 'off', label: 'Off', short: 'O' },
 ];
 
 const SIMPLE_STATUS_OPTIONS = FULL_STATUS_OPTIONS.filter(
-  (o) => o.value === 'present' || o.value === 'absent',
+  (o) => o.value === 'present' || o.value === 'absent' || o.value === 'half_day' || o.value === 'off',
 );
 
 function statusButtonClass(status: AttendanceStatus, selected: boolean): string {
@@ -55,6 +61,8 @@ function statusButtonClass(status: AttendanceStatus, selected: boolean): string 
       return 'border-amber-600 bg-amber-50 text-amber-900 font-semibold';
     case 'leave':
       return 'border-blue-600 bg-blue-50 text-blue-800 font-semibold';
+    case 'off':
+      return 'border-gray-500 bg-gray-100 text-gray-800 font-semibold';
   }
 }
 
@@ -75,7 +83,12 @@ export function ManagerTeamRollCall({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
   const [rollCallScope, setRollCallScope] = useState<'team' | 'all'>('team');
+  const [canViewWages, setCanViewWages] = useState(false);
+  const [draft, setDraft] = useState<Record<string, AttendanceStatus>>({});
+  const [viewMode, setViewMode] = useState<'list' | 'roll'>('list');
+  const [rollIndex, setRollIndex] = useState(0);
 
   const statusOptions = simpleStatuses ? SIMPLE_STATUS_OPTIONS : FULL_STATUS_OPTIONS;
 
@@ -100,8 +113,10 @@ export function ManagerTeamRollCall({
       }
       const data = await res.json();
       setRollCallScope(data.scope === 'all' ? 'all' : 'team');
+      setCanViewWages(data.can_view_wages === true);
       setTeam(data.team ?? []);
       setSummary(data.summary ?? null);
+      setDraft({});
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not load team');
     } finally {
@@ -119,6 +134,10 @@ export function ManagerTeamRollCall({
     name: string,
     extras?: { is_late?: boolean; late_excused?: boolean },
   ) => {
+    if (simpleStatuses) {
+      setDraft((prev) => ({ ...prev, [employeeId]: status }));
+      return;
+    }
     if (!business?.id || savingId === employeeId) return;
 
     setTeam((prev) =>
@@ -161,10 +180,53 @@ export function ManagerTeamRollCall({
     }
   };
 
+  const statusOf = (member: TeamRow): AttendanceStatus | null =>
+    draft[member.id] ?? member.attendance_status;
+
+  const markedCount = team.filter((member) => statusOf(member)).length;
+
+  const saveRegister = async () => {
+    const marks = team
+      .map((member) => ({ employee_id: member.id, status: statusOf(member) }))
+      .filter((mark): mark is { employee_id: string; status: AttendanceStatus } => !!mark.status);
+    if (marks.length === 0) {
+      toast.error('Mark at least one person');
+      return;
+    }
+    setSavingAll(true);
+    try {
+      const res = await fetch('/api/employees/manager/attendance', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, marks }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not save');
+      toast.success(`Attendance saved · ${marks.length}`);
+      void loadTeam();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
+  const markAllPresent = () => {
+    setDraft((prev) => {
+      const next = { ...prev };
+      for (const member of team) {
+        if ((prev[member.id] ?? member.attendance_status) === 'leave') continue;
+        next[member.id] = 'present';
+      }
+      return next;
+    });
+  };
+
   const filteredTeam = useMemo(() => {
     let rows = team;
     if (filter === 'pending') {
-      rows = rows.filter((r) => !r.attendance_status);
+      rows = rows.filter((r) => !(draft[r.id] ?? r.attendance_status));
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -175,7 +237,7 @@ export function ManagerTeamRollCall({
       );
     }
     return rows;
-  }, [team, filter, search]);
+  }, [team, filter, search, draft]);
 
   const dateLabel = useMemo(() => {
     try {
@@ -198,9 +260,9 @@ export function ManagerTeamRollCall({
 
   const pageTitle = rollCallScope === 'all' ? 'Mark attendance' : 'Team roll call';
   const pageDescription = simpleStatuses
-    ? 'Tap Present or Absent for each person — saves automatically'
+    ? 'Mark P, A, half, or Off, then save the day'
     : rollCallScope === 'all'
-      ? 'Tap P, A, ½, or L for each employee — saves automatically'
+      ? 'Tap P, A, ½, L, or O for each employee — saves automatically'
       : 'Tap a status for each person — saves automatically';
 
   return (
@@ -210,22 +272,41 @@ export function ManagerTeamRollCall({
       {/* Sticky summary + search (mobile-first) */}
       <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-surface px-4 py-3 lg:mx-0 lg:rounded-xl lg:border lg:px-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className="text-sm font-semibold text-text-primary">
-            <span className="sr-only">Date</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-border bg-white px-2 py-1 text-sm font-semibold text-text-primary"
-            />
-          </label>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Previous day"
+              onClick={() => setDate((current) => shiftYmd(current, -1))}
+              className="rounded-lg border border-border p-1.5"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <label className="text-sm font-semibold text-text-primary">
+              <span className="sr-only">Date</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="rounded-lg border border-border bg-white px-2 py-1 text-sm font-semibold text-text-primary"
+              />
+            </label>
+            <button
+              type="button"
+              aria-label="Next day"
+              onClick={() => setDate((current) => shiftYmd(current, 1))}
+              className="rounded-lg border border-border p-1.5"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
           {summary ? (
             <p className="text-xs text-text-secondary">
-              <span className="font-medium text-green-700">{summary.present} in</span>
+              <span className="font-medium text-green-700">{summary.present} present</span>
+              {' · '}
+              <span className="font-medium text-red-700">{summary.absent} absent</span>
+              {summary.half != null ? ` · ${summary.half} half` : ''}
               {' · '}
               <span className="font-medium text-text-primary">{summary.pending} left</span>
-              {' · '}
-              {summary.total} total
             </p>
           ) : null}
         </div>
@@ -269,6 +350,40 @@ export function ManagerTeamRollCall({
             {summary && summary.pending > 0 ? ` (${summary.pending})` : ''}
           </button>
         </div>
+        {simpleStatuses ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={markAllPresent}
+              className="rounded-full border border-violet-300 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-900"
+            >
+              Mark all present
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={clsx(
+                'rounded-full border px-3 py-1 text-xs font-medium',
+                viewMode === 'list' ? 'border-gray-500 bg-gray-100' : 'border-border bg-white',
+              )}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRollIndex(0);
+                setViewMode('roll');
+              }}
+              className={clsx(
+                'rounded-full border px-3 py-1 text-xs font-medium',
+                viewMode === 'roll' ? 'border-gray-500 bg-gray-100' : 'border-border bg-white',
+              )}
+            >
+              Roll-call
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {loading ? (
@@ -285,10 +400,25 @@ export function ManagerTeamRollCall({
         <p className="py-12 text-center text-sm text-text-secondary">
           {filter === 'pending' ? 'Everyone is marked for this day.' : 'No matches.'}
         </p>
+      ) : simpleStatuses && viewMode === 'roll' ? (
+        <RollCallCard
+          member={filteredTeam[Math.min(rollIndex, filteredTeam.length - 1)]}
+          status={statusOf(filteredTeam[Math.min(rollIndex, filteredTeam.length - 1)])}
+          index={Math.min(rollIndex, filteredTeam.length - 1)}
+          total={filteredTeam.length}
+          showRate={canViewWages}
+          onStatus={(status) => {
+            const member = filteredTeam[Math.min(rollIndex, filteredTeam.length - 1)];
+            void markStatus(member.id, status, member.name);
+            setRollIndex((current) => Math.min(current + 1, filteredTeam.length - 1));
+          }}
+          onPrev={() => setRollIndex((current) => Math.max(0, current - 1))}
+          onNext={() => setRollIndex((current) => Math.min(filteredTeam.length - 1, current + 1))}
+        />
       ) : (
         <ul className="mt-3 space-y-3">
           {filteredTeam.map((member) => {
-            const current = member.attendance_status;
+            const current = simpleStatuses ? statusOf(member) : member.attendance_status;
             const isSaving = savingId === member.id;
 
             return (
@@ -310,6 +440,9 @@ export function ManagerTeamRollCall({
                     <p className="text-xs text-text-muted">
                       {member.employee_code}
                       {member.designation ? ` · ${member.designation}` : ''}
+                      {canViewWages && member.rate
+                        ? ` · ₹${member.rate}/${member.pay_basis === 'daily' ? 'day' : 'month'}`
+                        : ''}
                     </p>
                   </div>
                   {current && !isSaving ? (
@@ -325,9 +458,7 @@ export function ManagerTeamRollCall({
                 <div
                   className={clsx(
                     'grid gap-2',
-                    simpleStatuses
-                      ? 'grid-cols-2 sm:w-64 sm:shrink-0'
-                      : 'grid-cols-4',
+                    simpleStatuses ? 'grid-cols-4 sm:w-56 sm:shrink-0' : 'grid-cols-4',
                   )}
                 >
                   {statusOptions.map((opt) => (
@@ -344,7 +475,7 @@ export function ManagerTeamRollCall({
                       aria-pressed={current === opt.value}
                     >
                       {simpleStatuses ? (
-                        <span>{opt.label}</span>
+                        <span>{opt.short}</span>
                       ) : (
                         <>
                           <span className="md:hidden">{opt.short}</span>
@@ -404,6 +535,236 @@ export function ManagerTeamRollCall({
       )}
 
       <p className="mt-4 hidden text-xs text-text-muted md:block">{dateLabel}</p>
+
+      {simpleStatuses && canViewWages ? <StaffWagePanel date={date} /> : null}
+
+      {simpleStatuses ? (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white p-3 lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0">
+          <button
+            type="button"
+            disabled={savingAll}
+            onClick={() => void saveRegister()}
+            className="w-full rounded-xl bg-violet-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 lg:w-auto"
+          >
+            {savingAll ? 'Saving…' : `Save attendance · ${markedCount}/${team.length}`}
+          </button>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function inr(amount: number): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function RollCallCard({
+  member,
+  status,
+  index,
+  total,
+  showRate,
+  onStatus,
+  onPrev,
+  onNext,
+}: {
+  member: TeamRow;
+  status: AttendanceStatus | null;
+  index: number;
+  total: number;
+  showRate: boolean;
+  onStatus: (status: AttendanceStatus) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-border bg-white p-4">
+      <p className="text-xs text-text-muted">{index + 1} of {total}</p>
+      <p className="mt-1 text-xl font-semibold text-text-primary">{member.name}</p>
+      <p className="text-sm text-text-secondary">
+        {member.employee_code}
+        {showRate && member.rate
+          ? ` · ₹${member.rate}/${member.pay_basis === 'daily' ? 'day' : 'month'}`
+          : ''}
+      </p>
+      <div className="mt-4 grid grid-cols-4 gap-2">
+        {SIMPLE_STATUS_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onStatus(opt.value)}
+            className={clsx(
+              'min-h-[48px] rounded-lg border text-sm',
+              statusButtonClass(opt.value, status === opt.value),
+            )}
+          >
+            {opt.short}
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-between">
+        <button type="button" onClick={onPrev} className="text-sm font-medium text-text-secondary">Previous</button>
+        <button type="button" onClick={onNext} className="text-sm font-medium text-text-secondary">Next</button>
+      </div>
+    </div>
+  );
+}
+
+type WageLine = {
+  employee_id: string;
+  name: string;
+  pay_basis: 'daily' | 'monthly';
+  gross: number;
+  present_days: number;
+  half_days: number;
+};
+
+type OpenPayable = {
+  accrual_id: string;
+  name: string;
+  period_kind: 'week' | 'month';
+  period_start: string;
+  period_end: string;
+  due: number;
+};
+
+function StaffWagePanel({ date }: { date: string }) {
+  const toast = useToastContext();
+  const [period, setPeriod] = useState<'week' | 'month'>('week');
+  const [loading, setLoading] = useState(true);
+  const [earned, setEarned] = useState(0);
+  const [closed, setClosed] = useState(false);
+  const [lines, setLines] = useState<WageLine[]>([]);
+  const [open, setOpen] = useState<OpenPayable[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/employees/staff-wages?date=${date}&period=${period}`, {
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not load wages');
+      if (!data.can_view_wages) return;
+      setEarned(Number(data.earned_total ?? 0));
+      setClosed(data.already_closed === true);
+      setLines(data.lines ?? []);
+      setOpen(data.open_payables ?? []);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not load wages');
+    } finally {
+      setLoading(false);
+    }
+  }, [date, period, toast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const closePeriod = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/employees/staff-wages/close', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, period }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not post');
+      toast.success('Posted to Salaries & Wages and Salary Payable');
+      void load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not post');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pay = async (row: OpenPayable) => {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/employees/staff-wages/pay', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accrual_id: row.accrual_id,
+          amount: row.due,
+          payment_date: date,
+          payment_mode: 'cash',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not pay');
+      toast.success(`Paid ${row.name}`);
+      void load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not pay');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-text-primary">Wages in the books</h2>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setPeriod('week')} className={clsx('rounded-full border px-3 py-1 text-xs', period === 'week' ? 'bg-gray-100' : 'bg-white')}>Week</button>
+          <button type="button" onClick={() => setPeriod('month')} className={clsx('rounded-full border px-3 py-1 text-xs', period === 'month' ? 'bg-gray-100' : 'bg-white')}>Month</button>
+        </div>
+      </div>
+      {loading ? (
+        <Loader2 className="h-5 w-5 animate-spin text-text-muted" />
+      ) : (
+        <>
+          <p className="text-sm text-text-secondary">
+            {closed ? 'This period is already posted.' : `Earned so far ${inr(earned)}. Closing posts the expense and leaves unpaid wages in Salary Payable.`}
+          </p>
+          <ul className="space-y-1 text-sm">
+            {lines.filter((line) => line.gross > 0).map((line) => (
+              <li key={line.employee_id} className="flex justify-between gap-2">
+                <span>{line.name}</span>
+                <span>
+                  {line.pay_basis === 'daily' ? `${line.present_days} + ${line.half_days} half · ` : 'Monthly · '}
+                  {inr(line.gross)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!closed ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void closePeriod()}
+              className="rounded-lg border border-border px-3 py-2 text-sm font-medium"
+            >
+              Post {period} to books
+            </button>
+          ) : null}
+          {open.length > 0 ? (
+            <ul className="space-y-2">
+              {open.map((row) => (
+                <li key={row.accrual_id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                  <span>
+                    {row.name} · due {inr(row.due)}
+                    <span className="block text-xs text-text-muted">{row.period_start} to {row.period_end}</span>
+                  </span>
+                  <button type="button" disabled={busy} onClick={() => void pay(row)} className="text-sm font-medium text-violet-800">
+                    Pay cash
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </section>
   );
 }

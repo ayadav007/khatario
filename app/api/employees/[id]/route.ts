@@ -212,6 +212,7 @@ export async function PATCH(
       employment_type,
       access_type,
       salary,
+      pay_basis,
       photo_url,
       emergency_contact_name,
       emergency_contact_phone,
@@ -361,6 +362,10 @@ export async function PATCH(
     if (salary !== undefined) {
       employeeUpdates.push(`salary = $${paramIndex++}`);
       employeeParams.push(salary || null);
+    }
+    if (pay_basis === 'daily' || pay_basis === 'monthly') {
+      employeeUpdates.push(`pay_basis = $${paramIndex++}`);
+      employeeParams.push(pay_basis);
     }
     if (photo_url !== undefined) {
       employeeUpdates.push(`photo_url = $${paramIndex++}`);

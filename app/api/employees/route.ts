@@ -187,6 +187,7 @@ export async function POST(request: NextRequest) {
       employment_type = 'full_time',
       access_type = 'full',
       salary,
+      pay_basis,
       photo_url,
       emergency_contact_name,
       emergency_contact_phone,
@@ -369,11 +370,11 @@ export async function POST(request: NextRequest) {
     const employee = await queryOne<Employee>(
       `INSERT INTO employees (
         id, business_id, employee_code, designation, department, joining_date,
-        reporting_manager_id, employment_type, access_type, salary, photo_url,
+        reporting_manager_id, employment_type, access_type, salary, pay_basis, photo_url,
         emergency_contact_name, emergency_contact_phone, bank_account_number,
         bank_ifsc, bank_name, pan_number, aadhaar_number, default_shift_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *`,
       [
         userId,
@@ -386,6 +387,7 @@ export async function POST(request: NextRequest) {
         employment_type,
         access_type,
         salary || null,
+        pay_basis === 'daily' ? 'daily' : 'monthly',
         photo_url || null,
         emergency_contact_name || null,
         emergencyPhoneNorm,
