@@ -1493,3 +1493,66 @@
   }
 }
 
+/* Document line tables: one card per row on a phone, desktop table from md up. */
+@media (max-width: 767px) {
+  .kh-line-cards {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .kh-line-cards thead {
+    display: none;
+  }
+
+  .kh-line-cards tbody,
+  .kh-line-cards tr,
+  .kh-line-cards td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .kh-line-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .kh-line-cards tr {
+    border: 1px solid rgb(229 231 235);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .kh-line-cards td {
+    border: 0;
+    padding: 0.375rem 0;
+    text-align: left;
+  }
+
+  .kh-line-cards td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: rgb(55 65 81);
+  }
+
+  .kh-line-cards td[data-label='']::before,
+  .kh-line-cards td:not([data-label])::before {
+    content: none;
+    display: none;
+  }
+
+  .kh-line-cards input,
+  .kh-line-cards select,
+  .kh-line-cards textarea {
+    width: 100% !important;
+    max-width: 100%;
+    min-width: 0 !important;
+  }
+}
+

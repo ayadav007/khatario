@@ -903,10 +903,25 @@ export default function NewSalesOrderPage() {
             </div>
           </div>
 
-          <div className="mb-4 space-y-2">
+          <div className="mb-4 space-y-3">
             {recalculatedRows.map((row, index) => (
-              <div key={index} className="grid grid-cols-12 items-end gap-2">
-                <div className="col-span-4">
+              <div key={index} className="space-y-3 rounded-lg border border-gray-200 p-3 lg:space-y-0 lg:border-0 lg:p-0">
+                <div className="flex items-center justify-between lg:hidden">
+                  <span className="text-sm font-medium text-gray-900">Item {index + 1}</span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => removeRow(index)}
+                    disabled={readOnly || recalculatedRows.length <= 1}
+                    aria-label={`Remove item ${index + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-12 lg:gap-2">
+                <div className="col-span-2 lg:col-span-4">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">Item</label>
                   <ItemAutocomplete
                     value={row.name}
                     onChange={(name) => patchRow(index, { name })}
@@ -923,7 +938,8 @@ export default function NewSalesOrderPage() {
                     disabled={readOnly}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="min-w-0 lg:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">Qty</label>
                   <Input
                     type="number"
                     value={row.quantity}
@@ -931,7 +947,8 @@ export default function NewSalesOrderPage() {
                     disabled={readOnly}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="min-w-0 lg:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">Price</label>
                   <Input
                     type="number"
                     value={row.price}
@@ -939,19 +956,22 @@ export default function NewSalesOrderPage() {
                     disabled={readOnly}
                   />
                 </div>
-                <div className="col-span-2 text-right text-sm font-medium">
+                <div className="col-span-2 text-sm font-medium lg:col-span-2 lg:text-right">
+                  <span className="mb-1 block text-xs font-medium text-gray-700 lg:sr-only">Total</span>
                   ₹{row.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
-                <div className="col-span-2 flex justify-end">
+                <div className="hidden justify-end lg:col-span-2 lg:flex">
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
                     onClick={() => removeRow(index)}
                     disabled={readOnly || recalculatedRows.length <= 1}
+                    aria-label={`Remove item ${index + 1}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
+                </div>
                 </div>
               </div>
             ))}

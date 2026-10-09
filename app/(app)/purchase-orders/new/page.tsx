@@ -582,8 +582,8 @@ export default function NewPurchaseOrderPage() {
                   </Button>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="md:overflow-x-auto">
+                  <table className="kh-line-cards w-full">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700">Item</th>
@@ -600,7 +600,7 @@ export default function NewPurchaseOrderPage() {
                     <tbody>
                       {rows.map((row, index) => (
                         <tr key={index} className="border-b border-gray-100">
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Item">
                             <ItemAutocomplete
                               value={row.itemId}
                               onChange={(val) => {
@@ -612,7 +612,7 @@ export default function NewPurchaseOrderPage() {
                               placeholder="Search item..."
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="HSN/SAC">
                             <Input
                               value={row.hsnSac}
                               onChange={(e) => updateRow(index, 'hsnSac', e.target.value)}
@@ -620,7 +620,7 @@ export default function NewPurchaseOrderPage() {
                               placeholder="HSN/SAC"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Qty">
                             <Input
                               type="number"
                               value={row.quantity}
@@ -630,7 +630,7 @@ export default function NewPurchaseOrderPage() {
                               step="0.01"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Unit">
                             <Input
                               value={row.unit}
                               onChange={(e) => updateRow(index, 'unit', e.target.value)}
@@ -638,7 +638,7 @@ export default function NewPurchaseOrderPage() {
                               placeholder="PCS"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Price">
                             <Input
                               type="number"
                               value={row.price}
@@ -648,7 +648,7 @@ export default function NewPurchaseOrderPage() {
                               step="0.01"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Disc %">
                             <Input
                               type="number"
                               value={row.discountPercent}
@@ -659,7 +659,7 @@ export default function NewPurchaseOrderPage() {
                               step="0.01"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Tax %">
                             <Input
                               type="number"
                               value={row.taxPercent}
@@ -669,10 +669,10 @@ export default function NewPurchaseOrderPage() {
                               step="0.01"
                             />
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="Total">
                             <span className="text-sm font-medium">₹{row.total.toFixed(2)}</span>
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-2 px-3" data-label="">
                             <Button
                               variant="ghost"
                               size="sm"

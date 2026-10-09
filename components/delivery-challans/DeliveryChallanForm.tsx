@@ -629,8 +629,8 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
               Add Item
             </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px]">
+          <div className="md:overflow-x-auto">
+            <table className="kh-line-cards w-full md:min-w-[900px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-2 py-2 text-left text-sm font-semibold text-gray-700">Item Name</th>
@@ -650,7 +650,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                   const lp = linePreview(row);
                   return (
                     <tr key={row.id} className="border-b">
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Item">
                         <ItemAutocomplete
                           value={row.item_name}
                           onChange={(val) => patchItem(row.id, { item_name: val })}
@@ -667,7 +667,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           }}
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="HSN/SAC">
                         <Input
                           type="text"
                           value={row.hsn_sac}
@@ -675,7 +675,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           placeholder="HSN"
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Qty">
                         <Input
                           type="number"
                           min={0}
@@ -683,14 +683,14 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           onChange={(e) => patchItem(row.id, { qty: Number(e.target.value) })}
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Unit">
                         <Input
                           type="text"
                           value={row.unit}
                           onChange={(e) => patchItem(row.id, { unit: e.target.value })}
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Rate">
                         <Input
                           type="number"
                           min={0}
@@ -700,7 +700,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                         />
                       </td>
                       {chargeTax && (
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-2" data-label="GST %">
                           <Input
                             type="number"
                             min={0}
@@ -710,14 +710,14 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                           />
                         </td>
                       )}
-                      <td className="px-2 py-2 text-right text-sm text-gray-700">{inr(lp?.taxable_value || 0)}</td>
+                      <td className="px-2 py-2 text-right text-sm text-gray-700" data-label="Taxable">{inr(lp?.taxable_value || 0)}</td>
                       {chargeTax && (
-                        <td className="px-2 py-2 text-right text-sm text-gray-700">{inr(lp?.tax_amount || 0)}</td>
+                        <td className="px-2 py-2 text-right text-sm text-gray-700" data-label="Tax">{inr(lp?.tax_amount || 0)}</td>
                       )}
-                      <td className="px-2 py-2 text-right text-sm font-medium text-gray-900">
+                      <td className="px-2 py-2 text-right text-sm font-medium text-gray-900" data-label="Total">
                         {inr(lp?.line_total || 0)}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="">
                         <Button variant="ghost" size="sm" onClick={() => removeItem(row.id)} disabled={items.length === 1}>
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </Button>
@@ -796,7 +796,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
           </div>
         </div>
 
-        <div className="flex justify-end space-x-3 pt-4 border-t">
+        <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="secondary" onClick={() => router.back()} disabled={loading}>
             Cancel
           </Button>

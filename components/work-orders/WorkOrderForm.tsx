@@ -458,8 +458,8 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
               Add Material
             </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px]">
+          <div className="md:overflow-x-auto">
+            <table className="kh-line-cards w-full md:min-w-[820px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-2 py-2 text-left text-sm font-semibold text-gray-700">Item</th>
@@ -475,14 +475,14 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={chargeTax ? 8 : 7} className="px-3 py-8 text-center text-gray-500 text-sm">
+                    <td colSpan={chargeTax ? 8 : 7} className="px-3 py-8 text-center text-gray-500 text-sm" data-label="">
                       No materials added. Click &quot;Add Material&quot; to add parts or consumables.
                     </td>
                   </tr>
                 ) : (
                   items.map((row) => (
                     <tr key={row.id} className="border-b">
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Item">
                         <ItemAutocomplete
                           value={row.item_name}
                           onChange={(val) => patchItem(row.id, { item_name: val })}
@@ -499,7 +499,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                           }}
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="HSN/SAC">
                         <Input
                           type="text"
                           value={row.hsn_sac}
@@ -507,7 +507,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                           placeholder="HSN"
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Qty">
                         <Input
                           type="number"
                           min={0}
@@ -515,10 +515,10 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                           onChange={(e) => patchItem(row.id, { qty: Number(e.target.value) })}
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Unit">
                         <Input type="text" value={row.unit} onChange={(e) => patchItem(row.id, { unit: e.target.value })} />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="Rate">
                         <Input
                           type="number"
                           min={0}
@@ -528,7 +528,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                         />
                       </td>
                       {chargeTax && (
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-2" data-label="GST %">
                           <Input
                             type="number"
                             min={0}
@@ -538,10 +538,10 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                           />
                         </td>
                       )}
-                      <td className="px-2 py-2 text-right text-sm font-medium text-gray-900">
+                      <td className="px-2 py-2 text-right text-sm font-medium text-gray-900" data-label="Amount">
                         {inr(Math.round((row.qty || 0) * (row.unit_price || 0) * 100) / 100)}
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2" data-label="">
                         <Button variant="ghost" size="sm" onClick={() => removeItem(row.id)}>
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </Button>
@@ -668,7 +668,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
           </div>
         </div>
 
-        <div className="flex justify-end space-x-3 pt-4 border-t">
+        <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="secondary" onClick={() => router.back()} disabled={loading}>
             Cancel
           </Button>
