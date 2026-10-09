@@ -35,7 +35,7 @@ import { useDateRange } from '@/contexts/DateRangeContext';
 import { CustomizableDashboard } from '@/components/dashboard/CustomizableDashboard';
 import { RecentTransactionsFeed } from '@/components/dashboard/RecentTransactionsFeed';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
-import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
+import { STACK_PAGE_CLASS } from '@/lib/page-layout';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { RecordPaymentModal } from '@/components/modals/RecordPaymentModal';
 import { ShareInvoiceFormatSheet } from '@/components/invoices/ShareInvoiceFormatSheet';
@@ -270,10 +270,9 @@ function DashboardPage() {
         title: `${periodPrefix} Sales`,
         value: `₹ ${sales.toLocaleString('en-IN')}`,
         icon: TrendingUp,
-        iconColor: 'text-emerald-700 dark:text-emerald-200',
-        valueColor: 'text-emerald-700 dark:text-emerald-300',
-        iconWellClassName:
-          'border border-emerald-300/80 bg-gradient-to-br from-emerald-100 via-emerald-50 to-teal-50 dark:border-emerald-700 dark:from-emerald-950/60 dark:via-emerald-950/40 dark:to-teal-950/35',
+        iconColor: 'text-text-secondary',
+        valueColor: 'text-text-primary',
+        iconWellClassName: 'border border-border bg-background',
         clickType: 'sales',
         tooltipTitle: 'Sales',
         tooltipBody: 'Invoice revenue in the selected period (final invoices, incl. GST).',
@@ -283,10 +282,9 @@ function DashboardPage() {
         title: `${periodPrefix} Collection`,
         value: `₹ ${collection.toLocaleString('en-IN')}`,
         icon: Wallet,
-        iconColor: 'text-blue-700 dark:text-blue-200',
-        valueColor: 'text-blue-700 dark:text-blue-300',
-        iconWellClassName:
-          'border border-blue-300/80 bg-gradient-to-br from-blue-100 via-blue-50 to-sky-50 dark:border-blue-700 dark:from-blue-950/60 dark:via-blue-950/40 dark:to-sky-950/35',
+        iconColor: 'text-text-secondary',
+        valueColor: 'text-text-primary',
+        iconWellClassName: 'border border-border bg-background',
         clickType: 'collection',
         tooltipTitle: 'Collection',
         tooltipBody: 'Customer payments received in the selected period.',
@@ -296,10 +294,9 @@ function DashboardPage() {
         title: `${periodPrefix} Purchases`,
         value: `₹ ${purchases.toLocaleString('en-IN')}`,
         icon: TrendingDown,
-        iconColor: 'text-orange-700 dark:text-orange-200',
-        valueColor: 'text-orange-700 dark:text-orange-300',
-        iconWellClassName:
-          'border border-orange-300/80 bg-gradient-to-br from-orange-100 via-orange-50 to-amber-50 dark:border-orange-700 dark:from-orange-950/60 dark:via-orange-950/40 dark:to-amber-950/35',
+        iconColor: 'text-text-secondary',
+        valueColor: 'text-text-primary',
+        iconWellClassName: 'border border-border bg-background',
         clickType: 'purchases',
         tooltipTitle: 'Purchases',
         tooltipBody: 'Purchase bills recorded in the selected period.',
@@ -309,12 +306,12 @@ function DashboardPage() {
         title: `${periodPrefix} Profit`,
         value: `₹ ${profit.toLocaleString('en-IN')}`,
         icon: IndianRupee,
-        iconColor: profit >= 0 ? 'text-violet-700 dark:text-violet-200' : 'text-red-600 dark:text-red-300',
-        valueColor: profit >= 0 ? 'text-violet-700 dark:text-violet-300' : 'text-red-600 dark:text-red-400',
+        iconColor: profit >= 0 ? 'text-text-secondary' : 'text-red-600 dark:text-red-300',
+        valueColor: profit >= 0 ? 'text-text-primary' : 'text-red-600 dark:text-red-400',
         iconWellClassName:
           profit >= 0
-            ? 'border border-violet-300/80 bg-gradient-to-br from-violet-100 via-violet-50 to-purple-50 dark:border-violet-700 dark:from-violet-950/60 dark:via-violet-950/40 dark:to-purple-950/35'
-            : 'border border-red-200/80 bg-gradient-to-br from-red-50 via-rose-50 to-red-100 dark:border-red-800/55 dark:from-red-950/50 dark:via-rose-950/40 dark:to-red-900/35',
+            ? 'border border-border bg-background'
+            : 'border border-red-200/80 bg-red-50 dark:border-red-800/55 dark:bg-red-950/40',
         tooltipTitle: 'Gross profit',
         tooltipBody: 'Sales minus cost of goods sold (COGS) for the period.',
       },
@@ -406,13 +403,11 @@ function DashboardPage() {
         ) : null}
 
         {!hideBody && data ? (
-          <div className={STACK_SECTION_CLASS}>
+          <div className="grid grid-cols-1 gap-stack-section md:grid-cols-2 md:gap-stack-page">
             <ReceivablesCard total={receivablesTotal} aging={receivablesAging} />
             <PayablesCard total={payablesTotal} aging={payablesAging} />
           </div>
         ) : null}
-
-        {!hideBody && !minimal ? <PromotionCarousel /> : null}
 
         {/* Pending Actions Button - Sticky in top-right */}
         {!hideBody && data ? <PendingActionsButton data={data} /> : null}
@@ -421,16 +416,10 @@ function DashboardPage() {
           <DashboardChartsSection businessId={business.id} chartDateRange={chartDateRange} />
         ) : null}
 
+        {!hideBody && !minimal ? <PromotionCarousel /> : null}
+
         {!hideBody ? (
         <>
-        <div ref={widgetsMount.ref}>
-          {widgetsMount.mounted ? (
-            <CustomizableDashboard businessId={business?.id || ''} initialWidgets={[]} />
-          ) : (
-            <div className="h-24 rounded-lg border border-dashed border-border bg-background/80" aria-hidden />
-          )}
-        </div>
-
         {data?.lowStockItems?.length > 0 ? (
           <Card padding="none" className="overflow-hidden">
             <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-5 md:pt-5 md:pb-3">
@@ -463,6 +452,14 @@ function DashboardPage() {
             </div>
           </Card>
         ) : null}
+
+        <div ref={widgetsMount.ref}>
+          {widgetsMount.mounted ? (
+            <CustomizableDashboard businessId={business?.id || ''} initialWidgets={[]} />
+          ) : (
+            <div className="h-10 rounded-lg border border-dashed border-border bg-background/80" aria-hidden />
+          )}
+        </div>
 
         <RecentTransactionsFeed />
         </>

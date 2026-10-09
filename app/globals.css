@@ -356,13 +356,33 @@
 @layer base {
   :root {
     color-scheme: light;
-    /* Canvas: soft teal-cool neutral (pairs with primary teal). Alternatives: #f8fafc slate, #f7f9fc blue-gray */
-    --color-background: #f1f7f6;
+    /* Khatario brand: cream canvas, deep green text, white cards. */
+    --color-background: #F8F3E9;
     --color-surface: #ffffff;
-    --color-text-primary: #1a1a1a;
-    --color-text-secondary: #64748b;
-    --color-text-muted: #94a3b8;
-    --color-border: #e2e8f0;
+    --color-text-primary: #063F35;
+    --color-text-secondary: #3d5c56;
+    --color-text-muted: #6d8580;
+    --color-border: #e4ddd0;
+    --color-primary-50: #eef2f1;
+    --color-primary-100: #dae2e1;
+    --color-primary-200: #afc2be;
+    --color-primary-300: #7e9b96;
+    --color-primary-400: #47716a;
+    --color-primary-500: #063F35;
+    --color-primary-600: #05362e;
+    --color-primary-700: #042d26;
+    --color-primary-800: #03251f;
+    --color-primary-900: #031c18;
+    --color-accent-50: #fef6ef;
+    --color-accent-100: #feecde;
+    --color-accent-200: #fcd7b8;
+    --color-accent-300: #fabe8b;
+    --color-accent-400: #f8a35a;
+    --color-accent-500: #F58220;
+    --color-accent-600: #d3701c;
+    --color-accent-700: #b05e17;
+    --color-accent-800: #8e4b13;
+    --color-accent-900: #6e3b0e;
 
     /**
      * Typography scale (desktop default). Tailwind text-* and semantic type-* use these.
@@ -518,6 +538,113 @@
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+  /**
+   * Logged-in shell. Redefines brand tokens on this subtree so a previously
+   * saved teal portal theme on <html> does not cover the Khatario palette.
+   */
+  /**
+   * Desktop sidebar: deep green field, cream type, cream selected row, orange mark.
+   */
+  aside.khatario-sidebar {
+    background-color: #063F35;
+    border-right: 1px solid rgba(248, 243, 233, 0.12);
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .border-border,
+  aside.khatario-sidebar .border-border\/60 {
+    border-color: rgba(248, 243, 233, 0.16);
+  }
+
+  aside.khatario-sidebar .bg-surface,
+  aside.khatario-sidebar .bg-surface\/95,
+  aside.khatario-sidebar .bg-surface\/98 {
+    background-color: transparent;
+  }
+
+  aside.khatario-sidebar .text-text-primary,
+  aside.khatario-sidebar .text-text-secondary,
+  aside.khatario-sidebar .text-text-muted,
+  aside.khatario-sidebar .text-primary-600 {
+    color: #F8F3E9;
+  }
+
+  aside.khatario-sidebar .bg-gray-200 {
+    background-color: rgba(248, 243, 233, 0.28);
+  }
+
+  aside.khatario-sidebar .bg-primary-500 {
+    background-color: #F8F3E9;
+    color: #063F35;
+  }
+
+  aside.khatario-sidebar .bg-primary-500 .text-white {
+    color: #063F35;
+  }
+
+  aside.khatario-sidebar .bg-primary-600 {
+    background-color: #F58220;
+  }
+
+  aside.khatario-sidebar a.bg-slate-100,
+  aside.khatario-sidebar button.bg-slate-100 {
+    background-color: #F8F3E9;
+    color: #063F35;
+    box-shadow: inset 3px 0 0 #F58220;
+  }
+
+  aside.khatario-sidebar a.bg-slate-100 .text-text-primary,
+  aside.khatario-sidebar a.bg-slate-100 .text-primary-600,
+  aside.khatario-sidebar button.bg-slate-100 .text-text-primary,
+  aside.khatario-sidebar button.bg-slate-100 .text-primary-600 {
+    color: #063F35;
+  }
+
+  aside.khatario-sidebar .bg-slate-100\/50,
+  aside.khatario-sidebar .bg-gray-50\/50 {
+    background-color: rgba(248, 243, 233, 0.08);
+  }
+
+  aside.khatario-sidebar .hover\:bg-slate-100:hover,
+  aside.khatario-sidebar .hover\:bg-slate-200:hover {
+    background-color: rgba(248, 243, 233, 0.12);
+  }
+
+  aside.khatario-sidebar a.bg-slate-100:hover,
+  aside.khatario-sidebar button.bg-slate-100:hover {
+    background-color: #F8F3E9;
+    color: #063F35;
+  }
+
+  html:not(.dark) .khatario-brand {
+    --color-background: #F8F3E9;
+    --color-surface: #ffffff;
+    --color-text-primary: #063F35;
+    --color-text-secondary: #3d5c56;
+    --color-text-muted: #6d8580;
+    --color-border: #e4ddd0;
+    --color-primary-50: #eef2f1;
+    --color-primary-100: #dae2e1;
+    --color-primary-200: #afc2be;
+    --color-primary-300: #7e9b96;
+    --color-primary-400: #47716a;
+    --color-primary-500: #063F35;
+    --color-primary-600: #05362e;
+    --color-primary-700: #042d26;
+    --color-primary-800: #03251f;
+    --color-primary-900: #031c18;
+    --color-accent-50: #fef6ef;
+    --color-accent-100: #feecde;
+    --color-accent-200: #fcd7b8;
+    --color-accent-300: #fabe8b;
+    --color-accent-400: #f8a35a;
+    --color-accent-500: #F58220;
+    --color-accent-600: #d3701c;
+    --color-accent-700: #b05e17;
+    --color-accent-800: #8e4b13;
+    --color-accent-900: #6e3b0e;
+  }
+
   body {
     @apply bg-background text-text-primary text-base antialiased;
     overflow-x: hidden;

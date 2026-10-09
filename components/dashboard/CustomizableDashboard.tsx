@@ -200,12 +200,12 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
 
 
 
-  if (widgetsLoaded && widgets.length === 0 && !isEditMode && !showAddWidget) {
+  if (widgets.length === 0 && !isEditMode && !showAddWidget) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-background/80 px-3 py-2 md:hidden dark:bg-slate-900/40">
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-background/80 px-3 py-2 dark:bg-slate-900/40">
         <div className="flex min-w-0 items-center gap-1.5">
           <Layout className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
-          <p className="truncate text-xs text-text-secondary">No dashboard widgets</p>
+          <p className="truncate text-xs text-text-secondary">Add a widget to this dashboard</p>
         </div>
         <Button
           type="button"
@@ -213,6 +213,7 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
           variant="secondary"
           size="sm"
           className="h-8 shrink-0 px-2.5 text-xs"
+          disabled={!widgetsLoaded}
         >
           Customize
         </Button>
@@ -299,19 +300,6 @@ export const CustomizableDashboard = React.memo(function CustomizableDashboard({
           </div>
         ))}
       </div>
-
-      {/* Empty State — desktop only (mobile uses compact bar above) */}
-      {widgets.length === 0 && (
-        <div className="hidden rounded-lg border border-dashed border-border bg-background/80 py-6 text-center dark:bg-slate-900/40 md:block md:py-8">
-          <Layout className="mx-auto mb-2 h-10 w-10 text-text-muted md:mb-3 md:h-12 md:w-12" />
-          <h3 className="mb-1 text-sm font-semibold text-text-primary md:text-base">
-            No widgets yet
-          </h3>
-          <p className="text-xs text-text-secondary md:text-sm">
-            Click Customize to add widgets to your dashboard
-          </p>
-        </div>
-      )}
 
       {/* Add Widget Modal */}
       {showAddWidget && (

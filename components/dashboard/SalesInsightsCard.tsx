@@ -210,7 +210,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
                     width={barWidth}
                     height={barH}
                     rx={2}
-                    fill="#22c55e"
+                    fill="#063F35"
                     data-bucket-key={bucket.key}
                     className="opacity-90"
                     aria-label={`${bucket.label}: ${formatInr(salesValue)} (${bucket.receipt_count} receipts)`}
@@ -238,8 +238,8 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
   const summary = data?.summary;
 
   return (
-    <Card padding="sm" className="border border-border md:!p-5">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <Card padding="none" className="overflow-hidden border border-border !shadow-none">
+      <div className="mb-3 flex flex-col gap-3 px-3 pt-3 sm:flex-row sm:items-center sm:justify-between md:px-5 md:pt-4">
         <div className="flex min-w-0 items-center gap-2">
           <TrendingUp className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
           <div className="min-w-0">
@@ -256,7 +256,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
         </div>
       ) : (
         <>
-          <div className="mb-4 grid grid-cols-3 gap-2 border-y border-border py-3 md:gap-4 md:py-4">
+          <div className="mx-3 mb-0 grid grid-cols-3 gap-2 border-y border-border py-3 md:mx-5 md:gap-4 md:py-4">
             <SummaryStat
               label="Receipts"
               value={String(summary?.receipt_count ?? 0)}
@@ -275,7 +275,7 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
             />
           </div>
 
-          <div className="border-t border-border pt-2 md:pt-3">{chartBody}</div>
+          <div>{chartBody}</div>
         </>
       )}
     </Card>

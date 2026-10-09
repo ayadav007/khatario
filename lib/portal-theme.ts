@@ -13,37 +13,37 @@ export interface PortalTheme {
   font_preset: PortalFontPreset;
 }
 
-/** Product defaults: primary teal + accent teal (matches pre-theme Tailwind). */
+/** Product defaults: Khatario deep green and orange. */
 export const DEFAULT_PORTAL_THEME: PortalTheme = {
-  primary_hex: '#0d9488',
-  accent_hex: '#00796b',
+  primary_hex: '#063F35',
+  accent_hex: '#F58220',
   font_preset: 'inter',
 };
 
 export const DEFAULT_PRIMARY_VARS: Record<string, string> = {
-  '--color-primary-50': '#ecfdf5',
-  '--color-primary-100': '#ccfbf1',
-  '--color-primary-200': '#99f6e4',
-  '--color-primary-300': '#5eead4',
-  '--color-primary-400': '#2dd4bf',
-  '--color-primary-500': '#0d9488',
-  '--color-primary-600': '#115e59',
-  '--color-primary-700': '#0f4f4a',
-  '--color-primary-800': '#0f3d39',
-  '--color-primary-900': '#052e2b',
+  '--color-primary-50': '#eef2f1',
+  '--color-primary-100': '#dae2e1',
+  '--color-primary-200': '#afc2be',
+  '--color-primary-300': '#7e9b96',
+  '--color-primary-400': '#47716a',
+  '--color-primary-500': '#063F35',
+  '--color-primary-600': '#05362e',
+  '--color-primary-700': '#042d26',
+  '--color-primary-800': '#03251f',
+  '--color-primary-900': '#031c18',
 };
 
 export const DEFAULT_ACCENT_VARS: Record<string, string> = {
-  '--color-accent-50': '#E0F2F1',
-  '--color-accent-100': '#B2DFDB',
-  '--color-accent-200': '#80CBC4',
-  '--color-accent-300': '#4DB6AC',
-  '--color-accent-400': '#26A69A',
-  '--color-accent-500': '#00897B',
-  '--color-accent-600': '#00796B',
-  '--color-accent-700': '#00695C',
-  '--color-accent-800': '#004D40',
-  '--color-accent-900': '#003D32',
+  '--color-accent-50': '#fef6ef',
+  '--color-accent-100': '#feecde',
+  '--color-accent-200': '#fcd7b8',
+  '--color-accent-300': '#fabe8b',
+  '--color-accent-400': '#f8a35a',
+  '--color-accent-500': '#F58220',
+  '--color-accent-600': '#d3701c',
+  '--color-accent-700': '#b05e17',
+  '--color-accent-800': '#8e4b13',
+  '--color-accent-900': '#6e3b0e',
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {

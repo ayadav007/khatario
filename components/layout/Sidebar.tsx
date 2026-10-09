@@ -1441,7 +1441,7 @@ export const Sidebar = React.memo(function Sidebar() {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed top-0 left-0 h-screen bg-surface border-r border-border z-50 flex flex-col text-base',
+          'khatario-sidebar fixed top-0 left-0 h-screen z-50 flex flex-col text-base',
           'transition-all duration-300 ease-in-out hidden lg:flex',
           sidebarCollapsed ? 'w-16' : 'w-64'
         )}

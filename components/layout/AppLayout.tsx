@@ -52,7 +52,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const isFullWidthPage = pathname?.includes('/whatsapp/conversations');
 
   return (
-    <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
+    <div className="khatario-brand min-h-screen min-w-0 max-w-full overflow-x-hidden bg-background">
       <DynamicTitle />
       <Sidebar />
       <div 

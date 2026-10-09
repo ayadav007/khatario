@@ -221,7 +221,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
           <path
             d={path}
             fill="none"
-            stroke="#3b82f6"
+            stroke="#063F35"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -233,7 +233,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               cx={point.x}
               cy={point.y}
               r="5"
-              fill="#3b82f6"
+              fill="#063F35"
               stroke={c.pointStroke}
               strokeWidth="2"
               className="cursor-pointer"
@@ -282,7 +282,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
 
   if (loading) {
     return (
-      <Card padding="sm" className="md:!p-5">
+      <Card padding="none" className="overflow-hidden border border-border !shadow-none">
         <div className="flex h-36 items-center justify-center md:h-48">
           <div className="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-500 md:h-8 md:w-8" />
         </div>
@@ -295,8 +295,8 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
   const closingDate = `31/03/${(selectedYear || 0) + 1}`;
 
   return (
-    <Card padding="sm" className="h-full border border-border md:!p-5">
-      <div className="mb-2 flex items-center justify-between gap-2 md:mb-3">
+    <Card padding="none" className="flex h-full flex-col overflow-hidden border border-border !shadow-none">
+      <div className="mb-2 flex items-center justify-between gap-2 px-3 pt-3 md:mb-3 md:px-5 md:pt-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <h3 className="truncate text-sm font-semibold text-text-primary md:text-base">
             Cash Flow
@@ -329,7 +329,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
         </select>
       </div>
 
-      <div className="border-t border-border pt-2 md:pt-3">
+      <div>
         {chartBody}
         {data && data.months.length > 1 && (() => {
           const closings = data.months.map((m) => m.closing);
@@ -347,7 +347,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
       </div>
 
       {/* Summary Panel */}
-      <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 md:grid-cols-4 md:gap-3 md:pt-3">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-3 py-3 md:grid-cols-4 md:gap-3 md:px-5 md:py-4">
         <div className="group relative flex flex-col">
           <p className="mb-0.5 text-2xs leading-tight text-text-secondary md:text-xs">
             Cash as on {openingDate}
