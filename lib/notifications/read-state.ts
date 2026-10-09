@@ -15,6 +15,7 @@ export async function markNotificationRead(
       WHERE id = $1
         AND business_id = $2
         AND (user_id = $3 OR user_id IS NULL)
+        AND is_read IS NOT TRUE
       RETURNING id`,
     [notificationId, businessId, userId]
   );
@@ -26,7 +27,7 @@ export async function markAllNotificationsRead(businessId: string, userId: strin
     `UPDATE notifications
         SET is_read = true, read_at = NOW()
       WHERE business_id = $1
-        AND is_read = false
+        AND is_read IS NOT TRUE
         AND (user_id = $2 OR user_id IS NULL)`,
     [businessId, userId]
   );

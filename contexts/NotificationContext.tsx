@@ -81,6 +81,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (inFlightRef.current && !fresh) return inFlightRef.current;
 
       const run = async () => {
+        const revision = store.listRevision;
         recordFetchNotifications('skip-cache');
         const params = new URLSearchParams({ business_id: businessId, limit: '20', _: String(Date.now()) });
         const res = await fetch(`/api/notifications?${params.toString()}`, {
@@ -93,7 +94,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           stream_cursor?: unknown;
         };
         if (sessionKeyRef.current !== key) throw new Error('notification session changed');
-        store.applyList(body.notifications ?? []);
+        store.applyList(body.notifications ?? [], revision);
         return isSeq(body.stream_cursor) ? body.stream_cursor : null;
       };
 
@@ -146,12 +147,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       store.markRead(id);
       try {
         const response = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH', credentials: 'include' });
-        if (!response.ok) await refreshNotifications();
+        if (!response.ok) await fetchList(true);
       } catch {
-        await refreshNotifications();
+        await fetchList(true);
       }
     },
-    [store, refreshNotifications]
+    [store, fetchList]
   );
 
   const markAllNotificationsAsRead = useCallback(async () => {
@@ -164,11 +165,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: businessId }),
       });
-      if (!response.ok) await refreshNotifications();
+      if (!response.ok) await fetchList(true);
     } catch {
-      await refreshNotifications();
+      await fetchList(true);
     }
-  }, [businessId, store, refreshNotifications]);
+  }, [businessId, store, fetchList]);
 
   const dismissPopups = useCallback(
     (keys: string[]) => {

@@ -127,6 +127,15 @@ describe('dismissal', () => {
     expect(store.getSnapshot()).toMatchObject({ unreadNotificationCount: 0, popups: [] });
     expect(store.getSnapshot().notifications.every((n) => n.is_read)).toBe(true);
   });
+
+  it('a list fetched before mark-all-read does not bring the badge back', () => {
+    store.applyList([row(1), row(2)]);
+    const revision = store.listRevision;
+    store.markAllRead();
+    store.applyList([row(1), row(2)], revision);
+    expect(store.getSnapshot().unreadNotificationCount).toBe(0);
+    expect(store.getSnapshot().notifications.every((n) => n.is_read)).toBe(true);
+  });
 });
 
 describe('re-fired reminders (same notification id, new seq)', () => {

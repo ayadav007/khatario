@@ -77,11 +77,17 @@ const isPopupCandidate = (n: ClientNotification) =>
  */
 export class NotificationStore {
   private state: NotificationSnapshot = EMPTY;
+  /** Bumps on mark-read and session reset so an older list response cannot undo them. */
+  private revision = 0;
   private readonly listeners = new Set<() => void>();
   private readonly popupsSeen = new BoundedSet(500);
   private readonly dismissed = new BoundedSet(500);
 
   getSnapshot = (): NotificationSnapshot => this.state;
+
+  get listRevision(): number {
+    return this.revision;
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -89,6 +95,7 @@ export class NotificationStore {
   };
 
   reset(): void {
+    this.revision += 1;
     this.popupsSeen.clear();
     this.dismissed.clear();
     this.set(EMPTY);
@@ -99,7 +106,12 @@ export class NotificationStore {
    * was taken (higher seq) are kept. Returns the highest seq in the list ('0' when empty), or
    * null when the rows carry no seq (database without Release 2).
    */
-  applyList(rows: ClientNotification[]): string | null {
+  applyList(rows: ClientNotification[], revisionAtFetch?: number): string | null {
+    if (revisionAtFetch != null && revisionAtFetch !== this.revision) {
+      const seqsOnly = rows.map((r) => (r.seq == null ? null : String(r.seq))).filter(isSeq);
+      return seqsOnly.length ? seqsOnly.reduce((m, s) => (BigInt(s) > BigInt(m) ? s : m)) : rows.length === 0 ? '0' : null;
+    }
+
     const incoming = rows.map(normalize);
     const seqs = incoming.map((r) => r.seq).filter(isSeq);
     const maxSeq = seqs.length ? seqs.reduce((m, s) => (BigInt(s) > BigInt(m) ? s : m)) : null;
@@ -171,6 +183,7 @@ export class NotificationStore {
   }
 
   markRead(id: string): void {
+    this.revision += 1;
     const now = new Date().toISOString();
     const notifications = this.state.notifications.map((n) => (n.id === id ? { ...n, is_read: true, read_at: now } : n));
     this.set({
@@ -181,6 +194,7 @@ export class NotificationStore {
   }
 
   markAllRead(): void {
+    this.revision += 1;
     const now = new Date().toISOString();
     const notifications = this.state.notifications.map((n) => (n.is_read ? n : { ...n, is_read: true, read_at: now }));
     this.set({ notifications, unreadNotificationCount: 0, popups: [] });
