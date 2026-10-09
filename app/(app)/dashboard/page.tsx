@@ -13,8 +13,6 @@ import { useBranch } from '@/contexts/BranchContext';
 import { buildApiUrl } from '@/lib/api-helpers';
 import { format } from 'date-fns';
 import { DashboardCardDetails } from '@/components/dashboard/DashboardCardDetails';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { GSTStatusIndicator } from '@/components/ui/GSTStatusIndicator';
 import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
 import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSection';
 import { DashboardSalesInsightsSection } from '@/components/dashboard/DashboardSalesInsightsSection';
@@ -35,6 +33,7 @@ import {
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { useDateRange } from '@/contexts/DateRangeContext';
 import { CustomizableDashboard } from '@/components/dashboard/CustomizableDashboard';
+import { RecentTransactionsFeed } from '@/components/dashboard/RecentTransactionsFeed';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { STACK_PAGE_CLASS, STACK_SECTION_CLASS } from '@/lib/page-layout';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
@@ -424,159 +423,48 @@ function DashboardPage() {
 
         {!hideBody ? (
         <>
-        {/* Main Content Row - Recent Invoices and Low Stock */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-page">
-          {/* Recent Invoices - Takes 2 columns */}
-          <Card className="lg:col-span-2 overflow-hidden" padding="none">
-            <div className="flex items-center justify-between px-4 pt-3 pb-2 md:mb-4 md:px-6 md:pt-6 md:pb-0">
-              <h2 className="text-base font-semibold text-text-primary md:text-lg">
-                Recent Invoices
-              </h2>
-              <Link href="/invoices">
-                <Button variant="ghost" size="sm">
-                  View All
-                </Button>
-              </Link>
-            </div>
-            <div className="hidden overflow-x-auto md:block md:px-6 md:pb-6">
-              <table className="table">
-                <thead>
-                  <tr className="table-header">
-                    <th className="table-cell text-left">Invoice No</th>
-                    <th className="table-cell text-left">Customer</th>
-                    <th className="table-cell text-left">Date</th>
-                    <th className="table-cell text-right">Amount</th>
-                    <th className="table-cell text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data?.recentInvoices?.length > 0 ? (
-                    data.recentInvoices.map((invoice: any) => (
-                      <tr key={invoice.id} className="cursor-pointer transition-colors hover:bg-slate-100/90 dark:hover:bg-slate-800/70">
-                        <td className="table-cell text-left font-medium">{invoice.invoice_number}</td>
-                        <td className="table-cell text-left">{invoice.customer_name || 'Cash Sale'}</td>
-                        <td className="table-cell text-left text-text-secondary">
-                          {format(new Date(invoice.invoice_date), 'dd MMM yyyy')}
-                        </td>
-                        <td className="table-cell text-right font-medium">₹ {Number(invoice.grand_total).toLocaleString('en-IN')}</td>
-                        <td className="table-cell text-center">
-                          <StatusBadge status={invoice.status} />
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="text-center py-8 text-text-secondary">
-                        No recent invoices found. Create your first invoice!
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile — compact list rows (tap to open invoice) */}
-            <div className="md:hidden divide-y divide-border border-t border-border">
-              {data?.recentInvoices?.length > 0 ? (
-                data.recentInvoices.map((invoice: any) => (
-                  <Link
-                    key={invoice.id}
-                    href={`/invoices/${invoice.id}`}
-                    className="flex items-center gap-2.5 px-3 py-2.5 transition-colors active:bg-slate-100/90 dark:active:bg-slate-800/70"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-xs font-semibold text-primary-600 dark:text-primary-400">
-                          {invoice.invoice_number}
-                        </p>
-                        <p className="shrink-0 text-sm font-bold tabular-nums text-text-primary">
-                          ₹ {Number(invoice.grand_total).toLocaleString('en-IN')}
-                        </p>
-                      </div>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-secondary">
-                        <span className="truncate">{invoice.customer_name || 'Cash Sale'}</span>
-                        <span className="shrink-0 text-text-muted">·</span>
-                        <span className="shrink-0 text-text-muted">
-                          {format(new Date(invoice.invoice_date), 'dd MMM yyyy')}
-                        </span>
-                        <StatusBadge status={invoice.status} />
-                        {invoice.status === 'final' ? (
-                          <GSTStatusIndicator status="pending" returnType="GSTR-1" />
-                        ) : null}
-                      </div>
-                    </div>
-                  </Link>
-                ))
-              ) : (
-                <div className="px-4 py-6 text-center text-sm text-text-secondary">
-                  No recent invoices found.
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* Low Stock Items */}
-          <Card padding="none" className="overflow-hidden">
-            <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-5 md:pt-5 md:pb-3">
-              <h2 className="text-sm font-semibold text-text-primary md:text-base">
-                Low Stock Items
-              </h2>
-              <Link href="/items">
-                <Button variant="ghost" size="sm" className="h-8 text-xs md:h-9 md:text-sm">
-                  View All
-                </Button>
-              </Link>
-            </div>
-            <div className="divide-y divide-border border-t border-border">
-              {data?.lowStockItems?.length > 0 ? (
-                data.lowStockItems.slice(0, 4).map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="px-3 py-2 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40 md:px-5 md:py-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <Link
-                        href={`/items/${item.id}`}
-                        className="min-w-0 flex-1 truncate text-xs font-semibold text-text-primary hover:underline md:text-sm"
-                      >
-                        {item.name}
-                      </Link>
-                      <Chip
-                        variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'}
-                        className="shrink-0 !px-1.5 !py-0.5 !text-2xs md:!text-xs"
-                      >
-                        {item.current_stock} {item.unit}
-                      </Chip>
-                    </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2 text-caption text-text-secondary md:text-xs">
-                      <p className="truncate">
-                        Min: {item.min_stock} {item.unit}
-                      </p>
-                      <LowStockRestockMenu
-                        itemId={String(item.id)}
-                        itemName={String(item.name || 'item')}
-                        suggestedQty={suggestedRestockQty(item.current_stock, item.min_stock)}
-                      />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="px-3 py-4 text-center text-xs text-text-secondary md:px-5 md:py-6 md:text-sm">
-                  All items are well stocked!
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* Customizable Widgets Section — deferred until near viewport */}
-        <div ref={widgetsMount.ref} className="mt-3 md:mt-6">
+        <div ref={widgetsMount.ref}>
           {widgetsMount.mounted ? (
             <CustomizableDashboard businessId={business?.id || ''} initialWidgets={[]} />
           ) : (
             <div className="h-24 rounded-lg border border-dashed border-border bg-background/80" aria-hidden />
           )}
         </div>
+
+        {data?.lowStockItems?.length > 0 ? (
+          <Card padding="none" className="overflow-hidden">
+            <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-5 md:pt-5 md:pb-3">
+              <h2 className="text-sm font-semibold text-text-primary md:text-base">Low stock</h2>
+              <Link href="/items">
+                <Button variant="ghost" size="sm" className="h-8 text-xs md:h-9 md:text-sm">View all</Button>
+              </Link>
+            </div>
+            <div className="flex gap-2 overflow-x-auto border-t border-border px-3 py-3 md:px-5">
+              {data.lowStockItems.slice(0, 8).map((item: any) => (
+                <div key={item.id} className="w-52 shrink-0 rounded-lg border border-border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link href={`/items/${item.id}`} className="min-w-0 flex-1 truncate text-xs font-semibold text-text-primary hover:underline md:text-sm">
+                      {item.name}
+                    </Link>
+                    <Chip variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'} className="shrink-0 !px-1.5 !py-0.5 !text-2xs md:!text-xs">
+                      {item.current_stock} {item.unit}
+                    </Chip>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 text-caption text-text-secondary md:text-xs">
+                    <p className="truncate">Min: {item.min_stock} {item.unit}</p>
+                    <LowStockRestockMenu
+                      itemId={String(item.id)}
+                      itemName={String(item.name || 'item')}
+                      suggestedQty={suggestedRestockQty(item.current_stock, item.min_stock)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : null}
+
+        <RecentTransactionsFeed />
         </>
         ) : null}
       </div>
