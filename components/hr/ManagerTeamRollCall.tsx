@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Loader2, Search, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { shiftYmd } from '@/lib/hr/staff-wage';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,15 +25,6 @@ type TeamRow = {
   rate?: number | null;
 };
 
-type Summary = {
-  present: number;
-  absent: number;
-  half?: number;
-  off?: number;
-  pending: number;
-  total: number;
-};
-
 type FilterMode = 'all' | 'pending';
 
 const FULL_STATUS_OPTIONS: { value: AttendanceStatus; label: string; short: string }[] = [
@@ -54,15 +45,15 @@ function statusButtonClass(status: AttendanceStatus, selected: boolean): string 
   }
   switch (status) {
     case 'present':
-      return 'border-green-600 bg-green-50 text-green-800 font-semibold';
+      return 'border-green-700 bg-green-600 text-white font-semibold shadow-sm';
     case 'absent':
-      return 'border-red-600 bg-red-50 text-red-800 font-semibold';
+      return 'border-red-700 bg-red-600 text-white font-semibold shadow-sm';
     case 'half_day':
-      return 'border-amber-600 bg-amber-50 text-amber-900 font-semibold';
+      return 'border-amber-700 bg-amber-500 text-white font-semibold shadow-sm';
     case 'leave':
-      return 'border-blue-600 bg-blue-50 text-blue-800 font-semibold';
+      return 'border-blue-700 bg-blue-600 text-white font-semibold shadow-sm';
     case 'off':
-      return 'border-gray-500 bg-gray-100 text-gray-800 font-semibold';
+      return 'border-gray-700 bg-gray-600 text-white font-semibold shadow-sm';
   }
 }
 
@@ -77,7 +68,6 @@ export function ManagerTeamRollCall({
 
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [team, setTeam] = useState<TeamRow[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [search, setSearch] = useState('');
@@ -89,13 +79,20 @@ export function ManagerTeamRollCall({
   const [draft, setDraft] = useState<Record<string, AttendanceStatus>>({});
   const [viewMode, setViewMode] = useState<'list' | 'roll'>('list');
   const [rollIndex, setRollIndex] = useState(0);
+  const saveSeq = useRef<Record<string, number>>({});
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const statusOptions = simpleStatuses ? SIMPLE_STATUS_OPTIONS : FULL_STATUS_OPTIONS;
 
-  const loadTeam = useCallback(async () => {
+  const loadTeam = useCallback(async (silent = false) => {
     if (!business?.id) return;
-    setLoading(true);
-    setForbidden(false);
+    const draftAtStart = draftRef.current;
+    if (!silent) {
+      setLoading(true);
+      setForbidden(false);
+      setDraft({});
+    }
     try {
       const params = new URLSearchParams({ date });
       const res = await fetch(`/api/employees/manager/attendance?${params}`, {
@@ -104,7 +101,7 @@ export function ManagerTeamRollCall({
       if (res.status === 403) {
         setForbidden(true);
         setTeam([]);
-        setSummary(null);
+        setDraft({});
         return;
       }
       if (!res.ok) {
@@ -115,12 +112,19 @@ export function ManagerTeamRollCall({
       setRollCallScope(data.scope === 'all' ? 'all' : 'team');
       setCanViewWages(data.can_view_wages === true);
       setTeam(data.team ?? []);
-      setSummary(data.summary ?? null);
-      setDraft({});
+      if (silent) {
+        setDraft((current) => {
+          const next = { ...current };
+          for (const [id, status] of Object.entries(draftAtStart)) {
+            if (current[id] === status) delete next[id];
+          }
+          return next;
+        });
+      }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Could not load team');
+      if (!silent) toast.error(err instanceof Error ? err.message : 'Could not load team');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [business?.id, date, toast]);
 
@@ -138,20 +142,25 @@ export function ManagerTeamRollCall({
       setDraft((prev) => ({ ...prev, [employeeId]: status }));
       return;
     }
-    if (!business?.id || savingId === employeeId) return;
+    if (!business?.id) return;
 
-    setTeam((prev) =>
-      prev.map((row) =>
+    const requestSeq = (saveSeq.current[employeeId] ?? 0) + 1;
+    saveSeq.current[employeeId] = requestSeq;
+
+    let previous: TeamRow | undefined;
+    setTeam((prev) => {
+      previous = prev.find((row) => row.id === employeeId);
+      return prev.map((row) =>
         row.id === employeeId
           ? {
               ...row,
               attendance_status: status,
-              is_late: extras?.is_late ?? row.is_late,
-              late_excused: extras?.late_excused ?? row.late_excused,
+              is_late: extras?.is_late ?? (status === 'present' ? row.is_late : false),
+              late_excused: extras?.late_excused ?? (status === 'present' ? row.late_excused : false),
             }
           : row,
-      ),
-    );
+      );
+    });
     setSavingId(employeeId);
 
     try {
@@ -167,16 +176,34 @@ export function ManagerTeamRollCall({
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (saveSeq.current[employeeId] !== requestSeq) return;
       if (!res.ok) {
         throw new Error(data.error || 'Could not save');
       }
-      toast.success(`${name.split(' ')[0]} — ${status.replace('_', ' ')}`);
-      void loadTeam();
+      const saved = data.attendance as
+        | { status?: AttendanceStatus; is_late?: boolean; late_excused?: boolean; late_minutes?: number }
+        | undefined;
+      setTeam((prev) =>
+        prev.map((row) =>
+          row.id === employeeId
+            ? {
+                ...row,
+                attendance_status: saved?.status ?? status,
+                is_late: saved?.is_late ?? row.is_late,
+                late_excused: saved?.late_excused ?? row.late_excused,
+                late_minutes: saved?.late_minutes ?? row.late_minutes,
+              }
+            : row,
+        ),
+      );
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
-      void loadTeam();
+      if (saveSeq.current[employeeId] !== requestSeq) return;
+      if (previous) {
+        setTeam((prev) => prev.map((row) => (row.id === employeeId ? previous : row)));
+      }
+      toast.error(err instanceof Error ? err.message : `${name.split(' ')[0]} — save failed`);
     } finally {
-      setSavingId(null);
+      if (saveSeq.current[employeeId] === requestSeq) setSavingId(null);
     }
   };
 
@@ -204,7 +231,7 @@ export function ManagerTeamRollCall({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not save');
       toast.success(`Attendance saved · ${marks.length}`);
-      void loadTeam();
+      void loadTeam(true);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -223,10 +250,34 @@ export function ManagerTeamRollCall({
     });
   };
 
+  const liveSummary = useMemo(() => {
+    let present = 0;
+    let absent = 0;
+    let half = 0;
+    let off = 0;
+    let leave = 0;
+    let pending = 0;
+    for (const member of team) {
+      const status = draft[member.id] ?? member.attendance_status;
+      if (!status) pending++;
+      else if (status === 'present') present++;
+      else if (status === 'absent') absent++;
+      else if (status === 'half_day') half++;
+      else if (status === 'off') off++;
+      else if (status === 'leave') leave++;
+    }
+    return { present, absent, half, off, leave, pending, total: team.length };
+  }, [team, draft]);
+
   const filteredTeam = useMemo(() => {
     let rows = team;
     if (filter === 'pending') {
-      rows = rows.filter((r) => !(draft[r.id] ?? r.attendance_status));
+      rows = rows.filter((r) => {
+        const chosen = draft[r.id] ?? r.attendance_status;
+        if (!chosen) return true;
+        // Keep someone you just tapped so P can be changed to A without leaving the list.
+        return draft[r.id] != null && draft[r.id] !== r.attendance_status;
+      });
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -238,6 +289,13 @@ export function ManagerTeamRollCall({
     }
     return rows;
   }, [team, filter, search, draft]);
+
+  const shiftDate = (days: number) => {
+    if (simpleStatuses && Object.keys(draftRef.current).length > 0) {
+      toast.warning('Unsaved attendance was cleared');
+    }
+    setDate((current) => shiftYmd(current, days));
+  };
 
   const dateLabel = useMemo(() => {
     try {
@@ -276,7 +334,7 @@ export function ManagerTeamRollCall({
             <button
               type="button"
               aria-label="Previous day"
-              onClick={() => setDate((current) => shiftYmd(current, -1))}
+              onClick={() => shiftDate(-1)}
               className="rounded-lg border border-border p-1.5"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -286,27 +344,34 @@ export function ManagerTeamRollCall({
               <input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  if (simpleStatuses && Object.keys(draftRef.current).length > 0) {
+                    toast.warning('Unsaved attendance was cleared');
+                  }
+                  setDate(e.target.value);
+                }}
                 className="rounded-lg border border-border bg-white px-2 py-1 text-sm font-semibold text-text-primary"
               />
             </label>
             <button
               type="button"
               aria-label="Next day"
-              onClick={() => setDate((current) => shiftYmd(current, 1))}
+              onClick={() => shiftDate(1)}
               className="rounded-lg border border-border p-1.5"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          {summary ? (
+          {!loading && team.length > 0 ? (
             <p className="text-xs text-text-secondary">
-              <span className="font-medium text-green-700">{summary.present} present</span>
+              <span className="font-medium text-green-700">{liveSummary.present} present</span>
               {' · '}
-              <span className="font-medium text-red-700">{summary.absent} absent</span>
-              {summary.half != null ? ` · ${summary.half} half` : ''}
+              <span className="font-medium text-red-700">{liveSummary.absent} absent</span>
+              {liveSummary.half > 0 ? ` · ${liveSummary.half} half` : ''}
+              {liveSummary.off > 0 ? ` · ${liveSummary.off} off` : ''}
+              {liveSummary.leave > 0 ? ` · ${liveSummary.leave} leave` : ''}
               {' · '}
-              <span className="font-medium text-text-primary">{summary.pending} left</span>
+              <span className="font-medium text-text-primary">{liveSummary.pending} left</span>
             </p>
           ) : null}
         </div>
@@ -347,7 +412,7 @@ export function ManagerTeamRollCall({
             )}
           >
             Not marked
-            {summary && summary.pending > 0 ? ` (${summary.pending})` : ''}
+            {liveSummary.pending > 0 ? ` (${liveSummary.pending})` : ''}
           </button>
         </div>
         {simpleStatuses ? (
@@ -410,7 +475,6 @@ export function ManagerTeamRollCall({
           onStatus={(status) => {
             const member = filteredTeam[Math.min(rollIndex, filteredTeam.length - 1)];
             void markStatus(member.id, status, member.name);
-            setRollIndex((current) => Math.min(current + 1, filteredTeam.length - 1));
           }}
           onPrev={() => setRollIndex((current) => Math.max(0, current - 1))}
           onNext={() => setRollIndex((current) => Math.min(filteredTeam.length - 1, current + 1))}
@@ -418,8 +482,9 @@ export function ManagerTeamRollCall({
       ) : (
         <ul className="mt-3 space-y-3">
           {filteredTeam.map((member) => {
-            const current = simpleStatuses ? statusOf(member) : member.attendance_status;
+            const current = statusOf(member);
             const isSaving = savingId === member.id;
+            const unsaved = simpleStatuses && draft[member.id] != null && draft[member.id] !== member.attendance_status;
 
             return (
               <li
@@ -445,43 +510,35 @@ export function ManagerTeamRollCall({
                         : ''}
                     </p>
                   </div>
-                  {current && !isSaving ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-green-700 sm:hidden">
-                      <Check className="h-3.5 w-3.5" />
-                      Saved
-                    </span>
-                  ) : isSaving ? (
+                  {isSaving ? (
                     <Loader2 className="h-4 w-4 shrink-0 animate-spin text-text-muted" />
+                  ) : unsaved ? (
+                    <span className="shrink-0 text-xs font-medium text-amber-800">Not saved</span>
                   ) : null}
                 </div>
 
                 <div
                   className={clsx(
                     'grid gap-2',
-                    simpleStatuses ? 'grid-cols-4 sm:w-56 sm:shrink-0' : 'grid-cols-4',
+                    simpleStatuses ? 'grid-cols-4 sm:w-64 sm:shrink-0' : 'grid-cols-5',
                   )}
                 >
                   {statusOptions.map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
-                      disabled={isSaving}
                       onClick={() => void markStatus(member.id, opt.value, member.name)}
                       className={clsx(
-                        'min-h-[44px] rounded-lg border text-sm transition-colors disabled:opacity-50',
+                        'min-h-[44px] rounded-lg border px-1 py-1.5 text-sm transition-colors',
                         statusButtonClass(opt.value, current === opt.value),
                       )}
                       aria-label={`${member.name} — ${opt.label}`}
                       aria-pressed={current === opt.value}
                     >
-                      {simpleStatuses ? (
-                        <span>{opt.short}</span>
-                      ) : (
-                        <>
-                          <span className="md:hidden">{opt.short}</span>
-                          <span className="hidden md:inline">{opt.label}</span>
-                        </>
-                      )}
+                      <span className="block text-base leading-none">{opt.short}</span>
+                      <span className={clsx('mt-0.5 block text-[10px] leading-none', current === opt.value ? 'text-white/90' : 'text-text-muted')}>
+                        {opt.label}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -500,7 +557,6 @@ export function ManagerTeamRollCall({
                     ) : null}
                     <button
                       type="button"
-                      disabled={isSaving}
                       onClick={() =>
                         void markStatus(member.id, 'present', member.name, {
                           is_late: !member.is_late,
@@ -514,7 +570,6 @@ export function ManagerTeamRollCall({
                     {member.is_late && !member.late_excused ? (
                       <button
                         type="button"
-                        disabled={isSaving}
                         onClick={() =>
                           void markStatus(member.id, 'present', member.name, {
                             is_late: true,
@@ -598,11 +653,14 @@ function RollCallCard({
             type="button"
             onClick={() => onStatus(opt.value)}
             className={clsx(
-              'min-h-[48px] rounded-lg border text-sm',
+              'min-h-[48px] rounded-lg border px-1 py-1.5 text-sm',
               statusButtonClass(opt.value, status === opt.value),
             )}
           >
-            {opt.short}
+            <span className="block text-base leading-none">{opt.short}</span>
+            <span className={clsx('mt-0.5 block text-[10px] leading-none', status === opt.value ? 'text-white/90' : 'text-text-muted')}>
+              {opt.label}
+            </span>
           </button>
         ))}
       </div>
