@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Khatario video studio</title>
+    <style>
+      :root { color-scheme: light; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: #f8f3e9; color: #063f35; }
+      main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+      h1 { font-size: 32px; margin: 0 0 8px; }
+      p.lead { margin: 0 0 24px; color: #3d5c56; line-height: 1.45; }
+      label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+      input[type="text"], textarea { width: 100%; box-sizing: border-box; border: 1px solid #e4ddd0; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; color: #063f35; }
+      textarea { min-height: 64px; resize: vertical; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      button { border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+      button.primary { background: #063f35; color: #f8f3e9; }
+      button.ghost { background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      button:disabled { opacity: 0.55; cursor: wait; }
+      .scene { background: #fff; border-radius: 16px; padding: 14px; margin-top: 12px; display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
+      .scene img { width: 160px; height: 90px; object-fit: cover; border-radius: 8px; background: #eef2f1; }
+      .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-weight: 600; }
+      #log { white-space: pre-wrap; background: #063f35; color: #f8f3e9; border-radius: 12px; padding: 12px; min-height: 80px; font-size: 13px; }
+      video { width: 100%; border-radius: 16px; margin-top: 16px; background: #000; }
+      .error { color: #8e2b16; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Video studio</h1>
+      <p class="lead">This page runs on your computer. It writes the captions, records the voice, and renders the MP4. It does not invent a new story from the app. Load the invoice shoot, change the words, or add your own screenshots.</p>
+      <label for="title">Title</label>
+      <input id="title" type="text" value="How to create an invoice" />
+      <label for="subtitle">Subtitle</label>
+      <input id="subtitle" type="text" value="New tax invoice on staging" />
+      <label for="intro">Opening line</label>
+      <input id="intro" type="text" value="Here's how to create a tax invoice in Khatario." />
+      <label class="check"><input id="voice" type="checkbox" checked /> Speak the lines</label>
+      <div class="row" style="margin-top: 16px">
+        <button class="ghost" id="load" type="button">Load invoice screens</button>
+        <button class="ghost" id="add" type="button">Add a screenshot</button>
+        <button class="primary" id="render" type="button">Make the video</button>
+      </div>
+      <div id="scenes"></div>
+      <label style="margin-top: 20px">Progress</label>
+      <div id="log">Waiting.</div>
+      <p id="error" class="error"></p>
+      <video id="player" controls hidden></video>
+    </main>
+    <script>
+      const scenesEl = document.querySelector('#scenes');
+      const logEl = document.querySelector('#log');
+      let scenes = [];
+
+      function paint() {
+        scenesEl.innerHTML = '';
+        scenes.forEach((scene, index) => {
+          const card = document.createElement('article');
+          card.className = 'scene';
+          const img = document.createElement('img');
+          img.alt = '';
+          img.src = scene.image ? '/shots/' + scene.image : scene.preview || '';
+          const fields = document.createElement('div');
+          fields.innerHTML = '<label>On-screen caption</label><textarea data-field="caption"></textarea><label>Spoken line</label><textarea data-field="voice"></textarea>';
+          fields.querySelector('[data-field="caption"]').value = scene.caption || '';
+          fields.querySelector('[data-field="voice"]').value = scene.voice || '';
+          fields.querySelectorAll('textarea').forEach((input) => {
+            input.addEventListener('input', () => { scene[input.dataset.field] = input.value; });
+          });
+          const remove = document.createElement('button');
+          remove.className = 'ghost';
+          remove.type = 'button';
+          remove.textContent = 'Remove scene ' + (index + 1);
+          remove.addEventListener('click', () => { scenes.splice(index, 1); paint(); });
+          fields.appendChild(remove);
+          card.append(img, fields);
+          scenesEl.appendChild(card);
+        });
+      }
+
+      document.querySelector('#load').addEventListener('click', async () => {
+        const preset = await fetch('/api/preset').then((res) => res.json());
+        document.querySelector('#title').value = preset.title;
+        document.querySelector('#subtitle').value = preset.subtitle;
+        if (preset.intro) document.querySelector('#intro').value = preset.intro;
+        document.querySelector('#voice').checked = preset.voice;
+        scenes = preset.scenes.map((scene) => ({ ...scene }));
+        paint();
+        logEl.textContent = 'Loaded the staging invoice screens.';
+      });
+
+      document.querySelector('#add').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/png,image/jpeg';
+        input.addEventListener('change', () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            scenes.push({ caption: '', voice: '', imageData: reader.result, preview: reader.result });
+            paint();
+          };
+          reader.readAsDataURL(file);
+        });
+        input.click();
+      });
+
+      document.querySelector('#render').addEventListener('click', async () => {
+        const button = document.querySelector('#render');
+        const error = document.querySelector('#error');
+        error.textContent = '';
+        button.disabled = true;
+        logEl.textContent = 'Working. A voiceover render takes a few minutes.';
+        try {
+          const res = await fetch('/api/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: document.querySelector('#title').value,
+              subtitle: document.querySelector('#subtitle').value,
+              intro: document.querySelector('#intro').value,
+              voice: document.querySelector('#voice').checked,
+              scenes,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Render failed');
+          logEl.textContent = (data.logs || []).join('\n');
+          const player = document.querySelector('#player');
+          player.hidden = false;
+          player.src = data.video;
+          player.play().catch(() => {});
+        } catch (err) {
+          error.textContent = err.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

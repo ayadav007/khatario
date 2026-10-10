@@ -18,6 +18,7 @@ import {
   BarChart3,
   CircleDollarSign,
   GitBranch,
+  Video,
   Menu,
   X,
   LayoutTemplate,
@@ -57,6 +58,7 @@ const navigation: AdminNavItem[] = [
   { name: 'HSN/SAC Codes', href: '/admin/hsn-codes', icon: Hash },
   { name: 'Logs', href: '/admin/logs', icon: FileText },
   { name: 'Releases', href: '/admin/releases', icon: GitBranch },
+  { name: 'Videos', href: '/admin/videos', icon: Video, requiresAdmin: true },
   { name: 'Settings', href: '/admin/settings', icon: Settings },
 ];
 
