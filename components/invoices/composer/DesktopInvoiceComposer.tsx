@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import {
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { Customer } from '@/types/database';
 import { useToastContext } from '@/contexts/ToastContext';
+import { useLayout } from '@/contexts/LayoutContext';
 import { BillToPanel, isOverseasCustomer, ShipToPanel } from './ComposerParties';
 import { DetailsPanel, MoreDetailsPanel } from './ComposerDetails';
 import { ExportPanel } from './ComposerExport';
@@ -299,6 +300,38 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const { sidebarCollapsed } = useLayout();
+  const [footerBox, setFooterBox] = useState({ left: 0, width: 0 });
+
+  useLayoutEffect(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    let frame = 0;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setFooterBox((prev) =>
+        prev.left === rect.left && prev.width === rect.width ? prev : { left: rect.left, width: rect.width }
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    if (el.parentElement) observer.observe(el.parentElement);
+    window.addEventListener('resize', update);
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', onScroll, true);
+      cancelAnimationFrame(frame);
+    };
+  }, [sidebarCollapsed]);
+
   const taxLabel = nonTaxable
     ? 'Tax'
     : p.isExport
@@ -310,7 +343,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
         : 'IGST';
 
   return (
-    <div className="space-y-3 pb-2">
+    <div ref={anchorRef} className="space-y-3 pb-28">
       <header className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -443,7 +476,6 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
           exportType={p.exportState.exportType}
           isIntraState={p.isIntraState}
           pricesIncludeGst={p.pricesIncludeGst}
-          setPricesIncludeGst={p.setPricesIncludeGst}
           readOnly={p.readOnly}
         />
 
@@ -483,7 +515,10 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
         </div>
       </div>
 
-      <footer className="sticky bottom-2 z-20 rounded-2xl border border-border bg-surface/95 px-4 py-2.5 shadow-lg shadow-slate-900/5 backdrop-blur">
+      <footer
+        className="fixed bottom-3 z-30 rounded-2xl border border-border bg-surface/95 px-4 py-2.5 shadow-lg shadow-slate-900/5 backdrop-blur"
+        style={{ left: footerBox.left, width: footerBox.width, visibility: footerBox.width > 0 ? 'visible' : 'hidden' }}
+      >
         <div className="flex items-center gap-4">
           <div className="hidden min-w-0 items-center gap-5 text-xs text-text-secondary md:flex">
             <FooterStat label="Items" value={`${filledRows.length} · ${Math.round(totalQty * 1000) / 1000} qty`} />
@@ -538,7 +573,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
                   disabled={p.saving}
                   className="inline-flex h-11 items-center gap-2 rounded-xl border border-primary-200 bg-primary-50 px-4 text-sm font-bold text-primary-700 transition hover:bg-primary-100 disabled:cursor-wait disabled:opacity-70 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200"
                 >
-                  {isEstimate ? 'Save' : 'Save draft'}
+                  {isEstimate ? 'Generate' : 'Generate draft'}
                   <Kbd className="hidden border-primary-200 text-primary-700 xl:inline-flex">Ctrl⇧S</Kbd>
                 </button>
                 <button
@@ -548,7 +583,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-lg shadow-primary-600/30 transition hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
                 >
                   {p.saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isEstimate ? 'Save & send' : 'Save invoice'}
+                  {isEstimate ? 'Generate & send' : 'Generate invoice'}
                   <Kbd className="hidden border-white/30 bg-white/15 text-white xl:inline-flex">Ctrl S</Kbd>
                 </button>
               </>
@@ -556,7 +591,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
           </div>
         </div>
         {!p.readOnly && !isEstimate && (
-          <p className="mt-1 text-right text-[10px] text-text-muted">Saving the invoice finalises it for GST filing. Drafts can be edited later.</p>
+          <p className="mt-1 text-right text-[10px] text-text-muted">Generating the invoice finalises it for GST filing. Drafts can be edited later.</p>
         )}
       </footer>
 

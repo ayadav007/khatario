@@ -312,6 +312,7 @@ export function DesktopSalesOrderComposer(p: DesktopSalesOrderComposerProps) {
           isIntraState={p.isIntraState}
           pricesIncludeGst={p.pricesIncludeGst}
           setPricesIncludeGst={p.setPricesIncludeGst}
+          showPricesIncludeGst
           readOnly={p.readOnly}
         />
 

@@ -25,7 +25,7 @@ export async function openNewDesktopComposer(
   await expect(page.getByRole('button', { name: /classic form/i })).toBeVisible({
     timeout: 30000,
   });
-  await expect(page.getByRole('button', { name: /save draft|save & send|^save$/i }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /generate draft|generate & send|^generate$/i }).first()).toBeVisible();
 }
 
 export async function getComposerSession(request: APIRequestContext): Promise<ComposerSession> {

@@ -17,6 +17,8 @@ type Studio = {
   renderJob: (body: unknown, log: (line: string) => void) => Promise<{ job: string }>;
   shotFile: (name: string) => string | null;
   videoFile: (stamp: string) => string | null;
+  listVideos: () => { stamp: string; bytes: number; created: string }[];
+  deleteVideo: (stamp: string) => boolean;
 };
 
 async function studio(): Promise<Studio> {
@@ -31,6 +33,9 @@ export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (!auth.ok) return auth.response;
   const engine = await studio();
+  if (request.nextUrl.searchParams.get('saved') === '1') {
+    return NextResponse.json({ videos: engine.listVideos() });
+  }
   return NextResponse.json(engine.preset);
 }
 
@@ -62,11 +67,16 @@ export async function streamShot(name: string) {
   });
 }
 
-export async function streamVideo(stamp: string) {
+export async function streamVideo(stamp: string, download = false) {
   const engine = await studio();
   const file = engine.videoFile(stamp);
   if (!file) return null;
-  return new NextResponse(Readable.toWeb(createReadStream(file)) as ReadableStream, {
-    headers: { 'Content-Type': 'video/mp4', 'Cache-Control': 'private, no-store' },
-  });
+  const headers: Record<string, string> = { 'Content-Type': 'video/mp4', 'Cache-Control': 'private, no-store' };
+  if (download) headers['Content-Disposition'] = `attachment; filename="khatario-${stamp}.mp4"`;
+  return new NextResponse(Readable.toWeb(createReadStream(file)) as ReadableStream, { headers });
+}
+
+export async function removeVideo(stamp: string) {
+  const engine = await studio();
+  return engine.deleteVideo(stamp);
 }

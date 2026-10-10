@@ -3562,18 +3562,6 @@ function NewInvoiceContent() {
                 </label>
               ) : null}
             </div>
-            <label className="flex items-center gap-2 text-sm text-text-primary">
-              <input
-                type="checkbox"
-                checked={pricesIncludeGst}
-                onChange={(e) => {
-                  setPricesIncludeGst(e.target.checked);
-                  setIsDirty(true);
-                }}
-                disabled={isFinal}
-              />
-              Prices include GST
-            </label>
             {selectedCustomer ? (
               <>
                 <div>

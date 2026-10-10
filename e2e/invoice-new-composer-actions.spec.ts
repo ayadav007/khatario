@@ -77,20 +77,20 @@ test.describe('New invoice desktop composer actions', () => {
   });
 
   test.describe('D — Document types', () => {
-    test('D-01 tax invoice default shows payments and GST toggle', async ({ authenticatedPage: page }) => {
+    test('D-01 tax invoice default shows payments', async ({ authenticatedPage: page }) => {
       await openNewDesktopComposer(page);
-      await expect(page.getByText(/prices include gst/i)).toBeVisible();
+      await expect(page.getByText(/prices include gst/i)).toHaveCount(0);
       await expect(page.getByText(/amount received/i)).toBeVisible();
-      await expect(page.getByRole('button', { name: /save draft/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /save invoice/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /generate draft/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /generate invoice/i })).toBeVisible();
     });
 
     test('D-02 proforma hides payments and uses estimate labels', async ({ authenticatedPage: page }) => {
       await openNewDesktopComposer(page, '/invoices/new?type=proforma_invoice');
       await expect(page.getByRole('heading', { name: /estimate/i })).toBeVisible();
       await expect(page.getByText(/amount received/i)).toHaveCount(0);
-      await expect(page.getByRole('button', { name: /^save$/i }).first()).toBeVisible();
-      await expect(page.getByRole('button', { name: /save & send/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^generate$/i }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: /generate & send/i })).toBeVisible();
     });
 
     test('D-05 prefill customer from query', async ({ authenticatedPage: page }) => {
@@ -294,19 +294,10 @@ test.describe('New invoice desktop composer actions', () => {
       await expect(page.getByText(/item discounts|discount/i).first()).toBeVisible({ timeout: 10000 });
     });
 
-    test('I-11 I-12 prices include GST toggle', async ({ authenticatedPage: page }) => {
-      const session = await getComposerSession(page.request);
-      const runId = Date.now();
-      const item = await seedServiceItem(page.request, session, `E2E Incl GST ${runId}`, { selling_price: 118, tax_rate: 18 });
+    test('I-11 prices include GST toggle is not shown', async ({ authenticatedPage: page }) => {
       await openNewDesktopComposer(page);
-      await addItemViaPicker(page, item.name);
-      const toggle = page.getByRole('switch', { name: /prices include gst/i }).or(
-        page.locator('label').filter({ hasText: /prices include gst/i }).locator('button, [role="switch"]')
-      );
-      await expect(page.getByText(/price \/ item|price \(incl\. gst\)/i).first()).toBeVisible();
-      await toggle.first().click();
-      await expect(page.getByText(/price \(incl\. gst\)/i)).toBeVisible();
-      await toggle.first().click();
+      await expect(page.getByRole('switch', { name: /prices include gst/i })).toHaveCount(0);
+      await expect(page.getByText(/prices include gst/i)).toHaveCount(0);
       await expect(page.getByText(/price \/ item/i)).toBeVisible();
     });
 
@@ -425,7 +416,7 @@ test.describe('New invoice desktop composer actions', () => {
       await openNewDesktopComposer(page);
       await selectCustomerByName(page, customer.name);
       await addItemViaPicker(page, item.name);
-      await page.getByRole('button', { name: /save draft/i }).click();
+      await page.getByRole('button', { name: /generate draft/i }).click();
       await expect(page.getByText(/draft|saved|invoice/i).first()).toBeVisible({ timeout: 30000 });
       await expect(page.getByRole('button', { name: /^print$/i }).or(page.getByText(/draft/i).first())).toBeVisible({
         timeout: 30000,
@@ -441,7 +432,7 @@ test.describe('New invoice desktop composer actions', () => {
       await selectCustomerByName(page, customer.name);
       await addItemViaPicker(page, item.name);
       await page.getByText(/fully paid/i).click();
-      await page.getByRole('button', { name: /save invoice/i }).click();
+      await page.getByRole('button', { name: /generate invoice/i }).click();
       await expect(page.getByRole('button', { name: /new invoice/i }).or(page.getByRole('button', { name: /^share$/i }))).toBeVisible({
         timeout: 45000,
       });
@@ -460,7 +451,7 @@ test.describe('New invoice desktop composer actions', () => {
       await openNewDesktopComposer(page, '/invoices/new?type=proforma_invoice');
       await selectCustomerByName(page, customer.name);
       await addItemViaPicker(page, item.name);
-      await page.getByRole('button', { name: /^save$/i }).first().click();
+      await page.getByRole('button', { name: /^generate$/i }).first().click();
       await expect(page.getByText(/saved|estimate|draft/i).first()).toBeVisible({ timeout: 30000 });
     });
   });

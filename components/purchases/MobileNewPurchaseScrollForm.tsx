@@ -1085,6 +1085,7 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             label="Paid amount"
             id="mpaid"
             mode="money"
+            commitWhileTyping
             value={props.formData.paid_amount}
             onCommit={(v) => props.setFormData((prev) => ({ ...prev, paid_amount: v }))}
           />

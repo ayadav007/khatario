@@ -157,10 +157,10 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
     ],
   },
   {
-    title: 'Save',
+    title: 'Generate',
     items: [
-      { keys: ['Ctrl', 'S'], label: 'Save' },
-      { keys: ['Ctrl', 'Shift', 'S'], label: 'Save as draft' },
+      { keys: ['Ctrl', 'S'], label: 'Generate' },
+      { keys: ['Ctrl', 'Shift', 'S'], label: 'Generate as draft' },
       { keys: ['Ctrl', 'P'], label: 'Preview' },
       { keys: ['?'], label: 'Show this help' },
     ],

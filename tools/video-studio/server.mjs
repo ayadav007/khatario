@@ -22,12 +22,12 @@ export const preset = {
   intro: "Here's how to create a tax invoice in Khatario.",
   voice: true,
   scenes: [
-    { image: '01-new-invoice.png', caption: 'Open New Tax Invoice. Recent customers are listed.', voice: 'Open New Tax Invoice. Your recent customers are already listed.' },
-    { image: '02-customer-search.png', caption: 'Search the customer by name or phone.', voice: 'Search by name or phone, then pick the customer.' },
-    { image: '03-customer-selected.png', caption: 'They sit on Bill to. Ship to follows.', voice: 'They land on Bill to, and the ship-to address follows.' },
-    { image: '04-item-picker.png', caption: 'Add items. Pick from the catalog.', voice: 'Add items from the catalog. Each row shows stock, price, and GST.' },
-    { image: '06-line-on-bill.png', caption: 'HSN, GST, and the line amount fill in.', voice: 'The line picks up the HSN, the GST rate, and the amount.' },
-    { image: '07-totals-and-save.png', caption: 'Save draft, or save the invoice.', voice: 'Save a draft if you are not finished, or save the invoice.' },
+    { image: '01-new-invoice.png', caption: 'Open New Tax Invoice. Recent customers are listed.', voice: 'Open New Tax Invoice. Your recent customers are already listed.', transition: 'crossfade', transitionSeconds: 1 },
+    { image: '02-customer-search.png', caption: 'Search the customer by name or phone.', voice: 'Search by name or phone, then pick the customer.', transition: 'slide', transitionSeconds: 1 },
+    { image: '03-customer-selected.png', caption: 'They sit on Bill to. Ship to follows.', voice: 'They land on Bill to, and the ship-to address follows.', transition: 'cut', transitionSeconds: 1 },
+    { image: '04-item-picker.png', caption: 'Add items. Pick from the catalog.', voice: 'Add items from the catalog. Each row shows stock, price, and GST.', transition: 'crossfade', transitionSeconds: 1 },
+    { image: '06-line-on-bill.png', caption: 'HSN, GST, and the line amount fill in.', voice: 'The line picks up the HSN, the GST rate, and the amount.', transition: 'slide', transitionSeconds: 1 },
+    { image: '07-totals-and-save.png', caption: 'Save draft, or save the invoice.', voice: 'Save a draft if you are not finished, or save the invoice.', transition: 'crossfade', transitionSeconds: 1 },
   ],
 };
 
@@ -53,9 +53,11 @@ function readBody(req) {
 }
 
 function run(command, args, cwd, env, onLine) {
-  const bin = command === 'npx' && process.platform === 'win32' ? 'npx.cmd' : command;
+  const npxCli = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
+  const bin = command === 'npx' ? process.execPath : command;
+  const argv = command === 'npx' ? [npxCli, ...args] : args;
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd, env, shell: false, windowsHide: true });
+    const child = spawn(bin, argv, { cwd, env, shell: false, windowsHide: true });
     let text = '';
     const take = (buf) => {
       text += buf.toString();
@@ -68,6 +70,28 @@ function run(command, args, cwd, env, onLine) {
     child.on('error', reject);
     child.on('close', (code) => (code === 0 ? resolve(text) : reject(new Error(text.slice(-1200) || `exit ${code}`))));
   });
+}
+
+function ffmpeg(args) {
+  return new Promise((resolve, reject) => {
+    const bin = path.join(ffmpegBin, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    const child = spawn(bin, args, { windowsHide: true });
+    let text = '';
+    child.stderr.on('data', (d) => { text += d.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve(text) : reject(new Error(text.slice(-500) || `ffmpeg exit ${code}`))));
+  });
+}
+
+async function boostVoice(file) {
+  const report = await ffmpeg(['-hide_banner', '-i', file, '-af', 'volumedetect', '-f', 'null', '-']);
+  const match = report.match(/max_volume:\s*(-?[\d.]+)\s*dB/);
+  if (!match) return;
+  const gain = Math.min(18, -1 - Number(match[1]));
+  if (gain < 1) return;
+  const louder = file.replace(/\.wav$/i, '.loud.wav');
+  await ffmpeg(['-y', '-i', file, '-af', `volume=${gain.toFixed(1)}dB`, louder]);
+  fs.renameSync(louder, file);
 }
 
 function ffprobe(file) {
@@ -83,28 +107,66 @@ function ffprobe(file) {
 
 function compositionHtml({ title, subtitle, scenes }) {
   const clips = [];
-  let t = 0;
+  const tweens = [
+    'tl.fromTo("#title-inner", { y: 28, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, 0.2);',
+  ];
   const titleDur = scenes.titleDuration;
   clips.push(`
-      <section id="title" class="clip" data-start="0" data-duration="${titleDur}" data-track-index="0">
+      <section id="title" class="clip" data-start="0" data-duration="${titleDur.toFixed(2)}" data-track-index="0">
         <div class="title-stage" id="title-inner">
           <p class="eyebrow">Khatario</p>
           <h1>${escapeHtml(title)}</h1>
           <p class="sub">${escapeHtml(subtitle || '')}</p>
         </div>
       </section>`);
-  t = titleDur;
   scenes.items.forEach((scene, index) => {
-    clips.push(`
-      <section id="scene-${index + 1}" class="clip" data-start="${t.toFixed(2)}" data-duration="${scene.duration}" data-track-index="${index + 1}">
-        <div class="shot" id="s${index + 1}">
-          <img src="assets/shots/${scene.file}" alt="" />
-          <p class="cap">${escapeHtml(scene.caption)}</p>
-        </div>
+    const id = `s${index + 1}`;
+    const start = scene.start.toFixed(2);
+    const duration = scene.duration.toFixed(2);
+    const frameId = `f${index + 1}`;
+    const mark = scene.zoom > 1 && scene.shape
+      ? `<div id="m${index + 1}" class="mark ${scene.shape}" style="left:${scene.zoomX}%;top:${scene.zoomY}%;width:${scene.markW}%;${scene.shape === 'rect' ? `height:${scene.markH}%;` : ''}"></div>`
+      : '';
+    const caption = scene.caption
+      ? (scene.media === 'video'
+        ? `<p class="cap clip" data-start="${start}" data-duration="${duration}" data-track-index="${40 + index}">${escapeHtml(scene.caption)}</p>`
+        : `<p class="cap">${escapeHtml(scene.caption)}</p>`)
+      : '';
+    const picture = scene.media === 'video'
+      ? `<div class="frame" id="${frameId}"><video id="v${index + 1}" class="clip" src="assets/shots/${scene.file}" muted playsinline data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}"></video></div>`
+      : `<div class="frame" id="${frameId}"><img src="assets/shots/${scene.file}" alt="" /></div>`;
+    const shot = `<div class="shot" id="${id}">${picture}${caption}${mark}</div>`;
+    if (scene.media === 'video') {
+      clips.push(shot);
+    } else {
+      clips.push(`
+      <section id="scene-${index + 1}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}">
+        ${shot}
       </section>`);
-    t += scene.duration;
+    }
+    const at = scene.start.toFixed(2);
+    if (scene.transition === 'crossfade' && scene.transitionSeconds > 0) {
+      tweens.push(`tl.fromTo("#${id}", { opacity: 0 }, { opacity: 1, duration: ${scene.transitionSeconds}, ease: "power1.inOut" }, ${at});`);
+      const previous = index === 0 ? '#title-inner' : `#s${index}`;
+      tweens.push(`tl.to("${previous}", { opacity: 0, duration: ${scene.transitionSeconds}, ease: "power1.inOut" }, ${at});`);
+    } else if (scene.transition === 'slide' && scene.transitionSeconds > 0) {
+      tweens.push(`tl.fromTo("#${id}", { x: 1920 }, { x: 0, duration: ${scene.transitionSeconds}, ease: "power2.inOut" }, ${at});`);
+    }
+    if (scene.zoom > 1) {
+      const zoomAt = (scene.start + scene.zoomAt).toFixed(2);
+      const zoomBack = (scene.start + scene.zoomAt + 1 + scene.zoomHold).toFixed(2);
+      tweens.push(`tl.set("#${frameId}", { transformOrigin: "${scene.zoomX}% ${scene.zoomY}%" }, 0);`);
+      tweens.push(`tl.fromTo("#${frameId}", { scale: 1 }, { scale: ${scene.zoom}, duration: 1, ease: "power2.inOut" }, ${zoomAt});`);
+      tweens.push(`tl.to("#${frameId}", { scale: 1, duration: 0.5, ease: "power2.inOut" }, ${zoomBack});`);
+      if (scene.shape) {
+        tweens.push(`tl.fromTo("#m${index + 1}", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, ${zoomAt});`);
+        tweens.push(`tl.to("#m${index + 1}", { opacity: 0, duration: 0.3, ease: "power1.in" }, ${zoomBack});`);
+      }
+    }
   });
-  const total = t;
+  const last = scenes.items[scenes.items.length - 1];
+  const total = last ? last.start + last.duration : titleDur;
+  const bed = scenes.voices.length ? 0.35 : 0.7;
   const voices = scenes.voices.map((voice) => `
       <audio id="${voice.id}" src="assets/voice/${voice.file}" data-start="${voice.start}" data-track-index="${voice.track}" data-volume="1"></audio>`).join('');
   return `<!doctype html>
@@ -116,10 +178,15 @@ function compositionHtml({ title, subtitle, scenes }) {
     <style>
       body { margin: 0; background: #f8f3e9; color: #063f35; font-family: system-ui, sans-serif; }
       #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #063f35; }
-      .clip { position: absolute; inset: 0; }
-      .shot { position: absolute; inset: 0; }
-      .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .clip { position: absolute; inset: 0; overflow: hidden; }
+      .shot { position: absolute; inset: 0; overflow: hidden; }
+      .frame { position: absolute; inset: 0; }
+      .shot img, .shot video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+      .mark { position: absolute; transform: translate(-50%, -50%); border: 8px solid #f58220; box-shadow: 0 0 0 4px rgba(6, 63, 53, 0.35); opacity: 0; }
+      .mark.circle { height: auto; aspect-ratio: 1; border-radius: 999px; }
+      .mark.rect { border-radius: 18px; }
       .cap { position: absolute; left: 40px; top: 28px; max-width: 1400px; margin: 0; padding: 18px 28px; border-radius: 16px; background: #063f35; color: #f8f3e9; font-size: 36px; font-weight: 700; line-height: 1.2; }
+      .cap.clip { inset: auto; width: auto; height: auto; overflow: visible; }
       .title-stage { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 120px; background: #f8f3e9; }
       .eyebrow { margin: 0 0 20px; color: #d7721c; font-size: 28px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
       h1 { margin: 0; max-width: 1500px; color: #063f35; font-size: 84px; line-height: 1.05; letter-spacing: -0.03em; }
@@ -130,16 +197,33 @@ function compositionHtml({ title, subtitle, scenes }) {
     <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="${total.toFixed(2)}">
       ${clips.join('')}
       <audio id="music" src="assets/music/bed.mp3" data-start="0" data-duration="${total.toFixed(2)}" data-track-index="20" data-volume="1"
-        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":0.6,"v":0.07},{"t":${Math.max(0, total - 1.5).toFixed(2)},"v":0.07},{"t":${total.toFixed(2)},"v":0}]}]}'></audio>
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":0.6,"v":${bed}},{"t":${Math.max(0, total - 1.5).toFixed(2)},"v":${bed}},{"t":${total.toFixed(2)},"v":0}]}]}'></audio>
       ${voices}
     </div>
     <script>
       const tl = gsap.timeline({ paused: true });
-      tl.fromTo("#title-inner", { y: 28, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, 0.2);
+      ${tweens.join('\n      ')}
       window.__timelines["main"] = tl;
     </script>
   </body>
 </html>`;
+}
+
+function writeDataFile(dest, dataUrl) {
+  const b64 = String(dataUrl).split(',')[1] || '';
+  const bytes = Buffer.from(b64, 'base64');
+  if (!bytes.length) throw new Error('That file was empty.');
+  if (bytes.length > 80 * 1024 * 1024) throw new Error('That file is over 80 MB. Use a shorter clip.');
+  fs.writeFileSync(dest, bytes);
+}
+
+function clockSeconds(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  const parts = String(value || '').trim().split(':').map((part) => Number(part));
+  if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
 }
 
 function escapeHtml(value) {
@@ -156,6 +240,28 @@ export function videoFile(stamp) {
   if (!/^[\dT-]+$/.test(String(stamp || ''))) return null;
   const file = path.join(root, 'brag-output/studio', stamp, 'video.mp4');
   return fs.existsSync(file) ? file : null;
+}
+
+export function listVideos() {
+  const dir = path.join(root, 'brag-output/studio');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((stamp) => /^[\dT-]+$/.test(stamp) && fs.existsSync(path.join(dir, stamp, 'video.mp4')))
+    .map((stamp) => {
+      const stat = fs.statSync(path.join(dir, stamp, 'video.mp4'));
+      return { stamp, bytes: stat.size, created: stat.mtime.toISOString() };
+    })
+    .sort((a, b) => b.created.localeCompare(a.created));
+}
+
+export function deleteVideo(stamp) {
+  if (!/^[\dT-]+$/.test(String(stamp || ''))) return false;
+  const studioDir = path.resolve(root, 'brag-output/studio');
+  const dir = path.resolve(studioDir, stamp);
+  if (dir !== path.join(studioDir, stamp)) return false;
+  if (!fs.existsSync(path.join(dir, 'video.mp4'))) return false;
+  fs.rmSync(dir, { recursive: true, force: true });
+  return true;
 }
 
 export async function renderJob(body, log) {
@@ -178,23 +284,48 @@ export async function renderJob(body, log) {
   const items = [];
   for (let i = 0; i < scenes.length; i += 1) {
     const scene = scenes[i];
-    const file = `scene-${String(i + 1).padStart(2, '0')}.png`;
+    const videoData = String(scene.videoData || '');
+    const imageData = String(scene.imageData || '');
+    const isVideo = videoData.startsWith('data:video/mp4');
+    const isJpeg = imageData.startsWith('data:image/jpeg');
+    const file = `scene-${String(i + 1).padStart(2, '0')}.${isVideo ? 'mp4' : isJpeg ? 'jpg' : 'png'}`;
     const dest = path.join(composition, 'assets/shots', file);
-    if (scene.imageData && String(scene.imageData).startsWith('data:image/')) {
-      const b64 = String(scene.imageData).split(',')[1] || '';
-      fs.writeFileSync(dest, Buffer.from(b64, 'base64'));
+    if (isVideo) {
+      writeDataFile(dest, videoData);
+    } else if (imageData.startsWith('data:image/')) {
+      writeDataFile(dest, imageData);
     } else if (scene.image && /^[\w.-]+\.png$/.test(scene.image)) {
       const src = path.join(invoiceShots, scene.image);
       if (!fs.existsSync(src)) throw new Error(`Missing screenshot ${scene.image}`);
       fs.copyFileSync(src, dest);
     } else {
-      throw new Error(`Scene ${i + 1} needs a screenshot.`);
+      throw new Error(`Scene ${i + 1} needs a screenshot or an MP4.`);
     }
+    const kind = ['cut', 'crossfade', 'slide'].includes(scene.transition) ? scene.transition : 'crossfade';
+    const seconds = Math.min(3, Math.max(0.2, Number(scene.transitionSeconds) || 1));
+    const mediaDuration = isVideo ? await ffprobe(dest) : 0;
+    const zoomOn = scene.zoomOn === true;
+    const shape = scene.shape === 'rect' ? 'rect' : scene.shape === 'none' ? '' : 'circle';
+    let zoomAt = zoomOn ? clockSeconds(scene.zoomAt) : 0;
+    if (zoomOn && mediaDuration > 0) zoomAt = Math.min(zoomAt, Math.max(0, mediaDuration - 0.2));
     items.push({
       file,
+      media: isVideo ? 'video' : 'image',
+      mediaDuration,
       caption: String(scene.caption || '').slice(0, 140),
       voice: String(scene.voice || scene.caption || '').slice(0, 240),
+      transition: kind,
+      transitionSeconds: kind === 'cut' ? 0 : seconds,
+      zoom: zoomOn ? Math.min(3, Math.max(1.2, Number(scene.zoomScale) || 2)) : 1,
+      zoomAt,
+      zoomHold: zoomOn ? Math.min(180, Math.max(0.4, Number(scene.zoomHold) || 30)) : 0,
+      zoomX: Math.min(100, Math.max(0, Number(scene.zoomX ?? 50))),
+      zoomY: Math.min(100, Math.max(0, Number(scene.zoomY ?? 50))),
+      markW: Math.min(90, Math.max(4, Number(scene.markW) || (shape === 'rect' ? 28 : 18))),
+      markH: Math.min(90, Math.max(4, Number(scene.markH) || 24)),
+      shape: zoomOn ? shape : '',
       duration: 6,
+      start: 0,
     });
   }
 
@@ -205,37 +336,46 @@ export async function renderJob(body, log) {
     HYPERFRAMES_BROWSER_PATH: chrome,
   };
   const voices = [];
-  let cursor = 0;
 
   async function speak(text, file) {
     log(`Voice: ${text.slice(0, 80)}`);
     await run('npx', ['--yes', 'hyperframes', 'tts', text, '--voice', 'af_nova', '--output', `assets/voice/${file}`], composition, env, (line) => {
       if (/Generated|failed|Error/i.test(line)) log(line.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 180));
     });
-    return ffprobe(path.join(composition, 'assets/voice', file));
+    const voiceFile = path.join(composition, 'assets/voice', file);
+    await boostVoice(voiceFile);
+    return ffprobe(voiceFile);
   }
 
+  const firstEnter = items[0] ? items[0].transitionSeconds : 0;
   let titleDuration = 5;
   if (voiceOn) {
     const dur = await speak(intro, '00.wav');
-    titleDuration = Math.max(5, dur + 1.2);
+    titleDuration = Math.max(5, 0.4 + dur + 0.8 + firstEnter);
     voices.push({ id: 'vo-00', file: '00.wav', start: 0.4, track: 30 });
+  } else {
+    titleDuration = Math.max(5, 4 + firstEnter);
   }
-  cursor = titleDuration;
-  if (voiceOn) {
-    for (let i = 0; i < items.length; i += 1) {
-      const dur = await speak(items[i].voice, `${String(i + 1).padStart(2, '0')}.wav`);
-      items[i].duration = Math.max(6, dur + 1.4);
+  let handoff = titleDuration;
+  for (let i = 0; i < items.length; i += 1) {
+    const enter = items[i].transitionSeconds;
+    const nextEnter = items[i + 1] ? items[i + 1].transitionSeconds : 0;
+    let spoken = 0;
+    if (voiceOn) {
+      spoken = await speak(items[i].voice, `${String(i + 1).padStart(2, '0')}.wav`);
       voices.push({
         id: `vo-${i + 1}`,
         file: `${String(i + 1).padStart(2, '0')}.wav`,
-        start: Number((cursor + 0.3).toFixed(2)),
+        start: Number(handoff.toFixed(2)),
         track: 31 + i,
       });
-      cursor += items[i].duration;
     }
-  } else {
-    cursor += items.reduce((sum, item) => sum + item.duration, 0);
+    const spokenHold = voiceOn ? spoken + 1.2 : 5;
+    const zoomNeed = items[i].zoom > 1 ? items[i].zoomAt + 1 + items[i].zoomHold + 0.5 : 0;
+    const settled = Math.max(spokenHold, items[i].mediaDuration || 0, zoomNeed) + nextEnter;
+    items[i].start = handoff - enter;
+    items[i].duration = enter + settled + (i === items.length - 1 ? 0.4 : 0);
+    handoff += settled;
   }
 
   fs.writeFileSync(path.join(composition, 'index.html'), compositionHtml({
@@ -271,9 +411,19 @@ const server = createServer(async (req, res) => {
       if (!/^[\dT-]+$/.test(stamp)) return send(res, 400, { error: 'Bad video id' });
       const file = path.join(root, 'brag-output/studio', stamp, 'video.mp4');
       if (!fs.existsSync(file)) return send(res, 404, { error: 'Not ready' });
-      res.writeHead(200, { 'Content-Type': 'video/mp4' });
+      const headers = { 'Content-Type': 'video/mp4' };
+      if (url.searchParams.get('download') === '1') headers['Content-Disposition'] = `attachment; filename="khatario-${stamp}.mp4"`;
+      res.writeHead(200, headers);
       fs.createReadStream(file).pipe(res);
       return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/videos') {
+      return send(res, 200, { videos: listVideos() });
+    }
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/videos/')) {
+      const stamp = path.basename(url.pathname);
+      if (!deleteVideo(stamp)) return send(res, 404, { error: 'Not found' });
+      return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/render') {
       const body = await readBody(req);

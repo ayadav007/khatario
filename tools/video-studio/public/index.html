@@ -11,25 +11,39 @@
       h1 { font-size: 32px; margin: 0 0 8px; }
       p.lead { margin: 0 0 24px; color: #3d5c56; line-height: 1.45; }
       label { display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
-      input[type="text"], textarea { width: 100%; box-sizing: border-box; border: 1px solid #e4ddd0; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; color: #063f35; }
+      input[type="text"], input[type="number"], textarea, select { width: 100%; box-sizing: border-box; border: 1px solid #e4ddd0; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; color: #063f35; }
       textarea { min-height: 64px; resize: vertical; }
       .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
       button { border: 0; border-radius: 10px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }
       button.primary { background: #063f35; color: #f8f3e9; }
-      button.ghost { background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      button.ghost, .file-btn { background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      .file-btn { position: relative; display: inline-flex; align-items: center; border-radius: 10px; padding: 10px 14px; font-weight: 700; cursor: pointer; overflow: hidden; }
+      .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 40px; }
       button:disabled { opacity: 0.55; cursor: wait; }
-      .scene { background: #fff; border-radius: 16px; padding: 14px; margin-top: 12px; display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
-      .scene img { width: 160px; height: 90px; object-fit: cover; border-radius: 8px; background: #eef2f1; }
+      .scene { background: #fff; border-radius: 16px; padding: 14px; margin-top: 12px; display: grid; gap: 12px; }
+      .aim { position: relative; width: min(100%, 640px); aspect-ratio: 16 / 9; background: #111; border-radius: 10px; overflow: hidden; cursor: crosshair; }
+      .aim img, .aim video { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .aim i { position: absolute; display: block; border: 3px solid #f58220; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
+      .aim i.circle { aspect-ratio: 1; border-radius: 999px; }
+      .aim i.rect { border-radius: 8px; }
+      .aim i b { position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px; background: #f58220; border-radius: 3px; cursor: nwse-resize; }
+      .transport { display: flex; gap: 10px; align-items: center; width: min(100%, 640px); }
+      .transport input[type="range"] { flex: 1; width: auto; padding: 0; }
+      .transport button { padding: 8px 12px; }
+      .time { min-width: 3.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .hint { margin: 6px 0 0; color: #3d5c56; font-size: 13px; font-weight: 600; }
       .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-weight: 600; }
       #log { white-space: pre-wrap; background: #063f35; color: #f8f3e9; border-radius: 12px; padding: 12px; min-height: 80px; font-size: 13px; }
-      video { width: 100%; border-radius: 16px; margin-top: 16px; background: #000; }
-      .error { color: #8e2b16; font-weight: 700; }
+      #player { width: 100%; border-radius: 16px; margin-top: 16px; background: #000; }
+      a.link { display: inline-block; text-decoration: none; background: #fff; color: #063f35; border: 1px solid #e4ddd0; }
+      h2 { margin: 28px 0 8px; font-size: 20px; }
+      .saved { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #fff; border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
     </style>
   </head>
   <body>
     <main>
       <h1>Video studio</h1>
-      <p class="lead">This page runs on your computer. It writes the captions, records the voice, and renders the MP4. It does not invent a new story from the app. Load the invoice shoot, change the words, or add your own screenshots.</p>
+      <p class="lead">Add an MP4, press Play, and pause on the moment you care about. Click the face or button on that frame. Choose a circle or a rectangle, set how long the zoom holds, then make the video. The view moves in over 1 second and back out in half a second. The clip's own sound stays off.</p>
       <label for="title">Title</label>
       <input id="title" type="text" value="How to create an invoice" />
       <label for="subtitle">Subtitle</label>
@@ -38,8 +52,10 @@
       <input id="intro" type="text" value="Here's how to create a tax invoice in Khatario." />
       <label class="check"><input id="voice" type="checkbox" checked /> Speak the lines</label>
       <div class="row" style="margin-top: 16px">
+        <button class="ghost" id="new" type="button">New project</button>
         <button class="ghost" id="load" type="button">Load invoice screens</button>
-        <button class="ghost" id="add" type="button">Add a screenshot</button>
+        <label class="file-btn">Add screenshots<input id="shot-files" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple /></label>
+        <button class="ghost" id="add-video" type="button">Add an MP4</button>
         <button class="primary" id="render" type="button">Make the video</button>
       </div>
       <div id="scenes"></div>
@@ -47,34 +63,243 @@
       <div id="log">Waiting.</div>
       <p id="error" class="error"></p>
       <video id="player" controls hidden></video>
+      <div id="finished" class="row" hidden>
+        <a id="download" class="ghost link" href="">Download</a>
+        <button class="ghost" id="delete-current" type="button">Delete from server</button>
+      </div>
+      <h2>Saved videos</h2>
+      <p class="hint">These files sit on the computer that made them. Download a copy, then delete it there so it does not keep using disk.</p>
+      <div id="saved"></div>
     </main>
     <script>
       const scenesEl = document.querySelector('#scenes');
       const logEl = document.querySelector('#log');
       let scenes = [];
 
+      function parseClock(value) {
+        const parts = String(value || '').trim().split(':').map((part) => Number(part));
+        if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return 0;
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        return parts[0];
+      }
+
+      function formatClock(seconds) {
+        const total = Math.max(0, Math.round(Number(seconds) || 0));
+        const minutes = Math.floor(total / 60);
+        return minutes + ':' + String(total % 60).padStart(2, '0');
+      }
+
+      function seekPreview(video, seconds) {
+        const go = () => {
+          const limit = Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.05) : seconds;
+          const next = Math.min(Math.max(0, seconds), limit);
+          if (Math.abs((video.currentTime || 0) - next) > 0.05) video.currentTime = next;
+        };
+        if (video.readyState >= 1) go();
+        else video.addEventListener('loadedmetadata', go, { once: true });
+      }
+
+      function markSize(scene) {
+        const width = Math.min(90, Math.max(4, Number(scene.markW) || (scene.shape === 'rect' ? 28 : 18)));
+        const height = Math.min(90, Math.max(4, Number(scene.markH) || 24));
+        return { width, height };
+      }
+
+      function placeMark(aim, scene) {
+        let mark = aim.querySelector('i');
+        if (!scene.zoomOn || scene.shape === 'none') {
+          if (mark) mark.remove();
+          return;
+        }
+        if (!mark) {
+          mark = document.createElement('i');
+          const handle = document.createElement('b');
+          handle.addEventListener('pointerdown', (event) => dragMark(event, aim, scene, true));
+          mark.appendChild(handle);
+          mark.addEventListener('pointerdown', (event) => {
+            if (event.target === handle) return;
+            dragMark(event, aim, scene, false);
+          });
+          mark.addEventListener('click', (event) => event.stopPropagation());
+          aim.appendChild(mark);
+        }
+        const size = markSize(scene);
+        mark.className = scene.shape === 'rect' ? 'rect' : 'circle';
+        mark.style.left = (scene.zoomX ?? 50) + '%';
+        mark.style.top = (scene.zoomY ?? 50) + '%';
+        mark.style.width = size.width + '%';
+        mark.style.height = scene.shape === 'rect' ? size.height + '%' : '';
+      }
+
+      function dragMark(event, aim, scene, resizing) {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.currentTarget;
+        if (target.setPointerCapture) target.setPointerCapture(event.pointerId);
+        const box = aim.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const origin = markSize(scene);
+        const left = scene.zoomX ?? 50;
+        const top = scene.zoomY ?? 50;
+        const move = (ev) => {
+          const dx = ((ev.clientX - startX) / box.width) * 100;
+          const dy = ((ev.clientY - startY) / box.height) * 100;
+          if (resizing) {
+            scene.markW = Math.min(90, Math.max(4, origin.width + dx));
+            if (scene.shape === 'rect') scene.markH = Math.min(90, Math.max(4, origin.height + dy));
+          } else {
+            scene.zoomX = Math.min(100, Math.max(0, Math.round((left + dx) * 10) / 10));
+            scene.zoomY = Math.min(100, Math.max(0, Math.round((top + dy) * 10) / 10));
+          }
+          placeMark(aim, scene);
+        };
+        const stop = () => {
+          target.removeEventListener('pointermove', move);
+          target.removeEventListener('pointerup', stop);
+        };
+        target.addEventListener('pointermove', move);
+        target.addEventListener('pointerup', stop);
+      }
+
       function paint() {
         scenesEl.innerHTML = '';
         scenes.forEach((scene, index) => {
           const card = document.createElement('article');
           card.className = 'scene';
-          const img = document.createElement('img');
-          img.alt = '';
-          img.src = scene.image ? '/shots/' + scene.image : scene.preview || '';
+          const stage = document.createElement('div');
+          const aim = document.createElement('div');
+          aim.className = 'aim';
+          const preview = scene.media === 'video'
+            ? Object.assign(document.createElement('video'), { className: 'aim-video', muted: true, playsInline: true, preload: 'auto', src: scene.preview || '' })
+            : Object.assign(document.createElement('img'), { alt: '', src: scene.image ? '/shots/' + scene.image : scene.preview || '' });
+          aim.appendChild(preview);
+          placeMark(aim, scene);
+          if (scene.media === 'video') {
+            const reveal = () => preview.play().then(() => preview.pause()).catch(() => {});
+            preview.addEventListener('loadeddata', () => {
+              if ((scene.zoomAt || 0) > 0.05) {
+                preview.addEventListener('seeked', reveal, { once: true });
+                seekPreview(preview, scene.zoomAt);
+              } else {
+                reveal();
+              }
+            }, { once: true });
+          }
+          aim.addEventListener('click', (event) => {
+            scene.zoomOn = true;
+            if (!scene.shape || scene.shape === 'none') scene.shape = 'circle';
+            const box = aim.getBoundingClientRect();
+            scene.zoomX = Math.round(((event.clientX - box.left) / box.width) * 1000) / 10;
+            scene.zoomY = Math.round(((event.clientY - box.top) / box.height) * 1000) / 10;
+            if (preview.tagName === 'VIDEO') {
+              preview.pause();
+              scene.zoomAt = Math.round(preview.currentTime * 10) / 10;
+            }
+            placeMark(aim, scene);
+            const zoomBox = card.querySelector('[data-field="zoomOn"]');
+            const atBox = card.querySelector('[data-field="zoomAt"]');
+            const shapeBox = card.querySelector('[data-field="shape"]');
+            if (zoomBox) zoomBox.checked = true;
+            if (atBox) atBox.value = formatClock(scene.zoomAt || 0);
+            if (shapeBox && scene.shape) shapeBox.value = scene.shape;
+          });
+          stage.appendChild(aim);
+          if (scene.media === 'video') {
+            const bar = document.createElement('div');
+            bar.className = 'transport';
+            const play = document.createElement('button');
+            play.type = 'button';
+            play.className = 'ghost';
+            play.textContent = 'Play';
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.min = '0';
+            range.max = '0';
+            range.step = '0.1';
+            range.value = String(scene.zoomAt || 0);
+            const clock = document.createElement('span');
+            clock.className = 'time';
+            clock.textContent = formatClock(scene.zoomAt || 0);
+            const rememberTime = () => {
+              scene.zoomAt = Math.round(preview.currentTime * 10) / 10;
+              const atBox = card.querySelector('[data-field="zoomAt"]');
+              if (atBox && document.activeElement !== atBox) atBox.value = formatClock(scene.zoomAt);
+              clock.textContent = formatClock(preview.currentTime);
+              range.value = String(preview.currentTime || 0);
+            };
+            play.addEventListener('click', () => {
+              preview.muted = false;
+              if (preview.paused) preview.play().catch(() => {});
+              else preview.pause();
+            });
+            preview.addEventListener('play', () => { play.textContent = 'Pause'; });
+            preview.addEventListener('pause', () => { play.textContent = 'Play'; rememberTime(); });
+            preview.addEventListener('timeupdate', rememberTime);
+            preview.addEventListener('loadedmetadata', () => { range.max = String(preview.duration || 0); });
+            range.addEventListener('input', () => {
+              preview.pause();
+              preview.currentTime = Number(range.value);
+              rememberTime();
+            });
+            bar.append(play, range, clock);
+            stage.appendChild(bar);
+          }
           const fields = document.createElement('div');
-          fields.innerHTML = '<label>On-screen caption</label><textarea data-field="caption"></textarea><label>Spoken line</label><textarea data-field="voice"></textarea>';
+          fields.innerHTML = '<label>On-screen caption</label><textarea data-field="caption"></textarea><label>Spoken line</label><textarea data-field="voice"></textarea><label>Transition</label><select data-field="transition"><option value="cut">Cut</option><option value="crossfade">Crossfade</option><option value="slide">Slide</option></select><label>Transition seconds</label><input data-field="transitionSeconds" type="number" min="0.2" max="3" step="0.1" /><label class="check"><input data-field="zoomOn" type="checkbox" /> Zoom into this frame</label><label>Zoom at</label><input data-field="zoomAt" type="text" /><label>Hold for seconds</label><input data-field="zoomHold" type="number" min="0.4" max="180" step="1" /><label>Mark</label><select data-field="shape"><option value="circle">Circle</option><option value="rect">Rectangle</option><option value="none">No mark</option></select><p class="hint">Pause on the moment and click the face or button. Drag the mark to move it. Drag the orange corner to make it larger or smaller.</p>';
           fields.querySelector('[data-field="caption"]').value = scene.caption || '';
           fields.querySelector('[data-field="voice"]').value = scene.voice || '';
+          fields.querySelector('[data-field="transition"]').value = scene.transition || 'crossfade';
+          const seconds = fields.querySelector('[data-field="transitionSeconds"]');
+          seconds.value = scene.transitionSeconds ?? 1;
+          seconds.disabled = (scene.transition || 'crossfade') === 'cut';
+          fields.querySelector('[data-field="zoomOn"]').checked = scene.zoomOn === true;
+          fields.querySelector('[data-field="zoomAt"]').value = formatClock(scene.zoomAt || 0);
+          fields.querySelector('[data-field="zoomHold"]').value = scene.zoomHold ?? 30;
+          fields.querySelector('[data-field="shape"]').value = scene.shape || 'circle';
           fields.querySelectorAll('textarea').forEach((input) => {
             input.addEventListener('input', () => { scene[input.dataset.field] = input.value; });
           });
+          fields.querySelector('[data-field="transition"]').addEventListener('change', (event) => {
+            scene.transition = event.target.value;
+            seconds.disabled = scene.transition === 'cut';
+          });
+          seconds.addEventListener('input', () => { scene.transitionSeconds = Number(seconds.value); });
+          fields.querySelector('[data-field="zoomOn"]').addEventListener('change', (event) => {
+            scene.zoomOn = event.target.checked;
+            if (scene.zoomX == null) scene.zoomX = 50;
+            if (scene.zoomY == null) scene.zoomY = 50;
+            if (preview.tagName === 'VIDEO' && !preview.paused) scene.zoomAt = Math.round(preview.currentTime * 10) / 10;
+            placeMark(aim, scene);
+          });
+          fields.querySelector('[data-field="zoomAt"]').addEventListener('change', (event) => {
+            scene.zoomAt = parseClock(event.target.value);
+            event.target.value = formatClock(scene.zoomAt);
+            if (preview.tagName === 'VIDEO') seekPreview(preview, scene.zoomAt);
+          });
+          fields.querySelector('[data-field="zoomHold"]').addEventListener('input', (event) => {
+            scene.zoomHold = Number(event.target.value);
+          });
+          fields.querySelector('[data-field="shape"]').addEventListener('change', (event) => {
+            scene.shape = event.target.value;
+            placeMark(aim, scene);
+          });
+          const change = document.createElement('button');
+          change.className = 'ghost';
+          change.type = 'button';
+          change.textContent = 'Change picture';
+          change.addEventListener('click', () => replacePicture(index));
           const remove = document.createElement('button');
           remove.className = 'ghost';
           remove.type = 'button';
           remove.textContent = 'Remove scene ' + (index + 1);
           remove.addEventListener('click', () => { scenes.splice(index, 1); paint(); });
-          fields.appendChild(remove);
-          card.append(img, fields);
+          const actions = document.createElement('div');
+          actions.className = 'row';
+          actions.append(change, remove);
+          fields.appendChild(actions);
+          card.append(stage, fields);
           scenesEl.appendChild(card);
         });
       }
@@ -90,22 +315,130 @@
         logEl.textContent = 'Loaded the staging invoice screens.';
       });
 
-      document.querySelector('#add').addEventListener('click', () => {
+      document.querySelector('#new').addEventListener('click', () => {
+        document.querySelector('#title').value = '';
+        document.querySelector('#subtitle').value = '';
+        document.querySelector('#intro').value = '';
+        scenes = [];
+        paint();
+        document.querySelector('#player').hidden = true;
+        logEl.textContent = 'New project. Add a screenshot or an MP4, then write the spoken line for each scene.';
+      });
+
+      function replacePicture(index) {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'image/png,image/jpeg';
+        input.accept = 'image/png,image/jpeg,video/mp4';
         input.addEventListener('change', () => {
           const file = input.files && input.files[0];
-          if (!file) return;
+          if (!file || !scenes[index]) return;
+          const kind = file.type.indexOf('video/') === 0 ? 'video' : 'image';
           const reader = new FileReader();
           reader.onload = () => {
-            scenes.push({ caption: '', voice: '', imageData: reader.result, preview: reader.result });
+            const scene = scenes[index];
+            const voice = scene.voice;
+            const caption = scene.caption;
+            scene.media = kind;
+            scene.preview = reader.result;
+            scene.image = '';
+            scene.imageData = kind === 'image' ? reader.result : '';
+            scene.videoData = kind === 'video' ? reader.result : '';
+            scene.voice = voice;
+            scene.caption = caption;
             paint();
           };
           reader.readAsDataURL(file);
         });
         input.click();
+      }
+
+      function addScenes(files, kind) {
+        const list = Array.from(files || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        if (!list.length) return;
+        Promise.all(list.map((file) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        }))).then((urls) => {
+          urls.forEach((url) => {
+            scenes.push({
+              caption: '',
+              voice: '',
+              transition: 'crossfade',
+              transitionSeconds: 1,
+              media: kind,
+              preview: url,
+              imageData: kind === 'image' ? url : '',
+              videoData: kind === 'video' ? url : '',
+            });
+          });
+          paint();
+          logEl.textContent = urls.length === 1
+            ? 'Added 1 scene. Write the spoken line for it.'
+            : 'Added ' + urls.length + ' scenes, in filename order. Write the spoken line for each one.';
+        }).catch(() => {
+          logEl.textContent = 'Could not read one of the selected files.';
+        });
+      }
+
+      document.querySelector('#shot-files').addEventListener('change', (event) => {
+        addScenes(event.target.files, 'image');
+        event.target.value = '';
       });
+
+      document.querySelector('#add-video').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'video/mp4';
+        input.addEventListener('change', () => addScenes(input.files, 'video'));
+        input.click();
+      });
+
+      function formatSize(bytes) {
+        if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+
+      async function deleteStamp(stamp) {
+        const res = await fetch('/api/videos/' + stamp, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Could not delete that video');
+        if (document.querySelector('#delete-current').dataset.stamp === stamp) {
+          document.querySelector('#player').hidden = true;
+          document.querySelector('#finished').hidden = true;
+        }
+        await loadSaved();
+      }
+
+      async function loadSaved() {
+        const data = await fetch('/api/videos').then((res) => res.json());
+        const box = document.querySelector('#saved');
+        box.innerHTML = '';
+        (data.videos || []).forEach((video) => {
+          const row = document.createElement('div');
+          row.className = 'saved';
+          const name = document.createElement('span');
+          name.textContent = video.stamp + ' · ' + formatSize(video.bytes);
+          const download = document.createElement('a');
+          download.className = 'ghost link';
+          download.href = '/videos/' + video.stamp + '/video.mp4?download=1';
+          download.textContent = 'Download';
+          const remove = document.createElement('button');
+          remove.className = 'ghost';
+          remove.type = 'button';
+          remove.textContent = 'Delete from server';
+          remove.addEventListener('click', () => deleteStamp(video.stamp).catch((err) => { document.querySelector('#error').textContent = err.message; }));
+          row.append(name, download, remove);
+          box.appendChild(row);
+        });
+        if (!(data.videos || []).length) box.textContent = 'No saved videos.';
+      }
+
+      document.querySelector('#delete-current').addEventListener('click', () => {
+        const stamp = document.querySelector('#delete-current').dataset.stamp;
+        if (stamp) deleteStamp(stamp).catch((err) => { document.querySelector('#error').textContent = err.message; });
+      });
+      loadSaved();
 
       document.querySelector('#render').addEventListener('click', async () => {
         const button = document.querySelector('#render');
@@ -131,7 +464,12 @@
           const player = document.querySelector('#player');
           player.hidden = false;
           player.src = data.video;
+          const finished = document.querySelector('#finished');
+          finished.hidden = false;
+          document.querySelector('#download').href = data.video + '?download=1';
+          document.querySelector('#delete-current').dataset.stamp = data.job;
           player.play().catch(() => {});
+          loadSaved();
         } catch (err) {
           error.textContent = err.message;
         } finally {

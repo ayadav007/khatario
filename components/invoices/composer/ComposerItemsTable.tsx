@@ -20,7 +20,8 @@ type Props = {
   exportType: 'wp' | 'wop';
   isIntraState: boolean;
   pricesIncludeGst: boolean;
-  setPricesIncludeGst: (v: boolean) => void;
+  setPricesIncludeGst?: (v: boolean) => void;
+  showPricesIncludeGst?: boolean;
   readOnly: boolean;
 };
 
@@ -44,6 +45,7 @@ export function ItemsTable({
   isIntraState,
   pricesIncludeGst,
   setPricesIncludeGst,
+  showPricesIncludeGst = false,
   readOnly,
 }: Props) {
   const [amountMode, setAmountMode] = useState<Record<number, boolean>>({});
@@ -97,7 +99,7 @@ export function ItemsTable({
         <p className="text-xs font-semibold text-text-secondary">
           Items{visible.length > 0 ? ` · ${visible.length}` : ''}
         </p>
-        {showTax && (
+        {showTax && showPricesIncludeGst && setPricesIncludeGst && (
           <label className="flex items-center gap-2 text-xs font-medium text-text-secondary">
             Prices include GST
             <Switch
