@@ -198,8 +198,9 @@ export function ManagerTeamRollCall({
       );
     } catch (err: unknown) {
       if (saveSeq.current[employeeId] !== requestSeq) return;
-      if (previous) {
-        setTeam((prev) => prev.map((row) => (row.id === employeeId ? previous : row)));
+      const revertTo = previous;
+      if (revertTo) {
+        setTeam((prev) => prev.map((row) => (row.id === employeeId ? revertTo : row)));
       }
       toast.error(err instanceof Error ? err.message : `${name.split(' ')[0]} — save failed`);
     } finally {
