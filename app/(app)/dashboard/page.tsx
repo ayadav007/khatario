@@ -424,7 +424,7 @@ function DashboardPage() {
           <Card padding="none" className="overflow-hidden">
             <div className="flex items-center justify-between px-3 pt-3 pb-2 md:px-5 md:pt-5 md:pb-3">
               <h2 className="text-sm font-semibold text-text-primary md:text-base">Low stock</h2>
-              <Link href="/items">
+              <Link href="/items?stock=low">
                 <Button variant="ghost" size="sm" className="h-8 text-xs md:h-9 md:text-sm">View all</Button>
               </Link>
             </div>

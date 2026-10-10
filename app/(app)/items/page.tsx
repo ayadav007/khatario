@@ -19,7 +19,7 @@ import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
 import { getModuleSettingsMenu } from '@/lib/module-settings';
 import { useAuth } from '@/contexts/AuthContext';
 import { Item } from '@/types/database';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { useEntityList } from '@/hooks/useEntityList';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
@@ -51,6 +51,7 @@ function ItemsPage() {
   const { business, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const toast = useToastContext();
   const { canDelete, isPrimaryAdmin, loading: permissionsLoading } = usePermissions();
   const canDeleteItems = !permissionsLoading && (canDelete('items') || isPrimaryAdmin);
@@ -104,10 +105,21 @@ function ItemsPage() {
       if (stockFilter === 'all') return true;
       if (item.item_type === 'service') return false;
       if (stockFilter === 'out') return Number(item.current_stock) <= 0;
-      if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock) && Number(item.current_stock) > 0;
+      if (stockFilter === 'low') return Number(item.current_stock) <= Number(item.min_stock ?? 0);
       return true;
     });
   }, [allItems, search, typeFilter, stockFilter, categoryFilter, storeFilter, featuredFilter]);
+
+  useEffect(() => {
+    const stock = searchParams.get('stock');
+    const filter = searchParams.get('filter');
+    if (stock === 'low' || filter === 'low_stock') {
+      setStockFilter('low');
+      setTypeFilter((prev) => (prev === 'service' ? 'goods' : prev));
+    } else if (stock === 'out') {
+      setStockFilter('out');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setPage(1);

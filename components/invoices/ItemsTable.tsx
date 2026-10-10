@@ -275,10 +275,6 @@ const ItemsTable = React.memo(function ItemsTable({
                     {row.name || 'Item'}
                     {row.variantName ? ` · ${row.variantName}` : ''}
                   </p>
-                  <p className="truncate text-[10px] leading-tight text-text-muted">
-                    {row.hsnSac ? `HSN ${row.hsnSac} · ` : ''}GST {Number(row.taxPercent) || 0}%
-                    {' · '}₹{Number(row.price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}/{unit}
-                  </p>
                 </button>
                 {!isFinal ? (
                   <div className="flex shrink-0 items-center gap-0.5">
@@ -306,7 +302,17 @@ const ItemsTable = React.memo(function ItemsTable({
                 ) : (
                   <span className="shrink-0 text-sm tabular-nums text-text-secondary">{row.quantity} {unit}</span>
                 )}
-                <p className="w-[4.75rem] shrink-0 text-right text-sm font-bold tabular-nums leading-tight text-text-primary">
+                <div className="ml-1 shrink-0 text-right leading-tight">
+                  <p className="whitespace-nowrap text-xs font-semibold tabular-nums text-text-primary">
+                    ₹{Number(row.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  {documentType !== 'bill_of_supply' ? (
+                    <p className="whitespace-nowrap text-[11px] font-medium tabular-nums text-text-secondary">
+                      GST {Number(row.taxPercent) || 0}%
+                    </p>
+                  ) : null}
+                </div>
+                <p className="min-w-[3.25rem] shrink-0 text-right text-sm font-bold tabular-nums leading-tight text-text-primary">
                   ₹{Number(row.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
                 {!isFinal ? (
@@ -343,7 +349,7 @@ const ItemsTable = React.memo(function ItemsTable({
                 setEditDraft(null);
               }}
             />
-            <div className="fixed inset-x-0 bottom-0 z-[61] flex max-h-[50vh] flex-col rounded-t-2xl border border-border bg-background shadow-[0_-8px_30px_rgba(0,0,0,0.12)] animate-in slide-in-from-bottom duration-300">
+            <div className="fixed inset-x-0 bottom-0 z-[61] flex max-h-[90dvh] flex-col rounded-t-2xl border border-border bg-background shadow-[0_-8px_30px_rgba(0,0,0,0.12)] animate-in slide-in-from-bottom duration-300">
               <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-border" aria-hidden />
               <div className="flex items-center gap-2 border-b border-border px-3 py-3 bg-surface shrink-0">
             <button type="button" onClick={() => { setEditIndex(null); setEditDraft(null); }} className="p-2 -ml-1 text-text-secondary" aria-label="Back">
