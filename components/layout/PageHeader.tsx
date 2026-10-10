@@ -65,7 +65,7 @@ export function PageHeader({
 }
 
 function unwrapActionRow(children: React.ReactNode): React.ReactNode[] {
-  const items = React.Children.toArray(children).filter((child) => child != null && child !== false);
+  const items = React.Children.toArray(children);
   if (items.length !== 1 || !React.isValidElement(items[0]) || items[0].type !== 'div') return items;
   const className = String((items[0].props as { className?: string }).className || '');
   if (!/\bflex\b/.test(className) || !/\bgap-/.test(className)) return items;
