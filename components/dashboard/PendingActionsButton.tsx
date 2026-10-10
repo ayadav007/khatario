@@ -155,7 +155,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
       {isOpen && (
         <Card
           padding="md"
-          className="absolute top-1/2 -translate-y-1/2 right-12 mr-2 w-[min(20rem,calc(100vw-2.5rem))] max-h-[600px] overflow-y-auto shadow-xl animate-in fade-in slide-in-from-right-2 duration-200"
+          className="absolute top-1/2 -translate-y-1/2 right-12 mr-2 w-[min(20rem,calc(100vw-3.5rem))] !max-w-none !min-w-[min(16rem,calc(100vw-3.5rem))] max-h-[600px] overflow-y-auto shadow-xl animate-in fade-in slide-in-from-right-2 duration-200"
         >
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
             <div className="flex items-center gap-2">
