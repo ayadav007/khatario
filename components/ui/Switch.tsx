@@ -40,7 +40,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={clsx(
-        'relative inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors',
+        'tap-target-44 relative inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2',
         'disabled:cursor-not-allowed disabled:opacity-50',
         track,

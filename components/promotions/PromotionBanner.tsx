@@ -118,7 +118,7 @@ export function PromotionBanner() {
               <button
                 type="button"
                 onClick={handleClick}
-                className="px-4 py-1 bg-white text-gray-900 rounded-full text-xs font-bold hover:bg-opacity-90 transition-all flex items-center gap-1 shadow-sm"
+                className="tap-target-44 px-4 py-1 bg-white text-gray-900 rounded-full text-xs font-bold hover:bg-opacity-90 transition-all flex items-center gap-1 shadow-sm"
                 style={{ color: promo.background_color }}
               >
                 {promo.button_text}
@@ -134,7 +134,7 @@ export function PromotionBanner() {
               <button
                 type="button"
                 onClick={handleDismiss}
-                className="p-1 hover:bg-black hover:bg-opacity-10 rounded-full transition-colors"
+                className="tap-target-44 p-1 hover:bg-black hover:bg-opacity-10 rounded-full transition-colors"
                 aria-label="Dismiss"
               >
                 <X className="w-4 h-4 opacity-80" />

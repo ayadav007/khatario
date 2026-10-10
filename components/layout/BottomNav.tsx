@@ -155,7 +155,7 @@ export const BottomNav: React.FC = () => {
             </span>
             <span
               className={clsx(
-                'text-[10px] leading-none tracking-wide',
+                'text-[11px] leading-none tracking-wide',
                 isActive ? 'font-semibold text-primary-700' : 'font-medium'
               )}
             >
