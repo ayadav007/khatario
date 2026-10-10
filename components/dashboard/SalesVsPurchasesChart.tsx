@@ -138,8 +138,10 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
     const width = 800;
     const height = plotHeight;
     const padding = plotHeight < 200 ? 40 : 48;
+    const paddingTop = 4;
+    const paddingBottom = 22;
     const chartWidth = width - padding * 2;
-    const chartHeight = height - padding * 2;
+    const chartHeight = height - paddingTop - paddingBottom;
     const barWidth = Math.max(30, Math.min(60, (chartWidth / chartData.length) * 0.6));
     const barSpacing = chartWidth / chartData.length;
     const gapBetweenBars = 4;
@@ -155,7 +157,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           onClick={handleChartClick}
         >
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = padding + chartHeight * (1 - ratio);
+            const y = paddingTop + chartHeight * (1 - ratio);
             return (
               <line
                 key={ratio}
@@ -170,7 +172,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           })}
 
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-            const y = padding + chartHeight * (1 - ratio);
+            const y = paddingTop + chartHeight * (1 - ratio);
             const value = Math.round(maxValue * ratio);
             return (
               <text
@@ -198,8 +200,8 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
               salesValue > 0 && salesHeight < minBarHeight ? minBarHeight : salesHeight;
             const finalPurchasesHeight =
               purchasesValue > 0 && purchasesHeight < minBarHeight ? minBarHeight : purchasesHeight;
-            const finalSalesY = padding + chartHeight - finalSalesHeight;
-            const finalPurchasesY = padding + chartHeight - finalPurchasesHeight;
+            const finalSalesY = paddingTop + chartHeight - finalSalesHeight;
+            const finalPurchasesY = paddingTop + chartHeight - finalPurchasesHeight;
             const dateLabel = format(new Date(d.date), 'MMM dd, yyyy');
 
             return (

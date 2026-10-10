@@ -149,9 +149,9 @@ export const SalesInsightsCard = React.memo(function SalesInsightsCard({
     const width = 800;
     const height = plotHeight;
     const paddingLeft = 52;
-    const paddingRight = 16;
-    const paddingTop = 12;
-    const paddingBottom = preset === 'day' && data?.granularity === 'hour' ? 36 : 44;
+    const paddingRight = 8;
+    const paddingTop = 2;
+    const paddingBottom = preset === 'day' && data?.granularity === 'hour' ? 22 : 26;
     const chartWidth = width - paddingLeft - paddingRight;
     const chartHeight = height - paddingTop - paddingBottom;
     const barSpacing = chartWidth / buckets.length;

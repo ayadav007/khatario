@@ -114,14 +114,15 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     const height = plotHeight;
     const width = 800;
     const chartPadding = plotHeight < 200 ? 44 : 52;
-    const bottomPadding = series.length > 7 ? 32 : 22;
+    const paddingTop = 4;
+    const bottomPadding = series.length > 7 ? 28 : 16;
     const chartWidth = width - chartPadding * 2;
-    const chartHeight = height - chartPadding - bottomPadding;
+    const chartHeight = height - paddingTop - bottomPadding;
 
     const points = series.map((month, i) => {
       const x = chartPadding + (i / (series.length - 1 || 1)) * chartWidth;
       const normalizedValue = (month.closing - adjustedMin) / adjustedRange;
-      const y = chartPadding + chartHeight - normalizedValue * chartHeight;
+      const y = paddingTop + chartHeight - normalizedValue * chartHeight;
 
       let monthLabel: string;
       if (month.month === 'opening') {
@@ -140,7 +141,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     const numLabels = 6;
     let yAxisLabels = Array.from({ length: numLabels }, (_, i) => {
       const value = adjustedMin + (adjustedRange * (numLabels - 1 - i)) / (numLabels - 1);
-      const y = chartPadding + (i / (numLabels - 1)) * chartHeight;
+      const y = paddingTop + (i / (numLabels - 1)) * chartHeight;
       let label = '';
       if (Math.abs(value) >= 100000) {
         label = `₹${(value / 100000).toFixed(1)}L`;
@@ -155,7 +156,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
     if (adjustedMin <= 0 && adjustedMax >= 0) {
       const hasZero = yAxisLabels.some((label) => Math.abs(label.value) < 0.01);
       if (!hasZero) {
-        const zeroY = chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight;
+        const zeroY = paddingTop + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight;
         yAxisLabels.push({ y: zeroY, label: '₹0', value: 0 });
         yAxisLabels.sort((a, b) => b.y - a.y);
       }
@@ -163,7 +164,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
 
     const zeroY =
       adjustedMin <= 0 && adjustedMax >= 0
-        ? chartPadding + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
+        ? paddingTop + chartHeight - ((0 - adjustedMin) / adjustedRange) * chartHeight
         : null;
 
     const svgHeight = height + (series.length > 7 ? 40 : 0);
