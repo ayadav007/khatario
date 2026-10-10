@@ -146,7 +146,7 @@ export function RecentTransactionsFeed() {
 
   return (
     <Card className="overflow-hidden" padding="none">
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 border-b border-border bg-surface/95 backdrop-blur-md lg:top-0">
+      <div className="z-20 border-b border-border bg-surface/95 backdrop-blur-md lg:sticky lg:top-0">
         <div className="px-4 pb-2 pt-3 md:px-6 md:pt-5">
           <h2 className="text-base font-semibold text-text-primary md:text-lg">Recent transactions</h2>
           <div className="relative mt-3">
