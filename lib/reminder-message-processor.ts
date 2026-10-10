@@ -6,6 +6,7 @@ import { toE164Digits } from '@/lib/platform-whatsapp-send';
 import { eventTemplateFailureMessage, sendEventTemplate } from '@/lib/whatsapp/tenant-send';
 import { invoiceEventValues, reminderEventKey } from '@/lib/whatsapp/invoice-event-values';
 import { businessTransport } from '@/lib/whatsapp/business-transport';
+import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import { resolveEventTemplate } from '@/lib/whatsapp/tenant-templates';
 
 /**
@@ -86,6 +87,14 @@ export async function sendReminderMessage(
     // Check if customer has phone number
     if (!invoice.customer_phone || invoice.customer_phone.trim() === '') {
       return { success: false, error: 'Customer phone number not available' };
+    }
+
+    const outbound = await whatsAppOutboundReady(businessId);
+    if (!outbound.ready) {
+      return {
+        success: false,
+        error: 'WhatsApp is not connected. Scan a QR code or connect the WhatsApp Business API before sending reminders.',
+      };
     }
 
     // Process template

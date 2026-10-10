@@ -3,7 +3,7 @@ import * as db from '@/lib/db';
 import { sendReminderMessage } from '@/lib/reminder-message-processor';
 import { checkLimit } from '@/lib/subscription';
 import { withWhatsAppBaseApi } from '@/lib/security/premium-module-api';
-import { businessTransport } from '@/lib/whatsapp/business-transport';
+import { whatsAppOutboundReady } from '@/lib/whatsapp/outbound-ready';
 import {
   BAILEYS_BULK_GAP_MS,
   BAILEYS_BULK_MAX_BATCH as BAILEYS_MAX_BATCH,
@@ -36,9 +36,21 @@ export const POST = withWhatsAppBaseApi({ parseJsonBody: true }, async ({ body, 
       return NextResponse.json({ error: 'message_template is required' }, { status: 400 });
     }
 
+    const outbound = await whatsAppOutboundReady(businessId);
+    if (!outbound.ready) {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp is not connected. Scan a QR code or connect the WhatsApp Business API before sending reminders.',
+          code: 'WHATSAPP_NOT_CONNECTED',
+        },
+        { status: 409 },
+      );
+    }
+
     const uniqueInvoiceIds = [...new Set(invoice_ids)];
 
-    const transport = await businessTransport(businessId);
+    const transport = outbound.transport;
     if (transport === 'baileys' && uniqueInvoiceIds.length > BAILEYS_MAX_BATCH) {
       return NextResponse.json(
         {

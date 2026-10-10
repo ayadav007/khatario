@@ -8,6 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { format } from 'date-fns';
 import { Toast } from '@/components/ui/Toast';
 import { ConfirmDialog } from '@/components/whatsapp/ConfirmDialog';
+import { WhatsAppConnectPrompt } from '@/components/whatsapp/WhatsAppConnectPrompt';
+import { useWhatsAppAccess } from '@/components/whatsapp/settings/useWhatsAppAccess';
 
 interface Invoice {
   id: string;
@@ -35,6 +37,7 @@ Thank you!
 
 export function SendRemindersTab() {
   const { business, user } = useAuth();
+  const { hasConnect } = useWhatsAppAccess();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -47,12 +50,30 @@ export function SendRemindersTab() {
   const [includePdf, setIncludePdf] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [whatsappReady, setWhatsappReady] = useState<boolean | null>(null);
+
+  const refreshWhatsAppReady = async () => {
+    if (!business?.id) return false;
+    try {
+      const res = await fetch(`/api/whatsapp/status?business_id=${business.id}`);
+      const data = await res.json().catch(() => ({}));
+      const ready = data.status === 'connected' || (data.cloudReady === true && hasConnect);
+      setWhatsappReady(ready);
+      return ready;
+    } catch {
+      setWhatsappReady(false);
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (business?.id) {
       fetchInvoices();
+      void refreshWhatsAppReady();
     }
-  }, [business?.id, paymentStatusFilter, search, dateFrom, dateTo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.id, paymentStatusFilter, search, dateFrom, dateTo, hasConnect]);
 
   const fetchInvoices = async () => {
     if (!business?.id) return;
@@ -120,12 +141,13 @@ export function SendRemindersTab() {
         });
         setSelectedInvoices(new Set());
         fetchInvoices();
+      } else if (data.code === 'WHATSAPP_NOT_CONNECTED') {
+        setWhatsappReady(false);
+        setConnectOpen(true);
+      } else if (data.code === 'LIMIT_EXCEEDED' || data.code === 'BATCH_TOO_LARGE') {
+        setToast({ message: `Cannot send reminders: ${data.error}`, type: 'error' });
       } else {
-        if (data.code === 'LIMIT_EXCEEDED' || data.code === 'BATCH_TOO_LARGE') {
-          setToast({ message: `Cannot send reminders: ${data.error}`, type: 'error' });
-        } else {
-          setToast({ message: `Failed to send reminders: ${data.error}`, type: 'error' });
-        }
+        setToast({ message: `Failed to send reminders: ${data.error}`, type: 'error' });
       }
     } catch (error) {
       console.error('Failed to send reminders:', error);
@@ -146,14 +168,22 @@ export function SendRemindersTab() {
       return;
     }
 
-    setConfirmDialog({
-      title: 'Send reminders',
-      message: `Send reminder to ${selectedInvoices.size} invoice(s)?`,
-      onConfirm: () => {
-        setConfirmDialog(null);
-        void performSend();
+    void (async () => {
+      const ready = await refreshWhatsAppReady();
+      if (!ready) {
+        setConnectOpen(true);
+        return;
       }
-    });
+
+      setConfirmDialog({
+        title: 'Send reminders',
+        message: `Send reminder to ${selectedInvoices.size} invoice(s)?`,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          void performSend();
+        },
+      });
+    })();
   };
 
   const allSelected = invoices.length > 0 && selectedInvoices.size === invoices.length;
@@ -208,6 +238,22 @@ export function SendRemindersTab() {
           </div>
         </div>
       </Card>
+
+      {whatsappReady === false ? (
+        <Card padding="md" className="border-amber-200 bg-amber-50">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-amber-950">WhatsApp is not connected</h3>
+              <p className="mt-1 text-sm text-amber-900">
+                Reminders stay here until you scan a QR code or connect the WhatsApp Business API.
+              </p>
+            </div>
+            <Button variant="secondary" onClick={() => setConnectOpen(true)}>
+              Connect WhatsApp
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Invoice List */}
@@ -341,6 +387,15 @@ export function SendRemindersTab() {
       {toast && (
         <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
       )}
+      <WhatsAppConnectPrompt
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        onConnected={() => {
+          setWhatsappReady(true);
+          setConnectOpen(false);
+          setToast({ message: 'WhatsApp is connected. You can send the reminders now.', type: 'success' });
+        }}
+      />
       <ConfirmDialog
         isOpen={!!confirmDialog}
         title={confirmDialog?.title || ''}
