@@ -28,10 +28,26 @@ describe('recentTransactionsSql', () => {
       filter: 'purchase',
     });
     expect(sql).toContain('FROM purchases');
+    expect(sql).toContain('p.payment_status');
+    expect(sql).toContain('AS sort_at');
     expect(sql).not.toContain('FROM invoices');
     expect(sql).toContain('ANY($2::uuid[])');
     expect(sql).toContain('ILIKE $3');
     expect(sql).toContain('LIMIT $6');
+  });
+
+  it('keeps only payments that are not settled against an invoice or purchase', () => {
+    const sql = recentTransactionsSql({
+      branchParam: null,
+      searchParam: null,
+      cursorAtParam: null,
+      cursorIdParam: null,
+      limitParam: 2,
+      filter: 'payment',
+    });
+    expect(sql).toContain("NOT IN ('invoice', 'purchase')");
+    expect(sql).toContain('AS sort_at');
+    expect(sql).not.toContain('FROM purchases');
   });
 });
 
