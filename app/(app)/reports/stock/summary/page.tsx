@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
@@ -350,15 +351,13 @@ export default function StockSummaryReportPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Inventory Intelligence</h1>
-          <p className="text-sm text-text-secondary mt-1 max-w-2xl">
-            Stock summary with velocity-based reorder signals, health buckets, aging, and recent movement — built for
-            quick decisions.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+  title="Inventory Intelligence"
+  subtitle="Stock summary with velocity-based reorder signals, health buckets, aging, and recent movement — built for quick decisions."
+
+  actions={
+    <>
+<div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" onClick={refresh} disabled={loading || !business?.id}>
             {loading ? (
               <>
@@ -377,7 +376,9 @@ export default function StockSummaryReportPage() {
             Export CSV
           </Button>
         </div>
-      </div>
+    </>
+  }
+/>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 px-4 py-3 text-sm text-red-800 dark:text-red-200">

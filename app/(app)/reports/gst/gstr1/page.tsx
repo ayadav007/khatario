@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, Filter, RefreshCw, ChevronDown, AlertCircle, FileCheck } from 'lucide-react';
@@ -260,8 +261,10 @@ function GSTR1PageContent() {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">GSTR-1 Report</h1>
-            <p className="text-sm text-gray-500">Details of outward supplies of goods or services</p>
+            <PageHeader
+  title="GSTR-1 Report"
+  subtitle="Details of outward supplies of goods or services"
+/>
             {filingInfo && (
               <div className="mt-2 flex items-center gap-2">
                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${

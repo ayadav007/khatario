@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -411,10 +412,10 @@ function Gstr13bReconciliationPageContent() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-text-primary">GSTR-1 vs GSTR-3B reconciliation</h1>
-        <p className="text-sm text-text-secondary">
-          Compare filed or live GSTR-1 heads with GSTR-3B (ledger basis), with voucher-level drill-down for audit.
-        </p>
+        <PageHeader
+  title="GSTR-1 vs GSTR-3B reconciliation"
+  subtitle="Compare filed or live GSTR-1 heads with GSTR-3B (ledger basis), with voucher-level drill-down for audit."
+/>
       </header>
 
       <ReconciliationFilters

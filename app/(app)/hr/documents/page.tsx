@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { FileText, Loader2, Plus, Download } from 'lucide-react';
@@ -125,17 +126,18 @@ export default function HrDocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">HR documents</h1>
-          <p className="text-sm text-text-secondary">
-            Appointment letters and other templates with attribute mapping
-          </p>
-        </div>
-        <Link href="/settings/offer-letter">
+      <PageHeader
+  title="HR documents"
+  subtitle="Appointment letters and other templates with attribute mapping"
+
+  actions={
+    <>
+<Link href="/settings/offer-letter">
           <Button variant="secondary">Offer letter templates</Button>
         </Link>
-      </div>
+    </>
+  }
+/>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="space-y-3 p-4">

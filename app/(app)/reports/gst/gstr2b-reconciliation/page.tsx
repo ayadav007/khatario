@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
  * - Full audit trail maintained
  */
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Upload, RefreshCw, AlertCircle, CheckCircle, XCircle, FileDown, AlertTriangle } from 'lucide-react';
@@ -289,10 +290,10 @@ export default function GSTR2BReconciliationPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">GSTR-2B Reconciliation Workspace</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Reconcile purchase register with GSTR-2B data from GST portal
-          </p>
+          <PageHeader
+  title="GSTR-2B Reconciliation Workspace"
+  subtitle="Reconcile purchase register with GSTR-2B data from GST portal"
+/>
         </div>
 
         {/* Compliance Warning Banner */}

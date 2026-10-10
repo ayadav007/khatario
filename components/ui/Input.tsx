@@ -49,10 +49,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({
         />
       </div>
       {error && (
-        <p className="mt-1.5 text-sm text-error">{error}</p>
+        <p className="type-body-sm mt-1.5 text-error">{error}</p>
       )}
       {helperText && !error && (
-        <p className="mt-1.5 text-sm text-text-secondary">{helperText}</p>
+        <p className="type-body-sm mt-1.5 text-text-secondary">{helperText}</p>
       )}
     </div>
   );

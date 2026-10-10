@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -101,17 +102,14 @@ export default function CurrencyConverterPage() {
     
       <div className="space-y-6 max-w-3xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-              <RefreshCw className="w-6 h-6 text-primary-500" />
-              Currency Converter
-            </h1>
-            <p className="text-text-secondary text-sm mt-1">
-              Convert between Indian Rupee and other currencies
-            </p>
-          </div>
-          <Button
+        <PageHeader
+  title={<><RefreshCw className="w-6 h-6 text-primary-500" />
+              Currency Converter</>}
+  subtitle="Convert between Indian Rupee and other currencies"
+
+  actions={
+    <>
+<Button
             variant="ghost"
             size="sm"
             onClick={fetchExchangeRate}
@@ -121,7 +119,9 @@ export default function CurrencyConverterPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Main Card */}
         <Card padding="md" className="space-y-6">

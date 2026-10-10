@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -172,14 +173,13 @@ export default function CashFlowPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Cash Flow Statement</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              {format(new Date(data.period.from_date), 'dd MMM yyyy')} to {format(new Date(data.period.to_date), 'dd MMM yyyy')}
-            </p>
-          </div>
-          <div className="flex gap-2 no-print">
+        <PageHeader
+  title="Cash Flow Statement"
+  subtitle={<>{format(new Date(data.period.from_date), 'dd MMM yyyy')} to {format(new Date(data.period.to_date), 'dd MMM yyyy')}</>}
+
+  actions={
+    <>
+<div className="flex gap-2 no-print">
             <Button
               type="button"
               variant="secondary"
@@ -194,7 +194,9 @@ export default function CashFlowPage() {
               Download PDF
             </Button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

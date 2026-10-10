@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -149,8 +150,10 @@ export default function CreditApprovalsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Credit Approvals</h1>
-            <p className="text-sm text-gray-600 mt-1">Manage credit limit override requests</p>
+            <PageHeader
+  title="Credit Approvals"
+  subtitle="Manage credit limit override requests"
+/>
           </div>
         </div>
 

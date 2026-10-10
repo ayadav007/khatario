@@ -117,8 +117,14 @@ const COMPOSER_PREFIXES = [
 export const MOBILE_COMPOSER_ROUTES = COMPOSER_PREFIXES;
 
 /** Primary create action for module list roots — rendered as TopBar + on mobile. */
-export function getMobileListCreateAction(pathname: string | null): MobileListCreateAction | null {
+export function getMobileListCreateAction(
+  pathname: string | null,
+  searchParams?: { get(name: string): string | null } | null
+): MobileListCreateAction | null {
   const p = normalizePath(pathname);
+  if (p === '/customers' && searchParams?.get('tab') === 'suppliers') {
+    return { href: '/suppliers/new', ariaLabel: 'New supplier' };
+  }
   return LIST_CREATE_BY_PATH[p] ?? null;
 }
 

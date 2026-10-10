@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -137,16 +138,15 @@ export default function NotificationsPage() {
     
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Notifications</h1>
-            <p className="text-text-secondary text-sm mt-1">
-              {unreadNotificationCount > 0 
+        <PageHeader
+  title="Notifications"
+  subtitle={<>{unreadNotificationCount > 0 
                 ? `${unreadNotificationCount} unread notification${unreadNotificationCount !== 1 ? 's' : ''}`
-                : 'All caught up!'}
-            </p>
-          </div>
-          {unreadNotificationCount > 0 && (
+                : 'All caught up!'}</>}
+
+  actions={
+    <>
+{unreadNotificationCount > 0 && (
             <Button
               onClick={handleMarkAllAsRead}
               variant="secondary"
@@ -156,7 +156,9 @@ export default function NotificationsPage() {
               Mark all as read
             </Button>
           )}
-        </div>
+    </>
+  }
+/>
 
         {/* Filter Tabs */}
         <div className="flex gap-2 border-b border-gray-200">

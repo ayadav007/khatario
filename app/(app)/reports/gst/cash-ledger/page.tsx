@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -171,15 +172,13 @@ export default function GstCashLedgerPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">GST electronic cash ledger</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Deposit credits the cash ledger and the bank. Utilisation moves that balance onto GST liability.
-            Pooled RCM (2155) is paid from IGST cash (1130) unless you choose CGST or SGST.
-          </p>
-        </div>
-        <div className="flex items-end gap-3">
+      <PageHeader
+  title="GST electronic cash ledger"
+  subtitle="Deposit credits the cash ledger and the bank. Utilisation moves that balance onto GST liability. Pooled RCM (2155) is paid from IGST cash (1130) unless you choose CGST or SGST."
+
+  actions={
+    <>
+<div className="flex items-end gap-3">
           <label className="text-xs font-medium text-gray-700">
             As on
             <input
@@ -193,7 +192,9 @@ export default function GstCashLedgerPage() {
             GSTR-3B
           </Link>
         </div>
-      </div>
+    </>
+  }
+/>
 
       {allBranches && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">

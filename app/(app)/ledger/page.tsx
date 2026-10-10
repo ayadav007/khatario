@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -93,8 +94,10 @@ export default function LedgerPage() {
     
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Ledger</h1>
-          <p className="text-sm text-text-secondary mt-1">View all ledger entries</p>
+          <PageHeader
+  title="Ledger"
+  subtitle="View all ledger entries"
+/>
         </div>
 
         <Card>

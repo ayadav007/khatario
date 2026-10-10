@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -16,8 +17,10 @@ export default function TDSPage() {
     
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">TDS Management</h1>
-          <p className="text-sm text-text-secondary mt-1">Manage Tax Deducted at Source</p>
+          <PageHeader
+  title="TDS Management"
+  subtitle="Manage Tax Deducted at Source"
+/>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

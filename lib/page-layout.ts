@@ -2,7 +2,7 @@
  * Wide content column — uses full main area up to very large viewports.
  * Settings screens, FormPageContainer, and similar dense UIs.
  */
-export const WIDE_PAGE_CONTENT_CLASS = 'w-full min-w-0 max-w-[1920px]';
+export const WIDE_PAGE_CONTENT_CLASS = 'w-full min-w-0 max-w-full';
 
 /** Standard main column padding (responsive spacing tokens in globals.css). */
 export const APP_MAIN_PADDING_CLASS = 'px-page-x pt-page-y pb-20 md:pb-page-y';

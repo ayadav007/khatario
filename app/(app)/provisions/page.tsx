@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -216,18 +217,19 @@ export default function ProvisionsPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Provisions Management</h1>
-            <p className="text-sm text-text-secondary mt-1">
-              Manage provisions for financial reporting
-            </p>
-          </div>
-          <Button onClick={() => setShowForm(true)}>
+        <PageHeader
+  title="Provisions Management"
+  subtitle="Manage provisions for financial reporting"
+
+  actions={
+    <>
+<Button onClick={() => setShowForm(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Provision
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Financial Year Selector */}
         <Card>

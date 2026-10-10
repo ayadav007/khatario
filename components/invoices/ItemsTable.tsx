@@ -275,9 +275,13 @@ const ItemsTable = React.memo(function ItemsTable({
                     {row.name || 'Item'}
                     {row.variantName ? ` · ${row.variantName}` : ''}
                   </p>
+                  <p className="truncate text-[11px] leading-tight text-text-secondary">
+                    ₹{Number(row.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {documentType !== 'bill_of_supply' ? ` · GST ${Number(row.taxPercent) || 0}%` : ''}
+                  </p>
                 </button>
                 {!isFinal ? (
-                  <div className="flex shrink-0 items-center gap-0.5">
+                  <div className="ml-3 flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
                       aria-label="Decrease quantity"
@@ -300,18 +304,8 @@ const ItemsTable = React.memo(function ItemsTable({
                     </button>
                   </div>
                 ) : (
-                  <span className="shrink-0 text-sm tabular-nums text-text-secondary">{row.quantity} {unit}</span>
+                  <span className="ml-3 shrink-0 text-sm tabular-nums text-text-secondary">{row.quantity} {unit}</span>
                 )}
-                <div className="ml-1 shrink-0 text-right leading-tight">
-                  <p className="whitespace-nowrap text-xs font-semibold tabular-nums text-text-primary">
-                    ₹{Number(row.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                  {documentType !== 'bill_of_supply' ? (
-                    <p className="whitespace-nowrap text-[11px] font-medium tabular-nums text-text-secondary">
-                      GST {Number(row.taxPercent) || 0}%
-                    </p>
-                  ) : null}
-                </div>
                 <p className="min-w-[3.25rem] shrink-0 text-right text-sm font-bold tabular-nums leading-tight text-text-primary">
                   ₹{Number(row.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>

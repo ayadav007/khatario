@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -275,20 +276,21 @@ export default function SupplierDashboardPage() {
     
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Supplier Dashboard</h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Monitor your customers' inventory and track low stock alerts
-            </p>
-          </div>
-          <Button
+        <PageHeader
+  title="Supplier Dashboard"
+  subtitle="Monitor your customers' inventory and track low stock alerts"
+
+  actions={
+    <>
+<Button
             variant="secondary"
             onClick={() => router.push('/suppliers/dashboard/thresholds')}
           >
             Manage Thresholds
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

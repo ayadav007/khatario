@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -166,10 +167,10 @@ export default function FifoLotTrackingPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">FIFO Cost Lot Tracking</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Each purchase, opening stock and returned quantity forms a cost lot. Sales consume the oldest lot first.
-        </p>
+        <PageHeader
+  title="FIFO Cost Lot Tracking"
+  subtitle="Each purchase, opening stock and returned quantity forms a cost lot. Sales consume the oldest lot first."
+/>
       </div>
 
       <Card padding="md">

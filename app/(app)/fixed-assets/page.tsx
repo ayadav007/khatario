@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Building2, Loader2, Plus, TrendingDown, X } from 'lucide-react';
@@ -254,20 +255,21 @@ export default function FixedAssetsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Fixed Assets</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Asset register, Schedule II book depreciation, disposals and Income-tax block depreciation
-          </p>
-        </div>
-        {tab === 'register' && (
+      <PageHeader
+  title="Fixed Assets"
+  subtitle="Asset register, Schedule II book depreciation, disposals and Income-tax block depreciation"
+
+  actions={
+    <>
+{tab === 'register' && (
           <Button onClick={() => setShowForm((s) => !s)}>
             {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
             {showForm ? 'Close' : 'Add asset'}
           </Button>
         )}
-      </div>
+    </>
+  }
+/>
 
       <div className="flex gap-2 border-b border-border">
         {(['register', 'it'] as const).map((t) => (

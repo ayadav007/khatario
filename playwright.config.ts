@@ -25,7 +25,22 @@ export default defineConfig({
   },
   timeout: 60000,
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      testIgnore: [/auth\.setup\.ts/, /mobile-audit\.spec\.ts/],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile',
+      dependencies: ['setup'],
+      testMatch: /mobile-audit\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 375, height: 812 },
+        storageState: 'e2e/.auth/auth.json',
+      },
+    },
   ],
   ...(process.env.PLAYWRIGHT_SKIP_WEBSERVER === '1'
     ? {}

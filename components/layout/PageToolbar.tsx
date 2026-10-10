@@ -13,7 +13,7 @@ export function PageToolbar({ children, className }: PageToolbarProps) {
   return (
     <div
       className={clsx(
-        'flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-0.5',
+        'flex w-full min-w-0 max-w-full items-center gap-2 overflow-x-auto pb-1 scrollbar-none',
         className
       )}
     >
@@ -45,7 +45,7 @@ export function PageToolbarChip({
       disabled={disabled}
       onClick={onClick}
       className={clsx(
-        'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors touch-manipulation',
+        'min-h-10 max-w-full shrink-0 rounded-full border px-3 text-base font-medium transition-colors touch-manipulation',
         active
           ? 'border-primary-600 bg-primary-600 text-white'
           : 'border-border bg-surface text-text-secondary hover:bg-slate-50 dark:hover:bg-slate-800',

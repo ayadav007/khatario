@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Megaphone, BarChart2, FileText, Loader2, Plus } from 'lucide-react';
@@ -163,17 +164,18 @@ export default function HrEngagementPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Engagement</h1>
-          <p className="text-sm text-text-secondary">
-            Announcements, polls, and articles for your team
-          </p>
-        </div>
-        <Link href="/hr/dashboard">
+      <PageHeader
+  title="Engagement"
+  subtitle="Announcements, polls, and articles for your team"
+
+  actions={
+    <>
+<Link href="/hr/dashboard">
           <Button variant="secondary">Back to HR dashboard</Button>
         </Link>
-      </div>
+    </>
+  }
+/>
 
       <div className="flex gap-1 border-b border-border">
         {TABS.map((t) => {

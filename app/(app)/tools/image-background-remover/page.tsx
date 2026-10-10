@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -242,13 +243,11 @@ export default function ImageBackgroundRemoverPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-primary-500" />
-              Professional AI Background Remover
-            </h1>
-            <p className="text-text-secondary text-sm mt-1">
-              AI extraction + Magic Brush for pixel-perfect results
-            </p>
+            <PageHeader
+  title={<><Sparkles className="w-6 h-6 text-primary-500" />
+              Professional AI Background Remover</>}
+  subtitle="AI extraction + Magic Brush for pixel-perfect results"
+/>
           </div>
           {loadingModel && (
             <div className="flex items-center gap-2 text-sm text-primary-600 bg-slate-50 px-3 py-1 rounded-full border border-primary-100 animate-pulse">

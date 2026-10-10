@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Download, FileText, RefreshCw, TrendingUp, TrendingDown, MinusCircle, AlertCircle } from 'lucide-react';
@@ -130,12 +131,13 @@ export default function GSTR9Page() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">GSTR-9 Annual Return</h1>
-            <p className="text-sm text-gray-500">Annual consolidated return for the financial year (CA-Grade Rebuild)</p>
-          </div>
-          <div className="flex gap-3">
+        <PageHeader
+  title="GSTR-9 Annual Return"
+  subtitle="Annual consolidated return for the financial year (CA-Grade Rebuild)"
+
+  actions={
+    <>
+<div className="flex gap-3">
             <button 
               onClick={() => handleExport('json')}
               className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-primary-700 rounded-lg hover:bg-primary-200"
@@ -151,7 +153,9 @@ export default function GSTR9Page() {
               Export CSV ZIP
             </button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Validation Warnings */}
         {data?.validation?.warnings?.length > 0 && (

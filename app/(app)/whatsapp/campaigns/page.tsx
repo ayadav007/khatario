@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
@@ -297,18 +298,19 @@ export default function CampaignsPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">WhatsApp Campaigns</h1>
-            <p className="text-gray-600 text-sm mt-1">
-              Create, manage, and track your WhatsApp marketing campaigns
-            </p>
-          </div>
-          <Button onClick={() => router.push('/whatsapp/send-message')}>
+        <PageHeader
+  title="WhatsApp Campaigns"
+  subtitle="Create, manage, and track your WhatsApp marketing campaigns"
+
+  actions={
+    <>
+<Button onClick={() => router.push('/whatsapp/send-message')}>
             <Send className="w-4 h-4 mr-2" />
             New Campaign
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* WhatsApp Connection Status Warning */}
         {whatsappStatus && whatsappStatus.status !== 'connected' && (

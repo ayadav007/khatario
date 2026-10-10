@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, BellOff, CheckCircle2, Info, MessageCircle, RefreshCw, ShieldAlert } from 'lucide-react';
@@ -145,16 +146,13 @@ export default function GstCompliancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">GST alerts</h1>
-          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Khatario checks your books every day against GST rules: supplier bills nearing 180 days unpaid (Rule 37), the
-            30 November last date for last year&apos;s ITC and credit notes, GSTR-3B due dates, e-way bills, e-invoicing and
-            reverse charge self-invoices.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      <PageHeader
+  title="GST alerts"
+  subtitle="Khatario checks your books every day against GST rules: supplier bills nearing 180 days unpaid (Rule 37), the 30 November last date for last year&apos;s ITC and credit notes, GSTR-3B due dates, e-way bills, e-invoicing and reverse charge self-invoices."
+
+  actions={
+    <>
+<div className="flex items-center gap-3">
           {dismissedCount > 0 && (
             <button
               type="button"
@@ -174,7 +172,9 @@ export default function GstCompliancePage() {
             Check again
           </button>
         </div>
-      </div>
+    </>
+  }
+/>
 
       {skipped && (
         <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">

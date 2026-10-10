@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -134,10 +135,10 @@ export default function BankImportPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
       <header>
-        <h1 className="text-2xl font-bold text-text-primary">Bank statement import</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Upload CSV or PDF, review extracted rows, then confirm to save. Nothing is stored until you confirm.
-        </p>
+        <PageHeader
+  title="Bank statement import"
+  subtitle="Upload CSV or PDF, review extracted rows, then confirm to save. Nothing is stored until you confirm."
+/>
       </header>
 
       <div className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-white p-4 shadow-sm">

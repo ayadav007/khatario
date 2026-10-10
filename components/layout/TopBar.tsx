@@ -538,7 +538,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const mobileQuickSettings = getMobileQuickSettings(pathname);
   const showMobileBack = isMobileNestedRoute(pathname);
   const mobileBackHref = getMobileBackHref(pathname);
-  const mobileListCreate = getMobileListCreateAction(pathname);
+  const mobileListCreate = getMobileListCreateAction(pathname, searchParams);
 
   useEffect(() => {
     if (!showDateRange) return;

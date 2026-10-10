@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/contexts/AuthContext';
@@ -94,10 +95,10 @@ export default function SupplierAnalyticsPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Location Analytics</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Track your product performance by geographic location
-          </p>
+          <PageHeader
+  title="Location Analytics"
+  subtitle="Track your product performance by geographic location"
+/>
         </div>
 
         {/* Summary Cards */}

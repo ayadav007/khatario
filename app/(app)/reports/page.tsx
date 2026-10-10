@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { TrendingUp, ShoppingCart, Package, FileText, Download, Calendar } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -125,12 +126,13 @@ function ReportsPage() {
       <MobileReportsIndex />
       <div className="hidden space-y-6 md:block">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Reports & Analytics</h1>
-            <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Insights into your business performance</p>
-          </div>
-          <div className="flex items-center gap-3">
+        <PageHeader
+  title="Reports & Analytics"
+  subtitle="Insights into your business performance"
+
+  actions={
+    <>
+<div className="flex items-center gap-3">
             <Link href="/reports/builder">
               <button className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
                 <FileText className="w-5 h-5" />
@@ -142,7 +144,9 @@ function ReportsPage() {
               <span>Export PDF</span>
             </button>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Tabs */}
         <div className="border-b border-gray-200">

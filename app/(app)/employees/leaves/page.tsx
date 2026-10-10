@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -158,12 +159,13 @@ export default function LeavesPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Leave Management</h1>
-            <p className="text-sm text-text-secondary mt-1">View and manage employee leave requests</p>
-          </div>
-          <div className="flex gap-2">
+        <PageHeader
+  title="Leave Management"
+  subtitle="View and manage employee leave requests"
+
+  actions={
+    <>
+<div className="flex gap-2">
             <Link href="/employees/leaves/new">
               <Button variant="secondary">
                 <Plus className="w-4 h-4 mr-2" />
@@ -177,7 +179,9 @@ export default function LeavesPage() {
               </Button>
             </Link>
           </div>
-        </div>
+    </>
+  }
+/>
 
         {/* Filters */}
         <Card>

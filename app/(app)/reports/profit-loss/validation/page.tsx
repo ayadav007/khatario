@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -496,11 +497,10 @@ export default function ProfitLossValidationPage() {
   return (
     <div className="space-y-3 md:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">P&amp;L Validation (Admin)</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Read-only audit of how the Profit &amp; Loss numbers were built. Findings are based on the same period and
-          branch scope as your P&amp;L screen.
-        </p>
+        <PageHeader
+  title="P&amp;L Validation (Admin)"
+  subtitle="Read-only audit of how the Profit &amp; Loss numbers were built. Findings are based on the same period and branch scope as your P&amp;L screen."
+/>
       </div>
 
       <Card>

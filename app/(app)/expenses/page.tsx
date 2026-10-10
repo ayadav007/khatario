@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Plus, Filter, Calendar, DollarSign, Tag } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -144,19 +145,22 @@ export default function ExpensesPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Expenses</h1>
-            <p className="text-gray-600 text-sm mt-1">Track your business expenses</p>
-          </div>
-          <button
+        <PageHeader
+  title="Expenses"
+  subtitle="Track your business expenses"
+
+  actions={
+    <>
+<button
             onClick={() => setShowAddModal(true)}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
           >
             <Plus className="w-5 h-5" />
             <span>Add Expense</span>
           </button>
-        </div>
+    </>
+  }
+/>
 
         {/* Stats & Filters */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

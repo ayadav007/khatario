@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useState, useEffect } from 'react';
 import { SendMessageTab } from '@/components/whatsapp/SendMessageTab';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
@@ -80,7 +81,9 @@ export default function SendMessagePage() {
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
             <Send className="w-6 h-6 text-primary-600" />
-            <h1 className="text-2xl font-bold text-gray-900">Send WhatsApp Message</h1>
+            <PageHeader
+  title="Send WhatsApp Message"
+/>
           </div>
           <p className="text-gray-600">
             Send custom messages, button messages, and media to your customers via WhatsApp.

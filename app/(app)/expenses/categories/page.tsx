@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -177,8 +178,10 @@ export default function ExpenseCategoriesPage() {
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Expense Categories</h1>
-            <p className="text-gray-600 text-sm mt-1">Organize expenses by category</p>
+            <PageHeader
+  title="Expense Categories"
+  subtitle="Organize expenses by category"
+/>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -444,12 +445,13 @@ export default function PurchaseReportPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{REPORT_TITLES[reportType] || 'Purchase Report'}</h1>
-          <p className="text-gray-600 text-sm mt-1">{REPORT_SUBTITLES[reportType] || 'Detailed purchase analysis and insights'}</p>
-        </div>
-        <button
+      <PageHeader
+  title={<>{REPORT_TITLES[reportType] || 'Purchase Report'}</>}
+  subtitle={<>{REPORT_SUBTITLES[reportType] || 'Detailed purchase analysis and insights'}</>}
+
+  actions={
+    <>
+<button
           onClick={() => exportCsv(`purchase-${reportType}-${dateRange.from}-to-${dateRange.to}.csv`, data, ROW_KEYS)}
           disabled={loading || !data}
           data-testid="purchase-report-export"
@@ -458,7 +460,9 @@ export default function PurchaseReportPage() {
           <Download className="w-5 h-5" />
           <span>Export</span>
         </button>
-      </div>
+    </>
+  }
+/>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="flex items-center space-x-4 flex-wrap">

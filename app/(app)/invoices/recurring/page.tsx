@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Plus, Calendar, User, RefreshCw, Check, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -59,19 +60,22 @@ export default function RecurringInvoicesPage() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Recurring Invoices</h1>
-            <p className="text-gray-600 text-sm mt-1">Automate periodic invoice generation</p>
-          </div>
-          <button
+        <PageHeader
+  title="Recurring Invoices"
+  subtitle="Automate periodic invoice generation"
+
+  actions={
+    <>
+<button
             onClick={() => router.push('/invoices/recurring/new')}
             className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
           >
             <Plus className="w-5 h-5" />
             <span>New Recurring Invoice</span>
           </button>
-        </div>
+    </>
+  }
+/>
 
         {/* Info Banner */}
         <div className="bg-slate-50 border border-primary-200 rounded-lg p-4">

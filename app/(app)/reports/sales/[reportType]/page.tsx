@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -778,12 +779,13 @@ function SalesReportContent() {
     
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{REPORT_TITLES[reportType] || 'Sales Report'}</h1>
-            <p className="text-gray-600 text-sm mt-1">{REPORT_SUBTITLES[reportType] || 'Detailed sales analysis and insights'}</p>
-          </div>
-          <button
+        <PageHeader
+  title={<>{REPORT_TITLES[reportType] || 'Sales Report'}</>}
+  subtitle={<>{REPORT_SUBTITLES[reportType] || 'Detailed sales analysis and insights'}</>}
+
+  actions={
+    <>
+<button
             onClick={() => exportCsv(`sales-${reportType}-${dateRange.from}-to-${dateRange.to}.csv`, data, ROW_KEYS)}
             disabled={loading || !data}
             data-testid="sales-report-export"
@@ -792,7 +794,9 @@ function SalesReportContent() {
             <Download className="w-5 h-5" />
             <span>Export</span>
           </button>
-        </div>
+    </>
+  }
+/>
 
         {/* Date Range Filter */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">

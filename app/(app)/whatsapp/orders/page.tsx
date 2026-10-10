@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -182,10 +183,10 @@ export default function WhatsAppOrdersPage() {
       <div className="max-w-6xl mx-auto space-y-6 pb-12">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Pending WhatsApp Orders</h1>
-            <p className="text-gray-600">
-              Verify payments from the WhatsApp AI agent: online checkout updates automatically when your payment provider confirms; manual UPI can use a screenshot.
-            </p>
+            <PageHeader
+  title="Pending WhatsApp Orders"
+  subtitle="Verify payments from the WhatsApp AI agent: online checkout updates automatically when your payment provider confirms; manual UPI can use a screenshot."
+/>
             <a href="/orders?channel=whatsapp" className="mt-1 inline-block text-sm text-primary hover:underline">
               Paid orders, dispatch and delivery are in Orders &amp; delivery →
             </a>

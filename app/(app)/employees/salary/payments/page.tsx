@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -95,18 +96,21 @@ export default function SalaryPaymentsPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Salary Payments</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage employee salary payments</p>
-          </div>
-          <Link href="/employees/salary/payments/new">
+        <PageHeader
+  title="Salary Payments"
+  subtitle="Manage employee salary payments"
+
+  actions={
+    <>
+<Link href="/employees/salary/payments/new">
             <Button>
               <Plus className="w-4 h-4 mr-2" />
               Process Salary
             </Button>
           </Link>
-        </div>
+    </>
+  }
+/>
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -131,10 +132,10 @@ export default function ItemCategoriesPage() {
               <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Item Categories</h1>
-              <p className="text-gray-600 text-sm mt-1">
-                Groups that shoppers see in the online store. Create any name you need — Best Seller, Grocery, Offers.
-              </p>
+              <PageHeader
+  title="Item Categories"
+  subtitle="Groups that shoppers see in the online store. Create any name you need — Best Seller, Grocery, Offers."
+/>
             </div>
           </div>
           <Button

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useEffect, useState, Suspense } from 'react';
 import { Card } from '@/components/ui/Card';
 import { useAuth } from '@/contexts/AuthContext';
@@ -94,8 +95,10 @@ function SearchContent() {
     return (
       
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Search</h1>
-          <p className="text-gray-600">Enter a search query to find invoices, customers, items, and suppliers.</p>
+          <PageHeader
+  title="Search"
+  subtitle="Enter a search query to find invoices, customers, items, and suppliers."
+/>
         </div>
       
     );
@@ -105,8 +108,10 @@ function SearchContent() {
     
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Search Results</h1>
-          <p className="text-gray-600 text-sm mt-1">Searching for: "{query}"</p>
+          <PageHeader
+  title="Search Results"
+  subtitle={<>Searching for: "{query}"</>}
+/>
         </div>
 
         {loading ? (
@@ -268,7 +273,9 @@ export default function SearchPage() {
   return (
     <Suspense fallback={
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Search</h1>
+        <PageHeader
+  title="Search"
+/>
         <div className="text-center py-12 text-gray-500">Loading...</div>
       </div>
     }>

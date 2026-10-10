@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -142,15 +143,18 @@ export default function StockValuationReportPage() {
   return (
     
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Stock Valuation Report</h1>
-            <p className="text-sm text-text-secondary mt-1">View stock value by different valuation methods</p>
-          </div>
-          <a href="/reports/stock/fifo-lots" className="text-sm text-primary-600 hover:underline font-medium">
+        <PageHeader
+  title="Stock Valuation Report"
+  subtitle="View stock value by different valuation methods"
+
+  actions={
+    <>
+<a href="/reports/stock/fifo-lots" className="text-sm text-primary-600 hover:underline font-medium">
             FIFO cost lot tracking
           </a>
-        </div>
+    </>
+  }
+/>
 
         <Card padding="md">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

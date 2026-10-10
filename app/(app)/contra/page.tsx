@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ArrowRightLeft, Loader2 } from 'lucide-react';
@@ -105,10 +106,10 @@ export default function ContraPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Contra Entries</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Cash deposits, cash withdrawals and transfers between your own bank accounts
-        </p>
+        <PageHeader
+  title="Contra Entries"
+  subtitle="Cash deposits, cash withdrawals and transfers between your own bank accounts"
+/>
       </div>
 
       <Card>

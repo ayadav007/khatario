@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -174,13 +175,11 @@ export default function ImageSizeReducerPage() {
       <div className="space-y-6 max-w-6xl mx-auto">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-            <FileImage className="w-6 h-6 text-primary-500" />
-            Image Size Reducer
-          </h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Compress and reduce image file sizes while maintaining quality
-          </p>
+          <PageHeader
+  title={<><FileImage className="w-6 h-6 text-primary-500" />
+            Image Size Reducer</>}
+  subtitle="Compress and reduce image file sizes while maintaining quality"
+/>
         </div>
 
         {/* Settings Card */}

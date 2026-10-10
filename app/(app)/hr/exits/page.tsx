@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -155,17 +156,18 @@ export default function HrExitsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Employee exits</h1>
-          <p className="text-sm text-text-secondary">
-            Resignation approvals, termination, checklists, and F&amp;F settlement
-          </p>
-        </div>
-        <Link href="/settings/hr-exit">
+      <PageHeader
+  title="Employee exits"
+  subtitle="Resignation approvals, termination, checklists, and F&amp;F settlement"
+
+  actions={
+    <>
+<Link href="/settings/hr-exit">
           <Button variant="secondary">Exit settings</Button>
         </Link>
-      </div>
+    </>
+  }
+/>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="space-y-3 p-4">

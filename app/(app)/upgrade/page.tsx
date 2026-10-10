@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,12 +37,10 @@ export default function UpgradePage() {
           <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100 mb-4">
             <Lock className="h-8 w-8 text-yellow-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            Feature Not Available
-          </h1>
-          <p className="text-gray-600">
-            This feature is not available in your current plan.
-          </p>
+          <PageHeader
+  title="Feature Not Available"
+  subtitle="This feature is not available in your current plan."
+/>
         </div>
 
         <div className="mb-6">

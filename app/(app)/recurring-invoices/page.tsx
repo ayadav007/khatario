@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2, Pause, Play, Zap } from 'lucide-react';
@@ -173,11 +174,10 @@ export default function RecurringInvoicesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Recurring invoices</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Raise an invoice automatically on a schedule, copied from an existing invoice. Runs daily; each period is
-          raised only once.
-        </p>
+        <PageHeader
+  title="Recurring invoices"
+  subtitle="Raise an invoice automatically on a schedule, copied from an existing invoice. Runs daily; each period is raised only once."
+/>
       </div>
 
       <Card>

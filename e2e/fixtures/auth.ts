@@ -14,9 +14,16 @@ export async function loginAsTestUser(page: Page) {
     );
   }
 
-  await page.goto('/login');
+  await page.goto('/login', { waitUntil: 'domcontentloaded', timeout: 120000 });
   // Wait for login form to be ready (handles slow initial load / DB errors)
-  await page.getByPlaceholder(/enter your phone/i).waitFor({ state: 'visible', timeout: 60000 });
+  await page.getByPlaceholder(/enter your phone/i).waitFor({ state: 'visible', timeout: 120000 });
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll('button')].find((el) =>
+      /continue/i.test(el.textContent || '')
+    );
+    if (!button) return false;
+    return Object.keys(button).some((key) => key.startsWith('__react'));
+  }, undefined, { timeout: 120000 });
   await page.getByPlaceholder(/enter your phone/i).fill(phone);
   await page.getByRole('button', { name: /continue/i }).click();
   await page.getByPlaceholder(/enter your password/i).waitFor({ state: 'visible', timeout: 10000 });
@@ -27,7 +34,7 @@ export async function loginAsTestUser(page: Page) {
       const path = url.pathname;
       return path !== '/login' && !path.startsWith('/login/');
     },
-    { timeout: 30000 },
+    { timeout: 90000 },
   );
 }
 

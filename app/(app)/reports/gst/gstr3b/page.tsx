@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -130,7 +131,9 @@ export default function GSTR3BPage() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">GSTR-3B Return</h1>
+              <PageHeader
+  title="GSTR-3B Return"
+/>
               {data?.reconciliation?.status === 'mismatch' && (
                 <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900 border border-amber-200">
                   Mismatch detected

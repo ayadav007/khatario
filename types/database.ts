@@ -724,6 +724,7 @@ export interface Supplier {
   pan?: string | null;
   opening_balance: number;
   opening_balance_type: 'debit' | 'credit';
+  current_balance?: number;
   linked_business_id?: string | null; // References business account if supplier is also a user
   approval_status?: 'pending' | 'approved' | 'rejected' | 'none'; // Status of supplier relationship
   requested_by_business_id?: string | null; // Business that initiated the supplier relationship request

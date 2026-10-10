@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -82,8 +83,10 @@ export default function PerformanceDashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">Performance Dashboard</h1>
-            <p className="text-sm text-text-secondary mt-1">Track employee sales performance and targets</p>
+            <PageHeader
+  title="Performance Dashboard"
+  subtitle="Track employee sales performance and targets"
+/>
           </div>
         </div>
 

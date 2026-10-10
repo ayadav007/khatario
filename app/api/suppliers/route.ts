@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         id, business_id, name, phone, email, address,
         city, state, state_code, pincode, gstin,
-        opening_balance, opening_balance_type,
+        opening_balance, opening_balance_type, COALESCE(current_balance, 0) AS current_balance,
         is_active, created_at, updated_at,
         linked_business_id, approval_status, allow_low_stock_access
       FROM suppliers

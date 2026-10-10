@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2, X } from 'lucide-react';
@@ -140,10 +141,10 @@ export default function AdvancesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Advances</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Customer advances (receipt vouchers, GST on service advances) and advances paid to suppliers
-        </p>
+        <PageHeader
+  title="Advances"
+  subtitle="Customer advances (receipt vouchers, GST on service advances) and advances paid to suppliers"
+/>
       </div>
 
       <div className="flex gap-2">

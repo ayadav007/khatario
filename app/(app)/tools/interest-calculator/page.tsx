@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -37,13 +38,11 @@ export default function InterestCalculatorPage() {
       <div className="space-y-6 max-w-3xl mx-auto">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-primary-500" />
-            Interest Calculator
-          </h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Calculate interest on overdue invoices, loans, or any amount
-          </p>
+          <PageHeader
+  title={<><TrendingUp className="w-6 h-6 text-primary-500" />
+            Interest Calculator</>}
+  subtitle="Calculate interest on overdue invoices, loans, or any amount"
+/>
         </div>
 
         {/* Main Card */}

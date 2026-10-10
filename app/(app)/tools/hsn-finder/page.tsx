@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -66,17 +67,14 @@ export default function HSNFinderPage() {
     
       <div className="space-y-6 max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-              <Search className="w-6 h-6 text-primary-500" />
-              GST HSN/SAC Finder Tool
-            </h1>
-            <p className="text-text-secondary text-sm mt-1">
-              Search the most commonly used HSN codes and GST rates for Indian small businesses.
-            </p>
-          </div>
-          <Button 
+        <PageHeader
+  title={<><Search className="w-6 h-6 text-primary-500" />
+              GST HSN/SAC Finder Tool</>}
+  subtitle="Search the most commonly used HSN codes and GST rates for Indian small businesses."
+
+  actions={
+    <>
+<Button 
             onClick={() => window.open('/downloads/Most_Used_HSN_India.xlsx', '_blank')}
             variant="secondary" 
             className="flex items-center gap-2"
@@ -84,7 +82,9 @@ export default function HSNFinderPage() {
             <Download className="w-4 h-4" />
             Download Excel Master
           </Button>
-        </div>
+    </>
+  }
+/>
 
         {/* Search & Filter Bar */}
         <Card className="p-4 bg-slate-50 border-primary-100">

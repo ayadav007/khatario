@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -135,13 +136,11 @@ export default function PANValidatorPage() {
       <div className="space-y-6 max-w-3xl mx-auto">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-            <CreditCard className="w-6 h-6 text-primary-500" />
-            PAN Card Validator
-          </h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Validate and verify PAN (Permanent Account Number) card format
-          </p>
+          <PageHeader
+  title={<><CreditCard className="w-6 h-6 text-primary-500" />
+            PAN Card Validator</>}
+  subtitle="Validate and verify PAN (Permanent Account Number) card format"
+/>
         </div>
 
         {/* Main Card */}

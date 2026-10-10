@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { PageHeader } from '@/components/layout/PageHeader';
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -433,12 +434,13 @@ export default function AccountsPage() {
   return (
     
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">Chart of Accounts</h1>
-            <p className="text-sm text-text-secondary mt-1">Manage your accounting accounts</p>
-          </div>
-          <div className="flex gap-3">
+        <PageHeader
+  title="Chart of Accounts"
+  subtitle="Manage your accounting accounts"
+
+  actions={
+    <>
+<div className="flex gap-3">
             <Link href="/settings/account-mappings">
               <Button variant="secondary">
                 <Settings className="w-4 h-4 mr-2" />
@@ -481,7 +483,9 @@ export default function AccountsPage() {
               </Button>
             </Link>
           </div>
-        </div>
+    </>
+  }
+/>
 
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
