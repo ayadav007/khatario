@@ -46,7 +46,7 @@ interface ItemAutocompleteProps {
   onSelectDone?: () => void;
   disabled?: boolean;
   inputRef?: React.RefObject<HTMLInputElement>;
-  onAddNew?: () => void;
+  onAddNew?: (query?: string) => void;
   className?: string;
   warehouseId?: string;
   categoryId?: string;
@@ -831,7 +831,7 @@ export const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                  onMouseDown={(e) => {
                    e.preventDefault();
                    if (onAddNew) {
-                     onAddNew();
+                     onAddNew(query);
                    } else {
                      window.location.href = '/items/new';
                    }

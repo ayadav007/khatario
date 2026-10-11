@@ -127,7 +127,22 @@ export async function cancelPostedInvoiceInTransaction(
       WHERE id = $2 AND business_id = $3 AND status = 'final'`,
     [cancellationDetails, inv.id, input.businessId],
   );
+  await releaseWorkOrderAfterInvoiceCancel(client, input.businessId, inv.id);
   return 'cancelled';
+}
+
+/** A cancelled invoice no longer counts as the work order's invoice, so the job can be billed again. */
+export async function releaseWorkOrderAfterInvoiceCancel(
+  client: PoolClient,
+  businessId: string,
+  invoiceId: string,
+): Promise<void> {
+  await client.query(
+    `UPDATE work_orders
+        SET converted_invoice_id = NULL
+      WHERE business_id = $1 AND converted_invoice_id = $2`,
+    [businessId, invoiceId],
+  );
 }
 
 /** Puts goods sold on a final invoice back, and records an `invoice_cancel` movement. */

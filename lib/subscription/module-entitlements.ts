@@ -137,7 +137,7 @@ export const MODULE_ADD_CONFIG: Record<
     status: 'trial',
     label: 'HR',
     description:
-      'Full HR beyond Billing Lite: leave, shifts, employee portal, and statutory payroll.',
+      'Full HR beyond Billing Lite: leave, shifts, and the employee portal.',
   },
   connect: {
     trialPlanId: 'connect',

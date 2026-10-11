@@ -13,6 +13,7 @@ import {
   DEFAULT_LABOR_SAC,
   DEFAULT_LABOR_TAX_RATE,
   WORK_ORDER_PRIORITIES,
+  workOrderInvoiceLineDrafts,
   type WorkOrderLineInput,
 } from '@/lib/work-orders/work-order-math';
 
@@ -21,6 +22,7 @@ export * from '@/lib/work-orders/work-order-math';
 export class WorkOrderInputError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message);
+    this.name = 'WorkOrderInputError';
   }
 }
 
@@ -198,41 +200,39 @@ export async function writeWorkOrder(
 
 /** Invoice lines for a completed work order: its materials, then labour and other charges. */
 export function buildWorkOrderInvoiceLines(wo: any, items: any[]): SourceLine[] {
-  const lines: SourceLine[] = items
-    .filter((r) => Number(r.qty) > 0)
-    .map((r) => ({
-      item_id: r.item_id,
-      item_name: r.item_name,
-      description: r.description,
-      hsn_sac: r.hsn_sac,
-      quantity: Number(r.used_qty) > 0 ? r.used_qty : r.qty,
-      unit: r.unit,
-      unit_price: r.unit_price,
-      tax_rate: r.tax_rate,
-    }));
-  const sac = wo.labor_sac || DEFAULT_LABOR_SAC;
-  const rate = wo.labor_tax_rate ?? DEFAULT_LABOR_TAX_RATE;
-  if (Number(wo.labor_cost) > 0) {
-    lines.push({
-      item_name: 'Labour charges',
-      description: `Work order ${wo.work_order_number}: ${String(wo.work_description || '').slice(0, 400)}`,
-      hsn_sac: sac,
-      quantity: 1,
-      unit: 'NOS',
-      unit_price: wo.labor_cost,
-      tax_rate: rate,
-    });
+  return workOrderInvoiceLineDrafts(wo, items);
+}
+
+/** Attach a new invoice to a completed work order. A cancelled invoice does not block a new one. */
+export async function claimWorkOrderForInvoice(
+  client: Queryable,
+  businessId: string,
+  workOrderId: string,
+  invoiceId: string,
+): Promise<void> {
+  const locked = await client.query(
+    `SELECT id, status, converted_invoice_id
+       FROM work_orders
+      WHERE id = $1 AND business_id = $2
+      FOR UPDATE`,
+    [workOrderId, businessId],
+  );
+  const wo = locked.rows[0];
+  if (!wo) throw new WorkOrderInputError('Work order not found', 404);
+  if (wo.status !== 'completed') {
+    throw new WorkOrderInputError('Mark the work order as completed before raising the invoice', 409);
   }
-  if (Number(wo.other_cost) > 0) {
-    lines.push({
-      item_name: 'Other charges',
-      description: `Work order ${wo.work_order_number}`,
-      hsn_sac: sac,
-      quantity: 1,
-      unit: 'NOS',
-      unit_price: wo.other_cost,
-      tax_rate: rate,
-    });
+  if (wo.converted_invoice_id && wo.converted_invoice_id !== invoiceId) {
+    const linked = await client.query(
+      `SELECT status FROM invoices WHERE id = $1 AND business_id = $2`,
+      [wo.converted_invoice_id, businessId],
+    );
+    if (linked.rows[0]?.status !== 'cancelled') {
+      throw new WorkOrderInputError('An invoice has already been raised for this work order', 409);
+    }
   }
-  return lines;
+  await client.query(
+    `UPDATE work_orders SET converted_invoice_id = $1 WHERE id = $2 AND business_id = $3`,
+    [invoiceId, workOrderId, businessId],
+  );
 }

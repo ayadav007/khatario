@@ -27,7 +27,40 @@ import {
   searchCustomersForBilling,
 } from '@/lib/offline/catalog/client-search';
 import { isAppOffline } from '@/lib/network/offline-state';
+import { getCatalogRepository } from '@/lib/offline/catalog/catalog-service';
+import type { CatalogCustomer } from '@/lib/offline/catalog/types';
 import { HeaderButton, inr, initials, Kbd, SectionLabel } from './ui';
+
+async function withLiveBalances(
+  rows: Customer[],
+  scope?: { businessId: string; userId: string }
+): Promise<Customer[]> {
+  if (isAppOffline() || rows.length === 0) return rows;
+  try {
+    const ids = rows.map((c) => c.id).filter(Boolean).join(',');
+    const res = await fetch(`/api/customers/balances?ids=${encodeURIComponent(ids)}`);
+    if (!res.ok) return rows;
+    const data = await res.json();
+    const byId = new Map<string, number>(
+      ((data.customers || []) as Array<{ id: string; current_balance: number }>).map((c) => [
+        c.id,
+        Number(c.current_balance) || 0,
+      ])
+    );
+    const merged = rows.map((c) => (byId.has(c.id) ? { ...c, current_balance: byId.get(c.id) } : c));
+    if (scope) {
+      try {
+        const repo = await getCatalogRepository();
+        await repo.upsertCustomers(scope, merged as CatalogCustomer[]);
+      } catch {
+        // The list on screen still uses the live balance.
+      }
+    }
+    return merged;
+  } catch {
+    return rows;
+  }
+}
 
 export const isOverseasCustomer = (c: Customer | null | undefined) =>
   !!c?.country && !/^\s*(india|in|bharat)\s*$/i.test(c.country);
@@ -214,7 +247,7 @@ function CustomerCard({
             </span>
           ) : outstanding < -0.004 ? (
             <span className="flex items-center gap-1.5 font-semibold text-sky-600">
-              {inr(-outstanding, 0)} advance
+              {inr(-outstanding, 0)} credit
             </span>
           ) : (
             <span className="flex items-center gap-1.5 font-semibold text-emerald-600">
@@ -263,8 +296,10 @@ function CustomerSearch({
 
   useEffect(() => {
     if (!business?.id || !user?.id) return;
-    void listCatalogCustomersLocal({ businessId: business.id, userId: user.id }, 50).then((rows) => {
-      if (rows?.length) setRecent(rows as Customer[]);
+    void listCatalogCustomersLocal({ businessId: business.id, userId: user.id }, 50).then(async (rows) => {
+      if (!rows?.length) return;
+      const live = await withLiveBalances(rows as Customer[], { businessId: business.id, userId: user.id });
+      setRecent(live);
     });
   }, [business?.id, user?.id]);
 
@@ -289,8 +324,10 @@ function CustomerSearch({
         const fromCatalog = await searchCustomersForBilling(scope, q);
         if (cancelled) return;
         if (fromCatalog != null) {
-          cacheRef.current.set(key, fromCatalog as Customer[]);
-          setRemote(fromCatalog as Customer[]);
+          const live = await withLiveBalances(fromCatalog as Customer[], scope);
+          if (cancelled) return;
+          cacheRef.current.set(key, live);
+          setRemote(live);
           return;
         }
         if (isAppOffline()) {

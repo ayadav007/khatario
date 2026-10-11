@@ -711,6 +711,19 @@ CREATE TABLE IF NOT EXISTS credit_notes (
     created_by UUID REFERENCES users(id)
 );
 
+-- Credit from a paid return, applied to a later invoice
+CREATE TABLE IF NOT EXISTS credit_note_applications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    credit_note_id UUID NOT NULL REFERENCES credit_notes(id) ON DELETE RESTRICT,
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
+    amount DECIMAL(15, 2) NOT NULL CHECK (amount > 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID REFERENCES users(id),
+    reversed_at TIMESTAMP,
+    reversed_by UUID REFERENCES users(id)
+);
+
 -- Credit Note Items
 CREATE TABLE IF NOT EXISTS credit_note_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

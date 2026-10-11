@@ -3,6 +3,7 @@ import path from 'path';
 import Handlebars from 'handlebars';
 import { Invoice, Business, Customer } from '@/types/database';
 import { registerInvoiceHandlebarsPartials } from './handlebars-invoice-partials';
+import { renderLocalizedPrintHtml, resolveDocumentLanguage } from './print-language';
 
 // Define types for data injection
 interface RenderData {
@@ -180,14 +181,16 @@ export class InvoiceRenderer {
       const options = args[args.length - 1] as Handlebars.HelperOptions;
       const result = args.slice(0, -1).some((v) => !!v);
       if (typeof options?.fn !== 'function') return result;
-      return result ? options.fn(this) : options.inverse(this);
+      if (result) return options.fn(this);
+      return typeof options.inverse === 'function' ? options.inverse(this) : '';
     });
 
     Handlebars.registerHelper('and', function (this: unknown, ...args: unknown[]) {
       const options = args[args.length - 1] as Handlebars.HelperOptions;
       const result = args.slice(0, -1).every((v) => !!v);
       if (typeof options?.fn !== 'function') return result;
-      return result ? options.fn(this) : options.inverse(this);
+      if (result) return options.fn(this);
+      return typeof options.inverse === 'function' ? options.inverse(this) : '';
     });
 
     // Helper to calculate dynamic colspan for item table totals
@@ -297,8 +300,6 @@ export class InvoiceRenderer {
     const firstLine = source.substring(0, 100);
     console.log('[Renderer] First 100 chars of template:', firstLine);
     
-    const template = Handlebars.compile(source);
-    
     // Ensure settings object exists and has defaults
     if (!data.settings) {
       data.settings = {};
@@ -328,8 +329,17 @@ export class InvoiceRenderer {
     // Ensure data structure is correct for Handlebars
     // Handlebars expects the root to be the data object itself
     try {
-      const result = template(data);
-      return result;
+      const payload = data as RenderData & {
+        document_language?: unknown;
+        business_id?: string;
+        business?: { id?: string; business_id?: string };
+        settings?: { document_language?: unknown };
+      };
+      const language = await resolveDocumentLanguage(
+        payload.document_language || payload.settings?.document_language,
+        payload.business_id || payload.business?.business_id || payload.business?.id,
+      );
+      return renderLocalizedPrintHtml(source, data, language);
     } catch (renderError: any) {
       console.error('[Renderer] Template rendering error:', renderError);
       console.error('[Renderer] Error stack:', renderError.stack);

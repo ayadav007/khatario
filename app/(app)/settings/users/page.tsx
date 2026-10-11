@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import Link from 'next/link';
-import { Plus, Edit, Trash2, User, UserCheck, UserX, Loader2, Warehouse, Building2 } from 'lucide-react';
+import { Edit, Trash2, User, UserCheck, UserX, Loader2, Warehouse, Building2 } from 'lucide-react';
 import { UserWarehouseAccess } from '@/components/settings/UserWarehouseAccess';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
@@ -381,14 +381,8 @@ export default function ManageUsersPage() {
     <>
     <SettingsPageShell
         title="Manage Users"
-        description="Add and manage team members"
+        description="People who can sign in. Add someone new from Employees, then give them a role there."
         icon={User}
-        actions={
-          <Button onClick={() => setShowAddModal(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add New User
-          </Button>
-        }
       >
         <SubscriptionUsageBanner
           businessId={business?.id}
@@ -404,7 +398,7 @@ export default function ManageUsersPage() {
         ) : users.length === 0 ? (
           <Card padding="lg" className="text-center">
             <User className="mx-auto mb-4 h-12 w-12 text-text-muted" />
-            <p className="type-body-secondary">No users found. Add your first team member!</p>
+            <p className="type-body-secondary">No one with a login yet. Add them from Employees and choose a sign-in role.</p>
           </Card>
         ) : (
           <div className="space-y-2">

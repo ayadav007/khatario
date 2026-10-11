@@ -24,9 +24,9 @@ Yes. Manufacturers can manage purchases of raw material, work orders, delivery c
 
 Yes. Service businesses can bill services with SAC codes, send quotations and estimates, use recurring invoices for monthly clients and track payments.
 
-## Is Khatario good for restaurants?
+## Is Khatario good for restaurants or cafés?
 
-Khatario can handle restaurant billing and stock, but it does not have kitchen order tickets (KOT) or table management. Restaurants that need KOT should book a demo to discuss.
+No. Khatario does not have kitchen order tickets (KOT), table management, or other restaurant tools. It is built for shops, wholesalers, and service businesses.
 
 ## Which industries use Khatario?
 

@@ -1,4 +1,4 @@
-import { attendanceMatrixCell, buildAttendanceMatrix } from '@/lib/hr/attendance-matrix';
+import { attendanceMatrixCell, buildAttendanceMatrix, monthCalendarSummary } from '@/lib/hr/attendance-matrix';
 import { DEFAULT_WEEKLY_OFF_POLICY } from '@/lib/hr/shift-overtime/types';
 
 describe('attendance matrix cells', () => {
@@ -44,7 +44,8 @@ describe('attendance matrix cells', () => {
           code: 'EMP-101',
           name: 'Rajesh Sharma',
           weeklyOff: DEFAULT_WEEKLY_OFF_POLICY,
-          offDates: ['2026-06-15'],
+          offDates: [],
+          holidayDates: ['2026-06-15'],
         },
       ],
       attendance: [
@@ -63,11 +64,31 @@ describe('attendance matrix cells', () => {
     expect(worker.cells[2]).toMatchObject({ label: 'HD' });
     expect(worker.cells[3]).toMatchObject({ label: 'A' });
     const sunday = matrix.days.findIndex((day) => day.date === '2026-06-07');
-    expect(worker.cells[sunday].kind).toBe('off');
+    expect(worker.cells[sunday]).toMatchObject({ kind: 'off', calendarCode: 'W' });
     const holiday = matrix.days.findIndex((day) => day.date === '2026-06-15');
-    expect(worker.cells[holiday].kind).toBe('off');
+    expect(worker.cells[holiday]).toMatchObject({ kind: 'off', calendarCode: 'H' });
+    expect(worker.cells[2].calendarCode).toBe('P/A');
     expect(worker.days).toBe(3);
     expect(worker.totalHours).toBe(22);
     expect(worker.totalHoursLabel).toBe('22.0h');
+    expect(monthCalendarSummary(worker.cells, 30)).toMatchObject({
+      totalDaysLabel: '30.0',
+      presentsLabel: '2.5',
+      absentsLabel: '1.5',
+      leavesLabel: '0.0',
+      officeHoursLabel: '22.00',
+    });
+  });
+
+  it('counts early and late minutes and a missing out punch', () => {
+    const cell = attendanceMatrixCell({
+      status: 'present',
+      totalHours: 8,
+      isOff: false,
+      checkInMinutes: 9 * 60 + 20,
+      shiftStartMinutes: 9 * 60,
+      missingOutPunch: true,
+    });
+    expect(cell).toMatchObject({ calendarCode: 'P', lateMinutes: 20, earlyMinutes: 0, missingOutPunch: true });
   });
 });

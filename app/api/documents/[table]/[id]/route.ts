@@ -52,10 +52,20 @@ export async function GET(
            c.email as party_email,
            c.phone as party_phone`;
 
+    const invoiceJoin =
+      table === 'work_orders'
+        ? `LEFT JOIN invoices conv ON conv.id = doc.converted_invoice_id AND conv.business_id = doc.business_id`
+        : '';
+    const invoiceSelect =
+      table === 'work_orders'
+        ? `, conv.status AS converted_invoice_status, conv.invoice_number AS converted_invoice_number`
+        : '';
+
     const doc = await db.queryOne(
-      `SELECT doc.*, ${partySelect}
+      `SELECT doc.*, ${partySelect}${invoiceSelect}
        FROM ${table} doc
        ${partyJoin}
+       ${invoiceJoin}
        WHERE doc.id = $1 AND doc.business_id = $2`,
       [id, businessId]
     );

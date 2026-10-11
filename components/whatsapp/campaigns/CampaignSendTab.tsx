@@ -11,6 +11,7 @@ import { MessageBuilder, MessageContent } from './MessageBuilder';
 import { RecipientInput, Recipient } from './RecipientInput';
 import { AntiBanSettings, AntiBanSettings as AntiBanSettingsType } from './AntiBanSettings';
 import { Send, Loader2, AlertCircle } from 'lucide-react';
+import { WHO_TO_MESSAGE_DRAFT_KEY, type WhoToMessageDraft } from '@/lib/whatsapp/who-to-message';
 
 const DEFAULT_MESSAGE: MessageContent = {
   type: 'text',
@@ -43,6 +44,30 @@ export function CampaignSendTab() {
       fetchWhatsAppStatus();
     }
   }, [business?.id]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(WHO_TO_MESSAGE_DRAFT_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(WHO_TO_MESSAGE_DRAFT_KEY);
+      const draft = JSON.parse(raw) as WhoToMessageDraft;
+      if (Array.isArray(draft.recipients) && draft.recipients.length > 0) {
+        setRecipients(
+          draft.recipients
+            .filter((r) => r && typeof r.phone === 'string' && r.phone.trim())
+            .map((r) => ({ phone: r.phone.trim(), name: r.name })),
+        );
+      }
+      if (typeof draft.messageText === 'string' && draft.messageText.trim()) {
+        setMessage((current) => ({ ...current, text: draft.messageText }));
+      }
+      if (typeof draft.campaignName === 'string' && draft.campaignName.trim()) {
+        setCampaignName(draft.campaignName.trim());
+      }
+    } catch {
+      sessionStorage.removeItem(WHO_TO_MESSAGE_DRAFT_KEY);
+    }
+  }, []);
 
   const fetchWhatsAppStatus = async () => {
     if (!business?.id) return;

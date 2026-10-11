@@ -31,6 +31,7 @@ import {
 } from '@/components/custom-fields/CustomFieldsManager';
 import type { CustomFieldValues } from '@/types/custom-fields';
 import { extraGalleryUrls, sanitizeGalleryUrls } from '@/lib/store/item-gallery';
+import { CategoryCombobox } from '@/components/items/CategoryCombobox';
 
 interface Supplier {
   id: string;
@@ -1061,22 +1062,16 @@ export default function NewItemPage() {
                       placeholder="e.g. Parle-G Biscuit"
                     />
                     <div>
-                      <label className="type-label mb-1.5 block">
-                        Category
-                      </label>
-                      <select
-                        name="category_id"
+                      <CategoryCombobox
+                        categories={categories}
                         value={formData.category_id}
-                        onChange={handleChange}
-                        className="input w-full"
-                      >
-                        <option value="">No category</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(categoryId) => setFormData((prev) => ({ ...prev, category_id: categoryId }))}
+                        onCategoryCreated={(category) =>
+                          setCategories((prev) =>
+                            prev.some((row) => row.id === category.id) ? prev : [...prev, category]
+                          )
+                        }
+                      />
                       <p className="text-xs text-text-muted mt-1">
                         <Link href="/items/categories" className="link-primary">
                           Manage categories

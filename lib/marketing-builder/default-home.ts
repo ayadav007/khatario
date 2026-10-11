@@ -8,14 +8,14 @@ import type { MarketingDocument } from '@/lib/marketing-builder/sanitize';
 const HOME_SECTIONS = [
   'Hero',
   'SocialProof',
-  'ProblemSolution',
   'Walkthrough',
   'KeyFeatures',
-  'TemplateGallery',
+  'ProblemSolution',
   'WhoItsFor',
   'ConnectedSupply',
   'TrustStrip',
   'Pricing',
+  'TemplateGallery',
   'Faq',
   'FinalCta',
 ] as const;

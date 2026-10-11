@@ -58,6 +58,7 @@ export function CreateCustomerModal({
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ current: number; limit: number } | null>(null);
   const [sameAsBilling, setSameAsBilling] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<{ field: 'phone' | 'email'; message: string } | null>(null);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const hasCheckedLimitsRef = useRef(false);
   const prevIsOpenRef = useRef(false);
@@ -166,6 +167,7 @@ export function CreateCustomerModal({
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
       
+      if (name === 'email') setDuplicateError(null);
       if (name === 'gstin') {
         setGstinVerified(false);
         setGstinError(false);
@@ -304,10 +306,16 @@ export function CreateCustomerModal({
 
       if (res.ok) {
         const data = await res.json();
+        if (data.deduplicated) {
+          const field = data.code === 'DUPLICATE_EMAIL' ? 'email' : 'phone';
+          const message = String(data.error || 'A customer with these details already exists.');
+          setDuplicateError({ field, message });
+          toast.warning(message);
+          return;
+        }
         const customer = data.customer;
         
         if (customer) {
-          // Call onSuccess with the created customer
           onSuccess(customer);
           onClose();
         }
@@ -358,7 +366,11 @@ export function CreateCustomerModal({
                 <IntlPhoneInput
                   label="Phone Number"
                   value={formData.phone}
-                  onChange={(full) => setFormData((prev) => ({ ...prev, phone: full }))}
+                  onChange={(full) => {
+                    setDuplicateError(null);
+                    setFormData((prev) => ({ ...prev, phone: full }));
+                  }}
+                  error={duplicateError?.field === 'phone' ? duplicateError.message : undefined}
                   nationalPlaceholder="Mobile number"
                 />
               </div>
@@ -377,7 +389,7 @@ export function CreateCustomerModal({
               <div className="md:col-span-2">
                 <Input label="Company Name (Optional)" name="company_name" value={formData.company_name} onChange={handleChange} placeholder="e.g. Rahul Traders" />
               </div>
-              <Input label="Email (Optional)" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="rahul@example.com" />
+              <Input label="Email (Optional)" name="email" type="email" value={formData.email} onChange={handleChange} placeholder="rahul@example.com" error={duplicateError?.field === 'email' ? duplicateError.message : undefined} />
               
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-text-secondary mb-1.5">GSTIN (Optional)</label>

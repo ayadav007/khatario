@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne, queryRows, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
-import { cancelPostedInvoiceInTransaction } from '@/lib/invoices/cancel-final-invoice';
+import {
+  cancelPostedInvoiceInTransaction,
+  releaseWorkOrderAfterInvoiceCancel,
+} from '@/lib/invoices/cancel-final-invoice';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,6 +148,7 @@ export async function PATCH(
         [cancellationDetails, id, businessScope]
       );
       updated = res.rows[0];
+      await releaseWorkOrderAfterInvoiceCancel(client, businessScope, id);
       }
 
       await client.query('COMMIT');

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { IntlPhoneInput } from '@/components/ui/IntlPhoneInput';
 import { Button } from '@/components/ui/Button';
 import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
+import { EmployeeLoginRoleFields } from '@/components/hr/EmployeeLoginRoleFields';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
@@ -65,6 +66,8 @@ export default function EditEmployeePage() {
     reporting_manager_id: '',
     employment_type: 'full_time' as 'full_time' | 'part_time' | 'contract',
     access_type: 'attendance_only' as 'attendance_only',
+    role_id: '',
+    login_password: '',
     pay_basis: 'monthly' as 'daily' | 'monthly',
     salary: '',
     emergency_contact_name: '',
@@ -146,6 +149,8 @@ export default function EditEmployeePage() {
           reporting_manager_id: emp.reporting_manager_id || '',
           employment_type: emp.employment_type || 'full_time',
           access_type: emp.access_type || 'attendance_only',
+          role_id: emp.role_id || '',
+          login_password: '',
           pay_basis: emp.pay_basis === 'daily' ? 'daily' : 'monthly',
           salary: emp.salary != null ? String(emp.salary) : '',
           emergency_contact_name: emp.emergency_contact_name || '',
@@ -214,7 +219,9 @@ export default function EditEmployeePage() {
         joining_date: formData.joining_date || null,
         reporting_manager_id: fullHr ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
-        access_type: formData.access_type,
+        access_type: formData.role_id ? 'full' : 'attendance_only',
+        role_id: formData.role_id || null,
+        password: formData.login_password || undefined,
         salary: formData.salary ? Number(formData.salary) : null,
         pay_basis: formData.pay_basis,
         emergency_contact_name: formData.emergency_contact_name.trim() || null,
@@ -338,6 +345,19 @@ export default function EditEmployeePage() {
                   value={formData.employee_code}
                   onChange={handleChange}
                   required
+                />
+                <EmployeeLoginRoleFields
+                  roleId={formData.role_id}
+                  password={formData.login_password}
+                  allowWhenSeatsFull={Boolean(formData.role_id)}
+                  onRoleId={(role_id) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      role_id,
+                      login_password: role_id ? prev.login_password : '',
+                    }))
+                  }
+                  onPassword={(login_password) => setFormData((prev) => ({ ...prev, login_password }))}
                 />
               </div>
             </AnnotatedFormSection>

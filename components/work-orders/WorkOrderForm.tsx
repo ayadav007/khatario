@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
+import { CreateItemModal } from '@/components/modals/CreateItemModal';
 import { Plus, Trash2, Save, Loader2, CalendarCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -92,6 +93,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
   const [chargeTax, setChargeTax] = useState(true);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [items, setItems] = useState<MaterialRow[]>([]);
+  const [itemModal, setItemModal] = useState<{ rowId: string; name: string } | null>(null);
 
   const { allowed: canSave, reason } = useAuthorizationGuard({
     resource: 'work_orders',
@@ -497,6 +499,7 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
                               ...(row.qty > 0 ? {} : { qty: 1 }),
                             });
                           }}
+                          onAddNew={(query) => setItemModal({ rowId: row.id, name: query || row.item_name })}
                         />
                       </td>
                       <td className="px-2 py-2" data-label="HSN/SAC">
@@ -691,6 +694,34 @@ export function WorkOrderForm({ editId }: { editId?: string }) {
           )}
         </div>
       </fieldset>
+      {itemModal && (
+        <CreateItemModal
+          isOpen
+          initialData={{ name: itemModal.name }}
+          onClose={() => setItemModal(null)}
+          onSuccess={(item) => {
+            const rowId = itemModal.rowId;
+            setItems((prev) =>
+              prev.map((row) =>
+                row.id === rowId
+                  ? {
+                      ...row,
+                      item_id: item.id,
+                      item_name: item.name,
+                      hsn_sac: item.hsn_sac || '',
+                      unit: item.unit || 'PCS',
+                      unit_price: Number(item.selling_price ?? 0),
+                      tax_rate: Number(item.tax_rate ?? 0),
+                      qty: row.qty > 0 ? row.qty : 1,
+                    }
+                  : row
+              )
+            );
+            setItemModal(null);
+            toast.success(`Item "${item.name}" added`);
+          }}
+        />
+      )}
     </div>
   );
 }

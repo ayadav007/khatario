@@ -95,6 +95,8 @@ export async function GET(request: NextRequest) {
       INNER JOIN users u ON e.id = u.id
       LEFT JOIN shifts s ON a.shift_id = s.id
       WHERE e.business_id = $1
+        AND e.is_active = true
+        AND u.is_active = true
     `;
     const params: any[] = [businessId];
     let paramIndex = 2;

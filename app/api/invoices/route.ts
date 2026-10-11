@@ -357,6 +357,7 @@ export async function POST(request: NextRequest) {
       status = 'draft',
       payment, // Optional single payment object (deprecated, use payments array)
       payments, // Optional array of payment objects
+      customer_credit_amount,
       billing_address,
       shipping_address,
       place_of_supply_state_code,
@@ -399,6 +400,7 @@ export async function POST(request: NextRequest) {
       attachments,
       round_off,
       request_id,
+      work_order_id,
       // Estimates/Quotations fields for proforma invoices
       expiry_date,
       estimate_status,
@@ -1434,6 +1436,21 @@ export async function POST(request: NextRequest) {
       await client.query('ROLLBACK');
       return NextResponse.json(draftDocumentPaymentError('invoice'), { status: 409 });
     }
+    const requestedCustomerCredit = round2(Number(customer_credit_amount) || 0);
+    if (requestedCustomerCredit > 0.004 && (status !== 'final' || document_type === 'proforma_invoice')) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Customer credit can only be used on a final tax invoice', code: 'CREDIT_NOT_ON_DRAFT' },
+        { status: 409 }
+      );
+    }
+    if (requestedCustomerCredit > 0.004 && invoiceId) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Customer credit can only be applied when the invoice is first saved', code: 'CREDIT_ON_UPDATE' },
+        { status: 409 }
+      );
+    }
 
     // Existing draft saves may omit payments[] so a previously stored amount is kept as-is.
     if (paymentEntries.length > 0) {
@@ -2351,8 +2368,46 @@ export async function POST(request: NextRequest) {
     // Update customer current_balance (only if status is final and customer exists)
     // For invoices: balance increases customer's receivable
     // Proforma invoices don't affect customer balance - they are estimates/quotes
+    // Credit already reduced the balance when the credit note was issued, so the new
+    // invoice must add back the amount settled by that credit as well as the amount still due.
+    let creditApplied = 0;
+    if (
+      !invoiceId &&
+      status === 'final' &&
+      customer_id &&
+      document_type !== 'proforma_invoice' &&
+      requestedCustomerCredit > 0.004
+    ) {
+      const { applyCustomerCredit, CustomerCreditError } = await import('@/lib/credit-notes/customer-credit');
+      try {
+        const applied = await applyCustomerCredit(client, {
+          businessId: business_id,
+          customerId: customer_id,
+          invoiceId: invoice.id,
+          amount: requestedCustomerCredit,
+          userId: actorUserId,
+        });
+        creditApplied = applied.amount;
+      } catch (error) {
+        if (error instanceof CustomerCreditError) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+        }
+        throw error;
+      }
+    }
+
+    let balanceToAdd = Number(invoice.balance_amount);
+    if (creditApplied > 0.004) {
+      const { recomputeInvoiceBalance } = await import('@/lib/invoices/invoice-balance');
+      const recomputed = await recomputeInvoiceBalance(client, invoice.id, business_id);
+      if (recomputed) {
+        invoice.balance_amount = recomputed.balance_amount;
+        invoice.payment_status = recomputed.payment_status;
+        balanceToAdd = recomputed.balance_amount + creditApplied;
+      }
+    }
     if (status === 'final' && customer_id && document_type !== 'proforma_invoice') {
-      const balanceToAdd = invoice.balance_amount || (invoice.grand_total - (invoice.paid_amount || 0));
       await client.query(`
         UPDATE customers
         SET current_balance = current_balance + $1,
@@ -2438,6 +2493,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Link invoice to quantity request if this invoice is the vendor's sale to the buyer.
+    if (!invoiceId && work_order_id && document_type !== 'proforma_invoice') {
+      const { claimWorkOrderForInvoice } = await import('@/lib/work-orders/work-order');
+      await claimWorkOrderForInvoice(client, business_id, String(work_order_id), invoice.id);
+    }
+
     if (!invoiceId && request_id) {
       try {
         const requestRes = await client.query(`
@@ -2725,6 +2785,12 @@ export async function POST(request: NextRequest) {
     });
     
     console.error('[InvoiceAPI] Error creating invoice:', error.message, error.code);
+    if (error?.name === 'WorkOrderInputError' && error.status) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error?.name === 'CustomerCreditError' && error.status) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
 
     const errorResponse = { 
       error: error.message || 'Failed to create invoice',

@@ -250,9 +250,10 @@ export default function WorkOrdersPage() {
                           {wo.converted_invoice_id && (
                             <button
                               onClick={() => router.push(`/invoices/${wo.converted_invoice_id}`)}
-                              className="text-sm text-green-600 hover:underline"
+                              className={`text-sm hover:underline ${wo.converted_invoice_status === 'cancelled' ? 'text-gray-500' : 'text-green-600'}`}
                             >
                               {wo.converted_invoice_number || 'Invoice'}
+                              {wo.converted_invoice_status === 'cancelled' ? ' (cancelled)' : ''}
                             </button>
                           )}
                           {['draft', 'scheduled', 'in_progress'].includes(wo.status) && (

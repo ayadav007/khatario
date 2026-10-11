@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Briefcase, ChevronDown, Loader2, Check } from 'lucide-react';
+import { Briefcase, ChevronDown, Loader2, Check, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -51,11 +51,15 @@ export interface BusinessSwitcherProps {
  * Hidden when the user has at most one membership.
  */
 export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
-  const { business } = useAuth();
+  const { business, isPrimaryAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [listLoading, setListLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [items, setItems] = useState<MyBusinessOption[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [draft, setDraft] = useState({ businessName: '', businessType: 'retail', industry: 'other' });
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,7 +122,39 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
     [activeId, switching]
   );
 
-  if (listLoading || items.length <= 1) {
+  const onAdd = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      if (adding) return;
+      setAdding(true);
+      setAddError('');
+      try {
+        const res = await fetch('/api/businesses', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessName: draft.businessName,
+            businessType: draft.businessType,
+            industry: draft.industry,
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setAddError(typeof body?.error === 'string' ? body.error : 'Could not add the business');
+          return;
+        }
+        window.location.assign('/dashboard');
+      } catch {
+        setAddError('Network error while adding the business');
+      } finally {
+        setAdding(false);
+      }
+    },
+    [adding, draft.businessName, draft.businessType, draft.industry],
+  );
+
+  if (listLoading || (items.length <= 1 && !isPrimaryAdmin)) {
     return null;
   }
 
@@ -210,6 +246,66 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
               );
             })}
           </div>
+          {isPrimaryAdmin && (
+            <div className="border-t border-border p-2">
+              {showAdd ? (
+                <form onSubmit={onAdd} className="space-y-2 px-1 py-1">
+                  <p className="px-2 text-xs font-semibold uppercase tracking-wide text-text-muted">New business</p>
+                  <input
+                    required
+                    value={draft.businessName}
+                    onChange={(e) => setDraft((d) => ({ ...d, businessName: e.target.value }))}
+                    placeholder="Business name"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-base"
+                  />
+                  <select
+                    value={draft.businessType}
+                    onChange={(e) => setDraft((d) => ({ ...d, businessType: e.target.value }))}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-base"
+                  >
+                    <option value="retail">Retail</option>
+                    <option value="wholesaler">Wholesaler</option>
+                    <option value="distributor">Distributor</option>
+                    <option value="manufacturer">Manufacturer</option>
+                    <option value="service">Service</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <select
+                    value={draft.industry}
+                    onChange={(e) => setDraft((d) => ({ ...d, industry: e.target.value }))}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-base"
+                  >
+                    <option value="pharmaceuticals">Pharmaceuticals</option>
+                    <option value="textiles">Textiles</option>
+                    <option value="garments">Garments</option>
+                    <option value="electronics">Electronics</option>
+                    <option value="food_beverages">Food & beverages</option>
+                    <option value="automotive">Automotive</option>
+                    <option value="construction">Construction</option>
+                    <option value="services">Services</option>
+                    <option value="other">Other</option>
+                  </select>
+                  {addError ? <p className="px-1 text-xs text-red-600">{addError}</p> : null}
+                  <button
+                    type="submit"
+                    disabled={adding}
+                    className="w-full rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {adding ? 'Creating…' : 'Create business'}
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAdd(true)}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-primary-700 hover:bg-slate-100/80 dark:text-primary-200 dark:hover:bg-slate-800"
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Add business
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

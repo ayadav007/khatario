@@ -40,6 +40,10 @@ interface TotalsPanelProps {
   
   // Payment
   onPaymentClick: () => void;
+  /** Unused credit from paid credit notes. */
+  creditAvailable?: number;
+  creditApplied?: number;
+  onCreditAppliedChange?: (amount: number) => void;
   
   // Display flags
   isFinal: boolean;
@@ -69,6 +73,9 @@ const TotalsPanel = React.memo(function TotalsPanel({
   onExtraChargesChange,
   onAddExtraCharge,
   onPaymentClick,
+  creditAvailable = 0,
+  creditApplied = 0,
+  onCreditAppliedChange,
   isFinal,
   documentType,
   isExport,
@@ -195,11 +202,37 @@ const TotalsPanel = React.memo(function TotalsPanel({
           </div>
         )}
         <div className="flex justify-between font-bold text-lg pt-2 border-t border-border text-text-primary"><span>Total</span><span>₹ {grandTotal.toFixed(2)}</span></div>
+        {creditAvailable > 0.004 && onCreditAppliedChange && !isFinal && documentType !== 'proforma_invoice' && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-900 dark:bg-sky-950/40">
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-sky-800 dark:text-sky-200">
+              <span>Customer credit</span>
+              <span>₹ {creditAvailable.toFixed(2)} available</span>
+            </div>
+            <label className="mt-2 flex items-center justify-between gap-2 text-xs text-text-secondary">
+              <span>Use on this bill</span>
+              <input
+                type="number"
+                min={0}
+                max={creditAvailable}
+                step="0.01"
+                value={creditApplied}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  onCreditAppliedChange(Number.isFinite(next) ? Math.max(0, next) : 0);
+                }}
+                className="w-28 rounded border border-border bg-surface px-2 py-1 text-right text-sm text-text-primary"
+              />
+            </label>
+          </div>
+        )}
+        {creditApplied > 0.004 && (
+          <div className="flex justify-between text-sky-700 dark:text-sky-300 pt-1 text-xs"><span>Credit applied</span><span>₹ {creditApplied.toFixed(2)}</span></div>
+        )}
         {recordPayment && (
-          <>
-            <div className="flex justify-between text-green-600 dark:text-green-400 pt-2 text-xs"><span>Paid</span><span>₹ {totalPaid.toFixed(2)}</span></div>
-            <div className="flex justify-between text-red-600 dark:text-red-400 font-medium pt-1 border-t border-dashed border-border text-xs"><span>Balance</span><span>₹ {balance.toFixed(2)}</span></div>
-          </>
+          <div className="flex justify-between text-green-600 dark:text-green-400 pt-2 text-xs"><span>Paid</span><span>₹ {totalPaid.toFixed(2)}</span></div>
+        )}
+        {(recordPayment || creditApplied > 0.004) && (
+          <div className="flex justify-between text-red-600 dark:text-red-400 font-medium pt-1 border-t border-dashed border-border text-xs"><span>To collect</span><span>₹ {balance.toFixed(2)}</span></div>
         )}
       </div>
       {/* Record Payment button - Hidden for proforma invoices */}

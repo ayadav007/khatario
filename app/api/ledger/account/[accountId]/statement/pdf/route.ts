@@ -76,6 +76,7 @@ export const GET = withPremiumSubscriptionApi<{ accountId: string }>(
       const totalCredit = entriesRes.reduce((sum, e) => sum + Number(e.credit), 0);
 
       const templateData = {
+        business_id: businessId,
         account,
         business,
         period: { from: fromDate, to: toDate },

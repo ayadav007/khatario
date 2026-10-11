@@ -28,6 +28,7 @@ import {
   getStateCode as engineGetStateCode,
 } from '@/lib/invoice-engine';
 import { useToastContext } from '@/contexts/ToastContext';
+import { workOrderInvoiceLineDrafts } from '@/lib/work-orders/work-order-math';
 import {
   useMobileHeaderRightAccessory,
   useMobileHeaderTitleOverride,
@@ -420,6 +421,9 @@ function NewInvoiceContent() {
   const [fetchedNextNumber, setFetchedNextNumber] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
+  const [creditAvailable, setCreditAvailable] = useState(0);
+  const [creditApply, setCreditApply] = useState(0);
+  const creditEditedRef = useRef(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [savedStatus, setSavedStatus] = useState<'draft' | 'final' | null>(null);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
@@ -1405,7 +1409,8 @@ function NewInvoiceContent() {
 
   const { itemSubtotal, totalDiscount, subtotal, itemTax, itemCGST, itemSGST, itemIGST, totalExtraCharges, taxableAmount, grandTotal, roundOff = 0, totalTax, totalCGST, totalSGST, totalIGST } = totals;
   const bStateCode = business?.state_code || engineGetStateCode(business?.state || ''), pStateCode = engineGetStateCode(placeOfSupply || ''), isIntraState = !!bStateCode && !!pStateCode && bStateCode === pStateCode;
-  const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), balance = grandTotal - totalPaid, recordPayment = payments.length > 0 && totalPaid > 0;
+  const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const recordPayment = payments.length > 0 && totalPaid > 0;
   const posSettlement = posMode
     ? applyPosTenders(
         grandTotal,
@@ -1418,7 +1423,14 @@ function NewInvoiceContent() {
       )
     : null;
   const invoicePaidAmount = posSettlement ? posSettlement.paidAmount : totalPaid;
-  const invoiceBalanceAmount = posSettlement ? posSettlement.balanceAmount : balance;
+  const cashDue = posSettlement ? posSettlement.balanceAmount : grandTotal - totalPaid;
+  const creditRoom = Math.max(0, Math.round(cashDue * 100) / 100);
+  const creditApplied =
+    documentType === 'proforma_invoice'
+      ? 0
+      : Math.min(Math.max(0, creditApply), creditAvailable, creditRoom);
+  const balance = Math.max(0, grandTotal - totalPaid - creditApplied);
+  const invoiceBalanceAmount = Math.max(0, cashDue - creditApplied);
   const invoicePaymentRows = posSettlement
     ? posSettlement.payments
     : payments.map((p) => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference }));
@@ -1669,6 +1681,7 @@ function NewInvoiceContent() {
           round_off: roundOff, 
           grand_total: grandTotal, 
           payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+          customer_credit_amount: creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
           payment_status: invoicePaymentStatus, 
           paid_amount: invoicePaidAmount, 
           balance_amount: invoiceBalanceAmount, 
@@ -1979,7 +1992,7 @@ function NewInvoiceContent() {
       console.error('Cannot print: missing savedInvoiceId or user');
       toastCtx.error('Cannot print: Invoice not saved');
     }
-  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode]);
+  }, [savedInvoiceId, user?.id, business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, isExport, exportType, portCode, shippingBillNumber, shippingBillDate, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, invoiceNumber, invoicePrefix, rows, subtotal, totalExtraCharges, totalTax, roundOff, grandTotal, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, notes, attachments, enableRoundOff, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, startNewBill, canBtPrint, bt, buildReceiptFromState, toastCtx, ensureProfile, posMode]);
 
   // PHASE 6: Calculate projected credit metrics when invoice total changes
   useEffect(() => {
@@ -2028,6 +2041,14 @@ function NewInvoiceContent() {
     if (targetStatus === 'draft' && canQueueOffline) {
       setToastMessage({
         message: 'Draft saves require internet. Your items are safe — tap Finalize to save offline.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (creditApplied > 0.004 && canFinalizeOffline) {
+      setToastMessage({
+        message: 'Customer credit can only be applied while you are online. Set the credit to 0 to save this bill offline.',
         type: 'error',
       });
       return;
@@ -2137,12 +2158,14 @@ function NewInvoiceContent() {
         round_off: roundOff, 
         grand_total: grandTotal, 
         payments: invoicePaymentRows.length > 0 ? invoicePaymentRows.map(p => ({ amount: p.amount, mode: p.mode, date: p.date, reference: p.reference })) : undefined, 
+        customer_credit_amount: targetStatus === 'final' && creditApplied > 0.004 ? Number(creditApplied.toFixed(2)) : undefined,
         payment_status: invoicePaymentStatus, 
         paid_amount: invoicePaidAmount, 
         balance_amount: invoiceBalanceAmount, 
         created_by: user?.id || null, 
         expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined, 
-        estimate_status: finalEstimateStatus
+        estimate_status: finalEstimateStatus,
+        work_order_id: searchParams.get('work_order_id') || undefined,
       };
       // PHASE 2: Construct full invoice number from prefix + number
       const fullInvoiceNumber = invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber;
@@ -2285,7 +2308,7 @@ function NewInvoiceContent() {
       hotToast.error(errorMsg, { duration: 8000 });
       return false;
     } finally { setLoading(false); }
-  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile]);
+  }, [business?.id, business, customerId, invoiceDate, billingAddress, shippingAddress, placeOfSupply, documentType, exportType, portCode, shippingBillNumber, shippingBillDate, notes, rows, subtotal, totalTax, grandTotal, recordPayment, payments, totalPaid, balance, creditApplied, invoicePaidAmount, invoiceBalanceAmount, invoicePaymentRows, invoicePaymentStatus, invoiceNumber, savedInvoiceId, savedStatus, limitInfo, ewayBillNumber, ewayBillDate, purchaseOrderNumber, purchaseOrderDate, referenceNumber, deliveryNote, paymentTerms, otherReferences, dispatchedThrough, destination, termsOfDelivery, enableRoundOff, attachments, isExport, invoiceCurrency, exchangeRate, countryOfOrigin, portOfLoading, portOfDischarge, placeOfDelivery, incoterms, transportMode, awbNumber, blNumber, buyerTaxId, invoiceTemplate, user?.id, totalExtraCharges, roundOff, router, estimateStatus, posMode, currentBranchId, isAdmin, isSeriesResolved, invoicePrefix, selectedWarehouseId, canQueueOffline, queueSalesFinalize, resetIdempotency, resetFormForNewInvoice, toastCtx, ensureProfile, searchParams]);
   handleSaveRef.current = handleSave;
   handlePrintBillRef.current = handlePrintBill;
 
@@ -2482,6 +2505,7 @@ function NewInvoiceContent() {
 
   useEffect(() => { if (business?.state && !placeOfSupply && !savedInvoiceId) setPlaceOfSupply(business.state); }, [business?.state, savedInvoiceId, placeOfSupply]);
 
+  const workOrderShipRef = useRef<string | null>(null);
   useEffect(() => {
     if (!customerId || !business) { if (!savedInvoiceId) { setSelectedCustomer(null); setBillingAddress(''); setShippingAddress(''); setPlaceOfSupply(business?.state || ''); setCreditMetrics(null); } return; }
     fetch(`/api/customers/${customerId}?user_id=${user?.id}`).then(r => r.json()).then(d => {
@@ -2489,7 +2513,7 @@ function NewInvoiceContent() {
       if (!c) { console.error('Customer not found:', customerId); return; }
       setSelectedCustomer(c);
       setBillingAddress(c.billing_address || c.address || '');
-      setShippingAddress(c.shipping_address || c.address || '');
+      setShippingAddress(workOrderShipRef.current || c.shipping_address || c.address || '');
       setPlaceOfSupply(stateFromGstin(c.gstin) || c.state || business.state || '');
       setRows(prev => prev.map(r => calculateRow(r, true)));
       
@@ -2518,6 +2542,45 @@ function NewInvoiceContent() {
       }
     });
   }, [customerId, business, calculateRow, savedInvoiceId, user?.id]);
+
+  useEffect(() => {
+    creditEditedRef.current = false;
+    if (!customerId || documentType === 'proforma_invoice') {
+      setCreditAvailable(0);
+      setCreditApply(0);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/customers/${customerId}/credits`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) {
+          if (!cancelled) setCreditAvailable(0);
+          return;
+        }
+        setCreditAvailable(Number(data.available) || 0);
+        if (data.current_balance != null) {
+          setSelectedCustomer((prev) =>
+            prev && prev.id === customerId ? { ...prev, current_balance: Number(data.current_balance) } : prev
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCreditAvailable(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId, documentType]);
+
+  useEffect(() => {
+    const cap = Math.min(creditAvailable, creditRoom);
+    if (!creditEditedRef.current) {
+      setCreditApply(cap);
+      return;
+    }
+    setCreditApply((prev) => Math.min(prev, cap));
+  }, [customerId, creditAvailable, creditRoom]);
 
   useEffect(() => {
     dueDateUserEditedRef.current = false;
@@ -2662,6 +2725,70 @@ function NewInvoiceContent() {
       })
       .catch((err) => console.error('[Convert] Failed to load source estimate:', err));
   }, [convertFromId, business?.id, user?.id, savedInvoiceId, branchLoading, calculateRow]);
+
+  // ?work_order_id=: open the invoice for review. Nothing is saved until Generate/Save.
+  const workOrderId = searchParams.get('work_order_id');
+  const workOrderPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!workOrderId || !business?.id || savedInvoiceId || branchLoading) return;
+    if (workOrderPrefillDoneRef.current === workOrderId) return;
+    workOrderPrefillDoneRef.current = workOrderId;
+    fetch(`/api/work-orders/${workOrderId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const wo = data?.workOrder;
+        if (!wo?.id) {
+          toastCtx.error('Could not load this work order');
+          return;
+        }
+        if (wo.status !== 'completed') {
+          toastCtx.error('Mark the work order as completed before raising the invoice');
+          return;
+        }
+        if (wo.converted_invoice_id && wo.converted_invoice_status !== 'cancelled') {
+          toastCtx.error('An invoice has already been raised for this work order');
+          return;
+        }
+        if (wo.customer_id) setCustomerId(wo.customer_id);
+        if (wo.place_of_supply_state_code) setPlaceOfSupply(wo.place_of_supply_state_code);
+        workOrderShipRef.current = wo.work_location || null;
+        if (wo.work_location) setShippingAddress(wo.work_location);
+        if (wo.notes) setNotes(wo.notes);
+        const drafts = workOrderInvoiceLineDrafts(wo, data.items || []);
+        if (drafts.length === 0) {
+          toastCtx.error('The work order has no labour cost or materials to invoice');
+          return;
+        }
+        setRows(
+          drafts.map((line) =>
+            calculateRow(
+              {
+                itemId: line.item_id || '',
+                name: line.item_name,
+                quantity: Number(line.quantity) || 1,
+                freeQty: 0,
+                unit: line.unit || 'PCS',
+                price: Number(line.unit_price) || 0,
+                discountPercent: 0,
+                discountAmount: 0,
+                taxPercent: Number(line.tax_rate) || 0,
+                taxAmount: 0,
+                hsnSac: line.hsn_sac || '',
+                taxableValue: 0,
+                cgstAmount: 0,
+                sgstAmount: 0,
+                igstAmount: 0,
+                total: 0,
+                priceUserOverride: true,
+              },
+              true,
+            ),
+          ),
+        );
+        setIsDirty(true);
+      })
+      .catch(() => toastCtx.error('Could not load this work order'));
+  }, [workOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, toastCtx]);
 
   const showMobileInvoiceUi = invoiceMobileLayout && !posMode;
   const mobileBillLabel =
@@ -2820,7 +2947,11 @@ function NewInvoiceContent() {
         if (data.customer) {
           setCustomers((prev) => [...prev, data.customer]);
           applyInvoiceCustomer(data.customer);
-          toastCtx.success(`Customer "${data.customer.name}" added`);
+          toastCtx.success(
+            data.deduplicated
+              ? `Using existing customer "${data.customer.name}"`
+              : `Customer "${data.customer.name}" added`
+          );
           return;
         }
       }
@@ -3116,7 +3247,7 @@ function NewInvoiceContent() {
       {!posMode && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-surface rounded-lg border border-border p-4 shadow-sm"><label className="block text-xs font-semibold uppercase text-text-secondary mb-2">Notes / Terms</label><textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} /></div>
-          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+          <TotalsPanel itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
           <ActionsBar
             onPreview={handlePreview}
             onSaveDraft={() => handleSave('draft')}
@@ -3738,7 +3869,7 @@ function NewInvoiceContent() {
           ) : null}
           <textarea placeholder="Add notes or terms..." className="w-full h-24 rounded border border-border bg-background p-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary-500" value={notes} onChange={e => setNotes(e.target.value)} disabled={isFinal} />
         </div>
-        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
+        <TotalsPanel className="w-full max-w-full" itemSubtotal={itemSubtotal} totalDiscount={totalDiscount} subtotal={subtotal} totalExtraCharges={totalExtraCharges} taxableAmount={taxableAmount} totalCGST={totalCGST} totalSGST={totalSGST} totalIGST={totalIGST} grandTotal={grandTotal} totalPaid={totalPaid} balance={balance} recordPayment={recordPayment} roundOff={roundOff} enableRoundOff={enableRoundOff} onEnableRoundOffChange={setEnableRoundOff} extraCharges={extraCharges} onExtraChargesChange={setExtraCharges} onAddExtraCharge={() => setExtraCharges([...extraCharges, { id: Date.now().toString(), purpose: '', amount: 0 }])} onPaymentClick={() => setPaymentModalOpen(true)} creditAvailable={creditAvailable} creditApplied={creditApplied} onCreditAppliedChange={(amount) => { creditEditedRef.current = true; setCreditApply(amount); }} isFinal={isFinal} documentType={documentType} isExport={isExport} isIntraState={isIntraState} />
         {words ? <p className="text-[10px] leading-snug text-text-muted">{words}</p> : null}
         {!isFinal && documentType !== 'proforma_invoice' ? (
           <div className="flex flex-wrap items-center gap-1">
@@ -4066,7 +4197,7 @@ function NewInvoiceContent() {
         </div>
       )}
       {shareModalOpen && savedInvoiceId && <ShareInvoiceModal invoiceId={savedInvoiceId} invoiceNumber={invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : 'N/A'} customerEmail={selectedCustomer?.email} customerPhone={selectedCustomer?.phone} onClose={() => setShareModalOpen(false)} onCreateAnother={resetFormForNewInvoice} />}
-      {paymentModalOpen && <InvoicePaymentModal grandTotal={grandTotal} payments={payments} onSave={setPayments} onClose={() => setPaymentModalOpen(false)} />}
+      {paymentModalOpen && <InvoicePaymentModal grandTotal={Math.max(0, grandTotal - creditApplied)} payments={payments} onSave={setPayments} onClose={() => setPaymentModalOpen(false)} />}
       {showUpgradePrompt && limitInfo && <UpgradeModal limitType="invoices" currentCount={limitInfo.current} limit={limitInfo.limit} onClose={() => setShowUpgradePrompt(false)} onUpgradeSuccess={() => window.location.reload()} />}
       {showContinuousScanner && business?.id && (<ContinuousBarcodeScanner businessId={business.id} onItemScanned={(item) => { if (!item?.id) return; handleItemSelect(item); }} onClose={() => setShowContinuousScanner(false)} />)}
       {createCustomerModalOpen && (

@@ -51,6 +51,23 @@ describe('work order status rules', () => {
     expect(canConvertToInvoice({ status: 'completed', converted_invoice_id: 'inv-1' })).toBe(false);
     expect(canConvertToInvoice({ status: 'in_progress', converted_invoice_id: null })).toBe(false);
   });
+
+  it('lets a completed work order be invoiced again when the linked invoice was cancelled', () => {
+    expect(
+      canConvertToInvoice({
+        status: 'completed',
+        converted_invoice_id: 'inv-1',
+        converted_invoice_status: 'cancelled',
+      }),
+    ).toBe(true);
+    expect(
+      canConvertToInvoice({
+        status: 'completed',
+        converted_invoice_id: 'inv-1',
+        converted_invoice_status: 'final',
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('buildWorkOrderInvoiceLines', () => {

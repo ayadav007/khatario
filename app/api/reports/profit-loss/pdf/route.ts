@@ -133,6 +133,7 @@ export async function GET(req: NextRequest) {
     const data = await apiRes.json();
 
     const templateData = {
+      business_id: businessId,
       business,
       data: {
         period: {

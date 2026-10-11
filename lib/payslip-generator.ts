@@ -1,60 +1,13 @@
 import * as db from '@/lib/db';
 import { SalaryPayment, Employee, Business } from '@/types/database';
 import Handlebars from 'handlebars';
+import { amountInWords, getBusinessDocumentLanguage, renderLocalizedPrintHtml } from '@/lib/print-language';
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
 import { getPuppeteerLaunchOptions } from '@/lib/puppeteer-launch';
 
 // Number to words converter (simplified version)
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-  const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  if (num === 0) return 'Zero';
-
-  function convertHundreds(n: number): string {
-    let result = '';
-    if (n >= 100) {
-      result += ones[Math.floor(n / 100)] + ' Hundred ';
-      n %= 100;
-    }
-    if (n >= 20) {
-      result += tens[Math.floor(n / 10)] + ' ';
-      n %= 10;
-    } else if (n >= 10) {
-      result += teens[n - 10] + ' ';
-      return result;
-    }
-    if (n > 0) {
-      result += ones[n] + ' ';
-    }
-    return result;
-  }
-
-  let words = '';
-  const crores = Math.floor(num / 10000000);
-  const lakhs = Math.floor((num % 10000000) / 100000);
-  const thousands = Math.floor((num % 100000) / 1000);
-  const hundreds = num % 1000;
-
-  if (crores > 0) {
-    words += convertHundreds(crores).trim() + ' Crore ';
-  }
-  if (lakhs > 0) {
-    words += convertHundreds(lakhs).trim() + ' Lakh ';
-  }
-  if (thousands > 0) {
-    words += convertHundreds(thousands).trim() + ' Thousand ';
-  }
-  if (hundreds > 0) {
-    words += convertHundreds(hundreds).trim();
-  }
-
-  return words.trim() || 'Zero';
-}
-
 // Register Handlebars helpers
 let helpersRegistered = false;
 
@@ -326,7 +279,10 @@ export async function generatePayslipHtml(salaryPaymentId: string): Promise<stri
       gross_salary: Number(salaryPayment.gross_salary),
       total_deductions: Number(salaryPayment.total_deductions),
       net_salary: Number(salaryPayment.net_salary),
-      amount_in_words: numberToWords(Math.round(salaryPayment.net_salary)) + ' Rupees Only',
+      amount_in_words: amountInWords(
+        Math.round(Number(salaryPayment.net_salary) || 0),
+        await getBusinessDocumentLanguage(salaryPayment.business_id),
+      ),
     },
   };
 
@@ -349,10 +305,8 @@ export async function generatePayslipHtml(salaryPaymentId: string): Promise<stri
   }
 
   const templateSource = fs.readFileSync(templatePath, 'utf-8');
-  const template = Handlebars.compile(templateSource);
-  const html = template(payslipData);
-
-  return html;
+  const documentLanguage = await getBusinessDocumentLanguage(salaryPayment.business_id);
+  return renderLocalizedPrintHtml(templateSource, { ...payslipData, document_language: documentLanguage }, documentLanguage);
 }
 
 export async function generatePayslipPdf(salaryPaymentId: string): Promise<Buffer> {

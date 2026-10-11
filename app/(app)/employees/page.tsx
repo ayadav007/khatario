@@ -20,6 +20,7 @@ import { DeleteAction } from '@/components/common/DeleteAction';
 import { usePermissions } from '@/hooks/usePermissions';
 import { EmployeePortalResetActions } from '@/components/hr/EmployeePortalResetActions';
 import { useFullHr } from '@/hooks/useFullHr';
+import { Switch } from '@/components/ui/Switch';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -39,6 +40,7 @@ export default function EmployeesPage() {
   
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [hideDeactivated, setHideDeactivated] = useState(true);
   const [accessTypeFilter, setAccessTypeFilter] = useState<'all' | 'full' | 'attendance_only'>('all');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -63,7 +65,9 @@ export default function EmployeesPage() {
         business_id: business.id,
         user_id: user.id, // REQUIRED for authorization
         ...(search && { search }),
-        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...((hideDeactivated ? 'active' : statusFilter) !== 'all' && {
+          status: hideDeactivated ? 'active' : statusFilter,
+        }),
         ...(accessTypeFilter !== 'all' && { access_type: accessTypeFilter }),
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -93,7 +97,7 @@ export default function EmployeesPage() {
       fetchEmployees();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, search, statusFilter, accessTypeFilter, pagination.page]);
+  }, [business?.id, search, statusFilter, hideDeactivated, accessTypeFilter, pagination.page]);
 
   useEffect(() => {
     if (business?.id) {
@@ -101,7 +105,7 @@ export default function EmployeesPage() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [business?.id, search, statusFilter, accessTypeFilter]);
+  }, [business?.id, search, statusFilter, hideDeactivated, accessTypeFilter]);
 
   const getStatusColor = (employee: EmployeeWithUser) => {
     if (!employee.is_active || !employee.user_is_active) return 'bg-red-100 text-red-800';
@@ -185,16 +189,27 @@ export default function EmployeesPage() {
                 className="input pl-10"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                onChange={(e) => {
+                  const next = e.target.value as typeof statusFilter;
+                  setStatusFilter(next);
+                  if (next === 'inactive') setHideDeactivated(false);
+                }}
                 className="input"
               >
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+              <HideDeactivatedToggle
+                checked={hideDeactivated}
+                onChange={(checked) => {
+                  setHideDeactivated(checked);
+                  if (checked && statusFilter === 'inactive') setStatusFilter('all');
+                }}
+              />
               {fullHr ? (
               <select
                 value={accessTypeFilter}
@@ -242,7 +257,11 @@ export default function EmployeesPage() {
                   <label className="type-label mb-1.5 block">Status</label>
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                    onChange={(e) => {
+                      const next = e.target.value as typeof statusFilter;
+                      setStatusFilter(next);
+                      if (next === 'inactive') setHideDeactivated(false);
+                    }}
                     className="input w-full"
                   >
                     <option value="all">All Status</option>
@@ -250,6 +269,13 @@ export default function EmployeesPage() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+                <HideDeactivatedToggle
+                  checked={hideDeactivated}
+                  onChange={(checked) => {
+                    setHideDeactivated(checked);
+                    if (checked && statusFilter === 'inactive') setStatusFilter('all');
+                  }}
+                />
                 {fullHr ? (
                 <div>
                   <label className="type-label mb-1.5 block">Access type</label>
@@ -608,6 +634,21 @@ export default function EmployeesPage() {
             onClose={() => setToast(null)}
           />
         )}
+    </div>
+  );
+}
+
+function HideDeactivatedToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
+      <span className="text-sm text-text-secondary">Hide deactivated account</span>
+      <Switch checked={checked} onChange={onChange} size="sm" aria-label="Hide deactivated account" />
     </div>
   );
 }

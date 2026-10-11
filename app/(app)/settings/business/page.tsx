@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect } from 'react';
 import { BusinessProfileTab } from '@/components/settings/BusinessProfileTab';
+import { DocumentLanguageCard } from '@/components/settings/DocumentLanguageCard';
 import { BusinessProfileTour } from '@/components/onboarding/BusinessProfileTour';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { Building } from 'lucide-react';
@@ -43,6 +44,7 @@ function BusinessSettingsPage() {
         icon={Building}
         tourAnchor="bp-intro"
       >
+        <DocumentLanguageCard />
         <BusinessProfileTab />
       </SettingsPageShell>
     </>

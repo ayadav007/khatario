@@ -30,6 +30,7 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
       }
 
       const templateData = {
+        business_id: businessId,
         certificate: {
           ...certificate,
           payment_date: new Date(certificate.payment_date).toLocaleDateString('en-IN'),

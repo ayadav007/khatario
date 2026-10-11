@@ -235,8 +235,16 @@ export async function POST(request: NextRequest) {
         [business_id, phoneNorm]
       );
       if (existingPhone) {
+        const name = existingPhone.name?.trim();
         return NextResponse.json(
-          { customer: existingPhone, deduplicated: true, message: 'Existing customer with this phone returned.' },
+          {
+            customer: existingPhone,
+            deduplicated: true,
+            code: 'DUPLICATE_PHONE',
+            error: name
+              ? `A customer named ${name} already uses this phone number.`
+              : 'A customer with this phone number already exists.',
+          },
           { status: 200 }
         );
       }
@@ -249,8 +257,16 @@ export async function POST(request: NextRequest) {
         [business_id, emailNorm]
       );
       if (existingEmail) {
+        const name = existingEmail.name?.trim();
         return NextResponse.json(
-          { customer: existingEmail, deduplicated: true, message: 'Existing customer with this email returned.' },
+          {
+            customer: existingEmail,
+            deduplicated: true,
+            code: 'DUPLICATE_EMAIL',
+            error: name
+              ? `A customer named ${name} already uses this email.`
+              : 'A customer with this email already exists.',
+          },
           { status: 200 }
         );
       }

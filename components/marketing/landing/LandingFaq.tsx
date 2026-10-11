@@ -41,15 +41,15 @@ export const LANDING_FAQ_DEFAULTS: LandingFaqContent = {
     },
     {
       q: 'Is my business data safe?',
-      a: 'Everything travels over encrypted HTTPS, and role-based access means staff only see what they should. Your customer list and bills are yours — we do not sell them to advertisers. Business and Enterprise plans include automatic backups.',
+      a: 'Everything travels over encrypted HTTPS, and role-based access means staff only see what they should. Your customer list and bills are yours — we do not sell them to advertisers. Backups are included on every plan, including Free.',
     },
     {
       q: 'Is there really a free plan?',
-      a: 'Yes. The Free plan covers up to 20 invoices a month with 10 customers and 10 items — enough to try Khatario properly. New accounts also start with a trial of the full product, and no card is needed to begin.',
+      a: 'Yes. The Free plan includes unlimited GST invoices, customers and items, and you can send invoices on WhatsApp from your own number. New accounts also start with a trial of the full product, and no card is needed to begin.',
     },
     {
       q: 'Can my staff and other branches use it too?',
-      a: 'Yes. Professional includes up to 3 users and Business up to 10, each with their own login and permissions. Business and Enterprise plans support multiple branches.',
+      a: 'Yes. Growth includes up to 3 users. Business includes up to 10 users and up to 3 branches, each with their own login and permissions.',
     },
   ],
 };

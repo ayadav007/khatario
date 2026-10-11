@@ -68,29 +68,8 @@ function WorkOrderActions({ workOrder, reload }: { workOrder: any; reload: () =>
     }
   }
 
-  async function createInvoice() {
-    if (!window.confirm('Raise a tax invoice for this work order? Materials will be issued from stock.')) return;
-    setBusy('invoice');
-    try {
-      const res = await fetch(`/api/work-orders/${workOrder.id}/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: business?.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Could not raise the invoice');
-        if (data.invoice_id) reload();
-        return;
-      }
-      toast.success(`Invoice ${data.invoice?.invoice_number || ''} created`.trim());
-      if (data.invoice?.id) router.push(`/invoices/${data.invoice.id}`);
-      else reload();
-    } catch {
-      toast.error('Could not raise the invoice');
-    } finally {
-      setBusy(null);
-    }
+  function prepareInvoice() {
+    router.push(`/invoices/new?work_order_id=${workOrder.id}`);
   }
 
   return (
@@ -119,7 +98,7 @@ function WorkOrderActions({ workOrder, reload }: { workOrder: any; reload: () =>
         </Button>
       )}
       {canConvertToInvoice(workOrder) && (
-        <Button size="sm" onClick={createInvoice} isLoading={busy === 'invoice'} disabled={!!busy}>
+        <Button size="sm" onClick={prepareInvoice} disabled={!!busy}>
           <Receipt className="w-4 h-4 mr-2" />
           Create Invoice
         </Button>
@@ -127,7 +106,7 @@ function WorkOrderActions({ workOrder, reload }: { workOrder: any; reload: () =>
       {workOrder.converted_invoice_id && (
         <Button size="sm" variant="secondary" onClick={() => router.push(`/invoices/${workOrder.converted_invoice_id}`)}>
           <FileText className="w-4 h-4 mr-2" />
-          View Invoice
+          {workOrder.converted_invoice_status === 'cancelled' ? 'Cancelled invoice' : 'View Invoice'}
         </Button>
       )}
       {canTransition(status, 'cancelled') && (

@@ -143,6 +143,7 @@ export async function GET(req: NextRequest) {
     const invAdj = Number(data.assets?.current?.inventory_adjustment || 0);
 
     const templateData = {
+      business_id: businessId,
       business,
       data: {
         ...data,

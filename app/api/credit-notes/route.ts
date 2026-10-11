@@ -8,6 +8,7 @@ import { computeLineGst, isZeroRatedWithoutTax, round2 } from '@/lib/invoices/li
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { refreshCreditNoteRefundStatus } from '@/lib/credit-notes/customer-credit';
 
 export const dynamic = 'force-dynamic';
 
@@ -618,6 +619,7 @@ export async function POST(request: NextRequest) {
     if (invoice_id) {
       await recomputeInvoiceBalance(client, invoice_id, business_id);
     }
+    await refreshCreditNoteRefundStatus(client, business_id, creditNote.id);
 
     // Calculate COGS (Cost of Goods Sold) for returned items
     let totalCogsAmount = 0;

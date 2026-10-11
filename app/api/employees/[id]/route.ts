@@ -16,6 +16,7 @@ import {
   assertPortalOwnResource,
 } from '@/lib/employee-portal/portal-api-guard';
 import { FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { resolveEmployeeLoginDecision } from '@/lib/hr/employee-login-options';
 
 export const dynamic = 'force-dynamic';
 
@@ -233,6 +234,49 @@ export async function PATCH(
       role_id,
     } = body;
 
+    let accessTypeToSave = access_type as string | undefined;
+    if (role_id !== undefined) {
+      const currentSeat = await queryOne<{
+        role_id: string | null;
+        is_primary_admin: boolean | null;
+        access_type: string | null;
+      }>(
+        `SELECT u.role_id, u.is_primary_admin, e.access_type
+         FROM users u
+         INNER JOIN employees e ON e.id = u.id
+         WHERE u.id = $1 AND e.business_id = $2`,
+        [employeeId, businessId],
+      );
+      if (currentSeat?.is_primary_admin) {
+        return NextResponse.json(
+          { error: 'The owner login is not changed from the employee form.', code: 'PRIMARY_ADMIN_PROTECTED' },
+          { status: 403 },
+        );
+      }
+      const loginDecision = await resolveEmployeeLoginDecision({
+        businessId,
+        actorUserId: updated_by_user_id,
+        roleId: role_id,
+        password,
+        alreadyConsumesSeat: Boolean(
+          currentSeat?.role_id ||
+            (currentSeat?.access_type && currentSeat.access_type !== 'attendance_only'),
+        ),
+      });
+      if (!loginDecision.ok) {
+        return NextResponse.json(
+          { error: loginDecision.error, code: loginDecision.code },
+          { status: loginDecision.status },
+        );
+      }
+      accessTypeToSave = loginDecision.mode === 'login' ? 'full' : 'attendance_only';
+      await query('UPDATE users SET role_id = $1 WHERE id = $2 AND business_id = $3', [
+        loginDecision.mode === 'login' ? loginDecision.roleId : null,
+        employeeId,
+        businessId,
+      ]);
+    }
+
     // Update user table if name, email, phone, or password provided
     if (name || email !== undefined || phone !== undefined || password) {
       const userUpdates: string[] = [];
@@ -283,15 +327,6 @@ export async function PATCH(
       }
     }
 
-    // Update role if provided
-    if (role_id !== undefined) {
-      await query('UPDATE users SET role_id = $1 WHERE id = $2', [
-        role_id || null,
-        employeeId,
-      ]);
-    }
-
-    // Update employee table
     const employeeUpdates: string[] = [];
     const employeeParams: any[] = [];
     let paramIndex = 1;
@@ -355,9 +390,9 @@ export async function PATCH(
       employeeUpdates.push(`employment_type = $${paramIndex++}`);
       employeeParams.push(employment_type);
     }
-    if (access_type) {
+    if (accessTypeToSave) {
       employeeUpdates.push(`access_type = $${paramIndex++}`);
-      employeeParams.push(access_type);
+      employeeParams.push(accessTypeToSave);
     }
     if (salary !== undefined) {
       employeeUpdates.push(`salary = $${paramIndex++}`);

@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { PageHeader } from '@/components/layout/PageHeader';
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { SendMessageTab } from '@/components/whatsapp/SendMessageTab';
 import { WhatsAppAddonModal } from '@/components/subscription/WhatsAppAddonModal';
 import { useAuth } from '@/contexts/AuthContext';
@@ -89,7 +89,9 @@ export default function SendMessagePage() {
             Send custom messages, button messages, and media to your customers via WhatsApp.
           </p>
         </div>
-        <SendMessageTab />
+        <Suspense fallback={null}>
+          <SendMessageTab />
+        </Suspense>
       </div>
     
   );

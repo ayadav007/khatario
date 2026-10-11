@@ -9,7 +9,7 @@ INSERT INTO subscription_plans (
   'hr_staff_lite',
   'hr_staff_lite',
   'HR Lite',
-  'Included with Billing: up to 30 staff, attendance, and simple salary. Upgrade to HR Pro for leave, portal, and statutory payroll.',
+  'Included with Billing: up to 30 staff, attendance, and simple salary. Upgrade to HR Pro for leave and the employee portal.',
   0, 0, 0, 'INR',
   '{"limits":{"max_users":1,"max_employees":30},"features":{}}'::jsonb,
   true, 9, true, 'hr'

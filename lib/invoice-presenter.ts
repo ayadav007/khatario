@@ -3,6 +3,13 @@ import * as db from './db';
 import { enrichInvoiceRenderData } from './custom-fields-render';
 import { parseCustomFieldValues } from './custom-fields';
 import { getStateName } from './gst-utils';
+import {
+  amountInWords,
+  documentLanguageDateLocale,
+  resolveDocumentLanguage,
+  translatePhrase,
+  type DocumentLanguage,
+} from './print-language';
 
 function placeOfSupplyName(code: unknown): string {
   const raw = String(code ?? '').trim();
@@ -22,7 +29,7 @@ const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
 };
 
 /** Job-card fields for the work order template, formatted for print. */
-function workOrderFields(wo: any, formatDate: (d: any) => string) {
+function workOrderFields(wo: any, formatDate: (d: any) => string, language: DocumentLanguage) {
   const money = (v: unknown) => Number(v || 0).toFixed(2);
   const hours = (v: unknown) => (v === null || v === undefined || v === '' ? '' : String(Number(v)));
   const priority = String(wo.priority || 'medium');
@@ -30,8 +37,8 @@ function workOrderFields(wo: any, formatDate: (d: any) => string) {
     description: wo.work_description || '',
     location: wo.work_location || '',
     assigned_to: wo.assigned_to || '',
-    priority: priority.charAt(0).toUpperCase() + priority.slice(1),
-    status: WORK_ORDER_STATUS_LABELS[wo.status] || wo.status || '',
+    priority: translatePhrase(language, priority.charAt(0).toUpperCase() + priority.slice(1)),
+    status: translatePhrase(language, WORK_ORDER_STATUS_LABELS[wo.status] || wo.status || ''),
     scheduled_start: formatDate(wo.scheduled_start_date),
     scheduled_end: formatDate(wo.scheduled_end_date),
     actual_start: formatDate(wo.actual_start_date),
@@ -99,6 +106,10 @@ async function fetchBankDetails(businessId: string): Promise<{
  */
 export async function prepareInvoiceForRendering(rawData: any, settings: any = {}): Promise<RenderData> {
   const { invoice: rawInvoice, business, customer, items } = rawData;
+  const documentLanguage = await resolveDocumentLanguage(
+    settings?.document_language,
+    business?.business_id || business?.id,
+  );
   
   // Fetch bank details from bank_accounts table if business_id is available
   let bankDetails = null;
@@ -140,7 +151,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   const rule = getDocumentRule(docType);
   
   // Apply document rules to settings
-  const effectiveSettings = { ...settings };
+  const effectiveSettings = { ...settings, document_language: documentLanguage };
   // Notes/terms typed on the document win over the template's default text, and
   // always print: the template's show_notes/show_terms switch only governs its default text.
   if (typeof rawInvoice.notes === 'string' && rawInvoice.notes.trim()) {
@@ -173,6 +184,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
   ) {
     invoiceTitle = 'EXPORT INVOICE';
   }
+  invoiceTitle = translatePhrase(documentLanguage, invoiceTitle);
 
   // 3. Formatting Helpers
   const formatCurrency = (val: any) => {
@@ -188,7 +200,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-      return date.toLocaleDateString('en-IN', { 
+      return date.toLocaleDateString(documentLanguageDateLocale(documentLanguage), { 
         day: 'numeric', 
         month: 'long', 
         year: 'numeric' 
@@ -196,26 +208,6 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
     } catch (e) {
       return dateStr;
     }
-  };
-
-  // 4. Number to Words (Internal Helper)
-  const numberToWords = (num: number) => {
-    if (isNaN(num) || num === 0) return 'Zero Rupees Only';
-    const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-    const b = ['','', 'Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-    const toWords = (n: number): string => {
-      if (n < 20) return a[n];
-      if (n < 100) return b[Math.floor(n/10)] + (n%10 ? ' ' + a[n%10] : '');
-      if (n < 1000) return a[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + toWords(n%100) : '');
-      if (n < 100000) return toWords(Math.floor(n/1000)) + ' Thousand' + (n%1000 ? ' ' + toWords(n%1000) : '');
-      if (n < 10000000) return toWords(Math.floor(n/100000)) + ' Lakh' + (n%100000 ? ' ' + toWords(n%100000) : '');
-      return toWords(Math.floor(n/10000000)) + ' Crore' + (n%10000000 ? ' ' + toWords(n%10000000) : '');
-    };
-    const whole = Math.floor(Math.abs(num));
-    const decimal = Math.round((Math.abs(num) - whole) * 100);
-    const wholeWords = whole === 0 ? 'Zero' : toWords(whole);
-    const decWords = decimal > 0 ? ` and ${toWords(decimal)} Paise` : '';
-    return `${num < 0 ? 'Minus ' : ''}${wholeWords} Rupees${decWords} Only`;
   };
 
   // 5. Process Items (Standardize Tax Splits)
@@ -355,8 +347,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       invoice_title: invoiceTitle,
       invoice_date: formatDate(invoice.invoice_date),
       due_date: (invoice.due_date || invoice.expected_delivery_date) ? formatDate(invoice.due_date || invoice.expected_delivery_date) : '',
-      amount_in_words: numberToWords(Number(invoice.grand_total)),
-      tax_amount_in_words: numberToWords(Number(invoice.tax_total || 0)),
+      amount_in_words: amountInWords(Number(invoice.grand_total), documentLanguage),
+      tax_amount_in_words: amountInWords(Number(invoice.tax_total || 0), documentLanguage),
       is_igst: isIGST,
       subtotal: Number(invoice.subtotal || 0).toFixed(2),
       tax_total: Number(invoice.tax_total || 0).toFixed(2),
@@ -389,7 +381,7 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
       ,
       // Tax breakdown grouped by HSN/SAC (for templates like Tally Style)
       tax_breakdown: taxBreakdown,
-      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate) : null
+      work_order: docType === 'work_order' ? workOrderFields(rawInvoice, formatDate, documentLanguage) : null
     },
     business: {
       ...business,

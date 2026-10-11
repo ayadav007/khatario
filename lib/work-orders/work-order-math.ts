@@ -20,8 +20,14 @@ export function isWorkOrderEditable(status: string): boolean {
   return status === 'draft' || status === 'scheduled' || status === 'in_progress';
 }
 
-export function canConvertToInvoice(wo: { status?: string | null; converted_invoice_id?: string | null }): boolean {
-  return wo.status === 'completed' && !wo.converted_invoice_id;
+export function canConvertToInvoice(wo: {
+  status?: string | null;
+  converted_invoice_id?: string | null;
+  converted_invoice_status?: string | null;
+}): boolean {
+  if (wo.status !== 'completed') return false;
+  if (!wo.converted_invoice_id) return true;
+  return wo.converted_invoice_status === 'cancelled';
 }
 
 export const STATUS_LABELS: Record<WorkOrderStatus, string> = {
@@ -105,4 +111,67 @@ export function computeWorkOrderCosts(
     lines,
     costs: { labor_cost, material_cost, other_cost, total_cost: r2(labor_cost + material_cost + other_cost) },
   };
+}
+
+/** Lines a work order would bill, before any invoice is saved. Prices stay as entered; GST is on each line. */
+export function workOrderInvoiceLineDrafts(
+  wo: {
+    work_order_number?: string | null;
+    work_description?: string | null;
+    labor_cost?: unknown;
+    other_cost?: unknown;
+    labor_sac?: string | null;
+    labor_tax_rate?: unknown;
+  },
+  items: Array<{
+    item_id?: string | null;
+    item_name?: string;
+    description?: string | null;
+    hsn_sac?: string | null;
+    qty?: unknown;
+    used_qty?: unknown;
+    unit?: string | null;
+    unit_price?: unknown;
+    tax_rate?: unknown;
+  }>,
+) {
+  const lines = items
+    .filter((r) => num(r.qty) > 0)
+    .map((r) => ({
+      item_id: r.item_id || null,
+      item_name: r.item_name || '',
+      description: r.description || null,
+      hsn_sac: r.hsn_sac || null,
+      quantity: num(r.used_qty) > 0 ? r.used_qty : r.qty,
+      unit: r.unit || 'PCS',
+      unit_price: r.unit_price,
+      tax_rate: r.tax_rate,
+    }));
+  const sac = wo.labor_sac || DEFAULT_LABOR_SAC;
+  const rate = wo.labor_tax_rate ?? DEFAULT_LABOR_TAX_RATE;
+  if (num(wo.labor_cost) > 0) {
+    lines.push({
+      item_id: null,
+      item_name: 'Labour charges',
+      description: `Work order ${wo.work_order_number || ''}: ${String(wo.work_description || '').slice(0, 400)}`,
+      hsn_sac: sac,
+      quantity: 1,
+      unit: 'NOS',
+      unit_price: wo.labor_cost,
+      tax_rate: rate,
+    });
+  }
+  if (num(wo.other_cost) > 0) {
+    lines.push({
+      item_id: null,
+      item_name: 'Other charges',
+      description: `Work order ${wo.work_order_number || ''}`,
+      hsn_sac: sac,
+      quantity: 1,
+      unit: 'NOS',
+      unit_price: wo.other_cost,
+      tax_rate: rate,
+    });
+  }
+  return lines;
 }

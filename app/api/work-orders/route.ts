@@ -21,10 +21,11 @@ export const GET = withPremiumSubscriptionApi(
         SELECT
           wo.*,
           c.name as customer_name,
-          inv.invoice_number as converted_invoice_number
+          inv.invoice_number as converted_invoice_number,
+          inv.status as converted_invoice_status
         FROM work_orders wo
         LEFT JOIN customers c ON wo.customer_id = c.id
-        LEFT JOIN invoices inv ON wo.converted_invoice_id = inv.id
+        LEFT JOIN invoices inv ON wo.converted_invoice_id = inv.id AND inv.business_id = wo.business_id
         WHERE wo.business_id = $1
       `;
       const params: any[] = [ctx.businessId];

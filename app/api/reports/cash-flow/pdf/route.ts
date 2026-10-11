@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
     const formatCurr = (val: any) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
     
     const templateData = {
+      business_id: businessId,
       business,
       data: {
         ...data,

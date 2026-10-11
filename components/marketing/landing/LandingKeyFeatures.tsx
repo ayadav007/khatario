@@ -91,7 +91,7 @@ export const LANDING_KEY_FEATURES_DEFAULTS: LandingKeyFeaturesContent = {
       title: 'Your own online store',
       benefit:
         'A shop page customers can browse and order from on their phone — items, prices and stock come straight from your billing.',
-      tag: 'Enterprise plan',
+      tag: 'Business plan',
       href: '',
     },
     {

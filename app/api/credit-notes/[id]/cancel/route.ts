@@ -5,6 +5,7 @@ import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-h
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
+import { creditNoteHasLiveApplications } from '@/lib/credit-notes/customer-credit';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +45,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (cn.status === 'cancelled') {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Credit note is already cancelled', code: 'CREDIT_NOTE_ALREADY_CANCELLED' }, { status: 409 });
+    }
+    if (await creditNoteHasLiveApplications(client, businessId, cn.id)) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'This credit has been used on another invoice. Cancel that invoice before cancelling the credit note.',
+          code: 'CREDIT_IN_USE',
+        },
+        { status: 409 }
+      );
     }
 
     try {

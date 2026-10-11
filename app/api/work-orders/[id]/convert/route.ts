@@ -37,11 +37,17 @@ export const POST = withPremiumSubscriptionApi<{ id: string }>(
       const wo = woRes.rows[0];
       if (!wo) throw new WorkOrderInputError('Work order not found', 404);
       if (wo.converted_invoice_id) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: 'An invoice has already been raised for this work order', invoice_id: wo.converted_invoice_id },
-          { status: 409 }
+        const linked = await client.query<{ status: string }>(
+          `SELECT status FROM invoices WHERE id = $1 AND business_id = $2`,
+          [wo.converted_invoice_id, ctx.businessId],
         );
+        if (linked.rows[0]?.status !== 'cancelled') {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'An invoice has already been raised for this work order', invoice_id: wo.converted_invoice_id },
+            { status: 409 },
+          );
+        }
       }
       if (wo.status !== 'completed') {
         throw new WorkOrderInputError('Mark the work order as completed before raising the invoice', 409);

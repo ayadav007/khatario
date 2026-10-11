@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { SendMessageSingleTab } from './SendMessageSingleTab';
 import { CampaignSendTab } from './campaigns/CampaignSendTab';
 import { MessageSquare, Users } from 'lucide-react';
@@ -8,7 +9,10 @@ import { MessageSquare, Users } from 'lucide-react';
 type TabType = 'single' | 'campaign';
 
 export function SendMessageTab() {
-  const [activeTab, setActiveTab] = useState<TabType>('single');
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabType>(
+    searchParams.get('tab') === 'campaign' ? 'campaign' : 'single',
+  );
 
   return (
     <div className="space-y-6">

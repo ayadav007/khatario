@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import Link from 'next/link';
 import { Toast, ToastType } from '@/components/ui/Toast';
@@ -24,6 +24,7 @@ import {
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
+import { EmployeeLoginRoleFields } from '@/components/hr/EmployeeLoginRoleFields';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
@@ -64,6 +65,7 @@ export default function NewEmployeePage() {
     email: '',
     phone: '',
     password: '',
+    role_id: '',
     
     // Employee fields
     employee_code: '', // Auto-generated if empty
@@ -132,8 +134,10 @@ export default function NewEmployeePage() {
       return;
     }
 
-    // Note: Employees are attendance-only, so password is not required
-    // Only users (with console access) need passwords
+    if (formData.role_id && formData.password.trim().length < 8) {
+      setToast({ message: 'A sign-in role needs a password of at least 8 characters, with a letter and a number', type: 'error' });
+      return;
+    }
 
     setLoading(true);
 
@@ -143,7 +147,8 @@ export default function NewEmployeePage() {
         name: formData.name,
         email: formData.email || null,
         phone: formData.phone,
-        password: null, // Employees are attendance-only, no password needed
+        password: formData.role_id ? formData.password : null,
+        role_id: formData.role_id || null,
         employee_code: formData.employee_code || null, // Auto-generate if empty
         designation: formData.designation || null,
         department: formData.department || null,
@@ -266,10 +271,14 @@ export default function NewEmployeePage() {
                     helperText="Leave empty to auto-generate (EMP001, EMP002, etc.)"
                   />
                   <div className="md:col-span-2">
-                    <p className="text-sm text-text-secondary flex items-center gap-1">
-                      <AlertCircle className="w-4 h-4" />
-                      This is a staff record for attendance and salary. To let someone log in and create invoices, add them under Settings → Users.
-                    </p>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <EmployeeLoginRoleFields
+                        roleId={formData.role_id}
+                        password={formData.password}
+                        onRoleId={(role_id) => setFormData((prev) => ({ ...prev, role_id, password: role_id ? prev.password : '' }))}
+                        onPassword={(password) => setFormData((prev) => ({ ...prev, password }))}
+                      />
+                    </div>
                   </div>
                 </div>
               </AnnotatedFormSection>

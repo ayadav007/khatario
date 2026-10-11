@@ -800,6 +800,13 @@ export const Sidebar = React.memo(function Sidebar() {
                     featureKey: 'whatsapp_bot',
                   },
                   {
+                    href: '/whatsapp/who-to-message',
+                    label: 'Who to message',
+                    module: 'whatsapp',
+                    isLocked: !hasWhatsAppAddon(),
+                    featureKey: 'whatsapp_bot',
+                  },
+                  {
                     href: '/whatsapp/campaigns',
                     label: 'Campaigns',
                     module: 'whatsapp',

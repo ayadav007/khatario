@@ -67,6 +67,7 @@ function NewCustomerContent() {
   });
 
   const [sameAsBilling, setSameAsBilling] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<{ field: 'phone' | 'email'; message: string } | null>(null);
 
   // Pre-fill from query parameters
   const returnUrl = searchParams?.get('return_url') || '';
@@ -173,6 +174,7 @@ function NewCustomerContent() {
         setGstinVerified(false);
         setGstinError(false);
       }
+      if (name === 'email') setDuplicateError(null);
 
       // Auto-calculate state_code when state changes
       if (name === 'state') {
@@ -329,7 +331,14 @@ function NewCustomerContent() {
     };
 
     try {
-      await create({ ...payload, id: customerId });
+      const result = await create({ ...payload, id: customerId });
+      if (result?.deduplicated) {
+        const field = result.code === 'DUPLICATE_EMAIL' ? 'email' : 'phone';
+        const message = String(result.error || 'A customer with these details already exists.');
+        setDuplicateError({ field, message });
+        toast.warning(message);
+        return;
+      }
       if (returnUrl) {
         const decodedReturnUrl = decodeURIComponent(returnUrl);
         const returnUrlObj = new URL(decodedReturnUrl, window.location.origin);
@@ -378,7 +387,11 @@ function NewCustomerContent() {
                 <IntlPhoneInput
                   label="Phone number"
                   value={formData.phone}
-                  onChange={(full) => setFormData((prev) => ({ ...prev, phone: full }))}
+                  onChange={(full) => {
+                    setDuplicateError(null);
+                    setFormData((prev) => ({ ...prev, phone: full }));
+                  }}
+                  error={duplicateError?.field === 'phone' ? duplicateError.message : undefined}
                   nationalPlaceholder="Mobile number"
                 />
                 <Input
@@ -388,6 +401,7 @@ function NewCustomerContent() {
                   value={formData.email}
                   onChange={handleChange}
                   placeholder="rahul@example.com"
+                  error={duplicateError?.field === 'email' ? duplicateError.message : undefined}
                 />
               </div>
             </AnnotatedFormSection>

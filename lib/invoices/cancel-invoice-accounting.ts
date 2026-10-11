@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { releaseDocumentAdvances } from '@/lib/accounting/advance-service';
+import { releaseCreditApplicationsForInvoice } from '@/lib/credit-notes/customer-credit';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
 
 /**
@@ -41,6 +42,11 @@ export async function reverseInvoiceAccountingOnCancel(
     userId,
     invoiceId: inv.id,
     reason,
+  });
+  await releaseCreditApplicationsForInvoice(client, {
+    businessId: inv.business_id,
+    invoiceId: inv.id,
+    userId,
   });
   if (inv.customer_id && inv.document_type !== 'proforma_invoice') {
     await client.query(

@@ -12,6 +12,7 @@ import {
   isValidOfferLetterTemplateId,
 } from '@/lib/offer-letter-template-registry';
 import { resolveOfferLetterTemplatePath } from '@/lib/offer-letter-template-path';
+import { getBusinessDocumentLanguage, renderLocalizedPrintHtml, type DocumentLanguage } from '@/lib/print-language';
 
 let helpersRegistered = false;
 
@@ -75,12 +76,15 @@ export type OfferLetterViewModel = {
   settings: OfferLetterTemplateSettings;
 };
 
-export function compileOfferLetterHtml(templateId: string, model: OfferLetterViewModel): string {
+export function compileOfferLetterHtml(
+  templateId: string,
+  model: OfferLetterViewModel,
+  language: DocumentLanguage = 'en',
+): string {
   registerHelpers();
   const templatePath = resolveOfferLetterTemplatePath(templateId);
   const templateSource = fs.readFileSync(templatePath, 'utf-8');
-  const template = Handlebars.compile(templateSource);
-  return template(model);
+  return renderLocalizedPrintHtml(templateSource, { ...model, document_language: language }, language);
 }
 
 function buildSalaryAnnualFields(basic: number, hra: number, transport: number, medical: number, special: number, other: number) {
@@ -269,5 +273,6 @@ export async function generateOfferLetterPreviewHtml(
   },
 ): Promise<string> {
   const { template_id, model } = await buildOfferLetterPreviewModel(businessId, options);
-  return compileOfferLetterHtml(template_id, model);
+  const language = await getBusinessDocumentLanguage(businessId);
+  return compileOfferLetterHtml(template_id, model, language);
 }

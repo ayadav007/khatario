@@ -23,12 +23,12 @@ export const LANDING_HERO_COPY: Record<
   { badges: string[]; headline: string; subhead: string; cta: string; footnote: string }
 > = {
   billing: {
-    badges: ['GST-ready invoicing', 'Staff attendance included'],
+    badges: ['GST-ready invoicing', 'Offline-ready billing'],
     headline: 'Still billing by hand at closing time? There is a simpler way.',
     subhead:
-      'Khatario turns your counter into one simple flow: bill with correct GST, share on WhatsApp, track who has paid, and file reports — plus staff attendance and simple salary for up to 30 people, included with every Billing plan.',
+      'Turn every sale into a GST bill, WhatsApp share, payment update, and accurate stock movement. Keep billing at the counter when the internet drops, then sync when it returns.',
     cta: 'Start Billing trial',
-    footnote: 'No credit card to start · Works on phone & computer · HR Lite included',
+    footnote: 'No credit card to start · Works on phone & computer · HR Lite for up to 30 staff included',
   },
   hr: {
     badges: ['Attendance & payroll', 'Made for India'],

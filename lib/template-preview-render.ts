@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import Handlebars from 'handlebars';
+import { getBusinessDocumentLanguage, renderLocalizedPrintHtml } from '@/lib/print-language';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { registerInvoiceHandlebarsPartials } from '@/lib/handlebars-invoice-partials';
 import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';
@@ -111,7 +111,7 @@ export async function renderTemplatePreviewHtml(
   const templateHtml = fs.readFileSync(fullPath, 'utf-8');
   registerGlobalInvoiceHandlebarsHelpers();
   registerInvoiceHandlebarsPartials();
-  const template = Handlebars.compile(templateHtml);
+  const documentLanguage = businessId ? await getBusinessDocumentLanguage(businessId) : 'en';
   const sampleData = getSampleData(templateId) as Record<string, any>;
 
   const defaults = getDefaultTemplateSettings(templateId);
@@ -142,7 +142,8 @@ export async function renderTemplatePreviewHtml(
 
   let data: Record<string, unknown> = {
     ...sampleData,
-    settings: finalSettings,
+    document_language: documentLanguage,
+    settings: { ...(finalSettings as object), document_language: documentLanguage },
     business: { ...(sampleData.business as object), id: businessId || undefined },
   };
 
@@ -155,7 +156,11 @@ export async function renderTemplatePreviewHtml(
     )) as Record<string, unknown>;
   }
 
-  const renderedHtml = template(data);
+  const renderedHtml = renderLocalizedPrintHtml(
+    templateHtml,
+    data as Record<string, any>,
+    documentLanguage,
+  );
   const settingsRecord = finalRecord;
 
   let html = await finalizePrintHtml(

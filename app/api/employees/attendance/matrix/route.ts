@@ -9,6 +9,7 @@ import {
 } from '@/lib/hr/employee-access-scope';
 import {
   buildAttendanceMatrix,
+  clockToMinutes,
   parseAttendanceMatrixMonth,
   monthDateRange,
   type AttendanceMatrixStatus,
@@ -31,6 +32,9 @@ type AttendanceRow = {
   date: string;
   status: AttendanceMatrixStatus;
   total_hours: string | number | null;
+  check_in: string | null;
+  shift_start: string | null;
+  missing_out: boolean | null;
 };
 
 type HolidayRow = {
@@ -96,9 +100,17 @@ export async function GET(request: NextRequest) {
 
     const [attendance, holidays, holidayLists, rosterOff, businessWeeklyOff] = await Promise.all([
       queryRows<AttendanceRow>(
-        `SELECT a.employee_id, a.date::text AS date, a.status, a.total_hours
+        `SELECT a.employee_id,
+                a.date::text AS date,
+                a.status,
+                a.total_hours,
+                to_char(a.check_in_time, 'HH24:MI') AS check_in,
+                to_char(COALESCE(s.start_time, ds.start_time), 'HH24:MI') AS shift_start,
+                (a.check_in_time IS NOT NULL AND a.check_out_time IS NULL) AS missing_out
          FROM employee_attendance a
          INNER JOIN employees e ON a.employee_id = e.id
+         LEFT JOIN shifts s ON s.id = a.shift_id
+         LEFT JOIN shifts ds ON ds.id = e.default_shift_id
          WHERE e.business_id = $1
            AND a.date >= $2::date
            AND a.date <= $3::date`,
@@ -168,7 +180,8 @@ export async function GET(request: NextRequest) {
           code: employee.employee_code,
           name: employee.employee_name,
           weeklyOff,
-          offDates: [...holidayDates, ...(rosterByEmployee.get(employee.id) ?? [])],
+          holidayDates,
+          offDates: rosterByEmployee.get(employee.id) ?? [],
         };
       }),
       attendance: attendance
@@ -178,6 +191,9 @@ export async function GET(request: NextRequest) {
           date: row.date,
           status: row.status,
           totalHours: row.total_hours == null ? null : Number(row.total_hours),
+          checkInMinutes: clockToMinutes(row.check_in),
+          shiftStartMinutes: clockToMinutes(row.shift_start),
+          missingOutPunch: Boolean(row.missing_out),
         })),
     });
 

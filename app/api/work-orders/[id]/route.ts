@@ -21,10 +21,12 @@ export const GET = withPremiumSubscriptionApi<Params>(
   async (ctx) => {
     try {
       const workOrder = await queryOne(
-        `SELECT wo.*, c.name AS customer_name, inv.invoice_number AS converted_invoice_number
+        `SELECT wo.*, c.name AS customer_name,
+                inv.invoice_number AS converted_invoice_number,
+                inv.status AS converted_invoice_status
            FROM work_orders wo
            LEFT JOIN customers c ON c.id = wo.customer_id
-           LEFT JOIN invoices inv ON inv.id = wo.converted_invoice_id
+           LEFT JOIN invoices inv ON inv.id = wo.converted_invoice_id AND inv.business_id = wo.business_id
           WHERE wo.id = $1 AND wo.business_id = $2`,
         [ctx.params.id, ctx.businessId]
       );
