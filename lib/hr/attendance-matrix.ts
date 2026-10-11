@@ -1,4 +1,4 @@
-import { isWeeklyOffDate } from '@/lib/hr/shift-overtime/weekly-off';
+import { isWeeklyOffDate } from '@/lib/hr/shift-overtime/weekly-off-dates';
 import type { WeeklyOffPolicy } from '@/lib/hr/shift-overtime/types';
 
 export type AttendanceMatrixStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'holiday';
