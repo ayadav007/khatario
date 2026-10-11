@@ -37,5 +37,37 @@ describe('print language', () => {
     expect(html).toContain('lang="hi"');
     expect(translatePhrase('hi', 'TAX INVOICE')).toBe('कर बीजक');
     expect(translatePhrase('hi', 'GSTIN')).toBe('GSTIN');
+    expect(translatePhrase('hi', 'Item name')).toBe('वस्तु का नाम');
+  });
+
+  it('translates the whole Item name heading, not only the word Item', () => {
+    const html = renderLocalizedPrintHtml('<html><body><th>Item name</th><td>Water Bottle</td></body></html>', {}, 'hi');
+    expect(html).toContain('वस्तु का नाम');
+    expect(html).toContain('Water Bottle');
+    expect(html).not.toContain('वस्तु name');
+  });
+
+  it('translates tally invoice headings that were only partly replaced', () => {
+    const source = [
+      '<html><body>',
+      '<div>Invoice Details:</div>',
+      '<th>Item name</th><th>HSN/SAC</th><th>Price/Unit(₹)</th><th>Disc(₹)</th><th>GST(₹)</th>',
+      '<div>Tax Summary:</div><th>Taxable amount (₹)</th><th>Total Tax (₹)</th><th>Amt (₹)</th>',
+      '<td>Water Bottle</td><div>Payment is due within 30 days.</div>',
+      '</body></html>',
+    ].join('');
+    const html = renderLocalizedPrintHtml(source, {}, 'hi');
+    expect(html).toContain('बीजक विवरण:');
+    expect(html).toContain('वस्तु का नाम');
+    expect(html).toContain('मूल्य/इकाई(₹)');
+    expect(html).toContain('छूट(₹)');
+    expect(html).toContain('कर सारांश:');
+    expect(html).toContain('करयोग्य राशि (₹)');
+    expect(html).toContain('कुल कर (₹)');
+    expect(html).toContain('राशि (₹)');
+    expect(html).toContain('HSN/SAC');
+    expect(html).toContain('GST(₹)');
+    expect(html).toContain('Water Bottle');
+    expect(html).toContain('Payment is due within 30 days.');
   });
 });
