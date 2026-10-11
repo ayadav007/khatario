@@ -35,7 +35,7 @@ import {
   type ComposerTotals,
   type PickerItem,
 } from './types';
-import { inr, isTypingTarget, Kbd } from './ui';
+import { inr, isTypingTarget, Kbd, PAYMENT_MODES } from './ui';
 
 export type DesktopInvoiceComposerProps = {
   title: string;
@@ -233,10 +233,21 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
     p.setPayments(fully ? [] : [newPayment(p.totals.grandTotal, p.payments[0]?.mode || 'cash')]);
   };
 
+  const selectPaymentMode = (index: number) => {
+    if (p.readOnly || isEstimate || p.payments.length > 1) return;
+    const mode = PAYMENT_MODES[index];
+    if (!mode) return;
+    const first = p.payments[0];
+    p.setPayments(first ? [{ ...first, mode: mode.id }] : [newPayment(0, mode.id)]);
+  };
+
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   keyHandler.current = (e: KeyboardEvent) => {
-    if (pickerOpen || shortcutsOpen || p.keyboardBlocked) return;
     const key = e.key;
+    if (key === 'F7' || e.code === 'F7') {
+      e.preventDefault();
+    }
+    if (pickerOpen || shortcutsOpen || p.keyboardBlocked) return;
     const lower = key.toLowerCase();
     const mod = e.ctrlKey || e.metaKey;
     if (mod && lower === 's') {
@@ -272,9 +283,12 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
       e.preventDefault();
       receivedRef.current?.focus();
       receivedRef.current?.select();
-    } else if (key === 'F9') {
+    } else if (key === 'F9' || e.code === 'F9') {
       e.preventDefault();
       markFullyPaid();
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && /^Digit[1-5]$/.test(e.code)) {
+      e.preventDefault();
+      selectPaymentMode(Number(e.code.slice(5)) - 1);
     } else if (e.altKey && lower === 'e') {
       e.preventDefault();
       toggleExport(!p.isExport);
@@ -286,8 +300,8 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => keyHandler.current(e);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   const didAutofocus = useRef(false);

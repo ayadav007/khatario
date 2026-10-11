@@ -22,6 +22,16 @@ type Props = {
 
 const keyOf = (item: PickerItem) => rowKey(String(item.id), item.variantId ? String(item.variantId) : null);
 
+/** Profit kept on one unit, before GST. GST on the sale is not income, and purchase price is stored without GST. */
+function unitProfit(item: PickerItem): number | null {
+  const sale = Number(item.selling_price || 0);
+  const cost = Number(item.purchase_price || 0);
+  if (!(sale > 0) || !(cost > 0)) return null;
+  const rate = Number(item.tax_rate || 0);
+  const taxableSale = item.gst_included && rate > 0 ? (sale * 100) / (100 + rate) : sale;
+  return Math.round((taxableSale - cost) * 100) / 100;
+}
+
 function flatten(raw: any[]): PickerItem[] {
   const rows: PickerItem[] = [];
   for (const item of raw) {
@@ -189,6 +199,21 @@ export function ItemPickerModal({
     if (!selectedEntries.length) return;
     onApply(selectedEntries.map((p) => ({ item: p.item, quantity: p.qty })));
   };
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      const add = e.key === 'F7' || e.code === 'F7' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey));
+      if (!add) return;
+      e.preventDefault();
+      e.stopPropagation();
+      commitRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const inQtyInput = (e.target as HTMLElement).dataset.qtyInput === 'true';
@@ -227,7 +252,7 @@ export function ItemPickerModal({
   const selectedValue = selectedEntries.reduce((s, p) => s + Number(p.item.selling_price || 0) * p.qty, 0);
   const showPurchase = items.some((i) => Number(i.purchase_price) > 0);
   const cols = showPurchase
-    ? 'grid-cols-[minmax(0,1fr)_7rem_7rem_7rem_4.5rem_9.5rem]'
+    ? 'grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_6.5rem_6.5rem_3.5rem_9.5rem]'
     : 'grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem_9.5rem]';
 
   return (
@@ -289,6 +314,7 @@ export function ItemPickerModal({
           <span className="text-right">Stock</span>
           <span className="text-right">Sale price</span>
           {showPurchase && <span className="text-right">Purchase</span>}
+          {showPurchase && <span className="text-right">Profit</span>}
           <span className="text-right">GST</span>
           <span className="text-center">Quantity</span>
         </div>
@@ -310,8 +336,9 @@ export function ItemPickerModal({
             const isActive = idx === active;
             const price = Number(item.selling_price || 0);
             const cost = Number(item.purchase_price || 0);
+            const profit = unitProfit(item);
             const noPrice = price <= 0;
-            const belowCost = !noPrice && cost > 0 && price < cost;
+            const belowCost = profit != null && profit < 0;
             const stock = item.current_stock;
             const hasStock = stock !== undefined && stock !== null;
             const negative = hasStock && Number(stock) < 0;
@@ -374,7 +401,17 @@ export function ItemPickerModal({
                   )}
                 </span>
                 {showPurchase && (
-                  <span className="text-right text-sm tabular-nums text-text-muted">{cost ? inr(cost, 0) : '—'}</span>
+                  <span className="text-right text-sm tabular-nums text-text-muted">{cost ? inr(cost, cost % 1 ? 2 : 0) : '—'}</span>
+                )}
+                {showPurchase && (
+                  <span
+                    className={clsx(
+                      'text-right text-sm font-semibold tabular-nums',
+                      profit == null ? 'text-text-muted' : profit < 0 ? 'text-rose-600' : 'text-emerald-700'
+                    )}
+                  >
+                    {profit == null ? '—' : inr(profit, profit % 1 ? 2 : 0)}
+                  </span>
                 )}
                 <span className="text-right text-xs font-medium text-text-secondary">{Number(item.tax_rate || 0)}%</span>
                 <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>

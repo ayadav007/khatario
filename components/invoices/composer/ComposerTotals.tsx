@@ -205,7 +205,7 @@ export function TotalsPanel({
                 />
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
-                {PAYMENT_MODES.map((m) => (
+                {PAYMENT_MODES.map((m, index) => (
                   <button
                     key={m.id}
                     type="button"
@@ -219,6 +219,7 @@ export function TotalsPanel({
                     )}
                   >
                     {m.label}
+                    {!readOnly && <Kbd className="ml-1 h-4 min-w-[14px] px-0.5 text-[9px]">{index + 1}</Kbd>}
                   </button>
                 ))}
               </div>

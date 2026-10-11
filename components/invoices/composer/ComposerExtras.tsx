@@ -134,6 +134,7 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
       { keys: ['F4'], label: 'Barcode / item code box' },
       { keys: ['F8'], label: 'Amount received' },
       { keys: ['F9'], label: 'Mark fully paid' },
+      { keys: ['Alt', '1–5'], label: 'Payment mode: Cash, UPI, Card, Bank, Cheque' },
       { keys: ['Alt', 'E'], label: 'Switch Domestic / Export' },
     ],
   },
