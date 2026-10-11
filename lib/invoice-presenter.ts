@@ -6,10 +6,10 @@ import { getStateName } from './gst-utils';
 import {
   amountInWords,
   documentLanguageDateLocale,
-  resolveDocumentLanguage,
   translatePhrase,
   type DocumentLanguage,
 } from './print-language';
+import { resolveDocumentLanguage } from './print-language/storage';
 
 function placeOfSupplyName(code: unknown): string {
   const raw = String(code ?? '').trim();

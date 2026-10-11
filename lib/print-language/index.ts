@@ -15,4 +15,3 @@ export {
   registerPrintLanguageHelper,
   renderLocalizedPrintHtml,
 } from './apply';
-export { getBusinessDocumentLanguage, resolveDocumentLanguage } from './storage';

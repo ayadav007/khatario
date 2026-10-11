@@ -7,7 +7,7 @@ import {
   compileOfferLetterHtml,
   generateOfferLetterPreviewHtml,
 } from '@/lib/offer-letter-render';
-import { getBusinessDocumentLanguage } from '@/lib/print-language';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 
 export { generateOfferLetterPreviewHtml } from '@/lib/offer-letter-render';
 

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { useToastContext } from '@/contexts/ToastContext';
-import { DOCUMENT_LANGUAGES, type DocumentLanguage } from '@/lib/print-language';
+import { DOCUMENT_LANGUAGES, type DocumentLanguage } from '@/lib/print-language/codes';
 
 export function DocumentLanguageCard() {
   const toast = useToastContext();

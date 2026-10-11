@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { getBusinessDocumentLanguage, renderLocalizedPrintHtml } from '@/lib/print-language';
+import { renderLocalizedPrintHtml } from '@/lib/print-language';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 import { getDefaultTemplateSettings, mergeTemplateSettings } from '@/lib/template-defaults';
 import { registerInvoiceHandlebarsPartials } from '@/lib/handlebars-invoice-partials';
 import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice-helpers';

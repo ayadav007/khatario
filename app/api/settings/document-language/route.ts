@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { normalizeDocumentLanguage, DOCUMENT_LANGUAGE_CODES, getBusinessDocumentLanguage } from '@/lib/print-language';
+import { normalizeDocumentLanguage, DOCUMENT_LANGUAGE_CODES } from '@/lib/print-language';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 import { hasTableColumn } from '@/lib/schema-columns';
 
 export const dynamic = 'force-dynamic';

@@ -12,7 +12,8 @@ import {
   isValidOfferLetterTemplateId,
 } from '@/lib/offer-letter-template-registry';
 import { resolveOfferLetterTemplatePath } from '@/lib/offer-letter-template-path';
-import { getBusinessDocumentLanguage, renderLocalizedPrintHtml, type DocumentLanguage } from '@/lib/print-language';
+import { renderLocalizedPrintHtml, type DocumentLanguage } from '@/lib/print-language';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 
 let helpersRegistered = false;
 

@@ -19,7 +19,6 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { format, addDays, parseISO } from 'date-fns';
 import { Customer, Item } from '@/types/database';
-import { prepareInvoiceForRendering } from '@/lib/invoice-presenter';
 import {
   calculateRow as engineCalculateRow,
   calculateTotals as engineCalculateTotals,

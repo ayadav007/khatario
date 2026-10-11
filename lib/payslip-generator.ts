@@ -1,7 +1,8 @@
 import * as db from '@/lib/db';
 import { SalaryPayment, Employee, Business } from '@/types/database';
 import Handlebars from 'handlebars';
-import { amountInWords, getBusinessDocumentLanguage, renderLocalizedPrintHtml } from '@/lib/print-language';
+import { amountInWords, renderLocalizedPrintHtml } from '@/lib/print-language';
+import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';

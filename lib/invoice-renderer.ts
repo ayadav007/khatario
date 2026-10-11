@@ -3,7 +3,8 @@ import path from 'path';
 import Handlebars from 'handlebars';
 import { Invoice, Business, Customer } from '@/types/database';
 import { registerInvoiceHandlebarsPartials } from './handlebars-invoice-partials';
-import { renderLocalizedPrintHtml, resolveDocumentLanguage } from './print-language';
+import { renderLocalizedPrintHtml } from './print-language';
+import { resolveDocumentLanguage } from './print-language/storage';
 
 // Define types for data injection
 interface RenderData {
