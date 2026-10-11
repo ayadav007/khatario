@@ -25,6 +25,7 @@ interface WorkOrder {
   total_cost: number | string;
   converted_invoice_id: string | null;
   converted_invoice_number: string | null;
+  converted_invoice_status?: string | null;
 }
 
 export default function WorkOrdersPage() {

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Lock, UserSearch } from 'lucide-react';
+import { Loader2, Lock, Users } from 'lucide-react';
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -160,7 +160,7 @@ export default function WhoToMessagePage() {
       <SettingsPageHeader
         title="Who to message"
         description="Pick a list, tick the people, choose a saved reply, then review the campaign before anything is sent."
-        icon={UserSearch}
+        icon={Users}
       />
 
       <div className="flex flex-wrap gap-2">

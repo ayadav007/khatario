@@ -1,3 +1,5 @@
+import type { SourceLine } from '@/lib/invoices/convert-to-invoice';
+
 export const WORK_ORDER_STATUSES = ['draft', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const;
 export type WorkOrderStatus = (typeof WORK_ORDER_STATUSES)[number];
 
@@ -134,18 +136,18 @@ export function workOrderInvoiceLineDrafts(
     unit_price?: unknown;
     tax_rate?: unknown;
   }>,
-) {
-  const lines = items
+): SourceLine[] {
+  const lines: SourceLine[] = items
     .filter((r) => num(r.qty) > 0)
     .map((r) => ({
       item_id: r.item_id || null,
       item_name: r.item_name || '',
       description: r.description || null,
       hsn_sac: r.hsn_sac || null,
-      quantity: num(r.used_qty) > 0 ? r.used_qty : r.qty,
+      quantity: num(r.used_qty) > 0 ? num(r.used_qty) : num(r.qty),
       unit: r.unit || 'PCS',
-      unit_price: r.unit_price,
-      tax_rate: r.tax_rate,
+      unit_price: num(r.unit_price),
+      tax_rate: num(r.tax_rate),
     }));
   const sac = wo.labor_sac || DEFAULT_LABOR_SAC;
   const rate = wo.labor_tax_rate ?? DEFAULT_LABOR_TAX_RATE;
@@ -157,8 +159,8 @@ export function workOrderInvoiceLineDrafts(
       hsn_sac: sac,
       quantity: 1,
       unit: 'NOS',
-      unit_price: wo.labor_cost,
-      tax_rate: rate,
+      unit_price: num(wo.labor_cost),
+      tax_rate: num(rate),
     });
   }
   if (num(wo.other_cost) > 0) {
@@ -169,8 +171,8 @@ export function workOrderInvoiceLineDrafts(
       hsn_sac: sac,
       quantity: 1,
       unit: 'NOS',
-      unit_price: wo.other_cost,
-      tax_rate: rate,
+      unit_price: num(wo.other_cost),
+      tax_rate: num(rate),
     });
   }
   return lines;
