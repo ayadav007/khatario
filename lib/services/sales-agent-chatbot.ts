@@ -9,6 +9,7 @@ import {
   recordCustomerBotReply,
   shopKnowledgeContext,
 } from '@/lib/whatsapp/customer-bot';
+import { formatMemoryBlock, type AgentMemory } from '@/lib/ai-agent/memory';
 import { buildAgentPrompt, type AgentCompanyInfo } from '@/lib/ai-agent/prompt';
 import { matchFaqs } from '@/lib/ai-agent/knowledge';
 import { loadAgentSettings } from '@/lib/ai-agent/settings';
@@ -43,6 +44,8 @@ export interface SalesAgentRequest {
   /** Editor test chat: unsaved settings, no daily cap, nothing recorded as a customer reply. */
   test?: boolean;
   settingsOverride?: AgentSettings;
+  /** Facts and summary saved for this chat. Sent on every reply so older turns are not forgotten. */
+  conversationMemory?: AgentMemory;
 }
 
 export type SalesAgentFailure =
@@ -151,6 +154,7 @@ export class SalesAgentChatbot {
           : undefined,
         request.conversationState,
         request.pendingOrder,
+        request.conversationMemory,
       );
 
       const response = await resolved.provider.chat(messages);
@@ -208,7 +212,8 @@ export class SalesAgentChatbot {
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
     customerInfo?: any,
     conversationState?: { state?: string; context?: any },
-    pendingOrder?: { orderNumber?: string; items?: Array<{ name: string; quantity: number; price: number }>; totalAmount?: number; createdAt?: Date }
+    pendingOrder?: { orderNumber?: string; items?: Array<{ name: string; quantity: number; price: number }>; totalAmount?: number; createdAt?: Date },
+    conversationMemory?: AgentMemory,
   ): ChatMessage[] {
     const messages: ChatMessage[] = [
       {
@@ -297,6 +302,13 @@ export class SalesAgentChatbot {
         role: 'system',
         content: `Customer Information: ${who}${customerInfo.previousOrders ? `Previous Orders: ${customerInfo.previousOrders}. ` : ''}${customerInfo.totalSpent ? `Total Spent: ₹${customerInfo.totalSpent}. ` : ''}`.trim()
       });
+    }
+
+    if (conversationMemory) {
+      const memoryBlock = formatMemoryBlock(conversationMemory);
+      if (memoryBlock) {
+        messages.push({ role: 'system', content: memoryBlock });
+      }
     }
 
     if (history && history.length > 0) {

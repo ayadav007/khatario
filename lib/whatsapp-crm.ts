@@ -13,7 +13,14 @@ import { loadAgentSettings } from './ai-agent/settings';
 import { runAgentGate } from './ai-agent/gate';
 import { parseAgentReply } from './ai-agent/prompt';
 import { performHandoff } from './ai-agent/conversation';
-import { applyLeadAnswers } from './ai-agent/leads';
+import { loadLeadAnswers, applyLeadAnswers } from './ai-agent/leads';
+import {
+  applyStoredAnswers,
+  combineMemory,
+  loadAgentMemory,
+  memoryFromTranscript,
+  rememberAgentTurn,
+} from './ai-agent/memory';
 import { DEFAULT_HANDOFF_MESSAGE } from './ai-agent/types';
 import {
   ORDER_NOT_CREATED_REPLY,
@@ -2789,13 +2796,8 @@ export async function processIncomingMessage(
           console.log('[CRM] 🤖 AI paused for this conversation — stored only');
           return { shouldStore: true };
         }
-        if (gate.action === 'reply') {
-          return { response: gate.response, shouldStore: true, delaySeconds: replyDelay };
-        }
-        const greetingPrefix = gate.greeting ? `${gate.greeting}\n\n` : '';
 
-        // Get recent conversation history (last 10 messages)
-        // conversationId here is the UUID from whatsapp_conversations.id
+        // Recent lines for tone, plus the saved memory of everything older than that window.
         const conversationHistory = await queryRows<any>(
           `SELECT direction, message_text, created_at, message_id, sent_by
            FROM whatsapp_conversation_messages
@@ -2814,7 +2816,34 @@ export async function processIncomingMessage(
               : msg.message_text || ''
         }));
 
-          const chatName = await loadChatCustomerName(businessId, conversationId);
+        const storedFields = await loadLeadAnswers(businessId, conversationId);
+        let conversationMemory = applyStoredAnswers(
+          await loadAgentMemory(businessId, conversationId),
+          storedFields,
+        );
+        if (!conversationMemory.summary.trim()) {
+          const prior = history.at(-1)?.role === 'user' ? history.slice(0, -1) : history;
+          conversationMemory = combineMemory(memoryFromTranscript(prior), conversationMemory);
+        }
+        const remember = (assistantReply: string, leadData?: Record<string, string>) =>
+          rememberAgentTurn(
+            businessId,
+            conversationId,
+            { userMessage: messageText, assistantReply, priorMessages: history, leadData },
+            {
+              customerId,
+              placeholderNames: [whatsappDisplayName, normalizedFrom],
+              base: conversationMemory,
+            },
+          ).catch((err) => console.error('[CRM] Saving agent memory failed:', err));
+
+        if (gate.action === 'reply') {
+          await remember(gate.response);
+          return { response: gate.response, shouldStore: true, delaySeconds: replyDelay };
+        }
+        const greetingPrefix = gate.greeting ? `${gate.greeting}\n\n` : '';
+
+          const chatName = (await loadChatCustomerName(businessId, conversationId)) || conversationMemory.facts.name || null;
           let customerInfo: any = {
             name: chatName,
             profileName: whatsappDisplayName && !isPlaceholderName(whatsappDisplayName) ? whatsappDisplayName : null,
@@ -2904,7 +2933,8 @@ export async function processIncomingMessage(
             pendingOrder: pendingOrderInfo,
             customerPhone: normalizedFrom,
             live: aiConfig?.mode !== 'dev',
-            settingsOverride: agentSettings
+            settingsOverride: agentSettings,
+            conversationMemory,
           };
 
           let aiResult = await chatbot.generate(businessId, salesAgentRequest);
@@ -2920,7 +2950,9 @@ export async function processIncomingMessage(
               return { shouldStore: true };
             }
             console.warn('[CRM] ⚠️ AI Sales Agent produced no reply — sending fallback:', aiResult.failure);
-            return { response: fallbackReply(), shouldStore: true, delaySeconds: replyDelay };
+            const missed = fallbackReply();
+            await remember(missed);
+            return { response: missed, shouldStore: true, delaySeconds: replyDelay };
           }
 
           const parsedReply = parseAgentReply(aiRaw);
@@ -2944,7 +2976,9 @@ export async function processIncomingMessage(
             : '');
 
           if (!aiTrimmed) {
-            return { response: fallbackReply(), shouldStore: true, delaySeconds: replyDelay };
+            const missed = fallbackReply();
+            await remember(missed);
+            return { response: missed, shouldStore: true, delaySeconds: replyDelay };
           }
 
           if (aiTrimmed) {
@@ -2978,8 +3012,10 @@ export async function processIncomingMessage(
                   const callLine = phone
                     ? `Please call us at ${phone} and we'll help you place the order.`
                     : `Please message us and we'll help you place the order.`;
+                  const unavailable = `Sorry — online ordering isn't available right now because payments aren't set up.\n\n${callLine}`;
+                  await remember(unavailable, parsedReply.leadData);
                   return {
-                    response: `Sorry — online ordering isn't available right now because payments aren't set up.\n\n${callLine}`,
+                    response: unavailable,
                     shouldStore: true,
                     delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0,
                   };
@@ -3353,8 +3389,10 @@ export async function processIncomingMessage(
                   console.error('[CRM] ⚠️ Payment link generation failed:', e);
                   const phone = String(businessInfo?.phone || '').trim();
                   const callLine = phone ? `Please call us at ${phone} and we’ll help you right away.` : 'Please call us and we’ll help you right away.';
+                  const paymentFailed = `Sorry — we’re facing a technical issue right now.\n\n${callLine}`;
+                  await remember(paymentFailed, parsedReply.leadData);
                   return {
-                    response: `Sorry — we’re facing a technical issue right now.\n\n${callLine}`,
+                    response: paymentFailed,
                     shouldStore: true,
                     delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
                   };
@@ -3366,8 +3404,10 @@ export async function processIncomingMessage(
                   const cleaned = finalAiResponse.replace(/\[insert payment link\]|\[payment link\]/g, '').trim();
                   const phone = String(businessInfo?.phone || '').trim();
                   const callLine = phone ? `Please call us at ${phone} and we’ll help you right away.` : 'Please call us and we’ll help you right away.';
+                  const noLink = `${cleaned}\n\nSorry — we couldn’t generate a payment link right now.\n\n${callLine}`.trim();
+                  await remember(noLink, parsedReply.leadData);
                   return {
-                    response: `${cleaned}\n\nSorry — we couldn’t generate a payment link right now.\n\n${callLine}`.trim(),
+                    response: noLink,
                     shouldStore: true,
                     delaySeconds: botTypingSettings.typingEnabled ? botTypingSettings.delaySeconds : 0
                   };
@@ -3436,6 +3476,7 @@ export async function processIncomingMessage(
                   }
 
                     // Return as plain text (no button) - UPI links work better as clickable text links
+                  await remember(finalAiResponse, parsedReply.leadData);
                   return {
                     response: finalAiResponse,
                       shouldStore: true,
@@ -3461,6 +3502,7 @@ export async function processIncomingMessage(
                     }
 
                     // Return with button for HTTP/HTTPS links
+                    await remember(finalAiResponse, parsedReply.leadData);
                     return {
                       response: finalAiResponse,
                       shouldStore: true,
@@ -3505,6 +3547,7 @@ export async function processIncomingMessage(
               // Non-critical: continue even if event logging fails
             }
             
+            const taggedReply = `${greetingPrefix}${finalAiResponse.trim()}`;
             // Clean up any JSON or technical tags from AI response before sending to customer
             finalAiResponse = stripOrderTags(finalAiResponse);
             
@@ -3515,6 +3558,7 @@ export async function processIncomingMessage(
             finalAiResponse = finalAiResponse.replace(/\n{3,}/g, '\n\n');
             
             const replyText = `${greetingPrefix}${finalAiResponse.trim()}`;
+            await remember(taggedReply, parsedReply.leadData);
             if (quickReplyButtons.length) {
               return {
                 response: replyText,

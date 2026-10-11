@@ -7,6 +7,7 @@ import { matchesTriggerPhrase, isOutsideBusinessHours } from '@/lib/ai-agent/gat
 import { parseAgentReply } from '@/lib/ai-agent/prompt';
 import { ORDER_NOT_CREATED_REPLY, parseCreateOrderTag, parseCustomerTag, resolveOrderItems, stripOrderTags } from '@/lib/ai-agent/order-items';
 import { DEFAULT_FALLBACK_MESSAGE, DEFAULT_HANDOFF_MESSAGE, normalizeAgentSettings } from '@/lib/ai-agent/types';
+import { memoryFromTranscript } from '@/lib/ai-agent/memory';
 import { SalesAgentChatbot, type SalesAgentResult } from '@/lib/services/sales-agent-chatbot';
 
 export const dynamic = 'force-dynamic';
@@ -98,6 +99,7 @@ export const POST = withWhatsAppPremiumApi(
         address: biz?.address_line1 ?? undefined,
       },
       conversationHistory: history,
+      conversationMemory: memoryFromTranscript(history),
       test: true,
       live: false,
       settingsOverride: settings,
