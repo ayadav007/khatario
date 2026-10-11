@@ -16,6 +16,7 @@ import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
 import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
+import { AttendanceHistoryMatrix } from '@/components/hr/AttendanceHistoryMatrix';
 import { useFullHr } from '@/hooks/useFullHr';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
@@ -44,6 +45,7 @@ export default function AttendanceManagementPage() {
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent' | 'half_day' | 'leave'>('all');
   const [isMobile, setIsMobile] = useState(false);
+  const [view, setView] = useState<'list' | 'matrix'>('list');
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
@@ -126,18 +128,52 @@ export default function AttendanceManagementPage() {
 
   // authStatus === 'allowed' - render page content
 
+  const viewTabs = (
+    <div className="flex w-fit max-w-full gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Attendance views">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === 'list'}
+        onClick={() => setView('list')}
+        className={`min-h-10 rounded-md px-3 text-sm font-medium ${
+          view === 'list' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary'
+        }`}
+      >
+        Daily list
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={view === 'matrix'}
+        onClick={() => setView('matrix')}
+        className={`min-h-10 rounded-md px-3 text-sm font-medium ${
+          view === 'matrix' ? 'bg-white text-text-primary shadow-sm' : 'text-text-secondary'
+        }`}
+      >
+        Attendance matrix
+      </button>
+    </div>
+  );
+
   if (isMobile) {
     return (
       <div className="space-y-3">
-        <div className="flex justify-end">
-          <Link
-            href="/employees/attendance/mark/advanced"
-            className="text-sm font-medium text-text-secondary underline-offset-2 hover:underline"
-          >
-            Advanced
-          </Link>
-        </div>
-        <ManagerTeamRollCall simpleStatuses />
+        {viewTabs}
+        {view === 'matrix' ? (
+          <AttendanceHistoryMatrix />
+        ) : (
+          <>
+            <div className="flex justify-end">
+              <Link
+                href="/employees/attendance/mark/advanced"
+                className="text-sm font-medium text-text-secondary underline-offset-2 hover:underline"
+              >
+                Advanced
+              </Link>
+            </div>
+            <ManagerTeamRollCall simpleStatuses />
+          </>
+        )}
       </div>
     );
   }
@@ -162,6 +198,12 @@ export default function AttendanceManagementPage() {
   }
 />
 
+        {viewTabs}
+
+        {view === 'matrix' ? (
+          <AttendanceHistoryMatrix />
+        ) : (
+        <>
         {/* Filters */}
         <Card>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -318,6 +360,8 @@ export default function AttendanceManagementPage() {
             </div>
           )}
         </Card>
+        </>
+        )}
       </div>
     
   );
