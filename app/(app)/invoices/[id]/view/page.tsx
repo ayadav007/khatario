@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
+import { EwayBillField } from '@/components/invoices/EwayBillField';
 
 type InvoiceSummary = {
   id: string;
@@ -18,6 +19,9 @@ type InvoiceSummary = {
   customer_name?: string;
   customer_phone?: string;
   document_type?: string;
+  status?: string;
+  eway_bill_number?: string | null;
+  eway_bill_date?: string | null;
 };
 
 function PostGenerateAction({
@@ -82,6 +86,9 @@ export default function PublicInvoiceViewPage() {
           customer_name: inv.customer_name,
           customer_phone: inv.customer_phone,
           document_type: inv.document_type,
+          status: inv.status,
+          eway_bill_number: inv.eway_bill_number,
+          eway_bill_date: inv.eway_bill_date,
         });
       }
     } catch (error) {
@@ -202,6 +209,17 @@ export default function PublicInvoiceViewPage() {
             </div>
           ) : null}
 
+          {invoice && invoice.status !== 'cancelled' ? (
+            <div className="mx-4 mt-3 rounded-xl border border-border bg-surface p-4 shadow-sm">
+              <EwayBillField
+                invoiceId={invoiceId}
+                initialNumber={invoice.eway_bill_number}
+                initialDate={invoice.eway_bill_date}
+                onSaved={() => void load()}
+              />
+            </div>
+          ) : null}
+
           {/* Print · Download · Share — below preview, always visible */}
           <div className="px-6 pt-8 pb-2 flex items-center justify-center gap-6 sm:gap-10">
             <PostGenerateAction icon={Printer} label="Print" onClick={handlePrint} />
@@ -259,6 +277,16 @@ export default function PublicInvoiceViewPage() {
               </div>
             )}
           </div>
+          {invoice && invoice.status !== 'cancelled' ? (
+            <div className="mt-4 rounded-lg border border-border bg-surface p-4">
+              <EwayBillField
+                invoiceId={invoiceId}
+                initialNumber={invoice.eway_bill_number}
+                initialDate={invoice.eway_bill_date}
+                onSaved={() => void load()}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -250,6 +250,7 @@ function SalesReportContent() {
               { label: 'Sales', right: true },
               { label: 'Tax', right: true },
               { label: 'Total', right: true },
+              { label: 'Collected as' },
               { label: 'Balance', right: true },
             ]}
             rows={data.invoices.map((inv: any) => [
@@ -261,10 +262,11 @@ function SalesReportContent() {
               inr(inv.sales),
               inr(inv.tax_total),
               inr(inv.grand_total),
+              inv.payments_label || (Number(inv.paid_amount) > 0 ? 'Paid' : 'Unpaid'),
               inr(inv.balance_amount),
             ])}
             rowClass={(i) => (data.invoices[i].status === 'final' ? '' : 'text-gray-400')}
-            total={t ? ['Total (posted)', '', '', '', '', inr(t.total_sales), inr(t.total_tax), inr(t.total_sales_with_tax), inr(t.total_pending)] : undefined}
+            total={t ? ['Total (posted)', '', '', '', '', inr(t.total_sales), inr(t.total_tax), inr(t.total_sales_with_tax), '', inr(t.total_pending)] : undefined}
           />
         )}
       </div>
@@ -302,7 +304,7 @@ function SalesReportContent() {
             item.hsn_sac || '-',
             qty(item.quantity_invoiced),
             qty(item.quantity_returned),
-            `${qty(item.quantity_sold)} ${item.unit || ''}`.trim(),
+            `${item.quantity_label || qty(item.quantity_sold)}`.trim(),
             inr(item.amount),
             inr(item.average_price),
             inr(item.tax),

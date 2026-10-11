@@ -709,6 +709,7 @@ export async function createInvoiceInTransaction(
     grandTotal: totals.grandTotal,
     customerId: body.customer_id || null,
     paymentMode,
+    cashSalePayments: isCashSale ? insertedPayments : undefined,
     isCashSale,
     cogsAmount: 0,
     branchId: finalBranchId,

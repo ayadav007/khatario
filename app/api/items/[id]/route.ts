@@ -209,6 +209,8 @@ export async function PATCH(
       seo_title,
       seo_description,
       seo_image_url,
+      pack_size,
+      pack_unit,
       variants = []
     } = body;
 
@@ -242,6 +244,21 @@ export async function PATCH(
       unit: unit || 'PCS',
       hsn_sac: hsnClean || null,
     });
+
+    const patchPack =
+      Object.prototype.hasOwnProperty.call(body, 'pack_size') ||
+      Object.prototype.hasOwnProperty.call(body, 'pack_unit');
+    let packSize: number | null = null;
+    let packUnit: string | null = null;
+    if (patchPack) {
+      const { normalizePack } = await import('@/lib/quantity-display');
+      const pack = normalizePack({ pack_size, pack_unit, unit: unit || existingItem.unit });
+      if (pack.error) {
+        return NextResponse.json({ error: pack.error, code: 'INVALID_PACK' }, { status: 400 });
+      }
+      packSize = pack.pack_size;
+      packUnit = pack.pack_unit;
+    }
 
     const bundleFlagProvided = Object.prototype.hasOwnProperty.call(body, 'is_bundle');
     const rawBundleActive =
@@ -377,6 +394,14 @@ export async function PATCH(
       parts.push(`, uqc = $${idx}`);
       extra.push(finalUqc);
       idx += 1;
+      if (patchPack) {
+        parts.push(`, pack_size = $${idx}`);
+        extra.push(packSize);
+        idx += 1;
+        parts.push(`, pack_unit = $${idx}`);
+        extra.push(packUnit);
+        idx += 1;
+      }
       if (patchCategory) {
         parts.push(`, category_id = $${idx}`);
         extra.push(resolvedCategoryForPatch ?? null);

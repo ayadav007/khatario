@@ -203,6 +203,8 @@ export async function POST(request: NextRequest) {
       barcode,
       barcode_type,
       unit = 'PCS',
+      pack_size,
+      pack_unit,
       selling_price,
       purchase_price = 0,
       tax_rate = 0,
@@ -335,6 +337,11 @@ export async function POST(request: NextRequest) {
     }
     const { resolveItemUqc } = await import('@/lib/gst/uqc');
     const finalUqc = resolveItemUqc({ uqc: body.uqc, unit, hsn_sac: hsnClean || null });
+    const { normalizePack } = await import('@/lib/quantity-display');
+    const pack = normalizePack({ pack_size, pack_unit, unit });
+    if (pack.error) {
+      return NextResponse.json({ error: pack.error, code: 'INVALID_PACK' }, { status: 400 });
+    }
 
     // Force values for services or items with variants
     const finalOpeningStock = (item_type === 'service' || has_variants) ? 0 : opening_stock;
@@ -390,10 +397,10 @@ export async function POST(request: NextRequest) {
         default_supplier_id, has_variants, image_url, gst_included, mrp,
         fssai_licence_no, net_quantity, country_of_origin, brand,
         is_weighed, plu_code, weight_barcode_mode, allow_sale_when_out_of_stock,
-        show_in_store, featured_in_store, uqc
+        show_in_store, featured_in_store, uqc, pack_size, pack_unit
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+              $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
       RETURNING *
     `, [
       business_id,
@@ -427,6 +434,8 @@ export async function POST(request: NextRequest) {
       !!show_in_store || !!featured_in_store,
       !!featured_in_store,
       finalUqc,
+      pack.pack_size,
+      pack.pack_unit,
     ]);
 
       item = insertResult.rows[0] ?? null;

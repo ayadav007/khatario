@@ -91,6 +91,14 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
   const isCollection = type === 'collection';
   const isInvoiceType = type === 'sales' || type === 'receivables';
 
+  const modeTotals = isCollection
+    ? (data as CollectionPayment[]).reduce<Record<string, number>>((totals, payment) => {
+        const mode = formatPaymentMode(payment.payment_mode || 'cash');
+        totals[mode] = (totals[mode] || 0) + paymentAmount(payment.amount);
+        return totals;
+      }, {})
+    : null;
+
   const total = data.reduce((sum: number, item: any) => {
     if (isCollection) return sum + paymentAmount(item.amount);
     return sum + Number(item.grand_total || 0);
@@ -414,6 +422,14 @@ export function DashboardCardDetails({ type, title, data, loading = false, onClo
               Total: ₹{total.toLocaleString('en-IN')} • {data.length}{' '}
               {data.length === 1 ? 'item' : 'items'}
             </p>
+            {modeTotals && Object.keys(modeTotals).length > 0 ? (
+              <p className="mt-1 text-xs text-text-primary md:text-sm">
+                {Object.entries(modeTotals)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([mode, amount]) => `${mode} ₹${amount.toLocaleString('en-IN')}`)
+                  .join(' · ')}
+              </p>
+            ) : null}
           </div>
           <button
             onClick={onClose}

@@ -702,10 +702,15 @@ export async function PATCH(
             [balanceToAdd, lockedInv.customer_id, businessScope]
           );
         }
-        const firstPayment = await client.query(
-          `SELECT payment_mode FROM payments WHERE reference_type = 'invoice' AND reference_id = $1 ORDER BY created_at LIMIT 1`,
+        const invoicePayments = await client.query(
+          `SELECT payment_mode, amount
+             FROM payments
+            WHERE reference_type = 'invoice' AND reference_id = $1
+              AND deleted_at IS NULL AND status = 'active'
+            ORDER BY created_at`,
           [id]
         );
+        const walkIn = !lockedInv.customer_id;
         await createInvoiceLedgerEntries({
           businessId: lockedInv.business_id,
           invoiceId: id,
@@ -713,8 +718,9 @@ export async function PATCH(
           invoiceDate: lockedInv.invoice_date,
           grandTotal: Number(lockedInv.grand_total) || 0,
           customerId: lockedInv.customer_id || null,
-          paymentMode: firstPayment.rows[0]?.payment_mode || 'cash',
-          isCashSale: !lockedInv.customer_id,
+          paymentMode: invoicePayments.rows[0]?.payment_mode || 'cash',
+          cashSalePayments: walkIn ? invoicePayments.rows : undefined,
+          isCashSale: walkIn,
           cogsAmount: 0,
           branchId: stockBranchId,
           taxableValue: Number(lockedInv.subtotal) || 0,

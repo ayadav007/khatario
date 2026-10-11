@@ -62,6 +62,12 @@ export class InvoiceRenderer {
       const root = options?.data?.root || options?.data || this;
       const settings = root?.settings || {};
       const value = settings[settingKey];
+
+      if (settingKey === 'show_eway_bill_number') {
+        const inv = root?.invoice || {};
+        const hasNumber = String(inv.eway_bill_number || inv.e_way_bill_number || '').trim();
+        if (hasNumber) return render(true);
+      }
       
       // Debug logging for troubleshooting (only for first few calls to avoid spam)
       if (process.env.NODE_ENV === 'development' && ['show_logo', 'show_business_name', 'show_business_address'].includes(settingKey)) {

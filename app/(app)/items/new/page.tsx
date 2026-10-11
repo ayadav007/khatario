@@ -75,6 +75,8 @@ export default function NewItemPage() {
     barcode: '',
     barcode_type: '',
     unit: 'PCS',
+    pack_size: '',
+    pack_unit: '',
     uqc: '',
     item_type: 'goods' as 'goods' | 'service',
     selling_price: '',
@@ -435,6 +437,8 @@ export default function NewItemPage() {
               barcode: item.barcode || '',
               barcode_type: item.barcode_type || '',
               unit: item.unit || 'PCS',
+              pack_size: item.pack_size != null ? String(item.pack_size) : '',
+              pack_unit: item.pack_unit || '',
               uqc: (item as { uqc?: string | null }).uqc || '',
               item_type: item.item_type || 'goods',
               selling_price: item.selling_price?.toString() || '',
@@ -792,6 +796,8 @@ export default function NewItemPage() {
         barcode: formData.barcode || null,
         barcode_type: formData.barcode_type || null,
         unit: formData.unit,
+        pack_size: formData.pack_size ? Number(formData.pack_size) : null,
+        pack_unit: formData.pack_unit || null,
         uqc: formData.uqc || toGstUqc(formData.unit, formData.hsn_sac),
         item_type: formData.item_type,
         selling_price: formData.item_type === 'service' || formData.has_variants
@@ -1243,6 +1249,30 @@ export default function NewItemPage() {
                   <option value="HRS">HRS (Hours)</option>
                   <option value="DAYS">DAYS (Days)</option>
                 </select>
+              </div>
+              <div>
+                <label className="type-label mb-1.5 block">Pieces in one pack</label>
+                <input
+                  name="pack_size"
+                  type="number"
+                  min={2}
+                  step={1}
+                  className="input"
+                  value={formData.pack_size}
+                  onChange={handleChange}
+                  placeholder="10"
+                />
+                <p className="mt-1 text-xs text-text-secondary">Leave blank if you do not sell this in packs. Stock stays in the unit above.</p>
+              </div>
+              <div>
+                <label className="type-label mb-1.5 block">Pack name</label>
+                <input
+                  name="pack_unit"
+                  className="input"
+                  value={formData.pack_unit}
+                  onChange={handleChange}
+                  placeholder="CTN"
+                />
               </div>
 
               <div>

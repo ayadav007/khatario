@@ -171,7 +171,7 @@ function GSTR1PageContent() {
     }
   };
 
-  const handleExport = async (format: 'xlsx' | 'xlsx_offline_v22' | 'json') => {
+  const handleExport = async (format: 'xlsx' | 'xlsx_offline_v22' | 'json' | 'iff') => {
     if (!business) return;
     if (!ensureProfile(profileContext)) return;
     
@@ -193,10 +193,12 @@ function GSTR1PageContent() {
           month: month.toString(),
           year: year.toString(),
           customer_type: customerType,
-          export: 'json'
+          export: format === 'iff' ? 'iff' : 'json'
         });
         url = `/api/reports/gst/gstr1?${query}`;
-        filename = `GSTR1_${month.toString().padStart(2, '0')}_${year}.json`;
+        filename = format === 'iff'
+          ? `IFF_${month.toString().padStart(2, '0')}_${year}.json`
+          : `GSTR1_${month.toString().padStart(2, '0')}_${year}.json`;
       }
       
       const res = await fetch(url);
@@ -325,6 +327,15 @@ function GSTR1PageContent() {
             >
               <FileText className="w-4 h-4" />
               Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport('iff')}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              title="For quarterly filers. B2B invoices and credit notes for this month only."
+            >
+              <FileText className="w-4 h-4" />
+              IFF JSON
             </button>
           </div>
         </div>

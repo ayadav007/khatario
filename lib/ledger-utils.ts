@@ -11,6 +11,7 @@ import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/f
 import { resolveGstScheme } from '@/lib/gst/registration';
 import { recipientMayClaimItc } from '@/lib/gst/scheme-policy';
 import { isItcTimeBarred, thirtyNovAfterFy, todayIst } from '@/lib/gst/time-limits';
+import { cashSaleDebitLines, type CashSalePayment } from '@/lib/accounting/cash-sale-debits';
 
 /** Use the same PoolClient as an outer BEGIN so deferred voucher-balance triggers see all lines at COMMIT. */
 async function ledgerQueryOne<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -722,6 +723,8 @@ export async function createInvoiceLedgerEntries(params: {
   grandTotal: number;
   customerId?: string | null;
   paymentMode?: string;
+  /** Walk-in payments. Used only when they add up to grandTotal. */
+  cashSalePayments?: CashSalePayment[];
   isCashSale: boolean;
   cogsAmount?: number; // Cost of Goods Sold amount (if inventory tracking)
   branchId?: string; // Branch ID for branch-wise accounting
@@ -747,6 +750,7 @@ export async function createInvoiceLedgerEntries(params: {
     invoiceDate,
     grandTotal,
     customerId,
+    cashSalePayments,
     isCashSale,
     cogsAmount = 0,
     taxableValue,
@@ -797,26 +801,52 @@ export async function createInvoiceLedgerEntries(params: {
 
   // Entry 1: Debit Receivables/Cash for grand_total
   if (isCashSale || !customerId) {
-    const cashAccount = accounts.cash || accounts.bank;
-    if (!cashAccount) {
-      throw new Error(
-        `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
-        `Cannot post cash sale invoice ${invoiceNumber}.`,
-      );
+    const split = cashSaleDebitLines(grandTotal, cashSalePayments || []);
+    if (split) {
+      for (const line of split) {
+        const paymentAccount = await getAccountForPaymentMode(businessId, line.mode);
+        if (!paymentAccount) {
+          throw new Error(
+            `No Cash/Bank ledger account found for payment mode "${line.mode}". ` +
+            `Cannot post cash sale invoice ${invoiceNumber}.`,
+          );
+        }
+        await createLedgerEntryLine({
+          businessId,
+          voucherId: invoiceId,
+          voucherType: 'invoice',
+          accountId: paymentAccount.id,
+          entryDate: invoiceDate,
+          debit: line.amount,
+          credit: 0,
+          narration: `Cash sale (${line.mode}) - Invoice ${invoiceNumber}`,
+          referenceNumber: invoiceNumber,
+          branchId: params.branchId,
+          poolClient,
+        });
+      }
+    } else {
+      const cashAccount = accounts.cash || accounts.bank;
+      if (!cashAccount) {
+        throw new Error(
+          `Cash/Bank account (1101/1102) not found for business ${businessId}. ` +
+          `Cannot post cash sale invoice ${invoiceNumber}.`,
+        );
+      }
+      await createLedgerEntryLine({
+        businessId,
+        voucherId: invoiceId,
+        voucherType: 'invoice',
+        accountId: cashAccount.id,
+        entryDate: invoiceDate,
+        debit: grandTotal,
+        credit: 0,
+        narration: `Cash sale - Invoice ${invoiceNumber}`,
+        referenceNumber: invoiceNumber,
+        branchId: params.branchId,
+        poolClient,
+      });
     }
-    await createLedgerEntryLine({
-      businessId,
-      voucherId: invoiceId,
-      voucherType: 'invoice',
-      accountId: cashAccount.id,
-      entryDate: invoiceDate,
-      debit: grandTotal,
-      credit: 0,
-      narration: `Cash sale - Invoice ${invoiceNumber}`,
-      referenceNumber: invoiceNumber,
-      branchId: params.branchId,
-      poolClient,
-    });
   } else {
     if (!accounts.accountsReceivable) {
       throw new Error(

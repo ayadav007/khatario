@@ -376,7 +376,9 @@ export async function GET(request: NextRequest) {
             0
           ) as current_stock,
           i.min_stock,
-          i.unit
+          i.unit,
+          i.pack_size,
+          i.pack_unit
         FROM items i
         WHERE i.business_id = $1
           AND i.is_active = true

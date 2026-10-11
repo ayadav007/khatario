@@ -12,6 +12,9 @@ import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { format } from 'date-fns';
+import { formatStockQuantity } from '@/lib/quantity-display';
+import { AdjustItemStockSheet } from '@/components/items/AdjustItemStockSheet';
+import Link from 'next/link';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 
 // Valuation Tab Component
@@ -98,7 +101,7 @@ function ValuationTab({ itemId, item, businessId }: { itemId: string; item: any;
               ₹{valuation.total_value.toFixed(2)}
             </p>
             <p className="text-xs text-text-secondary mt-1">
-              {valuation.current_stock} {item.unit} × ₹{valuation.unit_cost.toFixed(2)}
+              {formatStockQuantity(valuation.current_stock, item.unit, item.pack_size, item.pack_unit)} × ₹{valuation.unit_cost.toFixed(2)}
             </p>
           </div>
         </Card>
@@ -276,6 +279,82 @@ function ValuationTab({ itemId, item, businessId }: { itemId: string; item: any;
   );
 }
 
+function StockHistory({ itemId, businessId, refreshKey }: { itemId: string; businessId?: string; refreshKey: number }) {
+  const [rows, setRows] = useState<Array<{
+    id: string;
+    movement_date: string;
+    label: string;
+    document_number: string | null;
+    href: string | null;
+    notes: string | null;
+    signed_quantity: number;
+    quantity_label: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!businessId || !itemId) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/items/${itemId}/movements?business_id=${businessId}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed'))))
+      .then((data) => {
+        if (!cancelled) setRows(data.movements || []);
+      })
+      .catch(() => {
+        if (!cancelled) setRows([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId, itemId, refreshKey]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-text-secondary">No stock movements yet. Purchases, sales, returns, and damage show up here.</p>;
+  }
+
+  return (
+    <div className="divide-y divide-border">
+      {rows.map((row) => (
+        <div key={row.id} className="flex items-start justify-between gap-3 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text-primary">{row.label}</p>
+            <p className="mt-0.5 text-xs text-text-secondary">
+              {format(new Date(row.movement_date), 'dd MMM yyyy')}
+              {row.document_number ? (
+                <>
+                  {' · '}
+                  {row.href ? (
+                    <Link href={row.href} className="text-primary-600 hover:underline">{row.document_number}</Link>
+                  ) : (
+                    row.document_number
+                  )}
+                </>
+              ) : null}
+            </p>
+            {row.notes ? <p className="mt-0.5 text-xs text-text-secondary">{row.notes}</p> : null}
+          </div>
+          <p className={`shrink-0 text-sm font-semibold tabular-nums ${row.signed_quantity < 0 ? 'text-red-600' : 'text-green-700'}`}>
+            {row.signed_quantity < 0 ? '−' : '+'}
+            {row.quantity_label}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ItemDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -284,7 +363,9 @@ export default function ItemDetailPage() {
 
   const [item, setItem] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'details' | 'batches' | 'serials' | 'valuation'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'batches' | 'serials' | 'valuation' | 'history'>('details');
+  const [damageOpen, setDamageOpen] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   const fetchItem = useCallback(async () => {
     if (!business?.id || !itemId) return;
@@ -354,10 +435,18 @@ export default function ItemDetailPage() {
           title={item.name}
           description={itemSubtitle || undefined}
           trailing={
-            <Button variant="secondary" onClick={() => router.push(`/items/new?edit=${itemId}`)}>
-              <Edit className="w-4 h-4 mr-2" />
-              Edit Item
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setDamageOpen(true)}
+              >
+                Record damage
+              </Button>
+              <Button variant="secondary" onClick={() => router.push(`/items/new?edit=${itemId}`)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Item
+              </Button>
+            </div>
           }
         />
 
@@ -367,6 +456,7 @@ export default function ItemDetailPage() {
             <div className="flex">
               {[
                 { id: 'details', label: 'Details', icon: Package },
+                { id: 'history', label: 'Stock history', icon: TrendingUp },
                 { id: 'batches', label: 'Batches', icon: Package, show: item.track_batch },
                 { id: 'serials', label: 'Serials', icon: Hash, show: item.track_serial },
                 { id: 'valuation', label: 'Valuation', icon: TrendingUp, show: item.track_batch || item.track_serial },
@@ -393,6 +483,9 @@ export default function ItemDetailPage() {
           </div>
 
           <div className="p-6">
+            {activeTab === 'history' && (
+              <StockHistory itemId={itemId} businessId={business?.id} refreshKey={historyRefresh} />
+            )}
             {activeTab === 'details' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -496,6 +589,19 @@ export default function ItemDetailPage() {
             )}
           </div>
         </Card>
+        <AdjustItemStockSheet
+          item={item}
+          open={damageOpen}
+          title="Record damage"
+          initialDirection="DECREASE"
+          initialReason="DAMAGE"
+          onClose={() => setDamageOpen(false)}
+          onSuccess={() => {
+            setDamageOpen(false);
+            setHistoryRefresh((n) => n + 1);
+            void fetchItem();
+          }}
+        />
       </div>
     
   );

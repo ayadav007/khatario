@@ -2402,6 +2402,7 @@ export async function POST(request: NextRequest) {
         grandTotal: grandTotal,
         customerId: customer_id || null,
         paymentMode: paymentMode,
+        cashSalePayments: isCashSale ? insertedPayments : undefined,
         isCashSale: isCashSale,
         cogsAmount: totalCogsAmount,
         branchId: finalBranchId,

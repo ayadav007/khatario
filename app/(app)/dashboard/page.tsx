@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { buildApiUrl } from '@/lib/api-helpers';
 import { format } from 'date-fns';
+import { formatStockQuantity } from '@/lib/quantity-display';
 import { DashboardCardDetails } from '@/components/dashboard/DashboardCardDetails';
 import { PromotionCarousel } from '@/components/promotions/PromotionCarousel';
 import { DashboardChartsSection } from '@/components/dashboard/DashboardChartsSection';
@@ -436,7 +437,7 @@ function DashboardPage() {
                       {item.name}
                     </Link>
                     <Chip variant={Number(item.current_stock) <= 0 ? 'error' : 'warning'} className="shrink-0 !px-1.5 !py-0.5 !text-2xs md:!text-xs">
-                      {item.current_stock} {item.unit}
+                      {formatStockQuantity(item.current_stock, item.unit, item.pack_size, item.pack_unit)}
                     </Chip>
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 text-caption text-text-secondary md:text-xs">

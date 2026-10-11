@@ -19,6 +19,7 @@ import { ModuleSettingsSheet } from '@/components/settings/ModuleSettingsSheet';
 import { getModuleSettingsMenu } from '@/lib/module-settings';
 import { useAuth } from '@/contexts/AuthContext';
 import { Item } from '@/types/database';
+import { formatStockQuantity } from '@/lib/quantity-display';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useMobileHeaderRightAccessory } from '@/contexts/MobileHeaderTitleContext';
 import { useEntityList } from '@/hooks/useEntityList';
@@ -563,7 +564,7 @@ function ItemsPage() {
                           ) : (
                             <div className="flex flex-col items-center gap-0.5">
                               <Chip variant={stockStatus as any}>
-                                {available} {item.unit}
+                                {formatStockQuantity(available, item.unit, (item as { pack_size?: number | null }).pack_size, (item as { pack_unit?: string | null }).pack_unit)}
                               </Chip>
                               {reserved > 0 ? (
                                 <span className="text-2xs text-text-muted">

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { queryOne, queryRows } from '@/lib/db';
+import { formatStockQuantity } from '@/lib/quantity-display';
 import { INVOICE_CHANNELS, type InvoiceChannel } from '@/lib/invoices/channel';
 import {
   type ReportContext,
@@ -146,6 +147,7 @@ export interface SalesByItemRow {
   quantity_invoiced: number;
   quantity_returned: number;
   quantity_sold: number;
+  quantity_label: string;
   amount: number;
   tax: number;
   amount_with_tax: number;
@@ -180,6 +182,8 @@ export async function salesByItem(ctx: SalesReportContext) {
             COALESCE(MAX(it.name), MAX(l.line_name)) AS item_name,
             COALESCE(MAX(it.hsn_sac), MAX(l.hsn_sac)) AS hsn_sac,
             COALESCE(MAX(it.unit), MAX(l.unit)) AS unit,
+            MAX(it.pack_size) AS pack_size,
+            MAX(it.pack_unit) AS pack_unit,
             SUM(l.qty_in) AS qty_in, SUM(l.qty_out) AS qty_out,
             SUM(l.amount) AS amount, SUM(l.tax) AS tax, SUM(l.discount) AS discount,
             COUNT(DISTINCT l.invoice_id) AS invoice_count
@@ -204,6 +208,7 @@ export async function salesByItem(ctx: SalesReportContext) {
       quantity_invoiced: qtyIn,
       quantity_returned: qtyOut,
       quantity_sold: qty,
+      quantity_label: formatStockQuantity(qty, r.unit, r.pack_size == null ? null : Number(r.pack_size), r.pack_unit),
       amount,
       tax,
       amount_with_tax: r2(amount + tax),
@@ -303,7 +308,25 @@ export async function invoiceDetails(
             i.customer_id, COALESCE(c.name, 'Walk-in / Cash Sale') AS customer_name, c.gstin AS customer_gstin,
             COALESCE(i.channel, 'manual') AS channel,
             i.subtotal, i.discount_total, i.additional_charges, i.tax_total, i.cgst_total, i.sgst_total, i.igst_total,
-            i.grand_total, i.paid_amount, i.balance_amount, i.supply_type
+            i.grand_total, i.paid_amount, i.balance_amount, i.supply_type,
+            (
+              SELECT string_agg(
+                       INITCAP(REPLACE(pm.payment_mode, '_', ' ')) || ' ₹' ||
+                       to_char(pm.amt, 'FM999999990.00'),
+                       ', ' ORDER BY pm.amt DESC
+                     )
+                FROM (
+                  SELECT COALESCE(NULLIF(btrim(p.payment_mode), ''), 'cash') AS payment_mode,
+                         SUM(p.amount) AS amt
+                    FROM payments p
+                   WHERE p.reference_type = 'invoice'
+                     AND p.reference_id = i.id
+                     AND p.business_id = i.business_id
+                     AND p.deleted_at IS NULL
+                     AND p.status = 'active'
+                   GROUP BY 1
+                ) pm
+            ) AS payments_label
        FROM invoices i
        LEFT JOIN customers c ON c.id = i.customer_id
       WHERE i.business_id = $1 AND i.deleted_at IS NULL

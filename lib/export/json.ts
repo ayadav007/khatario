@@ -413,3 +413,27 @@ export async function generateGSTR1JSON(
 
   return JSON.stringify(gstr1Json, null, 2);
 }
+
+/**
+ * Invoice Furnishing Facility file for a quarterly (QRMP) filer.
+ * Only B2B invoices and credit/debit notes to registered buyers. B2C, HSN and
+ * the document summary stay on the quarterly GSTR-1.
+ */
+export function toIffJson(gstr1Json: string): string {
+  const src = JSON.parse(gstr1Json) as Record<string, unknown>;
+  return JSON.stringify(
+    {
+      gstin: src.gstin,
+      fp: src.fp,
+      gt: src.gt ?? 0,
+      cur_gt: src.cur_gt ?? src.gt ?? 0,
+      version: 'IFF-1.1',
+      b2b: src.b2b ?? [],
+      b2ba: src.b2ba ?? [],
+      cdnr: src.cdnr ?? [],
+      cdnra: src.cdnra ?? [],
+    },
+    null,
+    2,
+  );
+}
