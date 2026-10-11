@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { partiesFromItemOwner } from '@/lib/quantity-request-parties';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
 export const dynamic = 'force-dynamic';
@@ -27,8 +28,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       id: string;
       requester_business_id: string;
       responder_business_id: string;
+      item_id: string;
+      item_business_id: string;
     }>(
-      `SELECT id, requester_business_id, responder_business_id FROM quantity_requests WHERE id = $1`,
+      `SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
+              i.business_id AS item_business_id
+       FROM quantity_requests qr
+       JOIN items i ON i.id = qr.item_id
+       WHERE qr.id = $1`,
       [requestId]
     );
 
@@ -36,10 +43,42 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'request not found' }, { status: 404 });
     }
 
+    const parties = partiesFromItemOwner(
+      row.requester_business_id,
+      row.responder_business_id,
+      row.item_business_id,
+      row.item_id
+    );
+    if (!parties) {
+      return NextResponse.json({ error: 'request is not tied to a buyer item' }, { status: 400 });
+    }
+
     const allowed =
-      row.requester_business_id === auth.businessId || row.responder_business_id === auth.businessId;
+      parties.buyerBusinessId === auth.businessId || parties.vendorBusinessId === auth.businessId;
     if (!allowed) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+
+    async function owned(table: string, id: string | null, businessId: string) {
+      if (!id) return true;
+      const found = await db.queryOne(
+        `SELECT id FROM ${table} WHERE id = $1 AND business_id = $2`,
+        [id, businessId]
+      );
+      return !!found;
+    }
+
+    if (!(await owned('purchase_orders', purchase_order_id || null, parties.buyerBusinessId))) {
+      return NextResponse.json({ error: 'Purchase order was not found on the buyer’s books' }, { status: 400 });
+    }
+    if (!(await owned('purchases', purchase_id || null, parties.buyerBusinessId))) {
+      return NextResponse.json({ error: 'Purchase was not found on the buyer’s books' }, { status: 400 });
+    }
+    if (!(await owned('sales_orders', sales_order_id || null, parties.vendorBusinessId))) {
+      return NextResponse.json({ error: 'Sales order was not found on the vendor’s books' }, { status: 400 });
+    }
+    if (!(await owned('invoices', invoice_id || null, parties.vendorBusinessId))) {
+      return NextResponse.json({ error: 'Invoice was not found on the vendor’s books' }, { status: 400 });
     }
 
     const updated = await db.queryOne(

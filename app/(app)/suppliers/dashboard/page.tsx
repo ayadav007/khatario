@@ -508,9 +508,9 @@ export default function SupplierDashboardPage() {
           </Card>
 
           <Card padding="md" className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/suppliers/dashboard/analytics')}>
-            <h3 className="font-semibold text-gray-900 mb-2">Location Analytics</h3>
-            <p className="text-sm text-gray-600 mb-2">View product performance by region and pincode</p>
-            <p className="text-xs text-primary-600 font-medium">View Analytics →</p>
+            <h3 className="font-semibold text-gray-900 mb-2">Area performance</h3>
+            <p className="text-sm text-gray-600 mb-2">See which areas are buying and selling, on a map and in a pivot</p>
+            <p className="text-xs text-primary-600 font-medium">View areas →</p>
           </Card>
         </div>
 

@@ -41,7 +41,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     if (existing.responder_business_id !== auth.businessId) {
-      return NextResponse.json({ error: 'only the supplier can respond to this request' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Only the business that received this request can confirm or decline it' },
+        { status: 403 }
+      );
     }
 
     if (existing.status !== 'pending') {

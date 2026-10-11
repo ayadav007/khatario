@@ -2436,43 +2436,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Link invoice to quantity request if provided (new invoices only)
+    // Link invoice to quantity request if this invoice is the vendor's sale to the buyer.
     if (!invoiceId && request_id) {
       try {
-        await client.query(`
-          UPDATE quantity_requests
-          SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [invoice.id, request_id]);
-        
-        // Get request details to send notification to customer
         const requestRes = await client.query(`
-          SELECT requester_business_id, responder_business_id, item_id
-          FROM quantity_requests
-          WHERE id = $1
+          SELECT qr.requester_business_id, qr.responder_business_id, qr.item_id,
+                 i.business_id AS item_business_id
+          FROM quantity_requests qr
+          JOIN items i ON i.id = qr.item_id
+          WHERE qr.id = $1
         `, [request_id]);
-        
+
         if (requestRes.rows.length > 0) {
           const req = requestRes.rows[0];
-          // Send notification to customer (requester) that invoice has been created
-          try {
-            const supplierBiz = await client.query('SELECT name FROM businesses WHERE id = $1', [req.responder_business_id]);
-            const supplierName = supplierBiz.rows[0]?.name || 'Supplier';
-            
+          const { partiesFromItemOwner } = await import('@/lib/quantity-request-parties');
+          const parties = partiesFromItemOwner(
+            req.requester_business_id,
+            req.responder_business_id,
+            req.item_business_id,
+            req.item_id
+          );
+          if (parties && String(parties.vendorBusinessId) === String(business_id)) {
             await client.query(`
-              INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
-              VALUES ($1, 'quantity_response', 'Invoice Created', 
-                $2 || ' has created an invoice for your request. Invoice Number: ' || $3 || '. You can convert it to a purchase from the Requests page.',
-                'invoice', $4, CURRENT_TIMESTAMP)
-            `, [
-              req.requester_business_id,
-              supplierName,
-              invoice.invoice_number,
-              invoice.id
-            ]);
-          } catch (notifError) {
-            console.error('Error creating notification:', notifError);
-            // Don't fail invoice creation if notification fails
+              UPDATE quantity_requests
+              SET invoice_id = $1, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2
+            `, [invoice.id, request_id]);
+
+            try {
+              const supplierBiz = await client.query('SELECT name FROM businesses WHERE id = $1', [parties.vendorBusinessId]);
+              const supplierName = supplierBiz.rows[0]?.name || 'Supplier';
+
+              await client.query(`
+                INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
+                VALUES ($1, 'quantity_response', 'Invoice Created',
+                  $2 || ' has created an invoice for your request. Invoice Number: ' || $3 || '. You can convert it to a purchase from the Requests page.',
+                  'invoice', $4, CURRENT_TIMESTAMP)
+              `, [
+                parties.buyerBusinessId,
+                supplierName,
+                invoice.invoice_number,
+                invoice.id
+              ]);
+            } catch (notifError) {
+              console.error('Error creating notification:', notifError);
+            }
           }
         }
       } catch (linkError) {

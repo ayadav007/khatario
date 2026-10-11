@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic';
  * Look up customer business_id from supplier relationship
  */
 export async function GET(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const supplierBusinessId = searchParams.get('supplier_business_id');
@@ -17,6 +21,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'supplier_business_id and customer_name are required' },
         { status: 400 }
+      );
+    }
+
+    if (supplierBusinessId !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only look up customers for your own business', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 

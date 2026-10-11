@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
         cb.name as customer_name,
         cb.phone as customer_phone,
         cb.email as customer_email,
-        cb.address as customer_address,
         cb.city as customer_city,
         cb.state as customer_state,
         cb.pincode as customer_pincode,

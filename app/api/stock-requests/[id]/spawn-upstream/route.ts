@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant, assertLinkedSupplier } from '@/lib/stock-request-security';
+import { partiesFromItemOwner } from '@/lib/quantity-request-parties';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
 export const dynamic = 'force-dynamic';
@@ -25,11 +26,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const existing = await db.queryOne<{
       id: string;
+      requester_business_id: string;
       responder_business_id: string;
       item_id: string;
+      item_business_id: string;
       responder_item_id: string | null;
     }>(
-      `SELECT id, responder_business_id, item_id, responder_item_id FROM quantity_requests WHERE id = $1`,
+      `SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
+              i.business_id AS item_business_id, qr.responder_item_id
+       FROM quantity_requests qr
+       JOIN items i ON i.id = qr.item_id
+       WHERE qr.id = $1`,
       [requestId]
     );
 
@@ -37,11 +44,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'request not found' }, { status: 404 });
     }
 
-    if (existing.responder_business_id !== auth.businessId) {
-      return NextResponse.json({ error: 'only the current supplier can spawn an upstream request' }, { status: 403 });
+    const parties = partiesFromItemOwner(
+      existing.requester_business_id,
+      existing.responder_business_id,
+      existing.item_business_id,
+      existing.item_id
+    );
+    if (!parties || parties.vendorBusinessId !== auth.businessId) {
+      return NextResponse.json({ error: 'only the vendor can spawn an upstream request' }, { status: 403 });
     }
 
-    const newRequester = existing.responder_business_id;
+    const newRequester = parties.vendorBusinessId;
     const newResponder = upstream_business_id;
     const newItemId = (item_id && String(item_id).trim()) || existing.responder_item_id || null;
     if (!newItemId) {

@@ -3,161 +3,243 @@
 export const dynamic = 'force-dynamic';
 
 import { PageHeader } from '@/components/layout/PageHeader';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, MapPin, TrendingUp, Package } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { IndiaAreaMap } from '@/components/suppliers/IndiaAreaMap';
+import type { AreaPerformance } from '@/lib/supplier-area-performance';
 
-interface LocationStat {
-  state?: string;
-  city?: string;
-  pincode?: string;
-  customer_count: number;
-  total_sales: number;
-  item_count: number;
+type PeriodKey = '30d' | '90d' | 'fy';
+type ViewKey = 'map' | 'pivot' | 'rank';
+type Grain = 'state' | 'city' | 'pincode';
+
+type AnalyticsPayload = {
+  period: { key: PeriodKey; from: string; to: string };
+  states: AreaPerformance[];
+  cities: AreaPerformance[];
+  pincodes: AreaPerformance[];
+  pivot_items: string[];
+  pivot_matrix: { state: string; cells: Record<string, number>; total: number }[];
+};
+
+const BAND_LABEL: Record<AreaPerformance['band'], string> = {
+  strong: 'Doing well',
+  watch: 'Watch',
+  weak: 'Needs attention',
+  quiet: 'No movement',
+};
+
+function money(value: number) {
+  return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
 
 export default function SupplierAnalyticsPage() {
   const { business } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [byState, setByState] = useState<LocationStat[]>([]);
-  const [byCity, setByCity] = useState<LocationStat[]>([]);
-  const [byPincode, setByPincode] = useState<LocationStat[]>([]);
+  const [period, setPeriod] = useState<PeriodKey>('90d');
+  const [view, setView] = useState<ViewKey>('map');
+  const [grain, setGrain] = useState<Grain>('state');
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [data, setData] = useState<AnalyticsPayload | null>(null);
 
   useEffect(() => {
-    fetchAnalytics();
-  }, [business?.id]);
-
-  const fetchAnalytics = async () => {
     if (!business?.id) return;
-
+    let cancelled = false;
     setLoading(true);
-    try {
-      const res = await fetch(`/api/suppliers/dashboard/analytics?supplier_business_id=${business.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setByState(data.by_state || []);
-        setByCity(data.by_city || []);
-        setByPincode(data.by_pincode || []);
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetch(`/api/suppliers/dashboard/analytics?period=${period}`)
+      .then((res) => res.json())
+      .then((payload) => {
+        if (!cancelled && payload.success) setData(payload);
+      })
+      .catch((error) => console.error('Error fetching analytics:', error))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id, period]);
 
-  const renderLocationTable = (data: LocationStat[], title: string, locationField: 'state' | 'city' | 'pincode') => {
-    return (
-      <Card padding="md">
-        <h3 className="font-semibold text-gray-900 mb-4">{title}</h3>
-        {data.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">No data available</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left text-xs font-semibold text-gray-600 pb-2 px-2">Location</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 pb-2 px-2">Customers</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 pb-2 px-2">Items</th>
-                  <th className="text-right text-xs font-semibold text-gray-600 pb-2 px-2">Total Sales</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((item, index) => (
-                  <tr key={index} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-3 px-2">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900">
-                          {item[locationField] || 'N/A'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right text-gray-700">{item.customer_count}</td>
-                    <td className="py-3 px-2 text-right text-gray-700">{item.item_count}</td>
-                    <td className="py-3 px-2 text-right font-medium text-gray-900">
-                      ₹{item.total_sales?.toLocaleString('en-IN') || '0'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-    );
-  };
+  const rows = grain === 'state' ? data?.states : grain === 'city' ? data?.cities : data?.pincodes;
+  const visibleRows = useMemo(() => {
+    const list = rows || [];
+    if (!selectedState) return list;
+    return list.filter((row) => row.state === selectedState);
+  }, [rows, selectedState]);
 
   return (
-    
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div>
-          <PageHeader
-  title="Location Analytics"
-  subtitle="Track your product performance by geographic location"
-/>
-        </div>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <PageHeader
+        title="Area performance"
+        subtitle="Where customers are buying from you, and where those goods are selling onward. Only customers who granted low-stock access are included."
+      />
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card padding="md">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 mb-1">States Covered</p>
-                <p className="text-2xl font-bold text-gray-900">{byState.length}</p>
-              </div>
-              <div className="bg-slate-100 p-3 rounded-lg">
-                <MapPin className="w-6 h-6 text-primary-600" />
-              </div>
-            </div>
-          </Card>
-
-          <Card padding="md">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 mb-1">Cities Covered</p>
-                <p className="text-2xl font-bold text-gray-900">{byCity.length}</p>
-              </div>
-              <div className="bg-green-100 p-3 rounded-lg">
-                <TrendingUp className="w-6 h-6 text-green-600" />
-              </div>
-            </div>
-          </Card>
-
-          <Card padding="md">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 mb-1">PIN Codes</p>
-                <p className="text-2xl font-bold text-gray-900">{byPincode.length}</p>
-              </div>
-              <div className="bg-purple-100 p-3 rounded-lg">
-                <Package className="w-6 h-6 text-purple-600" />
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* By State */}
-            {renderLocationTable(byState, 'Performance by State', 'state')}
-
-            {/* By City */}
-            {renderLocationTable(byCity, 'Performance by City', 'city')}
-
-            {/* By Pincode */}
-            {renderLocationTable(byPincode, 'Performance by PIN Code', 'pincode')}
-          </div>
-        )}
+      <div className="flex flex-wrap gap-2">
+        {([
+          ['30d', 'Last 30 days'],
+          ['90d', 'Last 90 days'],
+          ['fy', 'This financial year'],
+        ] as const).map(([key, label]) => (
+          <Button key={key} size="sm" variant={period === key ? 'primary' : 'secondary'} onClick={() => setPeriod(key)}>
+            {label}
+          </Button>
+        ))}
       </div>
-    
+
+      <div className="flex flex-wrap gap-2">
+        {([
+          ['map', 'Map'],
+          ['pivot', 'Pivot'],
+          ['rank', 'Ranking'],
+        ] as const).map(([key, label]) => (
+          <Button key={key} size="sm" variant={view === key ? 'primary' : 'secondary'} onClick={() => setView(key)}>
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      {data?.period && (
+        <p className="text-xs text-gray-500">
+          {data.period.from} to {data.period.to}. Bought from you is their posted purchase bills. Sold onward is their posted invoices of items they buy from you, list you as the default supplier for, or that you set a threshold on.
+        </p>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        </div>
+      ) : !data || data.states.length === 0 ? (
+        <Card padding="lg">
+          <p className="text-center text-gray-500">No linked customers have granted low-stock access yet.</p>
+        </Card>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-700" /> Doing well</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-700" /> Watch</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-700" /> Needs attention</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-400" /> No movement</span>
+          </div>
+
+          {view === 'map' && (
+            <Card padding="md" className="space-y-3">
+              <IndiaAreaMap states={data.states} onSelect={(state) => setSelectedState(state)} />
+              {selectedState && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-gray-700">Selected: {selectedState}</p>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedState(null)}>Clear</Button>
+                </div>
+              )}
+              <AreaTable rows={selectedState ? data.states.filter((row) => row.state === selectedState) : data.states} />
+            </Card>
+          )}
+
+          {view === 'pivot' && (
+            <div className="space-y-4">
+              <GrainSwitch grain={grain} onChange={setGrain} />
+              <Card padding="md">
+                <h3 className="font-semibold text-gray-900 mb-3">Location pivot</h3>
+                <AreaTable rows={visibleRows} />
+              </Card>
+              <Card padding="md">
+                <h3 className="font-semibold text-gray-900 mb-1">State by item</h3>
+                <p className="text-xs text-gray-500 mb-3">Onward sales of the top items, by state.</p>
+                {data.pivot_items.length === 0 ? (
+                  <p className="text-sm text-gray-500">No onward sales in this period.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left text-xs font-semibold text-gray-600 py-2 pr-3">State</th>
+                          {data.pivot_items.map((item) => (
+                            <th key={item} className="text-right text-xs font-semibold text-gray-600 py-2 px-2">{item}</th>
+                          ))}
+                          <th className="text-right text-xs font-semibold text-gray-600 py-2 pl-2">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.pivot_matrix
+                          .filter((row) => !selectedState || row.state === selectedState)
+                          .map((row) => (
+                            <tr key={row.state} className="border-b border-gray-100">
+                              <td className="py-2 pr-3 font-medium text-gray-900">{row.state}</td>
+                              {data.pivot_items.map((item) => (
+                                <td key={item} className="py-2 px-2 text-right text-gray-700">{money(row.cells[item] || 0)}</td>
+                              ))}
+                              <td className="py-2 pl-2 text-right font-medium text-gray-900">{money(row.total)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+
+          {view === 'rank' && (
+            <div className="space-y-3">
+              <GrainSwitch grain={grain} onChange={setGrain} />
+              <Card padding="md">
+                <AreaTable rows={visibleRows} />
+              </Card>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
+function GrainSwitch({ grain, onChange }: { grain: Grain; onChange: (grain: Grain) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {([
+        ['state', 'State'],
+        ['city', 'City'],
+        ['pincode', 'PIN code'],
+      ] as const).map(([key, label]) => (
+        <Button key={key} size="sm" variant={grain === key ? 'primary' : 'secondary'} onClick={() => onChange(key)}>
+          {label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function AreaTable({ rows }: { rows: AreaPerformance[] }) {
+  if (rows.length === 0) {
+    return <p className="text-sm text-gray-500 py-6 text-center">Nothing in this selection.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200">
+            <th className="text-left text-xs font-semibold text-gray-600 py-2 pr-3">Area</th>
+            <th className="text-right text-xs font-semibold text-gray-600 py-2 px-2">Customers</th>
+            <th className="text-right text-xs font-semibold text-gray-600 py-2 px-2">Bought from you</th>
+            <th className="text-right text-xs font-semibold text-gray-600 py-2 px-2">Sold onward</th>
+            <th className="text-right text-xs font-semibold text-gray-600 py-2 px-2">Low stock</th>
+            <th className="text-left text-xs font-semibold text-gray-600 py-2 pl-2">Signal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label} className="border-b border-gray-100">
+              <td className="py-2 pr-3 font-medium text-gray-900">{row.label}</td>
+              <td className="py-2 px-2 text-right text-gray-700">{row.customerCount}</td>
+              <td className="py-2 px-2 text-right text-gray-700">{money(row.sellIn)}</td>
+              <td className="py-2 px-2 text-right text-gray-700">{money(row.sellThrough)}</td>
+              <td className="py-2 px-2 text-right text-gray-700">{row.lowStockItems}</td>
+              <td className="py-2 pl-2 text-gray-800">{BAND_LABEL[row.band]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

@@ -33,6 +33,7 @@ interface RequestRow {
   sales_order_number?: string | null;
   invoice_number?: string | null;
   invoice_id?: string | null;
+  item_business_id?: string | null;
   responder_item_id?: string | null;
   responder_item_name?: string | null;
   responder_item_code?: string | null;
@@ -51,6 +52,20 @@ interface ItemOption {
 }
 
 const emptyLinkFields = { purchase_order_id: '', purchase_id: '', invoice_id: '' };
+
+function requestParties(req: RequestRow, businessId?: string) {
+  const buyerIsRequester = !!req.item_business_id && req.item_business_id === req.requester_business_id;
+  const buyerBusinessId = buyerIsRequester ? req.requester_business_id : req.responder_business_id;
+  const vendorBusinessId = buyerIsRequester ? req.responder_business_id : req.requester_business_id;
+  return {
+    buyerBusinessId,
+    vendorBusinessId,
+    isBuyer: buyerBusinessId === businessId,
+    isVendor: vendorBusinessId === businessId,
+    buyerName: buyerIsRequester ? req.requester_name : req.responder_name,
+    vendorName: buyerIsRequester ? req.responder_name : req.requester_name,
+  };
+}
 
 function PurchaseRequestsContent() {
   const router = useRouter();
@@ -77,6 +92,8 @@ function PurchaseRequestsContent() {
   const [activityEvents, setActivityEvents] = useState<Record<string, any[]>>({});
   const [activityLoadingId, setActivityLoadingId] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ requester?: any; responder?: any }>({});
+  const [lowStockSuggestions, setLowStockSuggestions] = useState<any[]>([]);
+  const [sendingSuggestionId, setSendingSuggestionId] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [responseInput, setResponseInput] = useState<{ [key: string]: { status: string; qty: string; notes: string } }>({});
   const toast = useToastContext();
@@ -154,6 +171,17 @@ function PurchaseRequestsContent() {
     }
   }, [business?.id, user?.id]);
 
+  const fetchLowStockSuggestions = useCallback(async () => {
+    if (!business?.id) return;
+    try {
+      const res = await fetch('/api/stock-requests/reorder-suggestions');
+      const data = await res.json();
+      setLowStockSuggestions(data.suggestions || []);
+    } catch (error) {
+      console.error('Error fetching low-stock suggestions', error);
+    }
+  }, [business?.id]);
+
   const fetchDocumentPickers = useCallback(async () => {
     if (!business?.id || !user?.id) return;
     try {
@@ -228,8 +256,9 @@ function PurchaseRequestsContent() {
       fetchItems();
       fetchSummary();
       fetchDocumentPickers();
+      fetchLowStockSuggestions();
     }
-  }, [business?.id, fetchRequests, fetchSuppliers, fetchItems, fetchSummary, fetchDocumentPickers]);
+  }, [business?.id, fetchRequests, fetchSuppliers, fetchItems, fetchSummary, fetchDocumentPickers, fetchLowStockSuggestions]);
 
   // Handle return from customer creation
   useEffect(() => {
@@ -315,6 +344,7 @@ function PurchaseRequestsContent() {
         setNeedByDate('');
         fetchRequests();
         fetchSummary();
+        fetchLowStockSuggestions();
         toast.success('Request sent to supplier.');
       } else {
         const data = await res.json().catch(() => ({}));
@@ -325,6 +355,41 @@ function PurchaseRequestsContent() {
       toast.error('Failed to send request');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendSuggestion = async (suggestion: any) => {
+    if (!business?.id || !suggestion.linked_business_id || !suggestion.item_id) return;
+    setSendingSuggestionId(suggestion.item_id);
+    try {
+      const res = await fetch('/api/stock-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [
+            {
+              requester_business_id: business.id,
+              responder_business_id: suggestion.linked_business_id,
+              item_id: suggestion.item_id,
+              requested_qty: suggestion.shortage > 0 ? suggestion.shortage : suggestion.min_stock,
+            },
+          ],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(`Request sent to ${suggestion.supplier_name}.`);
+        fetchRequests();
+        fetchSummary();
+        fetchLowStockSuggestions();
+      } else {
+        toast.error(data.error || 'Failed to send request');
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to send request');
+    } finally {
+      setSendingSuggestionId(null);
     }
   };
 
@@ -528,6 +593,37 @@ function PurchaseRequestsContent() {
           </div>
         </Card>
 
+        {lowStockSuggestions.length > 0 && (
+          <Card padding="md" className="space-y-3">
+            <h2 className="text-lg font-semibold text-gray-900">Low stock to reorder</h2>
+            <p className="text-sm text-gray-600">
+              These items are at or below their minimum, and the default supplier is a linked business. Sending a request asks that vendor to confirm the quantity. You raise the purchase order after they confirm.
+            </p>
+            <div className="space-y-2">
+              {lowStockSuggestions.map((suggestion) => (
+                <div key={suggestion.item_id} className="flex flex-wrap items-center justify-between gap-2 border rounded-lg p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {suggestion.item_name}
+                      {suggestion.item_code ? ` (${suggestion.item_code})` : ''}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Stock {suggestion.current_stock} / min {suggestion.min_stock} {suggestion.unit} · Vendor {suggestion.supplier_name} · Ask {suggestion.shortage}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSendSuggestion(suggestion)}
+                    disabled={sendingSuggestionId === suggestion.item_id || !canCreate}
+                  >
+                    {sendingSuggestionId === suggestion.item_id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send to vendor'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         <Card padding="md">
           <p className="text-xs font-semibold text-gray-600 mb-2">As buyer (requests you sent)</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -576,14 +672,15 @@ function PurchaseRequestsContent() {
             <div className="space-y-3">
               {requests.map((req) => {
                 const isIncoming = req.responder_business_id === business?.id;
-                const otherPartyName = isIncoming ? req.requester_name : req.responder_name;
-                const otherPartyLabel = isIncoming ? 'From' : 'To';
+                const parties = requestParties(req, business?.id);
+                const otherPartyName = parties.isBuyer ? parties.vendorName : parties.buyerName;
+                const otherPartyLabel = parties.isBuyer ? 'Vendor' : 'Buyer';
                 
                 return (
                 <div key={req.id} className={`border rounded-lg p-3 flex flex-col gap-2 ${isIncoming ? 'border-primary-200 bg-slate-50/30' : ''}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col">
-                      <span className="text-xs text-gray-500">{otherPartyLabel}: {otherPartyName || (isIncoming ? 'Supplier' : 'Customer')}</span>
+                      <span className="text-xs text-gray-500">{otherPartyLabel}: {otherPartyName || 'Business'}</span>
                       <span className="text-sm font-semibold text-gray-900">{req.item_name || req.item_code || 'Item'}</span>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -632,16 +729,16 @@ function PurchaseRequestsContent() {
                     )}
                   </div>
 
-                  {isIncoming && (
+                  {parties.isVendor && (
                     <div className="text-xs text-gray-600 border border-dashed rounded p-2 space-y-2 bg-white/60">
-                      <p className="font-medium text-gray-800">Your catalog item (required before creating a purchase order)</p>
+                      <p className="font-medium text-gray-800">Your catalog item (used when you create a sales order or invoice)</p>
                       {req.responder_item_id ? (
                         <p className="text-green-700">
                           Mapped: {req.responder_item_name || req.responder_item_id}
                           {req.responder_item_code ? ` (${req.responder_item_code})` : ''}
                         </p>
                       ) : (
-                        <p className="text-amber-800">Not mapped yet — map your SKU so stock and PO lines stay correct.</p>
+                        <p className="text-amber-800">Not mapped yet — map your SKU before you bill this request.</p>
                       )}
                       <div className="flex flex-wrap items-end gap-2">
                         <select
@@ -726,7 +823,7 @@ function PurchaseRequestsContent() {
                   )}
                   
                   {/* Actions for confirmed outgoing requests with Purchase Order */}
-                  {!isIncoming && req.status === 'confirmed' && req.purchase_order_number && !req.sales_order_number && !req.invoice_number && (
+                  {parties.isVendor && ['confirmed', 'partial', 'backorder'].includes(req.status) && req.purchase_order_number && !req.sales_order_number && !req.invoice_number && (
                     <div className="border-t pt-3 space-y-2">
                       <p className="text-xs font-semibold text-gray-700">Fulfill Purchase Order:</p>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -734,26 +831,29 @@ function PurchaseRequestsContent() {
                           size="sm"
                           variant="secondary"
                           onClick={async () => {
-                            // Find customer by matching responder_name
+                            if (!req.responder_item_id) {
+                              toast.error('Map your catalog item before creating a sales document.');
+                              return;
+                            }
                             try {
                               const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
                               const customerData = await customerRes.json();
                               // Match by responder_name (Tandoor Studio)
                               const customer = customerData.customers?.find((c: any) => 
-                                c.name === req.responder_name || 
-                                c.name?.toLowerCase() === req.responder_name?.toLowerCase()
+                                c.name === parties.buyerName || 
+                                c.name?.toLowerCase() === parties.buyerName?.toLowerCase()
                               );
                               
                               if (!customer) {
                                 // Navigate to new customer page with business details pre-filled
                                 // Fetch business details to pre-fill phone, email, GSTIN, address
                                 try {
-                                  const businessRes = await fetch(`/api/businesses/${req.responder_business_id}`);
+                                  const businessRes = await fetch(`/api/businesses/${parties.buyerBusinessId}`);
                                   if (businessRes.ok) {
                                     const businessData = await businessRes.json();
                                     const biz = businessData.business || businessData;
                                     const returnParams = new URLSearchParams({
-                                      item_id: req.item_id,
+                                      item_id: req.responder_item_id || '',
                                       qty: (req.confirmed_qty || req.requested_qty).toString(),
                                       request_id: req.id,
                                       action: 'create_sales_order'
@@ -781,7 +881,7 @@ function PurchaseRequestsContent() {
                                   } else {
                                     // Fallback if business fetch fails
                                     const returnParams = new URLSearchParams({
-                                      item_id: req.item_id,
+                                      item_id: req.responder_item_id || '',
                                       qty: (req.confirmed_qty || req.requested_qty).toString(),
                                       request_id: req.id,
                                       action: 'create_sales_order'
@@ -793,7 +893,7 @@ function PurchaseRequestsContent() {
                                   console.error('Error fetching business details:', error);
                                   // Fallback
                                   const returnParams = new URLSearchParams({
-                                    item_id: req.item_id,
+                                    item_id: req.responder_item_id || '',
                                     qty: (req.confirmed_qty || req.requested_qty).toString(),
                                     request_id: req.id,
                                     action: 'create_sales_order'
@@ -807,7 +907,7 @@ function PurchaseRequestsContent() {
                               // Navigate to new sales order with pre-filled data
                               const params = new URLSearchParams({
                                 customer_id: customer.id,
-                                item_id: req.item_id,
+                                item_id: req.responder_item_id || '',
                                 item_name: req.item_name || '',
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
                                 request_id: req.id
@@ -825,26 +925,29 @@ function PurchaseRequestsContent() {
                           size="sm"
                           variant="secondary"
                           onClick={async () => {
-                            // Find customer by matching responder_name
+                            if (!req.responder_item_id) {
+                              toast.error('Map your catalog item before creating a sales document.');
+                              return;
+                            }
                             try {
                               const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
                               const customerData = await customerRes.json();
                               // Match by responder_name (Tandoor Studio)
                               const customer = customerData.customers?.find((c: any) => 
-                                c.name === req.responder_name || 
-                                c.name?.toLowerCase() === req.responder_name?.toLowerCase()
+                                c.name === parties.buyerName || 
+                                c.name?.toLowerCase() === parties.buyerName?.toLowerCase()
                               );
                               
                               if (!customer) {
                                 // Navigate to new customer page with business details pre-filled
                                 // Fetch business details to pre-fill phone, email, GSTIN, address
                                 try {
-                                  const businessRes = await fetch(`/api/businesses/${req.responder_business_id}`);
+                                  const businessRes = await fetch(`/api/businesses/${parties.buyerBusinessId}`);
                                   if (businessRes.ok) {
                                     const businessData = await businessRes.json();
                                     const biz = businessData.business || businessData;
                                     const returnParams = new URLSearchParams({
-                                      item_id: req.item_id,
+                                      item_id: req.responder_item_id || '',
                                       qty: (req.confirmed_qty || req.requested_qty).toString(),
                                       request_id: req.id,
                                       action: 'create_invoice'
@@ -872,7 +975,7 @@ function PurchaseRequestsContent() {
                                   } else {
                                     // Fallback if business fetch fails
                                     const returnParams = new URLSearchParams({
-                                      item_id: req.item_id,
+                                      item_id: req.responder_item_id || '',
                                       qty: (req.confirmed_qty || req.requested_qty).toString(),
                                       request_id: req.id,
                                       action: 'create_invoice'
@@ -884,7 +987,7 @@ function PurchaseRequestsContent() {
                                   console.error('Error fetching business details:', error);
                                   // Fallback
                                   const returnParams = new URLSearchParams({
-                                    item_id: req.item_id,
+                                    item_id: req.responder_item_id || '',
                                     qty: (req.confirmed_qty || req.requested_qty).toString(),
                                     request_id: req.id,
                                     action: 'create_invoice'
@@ -898,7 +1001,7 @@ function PurchaseRequestsContent() {
                               // Navigate to new invoice with pre-filled data
                               const params = new URLSearchParams({
                                 customer_id: customer.id,
-                                item_id: req.item_id,
+                                item_id: req.responder_item_id || '',
                                 item_name: req.item_name || '',
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
                                 request_id: req.id
@@ -996,7 +1099,7 @@ function PurchaseRequestsContent() {
                   )}
                   
                   {/* Actions for confirmed requests */}
-                  {req.status !== 'pending' && isIncoming && canCreate && (
+                  {['confirmed', 'partial', 'backorder'].includes(req.status) && parties.isBuyer && canCreate && !req.purchase_order_number && (
                     <div className="border-t pt-3 space-y-2">
                       <p className="text-xs font-semibold text-gray-700">Create Purchase Document:</p>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1008,22 +1111,16 @@ function PurchaseRequestsContent() {
                             try {
                               const supplierRes = await fetch(`/api/suppliers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
                               const supplierData = await supplierRes.json();
-                              const supplier = supplierData.suppliers?.find((s: any) => s.linked_business_id === req.requester_business_id);
+                              const supplier = supplierData.suppliers?.find((s: any) => s.linked_business_id === parties.vendorBusinessId);
                               
                               if (!supplier) {
-                                toast.error('Supplier not found. Please ensure the supplier is linked to your business account.');
-                                return;
-                              }
-
-                              if (!req.responder_item_id) {
-                                toast.error('Map your catalog item on this request before creating a purchase order.');
+                                toast.error('Supplier not found. Please ensure the vendor is linked to your business account.');
                                 return;
                               }
                               
-                              // Navigate to new purchase order with pre-filled data
                               const params = new URLSearchParams({
                                 supplier_id: supplier.id,
-                                item_id: req.responder_item_id,
+                                item_id: req.item_id,
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
                                 request_id: req.id
                               });
@@ -1035,42 +1132,6 @@ function PurchaseRequestsContent() {
                           }}
                         >
                           Create Purchase Order
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={async () => {
-                            // Find supplier_id from requester_business_id
-                            try {
-                              const supplierRes = await fetch(`/api/suppliers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
-                              const supplierData = await supplierRes.json();
-                              const supplier = supplierData.suppliers?.find((s: any) => s.linked_business_id === req.requester_business_id);
-                              
-                              if (!supplier) {
-                                toast.error('Supplier not found. Please ensure the supplier is linked to your business account.');
-                                return;
-                              }
-
-                              if (!req.responder_item_id) {
-                                toast.error('Map your catalog item on this request before creating a purchase.');
-                                return;
-                              }
-                              
-                              // Navigate to new purchase with pre-filled data
-                              const params = new URLSearchParams({
-                                supplier_id: supplier.id,
-                                item_id: req.responder_item_id,
-                                qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                request_id: req.id
-                              });
-                              router.push(`/purchases/new?${params.toString()}`);
-                            } catch (error) {
-                              console.error('Error finding supplier:', error);
-                              toast.error('Failed to find supplier. Please try again.');
-                            }
-                          }}
-                        >
-                          Create Purchase
                         </Button>
                       </div>
                       <div className="mt-2 pt-2 border-t">
@@ -1116,54 +1177,6 @@ function PurchaseRequestsContent() {
                             onChange={(e) => patchLinkFields(req.id, { invoice_id: e.target.value })}
                           />
                         </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Link documents for outgoing requests */}
-                  {req.status !== 'pending' && !isIncoming && (
-                    <div className="border-t pt-3 space-y-2">
-                      <p className="text-xs font-semibold text-gray-700">Link documents</p>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex flex-wrap gap-2 items-center">
-                          <select
-                            className="border rounded px-2 py-1.5 text-sm min-w-[200px]"
-                            value={(linkByReq[req.id] || emptyLinkFields).purchase_order_id}
-                            onChange={(e) => patchLinkFields(req.id, { purchase_order_id: e.target.value })}
-                          >
-                            <option value="">Purchase order…</option>
-                            {poPickerOptions.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            className="border rounded px-2 py-1.5 text-sm min-w-[200px]"
-                            value={(linkByReq[req.id] || emptyLinkFields).purchase_id}
-                            onChange={(e) => patchLinkFields(req.id, { purchase_id: e.target.value })}
-                          >
-                            <option value="">Purchase (GRN)…</option>
-                            {purchasePickerOptions.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                          <Button
-                            size="sm"
-                            onClick={() => handleLink(req.id)}
-                            disabled={linkingId === req.id}
-                          >
-                            {linkingId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Link docs'}
-                          </Button>
-                        </div>
-                        <Input
-                          placeholder="Invoice ID (optional)"
-                          className="text-sm max-w-md"
-                          value={(linkByReq[req.id] || emptyLinkFields).invoice_id}
-                          onChange={(e) => patchLinkFields(req.id, { invoice_id: e.target.value })}
-                        />
                       </div>
                     </div>
                   )}

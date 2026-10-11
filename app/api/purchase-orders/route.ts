@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getBusinessIdFromRequest, getUserIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getBusinessIdFromRequest, getAuthenticatedUserId, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { partiesFromItemOwner, purchaseQtyAllowed } from '@/lib/quantity-request-parties';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
@@ -109,9 +110,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let linkedRequest: {
+      buyerBusinessId: string;
+      vendorBusinessId: string;
+    } | null = null;
+
     if (request_id) {
       const qrRes = await client.query(
-        `SELECT id, responder_business_id, responder_item_id, requester_business_id FROM quantity_requests WHERE id = $1`,
+        `SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
+                qr.status, qr.requested_qty, qr.confirmed_qty, qr.purchase_order_id,
+                i.business_id AS item_business_id
+         FROM quantity_requests qr
+         JOIN items i ON i.id = qr.item_id
+         WHERE qr.id = $1`,
         [request_id]
       );
       if (qrRes.rows.length === 0) {
@@ -120,45 +131,100 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'quantity request not found', code: 'REQUEST_NOT_FOUND' }, { status: 400 });
       }
       const qr = qrRes.rows[0];
-      if (String(qr.responder_business_id) !== String(business_id)) {
+      if (qr.purchase_order_id) {
         await client.query('ROLLBACK');
         client.release();
         return NextResponse.json(
-          { error: 'Purchase order business must match the supplier (responder) on the quantity request' },
+          { error: 'This quantity request is already linked to a purchase order', code: 'PO_ALREADY_LINKED' },
+          { status: 409 }
+        );
+      }
+      const parties = partiesFromItemOwner(
+        qr.requester_business_id,
+        qr.responder_business_id,
+        qr.item_business_id,
+        qr.item_id
+      );
+      if (!parties) {
+        await client.query('ROLLBACK');
+        client.release();
+        return NextResponse.json(
+          { error: 'Quantity request is not tied to the buyer catalog item', code: 'ITEM_NOT_BUYER' },
+          { status: 400 }
+        );
+      }
+      if (String(parties.buyerBusinessId) !== String(business_id)) {
+        await client.query('ROLLBACK');
+        client.release();
+        return NextResponse.json(
+          { error: 'The purchase order must be created on the buyer’s books' },
           { status: 403 }
         );
       }
-      if (!qr.responder_item_id) {
+      const allowedQty = purchaseQtyAllowed(
+        String(qr.status),
+        Number(qr.requested_qty),
+        qr.confirmed_qty == null ? null : Number(qr.confirmed_qty)
+      );
+      if (allowedQty == null) {
         await client.query('ROLLBACK');
         client.release();
         return NextResponse.json(
           {
-            error:
-              'Map your catalog item on the quantity request before creating a purchase order (responder_item_id required).',
-            code: 'RESPONDER_ITEM_REQUIRED',
+            error: 'Confirm the quantity before creating a purchase order',
+            code: 'REQUEST_NOT_CONFIRMED',
+          },
+          { status: 409 }
+        );
+      }
+      const supplierOk = await client.query(
+        `SELECT id FROM suppliers
+         WHERE id = $1 AND business_id = $2 AND linked_business_id = $3 AND deleted_at IS NULL`,
+        [supplier_id, parties.buyerBusinessId, parties.vendorBusinessId]
+      );
+      if (supplierOk.rows.length === 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        return NextResponse.json(
+          {
+            error: 'Supplier must be the linked vendor on this quantity request',
+            code: 'SUPPLIER_NOT_ON_REQUEST',
           },
           { status: 400 }
         );
       }
+      let lineQty = 0;
       for (let j = 0; j < items.length; j++) {
         const line = items[j];
         const lid = line.item_id || line.itemId;
-        if (lid && String(lid) !== String(qr.responder_item_id)) {
+        if (!lid || String(lid) !== String(parties.buyerItemId)) {
           await client.query('ROLLBACK');
           client.release();
           return NextResponse.json(
             {
-              error:
-                'All lines linked to this quantity request must use the mapped supplier item (responder_item_id).',
-              code: 'ITEM_NOT_MAPPED_LINE',
+              error: 'Purchase order lines must use the buyer’s item from this quantity request.',
+              code: 'ITEM_NOT_BUYER_LINE',
             },
             { status: 400 }
           );
         }
+        lineQty += Number(line.qty || line.quantity || 0);
       }
+      if (!(lineQty > 0) || lineQty - allowedQty > 1e-6) {
+        await client.query('ROLLBACK');
+        client.release();
+        return NextResponse.json(
+          {
+            error: 'Purchase order quantity cannot exceed the confirmed quantity',
+            code: 'QTY_EXCEEDS_CONFIRMED',
+          },
+          { status: 400 }
+        );
+      }
+      linkedRequest = parties;
     }
 
-    const actorUserId = resolveCreatedByUserId(request, body) ?? created_by ?? getUserIdFromRequest(request);
+    const actorUserId = getAuthenticatedUserId(request);
     if (!actorUserId) {
       await client.query('ROLLBACK');
       client.release();
@@ -194,7 +260,7 @@ export async function POST(request: NextRequest) {
       business_id, supplier_id, order_number, order_date, expected_delivery_date,
       status, subtotal, discount_total, tax_total, round_off, grand_total,
       additional_charges, additional_charges_label || null, shipping_address || null, billing_address || null,
-      place_of_supply_state_code || null, notes || null, terms || null, created_by || null
+      place_of_supply_state_code || null, notes || null, terms || null, actorUserId
     ]);
 
     const purchaseOrder = orderResult.rows[0];
@@ -234,13 +300,10 @@ export async function POST(request: NextRequest) {
         WHERE id = $1
       `, [request_id]);
 
-      if (requestRes.rows.length > 0) {
-        const req = requestRes.rows[0];
+      if (requestRes.rows.length > 0 && linkedRequest) {
         const customerBiz = await client.query(`SELECT name FROM businesses WHERE id = $1`, [business_id]);
         const customerName = customerBiz.rows[0]?.name || 'Customer';
-        
-        // Notify the requester (the supplier who requested to supply) about the purchase order
-        // In this flow: Rayal Foods (requester) requested to supply, Tandoor Studio (responder) created PO
+
         try {
           await client.query(`
             INSERT INTO notifications (
@@ -248,9 +311,9 @@ export async function POST(request: NextRequest) {
             )
             VALUES ($1, 'quantity_request', $2, $3, 'purchase_order', $4, CURRENT_TIMESTAMP)
           `, [
-            req.requester_business_id, // Requester's business ID (the supplier who requested to supply)
+            linkedRequest.vendorBusinessId,
             'Purchase Order Created',
-            `${customerName} created Purchase Order ${order_number} for your request.`,
+            `${customerName} created Purchase Order ${order_number} for your quantity request.`,
             purchaseOrder.id
           ]);
         } catch (notifError: any) {
@@ -270,7 +333,7 @@ export async function POST(request: NextRequest) {
     const { logActivity, getClientIP, getUserAgent } = await import('@/lib/activity-logger');
     await logActivity({
       business_id: business_id,
-      user_id: created_by || getUserIdFromRequest(request) || undefined,
+      user_id: actorUserId,
       action_type: 'create',
       module: 'purchase_orders',
       entity_id: purchaseOrder.id,

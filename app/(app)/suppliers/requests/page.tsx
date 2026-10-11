@@ -31,6 +31,8 @@ interface RequestRow {
   purchase_order_number?: string | null;
   sales_order_number?: string | null;
   invoice_number?: string | null;
+  item_business_id?: string | null;
+  responder_name?: string | null;
   responder_item_id?: string | null;
   responder_item_name?: string | null;
   responder_item_code?: string | null;
@@ -154,9 +156,14 @@ export default function SupplierRequestsPage() {
     if (!business?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/stock-requests?role=responder`);
+      const res = await fetch(`/api/stock-requests?role=all`);
       const data = await res.json();
-      setRequests(data.requests || []);
+      const rows = (data.requests || []).filter((req: RequestRow) => {
+        const buyerIsRequester = req.item_business_id === req.requester_business_id;
+        const vendorId = buyerIsRequester ? req.responder_business_id : req.requester_business_id;
+        return vendorId === business.id;
+      });
+      setRequests(rows);
     } catch (error) {
       console.error('Error fetching responder requests', error);
     } finally {
@@ -342,7 +349,7 @@ export default function SupplierRequestsPage() {
             </div>
           </div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">Incoming Requests</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Quantity requests</h2>
             <Button variant="ghost" size="sm" onClick={fetchRequests}>
               Refresh
             </Button>
@@ -355,11 +362,15 @@ export default function SupplierRequestsPage() {
             <p className="text-sm text-gray-500">No incoming requests.</p>
           ) : (
             <div className="space-y-3">
-              {requests.map((req) => (
+              {requests.map((req) => {
+                const buyerIsRequester = req.item_business_id === req.requester_business_id;
+                const buyerName = buyerIsRequester ? req.requester_name : req.responder_name;
+                const iAmResponder = req.responder_business_id === business?.id;
+                return (
                 <div key={req.id} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-gray-900">{req.requester_name || 'Customer'}</span>
+                      <span className="text-sm font-semibold text-gray-900">{buyerName || 'Customer'}</span>
                       <span className="text-xs text-gray-600">{req.item_name || req.item_code || 'Item'}</span>
                     </div>
                     <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
@@ -375,7 +386,7 @@ export default function SupplierRequestsPage() {
                   )}
 
                   <div className="text-xs border border-dashed rounded p-2 space-y-2 bg-gray-50">
-                    <p className="font-medium text-gray-800">Your catalog item (required for PO / upstream)</p>
+                    <p className="font-medium text-gray-800">Your catalog item (used on the sales order or invoice)</p>
                     {req.responder_item_id ? (
                       <p className="text-green-700">
                         Mapped: {req.responder_item_name || req.responder_item_id}
@@ -467,7 +478,7 @@ export default function SupplierRequestsPage() {
                     </div>
                   )}
 
-                  {req.status === 'pending' && (
+                  {req.status === 'pending' && iAmResponder && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                     <div>
                       <label className="text-xs text-gray-500">Status</label>
@@ -553,7 +564,11 @@ export default function SupplierRequestsPage() {
           </div>
 
                   {/* Actions for confirmed requests with Purchase Order */}
-                  {req.status === 'confirmed' && req.purchase_order_number && !req.sales_order_number && !req.invoice_number && (
+                  {req.status === 'pending' && !iAmResponder && (
+                    <p className="text-xs text-gray-600">Waiting for the buyer to confirm this quantity.</p>
+                  )}
+
+                  {['confirmed', 'partial', 'backorder'].includes(req.status) && req.purchase_order_number && !req.sales_order_number && !req.invoice_number && (
                     <div className="border-t pt-3 space-y-2">
                       <p className="text-xs font-semibold text-gray-700">Create Sales Document:</p>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -567,12 +582,12 @@ export default function SupplierRequestsPage() {
                               const customerData = await customerRes.json();
                               // Match by requester_name
                               const customer = customerData.customers?.find((c: any) => 
-                                c.name === req.requester_name || 
-                                c.name?.toLowerCase() === req.requester_name?.toLowerCase()
+                                c.name === buyerName || 
+                                c.name?.toLowerCase() === buyerName?.toLowerCase()
                               );
                               
                               if (!customer) {
-                                toast.error(`Customer "${req.requester_name}" not found. Please create this customer first in your Customers list.`);
+                                toast.error(`Customer "${buyerName}" not found. Please create this customer first in your Customers list.`);
                                 return;
                               }
                               
@@ -606,12 +621,12 @@ export default function SupplierRequestsPage() {
                               const customerData = await customerRes.json();
                               // Match by requester_name
                               const customer = customerData.customers?.find((c: any) => 
-                                c.name === req.requester_name || 
-                                c.name?.toLowerCase() === req.requester_name?.toLowerCase()
+                                c.name === buyerName || 
+                                c.name?.toLowerCase() === buyerName?.toLowerCase()
                               );
                               
                               if (!customer) {
-                                toast.error(`Customer "${req.requester_name}" not found. Please create this customer first in your Customers list.`);
+                                toast.error(`Customer "${buyerName}" not found. Please create this customer first in your Customers list.`);
                                 return;
                               }
                               
@@ -688,7 +703,8 @@ export default function SupplierRequestsPage() {
                     </div>
                   </div>
           </div>
-              ))}
+                );
+              })}
           </div>
         )}
         </Card>

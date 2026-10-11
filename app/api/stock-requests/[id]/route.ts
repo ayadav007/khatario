@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { partiesFromItemOwner } from '@/lib/quantity-request-parties';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
 
 export const dynamic = 'force-dynamic';
@@ -23,10 +24,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     const existing = await db.queryOne<{
       id: string;
+      requester_business_id: string;
       responder_business_id: string;
-      status: string;
+      item_id: string;
+      item_business_id: string;
     }>(
-      `SELECT id, responder_business_id, status FROM quantity_requests WHERE id = $1`,
+      `SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id, i.business_id AS item_business_id
+       FROM quantity_requests qr
+       JOIN items i ON i.id = qr.item_id
+       WHERE qr.id = $1`,
       [params.id]
     );
 
@@ -34,18 +40,27 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: 'request not found' }, { status: 404 });
     }
 
-    if (existing.responder_business_id !== auth.businessId) {
-      return NextResponse.json({ error: 'only the supplier (responder) can map catalog items' }, { status: 403 });
+    const parties = partiesFromItemOwner(
+      existing.requester_business_id,
+      existing.responder_business_id,
+      existing.item_business_id,
+      existing.item_id
+    );
+    if (!parties || parties.vendorBusinessId !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'Only the vendor can map their catalog item on this request' },
+        { status: 403 }
+      );
     }
 
     const itemOk = await db.queryOne(
-      `SELECT 1 FROM items WHERE id = $1 AND business_id = $2`,
-      [responderItemId, existing.responder_business_id]
+      `SELECT 1 FROM items WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+      [responderItemId, parties.vendorBusinessId]
     );
     if (!itemOk) {
       return NextResponse.json(
         {
-          error: 'Selected item must exist in your catalog (responder business).',
+          error: 'Selected item must exist in your catalog.',
           code: 'ITEM_BUSINESS_MISMATCH',
         },
         { status: 400 }

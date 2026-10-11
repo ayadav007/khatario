@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
  * Get all thresholds set by a supplier
  */
 export async function GET(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const supplierBusinessId = searchParams.get('supplier_business_id');
@@ -17,6 +21,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'supplier_business_id is required' },
         { status: 400 }
+      );
+    }
+
+    if (supplierBusinessId !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only view your own thresholds', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 
@@ -64,6 +75,9 @@ export async function GET(request: NextRequest) {
  * Create a new threshold
  */
 export async function POST(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const {
@@ -77,6 +91,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'supplier_business_id, customer_business_id, item_id, and low_stock_threshold are required' },
         { status: 400 }
+      );
+    }
+
+    if (String(supplier_business_id) !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only set thresholds for your own business', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 
@@ -144,6 +165,9 @@ export async function POST(request: NextRequest) {
  * Delete a threshold
  */
 export async function DELETE(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const thresholdId = searchParams.get('id');
@@ -164,6 +188,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: 'Threshold not found' },
         { status: 404 }
+      );
+    }
+
+    if (String(threshold.supplier_business_id) !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only delete your own thresholds', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 

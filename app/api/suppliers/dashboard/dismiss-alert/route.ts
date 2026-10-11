@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, queryOne } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
  * Dismiss a low stock alert
  */
 export async function POST(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const alertId = searchParams.get('alert_id');
@@ -29,6 +33,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Alert not found' },
         { status: 404 }
+      );
+    }
+
+    if (String(alert.business_id) !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only dismiss your own alerts', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 

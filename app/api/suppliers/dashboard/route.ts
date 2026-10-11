@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryRows, queryOne } from '@/lib/db';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,9 @@ export const dynamic = 'force-dynamic';
  * Get supplier dashboard data
  */
 export async function GET(request: NextRequest) {
+  const auth = requireAuthenticatedTenant(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const supplierBusinessId = searchParams.get('supplier_business_id');
@@ -16,6 +20,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'supplier_business_id is required' },
         { status: 400 }
+      );
+    }
+
+    if (supplierBusinessId !== auth.businessId) {
+      return NextResponse.json(
+        { error: 'You can only view your own supplier dashboard', code: 'TENANT_MISMATCH' },
+        { status: 403 }
       );
     }
 
