@@ -52,6 +52,7 @@ export default function NewSalaryPaymentPage() {
   });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [pendingAdvance, setPendingAdvance] = useState(0);
+  const [awaitingApproval, setAwaitingApproval] = useState(0);
   const [suggestedRecovery, setSuggestedRecovery] = useState(0);
   const [recoveryBreakdown, setRecoveryBreakdown] = useState<RecoveryBreakdownRow[]>([]);
   const [proRataInfo, setProRataInfo] = useState<ProRataSalaryResult | null>(null);
@@ -129,7 +130,11 @@ export default function NewSalaryPaymentPage() {
         });
 
         const res = await fetch(`/api/employees/salary/payments/prefill?${params}`);
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          await fetchPendingAdvance(formData.employee_id, 0);
+          return;
+        }
 
         const data = await res.json();
         const fields = data.fields ?? {};
@@ -180,9 +185,14 @@ export default function NewSalaryPaymentPage() {
           Number(fields.special_allowance ?? 0) +
           Number(fields.other_earnings ?? 0);
 
-        await fetchPendingAdvance(grossPreview);
+        if (!cancelled) {
+          await fetchPendingAdvance(formData.employee_id, grossPreview);
+        }
       } catch (error) {
         console.error('Error loading payroll prefill:', error);
+        if (!cancelled) {
+          await fetchPendingAdvance(formData.employee_id, 0);
+        }
       }
     };
 
@@ -220,43 +230,31 @@ export default function NewSalaryPaymentPage() {
     }
   };
 
-  const fetchPendingAdvance = async (basicOverride?: number) => {
-    if (!business?.id || !formData.employee_id) return;
-
-    const basic = basicOverride ?? parseFloat(formData.basic_salary || '0');
-    const grossPreview =
-      basic +
-      parseFloat(formData.hra || '0') +
-      parseFloat(formData.transport_allowance || '0') +
-      parseFloat(formData.medical_allowance || '0') +
-      parseFloat(formData.special_allowance || '0') +
-      parseFloat(formData.overtime || '0') +
-      parseFloat(formData.bonus || '0') +
-      parseFloat(formData.commission || '0') +
-      parseFloat(formData.other_earnings || '0');
+  const fetchPendingAdvance = async (employeeId: string, grossPreview = 0) => {
+    if (!employeeId) return;
 
     try {
-      const params = new URLSearchParams({
-        business_id: business.id,
-        employee_id: formData.employee_id,
-      });
+      const params = new URLSearchParams({ employee_id: employeeId });
       if (grossPreview > 0) {
         params.set('cap_amount', String(grossPreview));
       }
 
       const res = await fetch(`/api/employees/salary/advances/balance?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        const pending = data.pending_balance || 0;
-        const suggested = data.suggested_recovery ?? pending;
-        setPendingAdvance(pending);
-        setSuggestedRecovery(suggested);
-        setRecoveryBreakdown(data.recovery_breakdown ?? []);
-        setFormData((prev) => ({
-          ...prev,
-          advance_recovery: Math.min(suggested, pending, grossPreview || pending).toFixed(2),
-        }));
-      }
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const pending = Number(data.pending_balance) || 0;
+      const suggested = Number(data.suggested_recovery ?? pending) || 0;
+      setPendingAdvance(pending);
+      setAwaitingApproval(Number(data.awaiting_approval_amount) || 0);
+      setSuggestedRecovery(suggested);
+      setRecoveryBreakdown(data.recovery_breakdown ?? []);
+      const filled = Math.min(suggested, pending, grossPreview > 0 ? grossPreview : pending);
+      setFormData((prev) => {
+        const current = parseFloat(prev.advance_recovery || '0') || 0;
+        if (current > 0) return prev;
+        return { ...prev, advance_recovery: filled.toFixed(2) };
+      });
     } catch (error) {
       console.error('Error fetching pending advance:', error);
     }
@@ -298,9 +296,21 @@ export default function NewSalaryPaymentPage() {
 
   const totals = calculateTotals();
 
+  const recoveryAmount = parseFloat(formData.advance_recovery || '0') || 0;
+  const recoveryOverBalance = recoveryAmount > pendingAdvance + 0.001;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!business?.id) return;
+
+    if (recoveryOverBalance) {
+      toast.error(
+        pendingAdvance <= 0
+          ? 'Advance recovery has to be 0 until this employee has an approved salary advance.'
+          : `Advance recovery cannot be more than the pending advance (₹${pendingAdvance.toLocaleString('en-IN')}).`
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -563,6 +573,17 @@ export default function NewSalaryPaymentPage() {
                   ) : null}
                 </div>
               )}
+              {awaitingApproval > 0 && pendingAdvance <= 0 && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p>
+                    <strong>Advance waiting for approval:</strong> ₹
+                    {awaitingApproval.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800/90">
+                    Approve it under Salary Advances before recovering it on this payment. Until then, leave Advance Recovery at 0.
+                  </p>
+                </div>
+              )}
               {pendingAdvance > 0 && (
                 <div className="mb-4 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <p>
@@ -647,12 +668,22 @@ export default function NewSalaryPaymentPage() {
                 ) : null}
                 <Input
                   label="Advance Recovery"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={formData.advance_recovery}
                   onChange={(e) => setFormData({ ...formData, advance_recovery: e.target.value })}
-                  min="0"
-                  max={pendingAdvance.toString()}
-                  step="0.01"
+                  error={
+                    recoveryOverBalance
+                      ? `Cannot be more than the approved advance still outstanding (₹${pendingAdvance.toLocaleString('en-IN')}).`
+                      : undefined
+                  }
+                  helperText={
+                    recoveryOverBalance
+                      ? undefined
+                      : pendingAdvance > 0
+                        ? `Approved advance outstanding: ₹${pendingAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                        : 'No approved advance outstanding for this employee.'
+                  }
                 />
                 <Input
                   label="Loan Deduction"

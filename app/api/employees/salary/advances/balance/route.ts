@@ -50,6 +50,17 @@ export async function GET(request: NextRequest) {
       [businessId, employeeId]
     );
 
+    const awaiting = await queryOne<{ awaiting_approval_amount: number }>(
+      `
+      SELECT COALESCE(SUM(remaining_amount), 0) AS awaiting_approval_amount
+      FROM salary_advances
+      WHERE business_id = $1
+        AND employee_id = $2
+        AND status = 'pending'
+    `,
+      [businessId, employeeId]
+    );
+
     const pendingRows = await queryRows<
       AdvanceForRecoverySuggestion & { recovery_months: number | null }
     >(
@@ -81,6 +92,7 @@ export async function GET(request: NextRequest) {
       total_advance_amount: Number(result?.total_advance_amount || 0),
       total_recovered_amount: Number(result?.total_recovered_amount || 0),
       pending_balance: Number(result?.pending_balance || 0),
+      awaiting_approval_amount: Number(awaiting?.awaiting_approval_amount || 0),
       advance_count: Number(result?.advance_count || 0),
       suggested_recovery: suggestion.suggested_total,
       recovery_breakdown: suggestion.breakdown,
