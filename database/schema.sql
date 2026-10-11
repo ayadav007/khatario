@@ -62,8 +62,8 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE,
-    phone VARCHAR(20) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(20) NOT NULL,
     password_hash TEXT,
     role VARCHAR(50) DEFAULT 'user',
     permissions JSONB DEFAULT '{}',
@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_business_phone
+  ON users (business_id, phone);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_business_email
+  ON users (business_id, lower(email))
+  WHERE email IS NOT NULL AND btrim(email) <> '';
 
 -- User ↔ business membership (multi-company); app-level role per business
 CREATE TABLE IF NOT EXISTS user_businesses (

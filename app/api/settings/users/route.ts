@@ -161,26 +161,26 @@ export async function POST(request: NextRequest) {
     }
 
     const existingUser = await queryOne(
-      'SELECT id FROM users WHERE phone = $1',
-      [phoneNorm]
+      'SELECT id FROM users WHERE phone = $1 AND business_id = $2',
+      [phoneNorm, business_id]
     );
 
     if (existingUser) {
       return NextResponse.json(
-        { error: 'A user with this phone number already exists' },
+        { error: 'A user with this phone number already exists in this business' },
         { status: 409 }
       );
     }
 
     if (email) {
       const existingEmail = await queryOne(
-        'SELECT id FROM users WHERE email = $1',
-        [email]
+        'SELECT id FROM users WHERE lower(email) = lower($1) AND business_id = $2',
+        [email, business_id]
       );
 
       if (existingEmail) {
         return NextResponse.json(
-          { error: 'A user with this email already exists' },
+          { error: 'A user with this email already exists in this business' },
           { status: 409 }
         );
       }

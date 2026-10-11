@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne } from '@/lib/db';
+import { queryRows } from '@/lib/db';
 import { claimBusinessForPartner } from '@/lib/partners/attribution';
 import { requirePartnerRequest } from '@/lib/partners/request-auth';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
@@ -23,14 +23,21 @@ export async function POST(request: NextRequest) {
       if (!phone) {
         return NextResponse.json({ error: 'Enter a valid phone number' }, { status: 400 });
       }
-      const user = await queryOne<{ business_id: string }>(
-        `SELECT business_id FROM users WHERE phone = $1 AND is_primary_admin = true LIMIT 1`,
+      const owners = await queryRows<{ business_id: string }>(
+        `SELECT business_id FROM users
+         WHERE phone = $1 AND is_primary_admin = true AND COALESCE(is_active, true) = true`,
         [phone],
       );
-      if (!user) {
+      if (owners.length === 0) {
         return NextResponse.json({ error: 'No business found for that phone' }, { status: 404 });
       }
-      businessId = user.business_id;
+      if (owners.length > 1) {
+        return NextResponse.json(
+          { error: 'This phone owns more than one business. Pass business_id.' },
+          { status: 409 },
+        );
+      }
+      businessId = owners[0].business_id;
     }
 
     if (!businessId) {

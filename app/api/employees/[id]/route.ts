@@ -499,9 +499,11 @@ export async function DELETE(
       );
     }
 
-    // Verify employee exists and belongs to business
-    const existing = await queryOne(
-      'SELECT id, business_id FROM employees WHERE id = $1 AND business_id = $2',
+    const existing = await queryOne<{ id: string; is_primary_admin: boolean | null }>(
+      `SELECT e.id, u.is_primary_admin
+       FROM employees e
+       INNER JOIN users u ON u.id = e.id
+       WHERE e.id = $1 AND e.business_id = $2`,
       [employeeId, businessId]
     );
 
@@ -522,14 +524,24 @@ export async function DELETE(
       throw error;
     }
 
-    // Soft delete: set is_active = false for both employee and user
+    if (existing.is_primary_admin) {
+      return NextResponse.json(
+        { error: 'The business owner account cannot be deactivated from employees.' },
+        { status: 400 }
+      );
+    }
+
+    // This business only. Admin access on this account is removed. Other businesses keep their own login.
     await query(
-      'UPDATE employees SET is_active = false WHERE id = $1',
-      [employeeId]
+      'UPDATE employees SET is_active = false WHERE id = $1 AND business_id = $2',
+      [employeeId, businessId]
     );
-    await query('UPDATE users SET is_active = false WHERE id = $1', [
-      employeeId,
-    ]);
+    await query(
+      `UPDATE users
+       SET is_active = false, role_id = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND business_id = $2 AND COALESCE(is_primary_admin, false) = false`,
+      [employeeId, businessId]
+    );
 
     return NextResponse.json({ message: 'Employee deactivated successfully' });
   } catch (error: any) {

@@ -274,28 +274,117 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already exists with this phone/email
-    const existingUser = await queryOne(
-      `SELECT id FROM users WHERE (phone = $1 OR email = $2) AND business_id = $3`,
-      [phoneNorm, email || '', business_id]
+    // Phone is unique inside this business. The same number may already exist at another business.
+    const phoneOwner = await queryOne<{ id: string }>(
+      `SELECT id FROM users WHERE phone = $1 AND business_id = $2`,
+      [phoneNorm, business_id]
     );
 
+    let existingUser: { id: string } | null = phoneOwner;
+
+    if (!existingUser && typeof email === 'string' && email.trim()) {
+      const emailOwner = await queryOne<{ id: string }>(
+        `SELECT id FROM users WHERE lower(email) = lower($1) AND business_id = $2`,
+        [email.trim(), business_id]
+      );
+      if (emailOwner) {
+        return NextResponse.json(
+          {
+            error: 'This email is already used by someone in this business. Use a different email.',
+            code: 'EMAIL_ALREADY_REGISTERED',
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     let userId: string;
+    let reactivatedEmployee: Employee | null = null;
 
     if (existingUser) {
-      // Link to existing user
       userId = existingUser.id;
 
-      // Check if employee record already exists
-      const existingEmployee = await queryOne(
-        'SELECT id FROM employees WHERE id = $1',
-        [userId]
+      const existingEmployee = await queryOne<{ id: string; is_active: boolean | null; employee_code: string }>(
+        'SELECT id, is_active, employee_code FROM employees WHERE id = $1 AND business_id = $2',
+        [userId, business_id]
       );
 
-      if (existingEmployee) {
+      if (existingEmployee && existingEmployee.is_active !== false) {
         return NextResponse.json(
           { error: 'Employee already exists for this user' },
           { status: 400 }
+        );
+      }
+
+      if (existingEmployee) {
+        if (reporting_manager_id) {
+          const cycle = await wouldCreateReportingCycle(business_id, userId, reporting_manager_id);
+          if (cycle) {
+            return NextResponse.json(
+              { error: 'Invalid reporting manager: would create a cycle in the org hierarchy' },
+              { status: 400 }
+            );
+          }
+        }
+
+        let finalEmployeeCode = employee_code || existingEmployee.employee_code;
+        if (employee_code && employee_code !== existingEmployee.employee_code) {
+          const codeExists = await queryOne(
+            'SELECT id FROM employees WHERE business_id = $1 AND employee_code = $2 AND id <> $3',
+            [business_id, employee_code, userId]
+          );
+          if (codeExists) {
+            return NextResponse.json(
+              { error: `Employee code "${employee_code}" already exists` },
+              { status: 400 }
+            );
+          }
+        }
+
+        await query(
+          `UPDATE users
+           SET name = $1, email = $2, is_active = true, role_id = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $3 AND business_id = $4 AND COALESCE(is_primary_admin, false) = false`,
+          [name, email || null, userId, business_id]
+        );
+        await query(
+          `UPDATE users
+           SET name = $1, is_active = true, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2 AND business_id = $3 AND COALESCE(is_primary_admin, false) = true`,
+          [name, userId, business_id]
+        );
+
+        reactivatedEmployee = await queryOne<Employee>(
+          `UPDATE employees SET
+             employee_code = $1, designation = $2, department = $3, joining_date = $4,
+             reporting_manager_id = $5, employment_type = $6, access_type = $7, salary = $8,
+             pay_basis = $9, photo_url = $10, emergency_contact_name = $11, emergency_contact_phone = $12,
+             bank_account_number = $13, bank_ifsc = $14, bank_name = $15, pan_number = $16,
+             aadhaar_number = $17, default_shift_id = $18, is_active = true
+           WHERE id = $19 AND business_id = $20
+           RETURNING *`,
+          [
+            finalEmployeeCode,
+            designation || null,
+            department || null,
+            joining_date || null,
+            reporting_manager_id || null,
+            employment_type,
+            access_type,
+            salary || null,
+            pay_basis === 'daily' ? 'daily' : 'monthly',
+            photo_url || null,
+            emergency_contact_name || null,
+            emergencyPhoneNorm,
+            bank_account_number || null,
+            bank_ifsc || null,
+            bank_name || null,
+            pan_number || null,
+            aadhaar_number || null,
+            default_shift_id || null,
+            userId,
+            business_id,
+          ]
         );
       }
     } else {
@@ -336,6 +425,7 @@ export async function POST(request: NextRequest) {
 
     // Generate employee code if not provided
     let finalEmployeeCode = employee_code;
+    if (!reactivatedEmployee) {
     if (!finalEmployeeCode) {
       finalEmployeeCode = await generateNextEmployeeCode(business_id);
     } else {
@@ -350,6 +440,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
     }
 
     if (reporting_manager_id) {
@@ -367,7 +458,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create employee record
-    const employee = await queryOne<Employee>(
+    const employee = reactivatedEmployee ?? await queryOne<Employee>(
       `INSERT INTO employees (
         id, business_id, employee_code, designation, department, joining_date,
         reporting_manager_id, employment_type, access_type, salary, pay_basis, photo_url,
@@ -470,6 +561,36 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: any) {
     console.error('Error creating employee:', error);
+    if (error?.code === '23505') {
+      const constraint = String(error.constraint || '');
+      const detail = String(error.detail || '');
+      if (
+        constraint === 'users_phone_key' ||
+        constraint === 'uq_users_business_phone' ||
+        detail.includes('(phone)')
+      ) {
+        return NextResponse.json(
+          {
+            error: 'This mobile number is already used in this business.',
+            code: 'PHONE_ALREADY_REGISTERED',
+          },
+          { status: 409 }
+        );
+      }
+      if (
+        constraint === 'users_email_key' ||
+        constraint === 'uq_users_business_email' ||
+        detail.includes('(email)')
+      ) {
+        return NextResponse.json(
+          {
+            error: 'This email is already used in this business.',
+            code: 'EMAIL_ALREADY_REGISTERED',
+          },
+          { status: 409 }
+        );
+      }
+    }
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

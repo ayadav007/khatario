@@ -154,20 +154,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existingUser = await query(
-      `SELECT id FROM users WHERE phone = $1 LIMIT 1`,
-      [phoneNorm]
-    );
-    if (existingUser.rows.length > 0) {
-      return NextResponse.json(
-        {
-          error: 'This mobile number is already registered. Log in to access your account.',
-          code: 'PHONE_ALREADY_REGISTERED',
-        },
-        { status: 409 }
-      );
-    }
-
     await client.query('BEGIN');
     const softFailures: string[] = [];
 
@@ -509,14 +495,17 @@ export async function POST(request: NextRequest) {
     console.error('Signup error:', error);
     
     if (error.code === '23505') {
+      const constraint = String(error.constraint || '');
+      const detail = String(error.detail || '');
       const isPhone =
-        error.constraint === 'users_phone_key' ||
-        String(error.detail || '').includes('(phone)');
+        constraint === 'users_phone_key' ||
+        constraint === 'uq_users_business_phone' ||
+        detail.includes('(phone)');
       return NextResponse.json(
         {
           error: isPhone
-            ? 'This mobile number is already registered. Log in to access your account.'
-            : 'Phone number or email already registered',
+            ? 'This mobile number is already registered for this business. Log in to access your account.'
+            : 'Phone number or email already registered for this business',
           code: isPhone ? 'PHONE_ALREADY_REGISTERED' : 'DUPLICATE_REGISTRATION',
         },
         { status: 409 }

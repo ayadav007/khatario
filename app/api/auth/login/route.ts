@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryOne, query } from '@/lib/db';
+import { queryOne, query, queryRows } from '@/lib/db';
+import { chooseMainLoginUser } from '@/lib/auth/login-account';
 import { User, Business } from '@/types/database';
 import { getBusinessPlatformContext } from '@/lib/business-modules';
 import bcrypt from 'bcryptjs';
@@ -66,45 +67,44 @@ export async function POST(request: NextRequest) {
     };
 
     const phoneFormats = normalizePhone(phone);
-    
-    let user: User | null = null;
-    for (const phoneFormat of phoneFormats) {
-      user = await queryOne<User>(
-        'SELECT * FROM users WHERE phone = $1',
-        [phoneFormat]
-      );
-      if (user) break;
+
+    const candidates = await queryRows<User>(
+      `SELECT * FROM users
+       WHERE phone = ANY($1::text[])
+         AND COALESCE(is_active, true) = true`,
+      [phoneFormats]
+    );
+
+    const passwordMatches: User[] = [];
+    for (const candidate of candidates) {
+      const hash = candidate.password_hash;
+      if (!hash || (!hash.startsWith('$2a$') && !hash.startsWith('$2b$') && !hash.startsWith('$2y$'))) {
+        continue;
+      }
+      if (await bcrypt.compare(password, hash)) {
+        passwordMatches.push(candidate);
+      }
     }
 
-    if (!user) {
+    const chosen = chooseMainLoginUser(passwordMatches);
+    if (!chosen) {
       return NextResponse.json(
         { error: 'Invalid phone number or password' },
         { status: 401 }
       );
     }
-
-    if (!user.password_hash) {
+    if ('ambiguous' in chosen) {
       return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
-    
-    // Only accept bcrypt-hashed passwords
-    if (!user.password_hash.startsWith('$2a$') && !user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2y$')) {
-      return NextResponse.json(
-        { error: 'Password needs to be reset. Please contact your administrator.' },
-        { status: 401 }
+        {
+          error:
+            'This mobile number is used by more than one business. Open that business’s employee link, or sign in as the owner of the business you registered.',
+          code: 'MULTIPLE_ACCOUNTS',
+        },
+        { status: 409 }
       );
     }
 
-    const isValid = await bcrypt.compare(password, user.password_hash);
-    if (!isValid) {
-      return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
+    const user = chosen.user;
 
     const employee = await queryOne<{ access_type: 'full' | 'attendance_only' }>(
       `SELECT access_type FROM employees WHERE id = $1 AND is_active = true`,

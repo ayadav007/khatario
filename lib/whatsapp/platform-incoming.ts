@@ -72,7 +72,7 @@ async function findUserByPhone(phone: string): Promise<KnownUser | null> {
        FROM users u
       WHERE u.is_active = TRUE AND u.business_id IS NOT NULL AND u.phone IS NOT NULL
         AND right(regexp_replace(u.phone, '\\D', '', 'g'), 10) = $1
-      ORDER BY u.updated_at DESC NULLS LAST
+      ORDER BY COALESCE(u.is_primary_admin, false) DESC, u.updated_at DESC NULLS LAST
       LIMIT 1`,
     [last10],
   ).catch(() => null);

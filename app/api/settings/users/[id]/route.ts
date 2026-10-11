@@ -263,8 +263,8 @@ export async function PATCH(
       if (phoneNorm) {
         if (phoneNorm !== existingUser.phone) {
           const phoneExists = await queryOne(
-            'SELECT id FROM users WHERE phone = $1 AND id != $2',
-            [phoneNorm, userId]
+            'SELECT id FROM users WHERE phone = $1 AND business_id = $2 AND id != $3',
+            [phoneNorm, businessId, userId]
           );
 
           if (phoneExists) {
@@ -281,8 +281,8 @@ export async function PATCH(
     // Check if email already exists (if changing)
     if (email && email !== existingUser.email) {
       const emailExists = await queryOne(
-        'SELECT id FROM users WHERE email = $1 AND id != $2',
-        [email, userId]
+        'SELECT id FROM users WHERE lower(email) = lower($1) AND business_id = $2 AND id != $3',
+        [email, businessId, userId]
       );
 
       if (emailExists) {
@@ -316,9 +316,14 @@ export async function PATCH(
       updates.push(`password_hash = $${paramIndex++}`);
       values.push(passwordHash);
     }
-    if (role_id !== undefined) {
+    const clearingAccess = is_active === false && !existingUser.is_primary_admin;
+    if (role_id !== undefined && !clearingAccess) {
       updates.push(`role_id = $${paramIndex++}`);
       values.push(role_id);
+    }
+    if (clearingAccess) {
+      updates.push(`role_id = $${paramIndex++}`);
+      values.push(null);
     }
     if (is_active !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);
@@ -359,6 +364,19 @@ export async function PATCH(
       RETURNING id, business_id, name, email, phone, role_id, is_primary_admin,
                 is_active, allow_multidevice_sync, seat_type, updated_at
     `, values);
+
+    if (is_active === false && !existingUser.is_primary_admin) {
+      await query(
+        'UPDATE employees SET is_active = false WHERE id = $1 AND business_id = $2',
+        [userId, businessId]
+      );
+    }
+    if (is_active === true) {
+      await query(
+        'UPDATE employees SET is_active = true WHERE id = $1 AND business_id = $2',
+        [userId, businessId]
+      );
+    }
 
     const updater = await queryOne('SELECT name FROM users WHERE id = $1', [updated_by_user_id]);
     await query(`

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { query, queryOne } from '@/lib/db';
+import { query, queryRows } from '@/lib/db';
+import { chooseMainLoginUser } from '@/lib/auth/login-account';
 import { consumePlatformOtpPair, issuePlatformOtp, nationalPhone10 } from '@/lib/platform-public-otp';
 
 const GENERIC =
@@ -29,21 +30,27 @@ async function findUserByPhone(rawPhone: string): Promise<{
   accountEmail: string | null;
 } | null> {
   for (const phone of phoneFormats(rawPhone)) {
-    const row = await queryOne<{
+    const rows = await queryRows<{
       id: string;
       phone: string;
+      is_primary_admin: boolean | null;
       user_email: string | null;
       business_email: string | null;
     }>(
-      `SELECT u.id, u.phone, u.email AS user_email, b.email AS business_email
+      `SELECT u.id, u.phone, u.is_primary_admin, u.email AS user_email, b.email AS business_email
        FROM users u
        LEFT JOIN businesses b ON b.id = u.business_id
        WHERE u.phone = $1 AND COALESCE(u.is_active, true) = true`,
       [phone],
     );
+    const withEmail = rows.map((row) => ({
+      ...row,
+      accountEmail: (row.user_email || row.business_email || '').trim().toLowerCase() || null,
+    }));
+    const chosen = chooseMainLoginUser(withEmail);
+    const row = chosen && 'user' in chosen ? chosen.user : null;
     if (row) {
-      const accountEmail = (row.user_email || row.business_email || '').trim().toLowerCase() || null;
-      return { id: row.id, phone: row.phone, accountEmail };
+      return { id: row.id, phone: row.phone, accountEmail: row.accountEmail };
     }
   }
   return null;
