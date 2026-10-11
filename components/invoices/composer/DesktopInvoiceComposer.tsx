@@ -343,7 +343,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
         : 'IGST';
 
   return (
-    <div ref={anchorRef} className="space-y-3 pb-28">
+    <div ref={anchorRef} className="space-y-3 pb-24">
       <header className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -516,7 +516,7 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
       </div>
 
       <footer
-        className="fixed bottom-3 z-30 rounded-2xl border border-border bg-surface/95 px-4 py-2.5 shadow-lg shadow-slate-900/5 backdrop-blur"
+        className="fixed bottom-3 z-30 rounded-2xl border border-border bg-surface px-4 py-2 shadow-lg shadow-slate-900/5"
         style={{ left: footerBox.left, width: footerBox.width, visibility: footerBox.width > 0 ? 'visible' : 'hidden' }}
       >
         <div className="flex items-center gap-4">
@@ -590,9 +590,6 @@ export function DesktopInvoiceComposer(p: DesktopInvoiceComposerProps) {
             )}
           </div>
         </div>
-        {!p.readOnly && !isEstimate && (
-          <p className="mt-1 text-right text-[10px] text-text-muted">Generating the invoice finalises it for GST filing. Drafts can be edited later.</p>
-        )}
       </footer>
 
       <ItemPickerModal
