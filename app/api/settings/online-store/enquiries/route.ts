@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryOne, queryRows } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { ENQUIRY_STATUSES, type EnquiryStatus } from '@/lib/store/enquiry';
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const status = searchParams.get('status');
@@ -61,6 +64,8 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
 
   const id = String(body.enquiry_id ?? '');
   const status = body.status as EnquiryStatus;

@@ -6,6 +6,7 @@ import { sanitizeStorePromoSheet } from '@/lib/store/promo-sheet';
 import { hashStoreWebhookToken, isValidShiprocketWebhookToken } from '@/lib/store/delivery/webhooks';
 import { clipStoreMediaUrl, sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +101,8 @@ export async function PATCH(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, body.business_id ?? searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const {

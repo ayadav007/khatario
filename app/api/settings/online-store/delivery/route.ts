@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryOne, queryRows, query } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 
@@ -12,6 +13,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const zones = await queryRows<{
@@ -87,6 +90,8 @@ export async function PUT(request: NextRequest) {
   const body = await request.json();
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const {

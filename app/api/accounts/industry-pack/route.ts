@@ -43,7 +43,7 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
  * POST /api/accounts/industry-pack
  * Adds the missing industry ledgers and expense categories. Never changes existing accounts.
  */
-export const POST = withPremiumSubscriptionApi({}, async (ctx) => {
+export const POST = withPremiumSubscriptionApi({ feature: 'accounting_chart' }, async (ctx) => {
   try {
     await authorize(ctx.userId, 'settings', 'create');
   } catch (error) {

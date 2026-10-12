@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryRows, queryOne, query } from '@/lib/db';
 import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
@@ -98,6 +99,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
   await accountOutstandingStoreOrders(businessId, getAuthenticatedUserId(request)).catch((err) => {
     console.error('[store invoice]', err);
@@ -168,6 +171,8 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const tenant = requireTenantBusinessId(request, body.business_id);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const businessId = tenant.businessId;
 
   const action = typeof body.action === 'string' ? body.action : null;

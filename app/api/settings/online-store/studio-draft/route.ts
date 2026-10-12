@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { query, queryOne } from '@/lib/db';
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
 import { STUDIO_DRAFT_MAX_BYTES, sanitizeStudioDraft } from '@/lib/store/studio-draft';
@@ -9,6 +10,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   try {
     const row = await queryOne<{ store_studio_draft: unknown; store_studio_draft_at: string | null }>(
       `SELECT store_studio_draft, store_studio_draft_at FROM business_settings WHERE business_id = $1`,
@@ -35,6 +38,8 @@ export async function PUT(request: NextRequest) {
   }
   const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   const draft = sanitizeStudioDraft(body.draft);
   if (!draft) return NextResponse.json({ error: 'Invalid draft' }, { status: 400 });
   try {
@@ -58,6 +63,8 @@ export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
   if (!tenant.ok) return tenant.response;
+  const planDenied = await denyIfFeatureMissing(tenant.businessId, 'advanced_online_store');
+  if (planDenied) return planDenied;
   try {
     await query(
       `UPDATE business_settings SET store_studio_draft = NULL, store_studio_draft_at = NULL WHERE business_id = $1`,

@@ -114,6 +114,7 @@ export const GET = withPremiumSubscriptionApi<{ id: string }>(
  */
 export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
   {
+    feature: 'accounting_chart',
     parseJsonBody: true,
     resolveActingUserId: ({ body, sessionUserId }) => {
       if (body != null && typeof body === 'object') {
@@ -346,7 +347,7 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
  * Delete account (soft delete - set is_active = false)
  */
 export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
-  {},
+  { feature: 'accounting_chart' },
   async (ctx) => {
     try {
       const accountId = ctx.params.id;

@@ -1,7 +1,8 @@
 import { query, queryOne, queryRows } from '@/lib/db';
 import { assertNoBannedClaims } from '@/lib/marketing/claims';
-import { writeMarketingCopy } from '@/lib/marketing/copy';
+import { writeMarketingCopy, type MarketingWriter } from '@/lib/marketing/copy';
 import { readCreative, renderCreative } from '@/lib/marketing/creative';
+import { angleForDate, imageStyleForDate, kolkataDate, resolveImageStyle, type MarketingImageStyle } from '@/lib/marketing/image-style';
 import { MarketingGraphError, publishFacebookPhoto, publishInstagramPhoto } from '@/lib/marketing/meta-graph';
 import { loadMarketingSecrets } from '@/lib/marketing/settings';
 
@@ -12,6 +13,8 @@ export type MarketingPostRow = {
   image_path: string;
   scheduled_for: string;
   angle: string | null;
+  image_style: MarketingImageStyle;
+  writer: MarketingWriter;
   status: 'draft' | 'approved' | 'posted' | 'failed';
   fb_post_id: string | null;
   ig_media_id: string | null;
@@ -22,7 +25,7 @@ export type MarketingPostRow = {
   posted_at: string | null;
 };
 
-const POST_COLUMNS = `id, caption, headline, image_path, scheduled_for::text AS scheduled_for, angle, status,
+const POST_COLUMNS = `id, caption, headline, image_path, scheduled_for::text AS scheduled_for, angle, image_style, writer, status,
   fb_post_id, ig_media_id, error, created_by, approved_by, created_at, posted_at`;
 
 export async function listMarketingPosts(status?: string): Promise<MarketingPostRow[]> {
@@ -38,22 +41,25 @@ export async function listMarketingPosts(status?: string): Promise<MarketingPost
 }
 
 export async function generateMarketingPost(input: {
-  adminId: string;
+  adminId: string | null;
   scheduledFor: string;
   angle: string;
+  imageStyle?: unknown;
 }): Promise<MarketingPostRow> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.scheduledFor)) {
     throw new Error('Pick a date in YYYY-MM-DD format');
   }
   const secrets = await loadMarketingSecrets();
-  const copy = await writeMarketingCopy(secrets.brief, input.angle.trim());
+  const angle = input.angle.trim();
+  const imageStyle = resolveImageStyle(input.imageStyle, input.scheduledFor);
+  const copy = await writeMarketingCopy(secrets.brief, angle);
   assertNoBannedClaims(`${copy.headline}\n${copy.caption}`, secrets.brief.bannedClaims);
-  const creative = await renderCreative(copy.headline);
+  const creative = await renderCreative(copy.headline, imageStyle, { angle, offer: secrets.brief.offer });
   const row = await queryOne<MarketingPostRow>(
-    `INSERT INTO marketing_posts (caption, headline, image_path, scheduled_for, angle, status, created_by)
-     VALUES ($1, $2, $3, $4::date, $5, 'draft', $6)
+    `INSERT INTO marketing_posts (caption, headline, image_path, scheduled_for, angle, image_style, writer, status, created_by)
+     VALUES ($1, $2, $3, $4::date, $5, $6, $7, 'draft', $8)
      RETURNING ${POST_COLUMNS}`,
-    [copy.caption, copy.headline, creative.imagePath, input.scheduledFor, input.angle.trim() || null, input.adminId],
+    [copy.caption, copy.headline, creative.imagePath, input.scheduledFor, angle || null, imageStyle, copy.writer, input.adminId],
   );
   if (!row) throw new Error('Could not save the draft');
   return row;
@@ -108,6 +114,22 @@ export async function updateMarketingPost(input: {
   );
   if (!row) throw new Error('Post not found');
   return row;
+}
+
+export async function ensureDailyMarketingDraft(now = new Date()): Promise<{ created: boolean; postId: string | null; scheduledFor: string }> {
+  const scheduledFor = kolkataDate(now);
+  const existing = await queryOne<{ id: string }>(
+    `SELECT id FROM marketing_posts WHERE scheduled_for = $1::date LIMIT 1`,
+    [scheduledFor],
+  );
+  if (existing) return { created: false, postId: existing.id, scheduledFor };
+  const post = await generateMarketingPost({
+    adminId: null,
+    scheduledFor,
+    angle: angleForDate(scheduledFor),
+    imageStyle: imageStyleForDate(scheduledFor),
+  });
+  return { created: true, postId: post.id, scheduledFor };
 }
 
 export function creativePublicUrl(origin: string, imagePath: string): string {

@@ -3,6 +3,7 @@ import { getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getAuthenticatedUserId, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { parseEwayBillDate, parseEwayBillNumber } from '@/lib/gst/eway';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,10 @@ export async function PATCH(
     const date = parseEwayBillDate(body.eway_bill_date);
     if (date.error) {
       return NextResponse.json({ error: date.error, code: 'INVALID_EWAY_DATE' }, { status: 400 });
+    }
+    if (number.number) {
+      const planDenied = await denyIfFeatureMissing(businessId, 'eway_bill');
+      if (planDenied) return planDenied;
     }
 
     const pool = getPool();

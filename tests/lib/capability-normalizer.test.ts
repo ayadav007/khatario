@@ -84,6 +84,7 @@ describe('capability-normalizer', () => {
       expect(normalizeFeature('multi_user')).toBe('settings_multi_user');
       expect(normalizeFeature('multi_branch')).toBe('settings_multi_branch');
       expect(normalizeFeature('multi_warehouse')).toBe('settings_multi_warehouse');
+      expect(normalizeFeature('multi_business')).toBe('settings_multi_business');
       expect(normalizeFeature('backup_restore')).toBe('settings_backup');
       expect(normalizeFeature('whatsapp_bot')).toBe('integration_whatsapp_bot');
       expect(normalizeFeature('todo')).toBe('tools_todo');

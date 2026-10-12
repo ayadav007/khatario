@@ -1,8 +1,15 @@
 import { amountInWords } from '@/lib/print-language/amount';
+import { applyDocumentLanguageEntitlement } from '@/lib/print-language/codes';
 import { embedPrintPhrases, renderLocalizedPrintHtml } from '@/lib/print-language/apply';
 import { translatePhrase } from '@/lib/print-language/labels';
+import { translatePrintedItemName } from '@/lib/print-language/item-name';
 
 describe('print language', () => {
+  it('prints English when the plan does not include print language', () => {
+    expect(applyDocumentLanguageEntitlement('hi', false)).toBe('en');
+    expect(applyDocumentLanguageEntitlement('hi', true)).toBe('hi');
+  });
+
   it('keeps English amount in words in the existing form', () => {
     expect(amountInWords(5630, 'en')).toBe('Five Thousand Six Hundred Thirty Rupees Only');
     expect(amountInWords(0, 'en')).toBe('Zero Rupees Only');
@@ -69,5 +76,27 @@ describe('print language', () => {
     expect(html).toContain('GST(₹)');
     expect(html).toContain('Water Bottle');
     expect(html).toContain('Payment is due within 30 days.');
+  });
+
+  it('translates a printed item name into the selected language', () => {
+    expect(translatePrintedItemName('hi', 'Water Bottle')).toBe('पानी की बोतल');
+    expect(translatePrintedItemName('hi', 'Rice')).toBe('चावल');
+    expect(translatePrintedItemName('hinglish', 'Water Bottle')).toBe('Paani ki botal');
+    expect(translatePrintedItemName('hinglish', 'Rice')).toBe('Chawal');
+    expect(translatePrintedItemName('mr', 'Water Bottle')).toBe('पाण्याची बाटली');
+    expect(translatePrintedItemName('mr', 'Rice')).toBe('तांदूळ');
+    expect(translatePrintedItemName('gu', 'Rice')).toBe('ચોખા');
+    expect(translatePrintedItemName('ta', 'Rice')).toBe('அரிசி');
+    expect(translatePrintedItemName('te', 'Rice')).toBe('బియ్యం');
+    expect(translatePrintedItemName('kn', 'Rice')).toBe('ಅಕ್ಕಿ');
+    expect(translatePrintedItemName('ml', 'Rice')).toBe('അരി');
+    expect(translatePrintedItemName('bn', 'Rice')).toBe('চাল');
+    expect(translatePrintedItemName('pa', 'Rice')).toBe('ਚਾਵਲ');
+    expect(translatePrintedItemName('or', 'Rice')).toBe('ଚାଉଳ');
+    expect(translatePrintedItemName('ur', 'Rice')).toBe('چاول');
+    expect(translatePrintedItemName('en', 'Water Bottle')).toBe('Water Bottle');
+    expect(translatePrintedItemName('hi', 'चावल')).toBe('चावल');
+    expect(translatePrintedItemName('hi', 'Basmati Rice')).toBe('बासमती चावल');
+    expect(translatePrintedItemName('hi', 'Acme Widget')).toBe('Acme Widget');
   });
 });

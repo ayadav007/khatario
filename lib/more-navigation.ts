@@ -117,6 +117,8 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     href: item.href,
     label: item.label,
     module: item.module,
+    featureKey: item.featureKey,
+    isLocked: item.featureKey ? !hasFeature(hasCapability, item.featureKey) : false,
   }));
   let sales = section('Sales', salesItems, ctx);
   // Connect agents on connect-only accounts still need sales lookups when RBAC allows.
@@ -194,13 +196,13 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   const accounting = section(
     'Accounting',
     [
-      { href: '/accounts', label: 'Chart of Accounts', module: 'settings' },
+      { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart', isLocked: !hasFeature(hasCapability, 'accounting_chart') },
       { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
       { href: '/ledger', label: 'Ledger', module: 'invoices' },
       { href: '/payments/in', label: 'Payments In', module: 'payments' },
       { href: '/payments/out', label: 'Payments Out', module: 'payments' },
-      { href: '/provisions', label: 'Provisions', module: 'settings' },
-      { href: '/tds', label: 'TDS/TCS', module: 'settings' },
+      { href: '/provisions', label: 'Provisions', module: 'settings', featureKey: 'accounting_provisions', isLocked: !hasFeature(hasCapability, 'accounting_provisions') },
+      { href: '/tds', label: 'TDS/TCS', module: 'settings', featureKey: 'accounting_tds', isLocked: !hasFeature(hasCapability, 'accounting_tds') },
     ],
     ctx
   );

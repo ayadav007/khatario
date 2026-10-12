@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest } from '@/lib/auth-helpers';
+import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { ChallanInputError } from '@/lib/delivery-challans/challan';
 
 /** Challans are issued under the invoices permission, matching the challan form's guard. */
@@ -12,6 +13,12 @@ export async function authorizeChallan(
   if (!userId) {
     return { ok: false, response: NextResponse.json({ error: 'Authentication required' }, { status: 401 }) };
   }
+  const businessId = getBusinessIdFromRequest(request);
+  if (!businessId) {
+    return { ok: false, response: NextResponse.json({ error: 'business_id is required' }, { status: 400 }) };
+  }
+  const planDenied = await denyIfFeatureMissing(businessId, 'sales_delivery_challans');
+  if (planDenied) return { ok: false, response: planDenied };
   try {
     await authorize(userId, 'invoices', action);
   } catch (error) {

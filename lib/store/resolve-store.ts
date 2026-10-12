@@ -123,6 +123,7 @@ export async function resolveStoreBySubdomain(
   );
 
   if (!row) return null;
+  if (!(await hasFeatureAccess(row.business_id, FeatureKeys.ONLINE_STORE))) return null;
 
   const [customBranding, paymentGateway, gatewayProvider, upiVpa] = await Promise.all([
     hasFeatureAccess(row.business_id, FeatureKeys.CUSTOM_BRANDING).catch(() => false),

@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * Fetch all work orders for a business
  */
 export const GET = withPremiumSubscriptionApi(
-  { module: 'work_orders', action: 'read' },
+  { feature: 'sales_work_orders', module: 'work_orders', action: 'read' },
   async (ctx) => {
     try {
       const { searchParams } = new URL(ctx.request.url);
@@ -50,7 +50,7 @@ export const GET = withPremiumSubscriptionApi(
  * Create a work order. Numbering and costs are decided on the server; the creator is the session user.
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true, module: 'work_orders', action: 'create' },
+  { parseJsonBody: true, feature: 'sales_work_orders', module: 'work_orders', action: 'create' },
   async (ctx) => {
     const client = await getPool().connect();
     try {

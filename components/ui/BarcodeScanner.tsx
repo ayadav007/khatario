@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { X, Camera, Loader2 } from 'lucide-react';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
@@ -25,6 +26,10 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const scannerIdRef = useRef<string>(`barcode-scanner-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const isInitializingRef = useRef(false);
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
+  useEffect(() => {
+    if (snapshotLoaded && !hasCapability('advanced_barcode', 'view')) onClose();
+  }, [snapshotLoaded, hasCapability, onClose]);
   const initScannerRef = useRef<(() => Promise<void>) | null>(null);
 
   // Function to play beep sound on successful scan

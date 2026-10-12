@@ -17,7 +17,7 @@ type Params = { id: string };
 
 /** GET /api/work-orders/[id] — work order with its materials, for the edit form. */
 export const GET = withPremiumSubscriptionApi<Params>(
-  { module: 'work_orders', action: 'read' },
+  { feature: 'sales_work_orders', module: 'work_orders', action: 'read' },
   async (ctx) => {
     try {
       const workOrder = await queryOne(
@@ -46,7 +46,7 @@ export const GET = withPremiumSubscriptionApi<Params>(
 
 /** PUT /api/work-orders/[id] — replace an open (draft, scheduled or in progress) work order. */
 export const PUT = withPremiumSubscriptionApi<Params>(
-  { parseJsonBody: true, module: 'work_orders', action: 'update' },
+  { parseJsonBody: true, feature: 'sales_work_orders', module: 'work_orders', action: 'update' },
   async (ctx) => {
     const client = await getPool().connect();
     try {
@@ -79,7 +79,7 @@ export const PUT = withPremiumSubscriptionApi<Params>(
  * Starting records the actual start date; completing records the end date and hours.
  */
 export const PATCH = withPremiumSubscriptionApi<Params>(
-  { parseJsonBody: true, module: 'work_orders', action: 'update' },
+  { parseJsonBody: true, feature: 'sales_work_orders', module: 'work_orders', action: 'update' },
   async (ctx) => {
     try {
       const body = (ctx.body || {}) as { status?: string; actual_hours?: unknown };

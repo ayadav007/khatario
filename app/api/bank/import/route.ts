@@ -8,6 +8,7 @@ import { queryOne } from '@/lib/db';
 import { extractBankRowsFromCsv } from '@/lib/bank/csv-extract';
 import { extractBankRowsFromPdf } from '@/lib/bank/pdf-extract';
 import type { BankImportPreview } from '@/lib/bank/types';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,8 @@ export async function POST(request: NextRequest) {
     const bankAccountId = String(form.get('bank_account_id') || '').trim();
     const tenant = requireTenantBusinessId(request, String(form.get('business_id') || '').trim() || null);
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
     const businessId = tenant.businessId;
 
     if (!businessId) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryOne } from '@/lib/db';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateProjectedCreditMetrics } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
@@ -33,6 +35,16 @@ export async function POST(request: NextRequest) {
         { error: 'business_id, entity_type, entity_id, reference_type, reference_id, and requested_by are required' },
         { status: 400 }
       );
+    }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) {
+      client.release();
+      return tenant.response;
+    }
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_credit_approvals');
+    if (planDenied) {
+      client.release();
+      return planDenied;
     }
 
     // Validate entity_type and reference_type

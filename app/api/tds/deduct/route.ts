@@ -23,7 +23,7 @@ function financialYearAndQuarter(date: Date): { financialYear: string; quarter: 
  * the payee's aggregate for the financial year, not per payment.
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_tds', parseJsonBody: true },
   async ({ body, businessId, userId }) => {
     const {
       supplier_id,

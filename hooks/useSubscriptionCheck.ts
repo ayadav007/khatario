@@ -163,6 +163,10 @@ export function useSubscriptionCheck(businessId: string | undefined) {
       'todo': 'tools_todo',
       'whatsapp_bot': 'integration_whatsapp_bot',
       'whatsapp_send_message': 'integration_whatsapp_manual',
+      'online_store': 'advanced_online_store',
+      'multi_currency': 'advanced_multi_currency',
+      'barcode_scanning': 'advanced_barcode',
+      'pos_mode': 'settings_pos_mode',
     };
     const registryFeatureKey = featureKeyMapping[featureKey] || featureKey;
 

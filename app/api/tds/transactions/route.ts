@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/tds/transactions
  * List TDS transactions. Active rows only unless ?status=cancelled or ?status=all.
  */
-export const GET = withPremiumSubscriptionApi({}, async ({ request, businessId }) => {
+export const GET = withPremiumSubscriptionApi({ feature: 'accounting_tds',}, async ({ request, businessId }) => {
   try {
     const { searchParams } = new URL(request.url);
     const financialYear = searchParams.get('financial_year');

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId, resolveCreatedByUserId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { queryRows, queryOne, getPool } from '@/lib/db';
 import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import { authorize } from '@/lib/authorization';
@@ -102,6 +103,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     // AUTHORIZATION: Check create permission (bank accounts are part of settings/accounting)
     try {
@@ -231,6 +236,10 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     // Verify the account belongs to the business
     const existing = await queryOne(
@@ -353,6 +362,8 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
+    const planDenied = await denyIfFeatureMissing(businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
 
     if (!userId) {
       return NextResponse.json(

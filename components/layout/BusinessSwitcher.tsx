@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Briefcase, ChevronDown, Loader2, Check, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLayoutData } from '@/contexts/LayoutDataContext';
 
 export type MyBusinessOption = {
   id: string;
@@ -52,6 +53,9 @@ export interface BusinessSwitcherProps {
  */
 export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
   const { business, isPrimaryAdmin } = useAuth();
+  const { enabledFeatureIds } = useLayoutData();
+  const canAddBusiness =
+    isPrimaryAdmin && enabledFeatureIds.includes('settings_multi_business');
   const [open, setOpen] = useState(false);
   const [listLoading, setListLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
@@ -154,7 +158,7 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
     [adding, draft.businessName, draft.businessType, draft.industry],
   );
 
-  if (listLoading || (items.length <= 1 && !isPrimaryAdmin)) {
+  if (listLoading || (items.length <= 1 && !canAddBusiness)) {
     return null;
   }
 
@@ -246,7 +250,7 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
               );
             })}
           </div>
-          {isPrimaryAdmin && (
+          {canAddBusiness && (
             <div className="border-t border-border p-2">
               {showAdd ? (
                 <form onSubmit={onAdd} className="space-y-2 px-1 py-1">

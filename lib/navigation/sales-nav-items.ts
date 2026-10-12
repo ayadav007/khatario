@@ -6,6 +6,7 @@ export type SalesNavItemDef = {
   href: string;
   label: string;
   module?: string;
+  featureKey?: string;
 };
 
 /** Same order/labels as Sidebar Sales (agents use invoices module for order lookups). */
@@ -15,8 +16,8 @@ export const SALES_NAV_ITEMS: SalesNavItemDef[] = [
   { href: '/orders', label: 'Orders & Delivery', module: 'invoices' },
   { href: '/estimates', label: 'Quotations', module: 'invoices' },
   { href: '/sales-orders', label: 'Sales Orders', module: 'invoices' },
-  { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices' },
-  { href: '/work-orders', label: 'Work Orders', module: 'work_orders' },
+  { href: '/delivery-challans', label: 'Delivery Challans', module: 'invoices', featureKey: 'sales_delivery_challans' },
+  { href: '/work-orders', label: 'Work Orders', module: 'work_orders', featureKey: 'sales_work_orders' },
   { href: '/credit-notes', label: 'Credit Notes', module: 'credit_notes' },
   { href: '/debit-notes', label: 'Debit Notes', module: 'debit_notes' },
 ];

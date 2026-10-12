@@ -261,10 +261,12 @@ export async function evaluateBusinessCompliance(businessId: string, asOn: strin
     return gstr3bFindings(asOn, s.opts, s.periods, s.tracksFiling);
   });
   await attempt(['eway_bill'], async () => {
+    if (!(await hasFeatureAccess(businessId, 'eway_bill'))) return [];
     const f = ewayBillFinding(asOn, await loadEwayCandidates(businessId, asOn));
     return f ? [f] : [];
   });
   await attempt(['einvoice'], async () => {
+    if (!(await hasFeatureAccess(businessId, 'e_invoice'))) return [];
     const fy = previousFyRange(asOn);
     const flag = await queryOne<{ above: boolean | null }>(
       `SELECT aggregate_turnover_above_5cr AS above FROM businesses WHERE id = $1::uuid`,

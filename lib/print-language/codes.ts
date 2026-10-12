@@ -43,6 +43,14 @@ export function normalizeDocumentLanguage(value: unknown): DocumentLanguage {
   return CODE_SET.has(code) ? (code as DocumentLanguage) : 'en';
 }
 
+/** Plan matrix off means every document prints in English, even if another language was saved. */
+export function applyDocumentLanguageEntitlement(
+  language: DocumentLanguage,
+  allowed: boolean,
+): DocumentLanguage {
+  return allowed ? language : 'en';
+}
+
 /** BCP 47 tag for dates on the printout. Hinglish keeps English month names. */
 export function documentLanguageDateLocale(language: DocumentLanguage): string {
   switch (language) {

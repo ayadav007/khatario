@@ -1,8 +1,10 @@
 import { platformChat } from '@/lib/ai/platform-chat';
 import type { MarketingBrief } from '@/lib/marketing/brief';
 import { bannedClaimHit } from '@/lib/marketing/claims';
+import { writeCopyWithWorker } from '@/lib/marketing/cloudflare-worker';
 
-export type MarketingCopy = { headline: string; caption: string };
+export type MarketingWriter = 'cloudflare' | 'groq' | 'brief';
+export type MarketingCopy = { headline: string; caption: string; writer: MarketingWriter };
 
 function fallbackCopy(brief: MarketingBrief, angle: string): MarketingCopy {
   const headline = (angle || brief.offer || 'GST billing on your phone').slice(0, 40);
@@ -12,7 +14,7 @@ function fallbackCopy(brief: MarketingBrief, angle: string): MarketingCopy {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 400);
-  return { headline, caption: caption || headline };
+  return { headline, caption: caption || headline, writer: 'brief' };
 }
 
 function parseCopy(raw: string, brief: MarketingBrief, angle: string): MarketingCopy {
@@ -21,7 +23,7 @@ function parseCopy(raw: string, brief: MarketingBrief, angle: string): Marketing
   const headline = (first || '').replace(/^headline:\s*/i, '').trim().slice(0, 80);
   const caption = rest.join('\n').replace(/^caption:\s*/i, '').trim().slice(0, 500);
   if (!headline || !caption) return fallbackCopy(brief, angle);
-  return { headline, caption };
+  return { headline, caption, writer: 'groq' };
 }
 
 export async function writeMarketingCopy(brief: MarketingBrief, angle: string): Promise<MarketingCopy> {
@@ -41,6 +43,18 @@ export async function writeMarketingCopy(brief: MarketingBrief, angle: string): 
   ]
     .filter(Boolean)
     .join('\n');
+
+  try {
+    const fromWorker = await writeCopyWithWorker(brief, angle);
+    if (!bannedClaimHit(`${fromWorker.headline}\n${fromWorker.caption}`, brief.bannedClaims)) {
+      return { ...fromWorker, writer: 'cloudflare' };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message !== 'CLOUDFLARE_MARKETING_UNCONFIGURED') {
+      console.warn('[marketing-copy] cloudflare skipped:', message.slice(0, 200));
+    }
+  }
 
   try {
     const raw = await platformChat(system, prompt);

@@ -491,6 +491,7 @@ export const BusinessProfileTab: React.FC = () => {
   };
 
   const togglePosMode = () => {
+    if (!featureRegistry.hasFeature('settings_pos_mode')) return;
     const next = !posModeEnabled;
     localStorage.setItem('pos_mode_enabled', String(next));
     setPosModeEnabled(next);
@@ -1053,8 +1054,13 @@ export const BusinessProfileTab: React.FC = () => {
               <div id="pos-mode" data-tour="bp-pos" className="scroll-mt-24">
                 <PreferenceRow
                   label="POS mode"
-                  description="A faster two-column invoice screen for counter billing. Applies on this device."
-                  checked={posModeEnabled}
+                  description={
+                    featureRegistry.hasFeature('settings_pos_mode')
+                      ? 'A faster two-column invoice screen for counter billing. Applies on this device.'
+                      : 'A faster counter billing screen. Turn on POS mode for this plan in Admin → Plans → Features.'
+                  }
+                  checked={posModeEnabled && featureRegistry.hasFeature('settings_pos_mode')}
+                  disabled={!featureRegistry.hasFeature('settings_pos_mode')}
                   onChange={togglePosMode}
                 />
               </div>

@@ -7,6 +7,7 @@ import { Plus, FileText, Calendar, User, CheckCircle, XCircle, Clock, Truck, Pac
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
+import { useFeatureRouteGuard } from '@/hooks/useFeatureRouteGuard';
 
 interface DeliveryChallan {
   id: string;
@@ -29,6 +30,7 @@ interface DeliveryChallan {
 export default function DeliveryChallansPage() {
   const router = useRouter();
   const { business } = useAuth();
+  const { canRender, loading: planLoading } = useFeatureRouteGuard({ featureKey: 'sales_delivery_challans' });
   const [deliveryChallans, setDeliveryChallans] = useState<DeliveryChallan[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -70,6 +72,8 @@ export default function DeliveryChallansPage() {
       </div>
     );
   };
+
+  if (planLoading || !canRender) return null;
 
   return (
     

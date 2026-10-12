@@ -172,6 +172,7 @@ export function resolveRegistryFeatureId(featureKey: string): string {
     [FeatureKeys.MULTI_USER]: 'settings_multi_user',
     [FeatureKeys.MULTI_BRANCH]: 'settings_multi_branch',
     [FeatureKeys.MULTI_WAREHOUSE]: 'settings_multi_warehouse',
+    [FeatureKeys.MULTI_BUSINESS]: 'settings_multi_business',
     [FeatureKeys.BACKUP_RESTORE]: 'settings_backup',
     [FeatureKeys.EMAIL_INVOICING]: 'integration_email',
     [FeatureKeys.PAYMENT_GATEWAY]: 'integration_payment_gateway',
@@ -179,6 +180,9 @@ export function resolveRegistryFeatureId(featureKey: string): string {
     [FeatureKeys.LEDGER_ACCOUNTING]: 'advanced_ledger',
     /** DB row id in {@code platform_features} (see migration 012 — JSONB alias was {@code custom_branding}) */
     [FeatureKeys.CUSTOM_BRANDING]: 'advanced_custom_branding',
+    [FeatureKeys.ONLINE_STORE]: 'advanced_online_store',
+    [FeatureKeys.MULTI_CURRENCY]: 'advanced_multi_currency',
+    [FeatureKeys.BARCODE_SCANNING]: 'advanced_barcode',
     [FeatureKeys.OFFERS_PERCENT_DISCOUNT]: 'offers_percent_discount',
     [FeatureKeys.OFFERS_FLAT_DISCOUNT]: 'offers_flat_discount',
     [FeatureKeys.OFFERS_BOGO]: 'offers_buy_x_get_y',
@@ -623,6 +627,23 @@ export async function hasFeatureAccess(
     void pending.finally(() => inflightHasFeatureAccess.delete(dedupeKey));
   }
   return pending;
+}
+
+/**
+ * Same denial as {@link assertFeatureAccess}, as a 403 response the route can return.
+ * `null` means the plan includes the feature.
+ */
+export async function denyIfFeatureMissing(
+  businessId: string,
+  featureKey: string,
+): Promise<NextResponse | null> {
+  try {
+    await assertFeatureAccess(businessId, featureKey);
+    return null;
+  } catch (error) {
+    if (error instanceof FeatureAccessDeniedError) return error.toNextResponse();
+    throw error;
+  }
 }
 
 /** Parallel callers with the same `businessId` share one subscription + matrix lookup for enabled ids. */

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { checkUserPermission } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,16 @@ export async function POST(request: NextRequest) {
         { error: 'approval_id, rejected_by, and business_id are required' },
         { status: 400 }
       );
+    }
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) {
+      client.release();
+      return tenant.response;
+    }
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_credit_approvals');
+    if (planDenied) {
+      client.release();
+      return planDenied;
     }
 
     // AUTHORIZATION: Check if user has admin/finance permissions

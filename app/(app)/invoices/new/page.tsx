@@ -316,6 +316,7 @@ function NewInvoiceContent() {
   const bt = useBluetoothPrinter();
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
+  const posAllowed = hasFeature('settings_pos_mode');
 
   // All state declarations first
   const [loading, setLoading] = useState(false);
@@ -453,10 +454,10 @@ function NewInvoiceContent() {
 
   // Read POS mode from localStorage on mount and when it changes
   useEffect(() => {
-    setPosMode(getPosMode());
+    setPosMode(posAllowed && getPosMode());
     // Listen for storage changes (when POS mode is toggled in settings)
     const handleStorageChange = () => {
-      setPosMode(getPosMode());
+      setPosMode(posAllowed && getPosMode());
     };
     window.addEventListener('storage', handleStorageChange);
     // Also listen for custom event (for same-tab updates)
@@ -465,7 +466,7 @@ function NewInvoiceContent() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('posModeChanged', handleStorageChange);
     };
-  }, []);
+  }, [posAllowed]);
 
   // Fetch warehouses when branch changes
   useEffect(() => {

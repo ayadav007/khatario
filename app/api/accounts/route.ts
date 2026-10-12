@@ -174,6 +174,7 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
  */
 export const POST = withPremiumSubscriptionApi(
   {
+    feature: 'accounting_chart',
     parseJsonBody: true,
     resolveActingUserId: ({ body, sessionUserId }) => {
       if (body != null && typeof body === 'object') {

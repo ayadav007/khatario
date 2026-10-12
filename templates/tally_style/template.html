@@ -27,10 +27,8 @@
       }
 
       .page {
-        /* IMPORTANT:
-         * The PDF generator already applies A4 margins.
-         * Using a fixed 210mm page box + extra padding can introduce top whitespace
-         * and force content to spill onto a second page.
+        /* Page margin comes from the print pipeline (@page), not from padding here.
+         * A fixed 210mm box plus extra padding spills onto a second page.
          */
         width: 100%;
         margin: 0;

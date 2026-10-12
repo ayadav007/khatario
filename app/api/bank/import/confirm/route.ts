@@ -8,6 +8,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getPool, queryOne } from '@/lib/db';
 import { roundMoney } from '@/lib/bank/normalize';
 import type { BankStatementFileType, BankStatementSourceType } from '@/lib/bank/types';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id as string | undefined);
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_bank');
+    if (planDenied) return planDenied;
     const businessId = tenant.businessId;
     const userId = getUserIdFromRequest(request);
     const createdBy = resolveCreatedByUserId(request, body);

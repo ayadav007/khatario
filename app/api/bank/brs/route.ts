@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { guardLedgerRoute } from '@/lib/http/ledger-route-guard';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { loadBrs } from '@/lib/bank/brs';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest) {
     action: 'read',
   });
   if (!guard.ok) return guard.response;
+  const planDenied = await denyIfFeatureMissing(guard.businessId, 'accounting_bank');
+  if (planDenied) return planDenied;
 
   const bankAccountId = searchParams.get('bank_account_id');
   if (!bankAccountId) return NextResponse.json({ error: 'bank_account_id is required' }, { status: 400 });

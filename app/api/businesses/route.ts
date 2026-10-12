@@ -11,6 +11,7 @@ import { clearSubscriptionCache } from '@/lib/subscription';
 import { parseAddBusinessInput } from '@/lib/businesses/create-business-input';
 import { provisionBusiness } from '@/lib/businesses/provision-business';
 import { attachUserAsOwner, grantOwnerBranchAccess } from '@/lib/businesses/owner-membership';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,6 +80,16 @@ export async function POST(request: NextRequest) {
       { error: 'Only the business owner can add another business' },
       { status: 403 },
     );
+  }
+
+  try {
+    await assertFeatureAccess(owner.business_id, 'multi_business');
+  } catch (error) {
+    if (error instanceof FeatureAccessDeniedError) {
+      return error.toNextResponse();
+    }
+    console.error('POST /api/businesses feature check:', error);
+    return NextResponse.json({ error: 'Could not create the business' }, { status: 500 });
   }
 
   const sessionVersion = getSessionVersionFromRequest(request);

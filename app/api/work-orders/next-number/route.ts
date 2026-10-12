@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 /** GET /api/work-orders/next-number — suggested number for a new work order (not reserved). */
 export const GET = withPremiumSubscriptionApi(
-  { module: 'work_orders', action: 'create' },
+  { feature: 'sales_work_orders', module: 'work_orders', action: 'create' },
   async (ctx) => {
     try {
       const pool = getPool();

@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
  * Materials become item lines (stock is issued), labour and other charges become service lines.
  */
 export const POST = withPremiumSubscriptionApi<{ id: string }>(
-  { parseJsonBody: true, module: 'work_orders', action: 'update' },
+  { parseJsonBody: true, feature: 'sales_work_orders', module: 'work_orders', action: 'update' },
   async (ctx) => {
     const body = (ctx.body || {}) as { invoice_date?: string };
     const invoiceDate = body.invoice_date ? String(body.invoice_date).slice(0, 10) : todayIsoDate();

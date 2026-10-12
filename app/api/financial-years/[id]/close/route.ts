@@ -5,6 +5,7 @@ import { queryOne } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
 /**
@@ -32,6 +33,8 @@ export async function POST(
     if (!userId) {
       return NextResponse.json({ error: 'user_id is required for authorization' }, { status: 401 });
     }
+    const planDenied = await denyIfFeatureMissing(business_id, 'accounting_chart');
+    if (planDenied) return planDenied;
     try {
       await authorize(userId, 'settings', 'update', { businessId: business_id, resourceId: params.id });
     } catch (error) {

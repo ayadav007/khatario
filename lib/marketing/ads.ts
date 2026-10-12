@@ -69,7 +69,7 @@ export async function generateMarketingAd(input: {
   assertWithinDailyCap(paise, secrets.brief.dailyAdCapRupees);
   const copy = await writeMarketingCopy(secrets.brief, input.angle.trim());
   assertNoBannedClaims(`${copy.headline}\n${copy.caption}`, secrets.brief.bannedClaims);
-  const creative = await renderCreative(copy.headline);
+  const creative = await renderCreative(copy.headline, 'square', { angle: input.angle.trim(), offer: secrets.brief.offer });
   const row = await queryOne<MarketingAdRow>(
     `INSERT INTO marketing_ads (name, headline, primary_text, image_path, daily_budget_paise, status, created_by)
      VALUES ($1, $2, $3, $4, $5, 'draft', $6)

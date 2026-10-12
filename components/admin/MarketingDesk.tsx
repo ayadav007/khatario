@@ -25,6 +25,8 @@ type PostRow = {
   headline: string;
   image_path: string;
   scheduled_for: string;
+  image_style: string;
+  writer: string;
   status: string;
   error: string | null;
   fb_post_id: string | null;
@@ -334,6 +336,7 @@ function QueueTab({ busy, run }: { busy: boolean; run: (work: () => Promise<void
   const [status, setStatus] = useState('all');
   const [date, setDate] = useState(todayInKolkata());
   const [angle, setAngle] = useState('');
+  const [imageStyle, setImageStyle] = useState('auto');
   const [captions, setCaptions] = useState<Record<string, string>>({});
 
   const load = useCallback(async (next = status) => {
@@ -357,11 +360,19 @@ function QueueTab({ busy, run }: { busy: boolean; run: (work: () => Promise<void
           <span className={label}>Angle (optional)</span>
           <input className={field} value={angle} placeholder="GST invoice in Hindi" onChange={(e) => setAngle(e.target.value)} />
         </label>
+        <label>
+          <span className={label}>Image</span>
+          <select className={field} value={imageStyle} onChange={(e) => setImageStyle(e.target.value)}>
+            <option value="auto">Alternate by day</option>
+            <option value="square">Square photo</option>
+            <option value="poster">Full poster</option>
+          </select>
+        </label>
         <button
           type="button"
           disabled={busy}
           className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-          onClick={() => void run(async () => { await api('/api/admin/marketing/desk/posts/generate', { method: 'POST', body: JSON.stringify({ scheduled_for: date, angle }) }); await load(); })}
+          onClick={() => void run(async () => { await api('/api/admin/marketing/desk/posts/generate', { method: 'POST', body: JSON.stringify({ scheduled_for: date, angle, image_style: imageStyle }) }); await load(); })}
         >
           Generate draft
         </button>
@@ -380,9 +391,10 @@ function QueueTab({ busy, run }: { busy: boolean; run: (work: () => Promise<void
       <div className="space-y-4">
         {posts.map((post) => (
           <article key={post.id} className="grid gap-4 rounded-lg border border-gray-200 p-4 md:grid-cols-[160px_1fr]">
-            <img src={post.image_path} alt="" className="h-40 w-40 rounded-md object-cover" />
+            <img src={post.image_path} alt="" className="h-44 w-full max-w-[140px] rounded-md bg-gray-50 object-contain" />
             <div className="space-y-2">
               <p className="text-sm font-medium">{post.headline} · {post.scheduled_for} · {post.status}</p>
+              <p className="text-xs text-gray-500">{post.image_style === 'poster' ? 'Full poster' : 'Square photo'} · written by {post.writer}</p>
               <textarea
                 className={field}
                 rows={4}

@@ -7,9 +7,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { withPageAuth } from '@/lib/auth/withPageAuth';
 import { Zap } from 'lucide-react';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { useFeatureRouteGuard } from '@/hooks/useFeatureRouteGuard';
 
 function AutomationPage() {
   const { business } = useAuth();
+  const { canRender, loading } = useFeatureRouteGuard({ featureKey: 'workflow_automation' });
+  if (loading) return null;
+  if (!canRender) return null;
 
   return (
     <SettingsPageShell

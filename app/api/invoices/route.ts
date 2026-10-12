@@ -30,6 +30,7 @@ import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-ut
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import {
   getClosingStockLockedCutoffDate,
   assertDocumentDateNotBeforeLockedClosingStock,
@@ -1122,6 +1123,30 @@ export async function POST(request: NextRequest) {
         if (res) {
           await client.query('ROLLBACK').catch(() => {});
           return res;
+        }
+        throw e;
+      }
+    }
+
+    if (String(eway_bill_number || '').trim()) {
+      try {
+        await assertFeatureAccess(business_id, 'eway_bill');
+      } catch (e) {
+        if (e instanceof FeatureAccessDeniedError) {
+          await client.query('ROLLBACK').catch(() => {});
+          return e.toNextResponse();
+        }
+        throw e;
+      }
+    }
+    const invoiceCurrencyCode = String(invoice_currency || 'INR').trim().toUpperCase();
+    if (invoiceCurrencyCode && invoiceCurrencyCode !== 'INR') {
+      try {
+        await assertFeatureAccess(business_id, FeatureKeys.MULTI_CURRENCY);
+      } catch (e) {
+        if (e instanceof FeatureAccessDeniedError) {
+          await client.query('ROLLBACK').catch(() => {});
+          return e.toNextResponse();
         }
         throw e;
       }

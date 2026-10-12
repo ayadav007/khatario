@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * This is useful for businesses created before the auto-creation feature was added
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_chart', parseJsonBody: true },
   async (ctx) => {
     const pool = getPool();
     const client = await pool.connect();

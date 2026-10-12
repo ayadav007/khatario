@@ -3,8 +3,13 @@ import { queryOne } from '@/lib/db';
 import { getUserIdFromRequest, requirePortalSession } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { normalizeDocumentLanguage, DOCUMENT_LANGUAGE_CODES } from '@/lib/print-language';
-import { getBusinessDocumentLanguage } from '@/lib/print-language/storage';
+import {
+  documentLanguageChangeAllowed,
+  getBusinessDocumentLanguage,
+} from '@/lib/print-language/storage';
 import { hasTableColumn } from '@/lib/schema-columns';
+import { FeatureKeys } from '@/lib/featureKeys';
+import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,8 +38,14 @@ export async function GET(request: NextRequest) {
 
     await authorize(userId, 'settings', 'read', { businessId });
 
+    const [documentLanguage, canChange] = await Promise.all([
+      getBusinessDocumentLanguage(businessId),
+      documentLanguageChangeAllowed(businessId),
+    ]);
+
     return NextResponse.json({
-      document_language: await getBusinessDocumentLanguage(businessId),
+      document_language: documentLanguage,
+      can_change: canChange,
     });
   } catch (error) {
     if (error instanceof AuthorizationError) {
@@ -61,6 +72,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     await authorize(userId, 'settings', 'update', { businessId });
+    await assertFeatureAccess(businessId, FeatureKeys.DOCUMENT_LANGUAGE);
 
     if (!(await hasTableColumn('business_settings', 'document_language'))) {
       return NextResponse.json(
@@ -89,6 +101,9 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof AuthorizationError) {
+      return error.toNextResponse();
+    }
+    if (error instanceof FeatureAccessDeniedError) {
       return error.toNextResponse();
     }
     console.error('document-language PATCH:', error);

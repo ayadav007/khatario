@@ -5,6 +5,7 @@ import { generateMarketingPost } from '@/lib/marketing/posts';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const auth = await requirePlatformRequest(request, 'admin');
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
       adminId: auth.admin.id,
       scheduledFor: String(body.scheduled_for || ''),
       angle: String(body.angle || ''),
+      imageStyle: body.image_style,
     });
     await logAdminAction(auth.admin.id, 'marketing_post_draft', 'marketing_post', post.id);
     return NextResponse.json({ post });

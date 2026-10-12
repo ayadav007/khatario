@@ -2,12 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 import { useToastContext } from '@/contexts/ToastContext';
+import { FeatureKeys } from '@/lib/featureKeys';
 import { DOCUMENT_LANGUAGES, type DocumentLanguage } from '@/lib/print-language/codes';
 
 export function DocumentLanguageCard() {
   const toast = useToastContext();
   const [language, setLanguage] = useState<DocumentLanguage>('en');
+  const [canChange, setCanChange] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -19,6 +22,7 @@ export function DocumentLanguageCard() {
         const data = await res.json();
         if (!cancelled && res.ok && data.document_language) {
           setLanguage(data.document_language);
+          setCanChange(data.can_change !== false);
         }
       } catch {
         if (!cancelled) toast.error('Could not load the print language');
@@ -44,6 +48,7 @@ export function DocumentLanguageCard() {
       const data = await res.json();
       if (!res.ok) {
         setLanguage(previous);
+        if (data.code === 'FEATURE_NOT_IN_PLAN') setCanChange(false);
         toast.error(data.error || 'Could not save the print language');
         return;
       }
@@ -73,7 +78,7 @@ export function DocumentLanguageCard() {
           id="document-language"
           className="input"
           value={language}
-          disabled={loading || saving}
+          disabled={loading || saving || !canChange}
           onChange={(event) => save(event.target.value as DocumentLanguage)}
         >
           {DOCUMENT_LANGUAGES.map((option) => (
@@ -85,6 +90,14 @@ export function DocumentLanguageCard() {
         <p className="type-body-sm mt-1.5 text-text-secondary">
           The app screens stay in English. On a server without Indian fonts, install Nirmala UI or Noto fonts so PDFs render the script.
         </p>
+        {!loading && !canChange ? (
+          <PlanFeatureDeniedCallout
+            className="mt-3"
+            featureKey={FeatureKeys.DOCUMENT_LANGUAGE}
+            title="Print language is not on your plan"
+            description="Documents print in English until Print language is included on your plan."
+          />
+        ) : null}
         {saving ? (
           <Button type="button" size="sm" variant="ghost" className="mt-3" disabled>
             Saving…

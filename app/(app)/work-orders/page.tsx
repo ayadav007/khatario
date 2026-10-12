@@ -8,6 +8,7 @@ import { Plus, FileText, Calendar, User, CheckCircle, XCircle, Clock, Wrench, Al
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { useFeatureRouteGuard } from '@/hooks/useFeatureRouteGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
 
 interface WorkOrder {
@@ -31,6 +32,7 @@ interface WorkOrder {
 export default function WorkOrdersPage() {
   const router = useRouter();
   const { business, user } = useAuth();
+  const { canRender, loading: planLoading } = useFeatureRouteGuard({ featureKey: 'sales_work_orders' });
   
   // Check authorization before rendering
   // Uses tri-state model: 'loading' | 'allowed' | 'denied'
@@ -96,6 +98,8 @@ export default function WorkOrdersPage() {
       </span>
     );
   };
+
+  if (planLoading || !canRender) return null;
 
   // Show loading state while checking authorization (tri-state: 'loading')
   if (authStatus === 'loading') {

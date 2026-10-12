@@ -1,4 +1,7 @@
+'use client';
+
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCapabilityCheck } from '@/hooks/useCapability';
 
 interface UseBarcodeScannerOptions {
   onScan: (barcode: string) => void;
@@ -27,6 +30,8 @@ export function useBarcodeScanner({
   scanTimeout = 100, // Time between keystrokes to consider it a scan (ms)
   enabled = true
 }: UseBarcodeScannerOptions) {
+  const { hasCapability, snapshotLoaded } = useCapabilityCheck();
+  const active = enabled && snapshotLoaded && hasCapability('advanced_barcode', 'view');
   const [isScanning, setIsScanning] = useState(false);
   const inputBuffer = useRef('');
   const lastKeyTime = useRef(0);
@@ -51,7 +56,7 @@ export function useBarcodeScanner({
   }, [minLength, maxLength, onScan]);
 
   const handleKeyPress = useCallback((e: KeyboardEvent) => {
-    if (!enabled) {
+    if (!active) {
       return;
     }
 
@@ -186,10 +191,10 @@ export function useBarcodeScanner({
         }
       }, scanTimeout * 3);
     }
-  }, [enabled, minLength, maxLength, scanTimeout, triggerScan, onScanStart, isScanning]);
+  }, [active, minLength, maxLength, scanTimeout, triggerScan, onScanStart, isScanning]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!active) {
       return;
     }
     // Use capture phase to catch events before they reach input fields
@@ -204,7 +209,7 @@ export function useBarcodeScanner({
         clearTimeout(rapidScanTimeoutRef.current);
       }
     };
-  }, [enabled, handleKeyPress]);
+  }, [active, handleKeyPress]);
 
   return {
     isScanning,

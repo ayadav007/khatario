@@ -10,6 +10,7 @@ import {
   type DocumentLanguage,
 } from './print-language';
 import { resolveDocumentLanguage } from './print-language/storage';
+import { translatePrintedItemName } from './print-language/item-name';
 
 function placeOfSupplyName(code: unknown): string {
   const raw = String(code ?? '').trim();
@@ -237,8 +238,8 @@ export async function prepareInvoiceForRendering(rawData: any, settings: any = {
 
     return {
       index: index + 1,
-      item_name: item.item_name || '',
-      description: item.description || '',
+      item_name: translatePrintedItemName(documentLanguage, item.item_name || ''),
+      description: translatePrintedItemName(documentLanguage, item.description || ''),
       hsn_sac: item.hsn_sac || '',
       quantity: qty,
       unit: item.unit || 'PCS',

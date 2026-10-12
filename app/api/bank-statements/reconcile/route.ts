@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * Auto-match bank statement transactions with ledger entries
  */
 export const POST = withPremiumSubscriptionApi(
-  { parseJsonBody: true },
+  { feature: 'accounting_bank', parseJsonBody: true },
   async ({ body, businessId }) => {
     const pool = getPool();
     const client = await pool.connect();

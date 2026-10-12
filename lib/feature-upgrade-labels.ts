@@ -25,6 +25,7 @@ const LABELS: Record<string, string> = {
   barcode_thermal_printer: 'Thermal printing',
   report_builder: 'Custom report builder',
   settings_backup: 'Backup & restore',
+  settings_document_language: 'Print language',
   soft_delete: 'Recycle bin restore',
 };
 

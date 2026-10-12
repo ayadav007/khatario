@@ -4,6 +4,7 @@ import { createProvisionEntry, getProvisionEntries } from '@/lib/services/provis
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 /**
  * GET /api/provisions/[id]/entries
@@ -17,6 +18,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
     const businessId = tenant.businessId;
     const financialYear = searchParams.get('financial_year');
 
@@ -55,6 +58,8 @@ export async function POST(
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
+    const planDenied = await denyIfFeatureMissing(tenant.businessId, 'accounting_provisions');
+    if (planDenied) return planDenied;
     const business_id = tenant.businessId;
     const {
       financial_year,
