@@ -9,6 +9,7 @@ import { Plus, Trash2, Save, Loader2, Truck, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { AccessDenied } from '@/components/common/AccessDenied';
 import { CustomerSearchSelect } from '@/components/customers/CustomerSearchSelect';
 import { Customer } from '@/types/database';
@@ -317,7 +318,8 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
   const linePreview = (row: ChallanRow) =>
     computeChallanLines([{ ...row, item_name: row.item_name || '-', qty: row.qty || 0 }], { interState, chargeTax })
       .lines[0];
-  const needsEwayBill = preview.totals.grand_total > EWAY_BILL_THRESHOLD && !formData.e_way_bill_number.trim();
+  const ewayAllowed = usePlanFeature('eway_bill');
+  const needsEwayBill = ewayAllowed && preview.totals.grand_total > EWAY_BILL_THRESHOLD && !formData.e_way_bill_number.trim();
 
   const readOnly = !!editId && existingStatus !== null && !isChallanEditable(existingStatus);
 
@@ -344,6 +346,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
     try {
       const payload = {
         ...formData,
+        e_way_bill_number: ewayAllowed ? formData.e_way_bill_number : '',
         place_of_supply_state_code: formData.place_of_supply_state_code || null,
         status,
         business_id: business.id,
@@ -536,6 +539,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                 {interState ? 'Inter-state: IGST applies.' : 'Within the state: CGST and SGST apply.'}
               </p>
             </div>
+            {ewayAllowed ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">E-Way Bill Number</label>
               <Input
@@ -545,6 +549,7 @@ export function DeliveryChallanForm({ editId }: { editId?: string }) {
                 placeholder="E-Way Bill #"
               />
             </div>
+            ) : null}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number</label>
               <Input

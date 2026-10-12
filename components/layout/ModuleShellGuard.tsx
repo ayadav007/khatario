@@ -3,7 +3,10 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { moduleForPath } from '@/lib/platform-modules';
+import { featureIdForPath } from '@/lib/subscription/plan-path-gate';
+import { PlanFeatureDeniedCallout } from '@/components/subscription/PlanFeatureDeniedCallout';
 import {
   CONNECT_AGENT_HOME_PATH,
   isConnectAgentSeat,
@@ -36,9 +39,17 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { loading, platformSession, user } = useAuth();
+  const { loading: planLoading, snapshotLoaded, enabledFeatureIds } = useLayoutData();
+
+  const requiredFeature = featureIdForPath(pathname);
+  const planKnown = snapshotLoaded && !planLoading;
+  const blockedByPlan =
+    planKnown &&
+    !!requiredFeature &&
+    !enabledFeatureIds.includes(requiredFeature);
 
   useEffect(() => {
-    if (loading || !pathname) return;
+    if (loading || !pathname || blockedByPlan) return;
 
     if (isConnectAgentSeat(user) && isConnectAgentBlockedPath(pathname)) {
       router.replace(CONNECT_AGENT_HOME_PATH);
@@ -60,7 +71,15 @@ export function ModuleShellGuard({ children }: { children: React.ReactNode }) {
     if (!platformSession.enabledModules.includes(requiredModule)) {
       router.replace(`/settings/products?upsell=${requiredModule}`);
     }
-  }, [loading, pathname, platformSession, router, user]);
+  }, [blockedByPlan, loading, pathname, platformSession, router, user]);
+
+  if (blockedByPlan && requiredFeature) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <PlanFeatureDeniedCallout featureKey={requiredFeature} autoOpenUpgradeModal />
+      </div>
+    );
+  }
 
   return <>{children}</>;
 }

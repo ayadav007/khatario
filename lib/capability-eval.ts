@@ -70,8 +70,19 @@ export function evaluateCapabilityAccess(
     }
   }
 
-  if (sessionIsPrimaryAdmin) return { allowed: true };
-  if (snapshot?.isPrimaryAdmin) return { allowed: true };
+  // The account owner skips role checks, but not the plan. A missing snapshot does not lock them out.
+  if (sessionIsPrimaryAdmin || snapshot?.isPrimaryAdmin) {
+    const planFeature = planFeatureForModule(res);
+    if (
+      planFeature &&
+      snapshot &&
+      Array.isArray(snapshot.enabledFeatures) &&
+      !snapshot.enabledFeatures.includes(planFeature)
+    ) {
+      return { allowed: false, denialReason: 'FEATURE_NOT_IN_PLAN' };
+    }
+    return { allowed: true };
+  }
 
   const mergedPermissions = {
     ...(sessionPermissions || {}),

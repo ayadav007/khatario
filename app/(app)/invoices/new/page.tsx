@@ -33,6 +33,7 @@ import {
   useMobileHeaderTitleOverride,
 } from '@/contexts/MobileHeaderTitleContext';
 import { useOfflineSalesFinalize } from '@/hooks/useOfflineSalesFinalize';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { InvoicePaymentModal } from '@/components/modals/InvoicePaymentModal';
@@ -317,6 +318,7 @@ function NewInvoiceContent() {
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
   const posAllowed = hasFeature('settings_pos_mode');
+  const ewayAllowed = usePlanFeature('eway_bill');
 
   // All state declarations first
   const [loading, setLoading] = useState(false);
@@ -1648,8 +1650,8 @@ function NewInvoiceContent() {
           bl_number: isExport ? blNumber : undefined, 
           buyer_tax_id: isExport ? buyerTaxId : undefined, 
           lut_declaration: isExport && exportType === 'wop', 
-          eway_bill_number: ewayBillNumber || undefined, 
-          eway_bill_date: ewayBillDate || undefined, 
+          eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
+          eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
           purchase_order_number: purchaseOrderNumber || undefined, 
           purchase_order_date: purchaseOrderDate || undefined, 
           reference_number: referenceNumber || undefined, 
@@ -2136,8 +2138,8 @@ function NewInvoiceContent() {
         bl_number: isExport ? blNumber : undefined, 
         buyer_tax_id: isExport ? buyerTaxId : undefined, 
         lut_declaration: isExport && exportType === 'wop', 
-        eway_bill_number: ewayBillNumber || undefined, 
-        eway_bill_date: ewayBillDate || undefined, 
+        eway_bill_number: ewayAllowed ? ewayBillNumber || undefined : undefined, 
+        eway_bill_date: ewayAllowed ? ewayBillDate || undefined : undefined, 
         purchase_order_number: purchaseOrderNumber || undefined, 
         purchase_order_date: purchaseOrderDate || undefined, 
         reference_number: referenceNumber || undefined, 
@@ -3189,8 +3191,8 @@ function NewInvoiceContent() {
           {showAdditionalInfo && (
             <div className="mt-2 p-4 bg-surface rounded-lg border border-border shadow-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="12 digits, or add it after the bill" disabled={isFinal} /></div>
-                <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div>
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} placeholder="12 digits, or add it after the bill" disabled={isFinal} /></div> : null}
+                {ewayAllowed ? <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} placeholder="PO number" disabled={isFinal} /></div>
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
                 <div><label className="block text-xs font-semibold uppercase text-text-secondary mb-1">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Reference number" disabled={isFinal} /></div>
@@ -3913,8 +3915,8 @@ function NewInvoiceContent() {
             <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary">More details</p>
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3">
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div>
-                  <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div>
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Number</label><Input type="text" value={ewayBillNumber} onChange={(e) => setEwayBillNumber(e.target.value)} disabled={isFinal} /></div> : null}
+                  {ewayAllowed ? <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">E-way Bill Date</label><Input type="date" value={ewayBillDate} onChange={(e) => setEwayBillDate(e.target.value)} disabled={isFinal} /></div> : null}
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Number</label><Input type="text" value={purchaseOrderNumber} onChange={(e) => setPurchaseOrderNumber(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Purchase Order Date</label><Input type="date" value={purchaseOrderDate} onChange={(e) => setPurchaseOrderDate(e.target.value)} disabled={isFinal} /></div>
                   <div><label className="text-xs font-semibold uppercase text-text-secondary mb-1 block">Reference Number</label><Input type="text" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} disabled={isFinal} /></div>

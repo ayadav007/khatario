@@ -22,6 +22,8 @@ import {
   APP_MAIN_PADDING_COMPACT_CLASS,
 } from '@/lib/page-layout';
 import { getPosMode } from '@/lib/pos-settings';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
+import { AccessibilityProvider } from '@/components/accessibility/AccessibilityProvider';
 import { MobileHeaderTitleProvider } from '@/contexts/MobileHeaderTitleContext';
 import { TodoScheduleRailProvider } from '@/contexts/TodoScheduleRailContext';
 import { TodoScheduleRail } from '@/components/todo/TodoScheduleRail';
@@ -59,9 +61,11 @@ function AppRouteLayoutInner({
   const { sidebarCollapsed } = useLayout();
   const pathname = usePathname();
   const [posMode, setPosMode] = useState(false);
+  const posAllowed = usePlanFeature('settings_pos_mode');
+  const accessibilityOn = usePlanFeature('accessibility');
 
   useEffect(() => {
-    const syncPosMode = () => setPosMode(getPosMode());
+    const syncPosMode = () => setPosMode(posAllowed && getPosMode());
 
     syncPosMode();
     window.addEventListener('posModeChanged', syncPosMode);
@@ -77,7 +81,7 @@ function AppRouteLayoutInner({
       window.removeEventListener('posModeChanged', syncPosMode);
       window.removeEventListener('storage', onStorage);
     };
-  }, []);
+  }, [posAllowed]);
 
   const isConversationsPage = pathname?.includes('/whatsapp/conversations') ?? false;
   /** Full-bleed chat chrome (no TopBar/banners); BottomNav still shows on mobile for agents. */
@@ -91,8 +95,7 @@ function AppRouteLayoutInner({
   const isSettingsRoute =
     pathname === '/settings' || (pathname?.startsWith('/settings/') ?? false);
 
-  if (posMode && isInvoicePage) {
-    return (
+  const shell = posMode && isInvoicePage ? (
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
         <MobileBackNavigation />
@@ -102,16 +105,13 @@ function AppRouteLayoutInner({
           <SyncStatusBanner />
           <DynamicTitle />
           <main className="h-full w-full">
-            {children}
+            <ModuleShellGuard>{children}</ModuleShellGuard>
           </main>
           <PromotionModal />
           <TrialExtensionModal />
         </div>
       </MobileHeaderTitleProvider>
-    );
-  }
-
-  return (
+  ) : (
     <TodoScheduleRailProvider>
       <MobileHeaderTitleProvider>
         <PortalThemeSync />
@@ -168,6 +168,8 @@ function AppRouteLayoutInner({
       </MobileHeaderTitleProvider>
     </TodoScheduleRailProvider>
   );
+
+  return accessibilityOn ? <AccessibilityProvider>{shell}</AccessibilityProvider> : shell;
 }
 
 export default function AppRouteLayout({

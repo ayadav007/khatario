@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { MOBILE_BOTTOM_NAV_SELECTOR } from '@/lib/mobile-navigation';
 
 const THRESHOLD = 72;   // px to pull before releasing triggers refresh
@@ -27,6 +28,7 @@ function isSuppressedPath(pathname: string | null): boolean {
 export function PullToRefresh() {
   const router = useRouter();
   const pathname = usePathname();
+  const mobileEnhancements = usePlanFeature('mobile_enhancements');
   const [pullY, setPullY] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -47,7 +49,7 @@ export function PullToRefresh() {
   }, [router]);
 
   useEffect(() => {
-    if (!isCapacitorNative()) return;
+    if (!mobileEnhancements || !isCapacitorNative()) return;
 
     const touchOnBottomNav = (e: TouchEvent) => {
       const target = e.target;
@@ -108,10 +110,10 @@ export function PullToRefresh() {
       document.removeEventListener('touchmove', onTouchMove);
       document.removeEventListener('touchend', onTouchEnd);
     };
-  }, [triggerRefresh]);
+  }, [triggerRefresh, mobileEnhancements]);
 
-  // Don't render on web or suppressed pages
-  if (!isCapacitorNative()) return null;
+  // Don't render on web, when the plan turns mobile extras off, or on suppressed pages
+  if (!mobileEnhancements || !isCapacitorNative()) return null;
   if (isSuppressedPath(pathname)) return null;
 
   const progress = Math.min(pullY / THRESHOLD, 1);

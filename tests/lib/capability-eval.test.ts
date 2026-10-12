@@ -198,6 +198,24 @@ describe('evaluateCapabilityAccess', () => {
     expect(result.denialReason).toBe('FEATURE_NOT_IN_PLAN');
   });
 
+  it('denies the account owner a plan feature that is turned off', () => {
+    loadSnapshot.mockReturnValue({
+      permissions: {},
+      isPrimaryAdmin: true,
+      enabledFeatures: ['sales_estimates'],
+    } as any);
+    const result = evaluateCapabilityAccess({
+      resource: 'invoices',
+      action: 'view',
+      businessId: 'b1',
+      userId: 'u1',
+      sessionIsPrimaryAdmin: true,
+      sessionPermissions: null,
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.denialReason).toBe('FEATURE_NOT_IN_PLAN');
+  });
+
   it('allows primary admin without waiting for module permissions', () => {
     const result = evaluateCapabilityAccess({
       resource: 'items',

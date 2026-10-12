@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { clsx } from 'clsx';
 import { AlertTriangle, ChevronDown, Home, Loader2, MapPin, Plane, Warehouse } from 'lucide-react';
 import type { ComposerDocType, ComposerMoreDetails } from './types';
@@ -261,6 +262,8 @@ export function MoreDetailsPanel({
   customFields: React.ReactNode | null;
   defaultOpen: boolean;
 }) {
+  const ewayAllowed = usePlanFeature('eway_bill');
+  const einvoiceAllowed = usePlanFeature('e_invoice');
   const filled = Object.values(value).filter((v) => String(v || '').trim()).length;
   const [open, setOpen] = useState(defaultOpen || filled > 0);
   const text = (key: keyof ComposerMoreDetails, label: string, placeholder?: string) => (
@@ -294,7 +297,7 @@ export function MoreDetailsPanel({
         className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-primary-700"
       >
         <ChevronDown className={clsx('h-3.5 w-3.5 transition', open && 'rotate-180')} />
-        {open ? 'Hide' : 'Show'} PO, E-way bill, dispatch &amp; references
+        {open ? 'Hide' : 'Show'} PO, {ewayAllowed ? 'E-way bill, ' : ''}dispatch &amp; references
         {filled > 0 && !open && (
           <span className="rounded-full bg-primary-50 px-1.5 text-[10px] font-bold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
             {filled} filled
@@ -306,8 +309,8 @@ export function MoreDetailsPanel({
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
             {text('purchaseOrderNumber', 'PO number', 'PO-1234')}
             {date('purchaseOrderDate', 'PO date')}
-            {text('ewayBillNumber', 'E-way bill no.', '12-digit EWB')}
-            {date('ewayBillDate', 'E-way bill date')}
+            {ewayAllowed ? text('ewayBillNumber', 'E-way bill no.', '12-digit EWB') : null}
+            {ewayAllowed ? date('ewayBillDate', 'E-way bill date') : null}
             {text('referenceNumber', 'Reference no.')}
             {text('deliveryNote', 'Delivery note')}
             {text('paymentTerms', 'Mode / terms of payment')}
@@ -323,6 +326,11 @@ export function MoreDetailsPanel({
               />
             </Field>
           </div>
+          {einvoiceAllowed ? (
+            <p className="text-xs text-text-secondary">
+              E-invoice is on for this plan. Take the IRN and QR from the government portal. Khatario does not create them.
+            </p>
+          ) : null}
           {customFields && (
             <div className="border-t border-border pt-3">
               <p className="mb-2 text-xs font-semibold text-text-secondary">Custom fields</p>

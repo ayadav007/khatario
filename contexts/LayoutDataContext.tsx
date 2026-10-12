@@ -141,10 +141,9 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
           ...existing,
           subscription,
           addons,
-          enabledFeatures:
-            enabledFeatureIds.length > 0
-              ? enabledFeatureIds
-              : (existing.enabledFeatures || []),
+          enabledFeatures: featuresRes.ok
+            ? enabledFeatureIds
+            : (existing.enabledFeatures || []),
           timestamp: Date.now(),
         });
       }
@@ -325,9 +324,10 @@ function LayoutDataProviderInner({ children }: { children: React.ReactNode }) {
             : (cachedSnapshot?.isPrimaryAdmin || false),
           subscription: subscription ?? cachedSnapshot?.subscription ?? null,
           addons: addons.length > 0 ? addons : (cachedSnapshot?.addons || []),
-          enabledFeatures: enabledFeatures.length > 0
-            ? enabledFeatures
-            : (cachedSnapshot?.enabledFeatures || []),
+          enabledFeatures:
+            featuresRes.status === 'fulfilled' && featuresRes.value.ok
+              ? enabledFeatures
+              : (cachedSnapshot?.enabledFeatures || []),
           timestamp: Date.now(),
         };
         saveCapabilitySnapshot(snapshot);

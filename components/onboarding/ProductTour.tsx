@@ -11,6 +11,7 @@ import { useLayout } from '@/contexts/LayoutContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { getPosMode } from '@/lib/pos-settings';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import {
   expandProductTourSidebarSections,
   PRODUCT_TOUR_START_EVENT,
@@ -168,7 +169,8 @@ function ProductTourInner() {
   /** After sidebar tour, open Business Profile guided tour (sidebar footer button) */
   const chainBusinessProfileAfterSidebarRef = useRef(false);
 
-  const posBlocking = pathname === '/invoices/new' && getPosMode();
+  const posAllowed = usePlanFeature('settings_pos_mode');
+  const posBlocking = pathname === '/invoices/new' && posAllowed && getPosMode();
 
   const tourHandlerCtxRef = useRef({
     authLoading,

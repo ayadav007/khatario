@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 
 type Props = {
   invoiceId: string;
@@ -11,11 +12,13 @@ type Props = {
 };
 
 export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved }: Props) {
+  const ewayAllowed = usePlanFeature('eway_bill');
   const [number, setNumber] = useState(initialNumber || '');
   const [date, setDate] = useState(initialDate ? String(initialDate).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  if (!ewayAllowed) return null;
 
   const save = async () => {
     setSaving(true);
@@ -77,5 +80,45 @@ export function EwayBillField({ invoiceId, initialNumber, initialDate, onSaved }
         {saving ? 'Saving…' : 'Save e-way bill'}
       </Button>
     </div>
+  );
+}
+
+export function InvoicePlanExtras({
+  invoiceId,
+  ewayNumber,
+  ewayDate,
+  onSaved,
+}: {
+  invoiceId: string;
+  ewayNumber?: string | null;
+  ewayDate?: string | null;
+  onSaved?: () => void;
+}) {
+  const eway = usePlanFeature('eway_bill');
+  const einvoice = usePlanFeature('e_invoice');
+  if (!eway && !einvoice) return null;
+  return (
+    <>
+      {eway ? (
+        <EwayBillField
+          invoiceId={invoiceId}
+          initialNumber={ewayNumber}
+          initialDate={ewayDate}
+          onSaved={onSaved}
+        />
+      ) : null}
+      <EInvoicePlanNote />
+    </>
+  );
+}
+
+/** Shown on the invoice only when the plan includes e-invoice. Khatario does not generate the IRN. */
+export function EInvoicePlanNote() {
+  const allowed = usePlanFeature('e_invoice');
+  if (!allowed) return null;
+  return (
+    <p className="mt-3 text-xs text-text-secondary">
+      E-invoice is on for this plan. Generate the IRN and QR on the government e-invoice portal, then print them on this bill. Khatario does not create the IRN.
+    </p>
   );
 }

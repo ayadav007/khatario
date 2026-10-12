@@ -343,6 +343,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-authenticated-user-id', payload.userId);
   requestHeaders.set('x-authenticated-business-id', payload.businessId);
   requestHeaders.set('x-authenticated-session-version', String(payload.sv));
+  requestHeaders.set('x-khatario-pathname', pathname);
 
   if (rotate) {
     const refreshUrl = new URL('/api/auth/refresh', request.url);

@@ -29,6 +29,7 @@ import { evaluatePolicy } from './policies/engine';
 import { PolicyUser, PolicyContext } from './policies/types';
 import { getPolicyRegistry } from './policies/registry';
 import { assertFeatureAccess, assertModuleAccess, FeatureAccessDeniedError } from './subscription/feature-access';
+import { featureIdForPath } from './subscription/plan-path-gate';
 import { getHrRegistryFeatureForAuthModule } from './hr-plan-features';
 import { resolvePlatformModuleForAuthModule } from './rbac-permission-catalog';
 import { clearSessionCookie } from './jwt';
@@ -173,6 +174,39 @@ export async function authorize(
       if (e instanceof FeatureAccessDeniedError) {
         throw new AuthorizationError(
           'This feature requires an active product subscription.',
+          'FEATURE_NOT_IN_PLAN',
+          e.toResponse(),
+        );
+      }
+      throw e;
+    }
+  }
+
+  // The request path owns a plan feature. Checked for every user, including the primary admin.
+  // Middleware stamps x-khatario-pathname. Missing header (tests, jobs) skips this.
+  let requestPath: string | null = null;
+  try {
+    const { headers } = await import('next/headers');
+    const headerList = await headers();
+    requestPath = headerList.get('x-khatario-pathname');
+  } catch {
+    requestPath = null;
+  }
+  const pathFeature = featureIdForPath(requestPath);
+  if (pathFeature) {
+    const businessIdForPath = context?.businessId || callingUser?.business_id;
+    if (!businessIdForPath) {
+      throw new AuthorizationError(
+        'businessId is required for plan feature access',
+        'BUSINESS_REQUIRED',
+      );
+    }
+    try {
+      await assertFeatureAccess(businessIdForPath, pathFeature);
+    } catch (e) {
+      if (e instanceof FeatureAccessDeniedError) {
+        throw new AuthorizationError(
+          'This feature is not included in your subscription plan.',
           'FEATURE_NOT_IN_PLAN',
           e.toResponse(),
         );

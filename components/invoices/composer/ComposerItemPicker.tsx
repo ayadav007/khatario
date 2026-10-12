@@ -6,6 +6,7 @@ import { AlertTriangle, ChevronRight, Loader2, Minus, PackagePlus, Plus, Search,
 import { browseOfflineItems, searchOfflineItems } from '@/lib/offline/catalog/client-search';
 import { rowKey, type PickerItem } from './types';
 import { inr, Kbd } from './ui';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 
 type Props = {
   open: boolean;
@@ -246,14 +247,19 @@ export function ItemPickerModal({
     }
   };
 
+  const profitAllowed = usePlanFeature('profit_invoice');
+
   if (!open) return null;
 
   const selectedUnits = selectedEntries.reduce((s, p) => s + p.qty, 0);
   const selectedValue = selectedEntries.reduce((s, p) => s + Number(p.item.selling_price || 0) * p.qty, 0);
-  const showPurchase = items.some((i) => Number(i.purchase_price) > 0);
-  const cols = showPurchase
+  const showCost = items.some((i) => Number(i.purchase_price) > 0);
+  const showProfit = profitAllowed && showCost;
+  const cols = showCost && showProfit
     ? 'grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_6.5rem_6.5rem_3.5rem_9.5rem]'
-    : 'grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem_9.5rem]';
+    : showCost
+      ? 'grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_6.5rem_3.5rem_9.5rem]'
+      : 'grid-cols-[minmax(0,1fr)_7rem_7rem_4.5rem_9.5rem]';
 
   return (
     <div
@@ -313,8 +319,8 @@ export function ItemPickerModal({
           <span>Item</span>
           <span className="text-right">Stock</span>
           <span className="text-right">Sale price</span>
-          {showPurchase && <span className="text-right">Purchase</span>}
-          {showPurchase && <span className="text-right">Profit</span>}
+          {showCost && <span className="text-right">Purchase</span>}
+          {showProfit && <span className="text-right">Profit</span>}
           <span className="text-right">GST</span>
           <span className="text-center">Quantity</span>
         </div>
@@ -396,14 +402,14 @@ export function ItemPickerModal({
                   ) : (
                     <>
                       {inr(price, price % 1 ? 2 : 0)}
-                      {belowCost && <span className="block text-[10px] font-semibold uppercase text-rose-600">Below cost</span>}
+                      {profitAllowed && belowCost && <span className="block text-[10px] font-semibold uppercase text-rose-600">Below cost</span>}
                     </>
                   )}
                 </span>
-                {showPurchase && (
+                {showCost && (
                   <span className="text-right text-sm tabular-nums text-text-muted">{cost ? inr(cost, cost % 1 ? 2 : 0) : '—'}</span>
                 )}
-                {showPurchase && (
+                {showProfit && (
                   <span
                     className={clsx(
                       'text-right text-sm font-semibold tabular-nums',

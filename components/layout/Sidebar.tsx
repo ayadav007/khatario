@@ -77,6 +77,7 @@ import {
   HR_NAV_SECTION_TITLE,
 } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
+import { featureIdForPath } from '@/lib/subscription/plan-path-gate';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -325,6 +326,10 @@ export const Sidebar = React.memo(function Sidebar() {
     }
 
     const basePath = href.split('?')[0];
+    const pathFeature = featureIdForPath(basePath);
+    if (pathFeature) {
+      return { locked: !hasCapability(pathFeature, 'view'), featureKey: pathFeature };
+    }
 
     // Check database-defined report routes first
     const dbFeatureKey = reportRouteMap[basePath];

@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { ShareInvoiceModal } from '@/components/modals/ShareInvoiceModal';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
-import { EwayBillField } from '@/components/invoices/EwayBillField';
+import { InvoicePlanExtras } from '@/components/invoices/EwayBillField';
 
 type InvoiceSummary = {
   id: string;
@@ -210,11 +210,11 @@ export default function PublicInvoiceViewPage() {
           ) : null}
 
           {invoice && invoice.status !== 'cancelled' ? (
-            <div className="mx-4 mt-3 rounded-xl border border-border bg-surface p-4 shadow-sm">
-              <EwayBillField
+            <div className="mx-4 mt-3">
+              <InvoicePlanExtras
                 invoiceId={invoiceId}
-                initialNumber={invoice.eway_bill_number}
-                initialDate={invoice.eway_bill_date}
+                ewayNumber={invoice.eway_bill_number}
+                ewayDate={invoice.eway_bill_date}
                 onSaved={() => void load()}
               />
             </div>
@@ -278,11 +278,11 @@ export default function PublicInvoiceViewPage() {
             )}
           </div>
           {invoice && invoice.status !== 'cancelled' ? (
-            <div className="mt-4 rounded-lg border border-border bg-surface p-4">
-              <EwayBillField
+            <div className="mt-4">
+              <InvoicePlanExtras
                 invoiceId={invoiceId}
-                initialNumber={invoice.eway_bill_number}
-                initialDate={invoice.eway_bill_date}
+                ewayNumber={invoice.eway_bill_number}
+                ewayDate={invoice.eway_bill_date}
                 onSaved={() => void load()}
               />
             </div>
