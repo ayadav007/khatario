@@ -1,21 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/templates/copy
- * Copy template settings to multiple document types
- * Body: { business_id, template_id, source_doc_type, target_doc_types: string[] }
+ * Copy template settings to multiple document types for the signed-in business.
+ * Body: { template_id, source_doc_type, target_doc_types: string[], business_id? }
+ * business_id is ignored unless it matches the session.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { business_id, template_id, source_doc_type, target_doc_types } = body;
+    const userId = getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
 
-    if (!business_id || !template_id || !source_doc_type || !Array.isArray(target_doc_types)) {
+    const tenant = requireTenantBusinessId(request, body.business_id);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
+
+    try {
+      await authorize(userId, 'settings', 'update', { businessId });
+    } catch (error) {
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+
+    const denied = await denyIfFeatureMissing(businessId, 'settings_template_customization');
+    if (denied) return denied;
+
+    const { template_id, source_doc_type, target_doc_types } = body;
+
+    if (!template_id || !source_doc_type || !Array.isArray(target_doc_types)) {
       return NextResponse.json(
-        { error: 'business_id, template_id, source_doc_type, and target_doc_types[] are required' },
+        { error: 'template_id, source_doc_type, and target_doc_types[] are required' },
         { status: 400 }
       );
     }
@@ -27,17 +50,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get settings from source
     const sourceResult = await query(
       `SELECT settings FROM business_template_assignments 
        WHERE business_id = $1 AND document_type = $2`,
-      [business_id, source_doc_type]
+      [businessId, source_doc_type]
     );
 
     const sourceSettings = sourceResult.rows[0]?.settings || {};
 
-    // Copy to all target document types
-    const copyPromises = target_doc_types.map(targetDocType =>
+    const copyPromises = target_doc_types.map((targetDocType: string) =>
       query(
         `INSERT INTO business_template_assignments 
            (business_id, template_id, document_type, settings) 
@@ -47,7 +68,7 @@ export async function POST(request: NextRequest) {
            template_id = EXCLUDED.template_id,
            settings = EXCLUDED.settings,
            updated_at = CURRENT_TIMESTAMP`,
-        [business_id, template_id, targetDocType, JSON.stringify(sourceSettings)]
+        [businessId, template_id, targetDocType, JSON.stringify(sourceSettings)]
       )
     );
 
@@ -66,4 +87,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

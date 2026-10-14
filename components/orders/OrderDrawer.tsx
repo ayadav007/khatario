@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { ChannelBadge } from './ChannelBadge';
 import { DeliveryStatusBadge } from './DeliveryStatusBadge';
 import { OrderTimeline, type TimelineEvent } from './OrderTimeline';
+import { OrderReturnsSection } from './returns/OrderReturnsSection';
+import { EditOrderPanel } from './EditOrderPanel';
 import { COURIERS } from '@/lib/fulfilment/couriers';
 import type { LabelSize } from '@/lib/fulfilment/shipping-label';
 import {
@@ -38,11 +40,15 @@ interface Fulfilment {
   ship_pincode: string | null;
   packages: number;
   weight_kg: number | null;
+  length_cm: number | null;
+  breadth_cm: number | null;
+  height_cm: number | null;
   carrier_shipment_id: string | null;
   label_url: string | null;
   manifest_url: string | null;
   pickup_scheduled_at: string | null;
   booking_error: string | null;
+  items: Array<{ line_id: string; name: string; quantity: number }>;
   events: TimelineEvent[];
 }
 
@@ -64,6 +70,7 @@ interface OrderDetail {
     order_number: string;
     invoice_id: string | null;
     invoice_number: string | null;
+    customer_id: string | null;
     customer_name: string | null;
     customer_phone: string | null;
     amount: number;
@@ -73,13 +80,13 @@ interface OrderDetail {
     delivery_status: string | null;
     created_at: string;
   };
-  lines: Array<{ name: string; quantity: number; amount: number }>;
+  lines: Array<{ line_id: string; name: string; quantity: number; amount: number }>;
   fulfilments: Fulfilment[];
   ship_to: { address: string | null; pincode: string | null };
   ship_from: ShipFrom | null;
 }
 
-type Panel = null | 'dispatch' | 'deliver' | 'failed' | 'cancel' | 'out' | 'address';
+type Panel = null | 'dispatch' | 'deliver' | 'failed' | 'cancel' | 'out' | 'address' | 'items' | 'edit';
 
 const LABEL_SIZE_KEY = 'kh.orders.labelSize';
 
@@ -105,6 +112,15 @@ export function OrderDrawer({
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [copied, setCopied] = useState(false);
+  const [riderCopied, setRiderCopied] = useState(false);
+  const [ndr, setNdr] = useState<{ action: 'reattempt' | 'change_address' | 'return_to_origin'; date: string; phone: string; address: string; pincode: string; note: string }>({
+    action: 'reattempt',
+    date: '',
+    phone: '',
+    address: '',
+    pincode: '',
+    note: '',
+  });
   const [form, setForm] = useState({
     method: 'courier' as FulfilmentMethod,
     partner: '',
@@ -120,8 +136,12 @@ export function OrderDrawer({
     pincode: '',
     boxes: '1',
     weight: '',
+    length: '',
+    breadth: '',
+    height: '',
   });
   const [labelSize, setLabelSize] = useState<LabelSize>('4x6');
+  const [pick, setPick] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.localStorage.getItem(LABEL_SIZE_KEY) === 'a4') setLabelSize('a4');
@@ -156,6 +176,9 @@ export function OrderDrawer({
       setPanel(null);
       return;
     }
+    if (p === 'items' && f) {
+      setPick(Object.fromEntries((data?.lines ?? []).map((l) => [l.line_id, String(f.items.find((i) => i.line_id === l.line_id)?.quantity ?? 0)])));
+    }
     if (p === 'dispatch' || p === 'address') {
       setForm((s) => ({
         ...s,
@@ -163,6 +186,9 @@ export function OrderDrawer({
         pincode: shipPincode ?? '',
         boxes: String(boxes),
         weight: f?.weight_kg ? String(f.weight_kg) : '',
+        length: f?.length_cm ? String(f.length_cm) : '',
+        breadth: f?.breadth_cm ? String(f.breadth_cm) : '',
+        height: f?.height_cm ? String(f.height_cm) : '',
       }));
     }
     setPanel(p);
@@ -174,6 +200,9 @@ export function OrderDrawer({
       pincode: form.pincode,
       packages: Number(form.boxes) || 1,
       ...(form.weight ? { weight_kg: Number(form.weight) } : {}),
+      ...(form.length ? { length_cm: Number(form.length) } : {}),
+      ...(form.breadth ? { breadth_cm: Number(form.breadth) } : {}),
+      ...(form.height ? { height_cm: Number(form.height) } : {}),
     };
   }
 
@@ -270,7 +299,7 @@ export function OrderDrawer({
         awb: f.awb,
         paid,
         codAmount: f.cod_collected_at ? 0 : Number(f.cod_amount) || 0,
-        itemCount: data.lines.reduce((n, l) => n + (Number(l.quantity) || 0), 0),
+        itemCount: (f.items.length > 0 ? f.items : data.lines).reduce((n, l) => n + (Number(l.quantity) || 0), 0),
         boxes,
       },
       labelSize,
@@ -280,6 +309,27 @@ export function OrderDrawer({
   function changeLabelSize(size: LabelSize) {
     setLabelSize(size);
     window.localStorage.setItem(LABEL_SIZE_KEY, size);
+  }
+
+  async function sendToRider(whatsapp: boolean) {
+    // Opened before the request so the browser does not block it as a pop-up.
+    const win = whatsapp ? window.open('', '_blank') : null;
+    const json = await act({ action: 'rider_link' });
+    const message = typeof json?.message === 'string' ? json.message : null;
+    const url = typeof json?.rider_url === 'string' ? json.rider_url : null;
+    if (!message || !url) {
+      win?.close();
+      return;
+    }
+    if (whatsapp && win) {
+      const phone = String(json?.rider_phone ?? f?.rider_phone ?? '').replace(/\D/g, '');
+      const to = phone.length === 10 ? `91${phone}` : phone;
+      win.location.href = `https://wa.me/${to}?text=${encodeURIComponent(message)}`;
+    } else {
+      await navigator.clipboard.writeText(url).catch(() => undefined);
+      setRiderCopied(true);
+      setTimeout(() => setRiderCopied(false), 1500);
+    }
   }
 
   async function copyLink() {
@@ -304,7 +354,8 @@ export function OrderDrawer({
         payment_status: data.order.payment_status ?? undefined,
         awb: f?.awb,
       },
-      data.lines.map((l) => ({ item_name: l.name, quantity: l.quantity, packed_qty: 0, unit: '' })),
+      // Only what travels in this parcel when the order goes out in more than one.
+      (f && f.items.length > 0 ? f.items : data.lines).map((l) => ({ item_name: l.name, quantity: l.quantity, packed_qty: 0, unit: '' })),
     );
   }
 
@@ -384,6 +435,31 @@ export function OrderDrawer({
                 ))}
               </ul>
             ) : null}
+
+            {(() => {
+              const live = data.fulfilments.filter((x) => x.status !== 'cancelled');
+              const notPacked = live.every((x) => x.status === 'new' || x.status === 'confirmed');
+              if (!notPacked || status === 'cancelled') return null;
+              if (!o?.invoice_id) {
+                return o?.source_type === 'sales_order' ? (
+                  <Link href={`/sales-orders/new?edit=${o.source_id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                    <Pencil className="h-3 w-3" /> Edit order
+                  </Link>
+                ) : null;
+              }
+              return (
+                <div>
+                  <button type="button" onClick={() => openPanel('edit')} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                    <Pencil className="h-3 w-3" /> {panel === 'edit' ? 'Close edit' : 'Edit order (before packing)'}
+                  </button>
+                  {panel === 'edit' ? (
+                    <div className="mt-2">
+                      <EditOrderPanel invoiceId={o.invoice_id} customerId={o.customer_id} paid={paid} busy={busy} onRemove={(b) => void act(b)} />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
 
             {data.fulfilments.length > 1 ? (
               <div>
@@ -494,6 +570,78 @@ export function OrderDrawer({
                   </div>
                 ) : null}
 
+                {(() => {
+                  const whole = f.items.length === data.lines.length && f.items.every((i) => data.lines.some((l) => l.line_id === i.line_id && Math.abs(l.quantity - i.quantity) < 1e-9));
+                  const editable = NOT_YET_OUT.includes(f.status);
+                  if (whole && !editable && data.fulfilments.length === 1) return null;
+                  return (
+                    <div className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-medium uppercase text-slate-500">
+                          <Package className="h-3.5 w-3.5" /> {whole ? 'Whole order in this parcel' : 'In this parcel'}
+                        </div>
+                        {editable ? (
+                          <button type="button" onClick={() => openPanel('items')} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            <Pencil className="h-3 w-3" /> {whole ? 'Send only some items' : 'Change items'}
+                          </button>
+                        ) : null}
+                      </div>
+                      {!whole ? (
+                        f.items.length === 0 ? (
+                          <p className="mt-1 text-xs text-slate-500">Nothing left to send in this parcel.</p>
+                        ) : (
+                          <ul className="mt-1.5 space-y-0.5">
+                            {f.items.map((i) => (
+                              <li key={i.line_id}>
+                                {i.name} <span className="text-slate-500">× {i.quantity}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
+                {panel === 'items' ? (
+                  <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <p className="text-xs text-slate-500">How many of each go in this parcel? The rest can go later as another parcel.</p>
+                    <ul className="space-y-1.5">
+                      {data.lines.map((l) => (
+                        <li key={l.line_id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="min-w-0 truncate">
+                            {l.name} <span className="text-slate-500">of {l.quantity}</span>
+                          </span>
+                          <input
+                            className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-right text-sm dark:border-slate-600 dark:bg-slate-800"
+                            inputMode="decimal"
+                            aria-label={`${l.name} in this parcel`}
+                            value={pick[l.line_id] ?? '0'}
+                            onChange={(e) => setPick((s) => ({ ...s, [l.line_id]: e.target.value }))}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        isLoading={busy}
+                        onClick={() =>
+                          void act({
+                            action: 'set_parcel_items',
+                            items: data.lines.map((l) => ({ line_id: l.line_id, quantity: Number(pick[l.line_id]) || 0 })),
+                          })
+                        }
+                      >
+                        Save items
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act({ action: 'set_parcel_items', items: [] })}>
+                        Everything left
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {panel === 'address' ? (
                   <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                     <textarea className={input} rows={3} placeholder="House / shop, street, area, city, state" value={form.address} onChange={set('address')} />
@@ -502,7 +650,12 @@ export function OrderDrawer({
                       <input className={input} placeholder="Boxes" type="number" min={1} max={50} value={form.boxes} onChange={set('boxes')} />
                       <input className={input} placeholder="Weight kg" inputMode="decimal" value={form.weight} onChange={set('weight')} />
                     </div>
-                    <p className="text-xs text-slate-500">Saved on this parcel only; the customer record is not changed.</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input className={input} placeholder="Length cm" inputMode="decimal" value={form.length} onChange={set('length')} />
+                      <input className={input} placeholder="Width cm" inputMode="decimal" value={form.breadth} onChange={set('breadth')} />
+                      <input className={input} placeholder="Height cm" inputMode="decimal" value={form.height} onChange={set('height')} />
+                    </div>
+                    <p className="text-xs text-slate-500">Saved on this parcel only; the customer record is not changed. Box size sets the courier&apos;s volumetric weight.</p>
                     <Button size="sm" isLoading={busy} onClick={() => void act({ action: 'set_shipping', shipping: shippingFromForm() })}>
                       Save address
                     </Button>
@@ -519,12 +672,38 @@ export function OrderDrawer({
                     </div>
                   ) : null}
                   {f.weight_kg ? <div>Weight: {f.weight_kg} kg</div> : null}
+                  {f.length_cm && f.breadth_cm && f.height_cm ? (
+                    <div>
+                      Box: {f.length_cm} × {f.breadth_cm} × {f.height_cm} cm
+                    </div>
+                  ) : null}
                   {f.tracking_url ? (
                     <a href={f.tracking_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                       Courier tracking <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : null}
                   {f.rider_name || f.rider_phone ? <div>Rider: {[f.rider_name, f.rider_phone].filter(Boolean).join(' · ')}</div> : null}
+                  {(f.method === 'own_rider' || f.method === 'local_app') && ['shipped', 'out_for_delivery', 'delivery_failed'].includes(f.status) ? (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void sendToRider(true)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" /> Send drop to rider
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void sendToRider(false)}
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <Copy className="h-3 w-3" /> {riderCopied ? 'Copied' : 'Copy rider link'}
+                      </button>
+                      <span className="w-full text-xs text-slate-500">The rider marks delivered, not delivered or cash collected from the link; no login.</span>
+                    </div>
+                  ) : null}
                   {f.pickup_code ? <div>Pickup code: <span className="font-mono font-semibold">{f.pickup_code}</span></div> : null}
                   {f.cod_amount > 0 ? (
                     <div>
@@ -533,6 +712,62 @@ export function OrderDrawer({
                     </div>
                   ) : null}
                   {f.failure_reason && f.status === 'delivery_failed' ? <div className="text-red-600">Failed: {f.failure_reason}</div> : null}
+                  {f.status === 'delivery_failed' ? (
+                    <div className="mt-2 space-y-2 rounded-lg border border-red-200 bg-white p-3 dark:border-red-900 dark:bg-slate-900">
+                      <div className="text-xs font-semibold uppercase text-red-700">What next?</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            ['reattempt', 'Try again'],
+                            ['change_address', 'New address'],
+                            ['return_to_origin', 'Bring it back'],
+                          ] as const
+                        ).map(([k, label]) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => setNdr((s) => ({ ...s, action: k }))}
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${
+                              ndr.action === k ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {ndr.action !== 'return_to_origin' ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <input className={input} type="date" aria-label="Re-attempt date" value={ndr.date} onChange={(e) => setNdr((s) => ({ ...s, date: e.target.value }))} />
+                          <input className={input} placeholder="Buyer phone (if changed)" inputMode="tel" value={ndr.phone} onChange={(e) => setNdr((s) => ({ ...s, phone: e.target.value }))} />
+                        </div>
+                      ) : null}
+                      {ndr.action === 'change_address' ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <textarea className={`${input} col-span-2`} rows={2} placeholder="Corrected address" value={ndr.address} onChange={(e) => setNdr((s) => ({ ...s, address: e.target.value }))} />
+                          <input className={input} placeholder="PIN" inputMode="numeric" maxLength={6} value={ndr.pincode} onChange={(e) => setNdr((s) => ({ ...s, pincode: e.target.value }))} />
+                        </div>
+                      ) : null}
+                      <input className={input} placeholder="Note for the courier / rider (optional)" value={ndr.note} onChange={(e) => setNdr((s) => ({ ...s, note: e.target.value }))} />
+                      <Button
+                        size="sm"
+                        isLoading={busy}
+                        onClick={() =>
+                          void act({
+                            action: 'ndr',
+                            ndr_action: ndr.action,
+                            reattempt_date: ndr.date || undefined,
+                            phone: ndr.phone || undefined,
+                            address: ndr.address || undefined,
+                            pincode: ndr.pincode || undefined,
+                            note: ndr.note || undefined,
+                          })
+                        }
+                      >
+                        {ndr.action === 'return_to_origin' ? 'Bring parcel back' : 'Re-attempt delivery'}
+                      </Button>
+                      {f.method === 'shiprocket' ? <p className="text-xs text-slate-500">Sent to Shiprocket; the courier updates the status.</p> : null}
+                    </div>
+                  ) : null}
                   {f.public_url ? (
                     <button type="button" onClick={() => void copyLink()} className="inline-flex items-center gap-1 text-primary hover:underline">
                       <Copy className="h-3.5 w-3.5" /> {copied ? 'Copied' : 'Copy buyer tracking link'}
@@ -726,6 +961,10 @@ export function OrderDrawer({
                 </section>
               </>
             )}
+
+            {o?.invoice_id ? (
+              <OrderReturnsSection invoiceId={o.invoice_id} invoiceNumber={o.invoice_number} onChanged={() => { void load(); onChanged(); }} />
+            ) : null}
           </div>
         ) : null}
       </aside>

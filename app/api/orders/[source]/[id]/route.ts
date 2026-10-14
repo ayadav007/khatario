@@ -46,6 +46,11 @@ import { InvoiceCancelError } from '@/lib/invoices/cancel-final-invoice';
 import { applyStoreOrderStatus, syncStoreFulfilmentQuietly, type StoreDispatchMode } from '@/lib/store/apply-store-status';
 import { bookStoreCourierIfNeeded } from '@/lib/store/book-store-shipment';
 import type { StoreOrderStatus } from '@/lib/store/fulfillment-rules';
+import { ensureReturnForReturnedFulfilment } from '@/lib/returns/service';
+import { loadParcelContents, ParcelItemsError, setParcelItems } from '@/lib/fulfilment/parcel-items';
+import { ensureRiderToken, riderMessage, riderUrl } from '@/lib/fulfilment/rider';
+import { actOnFailedDelivery, isNdrAction, NdrError } from '@/lib/fulfilment/ndr';
+import { OrderEditError, removeItemsBeforePacking } from '@/lib/fulfilment/order-edit';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +71,12 @@ async function detail(businessId: string, row: OrderHubRow) {
     loadShipTo(businessId, row.source_type, row.source_id),
     loadShipFrom(businessId),
   ]);
+  const contents = await loadParcelContents(
+    getPool(),
+    businessId,
+    { kind: row.source_type, id: row.source_id },
+    fulfilments.map((f) => ({ id: f.id, seq: Number((f as Record<string, unknown>).seq), status: String((f as Record<string, unknown>).status) })),
+  ).catch(() => new Map());
   return {
     order: row,
     lines,
@@ -74,8 +85,16 @@ async function detail(businessId: string, row: OrderHubRow) {
     fulfilments: fulfilments.map((f) => ({
       ...f,
       public_url: f.public_token ? orderTrackingUrl(f.public_token) : null,
+      items: contents.get(f.id) ?? [],
     })),
   };
+}
+
+function parseParcelItems(raw: unknown): Array<{ line_id: string; quantity: number }> | null {
+  if (!Array.isArray(raw)) return null;
+  return (raw as Record<string, unknown>[])
+    .filter((i) => i && typeof i.line_id === 'string' && UUID_RE.test(i.line_id))
+    .map((i) => ({ line_id: String(i.line_id), quantity: Number(i.quantity) || 0 }));
 }
 
 export async function GET(request: NextRequest, ctx: Ctx) {
@@ -121,6 +140,9 @@ function parseShipping(raw: unknown): FulfilmentShipping | null {
   if (s.pincode !== undefined) out.pincode = str(s.pincode, 10);
   if (s.packages !== undefined) out.packages = Number(s.packages);
   if (s.weight_kg !== undefined && s.weight_kg !== null && s.weight_kg !== '') out.weightKg = Number(s.weight_kg);
+  if (s.length_cm != null && s.length_cm !== '') out.lengthCm = Number(s.length_cm);
+  if (s.breadth_cm != null && s.breadth_cm !== '') out.breadthCm = Number(s.breadth_cm);
+  if (s.height_cm != null && s.height_cm !== '') out.heightCm = Number(s.height_cm);
   return out;
 }
 
@@ -236,11 +258,113 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   } else if (action === 'add_shipment') {
     const base = requested ?? own[0]?.id;
     if (!base) return NextResponse.json({ error: 'Start delivery tracking first' }, { status: 409 });
-    const added = await inTx((c) => addShipment(c, { businessId, fulfilmentId: base, actorUserId: auth.userId }));
+    const items = parseParcelItems(body.items);
+    let added: Awaited<ReturnType<typeof addShipment>>;
+    try {
+      added = await inTx(async (c) => {
+        const out = await addShipment(c, { businessId, fulfilmentId: base, actorUserId: auth.userId });
+        // The new parcel can be given its items in the same step ("send these now, the rest later").
+        if (out.ok && items && items.length > 0) await setParcelItems(c, { businessId, fulfilmentId: out.row.id, items });
+        return out;
+      });
+    } catch (error) {
+      if (error instanceof ParcelItemsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      throw error;
+    }
     if (!added.ok) {
       return NextResponse.json({ error: added.error, code: added.code }, { status: added.code === 'NOT_FOUND' ? 404 : 409 });
     }
     activeId = added.row.id;
+  } else if (action === 'rider_link') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const token = await inTx((c) => ensureRiderToken(c, businessId, target));
+    if (!token) return NextResponse.json({ error: 'Parcel not found' }, { status: 404 });
+    const parcel = own.find((f) => f.id === target) as Record<string, unknown> | undefined;
+    const shipTo = await loadShipTo(businessId, row.source_type, row.source_id);
+    const url = riderUrl(token);
+    const codDue = parcel?.cod_collected_at ? 0 : Number(parcel?.cod_amount) || 0;
+    return NextResponse.json({
+      rider_url: url,
+      rider_phone: (parcel?.rider_phone as string | null) ?? null,
+      message: riderMessage({
+        orderNumber: row.order_number,
+        buyerName: row.customer_name,
+        buyerPhone: row.customer_phone,
+        address: (parcel?.ship_address as string | null) || shipTo.address,
+        pincode: (parcel?.ship_pincode as string | null) || shipTo.pincode,
+        codDue,
+        url,
+      }),
+    });
+  } else if (action === 'ndr') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    if (!isNdrAction(body.ndr_action)) return NextResponse.json({ error: 'Choose what to do next' }, { status: 400 });
+    try {
+      const out = await actOnFailedDelivery({
+        businessId,
+        fulfilmentId: target,
+        userId: auth.userId,
+        action: body.ndr_action,
+        note: str(body.note, 500),
+        reattemptDate: str(body.reattempt_date, 10),
+        phone: str(body.phone, 20),
+        address: str(body.address, 500),
+        pincode: str(body.pincode, 10),
+      });
+      if (out.change) triggerFulfilmentNotification(businessId, out.change);
+      if (out.viaCourier) warning = 'Sent to Shiprocket. The status updates when the courier acts on it.';
+    } catch (error) {
+      if (error instanceof NdrError) return NextResponse.json({ error: error.message }, { status: error.status });
+      throw error;
+    }
+  } else if (action === 'remove_items') {
+    if (!row.invoice_id) {
+      return NextResponse.json({ error: 'This order has no bill yet; edit the order itself instead' }, { status: 409 });
+    }
+    const lines = Array.isArray(body.lines)
+      ? (body.lines as Record<string, unknown>[])
+          .filter((l) => l && typeof l.invoice_item_id === 'string' && UUID_RE.test(l.invoice_item_id))
+          .map((l) => ({ invoice_item_id: String(l.invoice_item_id), quantity: Number(l.quantity) || 0 }))
+      : [];
+    const refundRaw = (body.refund ?? null) as Record<string, unknown> | null;
+    const refund =
+      refundRaw && ['store_credit', 'cash', 'upi', 'bank'].includes(String(refundRaw.method))
+        ? { method: refundRaw.method as 'store_credit' | 'cash' | 'upi' | 'bank', reference: str(refundRaw.reference, 100) ?? null }
+        : null;
+    try {
+      const { authorize } = await import('@/lib/authorization');
+      await authorize(auth.userId, 'credit_notes', 'create', { businessId });
+      const out = await inTx((c) =>
+        removeItemsBeforePacking(c, {
+          businessId,
+          userId: auth.userId,
+          invoiceId: row.invoice_id!,
+          fulfilmentIds: own.map((f) => f.id),
+          lines,
+          note: str(body.note, 300),
+          refund,
+        }),
+      );
+      warning = `Credit note ${out.creditNoteNumber} posted for ₹${out.creditAmount.toLocaleString('en-IN')}; the items are back in stock.`;
+    } catch (error) {
+      if (error instanceof OrderEditError) return NextResponse.json({ error: error.message }, { status: error.status });
+      const { AuthorizationError } = await import('@/lib/authorization');
+      if (error instanceof AuthorizationError) return error.toNextResponse();
+      throw error;
+    }
+  } else if (action === 'set_parcel_items') {
+    const target = requested ?? own[0]?.id;
+    if (!target) return NextResponse.json({ error: 'No parcel on this order' }, { status: 409 });
+    const items = parseParcelItems(body.items) ?? [];
+    try {
+      await inTx((c) => setParcelItems(c, { businessId, fulfilmentId: target, items }));
+    } catch (error) {
+      if (error instanceof ParcelItemsError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      throw error;
+    }
+    activeId = target;
   } else if (action === 'remove_shipment') {
     if (!requested) return NextResponse.json({ error: 'Choose the parcel to remove' }, { status: 400 });
     const removed = await inTx((c) => removeShipment(c, { businessId, fulfilmentId: requested }));
@@ -417,6 +541,14 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         requirePickupCode: true,
         skipPaymentGate: row.source_type === 'store_order',
       });
+      if (moved.ok && moved.changed && to === 'returned') {
+        await ensureReturnForReturnedFulfilment(c, {
+          businessId,
+          fulfilmentId: moved.fulfilmentId,
+          userId: auth.userId,
+          wasDelivered: moved.from === 'delivered',
+        });
+      }
       if (moved.ok && moved.changed && to === 'cancelled' && row.source_type === 'sales_order' && !row.invoice_id) {
         await c.query(
           `UPDATE sales_orders SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP

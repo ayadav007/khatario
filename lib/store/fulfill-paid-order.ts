@@ -4,6 +4,7 @@ import { createInvoiceInTransaction } from '@/lib/invoices/invoice-create-servic
 import { roundMoney } from '@/lib/store/pricing';
 import { storePaymentAmountMatches } from '@/lib/store/fulfillment-rules';
 import { syncStoreOrderFulfilment } from '@/lib/fulfilment/service';
+import { releaseStoreOrderStock } from '@/lib/store/checkout-stock';
 
 export type StoreOnlinePaymentProvider = 'razorpay' | 'easebuzz';
 
@@ -606,6 +607,8 @@ export async function createInvoiceForStoreOrder(
     if (linked.rowCount !== 1) {
       throw new StoreInvoiceError('Store order was already invoiced', 'STORE_ORDER_ALREADY_INVOICED');
     }
+    // The invoice has deducted stock, so the checkout hold ends here.
+    await releaseStoreOrderStock(client, { businessId, orderId, outcome: 'fulfilled' });
     await syncStoreOrderFulfilment(client, { businessId, storeOrderId: orderId, actorType: 'system' });
 
     await client.query('COMMIT');

@@ -4,7 +4,23 @@ import { registerGlobalInvoiceHandlebarsHelpers } from '@/lib/handlebars-invoice
 
 export const dynamic = 'force-dynamic';
 
-import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { authorize, AuthorizationError } from '@/lib/authorization';
+import { denyIfFeatureMissing } from '@/lib/subscription/feature-access';
+
+async function requireTemplatePreview(request: NextRequest, businessId: string) {
+  const userId = getUserIdFromRequest(request);
+  if (!userId) {
+    return new NextResponse('Authentication required', { status: 401 });
+  }
+  try {
+    await authorize(userId, 'settings', 'read', { businessId });
+  } catch (error) {
+    if (error instanceof AuthorizationError) return error.toNextResponse();
+    throw error;
+  }
+  return denyIfFeatureMissing(businessId, 'settings_template_customization');
+}
 
 registerGlobalInvoiceHandlebarsHelpers();
 
@@ -258,6 +274,8 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const gate = await requireTemplatePreview(request, businessId);
+    if (gate) return gate;
     if (!templateId) {
       return new NextResponse('template_id parameter is required', { status: 400 });
     }
@@ -298,8 +316,9 @@ export async function POST(request: NextRequest) {
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
     const business_id = tenant.businessId;
+    const gate = await requireTemplatePreview(request, business_id);
+    if (gate) return gate;
     const templateId = body.template_id as string | undefined;
-    const businessId = (body.business_id as string | undefined) ?? null;
     const customSettings = (body.settings as Record<string, unknown> | undefined) ?? null;
 
     if (!templateId) {
@@ -308,7 +327,7 @@ export async function POST(request: NextRequest) {
 
     const html = await renderTemplatePreviewHtml({
       templateId,
-      businessId,
+      businessId: business_id,
       customSettings,
       getSampleData,
     });

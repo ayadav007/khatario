@@ -6,7 +6,7 @@ import { sanitizeOrderUpdateSettings, type OrderUpdateSettings } from './update-
 export const HUB_SOURCES = ['store_order', 'sales_order', 'invoice'] as const;
 export type HubSource = (typeof HUB_SOURCES)[number];
 
-export const NEEDS_ACTION = ['to_confirm', 'payment_pending', 'to_pack', 'to_dispatch', 'delivery_failed', 'stale'] as const;
+export const NEEDS_ACTION = ['to_confirm', 'payment_pending', 'to_pack', 'to_dispatch', 'delivery_failed', 'stale', 'in_transit_late'] as const;
 export type NeedsAction = (typeof NEEDS_ACTION)[number];
 
 export interface OrderHubRow {
@@ -67,6 +67,9 @@ function needsPredicate(key: NeedsAction, sla: string): string {
     case 'stale':
       return `(h.delivery_status IN ('new', 'confirmed', 'packed') AND h.payment_status = 'paid'
                AND h.created_at < NOW() - make_interval(hours => ${sla}::int))`;
+    case 'in_transit_late':
+      // On the road with no courier or rider update for 3 days.
+      return `(h.delivery_status IN ('shipped', 'out_for_delivery') AND h.status_changed_at < NOW() - INTERVAL '3 days')`;
   }
 }
 
@@ -182,6 +185,7 @@ export async function getOrderHubRow(scope: HubScope, source: HubSource, id: str
 }
 
 export interface OrderLine {
+  line_id: string;
   name: string;
   quantity: number;
   amount: number;
@@ -190,15 +194,15 @@ export interface OrderLine {
 export async function loadOrderLines(businessId: string, source: HubSource, id: string): Promise<OrderLine[]> {
   const sql =
     source === 'store_order'
-      ? `SELECT COALESCE(soi.item_name || COALESCE(' (' || soi.variant_name || ')', ''), 'Item') AS name,
+      ? `SELECT soi.id AS line_id, COALESCE(soi.item_name || COALESCE(' (' || soi.variant_name || ')', ''), 'Item') AS name,
                 soi.quantity::float8 AS quantity, soi.line_total::float8 AS amount
            FROM store_order_items soi JOIN store_orders so ON so.id = soi.order_id
           WHERE soi.order_id = $1 AND so.business_id = $2 ORDER BY soi.id`
       : source === 'sales_order'
-        ? `SELECT soi.item_name AS name, soi.qty::float8 AS quantity, COALESCE(soi.line_total, 0)::float8 AS amount
+        ? `SELECT soi.id AS line_id, soi.item_name AS name, soi.qty::float8 AS quantity, COALESCE(soi.line_total, 0)::float8 AS amount
              FROM sales_order_items soi JOIN sales_orders s ON s.id = soi.sales_order_id
             WHERE soi.sales_order_id = $1 AND s.business_id = $2 ORDER BY soi.sort_order, soi.id`
-        : `SELECT ii.item_name AS name, ii.quantity::float8 AS quantity, COALESCE(ii.line_total, 0)::float8 AS amount
+        : `SELECT ii.id AS line_id, ii.item_name AS name, ii.quantity::float8 AS quantity, COALESCE(ii.line_total, 0)::float8 AS amount
              FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
             WHERE ii.invoice_id = $1 AND i.business_id = $2 ORDER BY ii.sort_order, ii.id`;
   return queryRows<OrderLine>(sql, [id, businessId]).catch(() => []);
@@ -301,7 +305,8 @@ export async function loadOrderFulfilments(businessId: string, source: HubSource
     `SELECT f.id, f.seq, f.status, f.method, f.partner_name, f.awb, f.tracking_url, f.rider_name, f.rider_phone,
             f.pickup_code, f.proof_photo_url, f.cod_amount::float8 AS cod_amount, f.cod_collected_at,
             f.failure_reason, f.public_token, f.ship_address, f.ship_pincode, f.packages,
-            f.weight_kg::float8 AS weight_kg, f.carrier_shipment_id, f.label_url, f.manifest_url,
+            f.weight_kg::float8 AS weight_kg, f.length_cm::float8 AS length_cm, f.breadth_cm::float8 AS breadth_cm,
+            f.height_cm::float8 AS height_cm, f.carrier_shipment_id, f.label_url, f.manifest_url,
             f.pickup_scheduled_at, f.booking_error,
             f.status_changed_at, f.created_at
        FROM order_fulfilments f

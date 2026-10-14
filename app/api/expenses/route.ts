@@ -5,7 +5,7 @@ import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { enforceAccess, enforceAccessErrorResponse, isPrimaryAdminForBusiness } from '@/lib/enforce-access';
 
 export const dynamic = 'force-dynamic';
@@ -135,7 +135,6 @@ export async function POST(request: NextRequest) {
       expense_date,
       payment_mode,
       reference_number,
-      created_by,
       /** When payment_mode is on_account, optional supplier to increase “amount you owe” (matches Payment Out). */
       supplier_id: rawSupplierId,
       /** Optional: GST on B2B expense bill (ITC). Taxable expense = amount − (cgst+sgst+igst). */
@@ -194,6 +193,8 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    const created_by = getAuthenticatedUserId(request);
 
     if (!business_id || !amount || !expense_date) {
       return NextResponse.json(

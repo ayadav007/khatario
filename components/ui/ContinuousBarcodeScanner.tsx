@@ -104,7 +104,7 @@ export const ContinuousBarcodeScanner: React.FC<ContinuousBarcodeScannerProps> =
         return null;
       }
 
-      const res = await fetch(`/api/items/search?business_id=${businessId}&q=${encodeURIComponent(barcode)}`);
+      const res = await fetch(`/api/items/search?business_id=${businessId}&q=${encodeURIComponent(barcode)}&scan=1`);
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];

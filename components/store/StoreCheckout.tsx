@@ -28,7 +28,10 @@ export function StoreCheckout({
   onOrderPlaced,
   embedded = false,
 }: StoreCheckoutProps) {
-  const { store, cart, cartTotal, selectedBranchId, clearCart, customer, refreshCustomer } = useStore();
+  const {
+    store, cart, cartTotal, selectedBranchId, clearCart, customer, refreshCustomer,
+    updateCartQuantity, removeFromCart,
+  } = useStore();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -47,6 +50,10 @@ export function StoreCheckout({
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Lines the server said are short, so the buyer can trim the cart in one tap. */
+  const [shortfall, setShortfall] = useState<
+    { item_id: string; variant_id: string | null; name: string; requested: number; available: number }[]
+  >([]);
   const [quote, setQuote] = useState<{
     subtotal: number;
     tax_total: number;
@@ -119,6 +126,7 @@ export function StoreCheckout({
       if (!store || cart.length === 0) return;
       setSubmitting(true);
       setError(null);
+      setShortfall([]);
       try {
         const res = await fetch(
           `/api/public/store/${encodeURIComponent(store.store_subdomain)}/orders`,
@@ -154,6 +162,7 @@ export function StoreCheckout({
         }
         if (!res.ok) {
           setError(data.error || 'Failed to place order');
+          if (data.code === 'OUT_OF_STOCK' && Array.isArray(data.shortfall)) setShortfall(data.shortfall);
           return;
         }
 
@@ -286,6 +295,34 @@ export function StoreCheckout({
             {error ? (
               <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2.5 text-sm text-red-700">
                 {error}
+                {shortfall.length > 0 ? (
+                  <>
+                    <ul className="mt-2 space-y-0.5 text-xs">
+                      {shortfall.map((s) => (
+                        <li key={`${s.item_id}:${s.variant_id ?? ''}`}>
+                          {s.name}: {Math.floor(s.available) > 0 ? `${Math.floor(s.available)} left` : 'sold out'} (you
+                          asked for {s.requested})
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
+                      onClick={() => {
+                        for (const s of shortfall) {
+                          const left = Math.floor(s.available);
+                          const variantId = s.variant_id ?? undefined;
+                          if (left > 0) updateCartQuantity(s.item_id, variantId, left);
+                          else removeFromCart(s.item_id, variantId);
+                        }
+                        setShortfall([]);
+                        setError(null);
+                      }}
+                    >
+                      Update my cart
+                    </button>
+                  </>
+                ) : null}
               </div>
             ) : null}
 

@@ -38,18 +38,20 @@ const day = (col: string) => `to_char(${col}, 'YYYY-MM-DD')`;
 
 /** Goods lines of `table` for the given items; bundles count as their goods components. */
 function goodsLinesSql(table: 'invoice_items' | 'credit_note_items', docCol: string, qtyCol: string): string {
+  // Credit-note lines for damaged returns never re-enter stock.
+  const kept = table === 'credit_note_items' ? ' AND COALESCE(l.restocked, true)' : '';
   return `
     SELECT l.${docCol} AS doc_id, l.item_id, l.${qtyCol}::numeric AS qty
       FROM ${table} l
       JOIN items it ON it.id = l.item_id AND it.item_type = 'goods' AND NOT COALESCE(it.is_bundle, false)
-     WHERE l.item_id = ANY($2::uuid[])
+     WHERE l.item_id = ANY($2::uuid[])${kept}
     UNION ALL
     SELECT l.${docCol}, bi.item_id, (l.${qtyCol} * bi.quantity)::numeric
       FROM ${table} l
       JOIN items b ON b.id = l.item_id AND b.item_type = 'goods' AND COALESCE(b.is_bundle, false)
       JOIN bundle_items bi ON bi.bundle_id = b.id
       JOIN items c ON c.id = bi.item_id AND c.item_type = 'goods'
-     WHERE bi.item_id = ANY($2::uuid[])`;
+     WHERE bi.item_id = ANY($2::uuid[])${kept}`;
 }
 
 export interface LoadedItems {

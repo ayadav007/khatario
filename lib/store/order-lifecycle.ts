@@ -13,6 +13,7 @@ import {
 import { hashStoreWebhookToken, type StoreFulfillmentStatus } from './delivery/webhooks';
 import { syncStoreOrderFulfilment, type FulfilmentChange } from '@/lib/fulfilment/service';
 import type { FulfilmentStatus } from '@/lib/fulfilment/rules';
+import { releaseStoreOrderStock } from './checkout-stock';
 
 export type StoreOrderLifecycleResult =
   | {
@@ -143,6 +144,15 @@ export async function transitionStoreOrderInTransaction(
       reason: input.cancelledReason?.trim() || 'Store order cancelled',
     });
     stockRestored = reversed === 'cancelled';
+  }
+
+  if (input.to === 'cancelled') {
+    await releaseStoreOrderStock(client, {
+      businessId: input.businessId,
+      orderId: input.orderId,
+      outcome: 'cancelled',
+      userId: input.systemActor ? null : input.actorUserId ?? null,
+    });
   }
 
   await client.query(

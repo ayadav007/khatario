@@ -14,7 +14,7 @@ export interface ShiprocketCreds {
   password: string;
 }
 
-export type ShiprocketStage = 'login' | 'pickup_location' | 'create' | 'awb' | 'pickup' | 'label' | 'manifest' | 'cancel';
+export type ShiprocketStage = 'login' | 'pickup_location' | 'create' | 'awb' | 'pickup' | 'label' | 'manifest' | 'cancel' | 'ndr';
 
 export class ShiprocketError extends Error {
   constructor(
@@ -278,6 +278,22 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
   }
 
   /**
+   * Failed delivery (NDR): ask the courier to try again (optionally on a date, with a corrected
+   * phone or address) or to send the parcel back to the shop.
+   */
+  async function ndrAction(
+    awb: string,
+    input: { action: 're-attempt' | 'return'; comments: string; deferredDate?: string | null; phone?: string | null; address?: string | null },
+  ): Promise<void> {
+    const body: Record<string, unknown> = { action: input.action, comments: input.comments.slice(0, 250) };
+    if (input.deferredDate) body.deferred_date = input.deferredDate;
+    if (input.phone) body.phone = input.phone;
+    if (input.address) body.address1 = input.address.slice(0, 250);
+    const { ok, data } = await call(creds, `/ndr/${encodeURIComponent(awb)}/action`, { body });
+    if (!ok) throw new ShiprocketError(shiprocketErrorMessage(data, 'Shiprocket did not accept the instruction'), 'ndr');
+  }
+
+  /**
    * Create the order (unless a previous attempt already did), assign a courier and AWB, then ask
    * for pickup. Ids from a partial attempt are returned so a retry never makes a second order.
    */
@@ -322,7 +338,7 @@ export function createShiprocketClient(creds: ShiprocketCreds) {
     }
   }
 
-  return { pickupLocation, postcodeDetails, createOrder, assignAwb, requestPickup, label, manifest, cancelOrders, book };
+  return { pickupLocation, postcodeDetails, createOrder, assignAwb, requestPickup, label, manifest, cancelOrders, book, ndrAction };
 }
 
 export type ShiprocketClient = ReturnType<typeof createShiprocketClient>;

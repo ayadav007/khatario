@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Khatario phone app — proposed screens</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #F8F3E9;
+      --surface: #ffffff;
+      --ink: #063F35;
+      --ink-2: #3d5c56;
+      --muted: #6d8580;
+      --line: #e4ddd0;
+      --green: #063F35;
+      --green-soft: #eef2f1;
+      --orange: #F58220;
+      --orange-deep: #d3701c;
+      --danger: #EF4444;
+      --ok: #10B981;
+      --warn: #F59E0B;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background: #efe8dc;
+      color: var(--ink);
+    }
+    .stage {
+      min-height: 100%;
+      display: grid;
+      grid-template-columns: 280px 420px 1fr;
+      gap: 28px;
+      padding: 28px;
+      align-items: start;
+    }
+    h1 { font-size: 20px; line-height: 1.3; margin: 0 0 6px; }
+    .lede { margin: 0 0 18px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+    .group { margin: 0 0 16px; }
+    .group p {
+      margin: 0 0 6px;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    button.nav {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button.nav[aria-current="true"] { background: var(--surface); font-weight: 600; }
+    .phone {
+      width: 390px;
+      height: 844px;
+      background: var(--bg);
+      border: 10px solid #1c1917;
+      border-radius: 36px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .status {
+      height: 44px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 22px 6px;
+      font-size: 12px;
+      font-weight: 600;
+      flex: none;
+    }
+    .screen { flex: 1; overflow: auto; position: relative; }
+    .screen::-webkit-scrollbar { width: 0; }
+    .pad { padding: 8px 16px 24px; }
+    .bottom {
+      flex: none;
+      height: 72px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      padding-bottom: 8px;
+    }
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .tab[aria-current="true"] { color: var(--green); font-weight: 600; }
+    .tab svg { width: 22px; height: 22px; }
+    .kicker { font-size: 13px; color: var(--ink-2); margin: 0; }
+    .shop { font-size: 22px; font-weight: 700; margin: 2px 0 16px; letter-spacing: -0.02em; }
+    .sale {
+      background: var(--green);
+      color: white;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .sale .label { font-size: 13px; opacity: 0.8; margin: 0; }
+    .sale .amount { font-size: 32px; font-weight: 700; margin: 4px 0 10px; letter-spacing: -0.03em; }
+    .sale .split { display: flex; gap: 16px; font-size: 13px; }
+    .sale .split span { opacity: 0.85; }
+    .cta {
+      margin-top: 12px;
+      width: 100%;
+      height: 48px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--orange);
+      color: white;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .cta.green { background: var(--green); }
+    .cta.ghost {
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    h2 { font-size: 18px; margin: 0; }
+    .section-label {
+      margin: 18px 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink-2);
+    }
+    .row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+    .card {
+      background: var(--surface);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .who { flex: 1; min-width: 0; }
+    .who strong { display: block; font-size: 15px; font-weight: 600; }
+    .who small { color: var(--muted); font-size: 12px; }
+    .money { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .money.due { color: #b45309; }
+    .pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .pill.paid { background: #d1fae5; color: #065f46; }
+    .search {
+      width: 100%;
+      height: 44px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 0 12px;
+      font: inherit;
+      font-size: 16px;
+      color: var(--ink);
+      margin-bottom: 12px;
+    }
+    .chips { display: flex; gap: 8px; margin-bottom: 12px; }
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 13px;
+      color: var(--ink-2);
+      cursor: pointer;
+    }
+    .chip.on { background: var(--green); color: white; border-color: var(--green); }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px 8px;
+    }
+    .iconbtn {
+      width: 40px;
+      height: 40px;
+      border: 0;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--ink);
+    }
+    .party {
+      margin: 0 16px 12px;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: calc(100% - 32px);
+      border: 0;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      flex: none;
+    }
+    .line {
+      margin: 0 16px 8px;
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .line .top { display: flex; justify-content: space-between; gap: 8px; }
+    .line .meta { margin-top: 8px; display: flex; justify-content: space-between; align-items: center; color: var(--ink-2); font-size: 13px; }
+    .stepper { display: flex; align-items: center; gap: 8px; }
+    .stepper button {
+      width: 32px; height: 32px; border-radius: 8px;
+      border: 1px solid var(--line); background: var(--bg);
+      font: inherit; font-size: 18px; cursor: pointer; color: var(--ink);
+    }
+    .add {
+      margin: 4px 16px 16px;
+      height: 44px;
+      width: calc(100% - 32px);
+      border-radius: 8px;
+      border: 1px dashed #afc2be;
+      background: transparent;
+      color: var(--green);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .dock {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      padding: 12px 16px 16px;
+    }
+    .dock .sum { display: flex; justify-content: space-between; align-items: baseline; }
+    .dock .sum strong { font-size: 22px; }
+    .dock .hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    #overlay { position: absolute; inset: 0; z-index: 5; }
+    .sheet {
+      position: absolute;
+      inset: 0;
+      background: rgba(6, 63, 53, 0.35);
+      display: flex;
+      align-items: flex-end;
+    }
+    .sheet .panel {
+      background: var(--bg);
+      width: 100%;
+      border-radius: 16px 16px 0 0;
+      max-height: 78%;
+      overflow: auto;
+      padding: 8px 0 16px;
+    }
+    .handle { width: 36px; height: 4px; border-radius: 99px; background: var(--line); margin: 8px auto 12px; }
+    .note h2 { font-size: 18px; margin: 0 0 8px; }
+    .note p { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+    .note li { margin: 0 0 6px; color: var(--ink); font-size: 14px; line-height: 1.45; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .linkish {
+      background: none; border: 0; color: var(--green); font: inherit;
+      font-weight: 600; cursor: pointer; padding: 0;
+    }
+    .methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 16px; }
+    .method {
+      height: 44px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--surface); font: inherit; font-weight: 600; cursor: pointer; color: var(--ink);
+    }
+    .method.on { background: var(--green); color: white; border-color: var(--green); }
+    .more-block { margin-bottom: 8px; }
+    .more-block h3 { font-size: 13px; color: var(--muted); margin: 14px 16px 6px; font-weight: 600; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <aside>
+      <h1>Phone screens</h1>
+      <p class="lede">Sample shop, Gupta Kirana. Tap a screen or use the phone. This is a proposal, not the live app.</p>
+      <div id="menu"></div>
+    </aside>
+    <div>
+      <div class="phone" id="phone">
+        <div class="status"><span>9:41</span><span>Gupta Kirana</span></div>
+        <div class="screen" id="screen"></div>
+        <nav class="bottom" id="tabs"></nav>
+      </div>
+    </div>
+    <article class="note" id="note"></article>
+  </div>
+  <script>
+    const svg = {
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"/></svg>',
+      bills: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M7 3h8l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M15 3v5h5M8 13h8M8 17h5"/></svg>',
+      items: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 7.5 12 3l9 4.5-9 4.5L3 7.5Z"/><path d="M3 7.5V16.5L12 21l9-4.5V7.5"/><path d="M12 12v9"/></svg>',
+      people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M16 20v-1.2A3.8 3.8 0 0 0 12.2 15H7.8A3.8 3.8 0 0 0 4 18.8V20"/><circle cx="10" cy="8" r="3"/><path d="M20 20v-1.1A3.4 3.4 0 0 0 17.2 16"/><circle cx="17" cy="8.5" r="2.4"/></svg>',
+      more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="6" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18" cy="12" r="1.2" fill="currentColor"/></svg>'
+    };
+
+    const tabs = [
+      { id: 'today', label: 'Today', icon: 'home' },
+      { id: 'bills', label: 'Bills', icon: 'bills' },
+      { id: 'items', label: 'Items', icon: 'items' },
+      { id: 'parties', label: 'Parties', icon: 'people' },
+      { id: 'more', label: 'More', icon: 'more' }
+    ];
+
+    const menu = [
+      { group: 'Open the shop', items: ['sign-in', 'today'] },
+      { group: 'Make a bill', items: ['new-bill', 'bill'] },
+      { group: 'Money', items: ['bills', 'collect', 'parties', 'party'] },
+      { group: 'Stock', items: ['items'] },
+      { group: 'The rest of the books', items: ['more', 'purchases', 'quotations', 'reports'] }
+    ];
+
+    const titles = {
+      'sign-in': 'Sign in',
+      today: 'Today',
+      'new-bill': 'New bill',
+      bill: 'Bill INV-1042',
+      bills: 'Bills',
+      collect: 'Collect payment',
+      parties: 'Parties',
+      party: 'Ramesh Stores',
+      items: 'Items',
+      more: 'More',
+      purchases: 'Purchases',
+      quotations: 'Quotations',
+      reports: 'Reports'
+    };
+
+    const notes = {
+      'sign-in': {
+        title: 'Sign in',
+        body: 'One job on the screen. The phone number is large enough that the keyboard does not zoom the page. Password comes after the number is recognised, the same as the website.',
+        points: ['Cream page, green wordmark, orange only on the continue button.', 'No marketing, no dashboard, no second column.']
+      },
+      today: {
+        title: 'Today',
+        body: 'The website opens on a dashboard of cards. On the phone, the owner needs today’s sale and a way to start the next bill.',
+        points: ['One number is big. Collected and still due sit under it.', 'New bill is in the thumb zone, in the orange accent.', 'The list under it is money to collect, not a chart.']
+      },
+      'new-bill': {
+        title: 'New bill',
+        body: 'This is the counter. Party, lines, and the total stay on one screen. Quantity changes with a stepper so the cashier is not typing into a desktop grid.',
+        points: ['Total is stuck to the bottom, always visible.', 'Save and print is the primary action. Save without printing is secondary.', 'Choosing a party or an item opens a sheet and returns here.']
+      },
+      bill: {
+        title: 'A saved bill',
+        body: 'After save, the bill is a receipt the owner can read aloud, then share or collect. It is not an edit form.',
+        points: ['Status is a small pill, not a banner.', 'Share and Collect are the two next actions.', 'Print stays available without covering the amounts.']
+      },
+      bills: {
+        title: 'Bills',
+        body: 'A list the thumb can scan. Unpaid amounts use the warning colour. Paid bills stay quiet.',
+        points: ['Filters are chips, not a filter drawer.', 'Search is a real field, 16px type.', 'Opening a row goes to the receipt, not a cramped table.']
+      },
+      collect: {
+        title: 'Collect payment',
+        body: 'Recording money in is a short screen: who, how much, and how they paid. The ledger entry still happens on the server.',
+        points: ['Cash, UPI, and bank are equal choices.', 'The amount starts as the full due, so the common case is one tap.', 'Orange is not used here. Green means the money is recorded.']
+      },
+      parties: {
+        title: 'Parties',
+        body: 'Customers and suppliers in one list, with what they owe or what you owe them. The website splits this across menus.',
+        points: ['Due is the second line, so collection does not need a report.', 'A party opens their ledger, not a settings form.']
+      },
+      party: {
+        title: 'One party',
+        body: 'The balance is the heading. Recent bills sit under it. Collect is the action.',
+        points: ['GSTIN and phone are secondary.', 'The owner can start a bill for this party without going back to Today.']
+      },
+      items: {
+        title: 'Items',
+        body: 'Name, price, and stock in one row. Low stock is marked. Adding an item is a later screen in the same shape as a line on the bill.',
+        points: ['No table columns.', 'Price is what the cashier remembers. Stock is the quiet second fact.']
+      },
+      more: {
+        title: 'More',
+        body: 'Everything that is not a daily tap lives here, in the same groups as the website sidebar: sales, purchases, stock, accounts, reports.',
+        points: ['The bottom bar stays on Today, Bills, Items, Parties.', 'Journal, GST filing, and settings are reached from here. They are not fake-simplified into the counter.']
+      },
+      purchases: {
+        title: 'Purchases',
+        body: 'The same list pattern as bills, for money going out. A purchase bill is a document, not a second visual language.',
+        points: ['Supplier, date, and amount.', 'New purchase will reuse the new-bill screen with the party labelled as a supplier.']
+      },
+      quotations: {
+        title: 'Quotations',
+        body: 'Same document list. A quotation is not a tax invoice, so the pill says Quote and there is no collect action until it becomes a bill.',
+        points: ['One list layout is reused for quotations, sales orders, credit notes, and challans.', 'The difference is the status and the next action, not a new design.']
+      },
+      reports: {
+        title: 'Reports',
+        body: 'Reports stay readable summaries. Profit, what customers owe, and stock value. The long GST and ledger reports open as a focused page, not a spreadsheet on a phone.',
+        points: ['Three numbers, then the report names.', 'Export and print stay on the report itself.']
+      }
+    };
+
+    let screen = 'today';
+    let sheet = null;
+    let qtyRice = 2;
+    let qtyDal = 4;
+    let payMethod = 'UPI';
+
+    function inr(n) {
+      return '₹' + n.toLocaleString('en-IN');
+    }
+
+    function billMath() {
+      const rice = qtyRice * 420;
+      const dal = qtyDal * 148;
+      const tax = Math.round((rice + dal) * 0.05);
+      return { rice, dal, tax, total: rice + dal + tax, items: (qtyRice > 0 ? 1 : 0) + (qtyDal > 0 ? 1 : 0) };
+    }
+
+    function row(name, sub, amount, extra) {
+      return `<button class="row" data-go="${extra.go}">
+        <span class="avatar">${name.slice(0, 1)}</span>
+        <span class="who"><strong>${name}</strong><small>${sub}</small></span>
+        <span class="money ${extra.due ? 'due' : ''}">${amount}</span>
+      </button>`;
+    }
+
+    function renderScreen() {
+      const m = billMath();
+      const pages = {
+        'sign-in': `<div class="pad" style="padding-top:48px">
+          <p class="kicker">Khatario</p>
+          <h2 class="shop" style="font-size:28px">Sign in</h2>
+          <div class="field"><label>Mobile number</label><input class="search" value="98•••• 2210" readonly /></div>
+          <button class="cta green" data-go="today">Continue</button>
+          <p class="kicker" style="margin-top:16px">Password and WhatsApp code stay on the next step, same as the website.</p>
+        </div>`,
+        today: `<div class="pad">
+          <p class="kicker">Monday, 12 Oct</p>
+          <h2 class="shop">Gupta Kirana</h2>
+          <div class="sale">
+            <p class="label">Today’s sale</p>
+            <p class="amount">${inr(48260)}</p>
+            <div class="split"><span>Collected ${inr(31200)}</span><span>Due ${inr(17060)}</span></div>
+          </div>
+          <button class="cta" data-go="new-bill">New bill</button>
+          <p class="section-label">To collect</p>
+          <div class="card">
+            ${row('Ramesh Stores', '3 unpaid bills', inr(12400), { go: 'party', due: true })}
+            ${row('Mehta Provision', 'INV-1038', inr(2860), { go: 'bill', due: true })}
+            ${row('Walk-in, UPI pending', 'INV-1041', inr(1800), { go: 'bill', due: true })}
+          </div>
+          <p class="section-label">Low stock</p>
+          <div class="card">
+            ${row('Toor dal 1 kg', '4 left · reorder 20', inr(148), { go: 'items' })}
+            ${row('Sugar 1 kg', '6 left · reorder 25', inr(44), { go: 'items' })}
+          </div>
+        </div>`,
+        'new-bill': `<div class="topbar">
+            <button class="iconbtn" data-go="today" aria-label="Back">←</button>
+            <h2>New bill</h2>
+          </div>
+          <button class="party" data-sheet="party">
+            <span class="avatar">R</span>
+            <span class="who"><strong>Ramesh Stores</strong><small>Due ${inr(12400)} · GST 27AAAAA0000A1Z5</small></span>
+            <span class="linkish">Change</span>
+          </button>
+          ${qtyRice ? `<div class="line"><div class="top"><strong>Basmati rice 5 kg</strong><span class="money">${inr(m.rice)}</span></div><div class="meta"><span>GST 5% · ${inr(420)}</span><span class="stepper"><button data-qty="rice" data-dir="-1">−</button><span>${qtyRice}</span><button data-qty="rice" data-dir="1">+</button></span></div></div>` : ''}
+          ${qtyDal ? `<div class="line"><div class="top"><strong>Toor dal 1 kg</strong><span class="money">${inr(m.dal)}</span></div><div class="meta"><span>GST 5% · ${inr(148)}</span><span class="stepper"><button data-qty="dal" data-dir="-1">−</button><span>${qtyDal}</span><button data-qty="dal" data-dir="1">+</button></span></div></div>` : ''}
+          <button class="add" data-sheet="item">Add item</button>
+          <div style="height:120px"></div>
+          <div class="dock">
+            <div class="hint">${m.items} items · tax ${inr(m.tax)}</div>
+            <div class="sum"><span>Total</span><strong>${inr(m.total)}</strong></div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="cta ghost" style="flex:1" data-go="bills">Save</button>
+              <button class="cta green" style="flex:1.4" data-go="bill">Save & print</button>
+            </div>
+          </div>`,
+        bill: `<div class="topbar"><button class="iconbtn" data-go="bills" aria-label="Back">←</button><h2>INV-1042</h2><span class="pill" style="margin-left:auto">Unpaid</span></div>
+          <div class="pad">
+            <div class="card" style="padding:14px;margin-bottom:12px">
+              <strong>Ramesh Stores</strong>
+              <p class="kicker" style="margin-top:4px">12 Oct 2026 · Gupta Kirana</p>
+            </div>
+            <div class="card">
+              <div class="row" style="cursor:default"><span class="who"><strong>Basmati rice 5 kg</strong><small>2 × ${inr(420)}</small></span><span class="money">${inr(840)}</span></div>
+              <div class="row" style="cursor:default"><span class="who"><strong>Toor dal 1 kg</strong><small>4 × ${inr(148)}</small></span><span class="money">${inr(592)}</span></div>
+              <div class="row" style="cursor:default"><span class="who"><strong>GST 5%</strong></span><span class="money">${inr(72)}</span></div>
+            </div>
+            <p class="shop" style="text-align:right;margin-top:16px">${inr(1504)}</p>
+            <button class="cta green" data-go="collect">Collect ${inr(1504)}</button>
+            <button class="cta ghost" style="margin-top:8px">Share on WhatsApp</button>
+          </div>`,
+        bills: `<div class="pad">
+          <h2 class="shop">Bills</h2>
+          <input class="search" placeholder="Search party or bill no." readonly />
+          <div class="chips"><button class="chip on">Unpaid</button><button class="chip">Today</button><button class="chip">All</button></div>
+          <div class="card">
+            ${row('Ramesh Stores', 'INV-1042 · today', inr(1504), { go: 'bill', due: true })}
+            ${row('Mehta Provision', 'INV-1038 · 11 Oct', inr(2860), { go: 'bill', due: true })}
+            ${row('City Hotel', 'INV-1031 · 9 Oct', inr(6400), { go: 'bill', due: true })}
+          </div>
+        </div>`,
+        collect: `<div class="topbar"><button class="iconbtn" data-go="bill" aria-label="Back">←</button><h2>Collect</h2></div>
+          <div class="pad">
+            <p class="kicker">Ramesh Stores · INV-1042</p>
+            <p class="shop">${inr(1504)}</p>
+            <div class="field"><label>Amount</label><input class="search" value="1,504" readonly /></div>
+            <label style="font-size:13px;font-weight:600">Received as</label>
+            <div class="methods">
+              ${['Cash', 'UPI', 'Bank', 'Card'].map((name) => `<button class="method ${payMethod === name ? 'on' : ''}" data-pay="${name}">${name}</button>`).join('')}
+            </div>
+            <button class="cta green" data-go="today">Record payment</button>
+          </div>`,
+        parties: `<div class="pad">
+          <h2 class="shop">Parties</h2>
+          <input class="search" placeholder="Search name or phone" readonly />
+          <div class="card">
+            ${row('Ramesh Stores', 'Customer · due', inr(12400), { go: 'party', due: true })}
+            ${row('Mehta Provision', 'Customer · due', inr(2860), { go: 'party', due: true })}
+            ${row('Sharma Wholesale', 'Supplier · you owe', inr(18600), { go: 'purchases', due: true })}
+            ${row('City Hotel', 'Customer · clear', 'Clear', { go: 'party' })}
+          </div>
+        </div>`,
+        party: `<div class="topbar"><button class="iconbtn" data-go="parties" aria-label="Back">←</button><h2>Ramesh Stores</h2></div>
+          <div class="pad">
+            <p class="kicker">Customer · 98•••• 4412</p>
+            <p class="shop" style="color:#b45309">${inr(12400)} due</p>
+            <button class="cta green" data-go="collect">Collect</button>
+            <button class="cta ghost" style="margin-top:8px" data-go="new-bill">New bill</button>
+            <p class="section-label">Recent</p>
+            <div class="card">
+              ${row('INV-1042', 'Today · unpaid', inr(1504), { go: 'bill', due: true })}
+              ${row('INV-1004', '2 Oct · paid', inr(2200), { go: 'bill' })}
+            </div>
+          </div>`,
+        items: `<div class="pad">
+          <h2 class="shop">Items</h2>
+          <input class="search" placeholder="Search item" readonly />
+          <div class="card">
+            ${row('Basmati rice 5 kg', 'In stock 18 · GST 5%', inr(420), { go: 'new-bill' })}
+            ${row('Toor dal 1 kg', 'Low · 4 left · GST 5%', inr(148), { go: 'new-bill' })}
+            ${row('Sugar 1 kg', 'Low · 6 left · GST 5%', inr(44), { go: 'new-bill' })}
+            ${row('Groundnut oil 1 L', 'In stock 22 · GST 5%', inr(168), { go: 'new-bill' })}
+          </div>
+        </div>`,
+        more: `<div class="pad" style="padding-top:12px"><h2 class="shop">More</h2></div>
+          ${moreGroup('Sales', [['Quotations', 'quotations'], ['Sales orders', 'quotations'], ['Credit notes', 'bills'], ['Payments in', 'collect']])}
+          ${moreGroup('Purchases', [['Purchases', 'purchases'], ['Payments out', 'purchases'], ['Expenses', 'purchases']])}
+          ${moreGroup('Accounts', [['Ledger', 'reports'], ['Payments', 'collect'], ['Reports', 'reports']])}
+          ${moreGroup('Shop', [['Settings', 'more'], ['Printer', 'more']])}`,
+        purchases: listPage('Purchases', [
+          ['Sharma Wholesale', 'PB-220 · 11 Oct', inr(18600)],
+          ['Agro Mills', 'PB-214 · 8 Oct', inr(9400)]
+        ], 'more'),
+        quotations: listPage('Quotations', [
+          ['City Hotel', 'QT-88 · sent', inr(12600)],
+          ['Mehta Provision', 'QT-86 · draft', inr(3400)]
+        ], 'more'),
+        reports: `<div class="topbar"><button class="iconbtn" data-go="more" aria-label="Back">←</button><h2>Reports</h2></div>
+          <div class="pad">
+            <div class="card">
+              <div class="row" style="cursor:default"><span class="who"><strong>This month’s profit</strong><small>1–12 Oct</small></span><span class="money">${inr(86420)}</span></div>
+              <div class="row" style="cursor:default"><span class="who"><strong>Customers owe you</strong></span><span class="money due">${inr(17060)}</span></div>
+              <div class="row" style="cursor:default"><span class="who"><strong>Stock value</strong></span><span class="money">${inr(241000)}</span></div>
+            </div>
+            <p class="section-label">Open a report</p>
+            <div class="card">
+              ${row('Profit & loss', 'This month', '', { go: 'reports' })}
+              ${row('Who owes you', 'Ageing', '', { go: 'parties' })}
+              ${row('Stock summary', 'Qty and value', '', { go: 'items' })}
+              ${row('GST summary', 'Needs the period lock rules', '', { go: 'reports' })}
+            </div>
+          </div>`
+      };
+
+      let overlayHtml = '';
+      if (sheet === 'party') {
+        overlayHtml = `<div class="sheet" data-sheet-close="1"><div class="panel">
+          <div class="handle"></div>
+          <div class="pad" style="padding-top:0"><h2>Choose party</h2><input class="search" placeholder="Name or phone" readonly /></div>
+          <div class="card" style="margin:0 16px">
+            ${row('Ramesh Stores', 'Due ' + inr(12400), '', { go: 'close-sheet' })}
+            ${row('Mehta Provision', 'Due ' + inr(2860), '', { go: 'close-sheet' })}
+            ${row('Walk-in customer', 'No ledger party', '', { go: 'close-sheet' })}
+          </div>
+        </div></div>`;
+      }
+      if (sheet === 'item') {
+        overlayHtml = `<div class="sheet" data-sheet-close="1"><div class="panel">
+          <div class="handle"></div>
+          <div class="pad" style="padding-top:0"><h2>Add item</h2><input class="search" placeholder="Item name" readonly /></div>
+          <div class="card" style="margin:0 16px">
+            ${row('Groundnut oil 1 L', 'GST 5%', inr(168), { go: 'close-sheet' })}
+            ${row('Sugar 1 kg', 'Low stock', inr(44), { go: 'close-sheet' })}
+          </div>
+        </div></div>`;
+      }
+      document.getElementById('screen').innerHTML = pages[screen];
+      let overlay = document.getElementById('overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'overlay';
+        document.getElementById('phone').appendChild(overlay);
+      }
+      overlay.innerHTML = overlayHtml;
+      overlay.classList.toggle('hidden', !overlayHtml);
+      const showTabs = !['sign-in', 'new-bill', 'bill', 'collect', 'party', 'purchases', 'quotations', 'reports'].includes(screen);
+      document.getElementById('tabs').classList.toggle('hidden', !showTabs);
+      document.getElementById('tabs').innerHTML = tabs.map((tab) => {
+        const on = tab.id === screen;
+        return `<button class="tab" data-go="${tab.id}" aria-current="${on}">${svg[tab.icon]}${tab.label}</button>`;
+      }).join('');
+      const note = notes[screen];
+      document.getElementById('note').innerHTML = `<h2>${note.title}</h2><p>${note.body}</p><ul>${note.points.map((p) => `<li>${p}</li>`).join('')}</ul>`;
+      document.getElementById('menu').innerHTML = menu.map((group) => `
+        <div class="group"><p>${group.group}</p>
+          ${group.items.map((id) => `<button class="nav" data-go="${id}" aria-current="${id === screen}">${titles[id]}</button>`).join('')}
+        </div>`).join('');
+    }
+
+    function moreGroup(title, items) {
+      return `<div class="more-block"><h3>${title}</h3><div class="card" style="margin:0 16px">${
+        items.map(([label, go]) => `<button class="row" data-go="${go}"><span class="who"><strong>${label}</strong></span></button>`).join('')
+      }</div></div>`;
+    }
+
+    function listPage(title, rows, back) {
+      return `<div class="topbar"><button class="iconbtn" data-go="${back}" aria-label="Back">←</button><h2>${title}</h2></div>
+        <div class="pad"><div class="card">${rows.map(([name, sub, amount]) => row(name, sub, amount, { go: 'bill', due: true })).join('')}</div></div>`;
+    }
+
+    document.body.addEventListener('click', (event) => {
+      const qty = event.target.closest('[data-qty]');
+      if (qty) {
+        const dir = Number(qty.dataset.dir);
+        if (qty.dataset.qty === 'rice') qtyRice = Math.max(0, qtyRice + dir);
+        if (qty.dataset.qty === 'dal') qtyDal = Math.max(0, qtyDal + dir);
+        renderScreen();
+        return;
+      }
+      const pay = event.target.closest('[data-pay]');
+      if (pay) {
+        payMethod = pay.dataset.pay;
+        renderScreen();
+        return;
+      }
+      const openSheet = event.target.closest('[data-sheet]');
+      if (openSheet) {
+        sheet = openSheet.dataset.sheet;
+        renderScreen();
+        return;
+      }
+      const go = event.target.closest('[data-go]');
+      if (!go) {
+        if (event.target.closest('[data-sheet-close]') && event.target.classList.contains('sheet')) {
+          sheet = null;
+          renderScreen();
+        }
+        return;
+      }
+      if (go.dataset.go === 'close-sheet') {
+        sheet = null;
+        renderScreen();
+        return;
+      }
+      sheet = null;
+      screen = go.dataset.go;
+      renderScreen();
+    });
+
+    renderScreen();
+  </script>
+</body>
+</html>

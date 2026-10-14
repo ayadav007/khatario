@@ -276,6 +276,7 @@ export const LegacyFeatureKeyMap: Record<string, FeatureKey> = {
   'settings_multi_business': SettingsFeatures.MULTI_BUSINESS,
   'settings_backup': SettingsFeatures.BACKUP_RESTORE,
   'settings_pos_mode': SettingsFeatures.POS_MODE,
+  'pos_mode': SettingsFeatures.POS_MODE,
   
   // Integration domain legacy keys
   'integration_whatsapp_bot': IntegrationFeatures.WHATSAPP_BOT,

@@ -17,6 +17,12 @@ import { hasFeatureAccess } from '@/lib/subscription/feature-access';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { validateStoreOrderLines } from '@/lib/store/fulfillment-rules';
 import { reserveStoreOrderNumber } from '@/lib/store/order-lifecycle';
+import {
+  checkStoreCartStock,
+  holdStoreOrderStock,
+  shortfallMessage,
+  STORE_ONLINE_HOLD_MINUTES,
+} from '@/lib/store/checkout-stock';
 import { notifyStoreEvent } from '@/lib/store/notify-whatsapp';
 import { getBusinessUpiVpa, upiAppLinks } from '@/lib/payments/upi-pay-link';
 
@@ -137,6 +143,19 @@ export async function POST(
     const storeCustomerId = verified.id;
 
     await client.query('BEGIN');
+    // Lock and compare against what is left (on-hand minus other orders' holds) before saving.
+    const shortfall = await checkStoreCartStock(client, {
+      businessId: store.business_id,
+      branchId: body.branch_id ?? null,
+      lines: quote.lines,
+    });
+    if (shortfall.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: shortfallMessage(shortfall), code: 'OUT_OF_STOCK', shortfall },
+        { status: 409 },
+      );
+    }
     const orderNum = await reserveStoreOrderNumber(client, store.business_id);
 
     const order = await client.query(
@@ -197,6 +216,15 @@ export async function POST(
         ],
       );
     }
+
+    await holdStoreOrderStock(client, {
+      businessId: store.business_id,
+      orderId,
+      lines: quote.lines,
+      // Pay-online orders hold briefly; COD / UPI hold until the invoice or a cancel.
+      expiresAt:
+        paymentMethod === 'online' ? new Date(Date.now() + STORE_ONLINE_HOLD_MINUTES * 60_000) : null,
+    });
 
     await client.query(
       `UPDATE store_customers

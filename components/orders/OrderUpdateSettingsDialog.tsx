@@ -106,6 +106,34 @@ export function OrderUpdateSettingsDialog({ onClose, onSaved }: { onClose: () =>
                 onChange={(e) => setSettings({ ...settings, merchantDispatchAlert: e.target.checked })}
               />
             </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>
+                <span className="font-medium">Track bills that have a shipping address</span>
+                <span className="block text-xs text-slate-500">Manual bills with a delivery address appear under “To pack” straight away.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={settings.autoTrackShippedBills}
+                onChange={(e) => setSettings({ ...settings, autoTrackShippedBills: e.target.checked })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>
+                <span className="font-medium">Delay notice after (days)</span>
+                <span className="block text-xs text-slate-500">
+                  If a shipped parcel has not moved for this long, the buyer gets one “taking longer than usual” message and you see it in the list. 0 turns it off.
+                </span>
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={30}
+                className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-right dark:border-slate-600 dark:bg-slate-800"
+                value={settings.stuckNoticeDays}
+                onChange={(e) => setSettings({ ...settings, stuckNoticeDays: Math.max(0, Math.min(30, Number(e.target.value) || 0)) })}
+              />
+            </label>
             <p className="text-xs text-slate-500">
               Online store orders already get their own “order placed” and courier booking messages, so those are not sent twice.
             </p>

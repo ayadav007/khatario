@@ -7,6 +7,7 @@ import {
   type ShiprocketParcel,
 } from '@/lib/store/delivery/shiprocket';
 import { loadOrderLines, loadShipTo, type HubSource } from './hub';
+import { loadParcelContents } from './parcel-items';
 import { canTransitionFulfilment, type FulfilmentStatus } from './rules';
 import type { FulfilmentChange } from './service';
 
@@ -47,6 +48,9 @@ interface BookingRow {
   ship_address: string | null;
   ship_pincode: string | null;
   weight_kg: string | null;
+  length_cm: string | null;
+  breadth_cm: string | null;
+  height_cm: string | null;
   carrier_order_id: string | null;
   carrier_shipment_id: string | null;
   order_number: string | null;
@@ -65,6 +69,7 @@ async function loadBookingRow(businessId: string, fulfilmentId: string): Promise
     `SELECT f.id, f.business_id, f.seq, f.status, f.store_order_id, f.sales_order_id, f.invoice_id,
             f.buyer_name, f.buyer_phone, f.awb, f.partner_name, f.tracking_url, f.pickup_scheduled_at,
             f.cod_amount::text, f.cod_collected_at, f.ship_address, f.ship_pincode, f.weight_kg::text,
+            f.length_cm::text, f.breadth_cm::text, f.height_cm::text,
             f.carrier_order_id, f.carrier_shipment_id,
             COALESCE(so.order_number, s.order_number, i.invoice_number) AS order_number,
             COALESCE(so.grand_total, s.grand_total, i.grand_total)::text AS amount,
@@ -104,18 +109,26 @@ async function buildShiprocketParcel(
   const codDue = row.cod_collected_at ? 0 : Number(row.cod_amount) || 0;
   const ref = row.seq > 1 ? `${orderNumber}-P${row.seq}` : orderNumber;
 
-  let items: ShiprocketParcel['items'];
-  if (row.seq > 1) {
-    items = [{ name: `Order ${orderNumber} (parcel ${row.seq})`, units: 1, price: codDue || amount }];
-  } else {
-    const lines = await loadOrderLines(businessId, source, id);
-    items = lines
-      .filter((l) => Number(l.quantity) > 0)
-      .map((l) => {
-        const units = Math.max(1, Math.round(Number(l.quantity)));
-        return { name: l.name || 'Item', units, price: (Number(l.amount) || 0) / units };
-      });
-    if (items.length === 0) items = [{ name: `Order ${orderNumber}`, units: 1, price: amount }];
+  // Only what travels in this parcel (see parcel-items); priced at the order's unit price.
+  const lines = await loadOrderLines(businessId, source, id);
+  const unitPrice = new Map(lines.map((l) => [l.line_id, (Number(l.amount) || 0) / (Number(l.quantity) || 1)]));
+  const siblings = await queryRows<{ id: string; seq: number; status: string }>(
+    `SELECT x.id, x.seq, x.status FROM order_fulfilments x
+      WHERE x.business_id = $1
+        AND x.store_order_id IS NOT DISTINCT FROM $2::uuid
+        AND x.sales_order_id IS NOT DISTINCT FROM $3::uuid
+        AND x.invoice_id IS NOT DISTINCT FROM $4::uuid`,
+    [businessId, row.store_order_id, row.sales_order_id, row.invoice_id],
+  );
+  const contents = (await loadParcelContents(getPool(), businessId, { kind: source, id }, siblings)).get(row.id) ?? [];
+  let items: ShiprocketParcel['items'] = contents
+    .filter((l) => l.quantity > 0)
+    .map((l) => {
+      const units = Math.max(1, Math.round(l.quantity));
+      return { name: l.name || 'Item', units, price: ((unitPrice.get(l.line_id) ?? 0) * l.quantity) / units };
+    });
+  if (items.length === 0) {
+    items = [{ name: row.seq > 1 ? `Order ${orderNumber} (parcel ${row.seq})` : `Order ${orderNumber}`, units: 1, price: codDue || amount }];
   }
 
   return {
@@ -131,6 +144,9 @@ async function buildShiprocketParcel(
       subTotal: codDue > 0 ? codDue : amount,
       cod: codDue > 0,
       weightKg: Number(row.weight_kg) || DEFAULT_PARCEL_WEIGHT_KG,
+      lengthCm: Number(row.length_cm) || undefined,
+      breadthCm: Number(row.breadth_cm) || undefined,
+      heightCm: Number(row.height_cm) || undefined,
     },
   };
 }
@@ -462,6 +478,15 @@ export async function applyShiprocketFulfilmentUpdate(input: {
        VALUES ($1, $2, $3, 'Courier update', 'webhook')`,
       [row.id, input.businessId, to],
     );
+    if (to === 'returned') {
+      // The parcel came back: open a return so the shop inspects it and the bill is credited.
+      const { ensureReturnForReturnedFulfilment } = await import('@/lib/returns/service');
+      await ensureReturnForReturnedFulfilment(c, {
+        businessId: input.businessId,
+        fulfilmentId: row.id,
+        wasDelivered: row.status === 'delivered',
+      });
+    }
     await c.query('COMMIT');
     return { outcome: 'updated', fulfilment: { fulfilmentId: row.id, to } };
   } catch (e) {

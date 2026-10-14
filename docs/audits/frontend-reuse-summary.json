@@ -1,0 +1,353 @@
+{
+  "generatedAt": "2026-10-13T02:31:00.933Z",
+  "method": "Static scan of app, components, hooks, contexts, and lib. Tests, stories, phone/, and API implementation bodies are excluded from the component graph. Consumers follow value imports, dynamic import(), and re-export barrels. import type is ignored.",
+  "scannedFiles": 2947,
+  "pageFiles": 365,
+  "distinctRoutes": 365,
+  "duplicateRoutePaths": [],
+  "layoutFiles": 15,
+  "apiRouteFiles": 890,
+  "componentFiles": 548,
+  "kindCounts": {
+    "page-local-component": 18,
+    "shared-business": 54,
+    "feature-component": 456,
+    "ui-primitive": 18,
+    "lib-ui": 2
+  },
+  "consumerBuckets": {
+    "one": 331,
+    "twoToFive": 139,
+    "moreThanFive": 49,
+    "zero": 29
+  },
+  "pagesUsingDesignSystem": 231,
+  "pagesWithIndependentStyling": 41,
+  "pagesWithRawButtons": 148,
+  "pagesUsingSharedButton": 196,
+  "patterns": {
+    "rawButton": {
+      "files": 444,
+      "hits": 1634,
+      "sample": [
+        "app/(app)/accounts/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/bank/import/page.tsx",
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/credit-approvals/page.tsx",
+        "app/(app)/credit-notes/page.tsx",
+        "app/(app)/customers/new/page.tsx",
+        "app/(app)/customers/page.tsx"
+      ]
+    },
+    "sharedButtonImport": {
+      "files": 358,
+      "hits": 358,
+      "sample": [
+        "app/(app)/accounts/new/page.tsx",
+        "app/(app)/accounts/page.tsx",
+        "app/(app)/accounts/[id]/edit/page.tsx",
+        "app/(app)/accounts/[id]/page.tsx",
+        "app/(app)/accounts/[id]/reconciliation/page.tsx",
+        "app/(app)/activity-logs/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/contra/page.tsx"
+      ]
+    },
+    "rawTextInput": {
+      "files": 293,
+      "hits": 945,
+      "sample": [
+        "app/(app)/accounts/[id]/edit/page.tsx",
+        "app/(app)/bank/import/page.tsx",
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/credit-notes/new/page.tsx",
+        "app/(app)/credit-notes/page.tsx",
+        "app/(app)/customers/new/page.tsx",
+        "app/(app)/customers/page.tsx",
+        "app/(app)/customers/[id]/edit/page.tsx"
+      ]
+    },
+    "sharedInputImport": {
+      "files": 186,
+      "hits": 186,
+      "sample": [
+        "app/(app)/accounts/new/page.tsx",
+        "app/(app)/accounts/page.tsx",
+        "app/(app)/accounts/[id]/edit/page.tsx",
+        "app/(app)/accounts/[id]/reconciliation/page.tsx",
+        "app/(app)/activity-logs/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/contra/page.tsx",
+        "app/(app)/customers/new/page.tsx"
+      ]
+    },
+    "nativeSelect": {
+      "files": 232,
+      "hits": 524,
+      "sample": [
+        "app/(app)/accounts/new/page.tsx",
+        "app/(app)/accounts/page.tsx",
+        "app/(app)/accounts/[id]/edit/page.tsx",
+        "app/(app)/activity-logs/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/bank/import/page.tsx",
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/contra/page.tsx"
+      ]
+    },
+    "datePickerImport": {
+      "files": 0,
+      "hits": 0,
+      "sample": []
+    },
+    "dateTimePickerImport": {
+      "files": 1,
+      "hits": 1,
+      "sample": [
+        "app/(app)/tools/todo/page.tsx"
+      ]
+    },
+    "reactDayPicker": {
+      "files": 4,
+      "hits": 5,
+      "sample": [
+        "components/layout/TopBar.tsx",
+        "components/todo/TodoScheduleRail.tsx",
+        "components/ui/DatePicker.tsx",
+        "components/ui/DateTimePicker.tsx"
+      ]
+    },
+    "statusBadgeImport": {
+      "files": 12,
+      "hits": 12,
+      "sample": [
+        "app/(app)/invoices/new/page.tsx",
+        "app/(app)/invoices/page.tsx",
+        "app/(app)/payments/reconciliation/page.tsx",
+        "app/(app)/purchases/new/page.tsx",
+        "app/(app)/purchases/page.tsx",
+        "app/(app)/sales-orders/page.tsx",
+        "components/customers/CustomerDetailPanel.tsx",
+        "components/dashboard/RecentTransactionsFeed.tsx"
+      ]
+    },
+    "localStatusBadge": {
+      "files": 3,
+      "hits": 3,
+      "sample": [
+        "components/ai-agent/KnowledgeSection.tsx",
+        "components/candidate-portal/CandidateTasksTable.tsx",
+        "components/reports/RegisterReportUi.tsx"
+      ]
+    },
+    "windowConfirm": {
+      "files": 29,
+      "hits": 40,
+      "sample": [
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/delivery-challans/[id]/page.tsx",
+        "app/(app)/reports/gst/compliance/page.tsx",
+        "app/(app)/reports/gst/gstr1/page.tsx",
+        "app/(app)/reports/profit-loss/validation/page.tsx",
+        "app/(app)/reports/stock/fifo-lots/page.tsx",
+        "app/(app)/settings/onboarding-templates/page.tsx",
+        "app/(app)/settings/online-store/studio/page.tsx"
+      ]
+    },
+    "radixDialog": {
+      "files": 0,
+      "hits": 0,
+      "sample": []
+    },
+    "slideOver": {
+      "files": 3,
+      "hits": 3,
+      "sample": [
+        "components/ai-agent/AiAgentPage.tsx",
+        "components/purchase-orders/PurchaseOrderDetailPanel.tsx",
+        "components/reports/ProfitLossDrilldownPanel.tsx"
+      ]
+    },
+    "listPageHeader": {
+      "files": 33,
+      "hits": 33,
+      "sample": [
+        "app/(app)/credit-notes/page.tsx",
+        "app/(app)/customers/page.tsx",
+        "app/(app)/dashboard/page.tsx",
+        "app/(app)/debit-notes/page.tsx",
+        "app/(app)/delivery-challans/page.tsx",
+        "app/(app)/employees/manager/approvals/page.tsx",
+        "app/(app)/employees/manager/page.tsx",
+        "app/(app)/employees/manager/team/page.tsx"
+      ]
+    },
+    "pageHeader": {
+      "files": 87,
+      "hits": 87,
+      "sample": [
+        "app/(app)/accounts/page.tsx",
+        "app/(app)/activity-logs/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/bank/import/page.tsx",
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/contra/page.tsx",
+        "app/(app)/credit-approvals/page.tsx",
+        "app/(app)/employees/attendance/page.tsx"
+      ]
+    },
+    "formPageScaffold": {
+      "files": 0,
+      "hits": 0,
+      "sample": []
+    },
+    "reactHotToast": {
+      "files": 13,
+      "hits": 13,
+      "sample": [
+        "app/(app)/inventory-adjustments/new/page.tsx",
+        "app/(app)/invoices/new/page.tsx",
+        "app/(app)/settings/online-store/enquiries/page.tsx",
+        "app/(app)/settings/online-store/orders/page.tsx",
+        "components/common/DeleteAction.tsx",
+        "components/invoices/CustomerSection.tsx",
+        "components/layout/BusinessSwitcher.tsx",
+        "components/pos/POSLayout.tsx"
+      ]
+    },
+    "useToast": {
+      "files": 1,
+      "hits": 1,
+      "sample": [
+        "contexts/ToastContext.tsx"
+      ]
+    },
+    "uiToast": {
+      "files": 32,
+      "hits": 32,
+      "sample": [
+        "app/(app)/customers/page.tsx",
+        "app/(app)/employees/new/page.tsx",
+        "app/(app)/employees/page.tsx",
+        "app/(app)/employees/recruitment/candidates/[id]/page.tsx",
+        "app/(app)/employees/recruitment/candidates/[id]/tasks/[taskId]/page.tsx",
+        "app/(app)/employees/recruitment/jobs/new/page.tsx",
+        "app/(app)/employees/recruitment/jobs/[id]/page.tsx",
+        "app/(app)/employees/[id]/edit/page.tsx"
+      ]
+    },
+    "localFormatInr": {
+      "files": 16,
+      "hits": 16,
+      "sample": [
+        "app/(app)/pricing/party-item/page.tsx",
+        "app/(app)/purchase-orders/page.tsx",
+        "app/(app)/reports/profit-by-invoice/page.tsx",
+        "app/(app)/reports/stock/closing-stock/page.tsx",
+        "app/(app)/reports/stock/summary/page.tsx",
+        "app/api/purchase-orders/[id]/history/route.ts",
+        "components/customer-surface/CustomerPortalClient.tsx",
+        "components/customer-surface/PublicBillView.tsx"
+      ]
+    },
+    "localFormatINR": {
+      "files": 6,
+      "hits": 6,
+      "sample": [
+        "components/customers/CustomerDetailPanel.tsx",
+        "components/invoices/InvoiceDetailPanel.tsx",
+        "components/items/ItemDetailPanel.tsx",
+        "components/payments/PaymentDetailPanel.tsx",
+        "components/purchases/PurchaseDetailPanel.tsx",
+        "components/suppliers/SupplierDetailPanel.tsx"
+      ]
+    },
+    "localFormatMoney": {
+      "files": 3,
+      "hits": 3,
+      "sample": [
+        "app/(app)/payments/reconciliation/page.tsx",
+        "components/candidate-portal/CandidatePortalHome.tsx",
+        "components/items/ItemMobileCard.tsx"
+      ]
+    },
+    "enInLocale": {
+      "files": 224,
+      "hits": 646,
+      "sample": [
+        "app/(app)/accounts/[id]/page.tsx",
+        "app/(app)/accounts/[id]/reconciliation/page.tsx",
+        "app/(app)/advances/page.tsx",
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/credit-approvals/page.tsx",
+        "app/(app)/credit-notes/new/page.tsx",
+        "app/(app)/credit-notes/page.tsx",
+        "app/(app)/customers/page.tsx"
+      ]
+    },
+    "quantityDisplayImport": {
+      "files": 5,
+      "hits": 5,
+      "sample": [
+        "app/(app)/dashboard/page.tsx",
+        "app/(app)/items/page.tsx",
+        "app/(app)/items/[id]/page.tsx",
+        "app/api/items/[id]/movements/route.ts",
+        "lib/reports/sales-reports.ts"
+      ]
+    },
+    "useEntityList": {
+      "files": 3,
+      "hits": 3,
+      "sample": [
+        "app/(app)/customers/page.tsx",
+        "app/(app)/invoices/page.tsx",
+        "app/(app)/items/page.tsx"
+      ]
+    },
+    "zodImport": {
+      "files": 9,
+      "hits": 9,
+      "sample": [
+        "app/api/offline-sync/replay/route.ts",
+        "lib/insights/tools.ts",
+        "lib/marketing-builder/sanitize.ts",
+        "lib/rag/actions/leads.ts",
+        "lib/rag/actions/recommend.ts",
+        "lib/rag/admin.ts",
+        "lib/rag/rewrite.ts",
+        "lib/sales-funnel/definition.ts"
+      ]
+    },
+    "skeletonClass": {
+      "files": 24,
+      "hits": 36,
+      "sample": [
+        "app/(app)/bank/reconciliation/page.tsx",
+        "app/(app)/layout.tsx",
+        "app/(app)/purchases/page.tsx",
+        "app/(app)/reports/gst/reconciliation/page.tsx",
+        "app/(app)/tools/image-background-remover/page.tsx",
+        "app/(app)/whatsapp/campaigns/page.tsx",
+        "app/admin/page.tsx",
+        "app/admin/plans/page.tsx"
+      ]
+    },
+    "emptyCopy": {
+      "files": 118,
+      "hits": 131,
+      "sample": [
+        "app/(app)/advances/page.tsx",
+        "app/(app)/contra/page.tsx",
+        "app/(app)/debug/sqlite/page.tsx",
+        "app/(app)/employees/page.tsx",
+        "app/(app)/employees/recruitment/candidates/[id]/page.tsx",
+        "app/(app)/employees/recruitment/jobs/[id]/page.tsx",
+        "app/(app)/employees/recruitment/page.tsx",
+        "app/(app)/expenses/categories/page.tsx"
+      ]
+    }
+  },
+  "duplicateExportNames": 13
+}

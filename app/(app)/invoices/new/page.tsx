@@ -317,7 +317,7 @@ function NewInvoiceContent() {
   const bt = useBluetoothPrinter();
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
-  const posAllowed = hasFeature('settings_pos_mode');
+  const posAllowed = usePlanFeature('settings_pos_mode');
   const ewayAllowed = usePlanFeature('eway_bill');
 
   // All state declarations first
@@ -1160,7 +1160,7 @@ function NewInvoiceContent() {
   const handleGlobalBarcodeScan = useCallback(async (barcode: string) => {
     if (!business?.id) return;
     try {
-      const res = await fetch(`/api/items/search?business_id=${business.id}&q=${encodeURIComponent(barcode)}`);
+      const res = await fetch(`/api/items/search?business_id=${business.id}&q=${encodeURIComponent(barcode)}&scan=1`);
       if (res.ok) {
         const data = await res.json(), foundItems = data.items || [];
         if (foundItems.length === 1) {

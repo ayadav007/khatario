@@ -19,7 +19,8 @@ describe('featureIdForPath', () => {
   it('gates the matching API', () => {
     expect(featureIdForPath('/api/credit-notes')).toBe('sales_credit_notes');
     expect(featureIdForPath('/api/accounts/groups')).toBe('accounting_chart');
-    expect(featureIdForPath('/api/whatsapp/send')).toBe('settings_whatsapp');
+    expect(featureIdForPath('/api/whatsapp/send')).toBe('integration_whatsapp_manual');
+    expect(featureIdForPath('/whatsapp/send-message')).toBe('integration_whatsapp_manual');
     expect(featureIdForPath('/api/whatsapp/status')).toBeNull();
   });
 });

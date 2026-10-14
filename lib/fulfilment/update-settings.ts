@@ -17,6 +17,10 @@ export interface OrderUpdateSettings {
   /** Paid orders older than this, not yet dispatched, are flagged and can alert the merchant. */
   dispatchSlaHours: number;
   merchantDispatchAlert: boolean;
+  /** Manual bills with a shipping address start delivery tracking on their own. */
+  autoTrackShippedBills: boolean;
+  /** Tell the buyer once when a shipped parcel has not moved for this many days (0 = off). */
+  stuckNoticeDays: number;
 }
 
 export const DEFAULT_ORDER_UPDATE_SETTINGS: OrderUpdateSettings = {
@@ -32,6 +36,8 @@ export const DEFAULT_ORDER_UPDATE_SETTINGS: OrderUpdateSettings = {
   },
   dispatchSlaHours: 24,
   merchantDispatchAlert: false,
+  autoTrackShippedBills: true,
+  stuckNoticeDays: 3,
 };
 
 export const NOTIFY_STATUS_HELP: Record<NotifyStatus, string> = {
@@ -53,9 +59,13 @@ export function sanitizeOrderUpdateSettings(raw: unknown): OrderUpdateSettings {
     if (typeof notifyRaw[s] === 'boolean') notify[s] = notifyRaw[s] as boolean;
   }
   const hours = Number(r.dispatchSlaHours);
+  const stuck = Number(r.stuckNoticeDays);
   return {
     notify,
     dispatchSlaHours: Number.isFinite(hours) && hours >= 1 && hours <= 720 ? Math.round(hours) : 24,
     merchantDispatchAlert: r.merchantDispatchAlert === true,
+    autoTrackShippedBills: r.autoTrackShippedBills !== false,
+    stuckNoticeDays:
+      r.stuckNoticeDays === undefined ? DEFAULT_ORDER_UPDATE_SETTINGS.stuckNoticeDays : Number.isFinite(stuck) && stuck >= 0 && stuck <= 30 ? Math.round(stuck) : 3,
   };
 }

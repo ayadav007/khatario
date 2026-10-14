@@ -159,7 +159,7 @@ export function PurchaseItemPickerScreen() {
     try {
       const wh = warehouseId ? `&warehouse_id=${encodeURIComponent(warehouseId)}` : '';
       const res = await fetch(
-        `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(code)}&limit=20${wh}`,
+        `/api/items/search?business_id=${business.id}&q=${encodeURIComponent(code)}&limit=20&scan=1${wh}`,
       );
       const data = await res.json();
       const found: ItemRow[] = Array.isArray(data.items) ? data.items : [];

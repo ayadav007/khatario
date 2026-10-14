@@ -153,7 +153,7 @@ export async function assertPaidPlan(businessId: string, featureKey: string): Pr
  * Legacy keys are normalized to canonical form first
  */
 export function resolveRegistryFeatureId(featureKey: string): string {
-  // Normalize to canonical key first
+  // Normalize to canonical key first (includes legacy aliases such as pos_mode).
   const canonicalKey = normalizeFeatureKey(featureKey);
   
   // Map canonical keys to Feature Registry IDs (if different)

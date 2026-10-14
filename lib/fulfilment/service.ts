@@ -12,7 +12,7 @@ import {
   type FulfilmentStatus,
 } from './rules';
 
-export type FulfilmentActor = 'staff' | 'webhook' | 'system' | 'bot';
+export type FulfilmentActor = 'staff' | 'webhook' | 'system' | 'bot' | 'rider';
 
 export interface FulfilmentRow {
   id: string;
@@ -58,6 +58,17 @@ export interface FulfilmentShipping {
   pincode?: string | null;
   packages?: number | null;
   weightKg?: number | null;
+  /** Box size in cm (courier volumetric weight). */
+  lengthCm?: number | null;
+  breadthCm?: number | null;
+  heightCm?: number | null;
+}
+
+/** A box side in cm, 0.1 to 300, one decimal; null when unusable. */
+export function cleanDimCm(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0 || n > 300) return null;
+  return Math.round(n * 10) / 10;
 }
 
 /** Parcel weight in kg, 10 g to 500 kg, rounded to grams; null when unusable. */
@@ -82,6 +93,9 @@ export async function setFulfilmentShipping(
             ship_pincode = CASE WHEN $5::boolean THEN $6::varchar ELSE ship_pincode END,
             packages = COALESCE($7::smallint, packages),
             weight_kg = COALESCE($8::numeric, weight_kg),
+            length_cm = COALESCE($9::numeric, length_cm),
+            breadth_cm = COALESCE($10::numeric, breadth_cm),
+            height_cm = COALESCE($11::numeric, height_cm),
             updated_at = NOW()
       WHERE id = $1 AND business_id = $2`,
     [
@@ -93,6 +107,9 @@ export async function setFulfilmentShipping(
       pin ?? null,
       packages ?? null,
       weight,
+      input.lengthCm != null ? cleanDimCm(input.lengthCm) : null,
+      input.breadthCm != null ? cleanDimCm(input.breadthCm) : null,
+      input.heightCm != null ? cleanDimCm(input.heightCm) : null,
     ],
   );
   return res.rowCount === 1;
@@ -457,7 +474,7 @@ export async function removeShipment(
 /** Marks cash on delivery as collected (once). */
 export async function markCodCollected(
   client: PoolClient,
-  input: { businessId: string; fulfilmentId: string; actorUserId?: string | null },
+  input: { businessId: string; fulfilmentId: string; actorUserId?: string | null; actorType?: FulfilmentActor },
 ): Promise<{ ok: boolean; alreadyCollected?: boolean }> {
   const res = await client.query<{ id: string; business_id: string; status: FulfilmentStatus }>(
     `UPDATE order_fulfilments
@@ -473,7 +490,7 @@ export async function markCodCollected(
     );
     return { ok: exists.rows.length > 0, alreadyCollected: Boolean(exists.rows[0]?.cod_collected_at) };
   }
-  await recordEvent(client, res.rows[0], res.rows[0].status, 'staff', input.actorUserId, 'Cash collected');
+  await recordEvent(client, res.rows[0], res.rows[0].status, input.actorType ?? 'staff', input.actorUserId, 'Cash collected');
   return { ok: true };
 }
 

@@ -186,6 +186,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/send-payment-reminders >> /var/log/khatario-cron-staging.log 2>&1
 */5 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron-staging.log 2>&1
 0 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron-staging.log 2>&1
+30 */3 * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron-staging.log 2>&1
 */15 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron-staging.log 2>&1
 */10 * * * * . /var/www/khatario/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://staging.khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron-staging.log 2>&1
 # Production (only after scripts/setup-khatario-production.sh)
@@ -196,6 +197,7 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/send-payment-reminders >> /var/log/khatario-cron.log 2>&1
 */5 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/sales-funnel >> /var/log/khatario-cron.log 2>&1
 0 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/order-dispatch-alerts >> /var/log/khatario-cron.log 2>&1
+30 */3 * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/stuck-parcels >> /var/log/khatario-cron.log 2>&1
 */15 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/whatsapp-auto-resolve >> /var/log/khatario-cron.log 2>&1
 */10 * * * * . /var/www/khatario-prod/.env.production; curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://khatario.com/api/cron/expire-sales-order-reservations >> /var/log/khatario-cron.log 2>&1
 ```
@@ -203,6 +205,8 @@ Trial expiry, trial/grace reminders (email + platform WhatsApp + in-app bell) an
 `/api/cron/whatsapp-auto-resolve` keeps the WhatsApp inbox tidy: chats owned by a removed or deactivated agent go back to Requesting, and chats an agent intervened in are resolved (handed back to the bot) once the customer has been silent for 24 hours. Businesses can switch auto-resolve off in Settings > WhatsApp > Inbox. Both steps only touch chats that still qualify, so repeated runs are safe.
 
 `/api/cron/order-dispatch-alerts` WhatsApps the owner when paid orders have waited longer than the dispatch time set on the Orders page (only for businesses that switched the alert on). Each business gets at most one alert every 20 hours, so the hourly schedule is safe.
+
+`/api/cron/stuck-parcels` tells the buyer once when a shipped parcel has not moved for the shop's "delay notice" days (Orders & delivery > Buyer updates, default 3, 0 = off). Each parcel is claimed before the message goes, so repeated runs never message twice.
 
 `/api/cron/sales-funnel` runs the WhatsApp sales funnel for Meta ad leads (Admin > Sales flow): it marks leads activated (first invoice) or converted (paid plan), then sends due follow-ups, as normal messages inside WhatsApp's 24-hour window and as approved templates outside it. Each follow-up goes at most once per lead, so repeated runs are safe. The demo video and uploaded images are stored in `storage/sales-flow` inside the app folder (override with `SALES_FLOW_MEDIA_DIR`); keep that folder across deploys.
 

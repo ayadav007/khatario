@@ -1,0 +1,535 @@
+[
+  {
+    "file": "components/ui/Button.tsx",
+    "kind": "ui-primitive",
+    "exports": [],
+    "hasVariantProp": true,
+    "hasSizeProp": true,
+    "lines": 65,
+    "directConsumers": 358,
+    "consumers": 358,
+    "pageConsumers": 196
+  },
+  {
+    "file": "components/ui/Card.tsx",
+    "kind": "ui-primitive",
+    "exports": [],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 38,
+    "directConsumers": 239,
+    "consumers": 239,
+    "pageConsumers": 170
+  },
+  {
+    "file": "components/ui/Input.tsx",
+    "kind": "ui-primitive",
+    "exports": [
+      "Input"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 63,
+    "directConsumers": 186,
+    "consumers": 186,
+    "pageConsumers": 120
+  },
+  {
+    "file": "components/layout/PageHeader.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "PageHeader"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 132,
+    "directConsumers": 87,
+    "consumers": 87,
+    "pageConsumers": 83
+  },
+  {
+    "file": "components/common/AccessDenied.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "AccessDenied"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 226,
+    "directConsumers": 65,
+    "consumers": 65,
+    "pageConsumers": 59
+  },
+  {
+    "file": "components/settings/SettingsPageShell.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "SettingsPageShell"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 44,
+    "directConsumers": 54,
+    "consumers": 54,
+    "pageConsumers": 53
+  },
+  {
+    "file": "components/layout/MobileDuplicatePageChrome.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "MobileDuplicatePageChrome"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 55,
+    "directConsumers": 47,
+    "consumers": 47,
+    "pageConsumers": 46
+  },
+  {
+    "file": "components/layout/ListPageHeader.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "ListPageHeader"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 40,
+    "directConsumers": 33,
+    "consumers": 33,
+    "pageConsumers": 32
+  },
+  {
+    "file": "components/ui/Toast.tsx",
+    "kind": "ui-primitive",
+    "exports": [
+      "Toast",
+      "ToastContainer"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 85,
+    "directConsumers": 32,
+    "consumers": 32,
+    "pageConsumers": 17
+  },
+  {
+    "file": "lib/store/store-context.tsx",
+    "kind": "lib-ui",
+    "exports": [
+      "StoreProvider"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 341,
+    "directConsumers": 26,
+    "consumers": 26,
+    "pageConsumers": 10
+  },
+  {
+    "file": "components/ui/Chip.tsx",
+    "kind": "ui-primitive",
+    "exports": [],
+    "hasVariantProp": true,
+    "hasSizeProp": false,
+    "lines": 30,
+    "directConsumers": 21,
+    "consumers": 21,
+    "pageConsumers": 16
+  },
+  {
+    "file": "lib/auth/withPageAuth.tsx",
+    "kind": "lib-ui",
+    "exports": [],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 70,
+    "directConsumers": 21,
+    "consumers": 21,
+    "pageConsumers": 18
+  },
+  {
+    "file": "components/employee-portal/EmployeePortalContext.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "EmployeePortalProvider"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 106,
+    "directConsumers": 20,
+    "consumers": 20,
+    "pageConsumers": 13
+  },
+  {
+    "file": "components/ui/Textarea.tsx",
+    "kind": "ui-primitive",
+    "exports": [
+      "Textarea"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 45,
+    "directConsumers": 17,
+    "consumers": 17,
+    "pageConsumers": 2
+  },
+  {
+    "file": "components/ui/Switch.tsx",
+    "kind": "ui-primitive",
+    "exports": [
+      "Switch"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": true,
+    "lines": 73,
+    "directConsumers": 14,
+    "consumers": 14,
+    "pageConsumers": 2
+  },
+  {
+    "file": "components/invoices/ScaledA4Preview.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "ScaledA4Preview"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 183,
+    "directConsumers": 12,
+    "consumers": 12,
+    "pageConsumers": 8
+  },
+  {
+    "file": "components/settings/business-profile/ProfileSection.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "ProfileSection",
+      "EditableCard",
+      "SummaryList"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 128,
+    "directConsumers": 12,
+    "consumers": 12,
+    "pageConsumers": 9
+  },
+  {
+    "file": "components/subscription/UpgradeModal.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "UpgradeModal"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 606,
+    "directConsumers": 12,
+    "consumers": 12,
+    "pageConsumers": 7
+  },
+  {
+    "file": "components/ui/IntlPhoneInput.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "IntlPhoneInput"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 135,
+    "directConsumers": 12,
+    "consumers": 12,
+    "pageConsumers": 8
+  },
+  {
+    "file": "components/ui/StatusBadge.tsx",
+    "kind": "shared-business",
+    "exports": [],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 118,
+    "directConsumers": 12,
+    "consumers": 12,
+    "pageConsumers": 6
+  },
+  {
+    "file": "components/ai-agent/SectionCard.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "SectionCard",
+      "FieldLabel",
+      "CharCount"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 69,
+    "directConsumers": 11,
+    "consumers": 11,
+    "pageConsumers": 0
+  },
+  {
+    "file": "components/whatsapp/ConfirmDialog.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "ConfirmDialog"
+    ],
+    "hasVariantProp": true,
+    "hasSizeProp": false,
+    "lines": 73,
+    "directConsumers": 11,
+    "consumers": 11,
+    "pageConsumers": 5
+  },
+  {
+    "file": "components/common/DeleteAction.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "DeleteAction"
+    ],
+    "hasVariantProp": true,
+    "hasSizeProp": false,
+    "lines": 132,
+    "directConsumers": 10,
+    "consumers": 10,
+    "pageConsumers": 10
+  },
+  {
+    "file": "components/invoices/composer/ui.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "Kbd",
+      "SectionLabel",
+      "Field",
+      "HeaderButton",
+      "Switch",
+      "NumberInput",
+      "GST_RATES",
+      "PAYMENT_TERMS"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 232,
+    "directConsumers": 10,
+    "consumers": 10,
+    "pageConsumers": 0
+  },
+  {
+    "file": "components/navigation/Breadcrumbs.tsx",
+    "kind": "shared-business",
+    "exports": [],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 118,
+    "directConsumers": 10,
+    "consumers": 10,
+    "pageConsumers": 8
+  },
+  {
+    "file": "components/ui/AnnotatedFormSection.tsx",
+    "kind": "ui-primitive",
+    "exports": [
+      "AnnotatedFormSection"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 28,
+    "directConsumers": 10,
+    "consumers": 10,
+    "pageConsumers": 10
+  },
+  {
+    "file": "components/whatsapp/settings/SettingsBlock.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "SettingsPageBody",
+      "SettingsBlock",
+      "ConnectLockedCard",
+      "BillingPlanLockedCard"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 119,
+    "directConsumers": 10,
+    "consumers": 10,
+    "pageConsumers": 6
+  },
+  {
+    "file": "app/(app)/invoices/mock/_components/Kbd.tsx",
+    "kind": "page-local-component",
+    "exports": [
+      "Kbd",
+      "SectionLabel"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 19,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 1
+  },
+  {
+    "file": "components/layout/SplitPaneLayout.tsx",
+    "kind": "shared-business",
+    "exports": [
+      "SplitPaneLayout"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 115,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 9
+  },
+  {
+    "file": "components/marketing/landing/LandingProductContext.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "LandingProductProvider"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 69,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 0
+  },
+  {
+    "file": "components/store/StoreShell.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "StoreShell"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 401,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 7
+  },
+  {
+    "file": "components/subscription/UpgradePrompt.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "UpgradePrompt"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 468,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 5
+  },
+  {
+    "file": "components/ui/ItemAutocomplete.tsx",
+    "kind": "shared-business",
+    "exports": [],
+    "hasVariantProp": true,
+    "hasSizeProp": false,
+    "lines": 978,
+    "directConsumers": 9,
+    "consumers": 9,
+    "pageConsumers": 5
+  },
+  {
+    "file": "components/partners/PartnerShell.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "PartnerShell"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 97,
+    "directConsumers": 8,
+    "consumers": 8,
+    "pageConsumers": 8
+  },
+  {
+    "file": "app/admin/sales-flow/_components/shared.tsx",
+    "kind": "page-local-component",
+    "exports": [
+      "State",
+      "Notice",
+      "Table",
+      "Field",
+      "LimitedInput",
+      "ListInput",
+      "Badge",
+      "LIMITS",
+      "PIPELINE_ORDER",
+      "BUSINESS_TYPE_OPTIONS",
+      "PAIN_POINT_OPTIONS"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 272,
+    "directConsumers": 7,
+    "consumers": 7,
+    "pageConsumers": 0
+  },
+  {
+    "file": "components/employee-portal/EmployeePortalLoginForm.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "EmployeePortalLoginForm",
+      "EmployeePortalUnavailable"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 369,
+    "directConsumers": 7,
+    "consumers": 7,
+    "pageConsumers": 7
+  },
+  {
+    "file": "components/marketing/landing/LandingReveal.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "LandingReveal"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 53,
+    "directConsumers": 7,
+    "consumers": 7,
+    "pageConsumers": 0
+  },
+  {
+    "file": "components/candidate-portal/CandidatePortalContext.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "CandidatePortalProvider"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": false,
+    "lines": 84,
+    "directConsumers": 6,
+    "consumers": 6,
+    "pageConsumers": 2
+  },
+  {
+    "file": "components/documents/DocumentList.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "DocumentList"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": true,
+    "lines": 205,
+    "directConsumers": 6,
+    "consumers": 6,
+    "pageConsumers": 5
+  },
+  {
+    "file": "components/documents/DocumentUploader.tsx",
+    "kind": "feature-component",
+    "exports": [
+      "DocumentUploader"
+    ],
+    "hasVariantProp": false,
+    "hasSizeProp": true,
+    "lines": 235,
+    "directConsumers": 6,
+    "consumers": 6,
+    "pageConsumers": 5
+  }
+]

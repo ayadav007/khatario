@@ -3,6 +3,7 @@ import { queryRows } from '@/lib/db';
 import { normalizeBarcode } from '@/lib/barcode-validator';
 import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { denyIfFeatureMissing, hasFeatureAccess } from '@/lib/subscription/feature-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,6 +140,16 @@ export async function GET(request: NextRequest) {
       console.log('[ItemSearchAPI] Missing query');
       return NextResponse.json({ items: [] });
     }
+
+    // Barcode matching is the advanced_barcode plan. Name, code and HSN search stay open.
+    const scan = searchParams.get('scan') === '1';
+    const barcodeAllowed = await hasFeatureAccess(businessId, 'advanced_barcode');
+    if (scan && !barcodeAllowed) {
+      const denied = await denyIfFeatureMissing(businessId, 'advanced_barcode');
+      if (denied) return denied;
+    }
+    const barcodeOr = barcodeAllowed ? 'i.barcode = $3 OR i.barcode ILIKE $2 OR' : '';
+    const variantBarcodeOr = barcodeAllowed ? 'iv2.barcode = $3 OR iv2.barcode ILIKE $2 OR' : '';
 
     // Normalize barcode for search (remove spaces, etc.) to match how barcodes are stored
     const normalizedQuery = normalizeBarcode(query);
@@ -285,12 +296,11 @@ export async function GET(request: NextRequest) {
          AND (
            i.name ILIKE $2 OR 
            i.code ILIKE $2 OR 
-           i.barcode = $3 OR
-           i.barcode ILIKE $2 OR
+           ${barcodeOr}
            COALESCE(i.hsn_sac, '') ILIKE $2 OR
            EXISTS (
              SELECT 1 FROM item_variants iv2 
-             WHERE iv2.item_id = i.id AND (iv2.barcode = $3 OR iv2.barcode ILIKE $2 OR COALESCE(iv2.sku, '') ILIKE $2)
+             WHERE iv2.item_id = i.id AND (${variantBarcodeOr} COALESCE(iv2.sku, '') ILIKE $2)
            )
          )
          AND i.deleted_at IS NULL
@@ -338,9 +348,8 @@ export async function GET(request: NextRequest) {
              WHERE i.business_id = $1 
              AND (
                i.name ILIKE $2 OR 
-               i.code ILIKE $2 OR 
-               i.barcode = $3 OR
-               i.barcode ILIKE $2
+               i.code ILIKE $2
+               ${barcodeAllowed ? 'OR i.barcode = $3 OR i.barcode ILIKE $2' : ''}
              )
              AND (i.is_active IS NULL OR i.is_active = true)
              ORDER BY 
@@ -379,9 +388,8 @@ export async function GET(request: NextRequest) {
                WHERE i.business_id = $1 
                AND (
                  i.name ILIKE $2 OR 
-                 i.code ILIKE $2 OR 
-                 i.barcode = $3 OR
-                 i.barcode ILIKE $2
+                 i.code ILIKE $2
+                 ${barcodeAllowed ? 'OR i.barcode = $3 OR i.barcode ILIKE $2' : ''}
                )
                AND (i.is_active IS NULL OR i.is_active = true)
                ORDER BY 

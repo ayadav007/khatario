@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getPosMode, saveParkedBill, getParkedBills, ParkedBill } from '@/lib/pos-settings';
+import { usePlanFeature } from '@/hooks/usePlanFeature';
 import { ParkedBillsDrawer } from './ParkedBillsDrawer';
 import { POSPaymentInputs } from './POSPaymentInputs';
 import { Button } from '@/components/ui/Button';
@@ -113,6 +114,7 @@ export function POSLayout({
   bluetooth,
 }: POSLayoutProps) {
   const [posMode, setPosMode] = useState(false);
+  const posAllowed = usePlanFeature('settings_pos_mode');
   const [parkedBillsOpen, setParkedBillsOpen] = useState(false);
   const [phoneSearchQuery, setPhoneSearchQuery] = useState(customerPhone || '');
   const [phoneSearchResults, setPhoneSearchResults] = useState<any[]>([]);
@@ -124,8 +126,18 @@ export function POSLayout({
   const leftPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setPosMode(getPosMode());
-  }, []);
+    const sync = () => setPosMode(posAllowed && getPosMode());
+    sync();
+    window.addEventListener('posModeChanged', sync);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pos_mode_enabled' || e.key === null) sync();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('posModeChanged', sync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [posAllowed]);
 
   // Update fixed summary position when layout changes
   useEffect(() => {

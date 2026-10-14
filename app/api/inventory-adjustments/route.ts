@@ -11,7 +11,7 @@ import {
 } from '@/lib/inventory-adjustment-service';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getAuthenticatedUserId } from '@/lib/auth-helpers';
 
 /**
  * GET /api/inventory-adjustments
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       gst_impact // For value adjustments
     } = body;
 
-    const created_by = body.created_by || getUserIdFromRequest(request, body);
+    const created_by = getAuthenticatedUserId(request);
 
     // Validation
     if (!business_id || !adjustment_type || !item_id || !reason_code || !adjustment_date) {

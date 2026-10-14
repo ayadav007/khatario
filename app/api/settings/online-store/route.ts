@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
            store_tagline, store_hero_image_url,
            store_min_order_amount::text,
            COALESCE(store_allow_cod, true) AS store_allow_cod,
+           store_return_window_days,
            COALESCE(store_delivery_provider, 'self') AS store_delivery_provider,
            store_theme, store_about_md, store_contact_md,
            store_privacy_md, store_refund_md, store_terms_md,
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
       store_hero_image_url: (row as { store_hero_image_url?: string | null })?.store_hero_image_url ?? null,
       store_min_order_amount: parseFloat(row?.store_min_order_amount ?? '0') || 0,
       store_allow_cod: (row as { store_allow_cod?: boolean })?.store_allow_cod !== false,
+      store_return_window_days: (row as { store_return_window_days?: number | null })?.store_return_window_days ?? 7,
       store_delivery_provider: (row as { store_delivery_provider?: string })?.store_delivery_provider ?? 'self',
       store_theme: sanitizeStoreTheme((row as { store_theme?: unknown })?.store_theme),
       store_about_md: (row as { store_about_md?: string | null })?.store_about_md ?? null,
@@ -110,7 +112,7 @@ export async function PATCH(request: NextRequest) {
     store_allow_cod, store_delivery_provider, store_theme, store_about_md, store_contact_md,
     store_privacy_md, store_refund_md, store_terms_md,
     store_shiprocket_email, store_shiprocket_password, store_hide_khatario_badge,
-    store_promo_sheet, store_shiprocket_webhook_token,
+    store_promo_sheet, store_shiprocket_webhook_token, store_return_window_days,
   } = body;
 
   if (
@@ -198,6 +200,11 @@ export async function PATCH(request: NextRequest) {
     idx++;
     sets.push(`store_allow_cod = $${idx}`);
     params.push(Boolean(store_allow_cod));
+  }
+  if (store_return_window_days !== undefined) {
+    idx++;
+    sets.push(`store_return_window_days = $${idx}`);
+    params.push(Math.min(90, Math.max(0, Math.round(Number(store_return_window_days) || 0))));
   }
   if (store_delivery_provider !== undefined) {
     idx++;

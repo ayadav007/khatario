@@ -167,6 +167,13 @@ export function useSubscriptionCheck(businessId: string | undefined) {
       'multi_currency': 'advanced_multi_currency',
       'barcode_scanning': 'advanced_barcode',
       'pos_mode': 'settings_pos_mode',
+      'debit_notes': 'sales_debit_notes',
+      'credit_notes': 'sales_credit_notes',
+      'invoice_creation': 'sales_invoices',
+      'estimates_quotations': 'sales_estimates',
+      'recurring_invoices': 'sales_recurring_invoices',
+      'sales_orders': 'sales_sales_orders',
+      'template_customization': 'settings_template_customization',
     };
     const registryFeatureKey = featureKeyMapping[featureKey] || featureKey;
 

@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store/store-context';
 import { storePhoneDigits } from '@/lib/store/store-phone';
 import { sanitizeStoreTheme } from '@/lib/store/store-theme';
 import { OrderTimeline, type TimelineEvent } from '@/components/orders/OrderTimeline';
+import { StoreOrderReturn } from '@/components/store/StoreOrderReturn';
 import { FULFILMENT_STATUS_LABEL, isFulfilmentStatus } from '@/lib/fulfilment/rules';
 
 type AccountOrder = {
@@ -115,6 +116,9 @@ export default function StoreAccountPage() {
                       </a>
                     ) : null}
                   </div>
+                  {o.status === 'delivered' || o.delivery_status === 'delivered' || o.delivery_status === 'returned' ? (
+                    <StoreOrderReturn subdomain={store.store_subdomain} orderId={o.id} accent={accent} />
+                  ) : null}
                 </li>
               ))}
             </ul>

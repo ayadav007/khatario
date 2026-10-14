@@ -1,0 +1,94 @@
+[
+  {
+    "name": "Field",
+    "files": [
+      "app/admin/sales-flow/_components/shared.tsx",
+      "components/invoices/composer/ui.tsx",
+      "components/store/admin/theme-studio/studio-ui.tsx"
+    ]
+  },
+  {
+    "name": "BillToPanel",
+    "files": [
+      "app/(app)/invoices/mock/_components/CustomerPanels.tsx",
+      "components/invoices/composer/ComposerParties.tsx"
+    ]
+  },
+  {
+    "name": "DocumentViewer",
+    "files": [
+      "components/documents/DocumentViewer.tsx",
+      "components/whatsapp/conversations/DocumentViewer.tsx"
+    ]
+  },
+  {
+    "name": "ExportPanel",
+    "files": [
+      "app/(app)/invoices/mock/_components/ExportPanel.tsx",
+      "components/invoices/composer/ComposerExport.tsx"
+    ]
+  },
+  {
+    "name": "ItemPickerModal",
+    "files": [
+      "app/(app)/invoices/mock/_components/ItemPickerModal.tsx",
+      "components/invoices/composer/ComposerItemPicker.tsx"
+    ]
+  },
+  {
+    "name": "ItemsTable",
+    "files": [
+      "app/(app)/invoices/mock/_components/ItemsTable.tsx",
+      "components/invoices/composer/ComposerItemsTable.tsx"
+    ]
+  },
+  {
+    "name": "Kbd",
+    "files": [
+      "app/(app)/invoices/mock/_components/Kbd.tsx",
+      "components/invoices/composer/ui.tsx"
+    ]
+  },
+  {
+    "name": "ProfileSection",
+    "files": [
+      "components/ai-agent/ProfileSection.tsx",
+      "components/settings/business-profile/ProfileSection.tsx"
+    ]
+  },
+  {
+    "name": "SectionLabel",
+    "files": [
+      "app/(app)/invoices/mock/_components/Kbd.tsx",
+      "components/invoices/composer/ui.tsx"
+    ]
+  },
+  {
+    "name": "ShipToPanel",
+    "files": [
+      "app/(app)/invoices/mock/_components/CustomerPanels.tsx",
+      "components/invoices/composer/ComposerParties.tsx"
+    ]
+  },
+  {
+    "name": "ShortcutsDialog",
+    "files": [
+      "app/(app)/invoices/mock/_components/ShortcutsDialog.tsx",
+      "components/invoices/composer/ComposerExtras.tsx"
+    ]
+  },
+  {
+    "name": "Switch",
+    "files": [
+      "components/invoices/composer/ui.tsx",
+      "components/ui/Switch.tsx"
+    ]
+  },
+  {
+    "name": "TotalsPanel",
+    "files": [
+      "app/(app)/invoices/mock/_components/TotalsPanel.tsx",
+      "components/invoices/composer/ComposerTotals.tsx"
+    ]
+  }
+]

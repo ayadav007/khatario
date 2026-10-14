@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Khatario phone — Indian redesign (green)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #F8F3E9;
+      --surface: #FFFFFF;
+      --ink: #063F35;
+      --ink-2: #3d5c56;
+      --muted: #6d8580;
+      --line: #e4ddd0;
+      --primary: #063F35;
+      --primary-2: #0A5C4F;
+      --primary-soft: #E8F0EE;
+      --saffron: #F58220;
+      --in: #16A34A;
+      --in-soft: #DCFCE7;
+      --out: #DC2626;
+      --out-soft: #FEE2E2;
+      --amber: #D97706;
+      --amber-soft: #FEF3C7;
+      --violet: #7C3AED;
+      --violet-soft: #EDE9FE;
+      --teal: #0D9488;
+      --teal-soft: #CCFBF1;
+      --pink: #DB2777;
+      --pink-soft: #FCE7F3;
+      --wa: #25D366;
+      --upi: #6D28D9;
+      --cash: #16A34A;
+      --bankc: #0284C7;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: Inter, 'Noto Sans Devanagari', 'Noto Sans Gujarati', 'Noto Sans Tamil', 'Noto Sans Bengali', system-ui, sans-serif;
+      background: #efe8dc;
+      color: var(--ink);
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .stage {
+      display: grid;
+      grid-template-columns: 420px minmax(280px, 520px);
+      gap: 32px;
+      padding: 28px;
+      justify-content: center;
+      align-items: start;
+    }
+    .phone {
+      width: 390px;
+      height: 844px;
+      background: var(--bg);
+      border: 10px solid #111827;
+      border-radius: 38px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .status {
+      height: 40px; flex: none;
+      display: flex; align-items: flex-end; justify-content: space-between;
+      padding: 0 22px 4px; font-size: 12px; font-weight: 600;
+      background: var(--primary); color: #fff;
+    }
+    .screen { flex: 1; overflow-y: auto; position: relative; }
+    .screen::-webkit-scrollbar { width: 0; }
+
+    /* App bar */
+    .appbar {
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px 10px;
+    }
+    .appbar .avatar {
+      width: 36px; height: 36px; border-radius: 999px;
+      background: rgba(255,255,255,.18); display: grid; place-items: center;
+      font-weight: 700;
+    }
+    .appbar .biz { flex: 1; min-width: 0; }
+    .appbar .biz strong { display: block; font-size: 15px; }
+    .appbar .biz small { opacity: .8; font-size: 12px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .icon-btn {
+      width: 36px; height: 36px; border: 0; border-radius: 10px;
+      background: rgba(255,255,255,.12); color: #fff;
+      display: grid; place-items: center; position: relative;
+    }
+    .icon-btn svg { width: 19px; height: 19px; }
+    .dot { position: absolute; top: 7px; right: 8px; width: 8px; height: 8px; border-radius: 99px; background: var(--saffron); border: 2px solid var(--primary); }
+    .lang-btn {
+      height: 36px; border: 0; border-radius: 10px; padding: 0 10px;
+      background: rgba(255,255,255,.12); color: #fff;
+      display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+    }
+    .lang-btn svg { width: 16px; height: 16px; }
+
+    /* Header band with hero */
+    .band { background: var(--primary); padding: 4px 14px 64px; color: #fff; }
+    .greet { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+    .greet-sub { margin: 0; font-size: 13px; opacity: .85; }
+    .date-row { display: flex; align-items: center; gap: 6px; margin: 12px -14px 0; padding: 0 14px; overflow-x: auto; }
+    .date-row::-webkit-scrollbar { height: 0; }
+    .date-pill {
+      flex: none; white-space: nowrap;
+      border: 0; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600;
+      background: rgba(255,255,255,.14); color: #fff;
+    }
+    .date-pill.on { background: #fff; color: var(--primary); }
+
+    .pad { padding: 0 14px; }
+    .hero {
+      margin-top: -52px;
+      background: var(--surface);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 6px 20px rgba(15, 23, 42, .08);
+    }
+    .hero .label { font-size: 13px; color: var(--ink-2); font-weight: 600; margin: 0; }
+    .hero .amount { font-size: 34px; font-weight: 800; letter-spacing: -.02em; margin: 2px 0 2px; }
+    .trend { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--in); background: var(--in-soft); padding: 3px 8px; border-radius: 999px; }
+    .trend svg { width: 13px; height: 13px; }
+    .hero .meta { font-size: 12px; color: var(--muted); margin-left: 6px; }
+    .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+    .kpi { border-radius: 12px; padding: 10px; border: 0; text-align: left; }
+    .kpi small { display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+    .kpi strong { display: block; font-size: 16px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .kpi.in { background: var(--in-soft); } .kpi.in strong { color: #15803D; }
+    .kpi.out { background: var(--out-soft); } .kpi.out strong { color: #B91C1C; }
+    .kpi.profit { background: var(--primary-soft); } .kpi.profit strong { color: var(--primary); }
+
+    .section { margin-top: 14px; background: var(--surface); border-radius: 16px; padding: 14px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .section-head h3 { margin: 0; font-size: 15px; font-weight: 700; }
+    .link { border: 0; background: none; color: var(--primary-2); font-size: 13px; font-weight: 600; padding: 0; }
+
+    /* Quick action grid */
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 6px; }
+    .qa { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; }
+    .qa .well { width: 50px; height: 50px; border-radius: 16px; display: grid; place-items: center; }
+    .qa .well svg { width: 23px; height: 23px; }
+    .qa span { font-size: 11.5px; font-weight: 600; text-align: center; line-height: 1.25; color: var(--ink); min-height: 2.5em; }
+    html[lang="ta-IN"] .qa span { font-size: 10px; letter-spacing: -.01em; }
+    .qa.primary .well { background: var(--saffron); color: #fff; box-shadow: 0 4px 10px rgba(249,115,22,.35); }
+
+    /* Payment split */
+    .bar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--line); }
+    .bar i { display: block; height: 100%; }
+    .legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .legend div { display: flex; flex-direction: column; gap: 2px; }
+    .legend small { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .legend small b { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+    .legend strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+
+    /* 7-day chart */
+    .chart { display: flex; align-items: flex-end; gap: 8px; height: 110px; padding-top: 8px; }
+    .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+    .chart .col i { width: 100%; border-radius: 6px 6px 3px 3px; background: #B7D0C8; display: block; }
+    .chart .col.today i { background: var(--primary-2); }
+    .chart .col span { font-size: 11px; color: var(--muted); font-weight: 600; }
+    .chart .col.today span { color: var(--primary); }
+
+    /* Lena / dena */
+    .twin { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .tile { background: var(--surface); border-radius: 16px; padding: 12px; border: 0; text-align: left; }
+    .tile .head { display: flex; align-items: center; gap: 8px; }
+    .tile .head .well { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; }
+    .tile .head .well svg { width: 16px; height: 16px; }
+    .tile .head small { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+    .tile strong { display: block; font-size: 20px; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+    .tile p { margin: 0; font-size: 11.5px; color: var(--ink-2); }
+    .tile.in strong { color: #15803D; } .tile.in .well { background: var(--in-soft); color: var(--in); }
+    .tile.out strong { color: #B91C1C; } .tile.out .well { background: var(--out-soft); color: var(--out); }
+    .warn-text { color: var(--amber) !important; font-weight: 600; }
+
+    /* Udhaar list */
+    .party { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .party:first-of-type { border-top: 0; }
+    .party .av { width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; font-weight: 700; font-size: 14px; flex: none; }
+    .who { flex: 1; min-width: 0; }
+    .who strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .who small { display: block; font-size: 12px; color: var(--ink-2); }
+    .party .who small.old { color: var(--out); font-weight: 600; }
+    .party .who small.old { color: var(--out); font-weight: 600; }
+    .party .amt { font-weight: 700; font-size: 14.5px; color: #B91C1C; font-variant-numeric: tabular-nums; margin-right: 4px; }
+    .wa-btn {
+      width: 38px; height: 38px; border-radius: 999px; border: 1.5px solid var(--wa); background: #fff;
+      color: #128C7E; display: grid; place-items: center; flex: none;
+    }
+    .wa-btn svg { width: 18px; height: 18px; }
+    .wa-btn.sent { background: #E7F8EE; border-color: #E7F8EE; color: #15803D; }
+    .wa-all {
+      width: 100%; height: 44px; margin-top: 10px; border: 0; border-radius: 12px;
+      background: var(--wa); color: #fff; font-weight: 700; font-size: 14px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .wa-all svg { width: 18px; height: 18px; }
+
+    /* Low stock */
+    .hscroll { display: flex; gap: 8px; overflow-x: auto; margin: 0 -14px; padding: 0 14px 2px; }
+    .hscroll::-webkit-scrollbar { height: 0; }
+    .stock { flex: none; width: 150px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+    .stock strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stock .chip { display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--amber-soft); color: #92400E; }
+    .stock .chip.zero { background: var(--out-soft); color: #991B1B; }
+    .stock button { margin-top: 8px; width: 100%; height: 32px; border-radius: 8px; border: 1px solid var(--primary-soft); background: var(--primary-soft); color: var(--primary); font-size: 12px; font-weight: 700; }
+
+    /* Recent transactions */
+    .search { width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px 0 38px; font: inherit; font-size: 16px; color: var(--ink); }
+    .search-wrap { position: relative; }
+    .search-wrap svg { position: absolute; left: 12px; top: 13px; width: 18px; height: 18px; color: var(--muted); }
+    .chips { display: flex; gap: 6px; margin: 10px 0 4px; overflow-x: auto; }
+    .chips::-webkit-scrollbar { height: 0; }
+    .chip-f { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+    .chip-f.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .av { width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; font-weight: 700; flex: none; }
+    .money { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .txn { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .txn .well { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+    .txn .well svg { width: 17px; height: 17px; }
+    .txn .who { flex: 1; min-width: 0; }
+    .txn .who strong { display: block; font-size: 14px; }
+    .txn .who small { font-size: 12px; color: var(--ink-2); }
+    .txn .right { text-align: right; }
+    .txn .right strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+    .tag.paid { background: var(--in-soft); color: #166534; }
+    .tag.unpaid { background: var(--amber-soft); color: #92400E; }
+
+    /* FAB + bottom nav */
+    .fab {
+      position: absolute; right: 16px; bottom: 86px; z-index: 3;
+      height: 52px; border: 0; border-radius: 16px; padding: 0 18px 0 14px;
+      background: var(--saffron); color: #fff; font-weight: 700; font-size: 15px;
+      display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 18px rgba(249,115,22,.4);
+    }
+    .fab svg { width: 22px; height: 22px; }
+    .bottom {
+      flex: none; height: 70px; background: var(--surface); border-top: 1px solid var(--line);
+      display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: 6px;
+    }
+    .tab { border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .tab .pillw { width: 54px; height: 30px; border-radius: 999px; display: grid; place-items: center; }
+    .tab svg { width: 21px; height: 21px; }
+    .tab.on { color: var(--primary); }
+    .tab.on .pillw { background: var(--primary-soft); }
+
+    /* Language sheet */
+    .sheet { position: absolute; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-end; z-index: 10; }
+    .sheet .panel { width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 8px 16px 20px; }
+    .handle { width: 38px; height: 4px; background: var(--line); border-radius: 99px; margin: 6px auto 14px; }
+    .sheet h3 { margin: 0 0 4px; font-size: 17px; }
+    .sheet p { margin: 0 0 12px; font-size: 13px; color: var(--ink-2); }
+    .langs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .lang { border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px; text-align: left; }
+    .lang strong { display: block; font-size: 16px; }
+    .lang small { font-size: 12px; color: var(--muted); }
+    .lang.on { border-color: var(--primary); background: var(--primary-soft); }
+    .hidden { display: none !important; }
+
+    /* Notes column */
+    .notes h1 { font-size: 20px; margin: 4px 0 6px; }
+    .notes .lede { color: #334155; font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
+    .notes .switch { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+    .notes .switch button { border: 1px solid #CBD5E1; background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+    .notes .switch button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .notes table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; font-size: 13px; }
+    .notes th, .notes td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .notes th { background: #F8FAFC; font-size: 12px; color: var(--ink-2); }
+    .notes code { font-size: 12px; background: #F1F5F9; padding: 1px 5px; border-radius: 5px; }
+    .notes h2 { font-size: 15px; margin: 20px 0 8px; }
+    .notes ul { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; color: #334155; }
+    .notes a { color: var(--primary-2); }
+    .pagebar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px 10px; background: var(--primary); color: #fff;
+    }
+    .pagebar h2 { margin: 0; font-size: 17px; flex: 1; }
+    .pagebar .lang-btn, .pagebar .icon-btn { background: rgba(255,255,255,.12); color: #fff; }
+    .list-pad { padding: 12px 14px 96px; }
+    .kind {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+      background: #ece4d6; border-radius: 12px; padding: 4px; margin-bottom: 10px;
+    }
+    .kind button {
+      height: 36px; border: 0; border-radius: 9px; background: transparent;
+      font-weight: 700; font-size: 13px; color: var(--ink-2);
+    }
+    .kind button.on { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(6,63,53,.08); }
+    .cta {
+      width: 100%; height: 48px; border: 0; border-radius: 10px;
+      background: var(--saffron); color: #fff; font-weight: 700; font-size: 15px;
+    }
+    .cta.green { background: var(--primary); }
+    .cta.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .cta.wa { background: var(--wa); }
+    .line {
+      background: var(--surface); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+    }
+    .line .top { display: flex; justify-content: space-between; gap: 8px; }
+    .line .meta { margin-top: 8px; display: flex; justify-content: space-between; align-items: center; color: var(--ink-2); font-size: 13px; }
+    .stepper { display: flex; align-items: center; gap: 8px; }
+    .stepper button {
+      width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+      background: var(--bg); font-size: 18px; color: var(--ink);
+    }
+    .add-line {
+      width: 100%; height: 44px; border-radius: 10px; border: 1px dashed #afc2be;
+      background: transparent; color: var(--primary); font-weight: 700; margin: 4px 0 16px;
+    }
+    .dock {
+      position: sticky; bottom: 0; background: var(--surface);
+      border-top: 1px solid var(--line); padding: 12px 14px 16px;
+    }
+    .dock .sum { display: flex; justify-content: space-between; align-items: baseline; }
+    .dock .sum strong { font-size: 22px; }
+    .dock .hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 16px; }
+    .method {
+      height: 44px; border-radius: 10px; border: 1px solid var(--line);
+      background: #fff; font-weight: 700;
+    }
+    .method.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .party-card {
+      width: 100%; display: flex; align-items: center; gap: 12px;
+      background: var(--surface); border: 0; border-radius: 12px;
+      padding: 12px 14px; text-align: left; margin-bottom: 12px;
+    }
+    .row-act { display: flex; align-items: center; }
+    .icon-quiet {
+      width: 36px; height: 36px; border: 0; background: transparent; color: var(--ink-2);
+      display: grid; place-items: center;
+    }
+    .icon-quiet svg { width: 18px; height: 18px; }
+    .amt.due { color: #b45309; }
+    .amt.clear { color: var(--in); }
+    .more-block h3 { font-size: 12px; color: var(--muted); margin: 14px 0 6px; letter-spacing: .04em; text-transform: uppercase; }
+    .notes .navs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+    .notes .navs button { border: 1px solid #CBD5E1; background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 600; }
+    .notes .navs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div>
+      <div class="phone" id="phone">
+        <div class="status"><span>9:41</span><span>4G ▮▮▮ 82%</span></div>
+        <div class="screen" id="screen"></div>
+        <button class="fab" id="fab"></button>
+        <nav class="bottom" id="tabs"></nav>
+        <div id="overlay"></div>
+      </div>
+    </div>
+    <article class="notes">
+      <h1>Indian fintech style, Khatario green</h1>
+      <p class="lede">Same section order as localhost:3000. Brand green #063F35, orange only on New bill. Tap a screen below, then use the phone. Language: globe on the phone, or these chips.</p>
+      <div class="navs" id="screenNav"></div>
+      <div class="switch" id="langSwitch"></div>
+      <table>
+        <thead><tr><th>Block on the phone</th><th>Matches on localhost:3000</th><th>Flutter widget</th></tr></thead>
+        <tbody>
+          <tr><td>Green app bar, greeting, date chips</td><td>Top bar + date navigator + "Welcome back"</td><td><code>AppBar</code> / <code>Container</code>, <code>ChoiceChip</code></td></tr>
+          <tr><td>Hero card: today's sale + 3 small numbers</td><td>2×2 KPI grid (sales, collection, purchases, profit)</td><td><code>Card</code>, <code>Row</code> of 3 <code>Expanded</code></td></tr>
+          <tr><td>Quick actions, 8 icon tiles</td><td>The + sheet (MobileCreateSheet)</td><td><code>GridView.count(crossAxisCount: 4)</code></td></tr>
+          <tr><td>UPI / Cash / Bank split</td><td>New, uses collection by payment mode</td><td>3 <code>Expanded</code> in a <code>Row</code>, rounded <code>ClipRRect</code></td></tr>
+          <tr><td>Last 7 days bars</td><td>Sales insights</td><td>Existing <code>dashboard_charts.dart</code></td></tr>
+          <tr><td>To collect / To pay tiles</td><td>Receivables + Payables cards</td><td><code>Row</code> of 2 <code>Card</code></td></tr>
+          <tr><td>Udhaar list + WhatsApp remind</td><td>Receivables detail</td><td><code>ListTile</code> + <code>OutlinedButton</code>, <code>url_launcher</code> wa.me</td></tr>
+          <tr><td>Low stock, horizontal</td><td>Low stock strip</td><td><code>ListView(scrollDirection: horizontal)</code></td></tr>
+          <tr><td>Recent transactions</td><td>Recent transactions feed</td><td><code>TextField</code>, <code>FilterChip</code>, <code>ListTile</code></td></tr>
+          <tr><td>Bills list + chips</td><td>/invoices: All / Draft / Final / Paid / Unpaid</td><td><code>ListTile</code> + share icon</td></tr>
+          <tr><td>New bill</td><td>/invoices/new: party, lines, sticky total</td><td>Qty <code>+/−</code>, bottom dock</td></tr>
+          <tr><td>Saved bill + Collect</td><td>Invoice detail + Record payment</td><td>Cash / UPI / Bank / Card</td></tr>
+          <tr><td>Items</td><td>/items: name, price, stock</td><td>Same row as live ItemMobileCard</td></tr>
+          <tr><td>Parties</td><td>/customers: Customers | Suppliers</td><td>Due is the second line</td></tr>
+          <tr><td>More</td><td>/more sidebar groups</td><td>Sales / Purchases / Accounts / Shop</td></tr>
+          <tr><td>Purchases</td><td>/purchases: search + status chips</td><td>Same list as Bills, money going out</td></tr>
+          <tr><td>Quotations</td><td>/estimates: All / Draft / Sent / Accepted</td><td>Convert to bill, no Collect</td></tr>
+        </tbody>
+      </table>
+      <h2>Notes</h2>
+      <ul>
+        <li>Orange is only used for "New bill". Green means money in and red means money out, everywhere.</li>
+        <li>Amounts stay in Latin digits and the Indian grouping (₹1,24,500) in every language. That is what most Indian billing apps do.</li>
+        <li>Party and item names are data, so they are not translated.</li>
+        <li>"Remind" would open WhatsApp with a pre-filled message. Nothing is sent without the owner tapping send. The prototype only marks it as sent.</li>
+        <li>The UPI / Cash / Bank split needs collection grouped by payment mode from the overview API. That is the one new number here.</li>
+        <li>Translations are a first pass and should be checked by a native speaker before shipping.</li>
+      </ul>
+    </article>
+  </div>
+
+  <script>
+    const I = {
+      globe: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+      bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+      up: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+      filePlus: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6M12 12v6M9 15h6"/>',
+      handCoins: '<path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17"/><path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.8-2.8l-4.2 3.9"/><path d="m2 16 6 6"/><circle cx="16" cy="9" r="2.9"/><circle cx="6" cy="5" r="3"/>',
+      cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2 2h3l2.7 12.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 1.9-1.6L23 6H6"/>',
+      receipt: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+      packagePlus: '<path d="M16 16h6M19 13v6"/><path d="M21 10V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l2-1.1"/><path d="m7.5 4.3 9 5.1M3.3 7 12 12l8.7-5M12 22V12"/>',
+      userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+      fileText: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6M16 13H8M16 17H8M10 9H8"/>',
+      chart: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+      down: '<path d="M12 5v14M19 12l-7 7-7-7"/>',
+      upArrow: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+      wa: '<path d="M3 21l1.6-4.6A8.5 8.5 0 1 1 8 19.6Z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1.2-1.4-1.9-.9-.8.8c-1-.4-1.8-1.2-2.2-2.2l.8-.8-.9-1.9Z"/>',
+      search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1Z"/>',
+      bills: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6M16 13H8M16 17H8"/>',
+      box: '<path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/>',
+      users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+      more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+      check: '<path d="M20 6 9 17l-5-5"/>',
+      share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4M12 2v13"/>',
+      back: '<path d="M15 18 9 12l6-6"/>'
+    };
+    const ico = (name, sw = 2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${I[name]}</svg>`;
+
+    const LANGS = [
+      { id: 'en', name: 'English', native: 'English', locale: 'en-IN' },
+      { id: 'hi', name: 'Hindi', native: 'हिंदी', locale: 'hi-IN' },
+      { id: 'mr', name: 'Marathi', native: 'मराठी', locale: 'mr-IN' },
+      { id: 'gu', name: 'Gujarati', native: 'ગુજરાતી', locale: 'gu-IN' },
+      { id: 'ta', name: 'Tamil', native: 'தமிழ்', locale: 'ta-IN' },
+      { id: 'bn', name: 'Bengali', native: 'বাংলা', locale: 'bn-IN' }
+    ];
+
+    const T = {
+      en: {
+        greet: 'Namaste, Shalini', greetSub: 'Here is how Gupta Kirana is doing',
+        today: 'Today', yesterday: 'Yesterday', week: 'This week', month: 'This month',
+        sales: "Today's sale", vsY: 'vs yesterday', bills: 'bills',
+        collected: 'Collected', purchases: 'Purchases', profit: 'Profit',
+        quick: 'Quick actions', newBill: 'New bill', collect: 'Collect money', purchase: 'Purchase', expense: 'Expense',
+        addItem: 'Add item', addParty: 'Add party', quote: 'Quotation', reports: 'Reports',
+        split: 'How you got paid today', cash: 'Cash', bank: 'Bank',
+        last7: 'Sales, last 7 days',
+        toCollect: 'To collect', toPay: 'To pay', parties: 'parties', over30: 'over 30 days',
+        udhaar: 'Udhaar, who owes you', viewAll: 'View all', remind: 'Remind', sent: 'Sent',
+        old: (n) => `${n} days old`, remindAll: 'Remind all on WhatsApp',
+        lowStock: 'Low stock', left: 'left', reorder: 'Reorder',
+        recent: 'Recent transactions', search: 'Search number or party',
+        all: 'All', invoice: 'Invoice', payment: 'Payment', purchaseChip: 'Purchase',
+        paid: 'Paid', unpaid: 'Unpaid', received: 'Received', paidOut: 'Paid out',
+        tabs: ['Home', 'Bills', 'Items', 'Parties', 'More'],
+        langTitle: 'Choose language', langSub: 'Menus change language. Amounts, party names and bills stay the same.'
+      },
+      hi: {
+        greet: 'नमस्ते, शालिनी', greetSub: 'गुप्ता किराना का आज का हाल',
+        today: 'आज', yesterday: 'कल', week: 'इस हफ़्ते', month: 'इस महीने',
+        sales: 'आज की बिक्री', vsY: 'कल से', bills: 'बिल',
+        collected: 'वसूली', purchases: 'खरीद', profit: 'मुनाफ़ा',
+        quick: 'तुरंत करें', newBill: 'नया बिल', collect: 'पैसे लें', purchase: 'खरीद', expense: 'खर्च',
+        addItem: 'सामान जोड़ें', addParty: 'पार्टी जोड़ें', quote: 'कोटेशन', reports: 'रिपोर्ट',
+        split: 'आज पैसे कैसे आए', cash: 'नकद', bank: 'बैंक',
+        last7: 'बिक्री, पिछले 7 दिन',
+        toCollect: 'लेना है', toPay: 'देना है', parties: 'पार्टी', over30: '30 दिन से ज़्यादा',
+        udhaar: 'उधार, किससे लेना है', viewAll: 'सब देखें', remind: 'याद दिलाएँ', sent: 'भेजा',
+        old: (n) => `${n} दिन पुराना`, remindAll: 'सबको WhatsApp पर याद दिलाएँ',
+        lowStock: 'कम स्टॉक', left: 'बचे', reorder: 'फिर मँगाएँ',
+        recent: 'हाल के लेन-देन', search: 'नंबर या पार्टी खोजें',
+        all: 'सब', invoice: 'बिल', payment: 'भुगतान', purchaseChip: 'खरीद',
+        paid: 'चुकता', unpaid: 'बाकी', received: 'मिला', paidOut: 'दिया',
+        tabs: ['होम', 'बिल', 'सामान', 'पार्टी', 'और'],
+        langTitle: 'भाषा चुनें', langSub: 'मेन्यू की भाषा बदलेगी। रकम, पार्टी के नाम और बिल वैसे ही रहेंगे।'
+      },
+      mr: {
+        greet: 'नमस्कार, शालिनी', greetSub: 'गुप्ता किरानाचा आजचा आढावा',
+        today: 'आज', yesterday: 'काल', week: 'हा आठवडा', month: 'हा महिना',
+        sales: 'आजची विक्री', vsY: 'कालपेक्षा', bills: 'बिले',
+        collected: 'वसुली', purchases: 'खरेदी', profit: 'नफा',
+        quick: 'झटपट कामे', newBill: 'नवीन बिल', collect: 'पैसे घ्या', purchase: 'खरेदी', expense: 'खर्च',
+        addItem: 'माल जोडा', addParty: 'पार्टी जोडा', quote: 'कोटेशन', reports: 'अहवाल',
+        split: 'आज पैसे कसे आले', cash: 'रोख', bank: 'बँक',
+        last7: 'विक्री, मागील 7 दिवस',
+        toCollect: 'येणे बाकी', toPay: 'देणे बाकी', parties: 'पार्टी', over30: '30 दिवसांपेक्षा जास्त',
+        udhaar: 'उधारी, कोणाकडून येणे', viewAll: 'सर्व पहा', remind: 'आठवण करा', sent: 'पाठवले',
+        old: (n) => `${n} दिवस जुने`, remindAll: 'सर्वांना WhatsApp वर आठवण करा',
+        lowStock: 'कमी साठा', left: 'शिल्लक', reorder: 'पुन्हा मागवा',
+        recent: 'अलीकडील व्यवहार', search: 'नंबर किंवा पार्टी शोधा',
+        all: 'सर्व', invoice: 'बिल', payment: 'पेमेंट', purchaseChip: 'खरेदी',
+        paid: 'भरले', unpaid: 'बाकी', received: 'मिळाले', paidOut: 'दिले',
+        tabs: ['होम', 'बिले', 'माल', 'पार्टी', 'अधिक'],
+        langTitle: 'भाषा निवडा', langSub: 'मेन्यूची भाषा बदलेल. रक्कम, पार्टीची नावे आणि बिले तशीच राहतील.'
+      },
+      gu: {
+        greet: 'નમસ્તે, શાલિની', greetSub: 'ગુપ્તા કિરાનાનો આજનો હિસાબ',
+        today: 'આજે', yesterday: 'ગઈકાલે', week: 'આ અઠવાડિયે', month: 'આ મહિને',
+        sales: 'આજનું વેચાણ', vsY: 'ગઈકાલ કરતાં', bills: 'બિલ',
+        collected: 'વસૂલાત', purchases: 'ખરીદી', profit: 'નફો',
+        quick: 'ઝડપી કામ', newBill: 'નવું બિલ', collect: 'પૈસા લો', purchase: 'ખરીદી', expense: 'ખર્ચ',
+        addItem: 'માલ ઉમેરો', addParty: 'પાર્ટી ઉમેરો', quote: 'ક્વોટેશન', reports: 'રિપોર્ટ',
+        split: 'આજે પૈસા કેવી રીતે આવ્યા', cash: 'રોકડ', bank: 'બેંક',
+        last7: 'વેચાણ, છેલ્લા 7 દિવસ',
+        toCollect: 'લેવાના બાકી', toPay: 'આપવાના બાકી', parties: 'પાર્ટી', over30: '30 દિવસથી વધુ',
+        udhaar: 'ઉધાર, કોની પાસેથી લેવાના', viewAll: 'બધું જુઓ', remind: 'યાદ કરાવો', sent: 'મોકલ્યું',
+        old: (n) => `${n} દિવસ જૂનું`, remindAll: 'બધાને WhatsApp પર યાદ કરાવો',
+        lowStock: 'ઓછો સ્ટોક', left: 'બાકી', reorder: 'ફરી મંગાવો',
+        recent: 'તાજેતરના વ્યવહાર', search: 'નંબર અથવા પાર્ટી શોધો',
+        all: 'બધા', invoice: 'બિલ', payment: 'ચુકવણી', purchaseChip: 'ખરીદી',
+        paid: 'ચૂકવેલ', unpaid: 'બાકી', received: 'મળ્યા', paidOut: 'આપ્યા',
+        tabs: ['હોમ', 'બિલ', 'માલ', 'પાર્ટી', 'વધુ'],
+        langTitle: 'ભાષા પસંદ કરો', langSub: 'મેનૂની ભાષા બદલાશે. રકમ, પાર્ટીના નામ અને બિલ એ જ રહેશે.'
+      },
+      ta: {
+        greet: 'வணக்கம், ஷாலினி', greetSub: 'குப்தா கிரானாவின் இன்றைய நிலவரம்',
+        today: 'இன்று', yesterday: 'நேற்று', week: 'இந்த வாரம்', month: 'இந்த மாதம்',
+        sales: 'இன்றைய விற்பனை', vsY: 'நேற்றை விட', bills: 'பில்கள்',
+        collected: 'வசூல்', purchases: 'கொள்முதல்', profit: 'லாபம்',
+        quick: 'விரைவு செயல்கள்', newBill: 'புதிய பில்', collect: 'பணம் பெறு', purchase: 'கொள்முதல்', expense: 'செலவு',
+        addItem: 'பொருள் சேர்', addParty: 'நபர் சேர்', quote: 'விலைப்புள்ளி', reports: 'அறிக்கைகள்',
+        split: 'இன்று பணம் வந்த வழி', cash: 'ரொக்கம்', bank: 'வங்கி',
+        last7: 'விற்பனை, கடந்த 7 நாட்கள்',
+        toCollect: 'வர வேண்டியது', toPay: 'கொடுக்க வேண்டியது', parties: 'நபர்கள்', over30: '30 நாட்களுக்கு மேல்',
+        udhaar: 'கடன், யாரிடம் வர வேண்டும்', viewAll: 'அனைத்தும்', remind: 'நினைவூட்டு', sent: 'அனுப்பியது',
+        old: (n) => `${n} நாள் பழையது`, remindAll: 'அனைவருக்கும் WhatsApp நினைவூட்டல்',
+        lowStock: 'குறைந்த இருப்பு', left: 'மீதம்', reorder: 'மீண்டும் வாங்கு',
+        recent: 'சமீபத்திய பரிவர்த்தனைகள்', search: 'எண் அல்லது பெயர் தேடு',
+        all: 'அனைத்தும்', invoice: 'பில்', payment: 'கட்டணம்', purchaseChip: 'கொள்முதல்',
+        paid: 'செலுத்தியது', unpaid: 'நிலுவை', received: 'பெற்றது', paidOut: 'கொடுத்தது',
+        tabs: ['முகப்பு', 'பில்கள்', 'பொருட்கள்', 'நபர்கள்', 'மேலும்'],
+        langTitle: 'மொழியைத் தேர்வு செய்க', langSub: 'மெனு மொழி மாறும். தொகை, பெயர்கள், பில்கள் மாறாது.'
+      },
+      bn: {
+        greet: 'নমস্কার, শালিনী', greetSub: 'গুপ্তা কিরানার আজকের হিসাব',
+        today: 'আজ', yesterday: 'গতকাল', week: 'এই সপ্তাহ', month: 'এই মাস',
+        sales: 'আজকের বিক্রি', vsY: 'গতকালের তুলনায়', bills: 'বিল',
+        collected: 'আদায়', purchases: 'কেনাকাটা', profit: 'লাভ',
+        quick: 'দ্রুত কাজ', newBill: 'নতুন বিল', collect: 'টাকা নিন', purchase: 'কেনা', expense: 'খরচ',
+        addItem: 'পণ্য যোগ', addParty: 'পার্টি যোগ', quote: 'কোটেশন', reports: 'রিপোর্ট',
+        split: 'আজ টাকা কীভাবে এল', cash: 'নগদ', bank: 'ব্যাংক',
+        last7: 'বিক্রি, গত 7 দিন',
+        toCollect: 'পাওনা', toPay: 'দেনা', parties: 'পার্টি', over30: '30 দিনের বেশি',
+        udhaar: 'বাকি, কার কাছে পাওনা', viewAll: 'সব দেখুন', remind: 'মনে করান', sent: 'পাঠানো',
+        old: (n) => `${n} দিন পুরোনো`, remindAll: 'সবাইকে WhatsApp-এ মনে করান',
+        lowStock: 'কম স্টক', left: 'বাকি', reorder: 'আবার আনুন',
+        recent: 'সাম্প্রতিক লেনদেন', search: 'নম্বর বা পার্টি খুঁজুন',
+        all: 'সব', invoice: 'বিল', payment: 'পেমেন্ট', purchaseChip: 'কেনা',
+        paid: 'পরিশোধিত', unpaid: 'বাকি', received: 'পেয়েছি', paidOut: 'দিয়েছি',
+        tabs: ['হোম', 'বিল', 'পণ্য', 'পার্টি', 'আরও'],
+        langTitle: 'ভাষা বেছে নিন', langSub: 'মেনুর ভাষা বদলাবে। টাকা, পার্টির নাম আর বিল একই থাকবে।'
+      }
+    };
+
+    const EXTRA = {
+      en: {
+        draft: 'Draft', final: 'Final', searchBill: 'Search party or bill no.', searchItem: 'Search item', searchParty: 'Name or phone',
+        customers: 'Customers', suppliers: 'Suppliers', theyOwe: 'due', youOwe: 'you owe', settled: 'Clear',
+        gst: 'GST', total: 'Total', save: 'Save', savePrint: 'Save & print', change: 'Change', walkIn: 'Walk-in customer',
+        collectNow: 'Collect', shareWa: 'Share on WhatsApp', recordPay: 'Record payment', receivedAs: 'Received as', card: 'Card',
+        itemsLabel: 'Items', stockIn: 'In stock', adjust: 'Adjust', customer: 'Customer', supplier: 'Supplier',
+        moreTitle: 'More', salesGroup: 'Sales', buyGroup: 'Purchases', accGroup: 'Accounts', shopGroup: 'Shop',
+        quotations: 'Quotations', salesOrders: 'Sales orders', creditNotes: 'Credit notes', paymentsIn: 'Payments in',
+        paymentsOut: 'Payments out', expenses: 'Expenses', ledger: 'Ledger', settings: 'Settings', printer: 'Printer',
+        chooseParty: 'Choose party', due: 'Due', unpaidBills: 'unpaid bills',
+        searchPurchase: 'Bill number or supplier', newPurchase: 'New purchase', owing: 'You owe',
+        convert: 'Convert to bill', sent: 'Sent', accepted: 'Accepted', rejected: 'Rejected',
+        expired: 'Expired', converted: 'Converted', quotePill: 'Quote', searchQuote: 'Party or quote no.'
+      },
+      hi: {
+        draft: 'ड्राफ्ट', final: 'फाइनल', searchBill: 'पार्टी या बिल नंबर', searchItem: 'सामान खोजें', searchParty: 'नाम या फ़ोन',
+        customers: 'ग्राहक', suppliers: 'सप्लायर', theyOwe: 'बाकी', youOwe: 'आप पर', settled: 'क्लियर',
+        gst: 'GST', total: 'कुल', save: 'सेव', savePrint: 'सेव और प्रिंट', change: 'बदलें', walkIn: 'वॉक-इन ग्राहक',
+        collectNow: 'वसूली', shareWa: 'WhatsApp पर भेजें', recordPay: 'पेमेंट लिखें', receivedAs: 'कैसे मिला', card: 'कार्ड',
+        itemsLabel: 'सामान', stockIn: 'स्टॉक में', adjust: 'एडजस्ट', customer: 'ग्राहक', supplier: 'सप्लायर',
+        moreTitle: 'और', salesGroup: 'सेल्स', buyGroup: 'खरीद', accGroup: 'खाते', shopGroup: 'दुकान',
+        quotations: 'कोटेशन', salesOrders: 'सेल्स ऑर्डर', creditNotes: 'क्रेडिट नोट', paymentsIn: 'पैसे आए',
+        paymentsOut: 'पैसे गए', expenses: 'खर्च', ledger: 'खाता', settings: 'सेटिंग', printer: 'प्रिंटर',
+        chooseParty: 'पार्टी चुनें', due: 'बाकी', unpaidBills: 'बिल बाकी',
+        searchPurchase: 'बिल नंबर या सप्लायर', newPurchase: 'नई खरीद', owing: 'आप पर',
+        convert: 'बिल बनाएँ', sent: 'भेजा', accepted: 'मंजूर', rejected: 'रद्द',
+        expired: 'खत्म', converted: 'बिल बना', quotePill: 'कोट', searchQuote: 'पार्टी या कोट नंबर'
+      },
+      mr: {
+        draft: 'ड्राफ्ट', final: 'फायनल', searchBill: 'पार्टी किंवा बिल क्रमांक', searchItem: 'माल शोधा', searchParty: 'नाव किंवा फोन',
+        customers: 'ग्राहक', suppliers: 'पुरवठादार', theyOwe: 'येणे', youOwe: 'देणे', settled: 'क्लियर',
+        gst: 'GST', total: 'एकूण', save: 'सेव्ह', savePrint: 'सेव्ह आणि प्रिंट', change: 'बदला', walkIn: 'वॉक-इन ग्राहक',
+        collectNow: 'वसुली', shareWa: 'WhatsApp वर पाठवा', recordPay: 'पेमेंट नोंदवा', receivedAs: 'कसे मिळाले', card: 'कार्ड',
+        itemsLabel: 'माल', stockIn: 'स्टॉकमध्ये', adjust: 'अॅडजस्ट', customer: 'ग्राहक', supplier: 'पुरवठादार',
+        moreTitle: 'अधिक', salesGroup: 'विक्री', buyGroup: 'खरेदी', accGroup: 'खाती', shopGroup: 'दुकान',
+        quotations: 'कोटेशन', salesOrders: 'सेल्स ऑर्डर', creditNotes: 'क्रेडिट नोट', paymentsIn: 'पैसे आले',
+        paymentsOut: 'पैसे गेले', expenses: 'खर्च', ledger: 'खाते', settings: 'सेटिंग', printer: 'प्रिंटर',
+        chooseParty: 'पार्टी निवडा', due: 'येणे', unpaidBills: 'बिले बाकी',
+        searchPurchase: 'बिल क्रमांक किंवा पुरवठादार', newPurchase: 'नवीन खरेदी', owing: 'तुमचे देणे',
+        convert: 'बिल बनवा', sent: 'पाठवले', accepted: 'मंजूर', rejected: 'नाकारले',
+        expired: 'संपले', converted: 'बिल झाले', quotePill: 'कोट', searchQuote: 'पार्टी किंवा कोट क्रमांक'
+      },
+      gu: {
+        draft: 'ડ્રાફ્ટ', final: 'ફાઇનલ', searchBill: 'પાર્ટી અથવા બિલ નંબર', searchItem: 'માલ શોધો', searchParty: 'નામ અથવા ફોન',
+        customers: 'ગ્રાહક', suppliers: 'સપ્લાયર', theyOwe: 'લેવાના', youOwe: 'આપવાના', settled: 'ક્લિયર',
+        gst: 'GST', total: 'કુલ', save: 'સેવ', savePrint: 'સેવ અને પ્રિન્ટ', change: 'બદલો', walkIn: 'વોક-ઇન ગ્રાહક',
+        collectNow: 'વસૂલાત', shareWa: 'WhatsApp પર મોકલો', recordPay: 'પેમેન્ટ નોંધો', receivedAs: 'કેવી રીતે મળ્યા', card: 'કાર્ડ',
+        itemsLabel: 'માલ', stockIn: 'સ્ટોકમાં', adjust: 'એડજસ્ટ', customer: 'ગ્રાહક', supplier: 'સપ્લાયર',
+        moreTitle: 'વધુ', salesGroup: 'વેચાણ', buyGroup: 'ખરીદી', accGroup: 'ખાતા', shopGroup: 'દુકાન',
+        quotations: 'ક્વોટેશન', salesOrders: 'સેલ્સ ઓર્ડર', creditNotes: 'ક્રેડિટ નોટ', paymentsIn: 'પૈસા આવ્યા',
+        paymentsOut: 'પૈસા ગયા', expenses: 'ખર્ચ', ledger: 'ખાતું', settings: 'સેટિંગ', printer: 'પ્રિન્ટર',
+        chooseParty: 'પાર્ટી પસંદ કરો', due: 'બાકી', unpaidBills: 'બિલ બાકી',
+        searchPurchase: 'બિલ નંબર અથવા સપ્લાયર', newPurchase: 'નવી ખરીદી', owing: 'આપવાના',
+        convert: 'બિલ બનાવો', sent: 'મોકલ્યું', accepted: 'સ્વીકાર્યું', rejected: 'નામંજૂર',
+        expired: 'સમાપ્ત', converted: 'બિલ થયું', quotePill: 'કોટ', searchQuote: 'પાર્ટી અથવા કોટ નંબર'
+      },
+      ta: {
+        draft: 'வரைவு', final: 'இறுதி', searchBill: 'பெயர் அல்லது பில் எண்', searchItem: 'பொருள் தேடு', searchParty: 'பெயர் அல்லது எண்',
+        customers: 'வாடிக்கையாளர்', suppliers: 'சப்ளையர்', theyOwe: 'நிலுவை', youOwe: 'கொடுக்க', settled: 'சரி',
+        gst: 'GST', total: 'மொத்தம்', save: 'சேமி', savePrint: 'சேமி & அச்சு', change: 'மாற்று', walkIn: 'நேரடி வாடிக்கையாளர்',
+        collectNow: 'வசூல்', shareWa: 'WhatsApp அனுப்பு', recordPay: 'பணம் பதிவு', receivedAs: 'எப்படி வந்தது', card: 'கார்டு',
+        itemsLabel: 'பொருட்கள்', stockIn: 'இருப்பில்', adjust: 'சரிசெய்', customer: 'வாடிக்கையாளர்', supplier: 'சப்ளையர்',
+        moreTitle: 'மேலும்', salesGroup: 'விற்பனை', buyGroup: 'கொள்முதல்', accGroup: 'கணக்கு', shopGroup: 'கடை',
+        quotations: 'விலைப்புள்ளி', salesOrders: 'சேல்ஸ் ஆர்டர்', creditNotes: 'கிரெடிட் நோட்', paymentsIn: 'பணம் வந்தது',
+        paymentsOut: 'பணம் சென்றது', expenses: 'செலவு', ledger: 'லெட்ஜர்', settings: 'அமைப்பு', printer: 'அச்சுப்பொறி',
+        chooseParty: 'நபரை தேர்வு', due: 'நிலுவை', unpaidBills: 'பில்கள் நிலுவை',
+        searchPurchase: 'பில் எண் அல்லது சப்ளையர்', newPurchase: 'புதிய கொள்முதல்', owing: 'கொடுக்க வேண்டியது',
+        convert: 'பிலாக்கு', sent: 'அனுப்பியது', accepted: 'ஏற்கப்பட்டது', rejected: 'நிராகரிப்பு',
+        expired: 'காலாவதி', converted: 'பில் ஆனது', quotePill: 'மேற்கோள்', searchQuote: 'பெயர் அல்லது மேற்கோள் எண்'
+      },
+      bn: {
+        draft: 'ড্রাফট', final: 'ফাইনাল', searchBill: 'পার্টি বা বিল নম্বর', searchItem: 'পণ্য খুঁজুন', searchParty: 'নাম বা ফোন',
+        customers: 'গ্রাহক', suppliers: 'সাপ্লায়ার', theyOwe: 'পাওনা', youOwe: 'দেনা', settled: 'ক্লিয়ার',
+        gst: 'GST', total: 'মোট', save: 'সেভ', savePrint: 'সেভ ও প্রিন্ট', change: 'বদলান', walkIn: 'ওয়াক-ইন গ্রাহক',
+        collectNow: 'আদায়', shareWa: 'WhatsApp-এ পাঠান', recordPay: 'পেমেন্ট লিখুন', receivedAs: 'কীভাবে পেলেন', card: 'কার্ড',
+        itemsLabel: 'পণ্য', stockIn: 'স্টকে', adjust: 'অ্যাডজাস্ট', customer: 'গ্রাহক', supplier: 'সাপ্লায়ার',
+        moreTitle: 'আরও', salesGroup: 'সেলস', buyGroup: 'কেনা', accGroup: 'হিসাব', shopGroup: 'দোকান',
+        quotations: 'কোটেশন', salesOrders: 'সেলস অর্ডার', creditNotes: 'ক্রেডিট নোট', paymentsIn: 'টাকা এসেছে',
+        paymentsOut: 'টাকা গেছে', expenses: 'খরচ', ledger: 'লেজার', settings: 'সেটিং', printer: 'প্রিন্টার',
+        chooseParty: 'পার্টি বেছে নিন', due: 'বাকি', unpaidBills: 'বিল বাকি',
+        searchPurchase: 'বিল নম্বর বা সাপ্লায়ার', newPurchase: 'নতুন কেনা', owing: 'আপনার দেনা',
+        convert: 'বিল করুন', sent: 'পাঠানো', accepted: 'গৃহীত', rejected: 'বাতিল',
+        expired: 'মেয়াদ শেষ', converted: 'বিল হয়েছে', quotePill: 'কোট', searchQuote: 'পার্টি বা কোট নম্বর'
+      }
+    };
+
+    const DATA = {
+      sales: 48260, salesY: 42910, billCount: 23, collected: 31200, purchases: 18600, profit: 9840,
+      split: { upi: 19800, cash: 9400, bank: 2000 },
+      week: [31200, 38400, 29800, 44100, 52600, 42910, 48260],
+      receivable: 124500, receivableParties: 14, receivableOld: 38200,
+      payable: 62300, payableParties: 5,
+      udhaar: [
+        { name: 'Ramesh Stores', amount: 12400, days: 18, color: ['#D7E8E4', '#063F35'] },
+        { name: 'Anand Tea Stall', amount: 1150, days: 34, color: ['#FCE7F3', '#BE185D'] },
+        { name: 'Mehta Provision', amount: 2860, days: 6, color: ['#EDE9FE', '#6D28D9'] },
+        { name: 'Sunita Devi', amount: 640, days: 3, color: ['#CCFBF1', '#0F766E'] }
+      ],
+      stock: [
+        { name: 'Toor dal 1 kg', qty: 4, unit: 'pcs', price: 148 },
+        { name: 'Fortune oil 1 L', qty: 0, unit: 'pcs', price: 168 },
+        { name: 'Sugar 1 kg', qty: 6, unit: 'pcs', price: 44 },
+        { name: 'Parle-G 250 g', qty: 12, unit: 'pkts', price: 25 },
+        { name: 'Basmati rice 5 kg', qty: 18, unit: 'pcs', price: 420 }
+      ],
+      txns: [
+        { kind: 'invoice', name: 'Ramesh Stores', ref: 'INV-1042', time: '10:42', amount: 1504, status: 'unpaid' },
+        { kind: 'payment', name: 'Mehta Provision', ref: 'UPI · PAY-311', time: '10:15', amount: 2200, status: 'received' },
+        { kind: 'invoice', name: 'Walk-in customer', ref: 'INV-1041', time: '09:58', amount: 386, status: 'paid' },
+        { kind: 'purchase', name: 'Sharma Wholesale', ref: 'PB-220', time: '09:20', amount: 18600, status: 'paidOut' },
+        { kind: 'invoice', name: 'City Hotel', ref: 'INV-1040', time: '09:05', amount: 6400, status: 'paid' }
+      ],
+      bills: [
+        { no: 'INV-1042', name: 'Ramesh Stores', when: 'today', amount: 1504, status: 'unpaid' },
+        { no: 'INV-1041', name: 'Walk-in customer', when: 'today', amount: 386, status: 'paid' },
+        { no: 'INV-1038', name: 'Mehta Provision', when: '11 Oct', amount: 2860, status: 'unpaid' },
+        { no: 'INV-1031', name: 'City Hotel', when: '9 Oct', amount: 6400, status: 'unpaid' },
+        { no: 'INV-1028', name: 'Sunita Devi', when: '8 Oct', amount: 640, status: 'draft' }
+      ],
+      partyList: [
+        { name: 'Ramesh Stores', kind: 'customers', hint: '98•••• 4412', amount: 12400, due: true },
+        { name: 'Mehta Provision', kind: 'customers', hint: '98•••• 2201', amount: 2860, due: true },
+        { name: 'City Hotel', kind: 'customers', hint: '98•••• 1188', amount: 0, due: false },
+        { name: 'Sunita Devi', kind: 'customers', hint: '98•••• 0091', amount: 640, due: true },
+        { name: 'Sharma Wholesale', kind: 'suppliers', hint: '98•••• 7744', amount: 18600, due: true },
+        { name: 'Agro Mills', kind: 'suppliers', hint: '98•••• 3310', amount: 9400, due: true }
+      ],
+      purchases: [
+        { no: 'PB-220', name: 'Sharma Wholesale', when: '11 Oct', amount: 18600, status: 'unpaid' },
+        { no: 'PB-214', name: 'Agro Mills', when: '8 Oct', amount: 9400, status: 'unpaid' },
+        { no: 'PB-209', name: 'Sharma Wholesale', when: '2 Oct', amount: 4200, status: 'paid' }
+      ],
+      quotes: [
+        { no: 'QT-88', name: 'City Hotel', when: 'sent', amount: 12600, status: 'sent' },
+        { no: 'QT-86', name: 'Mehta Provision', when: 'draft', amount: 3400, status: 'draft' },
+        { no: 'QT-81', name: 'Ramesh Stores', when: 'accepted', amount: 8900, status: 'accepted' }
+      ]
+    };
+
+    const SCREENS = [
+      ['today', 'Home'], ['bills', 'Bills'], ['new-bill', 'New bill'], ['bill', 'Saved bill'],
+      ['collect', 'Collect'], ['items', 'Items'], ['parties', 'Parties'], ['party', 'Party'],
+      ['more', 'More'], ['purchases', 'Purchases'], ['purchase', 'Purchase bill'],
+      ['quotations', 'Quotations'], ['quote', 'Quote']
+    ];
+    const TAB_SCREENS = ['today', 'bills', 'items', 'parties', 'more'];
+    const NESTED = ['new-bill', 'bill', 'collect', 'party', 'purchase', 'quote'];
+
+    const state = {
+      lang: 'en', range: 'today', filter: 'all', billFilter: 'unpaid', purchaseFilter: 'unpaid', quoteFilter: 'all', partyKind: 'customers',
+      sheet: null, sent: new Set(), screen: 'today', pay: 'UPI', qtyRice: 2, qtyDal: 4
+    };
+    const inr = (n) => '₹' + n.toLocaleString('en-IN');
+    const tNow = () => Object.assign({}, T[state.lang], EXTRA[state.lang]);
+
+    function pagebar(title, back) {
+      const L = LANGS.find((l) => l.id === state.lang);
+      return `<div class="pagebar">
+        ${back ? `<button class="icon-btn" data-go="${back}" aria-label="Back">${ico('back')}</button>` : `<span class="avatar">S</span>`}
+        <h2>${title}</h2>
+        <button class="lang-btn" data-act="lang">${ico('globe')}${L.native}</button>
+      </div>`;
+    }
+
+    function row(name, sub, amount, extra) {
+      const due = extra.due ? 'due' : extra.clear ? 'clear' : '';
+      return `<div class="row-act">
+        <button class="txn" style="flex:1;border:0;background:transparent;text-align:left" data-go="${extra.go || 'bill'}">
+          <span class="av" style="background:var(--primary-soft);color:var(--primary);width:38px;height:38px;border-radius:999px;display:grid;place-items:center;font-weight:700;flex:none">${name.slice(0,1)}</span>
+          <span class="who"><strong>${name}</strong><small>${sub}</small></span>
+          <span class="right"><strong class="amt ${due}">${amount}</strong>${extra.tag ? `<span class="tag ${extra.tag}">${extra.tagLabel}</span>` : ''}</span>
+        </button>
+        ${extra.share ? `<button class="icon-quiet" aria-label="Share">${ico('share')}</button>` : ''}
+      </div>`;
+    }
+
+    function homeHtml(t, L) {
+      const now = new Date(2026, 9, 13);
+      const dateText = new Intl.DateTimeFormat(L.locale, { weekday: 'short', day: 'numeric', month: 'short' }).format(now);
+      const dayNames = Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(L.locale, { weekday: 'narrow' }).format(new Date(2026, 9, 7 + i)));
+      const growth = Math.round(((DATA.sales - DATA.salesY) / DATA.salesY) * 100);
+      const s = DATA.split; const sTotal = s.upi + s.cash + s.bank;
+      const maxW = Math.max(...DATA.week);
+      const qa = [
+        ['filePlus', t.newBill, 'primary', '', 'new-bill'],
+        ['handCoins', t.collect, '', 'background:var(--in-soft);color:var(--in)', 'collect'],
+        ['cart', t.purchase, '', 'background:var(--primary-soft);color:var(--primary-2)', 'more'],
+        ['receipt', t.expense, '', 'background:var(--out-soft);color:var(--out)', 'more'],
+        ['packagePlus', t.addItem, '', 'background:var(--amber-soft);color:var(--amber)', 'items'],
+        ['userPlus', t.addParty, '', 'background:var(--violet-soft);color:var(--violet)', 'parties'],
+        ['fileText', t.quote, '', 'background:var(--teal-soft);color:var(--teal)', 'more'],
+        ['chart', t.reports, '', 'background:var(--pink-soft);color:var(--pink)', 'more']
+      ];
+      const txnStyle = {
+        invoice: ['bills', 'background:var(--primary-soft);color:var(--primary-2)', t.invoice],
+        payment: ['down', 'background:var(--in-soft);color:var(--in)', t.payment],
+        purchase: ['upArrow', 'background:var(--out-soft);color:var(--out)', t.purchaseChip]
+      };
+      const txns = DATA.txns.filter((x) => state.filter === 'all' || x.kind === state.filter);
+      return `
+        <div class="appbar">
+          <span class="avatar">S</span>
+          <span class="biz"><strong>Gupta Kirana</strong><small>${dateText}</small></span>
+          <button class="lang-btn" data-act="lang">${ico('globe')}${L.native}</button>
+          <button class="icon-btn">${ico('bell')}<i class="dot"></i></button>
+          <button class="icon-btn">${ico('settings')}</button>
+        </div>
+        <div class="band">
+          <p class="greet">${t.greet}</p>
+          <p class="greet-sub">${t.greetSub}</p>
+          <div class="date-row">
+            ${['today', 'yesterday', 'week', 'month'].map((r) => `<button class="date-pill ${state.range === r ? 'on' : ''}" data-range="${r}">${t[r]}</button>`).join('')}
+          </div>
+        </div>
+        <div class="pad">
+          <div class="hero">
+            <p class="label">${t.sales}</p>
+            <p class="amount">${inr(DATA.sales)}</p>
+            <span class="trend">${ico('up', 2.4)}+${growth}% ${t.vsY}</span><span class="meta">${DATA.billCount} ${t.bills}</span>
+            <div class="kpis">
+              <button class="kpi in"><small>${t.collected}</small><strong>${inr(DATA.collected)}</strong></button>
+              <button class="kpi out"><small>${t.purchases}</small><strong>${inr(DATA.purchases)}</strong></button>
+              <button class="kpi profit"><small>${t.profit}</small><strong>${inr(DATA.profit)}</strong></button>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>${t.quick}</h3></div>
+            <div class="grid4">
+              ${qa.map(([icon, label, cls, style, go]) => `<button class="qa ${cls}" data-go="${go}"><span class="well" style="${style}">${ico(icon)}</span><span>${label}</span></button>`).join('')}
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>${t.split}</h3><strong style="font-size:15px">${inr(sTotal)}</strong></div>
+            <div class="bar">
+              <i style="width:${(s.upi / sTotal) * 100}%;background:var(--upi)"></i>
+              <i style="width:${(s.cash / sTotal) * 100}%;background:var(--cash)"></i>
+              <i style="width:${(s.bank / sTotal) * 100}%;background:var(--bankc)"></i>
+            </div>
+            <div class="legend">
+              <div><small><b style="background:var(--upi)"></b>UPI</small><strong>${inr(s.upi)}</strong></div>
+              <div><small><b style="background:var(--cash)"></b>${t.cash}</small><strong>${inr(s.cash)}</strong></div>
+              <div><small><b style="background:var(--bankc)"></b>${t.bank}</small><strong>${inr(s.bank)}</strong></div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>${t.last7}</h3><button class="link" data-go="more">${t.reports}</button></div>
+            <div class="chart">
+              ${DATA.week.map((v, i) => `<div class="col ${i === 6 ? 'today' : ''}"><i style="height:${Math.round((v / maxW) * 82)}px"></i><span>${dayNames[i]}</span></div>`).join('')}
+            </div>
+          </div>
+          <div class="twin">
+            <button class="tile in" data-go="parties">
+              <span class="head"><span class="well">${ico('down', 2.4)}</span><small>${t.toCollect}</small></span>
+              <strong>${inr(DATA.receivable)}</strong>
+              <p>${DATA.receivableParties} ${t.parties}</p>
+              <p class="warn-text">${inr(DATA.receivableOld)} ${t.over30}</p>
+            </button>
+            <button class="tile out" data-go="parties">
+              <span class="head"><span class="well">${ico('upArrow', 2.4)}</span><small>${t.toPay}</small></span>
+              <strong>${inr(DATA.payable)}</strong>
+              <p>${DATA.payableParties} ${t.parties}</p>
+            </button>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>${t.udhaar}</h3><button class="link" data-go="parties">${t.viewAll}</button></div>
+            ${DATA.udhaar.map((p, i) => {
+              const sent = state.sent.has(i);
+              return `<div class="party">
+                <span class="av" style="background:${p.color[0]};color:${p.color[1]}">${p.name.slice(0, 1)}</span>
+                <span class="who"><strong>${p.name}</strong><small class="${p.days > 30 ? 'old' : ''}">${t.old(p.days)}</small></span>
+                <span class="amt">${inr(p.amount)}</span>
+                <button class="wa-btn ${sent ? 'sent' : ''}" data-remind="${i}" aria-label="${sent ? t.sent : t.remind}">${ico(sent ? 'check' : 'wa', 2.2)}</button>
+              </div>`;
+            }).join('')}
+            <button class="wa-all" data-remind="all">${ico('wa', 2.2)}${t.remindAll}</button>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>${t.lowStock}</h3><button class="link" data-go="items">${t.viewAll}</button></div>
+            <div class="hscroll">
+              ${DATA.stock.slice(0, 4).map((it) => `<div class="stock">
+                <strong>${it.name}</strong>
+                <span class="chip ${it.qty === 0 ? 'zero' : ''}">${it.qty} ${it.unit} ${t.left}</span>
+                <button data-go="items">${t.reorder}</button>
+              </div>`).join('')}
+            </div>
+          </div>
+          <div class="section" style="margin-bottom:96px">
+            <div class="section-head"><h3>${t.recent}</h3></div>
+            <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.search}" /></div>
+            <div class="chips">
+              ${[['all', t.all], ['invoice', t.invoice], ['payment', t.payment], ['purchase', t.purchaseChip]].map(([id, label]) => `<button class="chip-f ${state.filter === id ? 'on' : ''}" data-filter="${id}">${label}</button>`).join('')}
+            </div>
+            ${txns.map((x) => {
+              const [icon, style, kindLabel] = txnStyle[x.kind];
+              const tagCls = x.status === 'unpaid' ? 'unpaid' : 'paid';
+              const color = x.kind === 'payment' ? 'color:#15803D' : x.kind === 'purchase' ? 'color:#B91C1C' : '';
+              return `<button class="txn" style="width:100%;border:0;background:transparent;text-align:left" data-go="${x.kind === 'invoice' ? 'bill' : 'parties'}">
+                <span class="well" style="${style}">${ico(icon)}</span>
+                <span class="who"><strong>${x.name}</strong><small>${kindLabel} · ${x.ref} · ${x.time}</small></span>
+                <span class="right"><strong style="${color}">${inr(x.amount)}</strong><span class="tag ${tagCls}">${t[x.status] || EXTRA.en[x.status] || x.status}</span></span>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+
+    function billsHtml(t) {
+      const chips = [['unpaid', t.unpaid], ['today', t.today], ['all', t.all], ['draft', t.draft], ['paid', t.paid]];
+      const list = DATA.bills.filter((b) => {
+        if (state.billFilter === 'all') return true;
+        if (state.billFilter === 'today') return b.when === 'today';
+        return b.status === state.billFilter;
+      });
+      return pagebar(t.tabs[1]) + `<div class="list-pad">
+        <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.searchBill}" /></div>
+        <div class="chips">${chips.map(([id, label]) => `<button class="chip-f ${state.billFilter === id ? 'on' : ''}" data-bfilter="${id}">${label}</button>`).join('')}</div>
+        <div class="section" style="padding:0 4px">${list.map((b) => row(b.name, `${b.no} · ${b.when}`, inr(b.amount), { go: 'bill', due: b.status === 'unpaid', tag: b.status === 'unpaid' ? 'unpaid' : 'paid', tagLabel: t[b.status] || t.draft, share: true })).join('')}</div>
+      </div>`;
+    }
+
+    function newBillHtml(t) {
+      const rice = state.qtyRice * 420;
+      const dal = state.qtyDal * 148;
+      const tax = Math.round((rice + dal) * 0.05);
+      const total = rice + dal + tax;
+      const items = (state.qtyRice > 0 ? 1 : 0) + (state.qtyDal > 0 ? 1 : 0);
+      return pagebar(t.newBill, 'today') + `
+        <button class="party-card" data-sheet="party" style="margin:12px 14px;width:calc(100% - 28px)">
+          <span class="av" style="background:var(--primary-soft);color:var(--primary);width:40px;height:40px;border-radius:999px;display:grid;place-items:center;font-weight:700">R</span>
+          <span class="who"><strong>Ramesh Stores</strong><small>${t.due} ${inr(12400)} · GST 27AAAAA0000A1Z5</small></span>
+          <span class="link">${t.change}</span>
+        </button>
+        <div class="pad">
+          ${state.qtyRice ? `<div class="line"><div class="top"><strong>Basmati rice 5 kg</strong><span class="money">${inr(rice)}</span></div><div class="meta"><span>${t.gst} 5% · ${inr(420)}</span><span class="stepper"><button data-qty="rice" data-dir="-1">−</button><span>${state.qtyRice}</span><button data-qty="rice" data-dir="1">+</button></span></div></div>` : ''}
+          ${state.qtyDal ? `<div class="line"><div class="top"><strong>Toor dal 1 kg</strong><span class="money">${inr(dal)}</span></div><div class="meta"><span>${t.gst} 5% · ${inr(148)}</span><span class="stepper"><button data-qty="dal" data-dir="-1">−</button><span>${state.qtyDal}</span><button data-qty="dal" data-dir="1">+</button></span></div></div>` : ''}
+          <button class="add-line" data-sheet="item">+ ${t.addItem}</button>
+        </div>
+        <div class="dock">
+          <div class="hint">${items} ${t.itemsLabel.toLowerCase()} · ${t.gst} ${inr(tax)}</div>
+          <div class="sum"><span>${t.total}</span><strong>${inr(total)}</strong></div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="cta ghost" style="flex:1" data-go="bills">${t.save}</button>
+            <button class="cta green" style="flex:1.4" data-go="bill">${t.savePrint}</button>
+          </div>
+        </div>`;
+    }
+
+    function billHtml(t) {
+      return pagebar('INV-1042', 'bills') + `<div class="list-pad">
+        <div class="section">
+          <strong>Ramesh Stores</strong>
+          <p class="kicker" style="margin:4px 0 0;color:var(--ink-2);font-size:13px">13 Oct 2026 · Gupta Kirana</p>
+          <span class="tag unpaid" style="display:inline-block;margin-top:8px">${t.unpaid}</span>
+        </div>
+        <div class="section" style="padding:0 4px">
+          ${row('Basmati rice 5 kg', `2 × ${inr(420)}`, inr(840), { go: 'bill' })}
+          ${row('Toor dal 1 kg', `4 × ${inr(148)}`, inr(592), { go: 'bill' })}
+          ${row(t.gst + ' 5%', '', inr(72), { go: 'bill' })}
+        </div>
+        <p style="text-align:right;font-size:28px;font-weight:800;margin:16px 0">${inr(1504)}</p>
+        <button class="cta green" data-go="collect">${t.collectNow} ${inr(1504)}</button>
+        <button class="cta ghost" style="margin-top:8px">${t.shareWa}</button>
+      </div>`;
+    }
+
+    function collectHtml(t) {
+      return pagebar(t.collectNow, 'bill') + `<div class="list-pad">
+        <p style="margin:0;color:var(--ink-2)">Ramesh Stores · INV-1042</p>
+        <p style="font-size:32px;font-weight:800;margin:6px 0 14px">${inr(1504)}</p>
+        <label style="font-size:13px;font-weight:700">${t.receivedAs}</label>
+        <div class="methods">
+          ${['Cash', 'UPI', 'Bank', t.card].map((name, i) => {
+            const key = ['Cash', 'UPI', 'Bank', 'Card'][i];
+            return `<button class="method ${state.pay === key ? 'on' : ''}" data-pay="${key}">${name}</button>`;
+          }).join('')}
+        </div>
+        <button class="cta green" data-go="today">${t.recordPay}</button>
+      </div>`;
+    }
+
+    function itemsHtml(t) {
+      return pagebar(t.tabs[2]) + `<div class="list-pad">
+        <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.searchItem}" /></div>
+        <div class="chips">
+          <button class="chip-f on">${t.lowStock}</button>
+          <button class="chip-f">${t.all}</button>
+        </div>
+        <div class="section" style="padding:0 4px">
+          ${DATA.stock.map((it) => row(it.name, `${it.qty <= 6 ? t.lowStock : t.stockIn} · ${it.qty} ${it.unit} · ${t.gst} 5%`, inr(it.price), { go: 'new-bill', due: it.qty === 0 })).join('')}
+        </div>
+      </div>`;
+    }
+
+    function partiesHtml(t) {
+      const list = DATA.partyList.filter((p) => p.kind === state.partyKind);
+      return pagebar(t.tabs[3]) + `<div class="list-pad">
+        <div class="kind">
+          <button class="${state.partyKind === 'customers' ? 'on' : ''}" data-kind="customers">${t.customers}</button>
+          <button class="${state.partyKind === 'suppliers' ? 'on' : ''}" data-kind="suppliers">${t.suppliers}</button>
+        </div>
+        <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.searchParty}" /></div>
+        <div class="section" style="padding:0 4px;margin-top:10px">
+          ${list.map((p) => {
+            const sub = (p.kind === 'customers' ? t.customer : t.supplier) + ' · ' + (p.amount ? (p.kind === 'suppliers' ? t.youOwe : t.theyOwe) : t.settled);
+            return row(p.name, sub, p.amount ? inr(p.amount) : t.settled, { go: 'party', due: !!p.amount, clear: !p.amount });
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    function partyHtml(t) {
+      return pagebar('Ramesh Stores', 'parties') + `<div class="list-pad">
+        <p style="margin:0;color:var(--ink-2)">${t.customer} · 98•••• 4412</p>
+        <p style="font-size:28px;font-weight:800;color:#b45309;margin:6px 0 12px">${inr(12400)} ${t.due}</p>
+        <button class="cta green" data-go="collect">${t.collectNow}</button>
+        <button class="cta ghost" style="margin-top:8px" data-go="new-bill">${t.newBill}</button>
+        <p style="margin:18px 0 8px;font-weight:700">${t.recent}</p>
+        <div class="section" style="padding:0 4px">
+          ${row('INV-1042', t.today + ' · ' + t.unpaid, inr(1504), { go: 'bill', due: true, tag: 'unpaid', tagLabel: t.unpaid })}
+          ${row('INV-1004', '2 Oct · ' + t.paid, inr(2200), { go: 'bill', tag: 'paid', tagLabel: t.paid })}
+        </div>
+      </div>`;
+    }
+
+    function purchasesHtml(t) {
+      const chips = [['unpaid', t.unpaid], ['all', t.all], ['draft', t.draft], ['paid', t.paid]];
+      const list = DATA.purchases.filter((b) => state.purchaseFilter === 'all' || b.status === state.purchaseFilter);
+      return pagebar(t.purchases, 'more') + `<div class="list-pad">
+        <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.searchPurchase}" /></div>
+        <div class="chips">${chips.map(([id, label]) => `<button class="chip-f ${state.purchaseFilter === id ? 'on' : ''}" data-pfilter="${id}">${label}</button>`).join('')}</div>
+        <div class="section" style="padding:0 4px">${list.map((b) => row(b.name, `${b.no} · ${b.when}`, inr(b.amount), { go: 'purchase', due: b.status === 'unpaid', tag: b.status === 'unpaid' ? 'unpaid' : 'paid', tagLabel: t[b.status] })).join('')}</div>
+      </div>`;
+    }
+
+    function purchaseHtml(t) {
+      return pagebar('PB-220', 'purchases') + `<div class="list-pad">
+        <div class="section">
+          <strong>Sharma Wholesale</strong>
+          <p style="margin:4px 0 0;color:var(--ink-2);font-size:13px">11 Oct 2026 · ${t.supplier}</p>
+          <span class="tag unpaid" style="display:inline-block;margin-top:8px">${t.unpaid}</span>
+        </div>
+        <div class="section" style="padding:0 4px">
+          ${row('Basmati rice 5 kg', `20 × ${inr(380)}`, inr(7600), { go: 'purchase' })}
+          ${row('Toor dal 1 kg', `50 × ${inr(110)}`, inr(5500), { go: 'purchase' })}
+          ${row(t.gst + ' 5%', '', inr(655), { go: 'purchase' })}
+        </div>
+        <p style="text-align:right;font-size:28px;font-weight:800;margin:16px 0">${inr(18600)}</p>
+        <p style="color:#b45309;font-weight:700;margin:0 0 12px">${t.owing}</p>
+        <button class="cta ghost" data-go="purchases">${t.shareWa}</button>
+      </div>`;
+    }
+
+    function quotationsHtml(t) {
+      const chips = [['all', t.all], ['draft', t.draft], ['sent', t.sent], ['accepted', t.accepted]];
+      const list = DATA.quotes.filter((b) => state.quoteFilter === 'all' || b.status === state.quoteFilter);
+      return pagebar(t.quotations, 'more') + `<div class="list-pad">
+        <div class="search-wrap">${ico('search')}<input class="search" placeholder="${t.searchQuote}" /></div>
+        <div class="chips">${chips.map(([id, label]) => `<button class="chip-f ${state.quoteFilter === id ? 'on' : ''}" data-qfilter="${id}">${label}</button>`).join('')}</div>
+        <div class="section" style="padding:0 4px">${list.map((b) => row(b.name, `${b.no} · ${t[b.status] || b.status}`, inr(b.amount), { go: 'quote', tag: b.status === 'draft' ? 'unpaid' : 'paid', tagLabel: t.quotePill })).join('')}</div>
+      </div>`;
+    }
+
+    function quoteHtml(t) {
+      return pagebar('QT-88', 'quotations') + `<div class="list-pad">
+        <div class="section">
+          <strong>City Hotel</strong>
+          <p style="margin:4px 0 0;color:var(--ink-2);font-size:13px">12 Oct 2026 · ${t.quotePill}</p>
+          <span class="tag paid" style="display:inline-block;margin-top:8px">${t.sent}</span>
+        </div>
+        <div class="section" style="padding:0 4px">
+          ${row('Groundnut oil 1 L', `40 × ${inr(168)}`, inr(6720), { go: 'quote' })}
+          ${row('Sugar 1 kg', `80 × ${inr(44)}`, inr(3520), { go: 'quote' })}
+        </div>
+        <p style="text-align:right;font-size:28px;font-weight:800;margin:16px 0">${inr(12600)}</p>
+        <button class="cta green" data-go="new-bill">${t.convert}</button>
+        <button class="cta ghost" style="margin-top:8px">${t.shareWa}</button>
+      </div>`;
+    }
+
+    function moreHtml(t) {
+      const groups = [
+        [t.salesGroup, [[t.quotations, 'quotations'], [t.salesOrders, 'quotations'], [t.creditNotes, 'bills'], [t.paymentsIn, 'collect']]],
+        [t.buyGroup, [[t.purchases, 'purchases'], [t.paymentsOut, 'purchases'], [t.expenses, 'purchases']]],
+        [t.accGroup, [[t.ledger, 'more'], [t.reports, 'more']]],
+        [t.shopGroup, [[t.settings, 'more'], [t.printer, 'more']]]
+      ];
+      return pagebar(t.moreTitle) + groups.map(([title, items]) => `
+        <div class="more-block" style="padding:0 14px">
+          <h3>${title}</h3>
+          <div class="section" style="padding:0 4px">${items.map(([label, go]) => `<button class="txn" style="width:100%;border:0;background:transparent;text-align:left" data-go="${go}"><span class="who"><strong>${label}</strong></span></button>`).join('')}</div>
+        </div>`).join('') + '<div style="height:24px"></div>';
+    }
+
+    function render() {
+      const t = tNow();
+      const L = LANGS.find((l) => l.id === state.lang);
+      document.documentElement.lang = L.locale;
+      const pages = {
+        today: () => homeHtml(t, L),
+        bills: () => billsHtml(t),
+        'new-bill': () => newBillHtml(t),
+        bill: () => billHtml(t),
+        collect: () => collectHtml(t),
+        items: () => itemsHtml(t),
+        parties: () => partiesHtml(t),
+        party: () => partyHtml(t),
+        more: () => moreHtml(t),
+        purchases: () => purchasesHtml(t),
+        purchase: () => purchaseHtml(t),
+        quotations: () => quotationsHtml(t),
+        quote: () => quoteHtml(t)
+      };
+      document.getElementById('screen').innerHTML = pages[state.screen]();
+
+      const fabMap = { today: [t.newBill, 'new-bill'], bills: [t.newBill, 'new-bill'], purchases: [t.newPurchase, 'new-bill'], quotations: [t.quote, 'new-bill'] };
+      const fab = document.getElementById('fab');
+      const fabSpec = fabMap[state.screen];
+      fab.classList.toggle('hidden', !fabSpec);
+      if (fabSpec) {
+        fab.innerHTML = `${ico('plus', 2.6)}${fabSpec[0]}`;
+        fab.dataset.go = fabSpec[1];
+      }
+
+      const showTabs = TAB_SCREENS.includes(state.screen);
+      const tabsEl = document.getElementById('tabs');
+      tabsEl.classList.toggle('hidden', !showTabs);
+      const tabIcons = ['home', 'bills', 'box', 'users', 'more'];
+      tabsEl.innerHTML = t.tabs.map((label, i) =>
+        `<button class="tab ${TAB_SCREENS[i] === state.screen ? 'on' : ''}" data-go="${TAB_SCREENS[i]}"><span class="pillw">${ico(tabIcons[i])}</span>${label}</button>`).join('');
+
+      let overlay = '';
+      if (state.sheet === 'lang') {
+        overlay = `<div class="sheet" data-act="close"><div class="panel"><div class="handle"></div>
+          <h3>${t.langTitle}</h3><p>${t.langSub}</p>
+          <div class="langs">${LANGS.map((l) => `<button class="lang ${l.id === state.lang ? 'on' : ''}" data-lang="${l.id}"><strong>${l.native}</strong><small>${l.name}</small></button>`).join('')}</div>
+        </div></div>`;
+      }
+      if (state.sheet === 'party' || state.sheet === 'item') {
+        const title = state.sheet === 'party' ? t.chooseParty : t.addItem;
+        const rows = state.sheet === 'party'
+          ? [['Ramesh Stores', t.due + ' ' + inr(12400)], ['Mehta Provision', t.due + ' ' + inr(2860)], [t.walkIn, '']]
+          : [['Groundnut oil 1 L', inr(168)], ['Sugar 1 kg', inr(44)]];
+        overlay = `<div class="sheet" data-act="close"><div class="panel"><div class="handle"></div>
+          <div class="pad" style="padding-top:0"><h3>${title}</h3>
+          <div class="search-wrap">${ico('search')}<input class="search" placeholder="${state.sheet === 'party' ? t.searchParty : t.searchItem}" /></div></div>
+          <div class="section" style="margin:0 16px;padding:0 4px">${rows.map(([n, s]) => row(n, s, '', { go: 'close-sheet' })).join('')}</div>
+        </div></div>`;
+      }
+      document.getElementById('overlay').innerHTML = overlay;
+
+      document.getElementById('langSwitch').innerHTML = LANGS.map((l) =>
+        `<button class="${l.id === state.lang ? 'on' : ''}" data-lang="${l.id}">${l.native}</button>`).join('');
+      document.getElementById('screenNav').innerHTML = SCREENS.map(([id, label]) =>
+        `<button class="${id === state.screen ? 'on' : ''}" data-go="${id}">${label}</button>`).join('');
+    }
+
+    document.body.addEventListener('click', (e) => {
+      const qty = e.target.closest('[data-qty]');
+      if (qty) {
+        const dir = Number(qty.dataset.dir);
+        if (qty.dataset.qty === 'rice') state.qtyRice = Math.max(0, state.qtyRice + dir);
+        if (qty.dataset.qty === 'dal') state.qtyDal = Math.max(0, state.qtyDal + dir);
+        render();
+        return;
+      }
+      const el = e.target.closest('[data-lang],[data-range],[data-filter],[data-bfilter],[data-pfilter],[data-qfilter],[data-remind],[data-act],[data-go],[data-pay],[data-kind],[data-sheet]');
+      if (!el) return;
+      if (el.dataset.lang) { state.lang = el.dataset.lang; state.sheet = null; }
+      else if (el.dataset.range) state.range = el.dataset.range;
+      else if (el.dataset.filter) state.filter = el.dataset.filter;
+      else if (el.dataset.bfilter) state.billFilter = el.dataset.bfilter;
+      else if (el.dataset.pfilter) state.purchaseFilter = el.dataset.pfilter;
+      else if (el.dataset.qfilter) state.quoteFilter = el.dataset.qfilter;
+      else if (el.dataset.kind) state.partyKind = el.dataset.kind;
+      else if (el.dataset.pay) state.pay = el.dataset.pay;
+      else if (el.dataset.sheet) state.sheet = el.dataset.sheet;
+      else if (el.dataset.remind) {
+        if (el.dataset.remind === 'all') DATA.udhaar.forEach((_, i) => state.sent.add(i));
+        else state.sent.add(Number(el.dataset.remind));
+      }
+      else if (el.dataset.act === 'lang') state.sheet = 'lang';
+      else if (el.dataset.act === 'close' && e.target === el) state.sheet = null;
+      else if (el.dataset.go === 'close-sheet') state.sheet = null;
+      else if (el.dataset.go) { state.sheet = null; state.screen = el.dataset.go; }
+      else return;
+      const scroll = document.getElementById('screen').scrollTop;
+      render();
+      if (!el.dataset.go || NESTED.includes(el.dataset.go) === false && el.dataset.go === state.screen) {
+        document.getElementById('screen').scrollTop = scroll;
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

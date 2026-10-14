@@ -130,6 +130,7 @@ export function useFeatureRegistry() {
       'invoice_creation': 'sales_invoices',
       'estimates_quotations': 'sales_estimates',
       'credit_notes': 'sales_credit_notes',
+      'debit_notes': 'sales_debit_notes',
       'recurring_invoices': 'sales_recurring_invoices',
       'sales_orders': 'sales_sales_orders',
       'supplier_management': 'purchase_suppliers',

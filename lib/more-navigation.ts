@@ -94,6 +94,14 @@ function section(
   return { title, items: vis };
 }
 
+/** Sections start open (no entry); one tap closes an open section. */
+export function toggleMoreSection(
+  prev: Record<string, boolean>,
+  title: string
+): Record<string, boolean> {
+  return { ...prev, [title]: prev[title] === false };
+}
+
 /**
  * Build grouped links for /more — titles align with desktop Sidebar.
  */

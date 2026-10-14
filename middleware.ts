@@ -86,6 +86,8 @@ const PUBLIC_PATHS = new Set([
 function isCustomerSurfacePath(pathname: string): boolean {
   if (pathname.startsWith('/i/')) return true;
   if (pathname.startsWith('/track/')) return true;
+  // Rider link for the shop's own delivery rider (token-only, no login).
+  if (pathname.startsWith('/r/')) return true;
   if (pathname.startsWith('/portal/')) return true;
   return false;
 }

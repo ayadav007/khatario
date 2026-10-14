@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, queryRows, queryOne, getPool } from '@/lib/db';
 import { Customer } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getAuthenticatedUserId } from '@/lib/auth-helpers';
 import {
   enforceAccess,
   enforceAccessErrorResponse,
@@ -168,8 +168,8 @@ export async function POST(request: NextRequest) {
       opening_balance_type = 'debit',
       credit_limit = 0,
       credit_days: bodyCreditDays,
-      created_by, // User ID who created the customer
     } = body;
+    const created_by = getAuthenticatedUserId(request);
 
     if (!business_id || !name) {
       return NextResponse.json(

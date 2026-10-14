@@ -35,6 +35,7 @@ interface StoreSettings {
   store_hero_image_url: string | null;
   store_min_order_amount: number;
   store_allow_cod?: boolean;
+  store_return_window_days?: number;
   store_delivery_provider?: string;
   store_about_md?: string | null;
   store_contact_md?: string | null;
@@ -110,6 +111,7 @@ export default function OnlineStoreSettingsPage() {
   const [refundMd, setRefundMd] = useState('');
   const [termsMd, setTermsMd] = useState('');
   const [allowCod, setAllowCod] = useState(true);
+  const [returnDays, setReturnDays] = useState('7');
   const [deliveryProvider, setDeliveryProvider] = useState('self');
   const [hideBadge, setHideBadge] = useState(false);
   const [shipEmail, setShipEmail] = useState('');
@@ -145,6 +147,7 @@ export default function OnlineStoreSettingsPage() {
         setRefundMd((data as { store_refund_md?: string }).store_refund_md ?? '');
         setTermsMd((data as { store_terms_md?: string }).store_terms_md ?? '');
         setAllowCod(data.store_allow_cod !== false);
+        setReturnDays(String(data.store_return_window_days ?? 7));
         setDeliveryProvider(data.store_delivery_provider ?? 'self');
         const nextTheme = sanitizeStoreTheme(data.store_theme);
         if (nextTheme.hero_slides.length === 0 && data.store_hero_image_url) {
@@ -210,6 +213,7 @@ export default function OnlineStoreSettingsPage() {
           store_refund_md: refundMd || null,
           store_terms_md: termsMd || null,
           store_allow_cod: allowCod,
+          store_return_window_days: Number(returnDays) || 0,
           store_delivery_provider: deliveryProvider,
           store_theme: sanitizeStoreTheme(theme),
           store_hide_khatario_badge: hideBadge,
@@ -250,6 +254,7 @@ export default function OnlineStoreSettingsPage() {
     refundMd,
     termsMd,
     allowCod,
+    returnDays,
     deliveryProvider,
     theme,
     hideBadge,
@@ -729,6 +734,18 @@ export default function OnlineStoreSettingsPage() {
                     onChange={(e) => setAllowCod(e.target.checked)}
                   />
                   Allow pay on delivery
+                </label>
+                <label className="block text-xs text-gray-500">
+                  Returns accepted for (days after delivery)
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    className="mt-1 w-32 rounded-lg border px-3 py-2 text-sm"
+                    value={returnDays}
+                    onChange={(e) => setReturnDays(e.target.value)}
+                  />
+                  <span className="mt-1 block">Buyers can ask for a return from their account. 0 turns online returns off.</span>
                 </label>
                 <label className="block text-xs text-gray-500">
                   Delivery partner

@@ -23,7 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useShellLayoutSettings } from '@/contexts/LayoutDataContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useCapabilityCheck } from '@/hooks/useCapability';
-import { buildMoreMenuSections, type MoreNavSection } from '@/lib/more-navigation';
+import { buildMoreMenuSections, toggleMoreSection, type MoreNavSection } from '@/lib/more-navigation';
 import { MORE_SECTION_QUERY_KEY } from '@/lib/navigation/more-menu-back';
 import type { LucideIcon } from 'lucide-react';
 import { MobileAccountCard } from '@/components/layout/MobileAccountCard';
@@ -126,7 +126,7 @@ export default function MorePage() {
   }, [searchParams, sections]);
 
   const toggleSection = (title: string) => {
-    setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }));
+    setOpenSections((prev) => toggleMoreSection(prev, title));
   };
 
   return (

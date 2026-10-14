@@ -2731,6 +2731,11 @@ export async function POST(request: NextRequest) {
     // Commit transaction before returning
     await client.query('COMMIT');
 
+    if (status === 'final' && invoice?.id) {
+      const { autoTrackDeliveryBill } = await import('@/lib/fulfilment/auto-track');
+      await autoTrackDeliveryBill(business_id, String(invoice.id));
+    }
+
     // PHASE 4.2: Calculate credit metrics for customer (if applicable)
     let creditMetrics = null;
     let creditWarning = null;

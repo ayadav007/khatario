@@ -15,14 +15,14 @@ const CUSTOMER_SQL = `
     HAVING ABS(SUM(lel.debit - lel.credit)) >= 0.005
   ), d AS (
     SELECT v.voucher_type, v.voucher_id, v.net,
-      COALESCE(i.customer_id, dn.customer_id, cn.customer_id, p.customer_id, pi.customer_id, ap.customer_id,
+      COALESCE(i.customer_id, dn.customer_id, cn.customer_id, p.customer_id, pi.customer_id, ap.customer_id, cnr.customer_id,
                CASE WHEN v.voucher_type = 'opening_balance' THEN v.voucher_id END) AS party_id,
       COALESCE(i.invoice_number, dn.debit_note_number, cn.credit_note_number,
                CASE WHEN p.id IS NOT NULL THEN 'PAY-' || substring(p.id::text, 1, 8) END,
                CASE WHEN pi.id IS NOT NULL THEN 'Receipt ' || pi.invoice_number END,
-               aa.voucher_number,
+               aa.voucher_number, cnr.voucher_number,
                CASE WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' END) AS reference,
-      COALESCE(i.invoice_date, dn.debit_note_date, cn.credit_note_date, p.payment_date, aa.adjustment_date, v.first_date)::text AS doc_date,
+      COALESCE(i.invoice_date, dn.debit_note_date, cn.credit_note_date, p.payment_date, aa.adjustment_date, cnr.refund_date, v.first_date)::text AS doc_date,
       i.due_date::text AS due_date,
       COALESCE(cn.invoice_id, CASE WHEN p.reference_type = 'invoice' THEN p.reference_id END, pi.id, aa.invoice_id) AS linked_id,
       CASE
@@ -33,10 +33,12 @@ const CUSTOMER_SQL = `
         WHEN v.voucher_type = 'credit_note' THEN 'Credit note' || COALESCE(' - ' || cn.reason, '')
         WHEN v.voucher_type = 'debit_note' THEN 'Debit note' || COALESCE(' - ' || dn.reason, '')
         WHEN v.voucher_type = 'advance_adjustment' THEN 'Advance ' || COALESCE(ap.voucher_number, '') || ' adjusted'
+        WHEN v.voucher_type = 'credit_note_refund' THEN 'Refund paid (' || upper(cnr.mode) || ')'
         WHEN v.voucher_type = 'opening_balance' THEN 'Opening balance'
         ELSE initcap(replace(v.voucher_type, '_', ' '))
       END AS description
     FROM v
+    LEFT JOIN credit_note_refunds cnr ON v.voucher_type = 'credit_note_refund' AND cnr.id = v.voucher_id AND cnr.business_id = $1
     LEFT JOIN invoices i ON v.voucher_type = 'invoice' AND i.id = v.voucher_id
     LEFT JOIN debit_notes dn ON v.voucher_type = 'debit_note' AND dn.id = v.voucher_id
     LEFT JOIN credit_notes cn ON v.voucher_type = 'credit_note' AND cn.id = v.voucher_id

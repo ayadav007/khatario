@@ -116,7 +116,8 @@ const PATH_FEATURES: ReadonlyArray<{ prefix: string; featureId: string }> = [
   { prefix: '/api/whatsapp/campaigns', featureId: 'integration_whatsapp_bot' },
   { prefix: '/api/whatsapp/flows', featureId: 'integration_whatsapp_bot' },
   { prefix: '/api/whatsapp/reminders', featureId: 'whatsapp_auto_reminders' },
-  { prefix: '/api/whatsapp/send', featureId: 'settings_whatsapp' },
+  // Custom sends. Invoice sends on this same route stay on settings_whatsapp inside the handler.
+  { prefix: '/api/whatsapp/send', featureId: 'integration_whatsapp_manual' },
 ];
 
 export function featureIdForPath(pathname: string | null | undefined): string | null {

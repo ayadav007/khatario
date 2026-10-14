@@ -5,7 +5,7 @@ import { Item } from '@/types/database';
 import { checkLimitInTransaction } from '@/lib/subscription';
 import { validateBarcode, normalizeBarcode } from '@/lib/barcode-validator';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import {
   requirePlatformModule,
   platformModuleErrorResponse,
@@ -232,13 +232,14 @@ export async function POST(request: NextRequest) {
       /** null = inherit business default; boolean = override */
       allow_sale_when_out_of_stock,
       custom_fields,
-      created_by, // User ID who created the item
       show_in_store,
       featured_in_store,
       seo_title,
       seo_description,
       seo_image_url,
     } = body;
+
+    const created_by = getAuthenticatedUserId(request);
 
     if (!business_id || !name) {
       return NextResponse.json({ error: 'Name and Business ID are required' }, { status: 400 });

@@ -17,6 +17,7 @@ export const TENANT_WA_EVENT_KEYS = [
   'order_out_for_delivery',
   'order_delivered',
   'order_delivery_failed',
+  'order_delayed',
   'order_cancelled',
   'merchant_new_order',
   'merchant_dispatch_overdue',
@@ -259,6 +260,14 @@ export const TENANT_WA_EVENTS: TenantWaEvent[] = [
     'khatario_delivery_failed',
     'Hi {{1}}, we could not deliver your order {{2}}: {{3}}. Follow it at {{4}} or reply here to reschedule.',
     ['customer_name', 'order_number', 'reason', 'order_link'],
+  ),
+  deliveryEvent(
+    'order_delayed',
+    'Parcel taking longer',
+    'Sent once when a shipped parcel has not moved for a few days, so the buyer is not left guessing.',
+    'khatario_order_delayed',
+    'Hi {{1}}, your order {{2}} is taking a little longer than usual to reach you. We are following up with {{3}}. Track it at {{4}} anytime.',
+    ['customer_name', 'order_number', 'courier', 'order_link'],
   ),
   deliveryEvent(
     'order_cancelled',

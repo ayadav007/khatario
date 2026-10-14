@@ -1760,7 +1760,8 @@ export async function createCreditNoteLedgerEntries(params: {
   if (poolClient && (await getInventoryModel(poolClient, businessId)) === 'perpetual') {
     const lines = await ledgerQueryRows<{ item_id: string | null; qty: string }>(
       poolClient,
-      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1',
+      // Damaged returns (restocked = false) are written off: no stock, so no cost comes back.
+      'SELECT item_id, qty FROM credit_note_items WHERE credit_note_id = $1 AND COALESCE(restocked, true)',
       [creditNoteId]
     );
     const [origin] = await ledgerQueryRows<{ invoice_date: string | Date; branch_id: string | null }>(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { getAuthenticatedUserId, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +9,7 @@ export const dynamic = 'force-dynamic';
 // GET - Load dashboard widgets
 export async function GET(request: NextRequest) {
   try {
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
+    const userId = getAuthenticatedUserId(request);
 
     if (!userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -25,9 +24,9 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    if (!businessId) {
-      return NextResponse.json({ error: 'business_id required' }, { status: 400 });
-    }
+    const tenant = requireTenantBusinessId(request, request.nextUrl.searchParams.get('business_id'));
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
 
     try {
       await assertFeatureAccess(businessId, 'customizable_dashboard');
@@ -51,7 +50,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ widgets });
   } catch (error: any) {
     console.error('Error loading widgets:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to load widgets' }, { status: 500 });
   }
 }
 
@@ -60,7 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { business_id, widgets } = body;
-    const userId = getUserIdFromRequest(request, body);
+    const userId = getAuthenticatedUserId(request);
 
     if (!userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -79,8 +78,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
 
+    const tenant = requireTenantBusinessId(request, business_id);
+    if (!tenant.ok) return tenant.response;
+    const businessId = tenant.businessId;
+
     try {
-      await assertFeatureAccess(business_id, 'customizable_dashboard');
+      await assertFeatureAccess(businessId, 'customizable_dashboard');
     } catch (err) {
       if (err instanceof FeatureAccessDeniedError) {
         return err.toNextResponse();
@@ -95,11 +98,11 @@ export async function POST(request: NextRequest) {
       DO UPDATE SET widgets = $2, updated_at = CURRENT_TIMESTAMP
     `;
 
-    await db.query(query, [business_id, JSON.stringify(widgets)]);
+    await db.query(query, [businessId, JSON.stringify(widgets)]);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error saving widgets:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to save widgets' }, { status: 500 });
   }
 }
