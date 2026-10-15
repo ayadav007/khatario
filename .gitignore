@@ -119,3 +119,7 @@ Desktop.ini
 /storage/marketing-creatives/
 /storage/sales-flow/
 /storage/whatsapp-media/
+
+# Khatario Staff face models (npm run face:models)
+models/face/*.onnx
+models/face/*.part

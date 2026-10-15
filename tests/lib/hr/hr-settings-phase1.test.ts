@@ -40,14 +40,14 @@ describe('hr-payroll-settings', () => {
   });
 
   it('accepts valid pay day 1–28', () => {
-    expect(parseHrPayrollSettings({ monthly_pay_day: 15 })).toEqual({ monthly_pay_day: 15 });
-    expect(parseHrPayrollSettings({ monthly_pay_day: '7' })).toEqual({ monthly_pay_day: 7 });
+    expect(parseHrPayrollSettings({ monthly_pay_day: 15 })).toEqual({ ...DEFAULT_HR_PAYROLL_SETTINGS, monthly_pay_day: 15 });
+    expect(parseHrPayrollSettings({ monthly_pay_day: '7' })).toEqual({ ...DEFAULT_HR_PAYROLL_SETTINGS, monthly_pay_day: 7 });
   });
 
   it('rejects out-of-range pay day', () => {
-    expect(parseHrPayrollSettings({ monthly_pay_day: 0 })).toEqual({ monthly_pay_day: null });
-    expect(parseHrPayrollSettings({ monthly_pay_day: 31 })).toEqual({ monthly_pay_day: null });
-    expect(parseHrPayrollSettings({ monthly_pay_day: null })).toEqual({ monthly_pay_day: null });
+    expect(parseHrPayrollSettings({ monthly_pay_day: 0 })).toEqual({ ...DEFAULT_HR_PAYROLL_SETTINGS, monthly_pay_day: null });
+    expect(parseHrPayrollSettings({ monthly_pay_day: 31 })).toEqual({ ...DEFAULT_HR_PAYROLL_SETTINGS, monthly_pay_day: null });
+    expect(parseHrPayrollSettings({ monthly_pay_day: null })).toEqual({ ...DEFAULT_HR_PAYROLL_SETTINGS, monthly_pay_day: null });
   });
 });
 

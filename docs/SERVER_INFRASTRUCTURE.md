@@ -168,6 +168,7 @@ npm run cap:android:production:install   # only after https://khatario.com serve
 | Platform Meta Cloud API | Save credentials in `/admin` → WhatsApp templates (encrypted in DB). Tenant Cloud API: Settings → WhatsApp. `META_WA_*` env is optional fallback only |
 | Razorpay | Add `PLATFORM_RAZORPAY_*` to the **production** env; webhook `https://khatario.com/api/webhooks/platform-billing/razorpay` |
 | Cron | Both environments need `CRON_SECRET` in `.env.production` and a crontab — see below |
+| Staff face check | `npm run face:models` (run by `deploy-vps.sh`) puts YuNet (MIT) + SFace (Apache-2.0) ONNX files in `models/face/` (gitignored, sha256-checked). Matching runs in the Next.js process with `onnxruntime-node` on the CPU (~40 MB RAM once loaded); no external API. `deploy-vps.sh` sets `ONNXRUNTIME_NODE_INSTALL=skip` so `npm ci` does not fetch its CUDA add-on. If the files are missing, face-checked check-ins go to manager review (`face_unchecked`). See `models/face/README.md` |
 | AI assistant | pgvector, `GROQ_API_KEY` / `GEMINI_API_KEY`, and the `kb-index-worker` PM2 process — see [AI assistant](#ai-assistant-staging-first) and `docs/ASSISTANT.md` |
 
 ### Cron (staging and production)

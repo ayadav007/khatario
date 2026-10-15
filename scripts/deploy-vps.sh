@@ -85,6 +85,10 @@ if [[ "$NO_PULL" == false ]]; then
   echo ""
 fi
 
+# onnxruntime-node (staff face check) would otherwise download its CUDA add-on on linux/x64;
+# the face models run on the CPU, so skip it.
+export ONNXRUNTIME_NODE_INSTALL=skip
+
 echo ">> npm ci"
 # The VPS shell often has NODE_ENV=production, which makes npm skip
 # devDependencies. The build needs TypeScript and Tailwind, and postinstall
@@ -93,6 +97,13 @@ if [[ -f package-lock.json ]]; then
   NODE_ENV=development npm ci --include=dev
 else
   NODE_ENV=development npm install --include=dev
+fi
+echo ""
+
+# Khatario Staff face check (YuNet + SFace, matched on this server). Skips files already in place.
+echo ">> npm run face:models"
+if ! npm run face:models; then
+  echo "⚠️  Face models missing — staff check-ins with face check go to manager review until fixed (deploy continues)"
 fi
 echo ""
 

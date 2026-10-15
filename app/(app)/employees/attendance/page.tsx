@@ -17,6 +17,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
 import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
 import { AttendanceHistoryMatrix } from '@/components/hr/AttendanceHistoryMatrix';
+import { StaffPunchReviewQueue } from '@/components/hr/StaffPunchReviewQueue';
 import { useFullHr } from '@/hooks/useFullHr';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
@@ -197,6 +198,8 @@ export default function AttendanceManagementPage() {
     </>
   }
 />
+
+        <StaffPunchReviewQueue onResolved={fetchAttendance} />
 
         {viewTabs}
 

@@ -29,6 +29,23 @@ android {
         versionName = flutter.versionName
     }
 
+    // Two apps from one codebase. "owner" is the shop app (default, see pubspec `default-flavor`);
+    // "staff" is Khatario Staff, for employee check-in only:
+    //   flutter run --flavor staff -t lib/main_staff.dart
+    flavorDimensions += "app"
+    productFlavors {
+        create("owner") {
+            dimension = "app"
+            applicationId = "com.khatario.phone"
+            manifestPlaceholders["appLabel"] = "Khatario"
+        }
+        create("staff") {
+            dimension = "app"
+            applicationId = "com.khatario.staff"
+            manifestPlaceholders["appLabel"] = "Khatario Staff"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

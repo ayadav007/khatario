@@ -17,6 +17,7 @@ describe('parseHrApprovalSettings', () => {
         allow_hr_override: false,
       })
     ).toEqual({
+      ...DEFAULT_HR_APPROVAL_SETTINGS,
       leave_mode: 'manager_direct_reports',
       expense_mode: 'manager_only',
       allow_hr_override: false,

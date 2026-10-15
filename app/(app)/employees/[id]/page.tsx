@@ -15,6 +15,7 @@ import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePa
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { EmployeePortalInviteCard } from '@/components/hr/EmployeePortalInviteCard';
 import { EmployeeSalaryStructurePanel } from '@/components/hr/EmployeeSalaryStructurePanel';
+import { StaffAppLinkCard } from '@/components/hr/StaffAppLinkCard';
 import { useCapabilityCheck } from '@/hooks/useCapability';
 import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
@@ -234,6 +235,8 @@ export default function EmployeeDetailPage() {
             portalInvitedAt={employee.portal_invited_at}
           />
         ) : null}
+
+        {hasCapability('hr_attendance', 'view') ? <StaffAppLinkCard employeeId={employeeId} /> : null}
 
         {/* Tabs */}
         <div className="border-b border-border">

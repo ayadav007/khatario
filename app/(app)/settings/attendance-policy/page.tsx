@@ -10,6 +10,7 @@ import { Loader2, Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
+import { AttendanceSitesSettings } from '@/components/hr/AttendanceSitesSettings';
 import type {
   AttendancePolicy,
   DailyRateBasis,
@@ -289,8 +290,8 @@ export default function AttendancePolicySettingsPage() {
         <Card padding="md" className="space-y-4">
           <h2 className="font-semibold text-text-primary">Office geofence (optional)</h2>
           <p className="text-xs text-text-muted">
-            When enabled, mobile app check-ins must be within the radius of your office coordinates.
-            Kiosk and manual admin check-ins are not restricted.
+            When enabled, portal and kiosk check-ins must be within the radius of your office coordinates.
+            Manual admin entries are not restricted. Office sites below take over once you add one.
           </p>
           <CheckboxRow
             label="Require check-in within office radius"
@@ -340,6 +341,8 @@ export default function AttendancePolicySettingsPage() {
             </>
           )}
         </Card>
+
+        <AttendanceSitesSettings />
 
         <div className="flex justify-end">
           <Button onClick={save} disabled={saving}>

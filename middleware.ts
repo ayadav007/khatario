@@ -116,6 +116,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/payments/return/',
   '/api/health',
   '/api/public/',
+  /** Khatario Staff app: each request is signed by the phone's device key (lib/hr/staff-app). */
+  '/api/staff-app/',
 ];
 
 function isPublicPath(pathname: string): boolean {

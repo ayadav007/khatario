@@ -395,7 +395,7 @@ export async function POST(request: NextRequest) {
     
     await logActivity({
       business_id,
-      user_id: created_by || null,
+      user_id: created_by,
       action_type: 'create',
       module: 'expenses',
       entity_id: expense.id,
