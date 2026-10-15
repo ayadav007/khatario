@@ -130,7 +130,8 @@ const nextConfig = {
     };
 
     if (isServer) {
-      config.externals = [...(config.externals || []), "baileys-pro"];
+      // Next 14 ignores `serverExternalPackages`; native addons must be externals or webpack tries to parse the .node binaries.
+      config.externals = [...(config.externals || []), "baileys-pro", "onnxruntime-node"];
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
