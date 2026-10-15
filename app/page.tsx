@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { LandingPage } from '@/components/marketing/landing/LandingPage';
 import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
 import { isSafeImageSrc } from '@/lib/marketing-builder/safe-url';
+import { loadPricingCatalog } from '@/lib/subscription/pricing-catalog';
 
 export const revalidate = 300;
 
@@ -30,6 +31,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page() {
-  const document = await getPublishedMarketingDocument('home');
-  return <LandingPage document={document} />;
+  const [document, pricingCatalog] = await Promise.all([
+    getPublishedMarketingDocument('home'),
+    loadPricingCatalog().catch((error) => {
+      console.error('Home page pricing failed to load:', error);
+      return null;
+    }),
+  ]);
+  return <LandingPage document={document} pricingCatalog={pricingCatalog} />;
 }

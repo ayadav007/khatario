@@ -16,16 +16,21 @@ export const CONTENT_BLOCKS = [
 export const KHATARIO_BLOCKS = [
   'Hero',
   'SocialProof',
-  'ProblemSolution',
   'Walkthrough',
-  'KeyFeatures',
+  'FeatureBento',
+  'WhatsAppBand',
   'TemplateGallery',
-  'WhoItsFor',
-  'ConnectedSupply',
-  'TrustStrip',
+  'PrintLanguages',
+  'StaffApp',
+  'Testimonials',
   'Pricing',
   'Faq',
   'FinalCta',
+  'ProblemSolution',
+  'KeyFeatures',
+  'WhoItsFor',
+  'ConnectedSupply',
+  'TrustStrip',
 ] as const;
 
 export const BLOCK_TYPES = [...LAYOUT_BLOCKS, ...CONTENT_BLOCKS, ...KHATARIO_BLOCKS] as const;

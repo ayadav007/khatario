@@ -56,7 +56,7 @@ export const LANDING_WALKTHROUGH_DEFAULTS: LandingWalkthroughContent = {
   ],
 };
 
-const AUTO_MS = 4500;
+const AUTO_MS = 6000;
 
 export function LandingWalkthrough(props: Partial<LandingWalkthroughContent> = {}) {
   const c = withDefaults(LANDING_WALKTHROUGH_DEFAULTS, props);
@@ -65,29 +65,28 @@ export function LandingWalkthrough(props: Partial<LandingWalkthroughContent> = {
   const editing = useMarketingEditing();
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
-  const current = steps[Math.min(active, steps.length - 1)];
+  const autoplay = !reduced && !editing && c.autoRotate && steps.length > 1;
 
   const goTo = useCallback((index: number) => {
     setActive(index);
   }, []);
 
   useEffect(() => {
-    if (reduced || paused || editing || !c.autoRotate || steps.length < 2) return;
-    const id = window.setInterval(() => {
-      setActive((i) => (i + 1) % steps.length);
-    }, AUTO_MS);
-    return () => window.clearInterval(id);
-  }, [reduced, paused, editing, c.autoRotate, steps.length]);
+    if (!autoplay || paused) return;
+    const id = window.setTimeout(() => setActive((i) => (i + 1) % steps.length), AUTO_MS);
+    return () => window.clearTimeout(id);
+  }, [autoplay, paused, active, steps.length]);
 
-  if (!current) return null;
+  if (steps.length === 0) return null;
   const activeIndex = Math.min(active, steps.length - 1);
 
   return (
-    <section className="scroll-mt-24 bg-white py-20 2xl:py-24">
+    <section id="how-it-works" className="scroll-mt-24 bg-slate-50 py-20 2xl:py-28">
       <div className={LANDING_PAGE_GUTTER}>
         <LandingReveal>
           <div className={LANDING_SECTION_INTRO}>
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl 2xl:text-5xl">
+            <p className="landing-kicker">How it works</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl 2xl:text-5xl">
               {c.heading}
             </h2>
             {c.subtext && <p className={LANDING_INTRO_SUBTEXT}>{c.subtext}</p>}
@@ -95,88 +94,61 @@ export function LandingWalkthrough(props: Partial<LandingWalkthroughContent> = {
         </LandingReveal>
 
         <div
-          className={`mt-14 w-full ${LANDING_MAX_MEDIUM}`}
+          className={`mt-12 w-full ${LANDING_MAX_MEDIUM}`}
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
           onFocusCapture={() => setPaused(true)}
           onBlurCapture={() => setPaused(false)}
         >
-          <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-2">
-            {steps.map((step, i) => (
-              <div key={i} className="flex flex-1 items-center">
+          <div role="tablist" aria-label="Walkthrough steps" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {steps.map((step, i) => {
+              const selected = activeIndex === i;
+              return (
                 <button
+                  key={i}
                   type="button"
+                  role="tab"
+                  aria-selected={selected}
                   onClick={() => goTo(i)}
-                  aria-current={activeIndex === i ? 'step' : undefined}
-                  aria-label={step.title}
                   className={clsx(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 2xl:h-12 2xl:w-12 2xl:text-base',
-                    activeIndex === i
-                      ? 'scale-110 bg-slate-900 text-white shadow-md'
-                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300',
+                    'relative flex flex-col gap-1 overflow-hidden rounded-2xl border bg-white px-4 py-4 text-left transition duration-300 sm:px-5',
+                    selected ? 'border-primary-600 shadow-lg shadow-primary-900/10' : 'border-slate-200 hover:border-slate-300',
                   )}
                 >
-                  {i + 1}
-                </button>
-                {i < steps.length - 1 && (
-                  <div
-                    className="mx-2 h-0.5 flex-1 overflow-hidden rounded-full bg-slate-200"
-                    aria-hidden
-                  >
-                    <div
-                      className={clsx(
-                        'h-full bg-slate-700 transition-all duration-500',
-                        activeIndex > i ? 'w-full' : activeIndex === i ? 'w-1/2' : 'w-0',
-                      )}
+                  <span className={clsx('text-xs font-bold', selected ? 'text-primary-600' : 'text-slate-400')}>Step {i + 1}</span>
+                  <span className="font-bold text-slate-900">{step.title}</span>
+                  <span className="hidden text-sm leading-snug text-slate-500 sm:block">{step.blurb}</span>
+                  {selected && (
+                    <span
+                      key={`${i}-${active}`}
+                      aria-hidden
+                      className={clsx('absolute inset-x-0 bottom-0 h-[3px] origin-left bg-accent-500', autoplay && 'landing-step-progress')}
+                      style={{ animationDuration: `${AUTO_MS}ms`, animationPlayState: paused ? 'paused' : 'running' }}
                     />
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm 2xl:mt-10">
-            <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-              <div className="flex flex-wrap items-center gap-2">
-                {steps.map((_, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => goTo(i)}
-                    className={clsx(
-                      'rounded-full px-3 py-1 text-xs font-semibold transition sm:hidden',
-                      activeIndex === i
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-600',
-                    )}
-                  >
-                    Step {i + 1}
-                  </button>
-                ))}
+          <LandingReveal delay={120}>
+            <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-primary-900/15">
+              <div className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-3">
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+                <p key={activeIndex} className="landing-testimonial-fade-in mx-auto truncate text-xs font-medium text-slate-500 sm:text-sm">
+                  {steps[activeIndex].title}
+                </p>
               </div>
-              <h3
-                key={activeIndex}
-                className="landing-testimonial-fade-in mt-2 text-xl font-bold text-slate-900 2xl:text-2xl"
-              >
-                {current.title}
-              </h3>
-              <p
-                key={`${activeIndex}-blurb`}
-                className="landing-testimonial-fade-in mt-1 max-w-2xl text-slate-600 2xl:text-lg"
-                style={{ animationDelay: '60ms' }}
-              >
-                {current.blurb}
-              </p>
-            </div>
-            <div className="p-3 sm:p-5 2xl:p-6">
-              <div className="relative aspect-[16/10] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+              <div className="relative aspect-[16/10] overflow-hidden bg-slate-50">
                 {steps.map((step, i) =>
                   step.image ? (
                     <div
                       key={i}
                       className={clsx(
-                        'absolute inset-0 transition-opacity duration-500',
-                        activeIndex === i ? 'opacity-100' : 'opacity-0',
+                        'absolute inset-0 transition-all duration-700 ease-out motion-reduce:transition-none',
+                        activeIndex === i ? 'scale-100 opacity-100' : 'scale-[1.03] opacity-0',
                       )}
                       aria-hidden={activeIndex !== i}
                     >
@@ -192,22 +164,8 @@ export function LandingWalkthrough(props: Partial<LandingWalkthroughContent> = {
                 )}
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 flex justify-center gap-2" aria-hidden>
-            {steps.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => goTo(i)}
-                className={clsx(
-                  'h-2 rounded-full transition-all duration-300',
-                  activeIndex === i ? 'w-6 bg-slate-800' : 'w-2 bg-slate-300',
-                )}
-                aria-label={`Go to step ${i + 1}`}
-              />
-            ))}
-          </div>
+          </LandingReveal>
+          <p className="mt-3 text-sm text-slate-500 sm:hidden">{steps[activeIndex].blurb}</p>
         </div>
       </div>
     </section>

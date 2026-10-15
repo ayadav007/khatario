@@ -26,7 +26,7 @@ export const DEFAULT_BILLING_HEADLINE: BillingHeadlineCopy = {
 };
 
 const H1_CLASS =
-  'text-4xl font-extrabold leading-[1.1] tracking-tight text-slate-900 sm:text-5xl lg:text-[2.75rem] xl:text-[3.25rem] 2xl:text-[3.5rem] 2xl:leading-[1.08]';
+  'text-4xl font-extrabold leading-[1.06] tracking-tight text-slate-900 sm:text-5xl lg:text-[3.1rem] xl:text-[3.75rem] 2xl:text-[4.25rem] 2xl:leading-[1.04]';
 
 function BillingAnimatedHeadline({ copy }: { copy: BillingHeadlineCopy }) {
   const words = copy.words.length > 0 ? copy.words : [''];

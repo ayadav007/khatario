@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3 } from 'lucide-react';
+import { Plus, Edit2, Eye, Package, Check, Grid3x3, BarChart3, Tags } from 'lucide-react';
 import { PlanFeatureMatrix } from '@/components/admin/PlanFeatureMatrix';
 import { PlanLimitsMatrix } from '@/components/admin/PlanLimitsMatrix';
+import { PricingDisplaySettings } from '@/components/admin/PricingDisplaySettings';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useAdmin } from '@/context/AdminContext';
 import { platformAdminFetchInit } from '@/lib/admin-client-headers';
@@ -45,6 +46,7 @@ export default function PlansManagement() {
   const [featureMatrixPlan, setFeatureMatrixPlan] = useState<{ id: string; name: string } | null>(null);
   const [showLimitsMatrix, setShowLimitsMatrix] = useState(false);
   const [limitsMatrixPlan, setLimitsMatrixPlan] = useState<{ id: string; name: string } | null>(null);
+  const [showPricingDisplay, setShowPricingDisplay] = useState(false);
 
   useEffect(() => {
     fetchPlans();
@@ -182,13 +184,22 @@ export default function PlansManagement() {
           <h1 className="text-3xl font-bold text-gray-900">Subscription Plans</h1>
           <p className="text-gray-600 mt-2">Manage pricing and features for all subscription tiers</p>
         </div>
-        <button
-          onClick={createNewPlan}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Create Plan</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowPricingDisplay(true)}
+            className="flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+          >
+            <Tags className="w-5 h-5" />
+            <span>Pricing page</span>
+          </button>
+          <button
+            onClick={createNewPlan}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Create Plan</span>
+          </button>
+        </div>
       </div>
 
       {/* Plans Grid */}
@@ -421,6 +432,8 @@ export default function PlansManagement() {
           onClose={handleFeatureMatrixClose}
         />
       )}
+
+      {showPricingDisplay && <PricingDisplaySettings onClose={() => setShowPricingDisplay(false)} />}
 
       {/* Limits Matrix Modal */}
       {showLimitsMatrix && limitsMatrixPlan && (

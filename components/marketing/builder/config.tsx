@@ -63,6 +63,14 @@ import { LandingTrustStrip, LANDING_TRUST_STRIP_DEFAULTS } from '@/components/ma
 import { LandingPricing, LANDING_PRICING_DEFAULTS } from '@/components/marketing/landing/LandingPricing';
 import { LandingFaq, LANDING_FAQ_DEFAULTS } from '@/components/marketing/landing/LandingFaq';
 import { LandingFinalCta, LANDING_FINAL_CTA_DEFAULTS } from '@/components/marketing/landing/LandingFinalCta';
+import { LandingFeatureBento, LANDING_FEATURE_BENTO_DEFAULTS } from '@/components/marketing/landing/LandingFeatureBento';
+import { LandingWhatsAppBand, LANDING_WHATSAPP_BAND_DEFAULTS } from '@/components/marketing/landing/LandingWhatsAppBand';
+import {
+  LandingPrintLanguages,
+  LANDING_PRINT_LANGUAGES_DEFAULTS,
+} from '@/components/marketing/landing/LandingPrintLanguages';
+import { LandingStaffApp, LANDING_STAFF_APP_DEFAULTS } from '@/components/marketing/landing/LandingStaffApp';
+import { LandingTestimonials, LANDING_TESTIMONIALS_DEFAULTS } from '@/components/marketing/landing/LandingTestimonials';
 import { BRAND_COLOR_OPTIONS, brandStyle, HEADING_FONT_OPTIONS } from '@/lib/marketing-builder/brand';
 import { CONTENT_BLOCKS, KHATARIO_BLOCKS, LAYOUT_BLOCKS } from '@/lib/marketing-builder/block-types';
 
@@ -752,6 +760,82 @@ export const marketingConfig: Config = {
       },
       defaultProps: LANDING_TRUST_STRIP_DEFAULTS,
       render: renderAs(LandingTrustStrip),
+    },
+
+    FeatureBento: {
+      label: 'Feature tiles',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        subtext: area('Sub-heading'),
+        dashboardTitle: text('Big tile title'),
+        dashboardText: area('Big tile text'),
+        dashboardImage: image('Big tile screenshot'),
+        dashboardAlt: text('Screenshot alt text'),
+        gstTitle: text('GST tile title'),
+        gstText: area('GST tile text'),
+        scanTitle: text('Bill-scan tile title'),
+        scanText: area('Bill-scan tile text'),
+        stockTitle: text('Stock tile title'),
+        stockText: area('Stock tile text'),
+        booksTitle: text('Accounts tile title'),
+        booksText: area('Accounts tile text'),
+      },
+      defaultProps: LANDING_FEATURE_BENTO_DEFAULTS,
+      render: renderAs(LandingFeatureBento),
+    },
+
+    WhatsAppBand: {
+      label: 'WhatsApp band (green)',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        subtext: area('Sub-heading'),
+        points: list('Points', { title: text('Title'), text: area('Text') }, (p) => String(p.title ?? ''), { title: 'Point', text: '' }, 3),
+      },
+      defaultProps: LANDING_WHATSAPP_BAND_DEFAULTS,
+      render: renderAs(LandingWhatsAppBand),
+    },
+
+    PrintLanguages: {
+      label: 'Print languages',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        subtext: area('Sub-heading'),
+      },
+      defaultProps: LANDING_PRINT_LANGUAGES_DEFAULTS,
+      render: renderAs(LandingPrintLanguages),
+    },
+
+    StaffApp: {
+      label: 'Khatario Staff app',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        subtext: area('Sub-heading (the free HR Lite staff count is added from the plans)'),
+        points: list('Points', { title: text('Bold start'), text: area('Rest of the line') }, (p) => String(p.title ?? ''), { title: 'Point.', text: '' }, 5),
+      },
+      defaultProps: LANDING_STAFF_APP_DEFAULTS,
+      render: renderAs(LandingStaffApp),
+    },
+
+    Testimonials: {
+      label: 'Customer quotes',
+      fields: {
+        kicker: text('Small heading'),
+        heading: text('Heading'),
+        subtext: area('Sub-heading'),
+        quotes: list(
+          'Quotes',
+          { quote: area('Quote'), name: text('Name'), role: text('Business · city'), result: text('Result line') },
+          (q) => String(q.name ?? ''),
+          { quote: '', name: 'Name', role: '', result: '' },
+          6,
+        ),
+      },
+      defaultProps: LANDING_TESTIMONIALS_DEFAULTS,
+      render: renderAs(LandingTestimonials),
     },
 
     Pricing: {

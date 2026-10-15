@@ -1,7 +1,7 @@
 import { sanitizeMarketingDocument, MARKETING_DOC_MAX_BYTES } from '@/lib/marketing-builder/sanitize';
 import { isSafeHref, isSafeImageSrc, youtubeId } from '@/lib/marketing-builder/safe-url';
 import { detectImageType, isMediaFileName } from '@/lib/marketing-builder/media';
-import { buildDefaultHomeDocument } from '@/lib/marketing-builder/default-home';
+import { buildDefaultHomeDocument, HOME_SECTIONS } from '@/lib/marketing-builder/default-home';
 import { KHATARIO_BLOCKS } from '@/lib/marketing-builder/block-types';
 
 const HASH = 'a'.repeat(64);
@@ -17,10 +17,11 @@ describe('sanitizeMarketingDocument', () => {
     expect(result).toEqual({ ok: true, data: input });
   });
 
-  it('default home document lists every Khatario section once', () => {
+  it('default home document lists each of its Khatario sections once', () => {
     const types = buildDefaultHomeDocument().content.map((c) => c.type);
     expect(new Set(types).size).toBe(types.length);
-    expect([...types].sort()).toEqual([...KHATARIO_BLOCKS].sort());
+    expect(types).toEqual([...HOME_SECTIONS]);
+    for (const type of types) expect(KHATARIO_BLOCKS).toContain(type);
   });
 
   it('rejects unknown block types', () => {

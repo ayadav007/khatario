@@ -154,9 +154,12 @@ export function LandingHero(props: Partial<LandingHeroContent> = {}) {
   return (
     <section
       id="landing-hero"
-      className={`${LANDING_PAGE_GUTTER} scroll-mt-28 border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-slate-50/80 py-10 md:py-16 lg:py-20 2xl:py-24`}
+      className={`${LANDING_PAGE_GUTTER} relative scroll-mt-28 overflow-hidden border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-white py-10 md:py-16 lg:py-20 2xl:py-24`}
     >
-      <div className="grid w-full items-center gap-12 lg:grid-cols-2 lg:gap-16 xl:gap-20 2xl:gap-24">
+      <div className="landing-hero-grid pointer-events-none absolute inset-0" aria-hidden />
+      <div className="landing-glow landing-glow-green pointer-events-none absolute -right-32 -top-32 h-[32rem] w-[32rem]" aria-hidden />
+      <div className="landing-glow landing-glow-orange pointer-events-none absolute -bottom-40 right-1/4 h-96 w-96" aria-hidden />
+      <div className="relative grid w-full items-center gap-12 lg:grid-cols-2 lg:gap-16 xl:gap-20 2xl:gap-24">
         <div className="text-left">
           {content.showProductToggle && <LandingProductToggle className="mb-6" />}
           <LandingReveal delay={0}>

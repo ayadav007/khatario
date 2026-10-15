@@ -33,11 +33,9 @@ export function LandingFinalCta(props: Partial<LandingFinalCtaContent> = {}) {
   const heading = c.heading.replace(/\{product\}/g, PRODUCT_LINE_LABELS[productLine]);
 
   return (
-    <section className="relative overflow-hidden bg-slate-900 py-20 2xl:py-28">
-      <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(148,163,184,0.15),_transparent_55%)]"
-        aria-hidden
-      />
+    <section className="relative overflow-hidden bg-primary-800 py-20 2xl:py-28">
+      <div className="landing-cta-grid pointer-events-none absolute inset-0" aria-hidden />
+      <div className="landing-glow landing-glow-orange pointer-events-none absolute -right-24 -top-40 h-[30rem] w-[30rem]" aria-hidden />
       <div className={`${LANDING_PAGE_GUTTER} relative w-full`}>
         <LandingReveal>
           <div className={LANDING_SECTION_INTRO}>
@@ -46,7 +44,7 @@ export function LandingFinalCta(props: Partial<LandingFinalCtaContent> = {}) {
               {c.highlight && (
                 <>
                   {' '}
-                  <span className="text-slate-300">{c.highlight}</span>
+                  <span className="text-accent-400">{c.highlight}</span>
                 </>
               )}
             </h2>
@@ -57,7 +55,7 @@ export function LandingFinalCta(props: Partial<LandingFinalCtaContent> = {}) {
             <div className="mt-8 flex max-md:justify-center md:justify-start">
               <Link
                 href={signupHref}
-                className="group inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-10 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-primary-700 landing-cta-shimmer"
+                className="group inline-flex items-center justify-center gap-2 rounded-xl bg-accent-500 px-10 py-4 text-lg font-semibold text-white shadow-lg shadow-accent-500/40 transition hover:-translate-y-0.5 hover:bg-accent-600"
               >
                 {c.ctaLabel}
                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" aria-hidden />

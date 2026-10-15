@@ -1,32 +1,44 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { LandingPricingPlan } from '@/components/marketing/landing/LandingPricing';
+import type { PricingCatalog } from '@/lib/subscription/pricing-catalog';
+
+export type BillingCycle = 'monthly' | 'yearly' | 'three_year';
 
 type LandingPlansValue = {
-  plans: LandingPricingPlan[];
+  catalog: PricingCatalog | null;
   loading: boolean;
-  billingCycle: 'monthly' | 'yearly';
-  setBillingCycle: (c: 'monthly' | 'yearly') => void;
+  billingCycle: BillingCycle;
+  setBillingCycle: (c: BillingCycle) => void;
 };
 
 const LandingPlansContext = createContext<LandingPlansValue | null>(null);
 
-export function LandingPlansProvider({ enabled = true, children }: { enabled?: boolean; children: ReactNode }) {
-  const [plans, setPlans] = useState<LandingPricingPlan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+/** Pricing catalog for the landing page: server-loaded when available, otherwise fetched from the public API. */
+export function LandingPlansProvider({
+  enabled = true,
+  initialCatalog = null,
+  children,
+}: {
+  enabled?: boolean;
+  initialCatalog?: PricingCatalog | null;
+  children: ReactNode;
+}) {
+  const [catalog, setCatalog] = useState<PricingCatalog | null>(initialCatalog);
+  const [loading, setLoading] = useState(!initialCatalog);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || initialCatalog) return;
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch('/api/admin/subscriptions/plans');
-        const data = await response.json();
-        if (!cancelled) setPlans(data.plans || []);
+        const response = await fetch('/api/public/pricing');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = (await response.json()) as PricingCatalog;
+        if (!cancelled) setCatalog(data);
       } catch (error) {
-        console.error('Error fetching plans:', error);
+        console.error('Error fetching pricing:', error);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -34,17 +46,17 @@ export function LandingPlansProvider({ enabled = true, children }: { enabled?: b
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, initialCatalog]);
 
   const value = useMemo(
-    () => ({ plans, loading, billingCycle, setBillingCycle }),
-    [plans, loading, billingCycle],
+    () => ({ catalog, loading, billingCycle, setBillingCycle }),
+    [catalog, loading, billingCycle],
   );
   return <LandingPlansContext.Provider value={value}>{children}</LandingPlansContext.Provider>;
 }
 
 export function useLandingPlans(): LandingPlansValue {
   const ctx = useContext(LandingPlansContext);
-  if (!ctx) return { plans: [], loading: false, billingCycle: 'monthly', setBillingCycle: () => {} };
+  if (!ctx) return { catalog: null, loading: false, billingCycle: 'monthly', setBillingCycle: () => {} };
   return ctx;
 }
