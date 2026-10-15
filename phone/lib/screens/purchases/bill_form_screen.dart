@@ -418,7 +418,8 @@ class _BillFormScreenState extends State<BillFormScreen> {
     if (_loading) return const Scaffold(body: KSpinner(padding: EdgeInsets.symmetric(vertical: 64)));
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: ListView(
+      body: SafeArea(
+        child: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
           Padding(
@@ -516,6 +517,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
           if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
           Padding(padding: const EdgeInsets.all(16), child: KButton(label: _saving ? 'Saving…' : 'Save', onPressed: _saving ? null : _save)),
         ],
+        ),
       ),
     );
   }

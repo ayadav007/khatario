@@ -8,6 +8,7 @@ import '../../shell/shell_banners.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import 'invoice_detail_screen.dart';
+import 'invoice_payment_sheet.dart';
 import 'invoice_share.dart';
 import 'record_payment_dialog.dart';
 
@@ -162,6 +163,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
+  Future<void> _finalize(Map<String, dynamic> invoice) async {
+    final grand = toNum(invoice['grand_total']).toDouble();
+    final paid = toNum(invoice['paid_amount']).toDouble();
+    final balance = invoice['balance_amount'] != null ? toNum(invoice['balance_amount']).toDouble() : grand - paid;
+    final ok = await finalizeDraftWithPayment(
+      context,
+      api: _api,
+      invoiceId: invoice['id'].toString(),
+      invoiceNumber: invoice['invoice_number']?.toString() ?? 'Bill',
+      grandTotal: balance > 0.01 ? balance : grand,
+      hasCustomer: (invoice['customer_id']?.toString() ?? '').isNotEmpty,
+    );
+    if (ok && mounted) _load(showSpinner: false);
+  }
+
   Future<void> _recordPayment(Map<String, dynamic> invoice) async {
     final grand = toNum(invoice['grand_total']);
     final balance = invoice['balance_amount'];
@@ -204,6 +220,15 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               _share(invoice);
             },
           ),
+          if (invoice['status'] == 'draft')
+            KSheetAction(
+              icon: LucideIcons.check,
+              label: 'Finalize',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _finalize(invoice);
+              },
+            ),
           if (InvoiceListRow.canRecordPayment(invoice))
             KSheetAction(
               icon: LucideIcons.handCoins,
@@ -356,8 +381,11 @@ class InvoiceListRow extends StatelessWidget {
     return raw.isEmpty ? 'unpaid' : raw;
   }
 
-  static bool canRecordPayment(Map<String, dynamic> invoice) =>
-      invoice['status'] == 'final' && invoice['payment_status'] != 'paid';
+  /// A later receipt needs a posted bill and a customer. Cash sales record money on the bill itself.
+  static bool canRecordPayment(Map<String, dynamic> invoice) {
+    final customerId = invoice['customer_id']?.toString() ?? '';
+    return invoice['status'] == 'final' && invoice['payment_status'] != 'paid' && customerId.isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -97,9 +97,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Add search filter (search by name, company_name, or phone)
+    // Name, phone, or address. The payment screen searches the same way.
     if (search) {
-      sql += ` AND (name ILIKE $${params.length + 1} OR company_name ILIKE $${params.length + 1} OR phone ILIKE $${params.length + 1})`;
+      sql += ` AND (
+        name ILIKE $${params.length + 1}
+        OR company_name ILIKE $${params.length + 1}
+        OR phone ILIKE $${params.length + 1}
+        OR address ILIKE $${params.length + 1}
+        OR billing_address ILIKE $${params.length + 1}
+        OR shipping_address ILIKE $${params.length + 1}
+        OR city ILIKE $${params.length + 1}
+        OR state ILIKE $${params.length + 1}
+        OR pincode ILIKE $${params.length + 1}
+      )`;
       params.push(`%${search}%`);
     }
 

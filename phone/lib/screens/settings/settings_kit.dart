@@ -4,7 +4,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../api.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
-import '../pages/record_page.dart' show openWebsitePage;
 
 /// Building blocks for the redesigned settings (docs/audits/SETTINGS_AUDIT.md §5):
 /// section cards with a one-line "why", rows that show their current value, switches and pickers
@@ -365,7 +364,11 @@ class WebSetting extends StatelessWidget {
   final String href;
 
   @override
-  Widget build(BuildContext context) => NavSetting(label: label, value: value ?? 'Opens on the website', web: true, onTap: () => openWebsitePage(href));
+  Widget build(BuildContext context) => NavSetting(
+        label: label,
+        value: value,
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This setting is not on the phone yet.'))),
+      );
 }
 
 /// A connection or state, with one action.
@@ -483,12 +486,13 @@ class SegmentSetting<T> extends StatelessWidget {
 
 /// Plan-locked option: stays visible, opens an upgrade note instead of a locked page.
 class LockedSetting extends StatelessWidget {
-  const LockedSetting({super.key, required this.label, required this.help, required this.plan, this.value});
+  const LockedSetting({super.key, required this.label, required this.help, required this.plan, this.value, this.onPlans});
 
   final String label;
   final String help;
   final String plan;
   final String? value;
+  final VoidCallback? onPlans;
 
   @override
   Widget build(BuildContext context) {
@@ -511,7 +515,7 @@ class LockedSetting extends StatelessWidget {
                 label: 'See plans',
                 onPressed: () {
                   Navigator.pop(ctx);
-                  openWebsitePage('/settings/subscription');
+                  onPlans?.call();
                 },
               ),
             ],

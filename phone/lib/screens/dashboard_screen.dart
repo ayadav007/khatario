@@ -143,7 +143,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     icon: LucideIcons.arrowDownLeft,
                     total: _total(data['receivables']),
                     aging: _aging(data['receivables']),
-                    onTap: () => widget.onOpen('Filtered invoices'),
+                    onTap: () => widget.onOpen('/reports/aging/receivables'),
                   ),
                   _MoneyCard(
                     title: 'To pay',
@@ -152,7 +152,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     icon: LucideIcons.arrowUpRight,
                     total: _total(data['payables']),
                     aging: _aging(data['payables']),
-                    onTap: () => widget.onOpen('Filtered purchases'),
+                    onTap: () => widget.onOpen('/reports/aging/payables'),
                   ),
                 ],
               ),
@@ -412,7 +412,7 @@ class _QuickActions extends StatelessWidget {
   final ValueChanged<String> onOpen;
 
   static const _actions = [
-    (LucideIcons.handCoins, 'Collect', 'Collection details', AppTints.green),
+    (LucideIcons.handCoins, 'Collect', 'Record payment', AppTints.green),
     (LucideIcons.shoppingCart, 'Purchase', 'New purchase', AppTints.sky),
     (LucideIcons.receipt, 'Expense', 'Expenses', AppTints.rose),
     (LucideIcons.fileText, 'Quotation', 'New estimate', AppTints.violet),

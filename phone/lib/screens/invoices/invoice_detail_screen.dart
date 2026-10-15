@@ -10,6 +10,7 @@ import '../../theme.dart';
 import '../../ui/detail_panel_shell.dart';
 import '../../ui/kit.dart';
 import 'invoice_form_screen.dart';
+import 'invoice_payment_sheet.dart';
 import 'invoice_pdf_screen.dart';
 import 'invoice_share.dart';
 import 'record_payment_dialog.dart';
@@ -106,6 +107,23 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     await SharePlus.instance.share(ShareParams(text: 'Invoice $number\n$url', subject: 'Invoice $number', title: 'Share invoice'));
   }
 
+  Future<void> _finalize() async {
+    final inv = _invoice;
+    if (inv == null) return;
+    final grand = toNum(inv['grand_total']).toDouble();
+    final paid = toNum(inv['paid_amount']).toDouble();
+    final balance = inv['balance_amount'] != null ? toNum(inv['balance_amount']).toDouble() : grand - paid;
+    final ok = await finalizeDraftWithPayment(
+      context,
+      api: widget.api,
+      invoiceId: widget.invoiceId,
+      invoiceNumber: inv['invoice_number']?.toString() ?? 'Bill',
+      grandTotal: balance > 0.01 ? balance : grand,
+      hasCustomer: (inv['customer_id']?.toString() ?? '').isNotEmpty,
+    );
+    if (ok && mounted) await _fetchInvoice();
+  }
+
   Future<void> _collect(Map<String, dynamic> inv, num grand, num paid, num balance) async {
     final ok = await showRecordPaymentDialog(
       context,
@@ -147,7 +165,9 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     final paid = toNum(inv['paid_amount']);
     final balance = inv['balance_amount'] != null ? toNum(inv['balance_amount']) : grand - paid;
     final due = balance > 0.01 && inv['status'] != 'cancelled';
-    final canCollect = inv['status'] == 'final' && due;
+    final draft = inv['status'] == 'draft';
+    final hasCustomer = (inv['customer_id']?.toString() ?? '').isNotEmpty;
+    final canCollect = inv['status'] == 'final' && due && hasCustomer;
     final date = parseServerDate(inv['invoice_date']);
     return DetailPanelShell<_Tab>(
       title: inv['invoice_number']?.toString() ?? 'Invoice',
@@ -180,7 +200,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       },
       bottomBar: KBottomBar(children: [
         KIconTile(icon: LucideIcons.fileText, label: 'View invoice', onTap: _openInvoiceView),
-        if (canCollect) ...[
+        if (draft) ...[
+          KIconTile(icon: LucideIcons.share2, label: 'Share', onTap: _share),
+          Expanded(
+            child: KButton(label: 'Finalize', icon: LucideIcons.check, onPressed: _finalize),
+          ),
+        ] else if (canCollect) ...[
           KIconTile(icon: LucideIcons.share2, label: 'Share', onTap: _share),
           Expanded(
             child: KButton(
@@ -229,6 +254,14 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           KAmount(grand, maxFraction: 2),
           const SizedBox(height: 8),
           KPill(label: label, tone: tone),
+          if (inv['status'] == 'final' && due && (inv['customer_id']?.toString() ?? '').isEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'This cash sale has no customer, so a separate receipt cannot be added. Add a customer on a new bill if you need to collect later.',
+              textAlign: TextAlign.center,
+              style: AppText.caption.copyWith(color: AppColors.negative),
+            ),
+          ],
           if (!cancelled) ...[
             const SizedBox(height: 16),
             ClipRRect(

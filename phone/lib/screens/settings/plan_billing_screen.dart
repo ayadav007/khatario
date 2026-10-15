@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
+import 'plan_picker_screen.dart';
 import 'settings_kit.dart';
 
 /// Website `SubscriptionTab`: plan name, usage, included features, and billing history.
-/// Plan changes stay on the website because they go through checkout.
+/// Free plans change here. Paid plans stay listed; checkout is not in the phone yet.
 class PlanBillingScreen extends StatefulWidget {
   const PlanBillingScreen({super.key, required this.session});
 
@@ -67,6 +67,28 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> {
     }
   }
 
+  Future<void> _changePlan() async {
+    try {
+      final body = await widget.session.api.getJson('/api/subscriptions/plans');
+      final plans = jsonList(body['plans']);
+      if (!mounted) return;
+      if (plans.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No plans are available right now.')));
+        return;
+      }
+      final updated = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => PlanPickerScreen(
+          session: widget.session,
+          plans: plans,
+          currentPlanId: _subscription['plan_id']?.toString(),
+        ),
+      ));
+      if (updated == true) await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SettingsPage(
@@ -86,8 +108,8 @@ class _PlanBillingScreenState extends State<PlanBillingScreen> {
           _historyCard(),
           const SizedBox(height: AppSpace.md),
           KButton(
-            label: 'Change plan on the website',
-            onPressed: () => launchUrl(Uri.parse('https://staging.khatario.com/settings/subscription'), mode: LaunchMode.externalApplication),
+            label: 'Change plan',
+            onPressed: _changePlan,
           ),
         ],
       ],

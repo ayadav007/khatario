@@ -64,7 +64,7 @@ Widget settingsGroupScreen(String id, AppSession session) => switch (id) {
       'messaging' => MessagingSettingsScreen(session: session),
       'people' => PeopleSettingsScreen(session: session),
       'data' => PlanDataSettingsScreen(session: session),
-      _ => const HelpSettingsScreen(),
+      _ => HelpSettingsScreen(session: session),
     };
 
 /// Website settings links (from the More menu and quick-settings sheets) mapped to the phone

@@ -31,6 +31,16 @@ void main() {
     expect(body, {'message_text': 'Thanks'});
     expect(body.containsKey('business_id'), isFalse);
     expect(body.containsKey('user_id'), isFalse);
+    final withFile = replyBody('', mediaUrl: 'data:image/jpeg;base64,aa', fileName: 'bill.jpg', buttons: quickReplyButtons(['Yes', ' ']));
+    expect(withFile['file_name'], 'bill.jpg');
+    expect(withFile.containsKey('business_id'), isFalse);
+    expect((withFile['buttons'] as List).single['title'], 'Yes');
+    expect(mediaRejectReason(mime: 'image/jpeg', bytes: 6 * 1024 * 1024), contains('5 MB'));
+    expect(mediaRejectReason(mime: 'application/pdf', bytes: 100), isNull);
+    final photo = ChatMessage.fromJson({'message_type': 'image', 'media_url': '/api/whatsapp/media/a.jpg', 'buttons': [{'title': 'Price'}]});
+    expect(photo.mediaUrl, '/api/whatsapp/media/a.jpg');
+    expect(photo.buttonTitles, ['Price']);
+    expect(photo.text, 'Photo');
   });
 
   test('requesting and intervened match the website inbox', () {
@@ -69,5 +79,21 @@ void main() {
       'Meera is handling this chat',
     );
     expect(replyBlockReason(canReply: true, canIntervene: false, windowOpen: true), isNull);
+  });
+
+  test('saved replies fill the customer name and slash matches the shortcut', () {
+    expect(
+      fillQuickReply('Hi {{first_name}}, this is {{agent}}', name: 'Ravi Kumar', agent: 'Neha'),
+      'Hi Ravi, this is Neha',
+    );
+    expect(conversationLabels({'labels': [{'id': '1', 'name': 'VIP'}]}).single['name'], 'VIP');
+    final replies = [
+      {'title': 'Bill', 'shortcut': 'bill', 'message': 'Here is the bill'},
+      {'title': 'Thanks', 'shortcut': 'thanks', 'message': 'Thank you'},
+    ];
+    expect(matchingSavedReplies('/bi', replies).single['shortcut'], 'bill');
+    expect(matchingSavedReplies('hello', replies), isEmpty);
+    final thread = ChatThread.fromJson({'messages': [], 'ownership': {'can_transfer': true}});
+    expect(thread.canTransfer, isTrue);
   });
 }

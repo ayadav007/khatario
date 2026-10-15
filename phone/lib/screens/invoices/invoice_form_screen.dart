@@ -13,6 +13,7 @@ import '../parties/customer_form_logic.dart';
 import '../parties/customer_form_screen.dart';
 import 'bill_saved_screen.dart';
 import 'invoice_form_logic.dart';
+import 'invoice_payment_sheet.dart';
 import 'invoice_scan.dart';
 
 /// New / edit tax invoice. Mirrors the website's mobile composer (`renderMobileComposer` in
@@ -30,10 +31,6 @@ class InvoiceFormScreen extends StatefulWidget {
   State<InvoiceFormScreen> createState() => _InvoiceFormScreenState();
 }
 
-/// Settlement buttons on the website composer: Paid / Credit / Partial.
-enum _Settle { paid, credit, partial }
-
-const _payModes = [('cash', 'Cash'), ('upi', 'UPI'), ('bank', 'Bank'), ('card', 'Card')];
 const _gstRates = [0.0, 5.0, 12.0, 18.0, 28.0];
 const _notePresets = [
   ('Due on receipt', 'Payment due upon receipt.'),
@@ -49,7 +46,8 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   /// Delivery, packing, freight… added after tax (sent as `additional_charges`).
   final List<ExtraCharge> _charges = [];
   double get _chargesTotal => _charges.fold(0.0, (s, c) => s + c.amount);
-  final _paid = TextEditingController();
+  final List<RecordedPayment> _payments = [];
+  double get _paidTotal => _payments.fold(0.0, (sum, p) => sum + p.amount);
   final _po = TextEditingController();
   final _reference = TextEditingController();
   String? _customerId;
@@ -64,8 +62,6 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
   /// Place of supply picked by hand; null follows the customer.
   String? _placeOverride;
-  String _payMode = 'cash';
-  _Settle _settle = _Settle.paid;
   bool _pricesIncludeGst = false;
   bool _roundOff = false;
   bool _moreOpen = false;
@@ -76,6 +72,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   DateTime? _dueDate;
   String? _number;
   String? _locked;
+  String? _loadedStatus;
 
   bool get _isNew => widget.invoiceId == null;
 
@@ -149,7 +146,6 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   void dispose() {
     _notes.dispose();
     _terms.dispose();
-    _paid.dispose();
     _po.dispose();
     _reference.dispose();
     super.dispose();
@@ -205,6 +201,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           ..clear()
           ..addAll(lines);
         _number = invoice['invoice_number']?.toString();
+        _loadedStatus = invoice['status']?.toString();
         _customerId = invoice['customer_id']?.toString();
         _customerName = invoice['customer_name']?.toString() ?? '';
         _customerGstin = invoice['customer_gstin']?.toString();
@@ -265,13 +262,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     });
   }
 
-  double _paymentAmount(double grand) => switch (_settle) {
-        _Settle.paid => grand,
-        _Settle.credit => 0,
-        _Settle.partial => double.tryParse(_paid.text.trim()) ?? 0,
-      };
-
-  InvoiceDraft _draft(String status, {double grand = 0}) => InvoiceDraft(
+  InvoiceDraft _draft(String status) => InvoiceDraft(
         invoiceId: widget.invoiceId,
         customerId: _customerId,
         invoiceDate: ymd(_date),
@@ -287,15 +278,33 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         purchaseOrderNumber: _po.text,
         referenceNumber: _reference.text,
         additionalCharges: _chargesTotal,
-        paymentAmount: status == 'final' && _isNew ? _paymentAmount(grand) : 0,
-        paymentMode: _payMode,
+        paymentAmount: status == 'final' && (_isNew || _loadedStatus == 'draft') ? _paidTotal : 0,
+        payments: status == 'final' && (_isNew || _loadedStatus == 'draft') ? List<RecordedPayment>.from(_payments) : const [],
       );
 
   Future<void> _save(String status) async {
     final grand = previewInvoice(_draft('draft'), supplierStateCode: _supplierStateCode).grand;
-    final draft = _draft(status, grand: grand);
+    if (status == 'final' && (_isNew || _loadedStatus == 'draft') && _payments.isEmpty) {
+      final hasCustomer = _customerId != null && _customerId!.isNotEmpty;
+      final saved = await showInvoicePaymentSheet(
+        context,
+        grandTotal: grand,
+        payments: const [],
+        canLeaveUnpaid: hasCustomer,
+        prefillFull: true,
+        requireFull: !hasCustomer,
+        saveLabel: 'Continue',
+      );
+      if (saved == null || !mounted) return;
+      setState(() {
+        _payments
+          ..clear()
+          ..addAll(saved);
+      });
+    }
+    final draft = _draft(status);
     final problem = validateInvoiceDraft(draft) ??
-        (status == 'final' && _isNew && _settle == _Settle.partial && draft.paymentAmount > grand + 0.005
+        (status == 'final' && _isNew && draft.paymentAmount > grand + 0.005
             ? 'Amount received cannot be more than the bill total'
             : null);
     if (problem != null) {
@@ -926,7 +935,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
         ],
 
         // 4. Settlement, only once there is something to settle.
-        if (hasLines && _isNew) ...[
+        if (hasLines && (_isNew || _loadedStatus == 'draft')) ...[
           const SizedBox(height: AppSpace.lg),
           _SectionLabel('Payment'),
           KCard(
@@ -934,31 +943,16 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                KSegmented<_Settle>(
-                  value: _settle,
-                  options: const [(_Settle.paid, 'Paid'), (_Settle.credit, 'Credit'), (_Settle.partial, 'Partial')],
-                  onChanged: (v) => setState(() => _settle = v),
+                if (_paidTotal > 0) ...[
+                  _payLine('Paid', formatAmount(_paidTotal), AppColors.positive),
+                  _payLine('To collect', formatAmount(invoiceRound2(preview.grand - _paidTotal)), AppColors.negative),
+                  const SizedBox(height: AppSpace.sm),
+                ],
+                KButton.secondary(
+                  label: _paidTotal > 0 ? 'Payment: ${formatAmount(_paidTotal)}' : 'Record payment',
+                  icon: LucideIcons.creditCard,
+                  onPressed: () => _recordPayment(preview.grand),
                 ),
-                if (_settle != _Settle.credit) ...[
-                  const SizedBox(height: AppSpace.md),
-                  KChipBar<String>(
-                    value: _payMode,
-                    options: _payModes,
-                    padding: EdgeInsets.zero,
-                    onChanged: (m) => setState(() => _payMode = m),
-                  ),
-                ],
-                if (_settle == _Settle.partial) ...[
-                  const SizedBox(height: AppSpace.md),
-                  WebInput(
-                    label: 'Amount received',
-                    controller: _paid,
-                    placeholder: '0',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                ],
-                const SizedBox(height: AppSpace.md),
-                _settleNote(preview.grand),
               ],
             ),
           ),
@@ -1041,24 +1035,25 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     return parts.join(' · ');
   }
 
-  Widget _settleNote(double grand) {
-    final received = _paymentAmount(grand);
-    final balance = invoiceRound2(grand - received);
-    final (IconData icon, String text, KTone tone) = switch (_settle) {
-      _Settle.paid => (LucideIcons.circleCheck, 'Full amount received now', KTone.positive),
-      _ when _customerId == null && balance > 0.005 => (
-          LucideIcons.triangleAlert,
-          'Choose a customer to keep ${formatAmount(balance)} on their account',
-          KTone.due
-        ),
-      _ => (LucideIcons.clock, '${formatAmount(balance)} goes to the customer\'s balance', KTone.due),
-    };
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: tone.fg),
-        const SizedBox(width: 8),
-        Expanded(child: Text(text, style: AppText.caption.copyWith(color: tone.fg))),
-      ],
+  Future<void> _recordPayment(double grand) async {
+    final saved = await showInvoicePaymentSheet(context, grandTotal: grand, payments: _payments);
+    if (saved == null || !mounted) return;
+    setState(() {
+      _payments
+        ..clear()
+        ..addAll(saved);
+    });
+  }
+
+  Widget _payLine(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: AppText.caption)),
+          Text(value, style: AppText.bodyStrong.copyWith(color: color)),
+        ],
+      ),
     );
   }
 
@@ -1091,7 +1086,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
             const SizedBox(width: 10),
           ],
           KButton(
-            label: _isNew ? 'Save bill' : 'Update',
+            label: _isNew ? 'Save bill' : (_loadedStatus == 'draft' ? 'Finalize' : 'Update'),
             icon: LucideIcons.check,
             expand: false,
             loading: _saving,

@@ -6,7 +6,10 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import 'custom_fields_screen.dart';
 import 'settings_kit.dart';
+import 'settings_router.dart';
+import 'template_settings_screen.dart';
 
 const _languages = [
   ('en', 'English'), ('hi', 'Hindi'), ('hinglish', 'Hinglish'), ('mr', 'Marathi'), ('gu', 'Gujarati'),
@@ -14,8 +17,19 @@ const _languages = [
   ('pa', 'Punjabi'), ('or', 'Odia'), ('ur', 'Urdu'),
 ];
 
-/// Number series the phone can edit; each has its own counter on the server.
-const _series = [('tax_invoice', 'Tax invoice', 'INV-'), ('bill_of_supply', 'Bill of supply', 'BOS-'), ('proforma_invoice', 'Proforma invoice', 'PI-')];
+/// (document type, label, fallback prefix, whether the server stores a next-number counter).
+/// Credit notes, orders and challans take their next number from the last document with that prefix.
+const _series = <(String, String, String, bool)>[
+  ('tax_invoice', 'Tax invoice', 'INV-', true),
+  ('bill_of_supply', 'Bill of supply', 'BOS-', true),
+  ('proforma_invoice', 'Proforma invoice', 'PI-', true),
+  ('credit_note', 'Credit note', 'CN-', false),
+  ('debit_note', 'Debit note', 'DN-', false),
+  ('delivery_challan', 'Delivery challan', 'DC-', false),
+  ('sales_order', 'Sales order', 'SO-', false),
+  ('purchase_order', 'Purchase order', 'PO-', false),
+  ('work_order', 'Work order', 'WO-', false),
+];
 
 /// Settings › Invoices & documents: defaults for new bills, bill screen, numbering, templates,
 /// print language.
@@ -35,6 +49,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
   String _language = 'en';
   bool _canChangeLanguage = false;
   Map<String, dynamic>? _numbering;
+  String? _branchId;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -73,6 +88,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
         _language = results[2]['document_language']?.toString() ?? 'en';
         _canChangeLanguage = results[2]['can_change'] == true;
         _numbering = results[3];
+        _branchId ??= _defaultBranchId(results[3]);
         _loading = false;
         _error = null;
       });
@@ -114,9 +130,21 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     }
   }
 
-  Map<String, dynamic>? get _branch {
-    final branches = jsonList(_numbering?['branches']);
+  String? _defaultBranchId(Map<String, dynamic> numbering) {
+    final branches = jsonList(numbering['branches']);
     if (branches.isEmpty) return null;
+    return (branches.firstWhere((b) => b['is_default'] == true, orElse: () => branches.first)['id'])?.toString();
+  }
+
+  List<Map<String, dynamic>> get _branches => jsonList(_numbering?['branches']);
+
+  Map<String, dynamic>? get _branch {
+    final branches = _branches;
+    if (branches.isEmpty) return null;
+    if (_branchId != null) {
+      final match = branches.where((b) => b['id']?.toString() == _branchId);
+      if (match.isNotEmpty) return match.first;
+    }
     return branches.firstWhere((b) => b['is_default'] == true, orElse: () => branches.first);
   }
 
@@ -131,7 +159,18 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
 
   int _next(String type) => toNum(jsonMap(_branch?['next_numbers'])[type]).toInt().clamp(1, 1 << 31);
 
-  Future<void> _editSeries(String type, String label, String fallback) async {
+  String _seriesValue(String type, String fallback, bool counted) {
+    final prefix = _prefix(type, fallback);
+    if (counted) {
+      final n = _next(type).toString().padLeft(5, '0');
+      return prefix.endsWith('-') ? '$prefix$n next' : '$prefix-$n next';
+    }
+    final used = toNum(jsonMap(_numbering?['currentStats'])[type]).toInt();
+    if (used <= 0) return '$prefix · none yet';
+    return '$prefix · last ${used.toString().padLeft(5, '0')}';
+  }
+
+  Future<void> _editSeries(String type, String label, String fallback, bool counted) async {
     final prefix = TextEditingController(text: _prefix(type, fallback));
     final start = TextEditingController(text: '${_next(type)}');
     final ok = await showKSheet<bool>(
@@ -143,10 +182,17 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(controller: prefix, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Prefix')),
-            const SizedBox(height: 12),
-            TextField(controller: start, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Next number')),
+            if (counted) ...[
+              const SizedBox(height: 12),
+              TextField(controller: start, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Next number')),
+            ],
             const SizedBox(height: 8),
-            Text('Applies to every branch. Numbers already used are never given out again.', style: AppText.caption),
+            Text(
+              counted
+                  ? 'Numbers already used are never given out again.'
+                  : 'The next document is one higher than the last one with this prefix.',
+              style: AppText.caption,
+            ),
             const SizedBox(height: 16),
             KButton(label: 'Save', onPressed: () => Navigator.pop(ctx, true)),
           ],
@@ -155,10 +201,12 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
     );
     if (ok != true || !mounted) return;
     try {
+      final branchId = _branch?['id']?.toString();
       await _api.putJson('/api/settings/number-series', {
         'document_type': type,
         'prefix': prefix.text.trim(),
-        'starting_number': int.tryParse(start.text.trim()) ?? _next(type),
+        if (counted) 'starting_number': int.tryParse(start.text.trim()) ?? _next(type),
+        if (_branches.length > 1 && branchId != null) 'branch_ids': [branchId],
       });
       await _load();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label numbering saved')));
@@ -229,16 +277,27 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
           ),
         ]),
         SettingsSection(title: 'Number series', why: 'Prefix and next number for each document.', children: [
-          for (final (type, label, fallback) in _series)
+          if (_branches.length > 1)
+            ChoiceSetting<String>(
+              label: 'Branch',
+              help: 'Prefix and next number for this branch.',
+              value: _branch?['id']?.toString() ?? '',
+              options: [for (final b in _branches) (b['id'].toString(), b['name']?.toString() ?? 'Branch')],
+              onChanged: (v) => setState(() => _branchId = v),
+            ),
+          for (final (type, label, fallback, counted) in _series)
             NavSetting(
               label: label,
-              value: '${_prefix(type, fallback)}${_next(type).toString().padLeft(5, '0')} next',
-              onTap: () => _editSeries(type, label, fallback),
+              value: _seriesValue(type, fallback, counted),
+              onTap: () => _editSeries(type, label, fallback, counted),
             ),
-          const WebSetting(label: 'Credit notes, challans, orders', value: 'Other documents and per-branch series', href: '/settings/number-series'),
         ]),
         SettingsSection(title: 'Templates & printing', why: 'How each document looks on paper and as PDF.', children: [
-          const WebSetting(label: 'Invoice templates', value: 'Choose and customise per document', href: '/settings/templates'),
+          NavSetting(
+            label: 'Invoice templates',
+            value: 'Choose and customise per document',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TemplateSettingsScreen(session: widget.session))),
+          ),
           _canChangeLanguage
               ? ChoiceSetting<String>(
                   label: 'Print language',
@@ -257,15 +316,20 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
                     );
                   },
                 )
-              : const LockedSetting(
+              : LockedSetting(
                   label: 'Print language',
                   value: 'English',
                   help: 'Print bills in Hindi, Marathi, Gujarati and 10 more languages.',
                   plan: 'Business plan',
+                  onPlans: () => openPhoneSetting(context, widget.session, '/settings/subscription'),
                 ),
         ]),
-        const SettingsSection(title: 'Custom fields', why: 'Extra details you want on items, bills and parties.', children: [
-          WebSetting(label: 'Item and invoice fields', href: '/settings/custom-fields'),
+        SettingsSection(title: 'Custom fields', why: 'Extra details you want on items, bills and parties.', children: [
+          NavSetting(
+            label: 'Item and invoice fields',
+            value: 'Add, require or remove',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CustomFieldsScreen(session: widget.session))),
+          ),
         ]),
       ],
     );

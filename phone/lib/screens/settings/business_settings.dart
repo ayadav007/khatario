@@ -8,6 +8,7 @@ import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../parties/customer_form_logic.dart' show indianStates;
 import 'settings_kit.dart';
+import 'settings_router.dart';
 
 /// Settings › Business: identity, address, GST, logo & signature, locations, exporter details.
 /// Saves to PATCH /api/business/:id (the same route the website's Business profile uses).
@@ -219,15 +220,15 @@ class _BusinessSettingsScreenState extends State<BusinessSettingsScreen> {
           _image('signature', 'Signature', 'Printed above “Authorised signatory”.'),
         ]),
         SettingsSection(title: 'Locations', why: 'Each branch can have its own GSTIN and invoice series.', children: [
-          WebSetting(
+          NavSetting(
             label: 'Branches',
             value: _branches.isEmpty ? 'One location' : _branches.map((b) => b['name']).whereType<Object>().join(', '),
-            href: '/settings/branches',
+            onTap: () => openPhoneSetting(context, widget.session, '/settings/branches'),
           ),
-          WebSetting(
+          NavSetting(
             label: 'Warehouses',
             value: _warehouses.isEmpty ? 'Not used' : _warehouses.map((w) => w['name']).whereType<Object>().join(', '),
-            href: '/settings/warehouses',
+            onTap: () => openPhoneSetting(context, widget.session, '/settings/warehouses'),
           ),
         ]),
         AdvancedSection(title: 'Exporter details', why: 'Only if you sell outside India.', children: [

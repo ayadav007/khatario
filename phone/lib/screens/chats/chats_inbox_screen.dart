@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../api.dart';
 import '../../session.dart';
+import 'chat_outreach_screens.dart';
 import 'chat_thread_logic.dart';
 import 'chat_thread_screen.dart';
 
@@ -31,6 +32,8 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
   InboxSummary _summary = const InboxSummary();
   String? _inboxState;
   String? _intervenedBy;
+  String? _labelId;
+  List<Map<String, dynamic>> _labels = const [];
   bool _unreadOnly = false;
   bool _loading = true;
   bool _loadingMore = false;
@@ -42,6 +45,7 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
     super.initState();
     _scroll.addListener(_onScroll);
     _loadSummary();
+    _loadLabels();
     _load();
   }
 
@@ -65,6 +69,17 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
       final body = await widget.session.api.getJson('/api/whatsapp/conversations/summary');
       if (!mounted) return;
       setState(() => _summary = InboxSummary.fromJson(body));
+    } catch (_) {}
+  }
+
+  Future<void> _loadLabels() async {
+    try {
+      final body = await widget.session.api.getJson('/api/whatsapp/labels');
+      final raw = body['labels'];
+      if (!mounted) return;
+      setState(() {
+        _labels = raw is List ? raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList() : const [];
+      });
     } catch (_) {}
   }
 
@@ -93,6 +108,7 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
         if (_inboxState != null) 'inbox_state=$_inboxState',
         if (_inboxState == 'intervened' && _intervenedBy != null) 'intervened_by=$_intervenedBy',
         if (_unreadOnly) 'unread_only=true',
+        if (_labelId != null) 'label_id=${Uri.encodeComponent(_labelId!)}',
       ].join('&');
       final path = '/api/whatsapp/conversations?limit=50&offset=$offset'
           '${q.isEmpty ? '' : '&search=${Uri.encodeComponent(q)}'}'
@@ -151,17 +167,30 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           child: Column(
             children: [
-              const SizedBox(
+              SizedBox(
                 height: 44,
                 child: Row(
                   children: [
-                    CircleAvatar(
+                    const CircleAvatar(
                       radius: 18,
                       backgroundColor: Color(0x33FFFFFF),
                       child: Icon(Icons.chat_bubble, color: Colors.white, size: 18),
                     ),
-                    SizedBox(width: 10),
-                    Text('Chats', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 10),
+                    const Expanded(child: Text('Chats', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600))),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white),
+                      onSelected: (value) {
+                        final page = value == 'broadcasts'
+                            ? BroadcastsScreen(session: widget.session)
+                            : BotRepliesScreen(session: widget.session);
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'broadcasts', child: Text('Broadcasts')),
+                        PopupMenuItem(value: 'bot', child: Text('Bot replies')),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -235,6 +264,25 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
               ],
             ),
           ),
+          if (_labels.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  _mini('All tags', _labelId == null, () {
+                    setState(() => _labelId = null);
+                    _load();
+                  }),
+                  for (final label in _labels)
+                    _mini(label['name']?.toString() ?? 'Tag', _labelId == label['id']?.toString(), () {
+                      final id = label['id']?.toString();
+                      setState(() => _labelId = _labelId == id ? null : id);
+                      _load();
+                    }),
+                ],
+              ),
+            ),
           if (_summary.supervisor && _inboxState == 'intervened')
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
@@ -380,6 +428,28 @@ class _ChatsInboxScreenState extends State<ChatsInboxScreen> {
                   if (phone != null) ...[
                     const SizedBox(height: 2),
                     Text(phone, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: _waMeta, height: 1.3)),
+                  ],
+                  if (conversationLabels(row).isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        for (final label in conversationLabels(row).take(3))
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Text(
+                              label['name']?.toString() ?? '',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _waInk),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                   const SizedBox(height: 2),
                   Row(

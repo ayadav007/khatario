@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../format.dart';
 import '../theme.dart';
+import 'whatsapp_icon.dart';
 
 /// Phone component kit built on the tokens in `theme.dart`.
 ///
@@ -382,9 +383,10 @@ class KSquareButton extends StatelessWidget {
 
 /// Round 40px icon button for app bars, with an optional count badge.
 class KIconButton extends StatelessWidget {
-  const KIconButton({super.key, required this.icon, required this.onTap, required this.tooltip, this.badge = 0, this.color, this.dot = false});
+  const KIconButton({super.key, required this.icon, required this.onTap, required this.tooltip, this.badge = 0, this.color, this.dot = false, this.whatsApp = false});
 
   final IconData icon;
+  final bool whatsApp;
   final VoidCallback onTap;
   final String tooltip;
   final int badge;
@@ -412,7 +414,7 @@ class KIconButton extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                Icon(icon, size: 22, color: color ?? AppColors.ink),
+                whatsApp ? WhatsAppIcon(size: 22, color: color ?? const Color(0xFF25D366)) : Icon(icon, size: 22, color: color ?? AppColors.ink),
                 if (badge > 0)
                   Positioned(top: 6, right: 4, child: KBadge(count: badge))
                 else if (dot)
@@ -719,9 +721,10 @@ class KButton extends StatelessWidget {
 
 /// Square 50px secondary icon button for bottom bars.
 class KIconTile extends StatelessWidget {
-  const KIconTile({super.key, required this.icon, required this.label, required this.onTap});
+  const KIconTile({super.key, required this.icon, required this.label, required this.onTap, this.whatsApp = false});
 
   final IconData icon;
+  final bool whatsApp;
   final String label;
   final VoidCallback onTap;
 
@@ -740,7 +743,11 @@ class KIconTile extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(AppRadius.md),
             onTap: onTap,
-            child: SizedBox(width: 50, height: 50, child: Icon(icon, size: 20, color: AppColors.ink)),
+            child: SizedBox(
+              width: 50,
+              height: 50,
+              child: Center(child: whatsApp ? const WhatsAppIcon(size: 22) : Icon(icon, size: 20, color: AppColors.ink)),
+            ),
           ),
         ),
       ),
@@ -923,9 +930,10 @@ Future<T?> showKSheet<T>(
 
 /// One tappable row in an action sheet.
 class KSheetAction extends StatelessWidget {
-  const KSheetAction({super.key, required this.icon, required this.label, required this.onTap, this.danger = false, this.selected = false, this.subtitle});
+  const KSheetAction({super.key, required this.icon, required this.label, required this.onTap, this.danger = false, this.selected = false, this.subtitle, this.whatsApp = false});
 
   final IconData icon;
+  final bool whatsApp;
   final String label;
   final String? subtitle;
   final VoidCallback onTap;
@@ -951,7 +959,9 @@ class KSheetAction extends StatelessWidget {
                   color: danger ? AppColors.negativeSoft : (selected ? AppColors.brandSoft : AppColors.sunken),
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
-                child: Icon(icon, size: 18, color: danger ? AppColors.negative : (selected ? AppColors.brand : AppColors.ink)),
+                child: whatsApp
+                    ? const WhatsAppIcon(size: 18)
+                    : Icon(icon, size: 18, color: danger ? AppColors.negative : (selected ? AppColors.brand : AppColors.ink)),
               ),
               const SizedBox(width: 14),
               Expanded(

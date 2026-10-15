@@ -1,3 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../api.dart';
@@ -21,6 +26,10 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   ChatThread? _thread;
+  List<Map<String, dynamic>> _replies = const [];
+  bool _repliesLoaded = false;
+  ({String name, String mime, List<int> bytes})? _file;
+  List<String> _buttons = const [];
   bool _loading = true;
   bool _sending = false;
   String? _error;
@@ -82,10 +91,13 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     });
   }
 
-  Future<void> _ownership(String action) async {
+  Future<void> _ownership(String action, {String? toUserId}) async {
     setState(() => _sending = true);
     try {
-      await widget.session.api.postJson('$_path/ownership', {'action': action});
+      await widget.session.api.postJson('$_path/ownership', {
+        'action': action,
+        'to_user_id': ?toUserId,
+      });
       if (!mounted) return;
       await _load();
     } on ApiException catch (error) {
@@ -96,10 +108,180 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     }
   }
 
+  Future<void> _ensureReplies() async {
+    if (_repliesLoaded) return;
+    try {
+      final body = await widget.session.api.getJson('/api/whatsapp/saved-replies');
+      final raw = body['replies'];
+      if (!mounted) return;
+      setState(() {
+        _replies = raw is List ? raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList() : const [];
+        _repliesLoaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _repliesLoaded = true);
+    }
+  }
+
+  void _applyReply(Map<String, dynamic> reply) {
+    final filled = fillQuickReply(
+      reply['message']?.toString() ?? '',
+      name: widget.title,
+      phone: widget.subtitle,
+      agent: widget.session.userName,
+    );
+    _input.text = filled;
+    _input.selection = TextSelection.collapsed(offset: filled.length);
+    setState(() {});
+  }
+
+  Future<void> _openReplies() async {
+    await _ensureReplies();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        if (_replies.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('No saved replies yet. Add them from the website inbox, then they show up here.'),
+          );
+        }
+        return ListView(
+          children: [
+            const ListTile(title: Text('Saved replies', style: TextStyle(fontWeight: FontWeight.w600))),
+            for (final reply in _replies)
+              ListTile(
+                title: Text(reply['title']?.toString() ?? 'Reply'),
+                subtitle: Text(
+                  reply['shortcut']?.toString().isNotEmpty == true ? '/${reply['shortcut']}' : (reply['message']?.toString() ?? ''),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => Navigator.pop(context, reply),
+              ),
+          ],
+        );
+      },
+    );
+    if (picked != null) _applyReply(picked);
+  }
+
+  Future<void> _transfer() async {
+    List<Map<String, dynamic>> people = const [];
+    try {
+      final body = await widget.session.api.getJson('/api/whatsapp/users');
+      final raw = body['users'];
+      people = raw is List ? raw.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList() : const [];
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+      return;
+    }
+    if (!mounted) return;
+    final assigned = _thread?.assignedTo;
+    final choices = people.where((person) => person['can_receive'] != false && person['id']?.toString() != assigned).toList();
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        if (choices.isEmpty) {
+          return const Padding(padding: EdgeInsets.all(24), child: Text('No other team member can receive chats.'));
+        }
+        return ListView(
+          children: [
+            const ListTile(title: Text('Transfer chat', style: TextStyle(fontWeight: FontWeight.w600))),
+            for (final person in choices)
+              ListTile(
+                leading: Icon(Icons.circle, size: 10, color: person['online'] == true ? const Color(0xFF16A34A) : const Color(0xFFD1D5DB)),
+                title: Text(person['name']?.toString() ?? 'Team member'),
+                subtitle: Text(person['online'] == true ? 'Online' : 'Offline'),
+                onTap: () => Navigator.pop(context, person['id']?.toString()),
+              ),
+          ],
+        );
+      },
+    );
+    if (picked != null && picked.isNotEmpty) await _ownership('transfer', toUserId: picked);
+  }
+
+  Future<void> _tags() async {
+    List<Map<String, dynamic>> catalog = const [];
+    List<Map<String, dynamic>> current = const [];
+    try {
+      final all = await widget.session.api.getJson('/api/whatsapp/labels');
+      final mine = await widget.session.api.getJson('$_path/labels');
+      final rawAll = all['labels'];
+      final rawMine = mine['labels'];
+      catalog = rawAll is List ? rawAll.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList() : const [];
+      current = rawMine is List ? rawMine.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList() : const [];
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+      return;
+    }
+    if (!mounted) return;
+    final selected = current.map((label) => label['id']?.toString()).whereType<String>().toSet();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheet) {
+            if (catalog.isEmpty) {
+              return const Padding(padding: EdgeInsets.all(24), child: Text('No tags yet. Create them from the website inbox.'));
+            }
+            return ListView(
+              children: [
+                const ListTile(title: Text('Tags', style: TextStyle(fontWeight: FontWeight.w600))),
+                for (final label in catalog)
+                  CheckboxListTile(
+                    value: selected.contains(label['id']?.toString()),
+                    title: Text(label['name']?.toString() ?? 'Tag'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (on) async {
+                      final id = label['id']?.toString();
+                      if (id == null || id.isEmpty) return;
+                      setSheet(() {
+                        if (on == true) {
+                          selected.add(id);
+                        } else {
+                          selected.remove(id);
+                        }
+                      });
+                      try {
+                        if (on == true) {
+                          await widget.session.api.postJson('$_path/labels', {'label_id': id});
+                        } else {
+                          await widget.session.api.deleteJson('$_path/labels?label_id=${Uri.encodeComponent(id)}');
+                        }
+                      } on ApiException catch (error) {
+                        if (!context.mounted) return;
+                        setSheet(() {
+                          if (on == true) {
+                            selected.remove(id);
+                          } else {
+                            selected.add(id);
+                          }
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+                      }
+                    },
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _send() async {
     final text = _input.text.trim();
     final thread = _thread;
-    if (text.isEmpty || thread == null || _sending) return;
+    final file = _file;
+    if ((text.isEmpty && file == null) || thread == null || _sending) return;
     if (replyBlockReason(canReply: thread.canReply, canIntervene: thread.canIntervene, windowOpen: thread.windowOpen, ownerName: thread.ownerName) != null) {
       return;
     }
@@ -108,11 +290,21 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       _error = null;
     });
     try {
-      final body = await widget.session.api.postJson('$_path/messages', replyBody(text));
+      final body = await widget.session.api.postJson(
+        '$_path/messages',
+        replyBody(
+          text,
+          mediaUrl: file == null ? null : 'data:${file.mime};base64,${base64Encode(file.bytes)}',
+          fileName: file?.name,
+          buttons: quickReplyButtons(_buttons),
+        ),
+      );
       final row = body['message'];
       if (!mounted) return;
       setState(() {
         _input.clear();
+        _file = null;
+        _buttons = const [];
         if (row is Map) {
           _thread = thread.copyWith(messages: [...thread.messages, ChatMessage.fromJson(Map<String, dynamic>.from(row))]);
         }
@@ -127,6 +319,56 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _pickFile({required bool image}) async {
+    final file = await FilePicker.pickFile(
+      type: image ? FileType.image : FileType.custom,
+      allowedExtensions: image ? null : const ['pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx'],
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    final mime = mimeForFileName(file.name);
+    final reason = mediaRejectReason(mime: mime, bytes: bytes.length);
+    if (!mounted) return;
+    if (reason != null) {
+      setState(() => _error = reason);
+      return;
+    }
+    setState(() {
+      _file = (name: file.name, mime: mime, bytes: bytes);
+      _error = null;
+    });
+  }
+
+  Future<void> _editButtons() async {
+    final fields = List.generate(3, (index) => TextEditingController(text: index < _buttons.length ? _buttons[index] : ''));
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reply buttons'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Up to three buttons. The customer taps one and that text comes back as their reply.'),
+            const SizedBox(height: 12),
+            for (final field in fields) ...[
+              TextField(controller: field, decoration: const InputDecoration(labelText: 'Button')),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Use')),
+        ],
+      ),
+    );
+    final titles = fields.map((field) => field.text.trim()).where((text) => text.isNotEmpty).toList();
+    for (final field in fields) {
+      field.dispose();
+    }
+    if (saved == true && mounted) setState(() => _buttons = titles);
   }
 
   @override
@@ -153,6 +395,9 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               Text(widget.subtitle!, style: const TextStyle(fontSize: 13, color: Color(0xCCFFFFFF))),
           ],
         ),
+        actions: [
+          IconButton(tooltip: 'Tags', onPressed: _tags, icon: const Icon(Icons.label_outline)),
+        ],
       ),
       body: Column(
         children: [
@@ -176,31 +421,96 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _input,
-                        enabled: block == null && !_sending,
-                        minLines: 1,
-                        maxLines: 4,
-                        textInputAction: TextInputAction.send,
-                        decoration: InputDecoration(
-                          hintText: 'Message',
-                          filled: true,
-                          fillColor: Colors.white,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                    if (_file != null || _buttons.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            if (_file != null)
+                              InputChip(
+                                label: Text(_file!.name, overflow: TextOverflow.ellipsis),
+                                onDeleted: _sending ? null : () => setState(() => _file = null),
+                              ),
+                            if (_buttons.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              InputChip(
+                                label: Text('${_buttons.length} button${_buttons.length == 1 ? '' : 's'}'),
+                                onDeleted: _sending ? null : () => setState(() => _buttons = const []),
+                              ),
+                            ],
+                          ],
                         ),
-                        onSubmitted: (_) => _send(),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Material(
-                      color: block != null || _sending ? const Color(0xFF008069).withValues(alpha: 0.45) : const Color(0xFF008069),
-                      shape: const CircleBorder(),
-                      child: IconButton(onPressed: block != null || _sending ? null : _send, color: Colors.white, icon: const Icon(Icons.send)),
+                    if (matchingSavedReplies(_input.text, _replies).isNotEmpty)
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Column(
+                          children: [
+                            for (final reply in matchingSavedReplies(_input.text, _replies))
+                              ListTile(
+                                dense: true,
+                                title: Text(reply['title']?.toString() ?? 'Reply'),
+                                subtitle: Text('/${reply['shortcut'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                                onTap: () => _applyReply(reply),
+                              ),
+                          ],
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        PopupMenuButton<String>(
+                          tooltip: 'Attach',
+                          enabled: block == null && !_sending,
+                          icon: const Icon(Icons.attach_file, color: Color(0xFF008069)),
+                          onSelected: (kind) => _pickFile(image: kind == 'photo'),
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(value: 'photo', child: Text('Photo')),
+                            PopupMenuItem(value: 'file', child: Text('Document')),
+                          ],
+                        ),
+                        IconButton(
+                          tooltip: 'Reply buttons',
+                          onPressed: block != null || _sending ? null : _editButtons,
+                          icon: const Icon(Icons.smart_button_outlined, color: Color(0xFF008069)),
+                        ),
+                        IconButton(
+                          tooltip: 'Saved replies',
+                          onPressed: block != null || _sending ? null : _openReplies,
+                          icon: const Icon(Icons.bookmark_border, color: Color(0xFF008069)),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _input,
+                            enabled: block == null && !_sending,
+                            minLines: 1,
+                            maxLines: 4,
+                            textInputAction: TextInputAction.send,
+                            decoration: InputDecoration(
+                              hintText: 'Message or / for saved replies',
+                              filled: true,
+                              fillColor: Colors.white,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                            ),
+                            onChanged: (value) {
+                              if (value.trimLeft().startsWith('/')) _ensureReplies();
+                              setState(() {});
+                            },
+                            onSubmitted: (_) => _send(),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Material(
+                          color: block != null || _sending ? const Color(0xFF008069).withValues(alpha: 0.45) : const Color(0xFF008069),
+                          shape: const CircleBorder(),
+                          child: IconButton(onPressed: block != null || _sending ? null : _send, color: Colors.white, icon: const Icon(Icons.send)),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -250,7 +560,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               ),
             ],
           ),
-          if (thread.canIntervene || thread.canTakeOver || thread.canResolve) ...[
+          if (thread.canIntervene || thread.canTakeOver || thread.canResolve || thread.canTransfer) ...[
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -264,6 +574,8 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                   ),
                 if (thread.canTakeOver)
                   OutlinedButton(onPressed: _sending ? null : () => _ownership('take_over'), child: const Text('Take over')),
+                if (thread.canTransfer)
+                  OutlinedButton(onPressed: _sending ? null : _transfer, child: const Text('Transfer')),
                 if (thread.canResolve)
                   FilledButton(
                     onPressed: _sending ? null : () => _ownership('resolve'),
@@ -273,6 +585,40 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  bool _fileRow(ChatMessage message) {
+    final url = message.mediaUrl ?? '';
+    return url.isNotEmpty && message.type != 'image' && message.type != 'sticker';
+  }
+
+  bool _mediaCaption(ChatMessage message) {
+    if ((message.mediaUrl ?? '').isEmpty) return false;
+    return const {'Photo', 'Document', 'Video', 'Voice message', 'Sticker'}.contains(message.text);
+  }
+
+  Widget _media(ChatMessage message) {
+    final url = message.mediaUrl ?? '';
+    if (message.type == 'image' || message.type == 'sticker') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: _AuthedImage(api: widget.session.api, url: url),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.insert_drive_file_outlined, size: 18, color: Color(0xFF008069)),
+          const SizedBox(width: 6),
+          Flexible(child: Text(message.text.isEmpty ? 'Document' : message.text, style: const TextStyle(fontSize: 13))),
         ],
       ),
     );
@@ -316,7 +662,20 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
               children: [
                 if (!outgoing && (message.senderName ?? '').isNotEmpty)
                   Text(message.senderName!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF06CF9C))),
-                Text(message.text, style: const TextStyle(fontSize: 14, height: 1.35, color: Color(0xFF111B21))),
+                if ((message.mediaUrl ?? '').isNotEmpty) _media(message),
+                if (message.text.isNotEmpty && !_mediaCaption(message) && !_fileRow(message))
+                  Text(message.text, style: const TextStyle(fontSize: 14, height: 1.35, color: Color(0xFF111B21))),
+                for (final title in message.buttonTitles)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFF008069)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF008069), fontWeight: FontWeight.w600)),
+                  ),
                 const SizedBox(height: 2),
                 Align(
                   alignment: Alignment.centerRight,
@@ -328,5 +687,52 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
         );
       },
     );
+  }
+}
+
+class _AuthedImage extends StatefulWidget {
+  const _AuthedImage({required this.api, required this.url});
+
+  final KhatarioApi api;
+  final String url;
+
+  @override
+  State<_AuthedImage> createState() => _AuthedImageState();
+}
+
+class _AuthedImageState extends State<_AuthedImage> {
+  Uint8List? _bytes;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final url = widget.url;
+      if (url.startsWith('data:')) {
+        final comma = url.indexOf(',');
+        if (comma < 0) throw StateError('bad data url');
+        if (!mounted) return;
+        setState(() => _bytes = base64Decode(url.substring(comma + 1)));
+        return;
+      }
+      final response = await widget.api.dio.get<List<int>>(url, options: Options(responseType: ResponseType.bytes));
+      final data = response.data;
+      if (!mounted || data == null) return;
+      setState(() => _bytes = Uint8List.fromList(data));
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return const Text('Photo', style: TextStyle(fontSize: 13, color: Color(0xFF667781)));
+    if (_bytes == null) return const SizedBox(width: 160, height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+    return Image.memory(_bytes!, width: 220, fit: BoxFit.cover);
   }
 }

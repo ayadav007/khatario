@@ -154,9 +154,11 @@ void main() {
 
   testWidgets('invoices: defaults, numbering and a locked print language', (tester) async {
     final api = _FakeApi();
-    await _pump(tester, InvoiceSettingsScreen(session: _session(api)), height: 2100);
+    await _pump(tester, InvoiceSettingsScreen(session: _session(api)), height: 2800);
     expect(find.text('15 days'), findsOneWidget);
     expect(find.text('INV-00248 next'), findsOneWidget);
+    expect(find.text('Credit note'), findsOneWidget);
+    expect(find.text('Work order'), findsOneWidget);
     expect(find.text('Business plan'), findsOneWidget);
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/102-settings-invoices.png'));
 

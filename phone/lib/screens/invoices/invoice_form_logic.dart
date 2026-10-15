@@ -120,6 +120,23 @@ class ExtraCharge {
   final double amount;
 }
 
+/// One row from the website's Record Payment sheet (`InvoicePaymentModal`).
+class RecordedPayment {
+  const RecordedPayment({required this.amount, required this.mode, required this.date, this.reference});
+
+  final double amount;
+  final String mode;
+  final String date;
+  final String? reference;
+
+  Map<String, dynamic> toJson() => {
+        'amount': amount,
+        'mode': mode,
+        'date': date,
+        if (reference != null && reference!.trim().isNotEmpty) 'reference': reference!.trim(),
+      };
+}
+
 class InvoiceDraft {
   const InvoiceDraft({
     this.invoiceId,
@@ -134,6 +151,7 @@ class InvoiceDraft {
     this.pricesIncludeGst = false,
     this.paymentAmount = 0,
     this.paymentMode = 'cash',
+    this.payments = const [],
     this.dueDate,
     this.enableRoundOff = false,
     this.purchaseOrderNumber,
@@ -155,6 +173,9 @@ class InvoiceDraft {
   final bool pricesIncludeGst;
   final double paymentAmount;
   final String paymentMode;
+
+  /// Rows from Record Payment. When empty, [paymentAmount] and [paymentMode] are used.
+  final List<RecordedPayment> payments;
 
   /// `yyyy-MM-dd`, optional.
   final String? dueDate;
@@ -244,12 +265,69 @@ Map<String, dynamic> invoiceCreateBody(InvoiceDraft draft) {
         },
     ],
   };
-  if (draft.invoiceId == null && draft.documentType == 'tax_invoice' && draft.status == 'final' && draft.paymentAmount > 0) {
-    body['payments'] = [
-      {'amount': draft.paymentAmount, 'mode': draft.paymentMode, 'date': draft.invoiceDate},
-    ];
+  final recorded = draft.payments.where((p) => p.amount > 0).toList();
+  if (draft.documentType == 'tax_invoice' && draft.status == 'final' && (recorded.isNotEmpty || draft.paymentAmount > 0)) {
+    body['payments'] = recorded.isNotEmpty
+        ? [for (final p in recorded) p.toJson()]
+        : [
+            {'amount': draft.paymentAmount, 'mode': draft.paymentMode, 'date': draft.invoiceDate},
+          ];
   }
   return body;
+}
+
+double _asDouble(dynamic v) {
+  if (v is num) return v.toDouble();
+  return double.tryParse(v?.toString() ?? '') ?? 0;
+}
+
+String _ymdFromServer(dynamic v) {
+  final raw = v?.toString() ?? '';
+  return raw.length >= 10 ? raw.substring(0, 10) : raw;
+}
+
+/// Rebuilds a draft from `GET /api/invoices/:id` so finalizing can post the same bill with a payment.
+InvoiceDraft invoiceDraftFromRecord(
+  Map<String, dynamic> invoice, {
+  required String status,
+  List<RecordedPayment> payments = const [],
+}) {
+  final rawLines = invoice['items'];
+  final lines = rawLines is List
+      ? rawLines.whereType<Map>().map((row) {
+          final e = Map<String, dynamic>.from(row);
+          return InvoiceLineDraft(
+            itemId: e['item_id']?.toString(),
+            name: e['item_name']?.toString() ?? '',
+            quantity: _asDouble(e['quantity']),
+            unitPrice: _asDouble(e['unit_price']),
+            unit: e['unit']?.toString() ?? 'PCS',
+            discountPercent: _asDouble(e['discount_percent']),
+            taxRate: _asDouble(e['tax_rate']),
+            hsn: e['hsn_sac']?.toString(),
+            variantId: e['variant_id']?.toString(),
+          );
+        }).toList()
+      : <InvoiceLineDraft>[];
+  final customerId = invoice['customer_id']?.toString();
+  return InvoiceDraft(
+    invoiceId: invoice['id']?.toString(),
+    customerId: (customerId == null || customerId.isEmpty) ? null : customerId,
+    invoiceDate: _ymdFromServer(invoice['invoice_date']),
+    dueDate: _ymdFromServer(invoice['due_date']).isEmpty ? null : _ymdFromServer(invoice['due_date']),
+    status: status,
+    documentType: invoice['document_type']?.toString() ?? 'tax_invoice',
+    lines: lines,
+    notes: invoice['notes']?.toString(),
+    terms: invoice['terms']?.toString(),
+    placeOfSupply: invoice['place_of_supply_state_code']?.toString(),
+    pricesIncludeGst: invoice['prices_include_gst'] == true,
+    enableRoundOff: invoice['enable_round_off'] == true,
+    purchaseOrderNumber: invoice['purchase_order_number']?.toString(),
+    referenceNumber: invoice['reference_number']?.toString(),
+    additionalCharges: _asDouble(invoice['additional_charges']),
+    payments: payments,
+  );
 }
 
 String? _blankToNull(String? v) => (v == null || v.trim().isEmpty) ? null : v.trim();

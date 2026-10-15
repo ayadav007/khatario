@@ -1,3 +1,10 @@
+/// Ids returned by POST /api/payments after a receipt is saved.
+class RecordedPayments {
+  const RecordedPayments(this.ids);
+
+  final List<String> ids;
+}
+
 /// Payment In job split from `app/(app)/payments/in/page.tsx`.
 /// Identity fields (`business_id`, `created_by`, `user_id`) are omitted; the session owns them.
 class PaymentLinkDraft {
@@ -137,6 +144,36 @@ List<PaymentJob> buildPaymentJobs(PaymentInDraft draft) {
     jobs.add(job(amount: unused, tds: 0));
   }
   return jobs;
+}
+
+/// Sum of the amounts typed against invoices. That sum is the amount received.
+double linkedPaymentTotal(List<PaymentLinkDraft> links) =>
+    roundMoney(links.where((l) => l.amount > 0).fold<double>(0, (s, l) => s + l.amount));
+
+/// `200` for a whole rupee amount, otherwise two decimals.
+String formatEnteredAmount(double amount) {
+  final rounded = roundMoney(amount);
+  if (rounded == rounded.roundToDouble()) return rounded.toInt().toString();
+  return rounded.toStringAsFixed(2);
+}
+
+/// Customer or supplier picker: name, phone number, or address.
+bool partyMatches(Map<String, dynamic> party, String search) {
+  final q = search.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  const fields = [
+    'name',
+    'company_name',
+    'phone',
+    'email',
+    'address',
+    'billing_address',
+    'shipping_address',
+    'city',
+    'state',
+    'pincode',
+  ];
+  return fields.any((key) => (party[key]?.toString().toLowerCase() ?? '').contains(q));
 }
 
 bool paymentMatches(Map<String, dynamic> payment, String search) {

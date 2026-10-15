@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Title shown on a conversation row and in the thread header.
 String conversationTitle(Map<String, dynamic> row) {
   if (row['is_group'] == true) {
@@ -61,6 +63,13 @@ String formatLastMessage(String? text, String? direction) {
 String conversationPreview(Map<String, dynamic> row) =>
     formatLastMessage(row['last_message_text']?.toString(), row['last_message_direction']?.toString());
 
+/// Labels already attached to a conversation row (`labels` from the list API).
+List<Map<String, dynamic>> conversationLabels(Map<String, dynamic> row) {
+  final raw = row['labels'];
+  if (raw is! List) return const [];
+  return raw.whereType<Map>().map((label) => Map<String, dynamic>.from(label)).toList();
+}
+
 int conversationUnread(Map<String, dynamic> row) {
   final value = row['unread_count'];
   if (value is num) return value.toInt();
@@ -102,6 +111,8 @@ class ChatMessage {
     required this.outgoing,
     required this.createdAt,
     this.type = 'text',
+    this.mediaUrl,
+    this.buttonTitles = const [],
     this.senderName,
   });
 
@@ -111,6 +122,8 @@ class ChatMessage {
   final bool outgoing;
   final String? createdAt;
   final String type;
+  final String? mediaUrl;
+  final List<String> buttonTitles;
   final String? senderName;
 
   factory ChatMessage.fromJson(Map<String, dynamic> row) {
@@ -123,9 +136,24 @@ class ChatMessage {
       outgoing: row['direction']?.toString() == 'outgoing',
       createdAt: row['created_at']?.toString(),
       type: type,
+      mediaUrl: row['media_url']?.toString(),
+      buttonTitles: _buttonTitles(row['buttons']),
       senderName: row['sender_name']?.toString() ?? row['sent_by_name']?.toString(),
     );
   }
+}
+
+List<String> _buttonTitles(dynamic raw) {
+  dynamic value = raw;
+  if (value is String && value.trim().isNotEmpty) {
+    try {
+      value = jsonDecode(value);
+    } catch (_) {
+      return const [];
+    }
+  }
+  if (value is! List) return const [];
+  return value.whereType<Map>().map((button) => button['title']?.toString().trim() ?? '').where((title) => title.isNotEmpty).toList();
 }
 
 String _typeLabel(String type) {
@@ -224,6 +252,7 @@ class ChatThread {
     this.canIntervene = false,
     this.canTakeOver = false,
     this.canResolve = false,
+    this.canTransfer = false,
     this.windowOpen = true,
     this.ownerName,
     this.inboxState,
@@ -239,6 +268,7 @@ class ChatThread {
   final bool canIntervene;
   final bool canTakeOver;
   final bool canResolve;
+  final bool canTransfer;
   final bool windowOpen;
   final String? ownerName;
   final String? inboxState;
@@ -255,6 +285,7 @@ class ChatThread {
       canIntervene: canIntervene,
       canTakeOver: canTakeOver,
       canResolve: canResolve,
+      canTransfer: canTransfer,
       windowOpen: windowOpen,
       ownerName: ownerName,
       inboxState: inboxState,
@@ -282,6 +313,7 @@ class ChatThread {
       canIntervene: ownership is Map && ownership['can_intervene'] == true,
       canTakeOver: ownership is Map && ownership['can_take_over'] == true,
       canResolve: ownership is Map && ownership['can_resolve'] == true,
+      canTransfer: ownership is Map && ownership['can_transfer'] == true,
       windowOpen: window is! Map || window['open'] != false,
       ownerName: owner == null || owner.isEmpty ? null : owner,
       inboxState: state == null || state.isEmpty ? null : state,
@@ -292,7 +324,87 @@ class ChatThread {
 }
 
 /// Body for POST /api/whatsapp/conversations/:id/messages. Identity stays on the session.
-Map<String, dynamic> replyBody(String text) => {'message_text': text.trim()};
+Map<String, dynamic> replyBody(
+  String text, {
+  String? mediaUrl,
+  String? fileName,
+  List<Map<String, dynamic>>? buttons,
+}) =>
+    {
+      'message_text': text.trim(),
+      if (mediaUrl != null && mediaUrl.isNotEmpty) 'media_url': mediaUrl,
+      if (fileName != null && fileName.isNotEmpty) 'file_name': fileName,
+      if (buttons != null && buttons.isNotEmpty) 'buttons': buttons,
+    };
+
+const imageMaxBytes = 5 * 1024 * 1024;
+const documentMaxBytes = 25 * 1024 * 1024;
+
+String mimeForFileName(String name) {
+  final ext = name.split('.').last.toLowerCase();
+  return switch (ext) {
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'png' => 'image/png',
+    'webp' => 'image/webp',
+    'gif' => 'image/gif',
+    'pdf' => 'application/pdf',
+    'txt' => 'text/plain',
+    'doc' => 'application/msword',
+    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls' => 'application/vnd.ms-excel',
+    'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    _ => 'application/octet-stream',
+  };
+}
+
+/// Null when the file can go out on WhatsApp. Matches the website composer limits.
+String? mediaRejectReason({required String mime, required int bytes}) {
+  if (mime == 'application/octet-stream') return 'This file type cannot be sent on WhatsApp.';
+  final image = mime.startsWith('image/');
+  final limit = image ? imageMaxBytes : documentMaxBytes;
+  if (bytes > limit) return image ? 'WhatsApp allows photos up to 5 MB' : 'WhatsApp allows files up to 25 MB';
+  return null;
+}
+
+/// Quick-reply buttons, the same shape the inbox send API stores.
+List<Map<String, dynamic>> quickReplyButtons(List<String> titles) {
+  final buttons = <Map<String, dynamic>>[];
+  for (final title in titles) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) continue;
+    buttons.add({'id': 'btn_${buttons.length + 1}', 'title': trimmed, 'type': 'quick_reply'});
+  }
+  return buttons;
+}
+
+/// Fills `{{name}}`, `{{first_name}}`, `{{phone}}` and `{{agent}}` the way the website picker does.
+String fillQuickReply(String message, {String? name, String? phone, String? agent}) {
+  final full = name?.trim() ?? '';
+  final parts = full.split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
+  final first = parts.isEmpty ? '' : parts.first;
+  final values = {
+    'name': full,
+    'first_name': first,
+    'phone': phone?.trim() ?? '',
+    'agent': agent?.trim() ?? '',
+  };
+  return message.replaceAllMapped(
+    RegExp(r'\{\{\s*(name|first_name|phone|agent)\s*\}\}', caseSensitive: false),
+    (match) => values[match.group(1)!.toLowerCase()] ?? '',
+  );
+}
+
+/// Replies shown while the draft starts with `/` and has no space yet.
+List<Map<String, dynamic>> matchingSavedReplies(String draft, List<Map<String, dynamic>> replies) {
+  final text = draft.trimLeft();
+  if (!text.startsWith('/') || text.contains(' ')) return const [];
+  final needle = text.substring(1).toLowerCase();
+  return replies.where((reply) {
+    final title = reply['title']?.toString().toLowerCase() ?? '';
+    final shortcut = reply['shortcut']?.toString().toLowerCase() ?? '';
+    return needle.isEmpty || title.contains(needle) || shortcut.contains(needle);
+  }).take(8).toList();
+}
 
 String? replyBlockReason({required bool canReply, required bool canIntervene, required bool windowOpen, String? ownerName}) {
   if (!windowOpen) {

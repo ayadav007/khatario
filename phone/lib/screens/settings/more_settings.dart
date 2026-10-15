@@ -7,10 +7,10 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import '../parties/party_logic.dart' show partyDay;
-import '../pages/record_page.dart' show openWebsitePage;
 import 'appearance_screen.dart';
 import 'plan_billing_screen.dart';
 import 'settings_kit.dart';
+import 'settings_router.dart';
 
 /// Loads a few JSON documents for a read-mostly settings page.
 mixin _Loads<T extends StatefulWidget> on State<T> {
@@ -94,19 +94,19 @@ class _AccountingSettingsScreenState extends State<AccountingSettingsScreen> wit
               }),
             ),
           if (_years.isEmpty) const SettingRow(label: 'No financial year added', help: 'Add April–March so reports and GST know your periods.', todo: true),
-          const WebSetting(label: 'Add or close a year', href: '/settings/financial-years'),
+          NavSetting(label: 'Add or close a year', onTap: () => openPhoneSetting(context, widget.session, '/settings/financial-years')),
         ]),
         SettingsSection(title: 'Period locks', why: 'Stops back-dated changes after you file returns.', children: [
-          WebSetting(
+          NavSetting(
             label: 'Locked periods',
             value: latestLock == null ? 'Nothing locked' : 'Locked up to ${partyDay(latestLock.toIso8601String())}',
-            href: '/settings/period-locks',
+            onTap: () => openPhoneSetting(context, widget.session, '/settings/period-locks'),
           ),
         ]),
-        const AdvancedSection(
+        AdvancedSection(
           title: 'Account mappings',
           why: 'Change only with your accountant. New entries post to the new account; old entries stay where they are.',
-          children: [WebSetting(label: 'Sales, receivables, cash, bank and stock accounts', href: '/settings/account-mappings')],
+          children: [NavSetting(label: 'Sales, receivables, cash, bank and stock accounts', onTap: () => openPhoneSetting(context, widget.session, '/settings/account-mappings'))],
         ),
       ],
     );
@@ -160,18 +160,18 @@ class _TeamSettingsScreenState extends State<TeamSettingsScreen> with _Loads {
                   : u['is_active'] == false
                       ? const KPill(label: 'Inactive', tone: KTone.neutral)
                       : Icon(LucideIcons.externalLink, size: 16, color: AppColors.ink3),
-              onTap: u['is_primary_admin'] == true ? null : () => openWebsitePage('/settings/users'),
+              onTap: u['is_primary_admin'] == true ? null : () => openPhoneSetting(context, widget.session, '/settings/users'),
             ),
-          AddSetting(label: 'Invite a user', onTap: () => openWebsitePage('/employees')),
+          AddSetting(label: 'Invite a user', onTap: () => openPhoneSetting(context, widget.session, '/employees')),
         ]),
-        const SettingsSection(title: 'Roles', why: 'What each role can see and do.', children: [
-          WebSetting(label: 'Roles & permissions', href: '/settings/roles'),
+        SettingsSection(title: 'Roles', why: 'What each role can see and do.', children: [
+          NavSetting(label: 'Roles & permissions', onTap: () => openPhoneSetting(context, widget.session, '/settings/roles')),
         ]),
         SettingsSection(title: 'WhatsApp agents', why: 'Separate logins that only answer chats.', children: [
-          WebSetting(label: 'Agents', value: agents == 0 ? 'No agents yet' : '$agents agent${agents == 1 ? '' : 's'}', href: '/settings/whatsapp/team'),
+          NavSetting(label: 'Agents', value: agents == 0 ? 'No agents yet' : '$agents agent${agents == 1 ? '' : 's'}', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/team')),
         ]),
-        const SettingsSection(title: 'Activity log', why: 'Who changed what, and when.', children: [
-          WebSetting(label: 'Open activity log', href: '/settings/activity'),
+        SettingsSection(title: 'Activity log', why: 'Who changed what, and when.', children: [
+          NavSetting(label: 'Open activity log', onTap: () => openPhoneSetting(context, widget.session, '/settings/activity')),
         ]),
       ],
     );
@@ -272,12 +272,12 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> with 
                     : 'Not connected',
             tone: connected ? KTone.positive : KTone.due,
             action: connected ? 'Manage' : 'Link number',
-            onAction: () => openWebsitePage('/settings/whatsapp'),
+            onAction: () => openPhoneSetting(context, widget.session, '/settings/whatsapp'),
           ),
-          const WebSetting(label: 'Message templates', value: 'Approved wording for invoices and updates', href: '/settings/whatsapp/templates'),
-          const WebSetting(label: 'Inbox & team', value: 'Who sees which chats, saved replies', href: '/settings/whatsapp/inbox'),
-          const WebSetting(label: 'AI agent', value: 'Answers questions and takes orders', href: '/settings/whatsapp/ai-agent'),
-          const WebSetting(label: 'Updates for you', value: 'Evening summary on your phone', href: '/settings/whatsapp/notifications'),
+          NavSetting(label: 'Message templates', value: 'Approved wording for invoices and updates', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/templates')),
+          NavSetting(label: 'Inbox & team', value: 'Who sees which chats, saved replies', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/inbox')),
+          NavSetting(label: 'AI agent', value: 'Answers questions and takes orders', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/ai-agent')),
+          NavSetting(label: 'Updates for you', value: 'Evening summary on your phone', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/notifications')),
         ]),
         SettingsSection(title: 'Email', why: 'Send invoices from your own address.', children: [
           ToggleSetting(
@@ -295,11 +295,11 @@ class _MessagingSettingsScreenState extends State<MessagingSettingsScreen> with 
           TextSetting(label: 'From address', controller: _f.field('from_email'), keyboardType: TextInputType.emailAddress),
           TextSetting(label: 'Reply-to (optional)', controller: _f.field('reply_to_email'), keyboardType: TextInputType.emailAddress),
         ]),
-        const AdvancedSection(title: 'Mail server', why: 'Host, port and password for your email account.', children: [
-          WebSetting(label: 'SMTP settings and test email', href: '/settings/email'),
+        AdvancedSection(title: 'Mail server', why: 'Host, port and password for your email account.', children: [
+          NavSetting(label: 'SMTP settings and test email', onTap: () => openPhoneSetting(context, widget.session, '/settings/email')),
         ]),
-        const SettingsSection(title: 'SMS', why: 'Text messages for buyers without WhatsApp.', children: [
-          WebSetting(label: 'SMS provider', href: '/settings/integrations?category=sms'),
+        SettingsSection(title: 'SMS', why: 'Text messages for buyers without WhatsApp.', children: [
+          NavSetting(label: 'SMS provider', onTap: () => openPhoneSetting(context, widget.session, '/settings/integrations?category=sms')),
         ]),
       ],
     );
@@ -315,34 +315,35 @@ class PeopleSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SettingsPage(
+    NavSetting row(String label, String href) => NavSetting(label: label, onTap: () => openPhoneSetting(context, session, href));
+    return SettingsPage(
       title: 'People',
       blurb: 'Attendance, leave, payroll and hiring for your staff.',
       icon: LucideIcons.idCard,
       loading: false,
       children: [
         SettingsSection(title: 'Time & attendance', why: 'Feeds payroll every month.', children: [
-          WebSetting(label: 'Shifts', href: '/settings/shifts'),
-          WebSetting(label: 'Weekly off', href: '/settings/weekly-off'),
-          WebSetting(label: 'Holidays', href: '/settings/holiday-lists'),
-          WebSetting(label: 'Late & absence rules', href: '/settings/attendance-policy'),
-          WebSetting(label: 'Overtime', href: '/settings/ot-policy'),
-          WebSetting(label: 'Attendance corrections', href: '/settings/attendance-regularization'),
+          row('Shifts', '/settings/shifts'),
+          row('Weekly off', '/settings/weekly-off'),
+          row('Holidays', '/settings/holiday-lists'),
+          row('Late & absence rules', '/settings/attendance-policy'),
+          row('Overtime', '/settings/ot-policy'),
+          row('Attendance corrections', '/settings/attendance-regularization'),
         ]),
         SettingsSection(title: 'Leave', why: 'Your leave plan with its leave types inside.', children: [
-          WebSetting(label: 'Leave plan and types', href: '/settings/leave-plan'),
-          WebSetting(label: 'Who approves leave and expenses', href: '/settings/hr-approval'),
+          row('Leave plan and types', '/settings/leave-plan'),
+          row('Who approves leave and expenses', '/settings/hr-approval'),
         ]),
         SettingsSection(title: 'Payroll', why: 'Pay day and statutory deductions.', children: [
-          WebSetting(label: 'Pay day, PF, ESI & professional tax', href: '/settings/payroll'),
-          WebSetting(label: 'Salary components', href: '/settings/salary-components'),
-          WebSetting(label: 'Sales commission', href: '/settings/commission-rules'),
+          row('Pay day, PF, ESI & professional tax', '/settings/payroll'),
+          row('Salary components', '/settings/salary-components'),
+          row('Sales commission', '/settings/commission-rules'),
         ]),
         SettingsSection(title: 'Hiring & employee portal', why: 'Offer letters, onboarding and the staff app.', children: [
-          WebSetting(label: 'Offer letter', href: '/settings/offer-letter'),
-          WebSetting(label: 'Onboarding tasks', href: '/settings/onboarding-templates'),
-          WebSetting(label: 'Employee portal & kiosk', href: '/settings/employee-portal'),
-          WebSetting(label: 'Probation, IDs and exits', href: '/settings/hr-employee'),
+          row('Offer letter', '/settings/offer-letter'),
+          row('Onboarding tasks', '/settings/onboarding-templates'),
+          row('Employee portal & kiosk', '/settings/employee-portal'),
+          row('Probation, IDs and exits', '/settings/hr-employee'),
         ]),
       ],
     );
@@ -403,7 +404,11 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
             value: '$_plan plan',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlanBillingScreen(session: widget.session))),
           ),
-          const WebSetting(label: 'Your products', value: 'Billing, HR and Connect', href: '/settings/products'),
+          NavSetting(
+            label: 'Your products',
+            value: 'Billing, HR and Connect',
+            onTap: () => openPhoneSetting(context, widget.session, '/settings/products'),
+          ),
         ]),
         SettingsSection(title: 'Backup', why: 'A full copy of your data on a schedule.', children: [
           StatusSetting(
@@ -413,7 +418,7 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
                 : '${freq == null ? 'On' : freq[0].toUpperCase() + freq.substring(1)} · ${b['time_of_day'] ?? ''} · keep ${toNum(b['retention_days'] ?? 30).toInt()} days',
             tone: b == null || b['is_enabled'] == false ? KTone.due : KTone.positive,
             action: 'Set up',
-            onAction: () => openWebsitePage('/settings/backup'),
+            onAction: () => openPhoneSetting(context, widget.session, '/settings/backup'),
             help: b?['last_run_at'] == null ? null : 'Last backup ${partyDay(b!['last_run_at'])}',
           ),
         ]),
@@ -434,7 +439,7 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
           SettingRow(
             label: 'Restore from a backup',
             help: 'Replaces today’s data with a backup. Done on the website, where you can preview it first.',
-            trailing: KTextButton(label: 'Open', color: AppColors.negative, onTap: () => openWebsitePage('/settings/backup')),
+            trailing: KTextButton(label: 'Open', color: AppColors.negative, onTap: () => openPhoneSetting(context, widget.session, '/settings/backup')),
           ),
         ]),
       ],
@@ -445,23 +450,26 @@ class _PlanDataSettingsScreenState extends State<PlanDataSettingsScreen> with _L
 // ---------------------------------------------------------------- Help
 
 class HelpSettingsScreen extends StatelessWidget {
-  const HelpSettingsScreen({super.key});
+  const HelpSettingsScreen({super.key, required this.session});
+
+  final AppSession session;
 
   @override
   Widget build(BuildContext context) {
-    return const SettingsPage(
+    NavSetting row(String label, String href) => NavSetting(label: label, onTap: () => openPhoneSetting(context, session, href));
+    return SettingsPage(
       title: 'Help',
       blurb: 'Guides, tours, and tools for when something is not working.',
       icon: LucideIcons.lifeBuoy,
       loading: false,
       children: [
         SettingsSection(title: 'Learn', children: [
-          WebSetting(label: 'How-to guides', href: '/settings/help/how-to'),
-          WebSetting(label: 'Help & support', href: '/settings/help'),
+          row('How-to guides', '/settings/help/how-to'),
+          row('Help & support', '/settings/help'),
         ]),
         SettingsSection(title: 'Diagnostics', why: 'Share these with support when something does not work.', children: [
-          WebSetting(label: 'Offline sync', href: '/settings/offline-sync'),
-          WebSetting(label: 'Printer diagnostics', href: '/settings/bluetooth-printer/diagnostics'),
+          row('Offline sync', '/settings/offline-sync'),
+          row('Printer diagnostics', '/settings/bluetooth-printer/diagnostics'),
         ]),
       ],
     );

@@ -102,7 +102,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
     final name = supplier['name']?.toString() ?? 'Supplier';
     final phone = _s(supplier['phone']) ?? '';
     final settled = balance.abs() < 0.005;
-    final tone = settled ? KTone.positive : (balance > 0 ? KTone.negative : KTone.positive);
+    final tone = settled ? KTone.positive : KTone.negative;
     final address = [
       _s(supplier['address']),
       [supplier['city'], supplier['state'], supplier['pincode']].map(_s).whereType<String>().join(', '),

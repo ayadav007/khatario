@@ -51,4 +51,36 @@ void main() {
     expect(paymentMatches({'customer_name': 'Ravi', 'payment_mode': 'cash', 'amount': 10}, 'rav'), isTrue);
     expect(paymentReferenceLabel({'reference_type': 'invoice'}), 'Invoice');
   });
+
+  test('invoice allocations add up to the amount received', () {
+    const links = [
+      PaymentLinkDraft(id: 'a', amount: 200, balance: 200, number: 'INV-1'),
+      PaymentLinkDraft(id: 'b', amount: 200, balance: 600, number: 'INV-2'),
+    ];
+    expect(linkedPaymentTotal(links), 400);
+    expect(formatEnteredAmount(400), '400');
+    expect(formatEnteredAmount(200.5), '200.50');
+    final jobs = buildPaymentJobs(const PaymentInDraft(
+      customerId: 'c1',
+      amount: 400,
+      paymentDate: '2026-10-14',
+      links: links,
+    ));
+    expect(jobs.map((j) => j.amount).toList(), [200, 200]);
+    expect(jobs.every((j) => j.referenceType == 'invoice'), isTrue);
+  });
+
+  test('a party matches name, phone, or address', () {
+    final party = <String, dynamic>{
+      'name': 'Shalini Yadav',
+      'phone': '919762648992',
+      'billing_address': '12 Market Road',
+      'city': 'Indore',
+    };
+    expect(partyMatches(party, 'shalini'), isTrue);
+    expect(partyMatches(party, '648992'), isTrue);
+    expect(partyMatches(party, 'market'), isTrue);
+    expect(partyMatches(party, 'indore'), isTrue);
+    expect(partyMatches(party, 'rahul'), isFalse);
+  });
 }

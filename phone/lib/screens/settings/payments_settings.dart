@@ -6,8 +6,8 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
-import '../pages/record_page.dart' show openWebsitePage;
 import 'settings_kit.dart';
+import 'settings_router.dart';
 
 /// Settings › Payments: bank accounts, UPI & payment methods, online gateways and payment
 /// reminders. Every money-in setting in one place.
@@ -221,10 +221,10 @@ class _PaymentsSettingsScreenState extends State<PaymentsSettingsScreen> {
                 title: '${b['bank_name'] ?? 'Bank'} · ${_mask(b['account_number'])}',
                 subtitle: [b['account_type'], b['ifsc_code']].where((v) => v != null && '$v'.isNotEmpty).join(' · '),
                 trailing: KPill(label: b['is_active'] == false ? 'Hidden' : 'On invoices', tone: b['is_active'] == false ? KTone.neutral : KTone.positive),
-                onTap: () => openWebsitePage('/settings/business#bp-payments'),
+                onTap: () => openPhoneSetting(context, widget.session, '/settings/business#bp-payments'),
               ),
             if (_banks.isEmpty) const SettingRow(label: 'No bank account yet', help: 'Add one so customers know where to pay from the invoice.'),
-            AddSetting(label: 'Add or edit on the website', onTap: () => openWebsitePage('/settings/business#bp-payments')),
+            AddSetting(label: 'Add a bank account', onTap: () => openPhoneSetting(context, widget.session, '/settings/business#bp-payments')),
           ],
         ),
         SettingsSection(
@@ -256,7 +256,7 @@ class _PaymentsSettingsScreenState extends State<PaymentsSettingsScreen> {
                 status: p['configured'] == true ? 'Connected · ${p['environment'] == 'production' ? 'live' : 'test'}' : 'Not connected',
                 tone: p['configured'] == true ? KTone.positive : KTone.neutral,
                 action: p['configured'] == true ? 'Manage' : 'Connect',
-                onAction: () => openWebsitePage('/settings/payments'),
+                onAction: () => openPhoneSetting(context, widget.session, '/settings/payments'),
               ),
             if (connected.length > 1)
               ChoiceSetting<String>(
@@ -277,10 +277,12 @@ class _PaymentsSettingsScreenState extends State<PaymentsSettingsScreen> {
           ],
         ),
         if (_rem == null)
-          const SettingsSection(
+          SettingsSection(
             title: 'Payment reminders',
             why: 'WhatsApp nudges for unpaid bills. Link WhatsApp first.',
-            children: [WebSetting(label: 'Set up WhatsApp', href: '/settings/whatsapp')],
+            children: [
+              NavSetting(label: 'Set up WhatsApp', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp')),
+            ],
           )
         else
           SettingsSection(

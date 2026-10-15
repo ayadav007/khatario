@@ -40,6 +40,21 @@ void main() {
     )), 'A payment can only be recorded on a final invoice');
   });
 
+  test('finalizing an existing draft sends the payment with the bill', () {
+    final body = invoiceCreateBody(const InvoiceDraft(
+      invoiceId: 'inv-1',
+      invoiceDate: '2026-10-14',
+      status: 'final',
+      payments: [RecordedPayment(amount: 190, mode: 'cash', date: '2026-10-14')],
+      lines: [InvoiceLineDraft(itemId: 'i1', name: 'Rice', quantity: 2, unitPrice: 95)],
+    ));
+    expect(body['id'], 'inv-1');
+    expect(body['status'], 'final');
+    expect(body['payments'], [
+      {'amount': 190, 'mode': 'cash', 'date': '2026-10-14'},
+    ]);
+  });
+
   test('a final cash receipt includes one payment and no identity', () {
     final body = invoiceCreateBody(const InvoiceDraft(
       invoiceDate: '2026-10-13',

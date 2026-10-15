@@ -7,10 +7,11 @@ import 'kit.dart';
 typedef DetailPanelTab<T> = (T id, String label, IconData icon);
 
 class DetailMoreAction {
-  const DetailMoreAction({required this.label, required this.icon, required this.onTap, this.danger = false});
+  const DetailMoreAction({required this.label, required this.icon, required this.onTap, this.danger = false, this.whatsApp = false});
 
   final String label;
   final IconData icon;
+  final bool whatsApp;
   final VoidCallback onTap;
   final bool danger;
 }
@@ -68,6 +69,7 @@ class DetailPanelShell<T> extends StatelessWidget {
           for (final a in moreActions)
             KSheetAction(
               icon: a.icon,
+              whatsApp: a.whatsApp,
               label: a.label,
               danger: a.danger,
               onTap: () {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -16,10 +17,13 @@ import 'payment_in_logic.dart';
 
 /// `app/(app)/payments/in/page.tsx`.
 class PaymentInScreen extends StatefulWidget {
-  const PaymentInScreen({super.key, required this.session, this.payable = false});
+  const PaymentInScreen({super.key, required this.session, this.payable = false, this.highlightIds = const []});
 
   final AppSession session;
   final bool payable;
+
+  /// Receipts just recorded. Those rows are marked and scrolled into view.
+  final List<String> highlightIds;
 
   @override
   State<PaymentInScreen> createState() => _PaymentInScreenState();
@@ -30,10 +34,13 @@ class _PaymentInScreenState extends State<PaymentInScreen> {
   bool _loading = true;
   String? _error;
   final _search = TextEditingController();
+  final _highlightIds = <String>{};
+  final _highlightKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    _highlightIds.addAll(widget.highlightIds);
     _load();
   }
 
@@ -53,16 +60,27 @@ class _PaymentInScreenState extends State<PaymentInScreen> {
         _payments = rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
         _loading = false;
       });
+      _scrollToHighlight();
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
+  void _scrollToHighlight() {
+    if (_highlightIds.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _highlightKey.currentContext;
+      if (ctx != null) Scrollable.ensureVisible(ctx, alignment: 0.2, duration: const Duration(milliseconds: 280));
+    });
+  }
+
   Future<void> _record() async {
-    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+    final saved = await Navigator.of(context).push<RecordedPayments>(MaterialPageRoute(
       builder: (_) => PaymentInFormScreen(session: widget.session, payable: widget.payable),
     ));
-    if (saved == true) _load();
+    if (saved == null || !mounted) return;
+    setState(() => _highlightIds.addAll(saved.ids));
+    await _load();
   }
 
   Future<void> _shareReceipt(String id) async {
@@ -163,15 +181,22 @@ class _PaymentInScreenState extends State<PaymentInScreen> {
                         child: KDivided(
                           indent: 66,
                           children: [
-                            for (final p in shown)
+                            for (var i = 0; i < shown.length; i++)
                               Builder(builder: (context) {
+                                final p = shown[i];
+                                final id = p['id'].toString();
+                                final fresh = _highlightIds.contains(id);
+                                final firstFresh = fresh && shown.take(i).every((earlier) => !_highlightIds.contains(earlier['id'].toString()));
                                 final name = p['customer_name']?.toString().isNotEmpty == true ? p['customer_name'].toString() : 'Cash sale';
                                 final reversed = p['status'] == 'reversed';
-                                return KListRow(
-                                  onTap: () => _shareReceipt(p['id'].toString()),
+                                return ColoredBox(
+                                  key: firstFresh ? _highlightKey : null,
+                                  color: fresh ? tint.$1 : Colors.transparent,
+                                  child: KListRow(
+                                  onTap: () => _shareReceipt(id),
                                   leading: KAvatar(name: name, muted: reversed),
                                   title: name,
-                                  subtitle: '${_day(p['payment_date'])} · ${paymentReferenceLabel(p)}${reversed ? ' · Reversed' : ''}',
+                                  subtitle: '${fresh ? 'Just recorded · ' : ''}${_day(p['payment_date'])} · ${paymentReferenceLabel(p)}${reversed ? ' · Reversed' : ''}',
                                   trailing: Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     mainAxisSize: MainAxisSize.min,
@@ -187,6 +212,7 @@ class _PaymentInScreenState extends State<PaymentInScreen> {
                                       Text('Receipt', style: AppText.small.copyWith(fontSize: 11, color: AppColors.brand)),
                                     ],
                                   ),
+                                ),
                                 );
                               }),
                           ],
@@ -283,6 +309,7 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
     }
     if (_inFlight) return;
     final jobs = buildPaymentJobs(draft);
+    final ids = <String>[];
     setState(() { _saving = true; _inFlight = true; });
     try {
       for (var i = 0; i < jobs.length; i++) {
@@ -297,7 +324,9 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
             payload['reference_type'] = null;
             payload['reference_id'] = null;
           }
-          await widget.session.api.postJson('/api/payments', payload, headers: {'X-Idempotency-Key': key});
+          final body = await widget.session.api.postJson('/api/payments', payload, headers: {'X-Idempotency-Key': key});
+          final id = body['payment'] is Map ? (body['payment'] as Map)['id']?.toString() : null;
+          if (id != null && id.isNotEmpty) ids.add(id);
         } on ApiException catch (e) {
           if (e.code == 'IDEMPOTENCY_KEY_REUSED') _keys.remove(job.fingerprint);
           final saved = i > 0 ? ' Part of this receipt was already saved.' : '';
@@ -310,7 +339,7 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
         }
       }
       _keys.clear();
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop(RecordedPayments(ids));
     } finally {
       if (mounted) setState(() { _saving = false; _inFlight = false; });
     }
@@ -329,23 +358,36 @@ class _PaymentInFormScreenState extends State<PaymentInFormScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet))),
       builder: (ctx) => _LinkSheet(invoices: rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), initial: _links),
     );
-    if (picked != null) setState(() => _links = picked);
+    if (picked == null || !mounted) return;
+    final total = linkedPaymentTotal(picked);
+    setState(() {
+      _links = picked;
+      if (total > 0) _amount.text = formatEnteredAmount(total);
+    });
   }
 
   Future<void> _pickParty() async {
-    await showKPicker<String>(
-      context,
-      title: widget.payable ? 'Supplier' : 'Customer',
-      value: _customerId ?? '',
-      options: [
-        for (final c in _customers)
-          (c['id'].toString(), '${c['name']}${c['phone'] == null || c['phone'] == '' ? '' : ' (${c['phone']})'}'),
-      ],
-      onChanged: (v) => setState(() {
-        _customerId = v;
-        _links = const [];
-      }),
+    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet))),
+      builder: (_) => _PartySheet(
+        api: widget.session.api,
+        payable: widget.payable,
+        selectedId: _customerId,
+      ),
     );
+    if (picked == null || !mounted) return;
+    final id = picked['id'].toString();
+    setState(() {
+      _customerId = id;
+      _links = const [];
+      if (_customers.every((c) => c['id'].toString() != id)) {
+        _customers = [..._customers, picked];
+      }
+    });
   }
 
   Widget _field(TextEditingController c, String label, {bool number = false, bool big = false, int lines = 1}) {
@@ -517,6 +559,7 @@ class _LinkSheet extends StatefulWidget {
 
 class _LinkSheetState extends State<_LinkSheet> {
   late final Map<String, TextEditingController> _amounts;
+  String? _error;
 
   @override
   void initState() {
@@ -524,9 +567,22 @@ class _LinkSheetState extends State<_LinkSheet> {
     _amounts = {
       for (final inv in widget.invoices)
         inv['id'].toString(): TextEditingController(
-          text: widget.initial.where((l) => l.id == inv['id'].toString()).map((l) => l.amount.toString()).firstOrNull ?? '',
+          text: widget.initial.where((l) => l.id == inv['id'].toString()).map((l) => formatEnteredAmount(l.amount)).firstOrNull ?? '',
         ),
     };
+    for (final c in _amounts.values) {
+      c.addListener(() {
+        if (mounted) setState(() => _error = null);
+      });
+    }
+  }
+
+  double get _total {
+    var sum = 0.0;
+    for (final c in _amounts.values) {
+      sum += double.tryParse(c.text.trim()) ?? 0;
+    }
+    return roundMoney(sum);
   }
 
   @override
@@ -605,26 +661,198 @@ class _LinkSheetState extends State<_LinkSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: KButton(
-                  label: 'Use these links',
-                  onPressed: () {
-                    final links = <PaymentLinkDraft>[];
-                    for (final inv in widget.invoices) {
-                      final amount = double.tryParse(_amounts[inv['id'].toString()]?.text ?? '') ?? 0;
-                      if (amount <= 0) continue;
-                      links.add(PaymentLinkDraft(
-                        id: inv['id'].toString(),
-                        amount: amount,
-                        balance: toNum(inv['balance_amount'] ?? inv['grand_total']).toDouble(),
-                        number: inv['invoice_number']?.toString() ?? '',
-                      ));
-                    }
-                    Navigator.pop(context, links);
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative)),
+                      )
+                    else if (_total > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text('Amount ₹${enIn(_total)}', style: AppText.bodyStrong),
+                      ),
+                    KButton(
+                      label: 'Use these links',
+                      onPressed: () {
+                        final links = <PaymentLinkDraft>[];
+                        for (final inv in widget.invoices) {
+                          final amount = double.tryParse(_amounts[inv['id'].toString()]?.text ?? '') ?? 0;
+                          if (amount <= 0) continue;
+                          final balance = toNum(inv['balance_amount'] ?? inv['grand_total']).toDouble();
+                          final number = inv['invoice_number']?.toString() ?? 'Invoice';
+                          if (amount > balance + 0.01) {
+                            setState(() => _error = '$number cannot take more than its balance of ₹${enIn(balance)}');
+                            return;
+                          }
+                          links.add(PaymentLinkDraft(
+                            id: inv['id'].toString(),
+                            amount: amount,
+                            balance: balance,
+                            number: number,
+                          ));
+                        }
+                        Navigator.pop(context, links);
+                      },
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PartySheet extends StatefulWidget {
+  const _PartySheet({required this.api, required this.payable, required this.selectedId});
+
+  final KhatarioApi api;
+  final bool payable;
+  final String? selectedId;
+
+  @override
+  State<_PartySheet> createState() => _PartySheetState();
+}
+
+class _PartySheetState extends State<_PartySheet> {
+  final _query = TextEditingController();
+  Timer? _debounce;
+  int _request = 0;
+  List<Map<String, dynamic>> _loaded = const [];
+  List<Map<String, dynamic>> _shown = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load('');
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetch(String query) async {
+    final path = widget.payable ? '/api/suppliers' : '/api/customers';
+    final key = widget.payable ? 'suppliers' : 'customers';
+    final search = Uri.encodeQueryComponent(query.trim());
+    final body = await widget.api.getJson('$path?limit=100${search.isEmpty ? '' : '&search=$search'}');
+    final rows = (body[key] as List?) ?? const [];
+    return rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  Future<void> _load(String query) async {
+    final request = ++_request;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final remote = await _fetch(query);
+      if (!mounted || request != _request) return;
+      if (query.trim().isEmpty) {
+        setState(() {
+          _loaded = remote;
+          _shown = remote;
+        });
+      } else {
+        final byId = <String, Map<String, dynamic>>{
+          for (final party in _loaded.where((p) => partyMatches(p, query))) party['id'].toString(): party,
+          for (final party in remote) party['id'].toString(): party,
+        };
+        setState(() => _shown = byId.values.toList());
+      }
+    } catch (e) {
+      if (mounted && request == _request) setState(() => _error = e is ApiException ? e.message : 'Could not load.');
+    } finally {
+      if (mounted && request == _request) setState(() => _loading = false);
+    }
+  }
+
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _load(value));
+  }
+
+  String _subtitle(Map<String, dynamic> party) {
+    final phone = party['phone']?.toString().trim() ?? '';
+    final address = [
+      party['billing_address'] ?? party['address'],
+      party['city'],
+      party['state'],
+      party['pincode'],
+    ].map((v) => v?.toString().trim() ?? '').where((v) => v.isNotEmpty).join(', ');
+    return [phone, address].where((v) => v.isNotEmpty).join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.payable ? 'Supplier' : 'Customer';
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.85,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(color: AppColors.hairline, borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text(title, style: AppText.heading)),
+                  KIconButton(icon: LucideIcons.x, tooltip: 'Close', onTap: () => Navigator.of(context).pop()),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 4, AppSpace.gutter, AppSpace.sm),
+              child: KSearchField(
+                controller: _query,
+                hint: 'Name, number or address',
+                autofocus: true,
+                onChanged: _onChanged,
+              ),
+            ),
+            Expanded(
+              child: _loading && _shown.isEmpty
+                  ? const KSpinner()
+                  : _error != null && _shown.isEmpty
+                      ? KEmptyState(icon: LucideIcons.cloudOff, title: 'Could not load', body: _error)
+                      : _shown.isEmpty
+                          ? KEmptyState(icon: LucideIcons.userRound, title: 'No $title found', body: 'Try a name, phone number, or address.')
+                          : ListView(
+                              children: [
+                                for (final party in _shown)
+                                  KListRow(
+                                    onTap: () => Navigator.of(context).pop(party),
+                                    leading: KAvatar(name: party['name']?.toString() ?? ''),
+                                    title: party['name']?.toString() ?? '',
+                                    subtitle: _subtitle(party).isEmpty ? null : _subtitle(party),
+                                    trailing: party['id'].toString() == widget.selectedId
+                                        ? Icon(LucideIcons.check, size: 18, color: AppColors.brand)
+                                        : null,
+                                  ),
+                              ],
+                            ),
+            ),
+          ],
         ),
       ),
     );

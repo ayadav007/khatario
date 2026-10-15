@@ -193,7 +193,7 @@ class _PartiesScreenState extends State<PartiesScreen> {
                   child: _MoneyTile(
                     label: 'To collect',
                     amount: _outstanding(_customers),
-                    tint: AppTints.green,
+                    tint: AppTints.rose,
                     icon: LucideIcons.arrowDownLeft,
                     loading: _loadingCustomers,
                     selected: customers && _filter == 'with-balance',
@@ -384,7 +384,7 @@ class _PartyRow extends StatelessWidget {
     final settled = isPartyBalanceSettled(balance);
     // Customers with a positive balance owe you; suppliers with a positive balance are owed.
     final youGet = supplier ? balance < 0 : balance > 0;
-    final tone = settled ? KTone.neutral : (youGet ? KTone.positive : KTone.negative);
+    final tone = settled ? KTone.neutral : KTone.negative;
     final caption = settled ? 'Settled' : (youGet ? "You'll get" : "You'll give");
     final showRemind = !supplier && balance > 0.005 && phone.isNotEmpty;
     return KListRow(
@@ -419,7 +419,7 @@ class _PartyRow extends StatelessWidget {
               message: 'Remind $name',
               child: reminding
                   ? const SizedBox(width: 44, height: 44, child: KSpinner(size: 18, padding: EdgeInsets.zero))
-                  : KIconButton(icon: LucideIcons.bellRing, tooltip: 'Remind $name', color: AppTints.green.$2, onTap: onRemind),
+                  : KIconButton(icon: LucideIcons.messageCircle, tooltip: 'WhatsApp reminder for $name', whatsApp: true, onTap: onRemind),
             )
           else
             const SizedBox(width: 12),

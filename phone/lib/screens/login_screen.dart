@@ -4,19 +4,21 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../api.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
 import '../ui/web_ui.dart';
+import 'signup_screen.dart';
 
 /// Sign in (`app/login/page.tsx` flow): phone, then password, plus the two-code password reset.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.api, required this.onSignedIn});
+  const LoginScreen({super.key, required this.api, required this.onSignedIn, this.notice});
 
   final Future<KhatarioApi> Function() api;
   final Future<void> Function() onSignedIn;
+
+  /// Shown when this device was signed out, for example after a login on another phone.
+  final String? notice;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -159,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   List<Widget> _banners() => [
+    if (widget.notice != null && widget.notice!.isNotEmpty && _mode == _Mode.login) _Notice(message: widget.notice!, tone: KTone.negative),
     if (_info.isNotEmpty) _Notice(message: _info, tone: KTone.positive),
     if (_error.isNotEmpty) _Notice(message: _error, tone: KTone.negative),
   ];
@@ -363,7 +366,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                           Text("Don't have an account? ", style: AppText.label),
                                           KTextButton(
                                             label: 'Create a new account',
-                                            onTap: () => launchUrl(Uri.parse('$apiBaseUrl/signup'), mode: LaunchMode.externalApplication),
+                                            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                                              builder: (_) => SignupScreen(api: widget.api, onSignedIn: widget.onSignedIn),
+                                            )),
                                           ),
                                         ],
                                       ),

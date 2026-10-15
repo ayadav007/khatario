@@ -3,12 +3,11 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../api.dart';
 import '../format.dart';
 import '../session.dart';
 import '../theme.dart';
+import '../whatsapp_compose.dart';
 
 /// `AVAILABLE_WIDGETS` from `components/dashboard/CustomizableDashboard.tsx`.
 const _availableWidgets = <(String type, String title, String icon, String? featureId)>[
@@ -1167,10 +1166,10 @@ class _DeadStockRowState extends State<_DeadStockRow> {
       "Hi, we currently have ${_jsStr(_row['quantity'])} ${_jsStr(_row['unit'])} of ${_row['item_name'] ?? ''} available"
       "${_row['last_sale_date'] != null ? '' : ' and thought you might be interested'}. Let us know if you'd like to place an order.";
 
-  Uri? _whatsapp(String phone) {
+  String? _whatsappTo(String phone) {
     final digits = phone.replaceAll(RegExp(r'\D+'), '').replaceFirst(RegExp(r'^0+'), '');
     if (digits.isEmpty) return null;
-    return Uri.parse('https://wa.me/$digits?text=${Uri.encodeComponent(_defaultMessage)}');
+    return digits.length == 10 ? '91$digits' : digits;
   }
 
   @override
@@ -1246,12 +1245,12 @@ class _DeadStockRowState extends State<_DeadStockRow> {
                                     ),
                                     const SizedBox(width: 8),
                                     Builder(builder: (context) {
-                                      final link = s['phone'] == null ? null : _whatsapp(s['phone'].toString());
-                                      if (link == null) {
+                                      final to = s['phone'] == null ? null : _whatsappTo(s['phone'].toString());
+                                      if (to == null) {
                                         return const Text('No phone', style: TextStyle(fontSize: 10, color: Tw.gray400));
                                       }
                                       return GestureDetector(
-                                        onTap: () => launchUrl(link, mode: LaunchMode.externalApplication),
+                                        onTap: () => composeBusinessWhatsApp(context, widget.api, to: to, message: _defaultMessage, title: s['name']?.toString() ?? 'WhatsApp'),
                                         child: Text('WhatsApp', style: xs.copyWith(color: Tw.green600)),
                                       );
                                     }),

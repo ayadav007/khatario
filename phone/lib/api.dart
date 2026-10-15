@@ -13,9 +13,23 @@ const apiBaseUrl = String.fromEnvironment(
 );
 
 class KhatarioApi {
-  KhatarioApi(this.dio);
+  KhatarioApi(this.dio, {this.cookies});
 
   final Dio dio;
+  final CookieJar? cookies;
+
+  /// Set while a user is signed in. A revoked session calls this once, then the app returns to sign-in.
+  void Function(ApiException error)? onSessionEnded;
+  bool _sessionEndSent = false;
+
+  void watchSession(void Function(ApiException error)? onEnded) {
+    onSessionEnded = onEnded;
+    _sessionEndSent = false;
+  }
+
+  Future<void> clearCookies() async {
+    await cookies?.deleteAll();
+  }
 
   static Future<KhatarioApi> open() async {
     final dir = await getApplicationSupportDirectory();
@@ -33,7 +47,7 @@ class KhatarioApi {
       ),
     );
     dio.interceptors.add(CookieManager(jar));
-    return KhatarioApi(dio);
+    return KhatarioApi(dio, cookies: jar);
   }
 
   Future<Map<String, dynamic>> getJson(String path) async {
@@ -47,7 +61,7 @@ class KhatarioApi {
     if ((res.statusCode ?? 500) >= 400) {
       final data = res.data;
       final body = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
-      throw ApiException(body['error']?.toString() ?? 'Request failed (${res.statusCode})', status: res.statusCode, code: body['code']?.toString());
+      throw _fail(res.statusCode, body['error']?.toString(), body['code']?.toString());
     }
     return res.data;
   }
@@ -84,32 +98,52 @@ class KhatarioApi {
     final res = await dio.get<List<int>>(path, options: Options(responseType: ResponseType.bytes));
     final bytes = res.data ?? const <int>[];
     if ((res.statusCode ?? 500) >= 400) {
-      throw ApiException(_errorFromBytes(bytes) ?? 'Request failed (${res.statusCode})', status: res.statusCode);
+      final parsed = _errorFromBytes(bytes);
+      throw _fail(res.statusCode, parsed?.$1, parsed?.$2);
     }
     return bytes;
   }
 
-  static String? _errorFromBytes(List<int> bytes) {
+  static (String?, String?)? _errorFromBytes(List<int> bytes) {
     try {
       final decoded = jsonDecode(utf8.decode(bytes));
-      return decoded is Map ? decoded['error']?.toString() : null;
+      if (decoded is! Map) return null;
+      return (decoded['error']?.toString(), decoded['code']?.toString());
     } catch (_) {
       return null;
     }
   }
 
+  ApiException _fail(int? status, String? error, String? code) {
+    final message = (error == null || error.isEmpty) ? 'Request failed ($status)' : error;
+    final exception = ApiException(message, status: status, code: code);
+    final ended = onSessionEnded;
+    if (ended != null && !_sessionEndSent && sessionWasEnded(status, code, message)) {
+      _sessionEndSent = true;
+      ended(exception);
+    }
+    return exception;
+  }
+
   Map<String, dynamic> _map(Response<dynamic> res) {
     final data = res.data;
-    final body = data is Map<String, dynamic> ? data : <String, dynamic>{};
+    final body = data is Map<String, dynamic> ? data : (data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{});
     if ((res.statusCode ?? 500) >= 400) {
-      throw ApiException(
-        body['error']?.toString() ?? 'Request failed (${res.statusCode})',
-        status: res.statusCode,
-        code: body['code']?.toString(),
-      );
+      throw _fail(res.statusCode, body['error']?.toString(), body['code']?.toString());
     }
     return body;
   }
+}
+
+/// True when the server rejected this device's login. A wrong password is not this.
+bool sessionWasEnded(int? status, String? code, String message) {
+  if (status != 401) return false;
+  const codes = {'SESSION_REVOKED', 'UNAUTHENTICATED', 'USER_NOT_FOUND', 'BUSINESS_NOT_FOUND'};
+  if (code != null && codes.contains(code)) return true;
+  final text = message.trim().toLowerCase();
+  return text == 'authentication required' ||
+      text == 'not authenticated' ||
+      text.startsWith('session revoked');
 }
 
 class ApiException implements Exception {

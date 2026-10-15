@@ -31,4 +31,18 @@ void main() {
     expect(find.text('Reset your password'), findsOneWidget);
     expect(find.text('Send WhatsApp and email codes'), findsOneWidget);
   });
+
+  testWidgets('Create account stays in the app', (tester) async {
+    tester.view.physicalSize = const Size(390, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const KhatarioApp(restoreSession: false));
+    await tester.tap(find.text('Create a new account'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Business name'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Send WhatsApp code'), 200, scrollable: find.byType(Scrollable).last);
+    expect(find.text('Send WhatsApp code'), findsOneWidget);
+    expect(find.text('https://staging.khatario.com/signup'), findsNothing);
+  });
 }

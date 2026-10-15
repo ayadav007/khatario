@@ -14,6 +14,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/detail_panel_shell.dart';
 import '../../ui/kit.dart';
+import '../../whatsapp_compose.dart';
 import '../invoices/invoice_detail_screen.dart';
 import 'customer_form_screen.dart';
 import 'customer_statement_screen.dart';
@@ -218,7 +219,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
           ],
           moreActions: [
             DetailMoreAction(label: 'View statement', icon: LucideIcons.fileText, onTap: _openStatement),
-            if (canRemind) DetailMoreAction(label: 'Send WhatsApp reminder', icon: LucideIcons.bellRing, onTap: _sendReminder),
+            if (canRemind) DetailMoreAction(label: 'Send WhatsApp reminder', icon: LucideIcons.messageCircle, whatsApp: true, onTap: _sendReminder),
           ],
           header: _BalanceHero(balance: balance, totalReceivable: _totalReceivable),
           body: switch (_tab) {
@@ -251,7 +252,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
             if (phone.isNotEmpty) KIconTile(icon: LucideIcons.phone, label: 'Call', onTap: () => launchUrl(Uri(scheme: 'tel', path: phone))),
             if (canRemind)
               KIconTile(
-                icon: _sendingReminder ? LucideIcons.loaderCircle : LucideIcons.bellRing,
+                icon: _sendingReminder ? LucideIcons.loaderCircle : LucideIcons.messageCircle,
+                whatsApp: !_sendingReminder,
                 label: 'Send reminder',
                 onTap: _sendingReminder ? () {} : _sendReminder,
               ),
@@ -282,7 +284,7 @@ class _BalanceHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final settled = isPartyBalanceSettled(balance);
     final owes = balance > 0;
-    final tone = settled ? KTone.positive : (owes ? KTone.due : KTone.positive);
+    final tone = settled ? KTone.positive : KTone.negative;
     return KCard(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       child: Row(
@@ -372,6 +374,7 @@ class _Overview extends StatelessWidget {
             api: api,
             customerId: customer['id'].toString(),
             email: customer['email']?.toString(),
+            phone: customer['phone']?.toString(),
             initialEnabled: customer['portal_enabled'] == true,
           ),
         ],
@@ -386,12 +389,14 @@ class CustomerPortalCard extends StatefulWidget {
     required this.api,
     required this.customerId,
     required this.email,
+    required this.phone,
     required this.initialEnabled,
   });
 
   final KhatarioApi api;
   final String customerId;
   final String? email;
+  final String? phone;
   final bool initialEnabled;
 
   @override
@@ -450,6 +455,18 @@ class _CustomerPortalCardState extends State<CustomerPortalCard> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _sendPortalLink(String url) async {
+    final digits = (widget.phone ?? '').replaceAll(RegExp(r'\D'), '');
+    final to = digits.length == 10 ? '91$digits' : digits;
+    await composeBusinessWhatsApp(
+      context,
+      widget.api,
+      to: to,
+      message: 'Your bills are here: $url',
+      title: 'Customer portal',
+    );
   }
 
   @override
@@ -511,7 +528,7 @@ class _CustomerPortalCardState extends State<CustomerPortalCard> {
                         },
                       ),
                       const SizedBox(width: 8),
-                      KTextButton(label: 'Open', onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)),
+                      KTextButton(label: 'Send link', onTap: () => _sendPortalLink(url)),
                       const SizedBox(width: 8),
                     ],
                   ),

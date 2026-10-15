@@ -6,8 +6,8 @@ import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
 import '../../ui/kit.dart';
-import '../pages/record_page.dart' show openWebsitePage;
 import 'settings_kit.dart';
+import 'settings_router.dart';
 
 /// Settings › Items & stock: stock rules, units and categories, labels and printers.
 class ItemsSettingsScreen extends StatefulWidget {
@@ -138,12 +138,12 @@ class _ItemsSettingsScreenState extends State<ItemsSettingsScreen> {
               onChanged: (v) => _toggle(v, (x) => _whBranch = x, '/api/settings/warehouses', 'auto_assign_branch_warehouses', 'Branch warehouses assigned automatically', 'Assign warehouses per user'),
             ),
         ]),
-        const SettingsSection(title: 'Units & categories', why: 'Master lists used on every item.', children: [
-          WebSetting(label: 'Categories', value: 'Group items for reports and the store', href: '/items/categories'),
+        SettingsSection(title: 'Units & categories', why: 'Master lists used on every item.', children: [
+          NavSetting(label: 'Categories', value: 'Group items for reports and the store', onTap: () => openPhoneSetting(context, widget.session, '/items/categories')),
         ]),
-        const SettingsSection(title: 'Labels & printers', why: 'Barcode labels and receipt printing.', children: [
-          WebSetting(label: 'Label templates', value: 'Sizes and fields on barcode labels', href: '/settings/label-templates'),
-          WebSetting(label: 'Printers & devices', value: 'Pair a Bluetooth receipt or label printer', href: '/settings/bluetooth-printer'),
+        SettingsSection(title: 'Labels & printers', why: 'Barcode labels and receipt printing.', children: [
+          NavSetting(label: 'Label templates', value: 'Sizes and fields on barcode labels', onTap: () => openPhoneSetting(context, widget.session, '/settings/label-templates')),
+          NavSetting(label: 'Printers & devices', value: 'Pair a Bluetooth receipt or label printer', onTap: () => openPhoneSetting(context, widget.session, '/settings/bluetooth-printer')),
         ]),
       ],
     );
@@ -289,8 +289,13 @@ class _OrdersSettingsScreenState extends State<OrdersSettingsScreen> {
       onDiscard: () => setState(_f.discard),
       children: [
         if (store == null)
-          const SettingsSection(title: 'Online store', why: 'Sell from your own store website.', children: [
-            LockedSetting(label: 'Online store', help: 'Your own store website with checkout, delivery and returns.', plan: 'Growth plan'),
+          SettingsSection(title: 'Online store', why: 'Sell from your own store website.', children: [
+            LockedSetting(
+              label: 'Online store',
+              help: 'Your own store website with checkout, delivery and returns.',
+              plan: 'Growth plan',
+              onPlans: () => openPhoneSetting(context, widget.session, '/settings/subscription'),
+            ),
           ])
         else ...[
           SettingsSection(title: 'Online store', why: 'Checkout rules. The look of your store is under Store design.', children: [
@@ -318,7 +323,7 @@ class _OrdersSettingsScreenState extends State<OrdersSettingsScreen> {
               value: store['store_allow_cod'] != false,
               onChanged: (v) => _setStore('store_allow_cod', v, v ? 'Cash on delivery on' : 'Cash on delivery off'),
             ),
-            const WebSetting(label: 'Store design', value: 'Theme, banners, pages in Studio', href: '/settings/online-store/studio'),
+            NavSetting(label: 'Store design', value: 'Theme, banners, pages in Studio', onTap: () => openPhoneSetting(context, widget.session, '/settings/online-store/studio')),
           ]),
           SettingsSection(title: 'Delivery', why: 'Who carries parcels and where you deliver.', children: [
             SegmentSetting<String>(
@@ -335,9 +340,9 @@ class _OrdersSettingsScreenState extends State<OrdersSettingsScreen> {
                     : 'Login not added',
                 tone: store['shiprocket_configured'] == true ? KTone.positive : KTone.due,
                 action: 'Set up',
-                onAction: () => openWebsitePage('/settings/online-store'),
+                onAction: () => openPhoneSetting(context, widget.session, '/settings/online-store'),
               ),
-            const WebSetting(label: 'Delivery zones', value: 'Areas, pincodes, charges and self-pickup', href: '/settings/online-store'),
+            NavSetting(label: 'Delivery zones', value: 'Areas, pincodes, charges and self-pickup', onTap: () => openPhoneSetting(context, widget.session, '/settings/online-store')),
           ]),
           SettingsSection(title: 'Returns', why: 'Buyers can ask from their store account; you approve and receive.', children: [
             TextSetting(
@@ -384,8 +389,8 @@ class _OrdersSettingsScreenState extends State<OrdersSettingsScreen> {
             short: true,
           ),
         ]),
-        const SettingsSection(title: 'WhatsApp shop', why: 'Customers browse, send a cart and pay inside WhatsApp.', children: [
-          WebSetting(label: 'Items on sale and welcome message', href: '/settings/whatsapp/shop'),
+        SettingsSection(title: 'WhatsApp shop', why: 'Customers browse, send a cart and pay inside WhatsApp.', children: [
+          NavSetting(label: 'Items on sale and welcome message', onTap: () => openPhoneSetting(context, widget.session, '/settings/whatsapp/shop')),
         ]),
       ],
     );

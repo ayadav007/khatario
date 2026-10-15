@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
+import '../../whatsapp_compose.dart';
 import 'orders_logic.dart';
 import 'return_detail_screen.dart';
 
@@ -234,11 +233,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (msg == null) return;
     var to = (res?['rider_phone'] ?? _parcel?['rider_phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
     if (to.length == 10) to = '91$to';
-    final uri = Uri.parse('https://wa.me/$to?text=${Uri.encodeComponent(msg)}');
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      await Clipboard.setData(ClipboardData(text: res?['rider_url']?.toString() ?? msg));
-      if (mounted) setState(() => _notice = 'Rider link copied');
-    }
+    if (!mounted) return;
+    await composeBusinessWhatsApp(context, widget.session.api, to: to, message: msg, title: 'Message the rider');
   }
 
   Future<void> _startReturn() async {

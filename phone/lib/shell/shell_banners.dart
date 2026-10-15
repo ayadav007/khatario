@@ -172,7 +172,14 @@ void openPromotion(Map<String, dynamic> promo, ValueChanged<String> onOpen) {
   final url = promo['button_url']?.toString();
   switch (promo['button_action']) {
     case 'link' when url != null && url.isNotEmpty:
-      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final uri = Uri.tryParse(url);
+      final host = uri?.host ?? '';
+      if (uri != null && (url.startsWith('/') || host == 'khatario.com' || host == 'www.khatario.com' || host == 'staging.khatario.com')) {
+        final path = url.startsWith('/') ? url : '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
+        onOpen(path);
+      } else {
+        launchUrl(uri ?? Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
     case 'route' when url != null && url.isNotEmpty:
       onOpen(url);
     case 'upgrade_modal':

@@ -18,6 +18,7 @@ import '../screens/pages/page_catalog.dart';
 import '../screens/chats/chats_inbox_screen.dart';
 import '../screens/pages/record_page.dart';
 import '../screens/expenses/expense_form_screen.dart';
+import '../screens/payments/payment_in_logic.dart';
 import '../screens/payments/payment_in_screen.dart';
 import '../screens/parties/customer_detail_screen.dart';
 import '../screens/parties/customer_form_screen.dart';
@@ -25,10 +26,12 @@ import '../screens/parties/parties_screen.dart';
 import '../screens/parties/party_logic.dart';
 import '../screens/orders/orders_screen.dart';
 import '../screens/settings/settings_hub_screen.dart';
+import '../screens/settings/settings_router.dart';
 import '../screens/parties/supplier_detail_screen.dart';
 import '../screens/parties/supplier_form_screen.dart';
 import '../screens/purchases/bill_form_screen.dart';
 import '../screens/purchases/purchase_section.dart';
+import '../screens/reports/aging_report_screen.dart';
 import '../screens/search/search_screen.dart';
 import '../session.dart';
 import '../theme.dart';
@@ -106,7 +109,7 @@ class _AppShellState extends State<AppShell> {
   CapabilitySnapshot? _snapshot;
   bool _warehousesEnabled = false;
 
-  /// The page was opened from the More menu, so Back returns to More.
+  /// Kept so Parties can open on Suppliers when More asks for that list.
   bool _openedFromMore = false;
 
   /// More > Suppliers opens the Parties list on the Suppliers tab.
@@ -164,16 +167,19 @@ class _AppShellState extends State<AppShell> {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => ExpenseFormScreen(session: widget.session)));
       return;
     }
+    if (href == '/reports/aging/receivables' || href == '/reports/aging/payables') {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => AgingReportScreen(session: widget.session, payables: href.endsWith('payables')),
+      ));
+      return;
+    }
     final tab = switch (href) {
       '/items' => AppTab.items,
       '/invoices' => AppTab.invoices,
       '/customers' || '/suppliers' => AppTab.parties,
       _ => null,
     };
-    if (href == '/docs' || href == '/support' || href == '/privacy') {
-      openWebsitePage(href);
-      return;
-    }
+    if (openPhoneSetting(context, widget.session, href)) return;
     if (href == '/orders') {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrdersScreen(session: widget.session)));
       return;
@@ -204,14 +210,7 @@ class _AppShellState extends State<AppShell> {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: page)));
       return;
     }
-    if (tab == null) {
-      // A website page with no phone screen: open it there rather than a dead end.
-      if (href.startsWith('/')) {
-        openWebsitePage(href);
-        return;
-      }
-      return _notBuilt(label);
-    }
+    if (tab == null) return _notBuilt(label);
     _selectTab(tab);
     setState(() {
       _openedFromMore = true;
@@ -464,6 +463,9 @@ class _AppShellState extends State<AppShell> {
       return tab(AppTab.parties);
     }
     switch (w) {
+      case 'Record payment':
+        _openRecordPayment();
+        return;
       case 'Collection details':
       case 'New payment':
         return push(PaymentInScreen(session: widget.session));
@@ -502,7 +504,11 @@ class _AppShellState extends State<AppShell> {
       case 'Settings':
         return page('/settings');
       case 'Edit supplier':
-        openWebsitePage('/suppliers');
+        _selectTab(AppTab.parties);
+        setState(() {
+          _openedFromMore = true;
+          _partiesStartSuppliers = true;
+        });
         return;
       case 'My employee profile':
         return page('/hr/dashboard');
@@ -517,7 +523,18 @@ class _AppShellState extends State<AppShell> {
   void _notBuilt(String what) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$what is not on the phone yet. Open it from the website.')));
+      ..showSnackBar(SnackBar(content: Text('$what is not on the phone yet.')));
+  }
+
+  /// Collect from Home: record the receipt, then show it on Payment in.
+  Future<void> _openRecordPayment() async {
+    final recorded = await Navigator.of(context).push<RecordedPayments>(
+      MaterialPageRoute(builder: (_) => PaymentInFormScreen(session: widget.session)),
+    );
+    if (!mounted || recorded == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PaymentInScreen(session: widget.session, highlightIds: recorded.ids),
+    ));
   }
 
   /// Home shortcuts that already have a phone screen. Everything else stays on [_notBuilt].
@@ -627,9 +644,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_openedFromMore,
+      canPop: _tab == _homeTab,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _selectTab(AppTab.more);
+        if (!didPop) _selectTab(_homeTab);
       },
       child: _scaffold(),
     );

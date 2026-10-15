@@ -79,9 +79,17 @@ export async function GET(request: NextRequest) {
     `;
     const params: any[] = [businessId];
 
-    // Add search filter
+    // Name, phone, or address. The payment screen searches the same way.
     if (search) {
-      sql += ` AND (name ILIKE $${params.length + 1} OR phone ILIKE $${params.length + 1} OR email ILIKE $${params.length + 1})`;
+      sql += ` AND (
+        name ILIKE $${params.length + 1}
+        OR phone ILIKE $${params.length + 1}
+        OR email ILIKE $${params.length + 1}
+        OR address ILIKE $${params.length + 1}
+        OR city ILIKE $${params.length + 1}
+        OR state ILIKE $${params.length + 1}
+        OR pincode ILIKE $${params.length + 1}
+      )`;
       params.push(`%${search}%`);
     }
 

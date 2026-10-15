@@ -302,9 +302,8 @@ class _RecordPageState extends State<RecordPage> {
       return ListView(children: [
         KEmptyState(
           icon: LucideIcons.pencil,
-          title: 'Open this on the website',
-          body: 'This page is not built in the phone app yet.',
-          action: KButton.secondary(label: 'Open website', expand: false, onPressed: () => openWebsitePage(widget.page.href)),
+          title: 'Not on the phone yet',
+          body: 'This page does not have a phone screen.',
         ),
       ]);
     }
@@ -321,7 +320,7 @@ class _RecordPageState extends State<RecordPage> {
               : KButton(
                   label: 'Subscription & billing',
                   expand: false,
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: plans))),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlanBillingScreen(session: widget.session))),
                 ),
         ),
       ]);
