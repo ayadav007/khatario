@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../settings/printers_screen.dart';
 import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
@@ -188,7 +189,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       onClose: () => Navigator.of(context).pop(),
       moreActions: [
         DetailMoreAction(label: 'Open full page', icon: LucideIcons.externalLink, onTap: () => widget.onOpen('The full item page')),
-        DetailMoreAction(label: 'Print barcode', icon: LucideIcons.printer, onTap: () => widget.onOpen('Print barcode')),
+        DetailMoreAction(label: 'Print barcode labels', icon: LucideIcons.printer, onTap: () => printItemLabels(context, widget.session, widget.itemId)),
         if (widget.session.canDelete('items'))
           DetailMoreAction(label: 'Remove from catalog', icon: LucideIcons.trash2, danger: true, onTap: () => _confirmDelete(item)),
       ],

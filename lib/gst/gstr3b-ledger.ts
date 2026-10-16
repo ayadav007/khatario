@@ -69,7 +69,7 @@ export async function resolveRcmLedgerNets(
   businessId: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<ResolvedRcmLedger> {
   const [a2156, a2157, a2158] = await Promise.all([
     getAccountByCode(businessId, GSTR3B_RCM_CGST),
@@ -152,6 +152,14 @@ export const GSTR3B_NON_SUPPLY_VOUCHER_TYPES = [
   'year_close',
 ] as const;
 
+/** One branch, the branches of one GSTIN (see `registrationBranchIds`), or null for all. */
+export type BranchScope = string | readonly string[] | null | undefined;
+
+function branchIdList(scope: BranchScope): string[] | null {
+  if (scope == null) return null;
+  return typeof scope === 'string' ? [scope] : [...scope];
+}
+
 /**
  * Generic ledger net for liability-style interpretation: SUM(credit) − SUM(debit).
  * Uses `ledger_entry_lines` (debit/credit columns; no invoice-derived tax).
@@ -161,7 +169,7 @@ export async function getLedgerNetCreditMinusDebit(
   accountCode: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<number> {
   const acc = await getAccountByCode(businessId, accountCode);
   if (!acc) return 0;
@@ -175,9 +183,10 @@ export async function getLedgerNetCreditMinusDebit(
     GSTR3B_NON_SUPPLY_VOUCHER_TYPES,
   ];
   let branchClause = '';
-  if (branchId) {
-    branchClause = ' AND (branch_id IS NULL OR branch_id = $6::uuid)';
-    params.push(branchId);
+  const branchIds = branchIdList(branchId);
+  if (branchIds) {
+    branchClause = ' AND (branch_id IS NULL OR branch_id = ANY($6::uuid[]))';
+    params.push(branchIds);
   }
 
   const { rows } = await pool.query<{ credit: string; debit: string }>(
@@ -202,6 +211,60 @@ export async function getLedgerNetCreditMinusDebit(
 }
 
 /**
+ * Account balance as SUM(credit) − SUM(debit) of every line dated before `beforeDate`, including
+ * settlement, payment and opening vouchers — the position carried into the period.
+ */
+export async function getLedgerBalanceBefore(
+  businessId: string,
+  accountCode: string,
+  beforeDate: string,
+  branchId?: BranchScope
+): Promise<number> {
+  const acc = await getAccountByCode(businessId, accountCode);
+  if (!acc) return 0;
+  const branchIds = branchIdList(branchId);
+  const { rows } = await getPool().query<{ net: string }>(
+    `SELECT COALESCE(SUM(credit) - SUM(debit), 0)::text AS net
+       FROM ledger_entry_lines
+      WHERE business_id = $1::uuid AND account_id = $2::uuid AND entry_date < $3::date
+        AND ($4::uuid[] IS NULL OR branch_id IS NULL OR branch_id = ANY($4::uuid[]))`,
+    [businessId, acc.id, beforeDate, branchIds]
+  );
+  return round2(parseFloat(rows[0]?.net ?? '0'));
+}
+
+/**
+ * ITC left in the electronic credit ledger at the start of a period (s.49(2)), by head. Earlier
+ * output tax still on the books is settled first under the same Rule 88A order, so months whose
+ * set-off was never posted do not carry forward credit they would have used. `held` is ITC the
+ * books hold that GSTR-2B has not supported yet (see `itc-2b-gate`), which is not in the ledger.
+ */
+export function itcCarriedForward(params: {
+  inputBalance: { igst: number; cgst: number; sgst: number; cess: number };
+  outputBalance: { igst: number; cgst: number; sgst: number; cess: number };
+  held: { igst: number; cgst: number; sgst: number; cess: number };
+}): { igst: number; cgst: number; sgst: number; cess: number } {
+  const itc = (h: 'igst' | 'cgst' | 'sgst' | 'cess') => Math.max(0, round2(params.inputBalance[h] - params.held[h]));
+  const avail = { igst: itc('igst'), cgst: itc('cgst'), sgst: itc('sgst'), cess: itc('cess') };
+  const u = computeItcUtilizationDisplay({
+    igstLiability: params.outputBalance.igst,
+    cgstLiability: params.outputBalance.cgst,
+    sgstLiability: params.outputBalance.sgst,
+    cessLiability: params.outputBalance.cess,
+    itcIgst: avail.igst,
+    itcCgst: avail.cgst,
+    itcSgst: avail.sgst,
+    itcCess: avail.cess,
+  });
+  return {
+    igst: round2(avail.igst - u.igst_to_igst - u.igst_to_cgst - u.igst_to_sgst),
+    cgst: round2(avail.cgst - u.cgst_to_cgst - u.cgst_to_igst),
+    sgst: round2(avail.sgst - u.sgst_to_sgst - u.sgst_to_igst),
+    cess: round2(avail.cess - u.cess_to_cess),
+  };
+}
+
+/**
  * True when any `invoice` voucher line in the period uses `entry_date` ≠ `invoices.invoice_date`.
  * GSTR-1 is invoice-date based; GSTR-3B output ledgers use entry_date — divergence causes reconciliation noise.
  */
@@ -209,14 +272,15 @@ export async function hasInvoiceLedgerEntryDateMismatch(
   businessId: string,
   fromDate: string,
   toDate: string,
-  branchId?: string | null
+  branchId?: BranchScope
 ): Promise<boolean> {
   const pool = getPool();
-  const params: string[] = [businessId, fromDate, toDate];
+  const params: (string | string[])[] = [businessId, fromDate, toDate];
   let branchClause = '';
-  if (branchId) {
-    branchClause = ' AND (lel.branch_id IS NULL OR lel.branch_id = $4::uuid)';
-    params.push(branchId);
+  const branchIds = branchIdList(branchId);
+  if (branchIds) {
+    branchClause = ' AND (lel.branch_id IS NULL OR lel.branch_id = ANY($4::uuid[]))';
+    params.push(branchIds);
   }
   const { rows } = await pool.query<{ ex: boolean }>(
     `

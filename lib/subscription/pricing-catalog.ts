@@ -19,6 +19,8 @@ export type PricingPlan = {
   priceYearly: number;
   price3Year: number;
   badge: string | null;
+  /** HR plan that comes with this Billing plan (subscription_plans.bundled_hr_plan_id). */
+  bundledHrPlanId: string | null;
   /** Ids of enabled features that are shown on pricing, in no particular order. */
   features: string[];
   /** Values for shown limits only; -1 = unlimited. */
@@ -72,20 +74,27 @@ async function loadLimits(): Promise<PricingLimit[]> {
 }
 
 async function loadPlans(): Promise<Array<Omit<PricingPlan, 'features' | 'limits'>>> {
-  const select = (badge: string) => `
-    SELECT id, display_name, description, product_line, price_monthly, price_yearly, price_3year, ${badge} AS badge
+  const select = (extra: string) => `
+    SELECT id, display_name, description, product_line, price_monthly, price_yearly, price_3year, ${extra}
     FROM subscription_plans
     WHERE is_active = true
     ORDER BY sort_order ASC`;
-  let rows: Array<Record<string, unknown>>;
-  try {
-    rows = await db.queryRows(select('pricing_badge'));
-  } catch (error) {
-    if (!isUndefinedColumn(error)) throw error;
-    rows = await db.queryRows(select('NULL'));
+  let rows: Array<Record<string, unknown>> | null = null;
+  // Newest columns first: is_public / bundled_hr_plan_id (387), pricing_badge (385).
+  for (const extra of [
+    'pricing_badge AS badge, is_public, bundled_hr_plan_id',
+    'pricing_badge AS badge, true AS is_public, NULL AS bundled_hr_plan_id',
+    'NULL AS badge, true AS is_public, NULL AS bundled_hr_plan_id',
+  ]) {
+    try {
+      rows = await db.queryRows(select(extra));
+      break;
+    } catch (error) {
+      if (!isUndefinedColumn(error)) throw error;
+    }
   }
-  return rows
-    .filter((r) => !PRICING_HIDDEN_PLAN_IDS.has(String(r.id)))
+  return (rows ?? [])
+    .filter((r) => r.is_public !== false && !PRICING_HIDDEN_PLAN_IDS.has(String(r.id)))
     .map((r) => ({
       id: String(r.id),
       name: String(r.display_name ?? r.id),
@@ -95,6 +104,7 @@ async function loadPlans(): Promise<Array<Omit<PricingPlan, 'features' | 'limits
       priceYearly: Number(r.price_yearly) || 0,
       price3Year: Number(r.price_3year) || 0,
       badge: typeof r.badge === 'string' && r.badge.trim() ? r.badge.trim() : null,
+      bundledHrPlanId: typeof r.bundled_hr_plan_id === 'string' ? r.bundled_hr_plan_id : null,
     }));
 }
 

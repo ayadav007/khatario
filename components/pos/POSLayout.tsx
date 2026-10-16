@@ -584,17 +584,12 @@ export function POSLayout({
                 size="sm"
                 className="w-full h-9"
                 onClick={() => bluetooth.onReprint()}
-                disabled={
-                  !bluetooth.supported ||
-                  bluetooth.pairedCount === 0 ||
-                  itemCount === 0 ||
-                  !!bluetooth.isReprinting
-                }
+                disabled={!bluetooth.supported || itemCount === 0 || !!bluetooth.isReprinting}
                 title={
                   !bluetooth.supported
                     ? 'Bluetooth not supported in this browser'
                     : bluetooth.pairedCount === 0
-                      ? 'Pair a printer in Settings → Print & devices first'
+                      ? 'Printer not connected. Tap to connect a printer and print.'
                       : 'Print this order to the Bluetooth printer without saving'
                 }
               >
@@ -607,6 +602,9 @@ export function POSLayout({
                   ? 'Printing to Bluetooth…'
                   : 'Print to Bluetooth'}
               </Button>
+              {bluetooth.supported && bluetooth.pairedCount === 0 && (
+                <p className="text-caption text-center font-semibold text-amber-700">Printer not connected</p>
+              )}
               {bluetooth.printerHint && (
                 <p className="text-caption text-gray-600 text-center">{bluetooth.printerHint}</p>
               )}

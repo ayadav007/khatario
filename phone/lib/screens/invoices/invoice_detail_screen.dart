@@ -12,6 +12,7 @@ import '../../ui/kit.dart';
 import 'invoice_form_screen.dart';
 import 'invoice_payment_sheet.dart';
 import 'invoice_pdf_screen.dart';
+import '../settings/printers_screen.dart';
 import 'invoice_share.dart';
 import 'record_payment_dialog.dart';
 
@@ -191,6 +192,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             )),
           ),
         DetailMoreAction(label: 'View invoice', icon: LucideIcons.externalLink, onTap: _openInvoiceView),
+        if (widget.session != null && !draft && inv['status'] != 'cancelled')
+          DetailMoreAction(
+            label: 'Print bill (thermal)',
+            icon: LucideIcons.printer,
+            onTap: () => printInvoiceOnThermal(context, widget.session!, widget.invoiceId),
+          ),
       ],
       header: _hero(inv, grand, paid, balance, due),
       body: switch (_tab) {

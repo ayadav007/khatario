@@ -7,5 +7,6 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         StaffDeviceChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
+        ThermalPrinterChannel(this).register(flutterEngine.dartExecutor.binaryMessenger)
     }
 }

@@ -45,6 +45,7 @@ import { NotificationCenter } from '@/components/notifications/NotificationCente
 import { useDarkMode } from '@/contexts/DarkModeContext';
 import { clsx } from 'clsx';
 import { Moon, Sun } from 'lucide-react';
+import { DesktopScreenSize } from '@/components/desktop/DesktopScreenSize';
 
 import {
   addDays,
@@ -883,6 +884,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     )}
                   </div>
                 )}
+                <DesktopScreenSize />
                 <div className="p-2">
                   <button
                     type="button"

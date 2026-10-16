@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { loadItcGate } from '@/lib/gst/itc-2b-gate';
 import type { PoolClient } from 'pg';
 import { getPool } from '@/lib/db';
 import { createLedgerEntryLine, getAccountByCode } from '@/lib/ledger-utils';
@@ -533,6 +534,19 @@ export async function applyGstSetoff(params: ApplyGstSetoffParams): Promise<Appl
     itcIGST = getItcFromInputBalance(balI);
     itcCGST = getItcFromInputBalance(balC);
     itcSGST = getItcFromInputBalance(balS);
+
+    // Credit GSTR-2B does not support yet stays in the input ledger, unused (s.16(2)(aa)).
+    const gate = await loadItcGate(getPool(), businessId, gst_period, [branchId]);
+    const notYet = (h: 'igst' | 'cgst' | 'sgst' | 'cess') => round2(gate.held[h] + gate.held_before[h]);
+    if (notYet('igst') + notYet('cgst') + notYet('sgst') + notYet('cess') >= 0.005) {
+      itcIGST = Math.max(0, round2(itcIGST - notYet('igst')));
+      itcCGST = Math.max(0, round2(itcCGST - notYet('cgst')));
+      itcSGST = Math.max(0, round2(itcSGST - notYet('sgst')));
+      itcCess = Math.max(0, round2(itcCess - notYet('cess')));
+      warnings.push(
+        `ITC not yet shown in GSTR-2B is kept out of this set-off: IGST ₹${notYet('igst').toFixed(2)}, CGST ₹${notYet('cgst').toFixed(2)}, SGST ₹${notYet('sgst').toFixed(2)}.`
+      );
+    }
   } else {
     outputCess = round2(await getLedgerNetCreditMinusDebit(businessId, GSTR3B_OUTPUT_CESS, from, to, branchId));
     itcCess = getItcFromInputLedgerNet(

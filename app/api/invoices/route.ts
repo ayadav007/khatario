@@ -1492,12 +1492,19 @@ export async function POST(request: NextRequest) {
 
     // Auto-classify supply_type if not provided
     let finalSupplyType = supply_type;
+    // GSTR-1 B2CL: inter-state supply to an unregistered person above ₹1 lakh (₹2.5 lakh before
+    // 1 Aug 2024, Notification 12/2024-CT). Intra-state B2C is always B2CS.
+    const b2cSize = () => {
+      const day = String(invoice_date || '').slice(0, 10);
+      const limit = day && day < '2024-08-01' ? 250000 : 100000;
+      const interState = !!posStateCode && !!businessStateCode && posStateCode !== businessStateCode;
+      return interState && grandTotal > limit ? 'b2c_large' : 'b2c_small';
+    };
     if (!finalSupplyType) {
-      // Export/SEZ: Check place_of_supply_state_code or is_export flag (overrides other classifications)
+      // Export: place of supply 96 or the is_export flag. SEZ is chosen explicitly (supply_type);
+      // 97 "Other Territory" is an ordinary inter-state supply.
       if (is_export || posStateCode === '96') {
         finalSupplyType = 'export';
-      } else if (posStateCode === '97') {
-        finalSupplyType = 'sez';
       }
       // For other types, check if customer has GSTIN (B2B)
       else if (customer_id) {
@@ -1505,24 +1512,9 @@ export async function POST(request: NextRequest) {
           'SELECT gstin FROM customers WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL',
           [customer_id, business_id]
         );
-        if (custRes.rows.length > 0 && custRes.rows[0].gstin) {
-          finalSupplyType = 'b2b';
-        } else {
-          // B2C Large: Invoice value > ₹2.5 lakh
-          if (grandTotal > 250000) {
-            finalSupplyType = 'b2c_large';
-          } else {
-            // B2C Small: Invoice value <= ₹2.5 lakh
-            finalSupplyType = 'b2c_small';
-          }
-        }
+        finalSupplyType = custRes.rows.length > 0 && custRes.rows[0].gstin ? 'b2b' : b2cSize();
       } else {
-        // No customer (cash sale) - default to B2C Small
-        if (grandTotal > 250000) {
-          finalSupplyType = 'b2c_large';
-        } else {
-          finalSupplyType = 'b2c_small';
-        }
+        finalSupplyType = b2cSize(); // cash sale
       }
     }
 

@@ -2,6 +2,7 @@ import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-cat
 import {
   bundledHrNote,
   comparisonRows,
+  isPhoneOnlyPlan,
   cycleOptions,
   planCardFeatures,
   planCardLimits,
@@ -19,6 +20,7 @@ function plan(id: string, features: string[], over: Partial<PricingPlan> = {}): 
     priceYearly: 0,
     price3Year: 0,
     badge: null,
+    bundledHrPlanId: null,
     features,
     limits: {},
     ...over,
@@ -141,13 +143,30 @@ describe('pricing view', () => {
     expect(pro.features.map((f) => f.id)).toEqual(['hr_payroll', 'hr_leaves']);
   });
 
-  it('describes the free HR plan bundled with Billing from its own limits', () => {
-    const withLite: PricingCatalog = {
+  it('names the HR plan bundled with each Billing plan, with its staff limit', () => {
+    const bundled: PricingCatalog = {
       ...catalog,
       limits: [...catalog.limits, { key: 'max_employees', one: 'employee', many: 'employees', rank: 6 }],
-      plans: [...catalog.plans, plan('hr_staff_lite', [], { name: 'HR Lite', productLine: 'hr', limits: { max_employees: 30 } })],
+      plans: [
+        ...catalog.plans.map((p) => (p.id === 'growth' ? { ...p, bundledHrPlanId: 'hr_starter' } : p)),
+        plan('hr_starter', [], { name: 'HR Starter', productLine: 'hr', limits: { max_employees: 50 } }),
+      ],
     };
-    expect(bundledHrNote(withLite)).toBe('HR Lite included · up to 30 employees');
-    expect(bundledHrNote(catalog)).toBeNull();
+    const growth = bundled.plans.find((p) => p.id === 'growth')!;
+    const free = bundled.plans.find((p) => p.id === 'free')!;
+    expect(bundledHrNote(bundled, growth)).toBe('HR Starter included · up to 50 employees');
+    expect(bundledHrNote(bundled, free)).toBeNull();
+  });
+
+  it('marks plans without website access as phone-app only', () => {
+    const withWeb: PricingCatalog = {
+      ...catalog,
+      features: [...catalog.features, { id: 'web_access', category: 'settings', label: 'Use on computer and phone', rank: 0 }],
+      plans: catalog.plans.map((p) => (p.id === 'free' ? p : { ...p, features: [...p.features, 'web_access'] })),
+    };
+    expect(isPhoneOnlyPlan(withWeb, withWeb.plans[0])).toBe(true);
+    expect(isPhoneOnlyPlan(withWeb, withWeb.plans[1])).toBe(false);
+    // Before the feature exists, nothing is phone-only.
+    expect(isPhoneOnlyPlan(catalog, catalog.plans[0])).toBe(false);
   });
 });

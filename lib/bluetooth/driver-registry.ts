@@ -12,6 +12,7 @@ import type { DriverDescriptor } from './drivers/registry-types';
 import { driverKindToTransport } from '@/lib/printer/capabilities';
 
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import { isDesktopPrintingAvailable } from '@/lib/desktop/printing';
 
 export { isCapacitorNative };
 
@@ -25,6 +26,18 @@ function hasWebBluetoothApi(): boolean {
 }
 
 const DRIVER_DESCRIPTORS: DriverDescriptor[] = [
+  {
+    transport: 'desktop',
+    priority: 1,
+    matchesRuntime: () => isDesktopPrintingAvailable(),
+    load: async () => {
+      const mod = await import(
+        /* webpackChunkName: "desktop-printer-driver" */
+        './drivers/desktop'
+      );
+      return mod.createDesktopPrinterDriver();
+    },
+  },
   {
     transport: 'android-spp',
     priority: 5,
@@ -97,6 +110,7 @@ export function isBluetoothSupported(): boolean {
 
 export function getActiveDriverKind(): BluetoothDriverKind | null {
   if (cachedKind) return cachedKind;
+  if (isDesktopPrintingAvailable()) return 'desktop';
   if (isCapacitorNative()) return 'capacitor-spp';
   if (hasWebBluetoothApi()) return 'web-ble';
   return null;

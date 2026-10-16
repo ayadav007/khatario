@@ -1,0 +1,12 @@
+{
+  "name": "khatario-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Khatario for Windows: a Tauri shell around the hosted Khatario web app.",
+  "scripts": {
+    "dev": "cargo tauri dev",
+    "build": "cargo tauri build",
+    "build:production": "cargo tauri build --config src-tauri/tauri.production.conf.json",
+    "icons": "cargo tauri icon ../public/icons/icon-512.png"
+  }
+}

@@ -494,8 +494,8 @@ async function fetchB2csInvoiceIds(businessId: string, invoiceIds: string[]): Pr
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.business_id = $1::uuid
       AND i.id = ANY($2::uuid[])
-      AND COALESCE(NULLIF(TRIM(c.gstin), ''), '') = ''
-      AND COALESCE(i.place_of_supply_state_code, '') NOT IN ('96', '97')
+      AND COALESCE(NULLIF(TRIM(i.customer_gstin), ''), '') = ''
+      AND COALESCE(i.place_of_supply_state_code, '') <> '96'
     `,
     [businessId, invoiceIds]
   );

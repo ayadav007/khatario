@@ -19,6 +19,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
+import { PrinterStatusChip } from '@/components/printer/PrinterStatusChip';
 
 interface LabelableEntry {
   row_id: string;
@@ -52,6 +54,7 @@ export default function BulkBarcodePrintPage() {
   const { business } = useAuth();
   const toast = useToastContext();
   const bt = useBluetoothPrinter();
+  const labelPrinter = usePrinterReady(bt, 'labels');
   const [entries, setEntries] = useState<LabelableEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
@@ -239,19 +242,6 @@ export default function BulkBarcodePrintPage() {
       // the server's auth + feature gates + DB hydration so no item data
       // leaks and the same label renders everywhere.
       if (format === 'bluetooth') {
-        if (!bt.supported) {
-          toast.error(
-            'Bluetooth is not available in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-          );
-          return;
-        }
-        if (bt.savedPrinters.length === 0) {
-          toast.error(
-            'No Bluetooth printer paired. Go to Settings → Print & devices to pair one first.'
-          );
-          return;
-        }
-
         const res = await fetch(
           `/api/labels/print?business_id=${business.id}`,
           {
@@ -279,12 +269,17 @@ export default function BulkBarcodePrintPage() {
           mfgDate: l.mfgDate ? new Date(l.mfgDate) : null,
           expiryDate: l.expiryDate ? new Date(l.expiryDate) : null,
         }));
-        await bt.printLabels({
-          template: payload.template,
-          lines: hydratedLines,
-          businessName: payload.businessName || '',
-        });
-        toast.success(`Sent ${totalCopies} label(s) to Bluetooth printer`);
+        const printed = await labelPrinter.print('Connect a printer to print these labels.', (printer) =>
+          bt.printLabels(
+            {
+              template: payload.template,
+              lines: hydratedLines,
+              businessName: payload.businessName || '',
+            },
+            printer
+          )
+        );
+        if (printed) toast.success(`Sent ${totalCopies} label(s) to Bluetooth printer`);
         return;
       }
 
@@ -402,6 +397,9 @@ export default function BulkBarcodePrintPage() {
                 Bluetooth printer{bt.supported ? '' : ' (unsupported)'}
               </option>
             </select>
+            {format === 'bluetooth' && (
+              <PrinterStatusChip printer={labelPrinter} reason="Connect a printer to print labels." />
+            )}
 
             <Button
               variant="secondary"
@@ -624,6 +622,7 @@ export default function BulkBarcodePrintPage() {
           </div>
         )}
       </Card>
+      {labelPrinter.dialog}
     </div>
   );
 }

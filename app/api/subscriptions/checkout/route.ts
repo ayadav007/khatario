@@ -10,6 +10,7 @@ import { resolveCheckoutPricing } from '@/lib/subscription/checkout-pricing';
 import { queryOne } from '@/lib/db';
 import { TRIAL_PLAN_ID } from '@/lib/subscription/trial-plan';
 import { normalizeBillingCycle } from '@/lib/subscription/apply-plan-change';
+import { planOpenToBusiness } from '@/lib/subscription/public-plans';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,14 @@ export async function POST(request: NextRequest) {
 
     if (!plan?.is_active) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
+    }
+
+    // Plans kept only for existing customers (is_public = false) can be renewed, not newly bought.
+    if (!(await planOpenToBusiness(tenant.businessId, plan_id))) {
+      return NextResponse.json(
+        { error: 'This plan is no longer offered. Choose one of the current plans.', code: 'PLAN_NOT_OFFERED' },
+        { status: 400 },
+      );
     }
 
     let pricing;

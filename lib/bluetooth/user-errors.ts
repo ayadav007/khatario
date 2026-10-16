@@ -9,6 +9,8 @@ export function mapBluetoothUserMessage(raw: unknown): string {
     const o = raw as { message?: string; errorMessage?: string };
     message = o.message || o.errorMessage || '';
   }
+  // Khatario for Windows writes its own cashier-facing messages (lib/desktop/printing.ts).
+  if (raw instanceof Error && raw.name === 'DesktopPrintError') return message;
   const m = message.toLowerCase();
 
   if (m.includes('permission')) {

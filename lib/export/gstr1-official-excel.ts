@@ -789,7 +789,7 @@ export async function generateOfficialGSTR1Excel(
     cgst: Math.round(cdnrTaxes.cgst * 100) / 100,
     sgst: Math.round(cdnrTaxes.sgst * 100) / 100,
     cess: Math.round(cdnrTaxes.cess * 100) / 100,
-    count: report.cdn.filter(c => c.gstin_uin_recipient).length,
+    count: new Set(report.cdn.filter(c => c.gstin_uin_recipient).map(c => `${c.note_type}|${c.note_number}`)).size,
   });
   
   summarySheet.addRow({
@@ -800,7 +800,7 @@ export async function generateOfficialGSTR1Excel(
     cgst: Math.round(cdnurTaxes.cgst * 100) / 100,
     sgst: Math.round(cdnurTaxes.sgst * 100) / 100,
     cess: Math.round(cdnurTaxes.cess * 100) / 100,
-    count: report.cdn.filter(c => !c.gstin_uin_recipient).length,
+    count: new Set(report.cdn.filter(c => !c.gstin_uin_recipient).map(c => `${c.note_type}|${c.note_number}`)).size,
   });
   
   summarySheet.addRow({

@@ -5,8 +5,9 @@ import * as db from '@/lib/db';
  * Shared by admin, tenant, and public plan listing routes.
  */
 export async function listActiveSubscriptionPlans() {
-  const plans = await db.queryRows(`
+  const select = (extra: string) => `
     SELECT 
+      ${extra}
       id,
       name,
       display_name,
@@ -24,7 +25,15 @@ export async function listActiveSubscriptionPlans() {
     FROM subscription_plans
     WHERE is_active = true
     ORDER BY sort_order ASC
-  `);
+  `;
+  // is_public / bundled_hr_plan_id come from migration 387.
+  let plans: Record<string, unknown>[];
+  try {
+    plans = await db.queryRows(select('is_public, bundled_hr_plan_id,'));
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42703') throw error;
+    plans = await db.queryRows(select('true AS is_public, NULL AS bundled_hr_plan_id,'));
+  }
 
   const plansWithRegistry = await Promise.all(
     plans.map(async (plan: Record<string, unknown>) => {

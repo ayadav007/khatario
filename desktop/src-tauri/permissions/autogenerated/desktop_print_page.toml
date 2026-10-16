@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-print-page"
+description = "Enables the desktop_print_page command without any pre-configured scope."
+commands.allow = ["desktop_print_page"]
+
+[[permission]]
+identifier = "deny-desktop-print-page"
+description = "Denies the desktop_print_page command without any pre-configured scope."
+commands.deny = ["desktop_print_page"]

@@ -1,14 +1,15 @@
 import { getPool } from '@/lib/db';
 import { resolveItemUqc, toGstUqc } from '@/lib/gst/uqc';
 import { loadAdvanceTables, type AdvanceTableRow } from '@/lib/gst/gstr1-advances';
-import { resolveSupplierRegistration } from '@/lib/gst/registration';
+import { registrationBranchIds, resolveSupplierRegistration } from '@/lib/gst/registration';
 import { checkGstin } from '@/lib/tax/gstin';
 
 export type { AdvanceTableRow };
 
 export interface GSTR1Filters {
   business_id: string;
-  branch_id?: string; // Optional: Filter by specific branch (for branch-wise GST reporting)
+  /** The return of this branch's GSTIN: every branch filing under that GSTIN is included. */
+  branch_id?: string;
   month?: number;
   year?: number;
   from_date?: string;
@@ -296,6 +297,70 @@ function deriveCdnurTyp(
   return 'B2CL';
 }
 
+/**
+ * A note covering lines at more than one GST rate is reported rate-wise (one item per rate in
+ * CDNR / CDNUR, and netted per rate into B2CS). Each rate row carries that rate's line totals;
+ * any difference between the note header and its lines (note-level discount, rounding) stays on
+ * the highest-rate row so the rows still add up to the note.
+ */
+async function splitNotesByRate(client: { query: (t: string, p?: unknown[]) => Promise<{ rows: any[] }> }, rows: any[]): Promise<any[]> {
+  const ids = (t: string) => rows.filter((r) => r.document_type === t).map((r) => String(r.document_id));
+  const [cn, dn] = await Promise.all([
+    ids('credit_note').length
+      ? client.query(
+          `SELECT cni.credit_note_id AS id, cni.tax_rate, SUM(cni.line_total - cni.tax_amount) AS taxable,
+                  SUM(cni.tax_amount) AS tax, 0::numeric AS igst, 0::numeric AS cgst, 0::numeric AS sgst
+             FROM credit_note_items cni WHERE cni.credit_note_id = ANY($1::uuid[]) GROUP BY 1, 2`,
+          [ids('credit_note')]
+        )
+      : { rows: [] },
+    ids('debit_note').length
+      ? client.query(
+          `SELECT dni.debit_note_id AS id, dni.tax_rate, SUM(dni.taxable_value) AS taxable, SUM(dni.tax_amount) AS tax,
+                  SUM(dni.igst_amount) AS igst, SUM(dni.cgst_amount) AS cgst, SUM(dni.sgst_amount) AS sgst
+             FROM debit_note_items dni WHERE dni.debit_note_id = ANY($1::uuid[]) GROUP BY 1, 2`,
+          [ids('debit_note')]
+        )
+      : { rows: [] },
+  ]);
+  const byNote = new Map<string, any[]>();
+  for (const r of [...cn.rows, ...dn.rows]) {
+    const k = String(r.id);
+    if (!byNote.has(k)) byNote.set(k, []);
+    byNote.get(k)!.push(r);
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const out: any[] = [];
+  for (const row of rows) {
+    const lines = (byNote.get(String(row.document_id)) ?? []).sort((a, b) => Number(b.tax_rate) - Number(a.tax_rate));
+    if (lines.length < 2) {
+      out.push(row);
+      continue;
+    }
+    const inter = (parseFloat(row.igst_amount) || 0) > 0;
+    const parts = lines.map((l) => {
+      const tax = parseFloat(l.tax) || 0;
+      const isDebit = row.document_type === 'debit_note';
+      const cgst = isDebit ? parseFloat(l.cgst) || 0 : inter ? 0 : r2(tax / 2);
+      return {
+        ...row,
+        tax_rate: Number(l.tax_rate),
+        taxable_value: r2(parseFloat(l.taxable) || 0),
+        igst_amount: isDebit ? parseFloat(l.igst) || 0 : inter ? tax : 0,
+        cgst_amount: cgst,
+        sgst_amount: isDebit ? parseFloat(l.sgst) || 0 : inter ? 0 : r2(tax - cgst),
+      };
+    });
+    const top = parts[0];
+    for (const k of ['taxable_value', 'igst_amount', 'cgst_amount', 'sgst_amount'] as const) {
+      const total = parseFloat(row[k]) || 0;
+      top[k] = r2(top[k] + total - parts.reduce((s, p) => s + p[k], 0));
+    }
+    out.push(...parts);
+  }
+  return out;
+}
+
 export class GSTR1Generator {
   private pool = getPool();
 
@@ -305,11 +370,11 @@ export class GSTR1Generator {
     const params: any[] = [business_id];
     let pIdx = 2;
 
-    // Add branch filter if provided
+    const branchIds = branch_id ? await registrationBranchIds(this.pool, business_id, branch_id) : null;
     let branchCondition = '';
-    if (branch_id) {
-      branchCondition = `AND i.branch_id = $${pIdx}`;
-      params.push(branch_id);
+    if (branchIds) {
+      branchCondition = `AND i.branch_id = ANY($${pIdx}::uuid[])`;
+      params.push(branchIds);
       pIdx++;
     }
 
@@ -343,7 +408,7 @@ export class GSTR1Generator {
           i.is_reverse_charge, i.document_type, i.supply_type, i.export_type,
           i.shipping_bill_number, i.shipping_bill_date, i.port_code,
           i.ecommerce_operator_gstin, i.is_ecommerce_supply, i.subtotal, i.branch_id,
-          c.gstin as customer_gstin, c.name as customer_name,
+          i.customer_gstin AS customer_gstin, c.name as customer_name, -- GSTIN on the invoice date (migration 388)
           ii.tax_rate, COALESCE(NULLIF(TRIM(ii.hsn_sac), ''), it.hsn_sac) AS hsn_sac,
           ii.quantity, ii.unit, ii.taxable_value as item_taxable_value,
           CASE WHEN UPPER(TRIM(COALESCE(ii.unit, ''))) = UPPER(TRIM(COALESCE(it.unit, ''))) THEN it.uqc END AS item_uqc,
@@ -469,7 +534,8 @@ export class GSTR1Generator {
         const inv = items[0]; // First item contains invoice details
         const isB2B = !!inv.customer_gstin;
         const isExport = inv.place_of_supply_state_code === '96'; // 96: Foreign Country
-        const isSEZ = inv.place_of_supply_state_code === '97' || inv.supply_type === 'sez'; // 97: SEZ/Other Territory
+        // 97 is "Other Territory" (a taxable inter-state supply), not SEZ; SEZ is marked by supply_type.
+        const isSEZ = inv.supply_type === 'sez';
         const totalValue = parseFloat(inv.grand_total);
         const placeOfSupply = inv.place_of_supply_state_code; // 2-digit code
         
@@ -685,10 +751,10 @@ export class GSTR1Generator {
       const cdnParams: any[] = [business_id];
       let cdnPIdx = 2;
 
-      if (branch_id) {
-        cdnBranchCn = `AND cn.branch_id = $${cdnPIdx}::uuid`;
-        cdnBranchDn = `AND dn.branch_id = $${cdnPIdx}::uuid`;
-        cdnParams.push(branch_id);
+      if (branchIds) {
+        cdnBranchCn = `AND cn.branch_id = ANY($${cdnPIdx}::uuid[])`;
+        cdnBranchDn = `AND dn.branch_id = ANY($${cdnPIdx}::uuid[])`;
+        cdnParams.push(branchIds);
         cdnPIdx++;
       }
 
@@ -721,7 +787,7 @@ export class GSTR1Generator {
           cn.reason,
           i.invoice_number                AS original_invoice_number,
           i.id                            AS linked_invoice_id,
-          c.gstin                         AS customer_gstin,
+          cn.customer_gstin               AS customer_gstin,
           c.name                          AS customer_name,
           COALESCE(i.is_reverse_charge, false) AS orig_is_reverse_charge,
           i.supply_type                   AS orig_supply_type,
@@ -764,7 +830,7 @@ export class GSTR1Generator {
           dn.reason,
           i.invoice_number                AS original_invoice_number,
           i.id                            AS linked_invoice_id,
-          c.gstin                         AS customer_gstin,
+          dn.customer_gstin               AS customer_gstin,
           c.name                          AS customer_name,
           COALESCE(i.is_reverse_charge, false) AS orig_is_reverse_charge,
           i.supply_type                   AS orig_supply_type,
@@ -820,7 +886,7 @@ export class GSTR1Generator {
       if (periodFrom && periodTo) {
         ({ at, atadj } = await loadAdvanceTables(client, {
           businessId: business_id,
-          branchId: branch_id || null,
+          branchIds,
           from: periodFrom,
           to: periodTo,
         }));
@@ -828,14 +894,14 @@ export class GSTR1Generator {
           `SELECT 6 AS doc_num, a.voucher_number AS number
              FROM advance_payments a
             WHERE a.business_id = $1 AND a.type = 'received' AND a.voucher_number IS NOT NULL
-              AND a.payment_date BETWEEN $2::date AND $3::date ${branch_id ? 'AND a.branch_id = $4' : ''}
+              AND a.payment_date BETWEEN $2::date AND $3::date ${branchIds ? 'AND a.branch_id = ANY($4::uuid[])' : ''}
            UNION ALL
            SELECT 8, aa.voucher_number
              FROM advance_adjustments aa
              JOIN advance_payments a ON a.id = aa.advance_id
             WHERE aa.business_id = $1 AND aa.kind = 'refund' AND a.type = 'received'
-              AND aa.adjustment_date BETWEEN $2::date AND $3::date ${branch_id ? 'AND a.branch_id = $4' : ''}`,
-          branch_id ? [business_id, periodFrom, periodTo, branch_id] : [business_id, periodFrom, periodTo]
+              AND aa.adjustment_date BETWEEN $2::date AND $3::date ${branchIds ? 'AND a.branch_id = ANY($4::uuid[])' : ''}`,
+          branchIds ? [business_id, periodFrom, periodTo, branchIds] : [business_id, periodFrom, periodTo]
         );
         for (const docNum of [6, 8] as const) {
           const docs = voucherDocs.rows
@@ -846,7 +912,8 @@ export class GSTR1Generator {
       }
 
       const cdnResult = await client.query(cdnQuery, cdnParams);
-      cdnResult.rows.forEach((row) => {
+      const cdnRows = await splitNotesByRate(client, cdnResult.rows);
+      cdnRows.forEach((row) => {
         const gstin = row.customer_gstin ? String(row.customer_gstin).trim() : null;
         const isRegRecipient = !!gstin && gstin.length === 15;
         const noteIgst = parseFloat(row.igst_amount) || 0;
@@ -935,7 +1002,7 @@ export class GSTR1Generator {
                 CASE WHEN cn.igst_total > 0 THEN cni.tax_amount ELSE 0 END AS igst_amount,
                 CASE WHEN cn.igst_total > 0 THEN 0 ELSE ROUND(cni.tax_amount / 2, 2) END AS cgst_amount,
                 CASE WHEN cn.igst_total > 0 THEN 0 ELSE cni.tax_amount - ROUND(cni.tax_amount / 2, 2) END AS sgst_amount,
-                c.gstin AS customer_gstin
+                cn.customer_gstin AS customer_gstin
            FROM credit_note_items cni
            JOIN credit_notes cn ON cn.id = cni.credit_note_id
            LEFT JOIN items it ON it.id = cni.item_id
@@ -945,7 +1012,7 @@ export class GSTR1Generator {
          SELECT 1 AS sign, COALESCE(dni.hsn_sac, it.hsn_sac, 'NA'), dni.description, dni.unit,
                 dni.qty, dni.tax_rate, dni.taxable_value,
                 dni.igst_amount, dni.cgst_amount, dni.sgst_amount,
-                c.gstin
+                dn.customer_gstin
            FROM debit_note_items dni
            JOIN debit_notes dn ON dn.id = dni.debit_note_id
            LEFT JOIN items it ON it.id = dni.item_id

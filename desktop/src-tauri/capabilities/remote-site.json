@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-site",
+  "description": "What the hosted Khatario site may call: screen size and printing to this PC's printers. Other sites get nothing.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://staging.khatario.com/*", "https://khatario.com/*"]
+  },
+  "permissions": [
+    "allow-desktop-get-zoom",
+    "allow-desktop-set-zoom",
+    "allow-desktop-list-printers",
+    "allow-desktop-print-windows",
+    "allow-desktop-print-network",
+    "allow-desktop-probe-network",
+    "allow-desktop-scan-network",
+    "allow-desktop-network-printer-status",
+    "allow-desktop-print-page",
+    "allow-desktop-list-serial-ports",
+    "allow-desktop-print-serial"
+  ]
+}

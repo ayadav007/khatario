@@ -17,8 +17,7 @@ export function isZeroRatedWithoutTax(opts: {
     !!opts.is_export ||
     supplyType === 'export' ||
     supplyType.startsWith('sez') ||
-    opts.place_of_supply_state_code === '96' ||
-    opts.place_of_supply_state_code === '97';
+    opts.place_of_supply_state_code === '96';
   if (!zeroRatedSupply) return false;
   if (exportType === 'wp' || supplyType === 'sez_wp') return false;
   return exportType === 'wop' || supplyType === 'sez_wop' || opts.lut_declaration === true;

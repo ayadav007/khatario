@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail } from 'lucide-react';
+import { Download, Edit, Share2, CreditCard, Loader2, XCircle, Send, Ban, AlertTriangle, Bluetooth, Mail, Printer } from 'lucide-react';
 import { SendDocumentEmailModal } from '@/components/email/SendDocumentEmailModal';
 import { ConfigureBusinessEmailModal } from '@/components/email/ConfigureBusinessEmailModal';
 import { useGatedDocumentEmail } from '@/hooks/useGatedDocumentEmail';
@@ -14,6 +14,8 @@ import { CancelInvoiceModal } from '@/components/modals/CancelInvoiceModal';
 import { DocumentList } from '@/components/documents/DocumentList';
 import { DocumentUploader } from '@/components/documents/DocumentUploader';
 import { useAuth } from '@/contexts/AuthContext';
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
+import { isKhatarioDesktop } from '@/lib/desktop/platform';
 import { useToastContext } from '@/contexts/ToastContext';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import { ProformaLifecycleManager } from '@/components/invoices/ProformaLifecycleManager';
@@ -26,6 +28,8 @@ import { CreditWarningBanner } from '@/components/credit/CreditWarningBanner';
 import { CreditMetrics } from '@/lib/credit-utils';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
+import { PrinterStatusChip } from '@/components/printer/PrinterStatusChip';
 import { invoicePayloadToReceipt } from '@/lib/bluetooth/invoice-payload-to-receipt';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import { ScaledA4Preview } from '@/components/invoices/ScaledA4Preview';
@@ -39,6 +43,7 @@ export default function InvoiceDetailPage() {
   const { user, business } = useAuth();
   const toast = useToastContext();
   const bt = useBluetoothPrinter();
+  const receiptPrinter = usePrinterReady(bt, 'receipts');
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
   const [btPrinting, setBtPrinting] = useState(false);
@@ -227,25 +232,28 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  // Khatario for Windows: Print goes straight to the chosen A4 printer (Settings › Print & devices).
+  const handlePrintA4 = async () => {
+    const result = await printInvoiceA4(invoiceId, user?.id, business?.id);
+    if (result.mode === 'printed') toast.success(`Sent to ${result.printer}`);
+    else if (result.error) toast.error(`${result.error} Opened the PDF instead.`);
+  };
+  const a4PrintButton = isKhatarioDesktop() ? (
+    <Button variant="secondary" onClick={handlePrintA4}>
+      <Printer className="w-4 h-4 mr-2" />
+      Print
+    </Button>
+  ) : null;
+
   const handlePrintBluetooth = async () => {
     if (!invoice) return;
-    if (!bt.supported) {
-      toast.error(
-        'Bluetooth printing is not supported in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-      );
-      return;
-    }
-    if (bt.savedPrinters.length === 0) {
-      toast.error(
-        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
-      );
-      return;
-    }
     setBtPrinting(true);
     try {
       const receipt = invoicePayloadToReceipt(invoice, (business as any) || {});
-      await bt.printReceipt(receipt);
-      toast.success('Receipt sent to Bluetooth printer');
+      const printed = await receiptPrinter.print('Connect a printer to print this receipt.', (printer) =>
+        bt.printReceipt(receipt, undefined, printer)
+      );
+      if (printed) toast.success('Receipt sent to Bluetooth printer');
     } catch (err: any) {
       toast.error(err?.message || 'Bluetooth print failed');
     } finally {
@@ -321,13 +329,11 @@ export default function InvoiceDetailPage() {
     <Button
       variant="secondary"
       onClick={handlePrintBluetooth}
-      disabled={btPrinting || !bt.supported || bt.savedPrinters.length === 0}
+      disabled={btPrinting}
       title={
-        !bt.supported
-          ? 'Bluetooth not supported in this browser'
-          : bt.savedPrinters.length === 0
-            ? 'Pair a printer in Settings → Print & devices'
-            : 'Print receipt to Bluetooth printer'
+        receiptPrinter.ready && receiptPrinter.printer
+          ? `Print receipt to ${receiptPrinter.printer.name}`
+          : 'Printer not connected. Click to connect a printer.'
       }
     >
       {btPrinting ? (
@@ -335,7 +341,10 @@ export default function InvoiceDetailPage() {
       ) : (
         <Bluetooth className="w-4 h-4 mr-2" />
       )}
-      {btPrinting ? 'Printing…' : 'Print to Bluetooth'}
+      {btPrinting ? 'Printing…' : receiptPrinter.ready ? 'Print to Bluetooth' : 'Printer not connected'}
+      {!btPrinting && !receiptPrinter.ready && (
+        <span className="ml-2 h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+      )}
     </Button>
   ) : null;
   
@@ -468,6 +477,7 @@ export default function InvoiceDetailPage() {
                   <Download className="w-4 h-4 mr-2" />
                   PDF
                 </Button>
+                {a4PrintButton}
                 {bluetoothPrintButton}
                 <Button variant="secondary" onClick={() => setCancelModalOpen(true)} className="text-red-600 hover:text-red-700 hover:border-red-300">
                   <Ban className="w-4 h-4 mr-2" />
@@ -732,6 +742,7 @@ export default function InvoiceDetailPage() {
         />
       )}
 
+      {receiptPrinter.dialog}
       {cancelModalOpen && invoice && (
         <CancelInvoiceModal
           invoiceId={invoice.id}

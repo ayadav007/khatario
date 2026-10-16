@@ -33,6 +33,20 @@ export interface SavedBluetoothPrinter {
   preferForReceipts?: boolean;
   /** Epoch ms of when the printer was last used successfully. */
   lastUsedAt?: number;
+  /** Bills: copies per print, 1–3 (copy 2 onward prints "DUPLICATE"). Default 1. */
+  copies?: number;
+  /** Bills: cut the paper after each bill. Default true (printers without a cutter ignore it). */
+  autoCut?: boolean;
+  /** Bills: open the cash drawer connected to this printer. Default 'never'. */
+  cashDrawer?: 'never' | 'cash' | 'always';
+  /** Labels: print darkness 0–15 (TSPL DENSITY / ZPL ~SD). Default 8. */
+  labelDensity?: number;
+  /** Labels: speed in inches per second, 1–6. Default 4. */
+  labelSpeed?: number;
+  /** Labels: gap between labels in mm (0 for continuous / black-mark rolls). Default 2. */
+  labelGapMm?: number;
+  /** Print head resolution; defaults to the profile's (203 dpi for nearly all thermal printers). */
+  dpi?: 203 | 300;
 }
 
 /** Which driver services a saved pairing or active session. */
@@ -41,10 +55,13 @@ export type BluetoothDriverKind =
   | 'capacitor-ble'
   | 'capacitor-spp'
   | 'tcp'
-  | 'usb';
+  | 'usb'
+  /** Khatario for Windows: Windows / network / COM port printers (lib/bluetooth/drivers/desktop.ts). */
+  | 'desktop';
 
 /** Known printer command languages. */
-export type PrinterLanguage = 'ESCPOS' | 'ZPL' | 'RAW';
+/** ESC/POS = receipt printers; TSPL = TSC / Xprinter / TVS label printers; ZPL = Zebra and compatibles. */
+export type PrinterLanguage = 'ESCPOS' | 'TSPL' | 'ZPL' | 'RAW';
 
 /**
  * Identifier for a known printer profile. Profiles carry the GATT
@@ -58,6 +75,10 @@ export type PrinterProfileId =
   | 'xprinter-xp-series'
   | 'tvs-rp-series'
   | 'goojprt-pt-series'
+  | 'tsc-label-tspl'
+  | 'xprinter-label-tspl'
+  | 'tvs-label-tspl'
+  | 'generic-tspl-label'
   | 'generic-zpl-label';
 
 /**

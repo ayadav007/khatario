@@ -8,6 +8,7 @@ import { GSTR1Generator } from './gstr1';
 import {
   computeGstr3bCashPayable,
   getItcFromInputLedgerNet,
+  getLedgerBalanceBefore,
   getLedgerNetCreditMinusDebit,
   GSTR3B_INPUT_CESS,
   GSTR3B_INPUT_CGST,
@@ -19,17 +20,22 @@ import {
   GSTR3B_OUTPUT_SGST,
   GSTR3BLedgerBasis,
   hasInvoiceLedgerEntryDateMismatch,
+  itcCarriedForward,
   resolveRcmLedgerNets,
   round2,
 } from './gstr3b-ledger';
 import { aggregateTable5, type GSTR3BTable5 } from './gstr3b-table5';
-import { resolveSupplierRegistration } from './registration';
+import { registrationBranchIds, resolveSupplierRegistration } from './registration';
+import { loadItcGate, type HeldBill, type ItcHeads } from './itc-2b-gate';
 
 export interface GSTR3BFilters {
   business_id: string;
   month: number;
   year: number;
-  /** When set, ledger lines are scoped like `get_account_balance` (NULL branch + this branch). */
+  /**
+   * The return of this branch's GSTIN: every branch filing under that GSTIN, plus ledger lines
+   * with no branch (like `get_account_balance`).
+   */
   branch_id?: string;
 }
 
@@ -68,13 +74,19 @@ export interface GSTR3BData {
   /** Table 5 — exempt, nil-rated, composition-supplier and non-GST inward supplies (from purchase lines). */
   inward_exempt_nil_non_gst: GSTR3BTable5;
 
-  /** Table 5.1 — interest and late fee */
+  /** Table 5.1 — interest plus late fee by head (filled by `fillTable51`; zero until then). */
   interest_late_fee: {
     igst: number;
     cgst: number;
     sgst: number;
     cess: number;
   };
+  /** Table 5.1 interest (s.50) by head, when filled by `fillTable51`. */
+  interest?: { igst: number; cgst: number; sgst: number; cess: number };
+  /** Table 5.1 late fee (s.47), CGST and SGST halves, when filled by `fillTable51`. */
+  late_fee?: { cgst: number; sgst: number };
+  /** Filing date the 5.1 figures assume, the return's due date, and days late. */
+  table_51_basis?: { filing_date: string; due_date: string; days_late: number };
 
   // Summary
   summary: {
@@ -105,6 +117,16 @@ export interface GSTR3BData {
   itc: { igst: number; cgst: number; sgst: number };
   utilization: GSTR3BLedgerBasis['utilization'];
   net_payable: GSTR3BLedgerBasis['net_payable'];
+
+  /**
+   * GSTR-2B gate on 4A(5) (s.16(2)(aa)): books ITC held back because 2B does not show it yet,
+   * and ITC held earlier that 2B or a decision supports from this period.
+   */
+  itc_2b: { reconciled: boolean; held: ItcHeads; released: ItcHeads; held_bills: HeldBill[] };
+  /** Credit left in the electronic credit ledger from earlier periods (s.49(2)). */
+  itc_brought_forward: ItcHeads;
+  /** ITC set off in 6.1: this period's claimable ITC plus the brought-forward balance. */
+  itc_available: ItcHeads;
 
   reconciliation: GSTR3BReconciliation;
   /** Ledger vs GSTR-1 by tax head (2150–2152 + 2153 vs invoice/CDN-derived), incl. CESS. */
@@ -162,14 +184,15 @@ function isInterStateDomestic(
   selfState: string | null
 ): boolean {
   const pos = extractStateCode(placeOfSupply);
-  if (pos === '96' || pos === '97') return false;
+  if (pos === '96') return false;
   if (selfState && pos.length === 2) return pos !== selfState;
   return igstAmount > 0;
 }
 
 function isExportPlaceOfSupply(placeOfSupply: string | undefined | null): boolean {
   const pos = extractStateCode(placeOfSupply);
-  return pos === '96' || pos === '97';
+  // 97 "Other Territory" is a taxable inter-state supply, not zero-rated.
+  return pos === '96';
 }
 
 /** Credit notes reduce outward supplies; debit notes add to them. */
@@ -186,7 +209,8 @@ export class GSTR3BGenerator {
     const startOfMonth = `${year}-${month.toString().padStart(2, '0')}-01`;
     // Built as text: Date#toISOString shifts to UTC and returns the previous day on IST servers.
     const endOfMonth = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
-    const branch = branch_id ?? null;
+    const pool = getPool();
+    const branch = branch_id ? await registrationBranchIds(pool, business_id, branch_id) : null;
 
     const gstr1Data = await this.gstr1Generator.generate({
       business_id,
@@ -259,9 +283,39 @@ export class GSTR3BGenerator {
     const rcmCgstForLiability = rcmResolved.cgst ?? 0;
     const rcmSgstForLiability = rcmResolved.sgst ?? 0;
 
+    // 4A(5) may hold only credit GSTR-2B supports (s.16(2)(aa)); see itc-2b-gate.
+    const period = `${year}-${month.toString().padStart(2, '0')}`;
+    const gate = await loadItcGate(pool, business_id, period, branch);
+
+    // 6.1 sets off against the electronic credit ledger, which carries unused credit forward.
+    const [inI, inC, inS, inCess, outI, outC, outS, outCess] = await Promise.all(
+      [GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST, GSTR3B_INPUT_CESS,
+        GSTR3B_OUTPUT_IGST, GSTR3B_OUTPUT_CGST, GSTR3B_OUTPUT_SGST, GSTR3B_OUTPUT_CESS].map((code) =>
+        getLedgerBalanceBefore(business_id, code, startOfMonth, branch)
+      )
+    );
+    const itc_brought_forward = itcCarriedForward({
+      inputBalance: { igst: Math.max(0, -inI), cgst: Math.max(0, -inC), sgst: Math.max(0, -inS), cess: Math.max(0, -inCess) },
+      outputBalance: { igst: Math.max(0, outI), cgst: Math.max(0, outC), sgst: Math.max(0, outS), cess: Math.max(0, outCess) },
+      // Released ITC is added to this period below, so it is not also carried forward.
+      held: {
+        igst: gate.held_before.igst + gate.released.igst,
+        cgst: gate.held_before.cgst + gate.released.cgst,
+        sgst: gate.held_before.sgst + gate.released.sgst,
+        cess: gate.held_before.cess + gate.released.cess,
+      },
+    });
+    const claimable = (books: number, head: keyof ItcHeads) => Math.max(0, round2(books - gate.held[head] + gate.released[head]));
+    const itc_available: ItcHeads = {
+      igst: round2(claimable(itcIGST, 'igst') + itc_brought_forward.igst),
+      cgst: round2(claimable(itcCGST, 'cgst') + itc_brought_forward.cgst),
+      sgst: round2(claimable(itcSGST, 'sgst') + itc_brought_forward.sgst),
+      cess: round2(claimable(itcCess, 'cess') + itc_brought_forward.cess),
+    };
+
     const cashWorking = computeGstr3bCashPayable({
       output: { igst: outputIGST, cgst: outputCGST, sgst: outputSGST, cess: outputCess },
-      itc: { igst: itcIGST, cgst: itcCGST, sgst: itcSGST, cess: itcCess },
+      itc: itc_available,
       rcm: rcmResolved,
     });
     const util = cashWorking.util;
@@ -392,10 +446,9 @@ export class GSTR3BGenerator {
       net_payable: util.net_payable,
     };
 
-    const pool = getPool();
     // Same registration lookup the invoice tax split uses: a valid GSTIN decides the state,
     // otherwise the registered state_code. A raw GSTIN prefix would disagree with the documents.
-    const registration = await resolveSupplierRegistration(pool, business_id, branch);
+    const registration = await resolveSupplierRegistration(pool, business_id, branch_id ?? null);
     const selfState = registration.stateCode;
 
     // Table 3.1(a)/(b): tax heads come from the documents themselves, never pro-rated.
@@ -509,7 +562,7 @@ export class GSTR3BGenerator {
         AND p.deleted_at IS NULL
         AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
         AND p.bill_date >= $2::date AND p.bill_date <= $3::date
-        AND ($4::uuid IS NULL OR p.branch_id = $4::uuid)
+        AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))
       GROUP BY 1, 2
       UNION ALL
       SELECT 'rcm', COALESCE(e.itc_eligible, true),
@@ -519,7 +572,7 @@ export class GSTR3BGenerator {
        WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
          AND COALESCE(e.is_reverse_charge, false)
          AND e.expense_date >= $2::date AND e.expense_date <= $3::date
-         AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)
+         AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))
        GROUP BY 2
       UNION ALL
       SELECT 'regular', false,
@@ -531,7 +584,7 @@ export class GSTR3BGenerator {
          AND e.itc_eligible = false
          AND (COALESCE(e.igst_amount, 0) + COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0)) > 0
          AND e.expense_date >= $2::date AND e.expense_date <= $3::date
-         AND ($4::uuid IS NULL OR e.branch_id = $4::uuid)`,
+         AND ($4::uuid[] IS NULL OR e.branch_id = ANY($4::uuid[]))`,
       [business_id, startOfMonth, endOfMonth, branch]
     );
     const table5Res = await pool.query(
@@ -548,7 +601,7 @@ export class GSTR3BGenerator {
           AND p.deleted_at IS NULL
           AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
           AND p.bill_date >= $2::date AND p.bill_date <= $3::date
-          AND ($4::uuid IS NULL OR p.branch_id = $4::uuid)`,
+          AND ($4::uuid[] IS NULL OR p.branch_id = ANY($4::uuid[]))`,
       [business_id, startOfMonth, endOfMonth, branch, selfState ?? null]
     );
     const inward_exempt_nil_non_gst = aggregateTable5(
@@ -608,7 +661,7 @@ export class GSTR3BGenerator {
           AND l.voucher_type IN ('itc_reversal', 'itc_reversal_r37')
           AND a.account_code IN ($5, $6, $7)
           AND l.entry_date >= $2::date AND l.entry_date <= $3::date
-          AND ($4::uuid IS NULL OR l.branch_id = $4::uuid)
+          AND ($4::uuid[] IS NULL OR l.branch_id = ANY($4::uuid[]))
         GROUP BY a.account_code`,
       [business_id, startOfMonth, endOfMonth, branch, GSTR3B_INPUT_IGST, GSTR3B_INPUT_CGST, GSTR3B_INPUT_SGST]
     );
@@ -619,18 +672,22 @@ export class GSTR3BGenerator {
       sgst: revAmt(GSTR3B_INPUT_SGST),
     };
 
-    // 4A(5): books ITC less the credits reported in 4A(1)-(3), plus credit reversed in 4B(1).
+    // 4A(5): books ITC less the credits reported in 4A(1)-(3) and less what GSTR-2B does not
+    // support yet, plus earlier credit 2B now supports, plus credit reversed in 4B(1).
     const otherHead = (ledger: number, head: 'igst' | 'cgst' | 'sgst') =>
       round2(
-        Math.max(0, ledger + stockLossReversal[head] - itcImports[head] - itcImportServices[head] - itcRcm[head]) +
-          blocked[head]
+        Math.max(
+          0,
+          ledger + stockLossReversal[head] - itcImports[head] - itcImportServices[head] - itcRcm[head] -
+            gate.held[head] + gate.released[head]
+        ) + blocked[head]
       );
     const other_itc: TaxBreakdown = {
       taxable_value: 0,
       igst: otherHead(itcIGST, 'igst'),
       cgst: otherHead(itcCGST, 'cgst'),
       sgst: otherHead(itcSGST, 'sgst'),
-      cess: round2(itcCess),
+      cess: Math.max(0, round2(itcCess - gate.held.cess + gate.released.cess)),
     };
     const itc_reversed: TaxBreakdown = roundTax({
       taxable_value: 0,
@@ -649,6 +706,17 @@ export class GSTR3BGenerator {
     const itcFromDocs = round2(itcImports.igst + itcImportServices.igst + itcRcm.igst);
     if (itcFromDocs > round2(itcIGST) + 0.5 || itcRcm.cgst > round2(itcCGST) + 0.5 || itcRcm.sgst > round2(itcSGST) + 0.5) {
       warnings.push('Import / reverse-charge ITC on bills exceeds input GST in the ledger for the period — check that RCM ITC was booked.');
+    }
+
+    if (!gate.reconciled && itcIGST + itcCGST + itcSGST > 0.005) {
+      warnings.push(
+        'GSTR-2B has not been reconciled for this period: 4A(5) shows ITC as per books. Only credit shown in GSTR-2B may be claimed (s.16(2)(aa)).'
+      );
+    }
+    if (gate.held_bills.length > 0) {
+      warnings.push(
+        `${gate.held_bills.length} bill(s) left out of 4A(5) because GSTR-2B does not support their credit yet — see itc_2b.held_bills.`
+      );
     }
 
     const gross_output_tax: TaxBreakdown = {
@@ -713,6 +781,9 @@ export class GSTR3BGenerator {
       itc: ledger_basis.itc,
       utilization: ledger_basis.utilization,
       net_payable: ledger_basis.net_payable,
+      itc_2b: { reconciled: gate.reconciled, held: gate.held, released: gate.released, held_bills: gate.held_bills },
+      itc_brought_forward,
+      itc_available,
       reconciliation,
       reconciliation_by_head,
       warnings,

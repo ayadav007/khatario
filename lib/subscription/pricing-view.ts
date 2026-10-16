@@ -1,5 +1,5 @@
 import type { PricingCatalog, PricingFeature, PricingLimit, PricingPlan } from '@/lib/subscription/pricing-catalog';
-import { HR_STAFF_LITE_PLAN_ID, type ProductLine } from '@/lib/product-lines';
+import type { ProductLine } from '@/lib/product-lines';
 
 /** Pure helpers that turn the pricing catalog into what the landing cards and table show. */
 
@@ -51,17 +51,24 @@ export function planCardFeatures(
 }
 
 /**
- * Line for Billing cards about the free HR plan that comes with every Billing plan
- * (`hr_staff_lite`, provisioned by ensure-complimentary-hr), e.g. "HR Lite included · up to 30 employees".
- * Null when that plan is not sold for free.
+ * Line for a Billing card about the HR plan that comes with it (subscription_plans.bundled_hr_plan_id),
+ * e.g. "HR Starter included · up to 50 employees". Null when the plan has no bundled HR.
  */
-export function bundledHrNote(catalog: PricingCatalog): string | null {
-  const lite = catalog.plans.find((p) => p.id === HR_STAFF_LITE_PLAN_ID);
-  if (!lite || lite.priceMonthly !== 0) return null;
+export function bundledHrNote(catalog: PricingCatalog, plan: PricingPlan): string | null {
+  if (!plan.bundledHrPlanId) return null;
+  const hr = catalog.plans.find((p) => p.id === plan.bundledHrPlanId);
+  if (!hr) return null;
   const limit = catalog.limits.find((l) => l.key === 'max_employees');
-  const staff = lite.limits.max_employees;
-  if (!limit || staff === undefined || staff === 0) return `${lite.name} included`;
-  return `${lite.name} included · ${staff === -1 ? `unlimited ${limit.many}` : `up to ${limitText(limit, staff)}`}`;
+  const staff = hr.limits.max_employees;
+  if (!limit || staff === undefined || staff === 0) return `${hr.name} included`;
+  return `${hr.name} included · ${staff === -1 ? `unlimited ${limit.many}` : `up to ${limitText(limit, staff)}`}`;
+}
+
+const WEB_ACCESS_FEATURE = 'web_access';
+
+/** True for a plan without website access (the Free plan works only in the phone app). */
+export function isPhoneOnlyPlan(catalog: PricingCatalog, plan: PricingPlan): boolean {
+  return catalog.features.some((f) => f.id === WEB_ACCESS_FEATURE) && !plan.features.includes(WEB_ACCESS_FEATURE);
 }
 
 export function limitText(limit: PricingLimit, value: number): string {

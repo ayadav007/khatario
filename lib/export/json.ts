@@ -255,8 +255,24 @@ export async function generateGSTR1JSON(
   // CDNEntry now carries stored igst/cgst/sgst amounts from DB (Phase 3).
   const cdnrMap = new Map<string, any[]>();
   const cdnurArr: any[] = [];
+  // A mixed-rate note arrives as one row per rate; the portal wants one note with an item per rate.
+  const seenNotes = new Map<string, any>();
 
   for (const note of report.cdn) {
+    const noteKey = `${note.document_type}|${note.document_id}`;
+    const existing = seenNotes.get(noteKey);
+    const itemDet = {
+      rt:    note.tax_rate,
+      txval: Math.round(note.taxable_value * 100) / 100,
+      iamt:  Math.round((note.igst_amount || 0) * 100) / 100,
+      camt:  Math.round((note.cgst_amount || 0) * 100) / 100,
+      samt:  Math.round((note.sgst_amount || 0) * 100) / 100,
+      csamt: Math.round((note.cess_amount || 0) * 100) / 100,
+    };
+    if (existing) {
+      existing.itms.push({ num: existing.itms.length + 1, itm_det: itemDet });
+      continue;
+    }
     const ctin: string = (note.gstin_uin_recipient || '').trim();
     const isReg = ctin.length === 15;
     let pos = posCode(note.place_of_supply, isReg && /^\d{2}/.test(ctin) ? ctin.slice(0, 2) : bizStateCode);
@@ -275,17 +291,7 @@ export async function generateGSTR1JSON(
       idt:   note.original_invoice_date ? formatDateForGSTN(note.original_invoice_date) : null,
       val:   Math.round(note.invoice_value * 100) / 100,
       pos,
-      itms: [{
-        num: 1,
-        itm_det: {
-          rt:    note.tax_rate,
-          txval: Math.round(note.taxable_value * 100) / 100,
-          iamt:  Math.round((note.igst_amount || 0) * 100) / 100,
-          camt:  Math.round((note.cgst_amount || 0) * 100) / 100,
-          samt:  Math.round((note.sgst_amount || 0) * 100) / 100,
-          csamt: Math.round((note.cess_amount || 0) * 100) / 100,
-        },
-      }],
+      itms: [{ num: 1, itm_det: itemDet }],
     };
 
     if (isReg) {
@@ -296,12 +302,14 @@ export async function generateGSTR1JSON(
       };
       if (!cdnrMap.has(ctin)) cdnrMap.set(ctin, []);
       cdnrMap.get(ctin)!.push(noteObj);
+      seenNotes.set(noteKey, noteObj);
     } else {
       const noteObj = {
         ...noteBase,
         ...(cdnurTyp ? { typ: cdnurTyp } : { typ: 'B2CL' }),
       };
       cdnurArr.push(noteObj);
+      seenNotes.set(noteKey, noteObj);
     }
   }
 

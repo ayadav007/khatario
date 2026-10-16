@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-print-serial"
+description = "Enables the desktop_print_serial command without any pre-configured scope."
+commands.allow = ["desktop_print_serial"]
+
+[[permission]]
+identifier = "deny-desktop-print-serial"
+description = "Denies the desktop_print_serial command without any pre-configured scope."
+commands.deny = ["desktop_print_serial"]

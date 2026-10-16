@@ -119,7 +119,9 @@ export function SubscriptionTab({ businessId }: { businessId: string }) {
   const plansForChangeModal = useMemo(
     () =>
       availablePlans.filter(
-        (p) => p.id !== TRIAL_PLAN_ID || subscription?.plan_id === TRIAL_PLAN_ID
+        (p) =>
+          p.id === subscription?.plan_id ||
+          (p.id !== TRIAL_PLAN_ID && (p as { is_public?: boolean }).is_public !== false)
       ),
     [availablePlans, subscription?.plan_id]
   );

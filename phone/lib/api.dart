@@ -104,6 +104,17 @@ class KhatarioApi {
     return bytes;
   }
 
+  /// POST JSON, receive bytes (printer data from /api/print/render). Errors come back as JSON `{ error }`.
+  Future<List<int>> postForBytes(String path, Map<String, dynamic> body) async {
+    final res = await dio.post<List<int>>(path, data: body, options: Options(responseType: ResponseType.bytes));
+    final bytes = res.data ?? const <int>[];
+    if ((res.statusCode ?? 500) >= 400) {
+      final parsed = _errorFromBytes(bytes);
+      throw _fail(res.statusCode, parsed?.$1, parsed?.$2);
+    }
+    return bytes;
+  }
+
   static (String?, String?)? _errorFromBytes(List<int> bytes) {
     try {
       final decoded = jsonDecode(utf8.decode(bytes));

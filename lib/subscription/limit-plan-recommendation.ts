@@ -34,17 +34,27 @@ export async function getLowestPlanForLimit(
   const limitKey = LIMIT_KEY_BY_TYPE[limitType];
   const minNeeded = Math.max(0, currentCount) + 1;
 
-  const plans = await db.queryRows<{
+  type PlanRow = {
     id: string;
     display_name: string;
     price_monthly: string | number | null;
     sort_order: number | null;
-  }>(
-    `SELECT id, display_name, price_monthly, sort_order
-     FROM subscription_plans
-     WHERE is_active = true
-     ORDER BY sort_order ASC NULLS LAST, price_monthly ASC NULLS LAST`,
-  );
+  };
+  const listPlans = (onlyPublic: boolean) =>
+    db.queryRows<PlanRow>(
+      `SELECT id, display_name, price_monthly, sort_order
+       FROM subscription_plans
+       WHERE is_active = true ${onlyPublic ? 'AND is_public = true' : ''}
+       ORDER BY sort_order ASC NULLS LAST, price_monthly ASC NULLS LAST`,
+    );
+  // Only recommend plans that are still offered (is_public, migration 387).
+  let plans: PlanRow[];
+  try {
+    plans = await listPlans(true);
+  } catch (error) {
+    if ((error as { code?: string })?.code !== '42703') throw error;
+    plans = await listPlans(false);
+  }
 
   for (const plan of plans) {
     if (!isPurchasableUpgradePlan(plan.id)) continue;

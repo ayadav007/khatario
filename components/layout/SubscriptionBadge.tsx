@@ -71,7 +71,7 @@ export function SubscriptionBadge({ businessId }: SubscriptionBadgeProps) {
       {showTrialBadge && planCode !== 'free' && (
         <span className="ml-1 opacity-90">(Trial)</span>
       )}
-      {planCode !== 'business' && planCode !== 'free' && (
+      {planCode !== 'business' && planCode !== 'billing_business' && planCode !== 'free' && (
         <TrendingUp className="w-3.5 h-3.5 ml-1 opacity-80" />
       )}
     </button>

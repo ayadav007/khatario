@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { isCapacitorNative } from '@/lib/capacitor/platform';
+import { isKhatarioDesktop } from '@/lib/desktop/platform';
 import { MarketingSiteHeader } from '@/components/marketing/MarketingSiteHeader';
 import { LandingFinalCta } from '@/components/marketing/landing/LandingFinalCta';
 import { LandingFooter } from '@/components/marketing/landing/LandingFooter';
@@ -64,7 +65,8 @@ function LandingShell({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
-  const [isNativeApp] = useState(() => isCapacitorNative());
+  // The Android and Windows apps skip the marketing page and open the app itself.
+  const [isNativeApp] = useState(() => isCapacitorNative() || isKhatarioDesktop());
   const initialProductLine = readProductLineFromSearchParam(searchParams.get('product'));
 
   useEffect(() => {

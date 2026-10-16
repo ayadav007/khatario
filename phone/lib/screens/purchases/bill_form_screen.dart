@@ -1,14 +1,15 @@
 import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
-import '../../theme.dart';
+import '../../theme.dart' hide inr;
 import '../../ui/kit.dart';
 import '../invoices/invoice_form_logic.dart';
+import '../parties/customer_form_logic.dart';
+import 'bill_camera.dart';
 
 /// A supplier or customer bill whose tax is either calculated by the server
 /// (purchases, credit notes, debit notes) or by the same line-GST function the
@@ -33,12 +34,25 @@ class _BillLine {
   final qty = TextEditingController(text: '1');
   final price = TextEditingController();
   final discount = TextEditingController(text: '0');
+  final discountAmount = TextEditingController(text: '0');
+  final cess = TextEditingController();
+  final batch = TextEditingController();
+  final manufactured = TextEditingController();
+  final expiry = TextEditingController();
+  final serials = TextEditingController();
   double taxRate = 0;
+  bool capitalGoods = false;
 
   void dispose() {
     qty.dispose();
     price.dispose();
     discount.dispose();
+    discountAmount.dispose();
+    cess.dispose();
+    batch.dispose();
+    manufactured.dispose();
+    expiry.dispose();
+    serials.dispose();
   }
 }
 
@@ -57,9 +71,15 @@ class _BillFormScreenState extends State<BillFormScreen> {
   bool _itc = true;
   bool _reverseCharge = false;
   bool _replacingDraft = false;
+  bool _roundOff = false;
+  bool _breakupOpen = false;
+  bool _moreOpen = false;
   List<Map<String, dynamic>> _parties = const [];
   List<Map<String, dynamic>> _items = const [];
+  List<Map<String, dynamic>> _warehouses = const [];
   String? _partyId;
+  String? _warehouseId;
+  String _supplierStateCode = '';
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -103,10 +123,20 @@ class _BillFormScreenState extends State<BillFormScreen> {
       final partyPath = _supplier ? '/api/suppliers' : '/api/customers';
       final parties = await widget.session.api.getData(partyPath);
       final items = await widget.session.api.getData('/api/items');
+      List<Map<String, dynamic>> warehouses = const [];
+      if (widget.kind == BillKind.purchase) {
+        try {
+          final body = await widget.session.api.getJson('/api/warehouses');
+          warehouses = _rows(body, const ['warehouses']);
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
         _parties = _rows(parties, _supplier ? const ['suppliers'] : const ['customers']);
         _items = _rows(items, const ['items']);
+        _warehouses = warehouses;
+        final primary = warehouses.cast<Map<String, dynamic>?>().where((row) => row?['is_primary'] == true).firstOrNull;
+        _warehouseId ??= primary?['id']?.toString() ?? warehouses.firstOrNull?['id']?.toString();
         _loading = false;
       });
       if (widget.purchaseId != null) await _fillDraft(widget.purchaseId!);
@@ -130,11 +160,15 @@ class _BillFormScreenState extends State<BillFormScreen> {
       _number.text = purchase['bill_number']?.toString() ?? '';
       _notes.text = purchase['notes']?.toString() ?? '';
       _gstin.text = purchase['supplier_gstin']?.toString() ?? '';
+      _supplierStateCode = purchase['supplier_state_code']?.toString() ?? '';
       _port.text = purchase['port_code']?.toString() ?? '';
       _place.text = purchase['place_of_supply_state_code']?.toString() ?? '';
       _docType = purchase['document_type']?.toString() ?? 'tax_invoice';
       _itc = purchase['itc_eligible'] != false;
       _reverseCharge = purchase['is_reverse_charge'] == true;
+      _priceMode = purchase['price_mode']?.toString() == 'inclusive' ? 'inclusive' : 'exclusive';
+      _roundOff = (num.tryParse(purchase['round_off']?.toString() ?? '') ?? 0) != 0;
+      _paid.text = purchase['paid_amount']?.toString() ?? '';
       final parsed = DateTime.tryParse(purchase['bill_date']?.toString() ?? '');
       if (parsed != null) _date = parsed;
       final due = DateTime.tryParse(purchase['due_date']?.toString() ?? '');
@@ -161,20 +195,30 @@ class _BillFormScreenState extends State<BillFormScreen> {
           line.qty.text = (entry['quantity'] ?? entry['qty'] ?? '1').toString();
           line.price.text = (entry['unit_price'] ?? '').toString();
           line.discount.text = (entry['discount_percent'] ?? '0').toString();
+          line.discountAmount.text = (entry['discount_amount'] ?? '0').toString();
+          line.cess.text = (entry['cess_amount'] ?? '').toString();
+          line.batch.text = entry['batch_number']?.toString() ?? '';
+          line.manufactured.text = entry['manufacturing_date']?.toString() ?? '';
+          line.expiry.text = entry['expiry_date']?.toString() ?? '';
+          final serials = entry['serial_numbers'];
+          line.serials.text = serials is List ? serials.map((s) => s.toString()).join(', ') : (serials?.toString() ?? '');
+          line.capitalGoods = entry['itc_type']?.toString() == 'capital_goods';
           line.taxRate = double.tryParse(entry['tax_rate']?.toString() ?? '') ?? 0;
+          final location = entry['location_id']?.toString();
+          if (location != null && location.isNotEmpty) _warehouseId = location;
           return line;
         }(),
     ];
   }
 
   Future<void> _scanBill() async {
-    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png']);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
+    final capture = await Navigator.of(context).push<BillCapture>(MaterialPageRoute(builder: (_) => const BillCameraScreen()));
+    if (capture == null || !mounted) return;
+    final bytes = capture.bytes;
     setState(() { _saving = true; _error = null; });
     try {
       final form = FormData.fromMap({
-        'file': MultipartFile.fromBytes(bytes, filename: file.name),
+        'file': MultipartFile.fromBytes(bytes, filename: capture.name),
         'business_id': widget.session.businessId,
       });
       final res = await widget.session.api.dio.post<dynamic>('/api/invoices/extract', data: form);
@@ -189,6 +233,9 @@ class _BillFormScreenState extends State<BillFormScreen> {
       setState(() {
         _number.text = invoice['bill_number']?.toString() ?? _number.text;
         _gstin.text = supplier['gstin']?.toString() ?? invoice['supplier_gstin']?.toString() ?? _gstin.text;
+        if (_gstin.text.length >= 2) {
+          _supplierStateCode = invoicePlaceOfSupply(gstin: _gstin.text) ?? _supplierStateCode;
+        }
         _place.text = invoice['place_of_supply_state_code']?.toString() ?? _place.text;
         if (invoice['price_mode']?.toString() == 'inclusive') _priceMode = 'inclusive';
         final name = supplier['name']?.toString().toLowerCase() ?? '';
@@ -231,7 +278,7 @@ class _BillFormScreenState extends State<BillFormScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _save({String purchaseStatus = 'final'}) async {
     if (_partyId == null) {
       setState(() => _error = _supplier ? 'Choose a supplier.' : 'Choose a customer.');
       return;
@@ -241,11 +288,13 @@ class _BillFormScreenState extends State<BillFormScreen> {
       return;
     }
     final party = _parties.cast<Map<String, dynamic>?>().firstWhere((row) => row?['id']?.toString() == _partyId, orElse: () => null);
-    final businessCode = widget.session.business['state_code']?.toString();
-    final intra = invoiceIntraState(
-      invoicePlaceOfSupply(gstin: party?['gstin']?.toString(), customerState: party?['state']?.toString(), customerStateCode: party?['state_code']?.toString()),
-      businessCode,
-    );
+    final intra = widget.kind == BillKind.purchase
+        ? _purchasePreview().intraState
+        : invoiceIntraState(
+            invoicePlaceOfSupply(gstin: party?['gstin']?.toString(), customerState: party?['state']?.toString(), customerStateCode: party?['state_code']?.toString()),
+            widget.session.business['state_code']?.toString(),
+          );
+    final includeGst = widget.kind == BillKind.purchase && _priceMode == 'inclusive';
     final items = <Map<String, dynamic>>[];
     var subtotal = 0.0;
     var taxTotal = 0.0;
@@ -255,10 +304,19 @@ class _BillFormScreenState extends State<BillFormScreen> {
       final qty = double.tryParse(line.qty.text) ?? 0;
       final price = double.tryParse(line.price.text) ?? 0;
       if (item == null || qty <= 0) {
-        setState(() => _error = 'Each line needs an item and a quantity.');
+        final blank = item == null && line.price.text.trim().isEmpty;
+        if (widget.kind == BillKind.purchase && blank) continue;
+        setState(() => _error = item == null ? 'Match every line to an item in your list.' : 'Each line needs an item and a quantity.');
         return;
       }
-      final gst = computeLineGst(quantity: qty, unitPrice: price, taxRate: line.taxRate, intraState: intra);
+      final gst = computeLineGst(
+        quantity: qty,
+        unitPrice: price,
+        discountPercent: widget.kind == BillKind.purchase ? (double.tryParse(line.discount.text) ?? 0) : 0,
+        taxRate: line.taxRate,
+        intraState: intra,
+        pricesIncludeGst: includeGst,
+      );
       subtotal += gst.taxable;
       taxTotal += gst.tax;
       grand += gst.total;
@@ -272,6 +330,16 @@ class _BillFormScreenState extends State<BillFormScreen> {
         'unit_price': price,
         'tax_rate': line.taxRate,
         'discount_percent': double.tryParse(line.discount.text) ?? 0,
+        if (widget.kind == BillKind.purchase) ...{
+          'discount_amount': double.tryParse(line.discountAmount.text) ?? 0,
+          'cess_amount': double.tryParse(line.cess.text) ?? 0,
+          if (line.capitalGoods) 'itc_type': 'capital_goods',
+          if (line.batch.text.trim().isNotEmpty) 'batch_number': line.batch.text.trim(),
+          if (line.manufactured.text.trim().isNotEmpty) 'manufacturing_date': line.manufactured.text.trim(),
+          if (line.expiry.text.trim().isNotEmpty) 'expiry_date': line.expiry.text.trim(),
+          if (line.serials.text.trim().isNotEmpty)
+            'serial_numbers': line.serials.text.split(RegExp(r'[,\n]')).map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
+        },
       };
       if (!_serverTax) {
         row.addAll({
@@ -286,6 +354,10 @@ class _BillFormScreenState extends State<BillFormScreen> {
       }
       items.add(row);
     }
+    if (items.isEmpty) {
+      setState(() => _error = 'Add at least one item.');
+      return;
+    }
     final date = '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}';
     final businessId = widget.session.businessId;
     final userId = widget.session.user['id']?.toString();
@@ -294,19 +366,28 @@ class _BillFormScreenState extends State<BillFormScreen> {
           'supplier_id': _partyId,
           'bill_number': _number.text.trim().isEmpty ? null : _number.text.trim(),
           'bill_date': date,
-          'due_date': _due == null ? null : '${_due!.year.toString().padLeft(4, '0')}-${_due!.month.toString().padLeft(2, '0')}-${_due!.day.toString().padLeft(2, '0')}',
-          'status': 'final',
+          'due_date': _due == null ? null : _iso(_due!),
+          'status': purchaseStatus,
           'paid_amount': num.tryParse(_paid.text) ?? 0,
           'document_type': _docType,
           'price_mode': _priceMode,
           'supplier_gstin': _gstin.text.trim(),
-          'port_code': _port.text.trim(),
-          'place_of_supply_state_code': _place.text.trim(),
+          'supplier_state_code': _supplierCode(),
+          'port_code': _docType == 'bill_of_entry' ? _port.text.trim() : '',
+          'place_of_supply_state_code': _placeCode(),
           'itc_eligible': _itc,
           'is_reverse_charge': _reverseCharge,
+          'round_off': _purchasePreview().roundOff,
           'notes': _notes.text.trim(),
           'branch_id': widget.session.defaultBranchId,
-          'items': items,
+          'items': [
+            for (final row in items)
+              {
+                ...row,
+                'tax_mode': _priceMode,
+                if (_warehouseId != null) 'location_id': _warehouseId,
+              },
+          ],
         },
       BillKind.purchaseOrder => {
           'business_id': businessId,
@@ -382,6 +463,67 @@ class _BillFormScreenState extends State<BillFormScreen> {
     }
   }
 
+  String _iso(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  String? _supplierCode() {
+    if (_supplierStateCode.trim().isNotEmpty) return _supplierStateCode.trim();
+    final party = _parties.cast<Map<String, dynamic>?>().where((row) => row?['id']?.toString() == _partyId).firstOrNull;
+    return invoicePlaceOfSupply(
+      gstin: _gstin.text.isNotEmpty ? _gstin.text : party?['gstin']?.toString(),
+      customerState: party?['state']?.toString(),
+      customerStateCode: party?['state_code']?.toString(),
+    );
+  }
+
+  String? _placeCode() {
+    if (_place.text.trim().isNotEmpty) return _place.text.trim();
+    return _businessStateCode();
+  }
+
+  String? _businessStateCode() {
+    final code = widget.session.business['state_code']?.toString().trim() ?? '';
+    if (code.isNotEmpty) return code.padLeft(2, '0');
+    final named = stateCode(widget.session.business['state']?.toString() ?? '');
+    return named.isEmpty ? null : named;
+  }
+
+  ({double taxable, double tax, double cgst, double sgst, double igst, double discount, double cess, double roundOff, double grand, bool intraState}) _purchasePreview() {
+    final intra = invoiceIntraState(_businessStateCode(), _supplierCode());
+    var taxable = 0.0, tax = 0.0, cgst = 0.0, sgst = 0.0, igst = 0.0, discount = 0.0, cess = 0.0, grand = 0.0;
+    for (final line in _lines) {
+      if (line.item == null) continue;
+      final gst = _purchaseLineGst(line, intra);
+      taxable += gst.taxable;
+      tax += gst.tax;
+      cgst += gst.cgst;
+      sgst += gst.sgst;
+      igst += gst.igst;
+      discount += gst.discount;
+      cess += double.tryParse(line.cess.text) ?? 0;
+      grand += gst.total;
+    }
+    grand += cess;
+    final roundOff = _roundOff ? invoiceRound2(grand.roundToDouble() - grand) : 0.0;
+    return (taxable: taxable, tax: tax, cgst: cgst, sgst: sgst, igst: igst, discount: discount, cess: cess, roundOff: roundOff, grand: invoiceRound2(grand + roundOff), intraState: intra);
+  }
+
+  LineGst _purchaseLineGst(_BillLine line, bool intra) {
+    final qty = double.tryParse(line.qty.text) ?? 0;
+    final price = double.tryParse(line.price.text) ?? 0;
+    final amount = double.tryParse(line.discountAmount.text) ?? 0;
+    final gross = qty * price;
+    final percent = amount > 0 && gross > 0 ? (amount / gross) * 100 : (double.tryParse(line.discount.text) ?? 0);
+    return computeLineGst(
+      quantity: qty,
+      unitPrice: price,
+      discountPercent: percent,
+      taxRate: line.taxRate,
+      intraState: intra,
+      pricesIncludeGst: _priceMode == 'inclusive',
+    );
+  }
+
   String? get _partyName => _parties.cast<Map<String, dynamic>?>().where((row) => row?['id']?.toString() == _partyId).firstOrNull?['name']?.toString();
 
   void _pickParty() {
@@ -413,9 +555,594 @@ class _BillFormScreenState extends State<BillFormScreen> {
     );
   }
 
+  List<_BillLine> get _purchaseLines => _lines.where((line) => line.item != null).toList();
+
+  String get _dueSummary => _due == null ? 'No due date' : 'Due ${ddMMMyyyy(_due!)}';
+
+  String _money(num value) => inr(value, maxFraction: 2);
+
+  String _docLabel(String type) => switch (type) {
+        'bill_of_supply' => 'Bill of supply',
+        'bill_of_entry' => 'Bill of entry',
+        'import_service' => 'Import of services',
+        _ => 'Tax invoice',
+      };
+
+  void _applySupplier(Map<String, dynamic> party) {
+    setState(() {
+      _partyId = party['id']?.toString();
+      final gstin = party['gstin']?.toString() ?? '';
+      if (gstin.isNotEmpty) _gstin.text = gstin.toUpperCase();
+      _supplierStateCode = invoicePlaceOfSupply(
+            gstin: gstin,
+            customerState: party['state']?.toString(),
+            customerStateCode: party['state_code']?.toString(),
+          ) ??
+          '';
+      if (_place.text.trim().isEmpty) _place.text = _placeCode() ?? '';
+    });
+  }
+
+  void _applyItem(Map<String, dynamic> item, _BillLine line) {
+    line.item = item;
+    final price = item['purchase_price'] ?? item['selling_price'];
+    line.price.text = price == null ? '' : price.toString();
+    line.taxRate = double.tryParse(item['tax_rate']?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> _searchSupplier() async {
+    final picked = await _searchSheet(
+      title: 'Supplier',
+      rows: _parties,
+      nameOf: (row) => row['name']?.toString() ?? 'Supplier',
+      detailOf: (row) => [row['phone'], row['gstin']].whereType<Object>().map((v) => v.toString()).where((v) => v.isNotEmpty).join(' · '),
+    );
+    if (picked != null) _applySupplier(picked);
+  }
+
+  Future<void> _addPurchaseItem() async {
+    final picked = await _searchSheet(
+      title: 'Item',
+      rows: _items,
+      nameOf: (row) => row['name']?.toString() ?? 'Item',
+      detailOf: (row) => row['hsn_sac']?.toString() ?? '',
+    );
+    if (picked == null || !mounted) return;
+    final line = _BillLine();
+    _applyItem(picked, line);
+    setState(() => _lines.add(line));
+  }
+
+  Future<Map<String, dynamic>?> _searchSheet({
+    required String title,
+    required List<Map<String, dynamic>> rows,
+    required String Function(Map<String, dynamic>) nameOf,
+    required String Function(Map<String, dynamic>) detailOf,
+  }) {
+    final query = TextEditingController();
+    return showKSheet<Map<String, dynamic>>(
+      context,
+      title: title,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheet) {
+          final q = query.text.trim().toLowerCase();
+          final shown = rows.where((row) {
+            if (q.isEmpty) return true;
+            return nameOf(row).toLowerCase().contains(q) || detailOf(row).toLowerCase().contains(q);
+          }).take(40);
+          return SizedBox(
+            height: 420,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    controller: query,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: 'Search'),
+                    onChanged: (_) => setSheet(() {}),
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final row in shown)
+                        ListTile(
+                          title: Text(nameOf(row)),
+                          subtitle: detailOf(row).isEmpty ? null : Text(detailOf(row)),
+                          onTap: () => Navigator.pop(ctx, row),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _editPurchaseDetails() async {
+    final number = TextEditingController(text: _number.text);
+    var date = _date;
+    var due = _due;
+    await showKSheet<void>(
+      context,
+      title: 'Bill details',
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: number, decoration: const InputDecoration(labelText: 'Bill number')),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Bill date'),
+                subtitle: Text(ddMMMyyyy(date)),
+                onTap: () async {
+                  final picked = await showDatePicker(context: context, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime(2100));
+                  if (picked != null) setSheet(() => date = picked);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Due date'),
+                subtitle: Text(due == null ? 'None' : ddMMMyyyy(due!)),
+                onTap: () async {
+                  final picked = await showDatePicker(context: context, initialDate: due ?? date, firstDate: DateTime(2000), lastDate: DateTime(2100));
+                  if (picked != null) setSheet(() => due = picked);
+                },
+              ),
+              const SizedBox(height: 8),
+              KButton(
+                label: 'Done',
+                onPressed: () {
+                  setState(() {
+                    _number.text = number.text;
+                    _date = date;
+                    _due = due;
+                  });
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    number.dispose();
+  }
+
+  Future<void> _editPurchaseLine(_BillLine line) async {
+    final qty = TextEditingController(text: line.qty.text);
+    final price = TextEditingController(text: line.price.text);
+    final discount = TextEditingController(text: line.discount.text);
+    final discountAmount = TextEditingController(text: line.discountAmount.text);
+    final cess = TextEditingController(text: line.cess.text);
+    final batch = TextEditingController(text: line.batch.text);
+    final manufactured = TextEditingController(text: line.manufactured.text);
+    final expiry = TextEditingController(text: line.expiry.text);
+    final serials = TextEditingController(text: line.serials.text);
+    var rate = line.taxRate;
+    var capital = line.capitalGoods;
+    final trackBatch = line.item?['track_batch'] == true;
+    final trackSerial = line.item?['track_serial'] == true;
+    await showKSheet<void>(
+      context,
+      title: line.item?['name']?.toString() ?? 'Item',
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Quantity')),
+              TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Rate')),
+              TextField(controller: discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount %')),
+              TextField(controller: discountAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Discount ₹ (overrides %)')),
+              TextField(controller: cess, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Cess ₹')),
+              if (trackBatch) ...[
+                TextField(controller: batch, decoration: const InputDecoration(labelText: 'Batch number')),
+                TextField(controller: manufactured, decoration: const InputDecoration(labelText: 'Manufactured (YYYY-MM-DD)')),
+                TextField(controller: expiry, decoration: const InputDecoration(labelText: 'Expiry (YYYY-MM-DD)')),
+              ],
+              if (trackSerial) TextField(controller: serials, maxLines: 2, decoration: const InputDecoration(labelText: 'Serial numbers')),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Capital goods'),
+                value: capital,
+                onChanged: (v) => setSheet(() => capital = v),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final option in const [0.0, 5.0, 12.0, 18.0, 28.0])
+                    ChoiceChip(
+                      label: Text('${option.toStringAsFixed(0)}%'),
+                      selected: rate == option,
+                      onSelected: (_) => setSheet(() => rate = option),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              KButton(
+                label: 'Done',
+                onPressed: () {
+                  setState(() {
+                    line.qty.text = qty.text;
+                    line.price.text = price.text;
+                    line.discount.text = discount.text;
+                    line.discountAmount.text = discountAmount.text;
+                    line.cess.text = cess.text;
+                    line.batch.text = batch.text;
+                    line.manufactured.text = manufactured.text;
+                    line.expiry.text = expiry.text;
+                    line.serials.text = serials.text;
+                    line.capitalGoods = capital;
+                    line.taxRate = rate;
+                  });
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    qty.dispose();
+    price.dispose();
+    discount.dispose();
+    discountAmount.dispose();
+    cess.dispose();
+    batch.dispose();
+    manufactured.dispose();
+    expiry.dispose();
+    serials.dispose();
+  }
+
+  void _stepQty(_BillLine line, int delta) {
+    final next = (double.tryParse(line.qty.text) ?? 0) + delta;
+    if (next <= 0) {
+      setState(() {
+        line.dispose();
+        _lines.remove(line);
+      });
+      return;
+    }
+    setState(() => line.qty.text = next == next.roundToDouble() ? next.toStringAsFixed(0) : next.toString());
+  }
+
+  Future<void> _pickState({required String title, required String current, required ValueChanged<String> onPicked}) async {
+    final options = <(String, String)>[
+      for (final name in indianStates)
+        if (stateCode(name).isNotEmpty) (stateCode(name), name),
+    ];
+    await showKPicker<String>(
+      context,
+      title: title,
+      value: current,
+      options: options,
+      onChanged: onPicked,
+    );
+  }
+
+  Widget _purchaseScaffold() {
+    final preview = _purchasePreview();
+    final lines = _purchaseLines;
+    final party = _parties.cast<Map<String, dynamic>?>().where((row) => row?['id']?.toString() == _partyId).firstOrNull;
+    final billNo = _number.text.trim();
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 8, 16, 0),
+              child: Row(children: [
+                KIconButton(icon: LucideIcons.arrowLeft, tooltip: 'Back', onTap: () => Navigator.of(context).maybePop()),
+                Expanded(child: Text(_title, style: AppText.heading.copyWith(fontSize: 22))),
+                KTextButton(label: 'Scan bill', onTap: _saving ? () {} : _scanBill),
+              ]),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(AppSpace.gutter, 8, AppSpace.gutter, 16),
+                children: [
+                  KCard(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(billNo.isEmpty ? 'Supplier bill' : 'Bill $billNo', style: AppText.bodyStrong.copyWith(color: AppColors.brand, fontSize: 16)),
+                              const SizedBox(height: 4),
+                              Text('${ddMMMyyyy(_date)}  ·  $_dueSummary', style: AppText.label),
+                            ],
+                          ),
+                        ),
+                        TextButton(onPressed: _editPurchaseDetails, child: const Text('EDIT')),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text('SUPPLIER', style: AppText.overline),
+                  const SizedBox(height: 8),
+                  KCard(
+                    onTap: _searchSupplier,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    child: Row(
+                      children: [
+                        KAvatar(name: _partyName ?? ''),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_partyName ?? 'Choose supplier', style: AppText.bodyStrong),
+                              if ((party?['phone']?.toString() ?? '').isNotEmpty)
+                                Text(party!['phone'].toString(), style: AppText.caption),
+                            ],
+                          ),
+                        ),
+                        const Icon(LucideIcons.chevronRight, size: 18),
+                      ],
+                    ),
+                  ),
+                  if (_warehouses.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text('WAREHOUSE', style: AppText.overline),
+                    const SizedBox(height: 8),
+                    KCard(
+                      onTap: () => showKPicker<String>(
+                        context,
+                        title: 'Warehouse',
+                        value: _warehouseId ?? '',
+                        options: [for (final wh in _warehouses) (wh['id'].toString(), wh['name']?.toString() ?? 'Warehouse')],
+                        onChanged: (id) => setState(() => _warehouseId = id),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(_warehouses.cast<Map<String, dynamic>?>().where((row) => row?['id']?.toString() == _warehouseId).firstOrNull?['name']?.toString() ?? 'Choose warehouse', style: AppText.bodyStrong)),
+                          const Icon(LucideIcons.chevronRight, size: 18),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(child: Text(lines.isEmpty ? 'ITEMS' : 'ITEMS (${lines.length})', style: AppText.overline)),
+                      if (lines.isNotEmpty) KTextButton(label: '+ Add', onTap: _addPurchaseItem),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (lines.isEmpty)
+                    KButton.secondary(label: 'Add item', onPressed: _addPurchaseItem)
+                  else
+                    KCard(
+                      child: Column(
+                        children: [
+                          for (final line in lines) _purchaseLine(line, preview.intraState),
+                          _purchaseTotal(preview),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  Text('PAYMENT', style: AppText.overline),
+                  const SizedBox(height: 8),
+                  KCard(
+                    padding: const EdgeInsets.all(14),
+                    child: TextField(
+                      controller: _paid,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Amount paid now', border: InputBorder.none),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () => setState(() => _moreOpen = !_moreOpen),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Row(
+                        children: [
+                          Icon(_moreOpen ? LucideIcons.chevronDown : LucideIcons.chevronRight, size: 18, color: AppColors.ink2),
+                          const SizedBox(width: 8),
+                          Text('GST AND NOTES', style: AppText.overline.copyWith(color: AppColors.ink2)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_moreOpen) _purchaseMore(),
+                  if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, style: AppText.body.copyWith(color: AppColors.negative))),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(child: KButton.secondary(label: 'Save draft', onPressed: _saving ? null : () => _save(purchaseStatus: 'draft'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: KButton(label: _saving ? 'Saving…' : 'Finalize', onPressed: _saving ? null : () => _save())),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _purchaseLine(_BillLine line, bool intra) {
+    final gst = _purchaseLineGst(line, intra);
+    final discount = double.tryParse(line.discountAmount.text) ?? 0;
+    final percent = double.tryParse(line.discount.text) ?? 0;
+    final cess = double.tryParse(line.cess.text) ?? 0;
+    final details = [
+      '${_money(double.tryParse(line.price.text) ?? 0)} / ${line.item?['unit'] ?? 'PCS'}',
+      'GST ${enIn(line.taxRate)}%',
+      if (discount > 0) '${_money(discount)} off' else if (percent > 0) '${enIn(percent)}% off',
+      if (cess > 0) 'Cess ${_money(cess)}',
+      if (line.capitalGoods) 'Capital goods',
+    ].join(' · ');
+    return InkWell(
+      onTap: () => _editPurchaseLine(line),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(line.item?['name']?.toString() ?? 'Item', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.bodyStrong)),
+                Text(_money(gst.total + cess), style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(child: Text(details, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption)),
+                IconButton(visualDensity: VisualDensity.compact, onPressed: () => _stepQty(line, -1), icon: const Icon(LucideIcons.minus, size: 16)),
+                Text(line.qty.text, style: AppText.bodyStrong),
+                IconButton(visualDensity: VisualDensity.compact, onPressed: () => _stepQty(line, 1), icon: const Icon(LucideIcons.plus, size: 16)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _purchaseTotal(({double taxable, double tax, double cgst, double sgst, double igst, double discount, double cess, double roundOff, double grand, bool intraState}) preview) {
+    return Container(
+      color: const Color(0xFFFBFAF7),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() => _breakupOpen = !_breakupOpen),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Total', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                        Text(_breakupOpen ? 'Hide breakup' : 'View breakup', style: AppText.small.copyWith(color: AppColors.brand)),
+                      ],
+                    ),
+                  ),
+                  Text(_money(preview.grand), style: AppText.heading.copyWith(fontFeatures: AppText.tabular)),
+                ],
+              ),
+            ),
+          ),
+          if (_breakupOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+              child: Column(
+                children: [
+                  _sum('Taxable value', preview.taxable),
+                  if (preview.discount > 0) _sum('Discount', preview.discount),
+                  if (preview.cess > 0) _sum('Cess', preview.cess),
+                  if (preview.intraState) ...[
+                    _sum('CGST', preview.cgst),
+                    _sum('SGST', preview.sgst),
+                  ] else
+                    _sum('IGST', preview.igst),
+                  Row(
+                    children: [
+                      const Expanded(child: Text('Round off')),
+                      Switch.adaptive(
+                        value: _roundOff,
+                        activeTrackColor: AppColors.brand,
+                        activeThumbColor: AppColors.onBrand,
+                        onChanged: (v) => setState(() => _roundOff = v),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sum(String label, double value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [Expanded(child: Text(label, style: AppText.caption)), Text(_money(value), style: AppText.label)]),
+      );
+
+  Widget _purchaseMore() {
+    final supplierState = gstStateName(_supplierCode() ?? '');
+    final place = gstStateName(_placeCode() ?? '');
+    return KCard(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: TextField(controller: _gstin, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Supplier GSTIN')),
+          ),
+          KListRow(
+            title: 'Supplier state',
+            subtitle: supplierState.isEmpty ? 'From GSTIN' : supplierState,
+            onTap: () => _pickState(title: 'Supplier state', current: _supplierCode() ?? '', onPicked: (code) => setState(() => _supplierStateCode = code)),
+          ),
+          KListRow(
+            title: 'Place of supply',
+            subtitle: place.isEmpty ? 'Your state' : place,
+            onTap: () => _pickState(title: 'Place of supply', current: _placeCode() ?? '', onPicked: (code) => setState(() => _place.text = code)),
+          ),
+          KListRow(
+            title: 'Document',
+            subtitle: _docLabel(_docType),
+            onTap: () => showKPicker<String>(
+              context,
+              title: 'Document',
+              value: _docType,
+              options: const [('tax_invoice', 'Tax invoice'), ('bill_of_supply', 'Bill of supply'), ('bill_of_entry', 'Bill of entry'), ('import_service', 'Import of services')],
+              onChanged: (v) => setState(() => _docType = v),
+            ),
+          ),
+          KListRow(
+            title: 'Prices',
+            subtitle: _priceMode == 'inclusive' ? 'GST included in the rate' : 'GST extra',
+            onTap: () => showKPicker<String>(
+              context,
+              title: 'Prices',
+              value: _priceMode,
+              options: const [('exclusive', 'GST extra'), ('inclusive', 'GST included')],
+              onChanged: (v) => setState(() => _priceMode = v),
+            ),
+          ),
+          if (_docType == 'bill_of_entry')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: TextField(controller: _port, decoration: const InputDecoration(labelText: 'Port code')),
+            ),
+          SwitchListTile(title: const Text('GST credit (ITC) allowed'), value: _itc, onChanged: (v) => setState(() => _itc = v)),
+          SwitchListTile(title: const Text('Reverse charge'), value: _reverseCharge, onChanged: (v) => setState(() => _reverseCharge = v)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: TextField(controller: _notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes')),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Scaffold(body: KSpinner(padding: EdgeInsets.symmetric(vertical: 64)));
+    if (widget.kind == BillKind.purchase) return _purchaseScaffold();
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(

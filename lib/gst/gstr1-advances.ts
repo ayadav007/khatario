@@ -59,13 +59,13 @@ export function buildAdvanceTables(input: {
 
 export async function loadAdvanceTables(
   client: PoolClient,
-  p: { businessId: string; branchId?: string | null; from: string; to: string }
+  p: { businessId: string; branchIds?: string[] | null; from: string; to: string }
 ): Promise<{ at: AdvanceTableRow[]; atadj: AdvanceTableRow[] }> {
   const params: unknown[] = [p.businessId, p.from, p.to];
   let branch = '';
-  if (p.branchId) {
-    params.push(p.branchId);
-    branch = `AND a.branch_id = $${params.length}`;
+  if (p.branchIds) {
+    params.push(p.branchIds);
+    branch = `AND a.branch_id = ANY($${params.length}::uuid[])`;
   }
   const base = `a.business_id = $1 AND a.type = 'received' AND a.supply_type = 'services'
                 AND a.status <> 'cancelled' AND COALESCE(a.tax_rate, 0) > 0 ${branch}`;

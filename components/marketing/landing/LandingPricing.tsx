@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Check, Minus, Plus, UserCheck } from 'lucide-react';
+import { Check, Minus, Plus, Smartphone, UserCheck } from 'lucide-react';
 import { clsx } from 'clsx';
 import { LANDING_INTRO_SUBTEXT, LANDING_PAGE_GUTTER, LANDING_SECTION_INTRO } from '@/lib/marketing-layout';
 import { FALLBACK_PRICING_CATALOG } from '@/lib/landing-pricing-fallback';
@@ -17,6 +17,7 @@ import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-cat
 import {
   bundledHrNote,
   comparisonRows,
+  isPhoneOnlyPlan,
   cycleOptions,
   planCardFeatures,
   planCardLimits,
@@ -87,7 +88,8 @@ function PlanCard({
   const plan = plans[index];
   const { previous, features } = planCardFeatures(catalog, plans, index);
   const limits = planCardLimits(catalog, plan, previous);
-  const hrNote = productLine === 'billing' ? bundledHrNote(catalog) : null;
+  const hrNote = productLine === 'billing' ? bundledHrNote(catalog, plan) : null;
+  const phoneOnly = productLine === 'billing' && isPhoneOnlyPlan(catalog, plan);
   const { perMonth, billed } = priceForCycle(plan, cycle);
   const featured = !!plan.badge;
   const top = features.slice(0, CARD_FEATURE_COUNT);
@@ -150,6 +152,12 @@ function PlanCard({
             </span>
           ))}
         </div>
+      )}
+      {phoneOnly && (
+        <p className="flex items-center gap-2 rounded-xl bg-accent-50 px-3 py-2 text-sm font-semibold text-accent-700">
+          <Smartphone className="h-4 w-4 shrink-0" aria-hidden />
+          Khatario phone app only
+        </p>
       )}
       {hrNote && (
         <p className="flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-600">

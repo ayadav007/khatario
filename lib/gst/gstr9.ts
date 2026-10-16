@@ -3,6 +3,7 @@ import { GSTR1Generator } from './gstr1';
 import { GSTR3BGenerator, TaxBreakdown } from './gstr3b';
 import { getGstCashPaidByHead } from './gst-settlement';
 import { computeTable8A } from './gstr9-table8a';
+import { toGstUqc } from './uqc';
 
 export interface GSTR9Filters {
   business_id: string;
@@ -324,9 +325,14 @@ export class GSTR9Generator {
       const fyTo = `${financial_year + 1}-03-31`;
 
       // 1. SOURCING FROM BOOKS (Sales) - Primary for Table 4 & 5
+      // Classified line by line: a nil-rated line on a taxable invoice belongs in Table 5, not 4.
       const salesQuery = `
-        SELECT i.*, c.gstin as customer_gstin
+        SELECT i.id, i.document_type, i.place_of_supply_state_code, i.supply_type,
+               i.customer_gstin AS customer_gstin,
+               ii.taxable_value, ii.igst_amount, ii.cgst_amount, ii.sgst_amount,
+               COALESCE(ii.cess_amount, 0) AS cess_amount
         FROM invoices i
+        JOIN invoice_items ii ON ii.invoice_id = i.id
         LEFT JOIN customers c ON i.customer_id = c.id
         WHERE i.business_id = $1 AND i.invoice_date >= $2 AND i.invoice_date <= $3
         AND i.status = 'final'
@@ -335,17 +341,18 @@ export class GSTR9Generator {
       `;
       const salesRes = await client.query(salesQuery, [business_id, fyFrom, fyTo]);
       
-      salesRes.rows.forEach(inv => {
+      salesRes.rows.forEach(line => {
         const tb = { 
-          taxable_value: parseFloat(inv.subtotal) || 0, 
-          igst: parseFloat(inv.igst_total) || 0, 
-          cgst: parseFloat(inv.cgst_total) || 0, 
-          sgst: parseFloat(inv.sgst_total) || 0, 
-          cess: 0 
+          taxable_value: parseFloat(line.taxable_value) || 0, 
+          igst: parseFloat(line.igst_amount) || 0, 
+          cgst: parseFloat(line.cgst_amount) || 0, 
+          sgst: parseFloat(line.sgst_amount) || 0, 
+          cess: parseFloat(line.cess_amount) || 0 
         };
-        const isB2B = !!inv.customer_gstin;
-        const isExport = inv.place_of_supply_state_code === '96';
-        const isSEZ = inv.place_of_supply_state_code === '97' || inv.supply_type === 'sez';
+        const isB2B = !!line.customer_gstin;
+        const isExport = line.place_of_supply_state_code === '96';
+        // 97 is "Other Territory" (a taxable inter-state supply), not SEZ.
+        const isSEZ = line.supply_type === 'sez';
         
         if ((tb.igst + tb.cgst + tb.sgst) > 0) {
           // Table 4
@@ -354,10 +361,10 @@ export class GSTR9Generator {
           else if (isB2B) addTaxBreakdown(data.table_4.B, tb);
           else addTaxBreakdown(data.table_4.A, tb);
         } else {
-          // Table 5
+          // Table 5: 5D exempted (bill of supply), 5E nil rated (0% on a tax invoice) — as GSTR-1 Table 8
           if (isSEZ) addTaxBreakdown(data.table_5.B, tb);
           else if (isExport) addTaxBreakdown(data.table_5.A, tb);
-          else if (inv.document_type === 'bill_of_supply') addTaxBreakdown(data.table_5.D, tb);
+          else if (line.document_type === 'bill_of_supply') addTaxBreakdown(data.table_5.D, tb);
           else addTaxBreakdown(data.table_5.E, tb);
         }
       });
@@ -388,13 +395,22 @@ export class GSTR9Generator {
         else addTaxBreakdown(taxed ? data.table_4.J : data.table_5.I, tb);
       });
 
-      // Table 4G: inward supplies liable to reverse charge (tax payable by us).
+      // Table 4G: inward supplies liable to reverse charge (tax payable by us) — bills and
+      // expenses, the same documents whose RCM credit is reported in 6C / 6D.
       const rcmRes = await client.query(
-        `SELECT COALESCE(SUM(subtotal), 0) AS taxable, COALESCE(SUM(igst_total), 0) AS igst,
-                COALESCE(SUM(cgst_total), 0) AS cgst, COALESCE(SUM(sgst_total), 0) AS sgst
-           FROM purchases
-          WHERE business_id = $1 AND bill_date BETWEEN $2 AND $3
-            AND status = 'final' AND deleted_at IS NULL AND is_reverse_charge = true`,
+        `SELECT COALESCE(SUM(taxable), 0) AS taxable, COALESCE(SUM(igst), 0) AS igst,
+                COALESCE(SUM(cgst), 0) AS cgst, COALESCE(SUM(sgst), 0) AS sgst
+           FROM (
+             SELECT subtotal AS taxable, igst_total AS igst, cgst_total AS cgst, sgst_total AS sgst
+               FROM purchases
+              WHERE business_id = $1 AND bill_date BETWEEN $2 AND $3
+                AND status = 'final' AND deleted_at IS NULL AND is_reverse_charge = true
+             UNION ALL
+             SELECT amount, COALESCE(igst_amount, 0), COALESCE(cgst_amount, 0), COALESCE(sgst_amount, 0)
+               FROM expenses
+              WHERE business_id = $1 AND expense_date BETWEEN $2 AND $3
+                AND deleted_at IS NULL AND COALESCE(is_reverse_charge, false)
+           ) rcm`,
         [business_id, fyFrom, fyTo]
       );
       const rcm = rcmRes.rows[0] || {};
@@ -476,11 +492,14 @@ export class GSTR9Generator {
         // HSN Inward (Always from Books)
         if (row.hsn_sac) {
           const lineTotal = parseFloat(row.line_total) || 0;
-          if (!hsnInMap.has(row.hsn_sac)) {
-            hsnInMap.set(row.hsn_sac, { 
+          // Table 18 is one row per HSN and unit quantity code.
+          const uqc = toGstUqc(row.unit, row.hsn_sac);
+          const hsnKey = `${row.hsn_sac}|${uqc}`;
+          if (!hsnInMap.has(hsnKey)) {
+            hsnInMap.set(hsnKey, { 
               hsn_sac: row.hsn_sac, 
               description: row.item_name || '', 
-              uqc: 'NOS', 
+              uqc, 
               total_quantity: parseFloat(row.quantity) || 0, 
               total_value: lineTotal, 
               taxable_value: tb.taxable_value, 
@@ -490,7 +509,7 @@ export class GSTR9Generator {
               cess: tb.cess 
             });
           } else {
-            const existing = hsnInMap.get(row.hsn_sac);
+            const existing = hsnInMap.get(hsnKey);
             existing.total_quantity += parseFloat(row.quantity) || 0;
             existing.total_value += lineTotal;
             existing.taxable_value += tb.taxable_value;

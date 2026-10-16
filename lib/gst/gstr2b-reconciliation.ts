@@ -67,8 +67,20 @@ export interface UserDecision {
   decided_by_user_id: string;
 }
 
+/**
+ * Supplier invoice numbers as typed in books and as filed by the supplier differ in separators,
+ * case and zero padding ("inv/003" vs "INV-3"). Compare letters and digits only, without
+ * leading zeros in each run of digits.
+ */
+export function normalizeDocNumber(no: unknown): string {
+  return String(no ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/(^|[^0-9])0+(?=[0-9])/g, '$1');
+}
+
 const TOLERANCE_DAYS = 2; // Allow 2 days tolerance for invoice date matching
-const TOLERANCE_AMOUNT = 1; // Allow ₹1 tolerance for amount matching
+const TOLERANCE_AMOUNT = 1; // Allow ₹1 tolerance per tax head and on taxable value
 
 export class GSTR2BReconciliationEngine {
   private pool = getPool();
@@ -100,18 +112,24 @@ export class GSTR2BReconciliationEngine {
   }
 
   /**
-   * Fetch invoices from purchase register (books)
+   * Fetch invoices from purchase register (books): bills of the period, plus earlier bills (from
+   * the previous financial year on, the s.16(4) window) that no earlier reconciliation found in
+   * 2B — a supplier who files late shows the bill in a later month's 2B. Earlier bills are kept
+   * only if they match this period's 2B. Blocked credit (s.17(5)) is included so its 2B line is
+   * not reported as "only in 2B".
    */
   private async fetchBooksInvoices(client: any, business_id: string, filing_period: string) {
     const [year, month] = filing_period.split('-').map(Number);
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
     const endDate = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
-    
+    const fyStart = month >= 4 ? year : year - 1;
+    const carryFrom = `${fyStart - 1}-04-01`;
+
     const query = `
-      SELECT 
+      SELECT
         p.id as purchase_id,
         pi.id as purchase_item_id,
-        p.supplier_gstin,
+        UPPER(TRIM(COALESCE(NULLIF(TRIM(p.supplier_gstin), ''), s.gstin, ''))) as supplier_gstin,
         p.bill_number as invoice_number,
         p.bill_date as invoice_date,
         COALESCE(p.document_type, 'invoice') as document_type,
@@ -123,27 +141,44 @@ export class GSTR2BReconciliationEngine {
         (pi.igst_amount + pi.cgst_amount + pi.sgst_amount + COALESCE(pi.cess_amount, 0)) as itc_amount,
         p.is_reverse_charge,
         p.document_type as purchase_document_type,
-        i.item_type
+        p.supplier_state_code,
+        (p.itc_eligible IS DISTINCT FROM false) AS itc_eligible,
+        (p.bill_date < $2::date) AS carried,
+        COALESCE(pi.line_item_type, i.item_type) AS item_type
       FROM purchases p
       JOIN purchase_items pi ON p.id = pi.purchase_id
       LEFT JOIN items i ON pi.item_id = i.id
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
       WHERE p.business_id = $1
-        AND p.bill_date >= $2
-        AND p.bill_date <= $3
-        AND (p.itc_eligible = true OR p.itc_availed = true)
-        AND p.status = 'final'
+        AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
         AND p.deleted_at IS NULL
-      ORDER BY p.supplier_gstin, p.bill_number, p.bill_date
+        AND (
+          (p.bill_date >= $2::date AND p.bill_date <= $3::date)
+          OR (
+            p.bill_date >= $4::date AND p.bill_date < $2::date
+            AND NOT EXISTS (
+              SELECT 1 FROM gstr2b_reconciliation r
+               WHERE r.purchase_id = p.id AND r.filing_period < $5
+                 AND r.match_status IN ('MATCHED', 'PARTIALLY_MATCHED', 'NOT_ELIGIBLE')
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM gstr2b_reconciliation r
+                JOIN reconciliation_decisions d ON d.reconciliation_id = r.id
+               WHERE r.purchase_id = p.id AND d.decision IN ('ITC_NOT_ELIGIBLE', 'IGNORE')
+            )
+          )
+        )
+      ORDER BY p.bill_date, p.bill_number
     `;
-    
-    const result = await client.query(query, [business_id, startDate, endDate]);
-    
-    // Group by invoice (aggregate items at invoice level)
+
+    const result = await client.query(query, [business_id, startDate, endDate, carryFrom, filing_period]);
+
+    // Group by bill (aggregate items at invoice level)
     const invoiceMap = new Map<string, any>();
-    
+
     result.rows.forEach((row: any) => {
-      const key = `${row.supplier_gstin || 'NO_GSTIN'}_${row.invoice_number}_${row.invoice_date}`;
-      
+      const key = row.purchase_id;
+
       if (!invoiceMap.has(key)) {
         invoiceMap.set(key, {
           purchase_id: row.purchase_id,
@@ -160,10 +195,13 @@ export class GSTR2BReconciliationEngine {
           itc_amount: 0,
           is_reverse_charge: row.is_reverse_charge,
           purchase_document_type: row.purchase_document_type,
+          supplier_state_code: row.supplier_state_code,
+          itc_eligible: row.itc_eligible,
+          carried: row.carried,
           has_service_item: row.item_type === 'service'
         });
       }
-      
+
       const invoice = invoiceMap.get(key)!;
       invoice.taxable_value += parseFloat(row.taxable_value) || 0;
       invoice.igst_amount += parseFloat(row.igst_amount) || 0;
@@ -171,12 +209,12 @@ export class GSTR2BReconciliationEngine {
       invoice.sgst_amount += parseFloat(row.sgst_amount) || 0;
       invoice.cess_amount += parseFloat(row.cess_amount) || 0;
       invoice.itc_amount += parseFloat(row.itc_amount) || 0;
-      
+
       if (row.item_type === 'service') {
         invoice.has_service_item = true;
       }
     });
-    
+
     return Array.from(invoiceMap.values());
   }
 
@@ -185,7 +223,7 @@ export class GSTR2BReconciliationEngine {
    */
   private async fetchGSTR2BInvoices(client: any, business_id: string, filing_period: string) {
     const query = `
-      SELECT 
+      SELECT
         id as gstr2b_invoice_id,
         supplier_gstin,
         invoice_number,
@@ -205,7 +243,7 @@ export class GSTR2BReconciliationEngine {
         AND filing_period = $2
       ORDER BY supplier_gstin, invoice_number, invoice_date
     `;
-    
+
     const result = await client.query(query, [business_id, filing_period]);
     return result.rows;
   }
@@ -222,139 +260,104 @@ export class GSTR2BReconciliationEngine {
   ): Promise<ReconciliationMatch[]> {
     const matches: ReconciliationMatch[] = [];
     const matched2BIds = new Set<string>();
-    
-    // Create lookup map for GSTR-2B invoices
-    const gstr2bMap = new Map<string, any>();
+
+    // Supplier invoices (b2b) match on supplier GSTIN + invoice number; imports (impg) on the
+    // bill of entry number. Credit / debit notes in 2B are not matched against bills.
+    const gstr2bMap = new Map<string, any[]>();
     gstr2bInvoices.forEach((inv: any) => {
-      const key = `${inv.supplier_gstin}_${inv.invoice_number}_${inv.invoice_date}`;
-      if (!gstr2bMap.has(key)) {
-        gstr2bMap.set(key, []);
-      }
+      const key = inv.document_type === 'import_goods'
+        ? `IMPG|${normalizeDocNumber(inv.invoice_number)}`
+        : inv.document_type === 'invoice'
+          ? `${String(inv.supplier_gstin || '').trim().toUpperCase()}|${normalizeDocNumber(inv.invoice_number)}`
+          : null;
+      if (!key) return;
+      if (!gstr2bMap.has(key)) gstr2bMap.set(key, []);
       gstr2bMap.get(key)!.push(inv);
     });
-    
-    // Match books invoices with GSTR-2B
+
     for (const bookInv of booksInvoices) {
-      // Skip imports (they don't appear in GSTR-2B)
-      const isImportGoods = bookInv.purchase_document_type === 'bill_of_entry' || 
-                           (bookInv.igst_amount > 0 && bookInv.cgst_amount === 0 && 
-                            bookInv.sgst_amount === 0 && !bookInv.supplier_gstin && 
-                            !bookInv.has_service_item);
-      
-      const isImportService = bookInv.has_service_item && 
-                             (!bookInv.supplier_gstin || bookInv.supplier_gstin.length < 15) &&
-                             bookInv.is_reverse_charge;
-      
-      if (isImportGoods || isImportService) {
-        // Imports are handled separately - don't reconcile with GSTR-2B
+      const isImportGoods = bookInv.purchase_document_type === 'bill_of_entry' ||
+        (bookInv.supplier_state_code === '96' && !bookInv.has_service_item);
+      const isImportService = !isImportGoods && bookInv.supplier_state_code === '96' && bookInv.is_reverse_charge;
+      // s.9(4): a domestic reverse-charge bill from an unregistered supplier is self-invoiced and
+      // never appears in 2B.
+      if (!isImportGoods && !isImportService && !bookInv.supplier_gstin && bookInv.is_reverse_charge) continue;
+
+      const base = {
+        supplier_gstin: bookInv.supplier_gstin || '',
+        invoice_number: bookInv.invoice_number,
+        invoice_date: bookInv.invoice_date,
+        document_type: bookInv.document_type,
+        books_taxable_value: bookInv.taxable_value,
+        books_igst: bookInv.igst_amount,
+        books_cgst: bookInv.cgst_amount,
+        books_sgst: bookInv.sgst_amount,
+        books_cess: bookInv.cess_amount,
+        books_itc_amount: bookInv.itc_amount,
+        purchase_id: bookInv.purchase_id,
+        is_import_goods: isImportGoods,
+        is_import_services: isImportService,
+        is_credit_note: bookInv.document_type === 'credit_note',
+      };
+
+      if (isImportService) {
+        // Import of services is paid under reverse charge and has no 2B section to match.
         matches.push({
-          match_status: 'MATCHED', // Special case: imports are always "matched" as they're not expected in 2B
-          supplier_gstin: bookInv.supplier_gstin || '',
-          invoice_number: bookInv.invoice_number,
-          invoice_date: bookInv.invoice_date,
-          document_type: bookInv.document_type,
-          books_taxable_value: bookInv.taxable_value,
-          books_igst: bookInv.igst_amount,
-          books_cgst: bookInv.cgst_amount,
-          books_sgst: bookInv.sgst_amount,
-          books_cess: bookInv.cess_amount,
-          books_itc_amount: bookInv.itc_amount,
-          gstr2b_taxable_value: 0,
-          gstr2b_igst: 0,
-          gstr2b_cgst: 0,
-          gstr2b_sgst: 0,
-          gstr2b_cess: 0,
+          ...base,
+          match_status: 'MATCHED',
+          gstr2b_taxable_value: 0, gstr2b_igst: 0, gstr2b_cgst: 0, gstr2b_sgst: 0, gstr2b_cess: 0,
           gstr2b_itc_eligibility: 'eligible',
-          difference_taxable_value: 0,
-          difference_igst: 0,
-          difference_cgst: 0,
-          difference_sgst: 0,
-          difference_cess: 0,
-          purchase_id: bookInv.purchase_id,
-          is_import_goods: isImportGoods,
-          is_import_services: isImportService,
-          is_credit_note: bookInv.document_type === 'credit_note'
+          difference_taxable_value: 0, difference_igst: 0, difference_cgst: 0, difference_sgst: 0, difference_cess: 0,
         });
         continue;
       }
-      
-      // Try to find match in GSTR-2B (with tolerance)
-      const matchKey = this.findMatchKey(bookInv, gstr2bMap);
-      const matched2B = matchKey ? gstr2bMap.get(matchKey)?.[0] : null;
-      
-      if (matched2B) {
-        matched2BIds.add(matched2B.gstr2b_invoice_id);
-        
-        // Check if values match (with tolerance)
-        const isFullyMatched = this.isAmountMatch(bookInv, matched2B);
-        
-        // Check eligibility
-        const isEligible = matched2B.itc_eligibility === 'eligible';
-        
-        const match: ReconciliationMatch = {
-          match_status: isEligible ? (isFullyMatched ? 'MATCHED' : 'PARTIALLY_MATCHED') : 'NOT_ELIGIBLE',
-          supplier_gstin: bookInv.supplier_gstin,
-          invoice_number: bookInv.invoice_number,
-          invoice_date: bookInv.invoice_date,
-          document_type: bookInv.document_type,
-          books_taxable_value: bookInv.taxable_value,
-          books_igst: bookInv.igst_amount,
-          books_cgst: bookInv.cgst_amount,
-          books_sgst: bookInv.sgst_amount,
-          books_cess: bookInv.cess_amount,
-          books_itc_amount: bookInv.itc_amount,
-          gstr2b_taxable_value: parseFloat(matched2B.taxable_value) || 0,
-          gstr2b_igst: parseFloat(matched2B.igst_amount) || 0,
-          gstr2b_cgst: parseFloat(matched2B.cgst_amount) || 0,
-          gstr2b_sgst: parseFloat(matched2B.sgst_amount) || 0,
-          gstr2b_cess: parseFloat(matched2B.cess_amount) || 0,
-          gstr2b_itc_eligibility: matched2B.itc_eligibility || 'eligible',
-          difference_taxable_value: bookInv.taxable_value - (parseFloat(matched2B.taxable_value) || 0),
-          difference_igst: bookInv.igst_amount - (parseFloat(matched2B.igst_amount) || 0),
-          difference_cgst: bookInv.cgst_amount - (parseFloat(matched2B.cgst_amount) || 0),
-          difference_sgst: bookInv.sgst_amount - (parseFloat(matched2B.sgst_amount) || 0),
-          difference_cess: bookInv.cess_amount - (parseFloat(matched2B.cess_amount) || 0),
-          purchase_id: bookInv.purchase_id,
-          gstr2b_invoice_id: matched2B.gstr2b_invoice_id,
-          is_import_goods: false,
-          is_import_services: false,
-          is_credit_note: bookInv.document_type === 'credit_note'
-        };
-        
-        matches.push(match);
-      } else {
-        // Missing in GSTR-2B
+
+      const key = isImportGoods
+        ? `IMPG|${normalizeDocNumber(bookInv.invoice_number)}`
+        : `${bookInv.supplier_gstin}|${normalizeDocNumber(bookInv.invoice_number)}`;
+      const matched2B = this.findMatch(bookInv, gstr2bMap.get(key) ?? [], matched2BIds);
+
+      if (!matched2B) {
+        // An earlier month's bill is reported only in the period whose 2B shows it.
+        if (bookInv.carried) continue;
         matches.push({
+          ...base,
           match_status: 'MISSING_IN_2B',
-          supplier_gstin: bookInv.supplier_gstin,
-          invoice_number: bookInv.invoice_number,
-          invoice_date: bookInv.invoice_date,
-          document_type: bookInv.document_type,
-          books_taxable_value: bookInv.taxable_value,
-          books_igst: bookInv.igst_amount,
-          books_cgst: bookInv.cgst_amount,
-          books_sgst: bookInv.sgst_amount,
-          books_cess: bookInv.cess_amount,
-          books_itc_amount: bookInv.itc_amount,
-          gstr2b_taxable_value: 0,
-          gstr2b_igst: 0,
-          gstr2b_cgst: 0,
-          gstr2b_sgst: 0,
-          gstr2b_cess: 0,
+          gstr2b_taxable_value: 0, gstr2b_igst: 0, gstr2b_cgst: 0, gstr2b_sgst: 0, gstr2b_cess: 0,
           gstr2b_itc_eligibility: '',
           difference_taxable_value: bookInv.taxable_value,
           difference_igst: bookInv.igst_amount,
           difference_cgst: bookInv.cgst_amount,
           difference_sgst: bookInv.sgst_amount,
           difference_cess: bookInv.cess_amount,
-          purchase_id: bookInv.purchase_id,
-          is_import_goods: false,
-          is_import_services: false,
-          is_credit_note: bookInv.document_type === 'credit_note'
         });
+        continue;
       }
+
+      matched2BIds.add(matched2B.gstr2b_invoice_id);
+      const n = (v: unknown) => parseFloat(String(v ?? 0)) || 0;
+      const isFullyMatched = this.isAmountMatch(bookInv, matched2B);
+      // Not eligible when 2B says so, or the books block the credit under s.17(5).
+      const isEligible = (matched2B.itc_eligibility || 'eligible') === 'eligible' && bookInv.itc_eligible !== false;
+
+      matches.push({
+        ...base,
+        match_status: isEligible ? (isFullyMatched ? 'MATCHED' : 'PARTIALLY_MATCHED') : 'NOT_ELIGIBLE',
+        gstr2b_taxable_value: n(matched2B.taxable_value),
+        gstr2b_igst: n(matched2B.igst_amount),
+        gstr2b_cgst: n(matched2B.cgst_amount),
+        gstr2b_sgst: n(matched2B.sgst_amount),
+        gstr2b_cess: n(matched2B.cess_amount),
+        gstr2b_itc_eligibility: matched2B.itc_eligibility || 'eligible',
+        difference_taxable_value: bookInv.taxable_value - n(matched2B.taxable_value),
+        difference_igst: bookInv.igst_amount - n(matched2B.igst_amount),
+        difference_cgst: bookInv.cgst_amount - n(matched2B.cgst_amount),
+        difference_sgst: bookInv.sgst_amount - n(matched2B.sgst_amount),
+        difference_cess: bookInv.cess_amount - n(matched2B.cess_amount),
+        gstr2b_invoice_id: matched2B.gstr2b_invoice_id,
+      });
     }
-    
+
     // Find invoices only in GSTR-2B (not in books)
     gstr2bInvoices.forEach((gstr2bInv: any) => {
       if (!matched2BIds.has(gstr2bInv.gstr2b_invoice_id)) {
@@ -382,52 +385,55 @@ export class GSTR2BReconciliationEngine {
           difference_sgst: -(parseFloat(gstr2bInv.sgst_amount) || 0),
           difference_cess: -(parseFloat(gstr2bInv.cess_amount) || 0),
           gstr2b_invoice_id: gstr2bInv.gstr2b_invoice_id,
-          is_import_goods: false,
+          is_import_goods: gstr2bInv.document_type === 'import_goods',
           is_import_services: false,
           is_credit_note: gstr2bInv.document_type === 'credit_note'
         });
       }
     });
-    
+
     return matches;
   }
 
   /**
-   * Find matching key in GSTR-2B map (with tolerance)
+   * The unused 2B line with the same normalised number whose date is closest to the bill's,
+   * within TOLERANCE_DAYS. A 2B line is never matched to two bills.
    */
-  private findMatchKey(bookInv: any, gstr2bMap: Map<string, any[]>): string | null {
-    // Try exact match first
-    const exactKey = `${bookInv.supplier_gstin}_${bookInv.invoice_number}_${bookInv.invoice_date}`;
-    if (gstr2bMap.has(exactKey)) {
-      return exactKey;
-    }
-    
-    // Try with date tolerance
-    const bookDate = new Date(bookInv.invoice_date);
-    for (const [key, invoices] of gstr2bMap.entries()) {
-      const [gstin, invNum, invDate] = key.split('_');
-      if (gstin === bookInv.supplier_gstin && invNum === bookInv.invoice_number) {
-        const gstr2bDate = new Date(invDate);
-        const diffDays = Math.abs((bookDate.getTime() - gstr2bDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays <= TOLERANCE_DAYS) {
-          return key;
-        }
+  private findMatch(bookInv: any, candidates: any[], used: Set<string>): any | null {
+    const day = (d: unknown) => {
+      if (d instanceof Date) return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+      const m = String(d ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : NaN;
+    };
+    const bookDay = day(bookInv.invoice_date);
+    let best: any = null;
+    let bestDiff = Infinity;
+    for (const c of candidates) {
+      if (used.has(c.gstr2b_invoice_id)) continue;
+      const diff = Math.abs(bookDay - day(c.invoice_date));
+      if (diff <= TOLERANCE_DAYS && diff < bestDiff) {
+        best = c;
+        bestDiff = diff;
       }
     }
-    
-    return null;
+    return best;
   }
 
   /**
-   * Check if amounts match (with tolerance)
+   * Amounts match head by head and on taxable value. Comparing only the total would pass an
+   * inter-state bill booked as IGST that the supplier reported as CGST + SGST (credit is taken in
+   * the head the supplier charged), or a wrong taxable value with the same tax.
    */
   private isAmountMatch(bookInv: any, gstr2bInv: any): boolean {
-    const bookTotal = bookInv.igst_amount + bookInv.cgst_amount + bookInv.sgst_amount;
-    const gstr2bTotal = (parseFloat(gstr2bInv.igst_amount) || 0) + 
-                       (parseFloat(gstr2bInv.cgst_amount) || 0) + 
-                       (parseFloat(gstr2bInv.sgst_amount) || 0);
-    
-    return Math.abs(bookTotal - gstr2bTotal) <= TOLERANCE_AMOUNT;
+    const n = (v: unknown) => parseFloat(String(v ?? 0)) || 0;
+    const pairs: Array<[number, number]> = [
+      [bookInv.taxable_value, n(gstr2bInv.taxable_value)],
+      [bookInv.igst_amount, n(gstr2bInv.igst_amount)],
+      [bookInv.cgst_amount, n(gstr2bInv.cgst_amount)],
+      [bookInv.sgst_amount, n(gstr2bInv.sgst_amount)],
+      [bookInv.cess_amount, n(gstr2bInv.cess_amount)],
+    ];
+    return pairs.every(([a, b]) => Math.abs(a - b) <= TOLERANCE_AMOUNT);
   }
 
   /**
@@ -439,89 +445,102 @@ export class GSTR2BReconciliationEngine {
     filing_period: string, 
     matches: ReconciliationMatch[]
   ) {
-    // Delete existing reconciliation for this period (to allow re-reconciliation)
-    await client.query(
-      'DELETE FROM gstr2b_reconciliation WHERE business_id = $1 AND filing_period = $2',
-      [business_id, filing_period]
-    );
-    
-    for (const match of matches) {
-      const query = `
-        INSERT INTO gstr2b_reconciliation (
-          business_id, filing_period,
-          purchase_id, gstr2b_invoice_id,
-          match_status, supplier_gstin, invoice_number, invoice_date, document_type,
-          books_taxable_value, books_igst, books_cgst, books_sgst, books_cess, books_itc_amount,
-          gstr2b_taxable_value, gstr2b_igst, gstr2b_cgst, gstr2b_sgst, gstr2b_cess, gstr2b_itc_eligibility,
-          difference_taxable_value, difference_igst, difference_cgst, difference_sgst, difference_cess,
-          is_import_goods, is_import_services, is_credit_note, matched_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, $21,
-          $22, $23, $24, $25, $26,
-          $27, $28, $29, CURRENT_TIMESTAMP
-        )
-        ON CONFLICT (business_id, filing_period, supplier_gstin, invoice_number, invoice_date, document_type)
-        DO UPDATE SET
-          purchase_id = EXCLUDED.purchase_id,
-          gstr2b_invoice_id = EXCLUDED.gstr2b_invoice_id,
-          match_status = EXCLUDED.match_status,
-          books_taxable_value = EXCLUDED.books_taxable_value,
-          books_igst = EXCLUDED.books_igst,
-          books_cgst = EXCLUDED.books_cgst,
-          books_sgst = EXCLUDED.books_sgst,
-          books_cess = EXCLUDED.books_cess,
-          books_itc_amount = EXCLUDED.books_itc_amount,
-          gstr2b_taxable_value = EXCLUDED.gstr2b_taxable_value,
-          gstr2b_igst = EXCLUDED.gstr2b_igst,
-          gstr2b_cgst = EXCLUDED.gstr2b_cgst,
-          gstr2b_sgst = EXCLUDED.gstr2b_sgst,
-          gstr2b_cess = EXCLUDED.gstr2b_cess,
-          gstr2b_itc_eligibility = EXCLUDED.gstr2b_itc_eligibility,
-          difference_taxable_value = EXCLUDED.difference_taxable_value,
-          difference_igst = EXCLUDED.difference_igst,
-          difference_cgst = EXCLUDED.difference_cgst,
-          difference_sgst = EXCLUDED.difference_sgst,
-          difference_cess = EXCLUDED.difference_cess,
-          is_import_goods = EXCLUDED.is_import_goods,
-          is_import_services = EXCLUDED.is_import_services,
-          is_credit_note = EXCLUDED.is_credit_note,
-          matched_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-      `;
+    // Re-reconciliation updates rows in place (same id) so user decisions stay attached. Rows no
+    // longer produced are removed only when nobody has decided on them.
+    await client.query('BEGIN');
+    try {
+      const keptIds: string[] = [];
+      for (const match of matches) {
+        const query = `
+          INSERT INTO gstr2b_reconciliation (
+            business_id, filing_period,
+            purchase_id, gstr2b_invoice_id,
+            match_status, supplier_gstin, invoice_number, invoice_date, document_type,
+            books_taxable_value, books_igst, books_cgst, books_sgst, books_cess, books_itc_amount,
+            gstr2b_taxable_value, gstr2b_igst, gstr2b_cgst, gstr2b_sgst, gstr2b_cess, gstr2b_itc_eligibility,
+            difference_taxable_value, difference_igst, difference_cgst, difference_sgst, difference_cess,
+            is_import_goods, is_import_services, is_credit_note, matched_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9,
+            $10, $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20, $21,
+            $22, $23, $24, $25, $26,
+            $27, $28, $29, CURRENT_TIMESTAMP
+          )
+          ON CONFLICT (business_id, filing_period, supplier_gstin, invoice_number, invoice_date, document_type)
+          DO UPDATE SET
+            purchase_id = EXCLUDED.purchase_id,
+            gstr2b_invoice_id = EXCLUDED.gstr2b_invoice_id,
+            match_status = EXCLUDED.match_status,
+            books_taxable_value = EXCLUDED.books_taxable_value,
+            books_igst = EXCLUDED.books_igst,
+            books_cgst = EXCLUDED.books_cgst,
+            books_sgst = EXCLUDED.books_sgst,
+            books_cess = EXCLUDED.books_cess,
+            books_itc_amount = EXCLUDED.books_itc_amount,
+            gstr2b_taxable_value = EXCLUDED.gstr2b_taxable_value,
+            gstr2b_igst = EXCLUDED.gstr2b_igst,
+            gstr2b_cgst = EXCLUDED.gstr2b_cgst,
+            gstr2b_sgst = EXCLUDED.gstr2b_sgst,
+            gstr2b_cess = EXCLUDED.gstr2b_cess,
+            gstr2b_itc_eligibility = EXCLUDED.gstr2b_itc_eligibility,
+            difference_taxable_value = EXCLUDED.difference_taxable_value,
+            difference_igst = EXCLUDED.difference_igst,
+            difference_cgst = EXCLUDED.difference_cgst,
+            difference_sgst = EXCLUDED.difference_sgst,
+            difference_cess = EXCLUDED.difference_cess,
+            is_import_goods = EXCLUDED.is_import_goods,
+            is_import_services = EXCLUDED.is_import_services,
+            is_credit_note = EXCLUDED.is_credit_note,
+            matched_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING id
+        `;
       
-      await client.query(query, [
-        business_id,
-        filing_period,
-        match.purchase_id || null,
-        match.gstr2b_invoice_id || null,
-        match.match_status,
-        match.supplier_gstin,
-        match.invoice_number,
-        match.invoice_date,
-        match.document_type,
-        match.books_taxable_value,
-        match.books_igst,
-        match.books_cgst,
-        match.books_sgst,
-        match.books_cess,
-        match.books_itc_amount,
-        match.gstr2b_taxable_value,
-        match.gstr2b_igst,
-        match.gstr2b_cgst,
-        match.gstr2b_sgst,
-        match.gstr2b_cess,
-        match.gstr2b_itc_eligibility,
-        match.difference_taxable_value,
-        match.difference_igst,
-        match.difference_cgst,
-        match.difference_sgst,
-        match.difference_cess,
-        match.is_import_goods,
-        match.is_import_services,
-        match.is_credit_note
-      ]);
+        const saved = await client.query(query, [
+          business_id,
+          filing_period,
+          match.purchase_id || null,
+          match.gstr2b_invoice_id || null,
+          match.match_status,
+          match.supplier_gstin,
+          match.invoice_number,
+          match.invoice_date,
+          match.document_type,
+          match.books_taxable_value,
+          match.books_igst,
+          match.books_cgst,
+          match.books_sgst,
+          match.books_cess,
+          match.books_itc_amount,
+          match.gstr2b_taxable_value,
+          match.gstr2b_igst,
+          match.gstr2b_cgst,
+          match.gstr2b_sgst,
+          match.gstr2b_cess,
+          match.gstr2b_itc_eligibility,
+          match.difference_taxable_value,
+          match.difference_igst,
+          match.difference_cgst,
+          match.difference_sgst,
+          match.difference_cess,
+          match.is_import_goods,
+          match.is_import_services,
+          match.is_credit_note
+        ]);
+        keptIds.push(saved.rows[0].id);
+        match.reconciliation_id = saved.rows[0].id;
+      }
+      await client.query(
+        `DELETE FROM gstr2b_reconciliation r
+          WHERE r.business_id = $1 AND r.filing_period = $2 AND NOT (r.id = ANY($3::uuid[]))
+            AND NOT EXISTS (SELECT 1 FROM reconciliation_decisions d WHERE d.reconciliation_id = r.id)`,
+        [business_id, filing_period, keptIds]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
     }
   }
 

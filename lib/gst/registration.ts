@@ -121,3 +121,25 @@ export async function resolveGstScheme(
   ]);
   return effectiveGstScheme(biz.rows[0]?.gst_registration_type, reg.gstin);
 }
+
+/**
+ * Every branch that files under the same GSTIN as `branchId`. GSTR-1 and GSTR-3B are one return
+ * per registration (s.25(2) CGST Act), so shops without their own GSTIN are reported together with
+ * the head office, and a branch with a separate GSTIN only with branches holding that GSTIN.
+ */
+export async function registrationBranchIds(db: Queryable, businessId: string, branchId: string): Promise<string[]> {
+  const res = await db.query<{ id: string; gstin: string | null; b_gstin: string | null }>(
+    `SELECT br.id, br.gstin, b.gstin AS b_gstin
+       FROM branches br JOIN businesses b ON b.id = br.business_id
+      WHERE br.business_id = $1`,
+    [businessId],
+  );
+  const ownGstin = (r: { gstin: string | null; b_gstin: string | null }) => {
+    const g = r.gstin?.trim().toUpperCase() || null;
+    return g && g !== (r.b_gstin?.trim().toUpperCase() || null) ? g : null;
+  };
+  const target = res.rows.find((r) => r.id === branchId);
+  if (!target) return [branchId];
+  const key = ownGstin(target);
+  return res.rows.filter((r) => ownGstin(r) === key).map((r) => r.id);
+}

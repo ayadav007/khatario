@@ -83,7 +83,7 @@ export async function applyModuleSubscriptionPlanChange(params: {
 
   await enableBusinessModule(params.businessId, params.moduleKey, 'upgrade');
 
-  // Billing Free / Growth / Business / Trial all include HR Lite.
+  // HR follows the Billing plan's bundled HR plan (lib/subscription/hr-bundle.ts).
   if (params.moduleKey === 'billing') {
     await ensureComplimentaryHrForBilling(params.businessId);
   }

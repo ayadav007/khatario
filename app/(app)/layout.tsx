@@ -35,6 +35,8 @@ import { LastRouteTracker } from '@/components/layout/LastRouteTracker';
 import { NetworkStatusBanner } from '@/components/system/NetworkStatusBanner';
 import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 import { ModuleShellGuard } from '@/components/layout/ModuleShellGuard';
+import { WebAccessGate } from '@/components/layout/WebAccessGate';
+import { DesktopZoomShortcuts } from '@/components/desktop/DesktopZoomShortcuts';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -105,7 +107,8 @@ function AppRouteLayoutInner({
           <SyncStatusBanner />
           <DynamicTitle />
           <main className="h-full w-full">
-            <ModuleShellGuard>{children}</ModuleShellGuard>
+            <DesktopZoomShortcuts />
+            <WebAccessGate><ModuleShellGuard>{children}</ModuleShellGuard></WebAccessGate>
           </main>
           <PromotionModal />
           <TrialExtensionModal />
@@ -152,7 +155,8 @@ function AppRouteLayoutInner({
                   isSettingsRoute && 'settings-ui-scale'
                 )}
               >
-                <ModuleShellGuard>{children}</ModuleShellGuard>
+                <DesktopZoomShortcuts />
+                <WebAccessGate><ModuleShellGuard>{children}</ModuleShellGuard></WebAccessGate>
               </main>
               {!isFullWidthPage && <TodoScheduleRail />}
             </div>

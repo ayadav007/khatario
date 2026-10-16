@@ -46,7 +46,7 @@ export function checkInvoiceCompliance(input: InvoiceComplianceInput): InvoiceCo
 
   const gstinCheck = input.customerGstin ? checkGstin(input.customerGstin) : null;
   const isB2B = !!(input.customerGstin && String(input.customerGstin).trim());
-  const zeroRatedPos = input.placeOfSupply === '96' || input.placeOfSupply === '97';
+  const zeroRatedPos = input.placeOfSupply === '96';
   let placeOfSupply = input.placeOfSupply ? String(input.placeOfSupply).slice(0, 2) : null;
 
   if (gstinCheck?.valid && !input.isExport && !zeroRatedPos) {

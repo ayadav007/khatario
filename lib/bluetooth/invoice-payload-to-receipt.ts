@@ -12,6 +12,7 @@
  */
 
 import type { ReceiptData } from './invoice-to-escpos';
+import { getStateName } from '@/lib/gst-utils';
 
 export interface InvoicePayloadLike {
   invoice_number: string;
@@ -30,11 +31,22 @@ export interface InvoicePayloadLike {
   paid_amount?: number | string;
   balance_amount?: number | string;
   notes?: string | null;
+  document_type?: string | null;
+  place_of_supply_state_code?: string | null;
+  is_reverse_charge?: boolean | null;
+  irn?: string | null;
+  ack_no?: string | number | null;
+  ack_date?: string | null;
+  signed_qr_code?: string | null;
   items?: Array<{
     item_name?: string | null;
     item_code?: string | null;
     variant_name?: string | null;
     hsn?: string | null;
+    hsn_sac?: string | null;
+    tax_rate?: number | string | null;
+    taxable_value?: number | string | null;
+    tax_amount?: number | string | null;
     quantity?: number | string | null;
     unit?: string | null;
     unit_price?: number | string | null;
@@ -82,11 +94,14 @@ export function invoicePayloadToReceipt(
     const amount = num(it.amount ?? it.line_total ?? unitPrice * qty);
     return {
       name: [it.item_name, it.variant_name].filter(Boolean).join(' - ') || 'Item',
-      hsn: it.hsn || null,
+      hsn: it.hsn || it.hsn_sac || null,
       quantity: qty,
       unit: it.unit || null,
       unitPrice,
       amount,
+      taxRate: it.tax_rate != null && it.tax_rate !== '' ? num(it.tax_rate) : null,
+      taxableValue: it.taxable_value != null && it.taxable_value !== '' ? num(it.taxable_value) : null,
+      taxAmount: it.tax_amount != null && it.tax_amount !== '' ? num(it.tax_amount) : null,
     };
   });
 
@@ -142,5 +157,13 @@ export function invoicePayloadToReceipt(
     notes: invoice.notes || null,
     footerQr: opts.footerQr || null,
     footerText: opts.footerText || null,
+    documentType: invoice.document_type || null,
+    placeOfSupplyStateCode: invoice.place_of_supply_state_code || null,
+    placeOfSupplyName: invoice.place_of_supply_state_code ? getStateName(invoice.place_of_supply_state_code) || null : null,
+    isReverseCharge: !!invoice.is_reverse_charge,
+    irn: invoice.irn || null,
+    ackNo: invoice.ack_no != null ? String(invoice.ack_no) : null,
+    ackDate: invoice.ack_date || null,
+    signedQr: invoice.signed_qr_code || null,
   };
 }

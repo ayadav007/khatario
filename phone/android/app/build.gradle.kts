@@ -64,3 +64,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // ContextCompat / ActivityCompat for the thermal printer channel (Bluetooth + USB permissions).
+    implementation("androidx.core:core-ktx:1.13.1")
+}

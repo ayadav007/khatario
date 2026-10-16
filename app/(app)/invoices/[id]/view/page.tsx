@@ -1,5 +1,6 @@
 'use client';
 
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Download, Loader2, Printer, Share2, Pencil } from 'lucide-react';
@@ -52,7 +53,7 @@ export default function PublicInvoiceViewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const invoiceId = params.id as string;
-  const { user } = useAuth();
+  const { user, business } = useAuth();
   const fromGenerate = searchParams.get('from') === 'generate';
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState('');
@@ -108,8 +109,9 @@ export default function PublicInvoiceViewPage() {
     window.open(pdfUrl, '_blank');
   };
 
+  // Khatario for Windows prints straight to the chosen A4 printer; elsewhere the PDF opens.
   const handlePrint = () => {
-    window.open(pdfUrl, '_blank');
+    void printInvoiceA4(invoiceId, user?.id, business?.id);
   };
 
   const paymentLabel = (() => {

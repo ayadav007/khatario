@@ -1,9 +1,10 @@
 import type { PoolClient } from 'pg';
+import { registrationBranchIds } from '@/lib/gst/registration';
 
 export type Gstr1FilingDocumentType = 'invoice' | 'credit_note' | 'debit_note';
 
 /**
- * Replace all document links for a draft GSTR-1 filing (invoices + CDN in period, branch).
+ * Replace all document links for a draft GSTR-1 filing (invoices + CDN in period, every branch of the GSTIN).
  */
 export async function replaceGstr1FilingDocuments(params: {
   client: PoolClient;
@@ -15,6 +16,8 @@ export async function replaceGstr1FilingDocuments(params: {
 }): Promise<void> {
   const { client, filingId, businessId, branchId, month, year } = params;
   const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  // Every branch of the same GSTIN, as in the GSTR-1 itself.
+  const branchIds = await registrationBranchIds(client, businessId, branchId);
 
   await client.query(`DELETE FROM gstr1_filing_documents WHERE gstr1_filing_id = $1`, [filingId]);
 
@@ -23,14 +26,14 @@ export async function replaceGstr1FilingDocuments(params: {
     SELECT i.id
     FROM invoices i
     WHERE i.business_id = $1::uuid
-      AND i.branch_id = $2::uuid
+      AND i.branch_id = ANY($2::uuid[])
       AND i.deleted_at IS NULL
       AND i.status = 'final'
       AND (i.document_type IS NULL OR i.document_type != 'proforma_invoice')
       AND i.invoice_date >= $3::date
       AND i.invoice_date < ($3::date + INTERVAL '1 month')
     `,
-    [businessId, branchId, start]
+    [businessId, branchIds, start]
   );
 
   const cnRes = await client.query<{ id: string }>(
@@ -38,11 +41,11 @@ export async function replaceGstr1FilingDocuments(params: {
     SELECT cn.id
     FROM credit_notes cn
     WHERE cn.business_id = $1::uuid
-      AND cn.branch_id = $2::uuid
+      AND cn.branch_id = ANY($2::uuid[])
       AND cn.credit_note_date >= $3::date
       AND cn.credit_note_date < ($3::date + INTERVAL '1 month')
     `,
-    [businessId, branchId, start]
+    [businessId, branchIds, start]
   );
 
   const dnRes = await client.query<{ id: string }>(
@@ -50,11 +53,11 @@ export async function replaceGstr1FilingDocuments(params: {
     SELECT dn.id
     FROM debit_notes dn
     WHERE dn.business_id = $1::uuid
-      AND dn.branch_id = $2::uuid
+      AND dn.branch_id = ANY($2::uuid[])
       AND dn.debit_note_date >= $3::date
       AND dn.debit_note_date < ($3::date + INTERVAL '1 month')
     `,
-    [businessId, branchId, start]
+    [businessId, branchIds, start]
   );
 
   const rows: { t: Gstr1FilingDocumentType; id: string }[] = [

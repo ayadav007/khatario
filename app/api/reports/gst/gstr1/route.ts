@@ -155,10 +155,10 @@ export async function GET(request: NextRequest) {
       const invoiceParams: any[] = [business_id];
       let paramIdx = 2;
 
-      // Add branch filter if provided
-      // Always filter by resolved branchId
-      invoiceQuery += ` AND i.branch_id = $${paramIdx}`;
-      invoiceParams.push(filters.branch_id);
+      // Every branch filing under the resolved branch's GSTIN
+      const { registrationBranchIds } = await import('@/lib/gst/registration');
+      invoiceQuery += ` AND i.branch_id = ANY($${paramIdx}::uuid[])`;
+      invoiceParams.push(await registrationBranchIds(client, business_id, finalBranchId));
       paramIdx++;
 
       if (filters.from_date && filters.to_date) {

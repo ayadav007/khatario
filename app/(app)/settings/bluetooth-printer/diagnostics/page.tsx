@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { SettingsPageShell } from '@/components/settings/SettingsPageShell';
 import { collectPrinterRuntimeDiagnostics } from '@/lib/printer/runtime';
 import { BleVsClassicHelp } from '@/components/printer/BleVsClassicHelp';
+import { clearPrintJobs, listPrintJobs, type PrintJobLogEntry } from '@/lib/printer/job-log';
+import { getKhatarioDesktop } from '@/lib/desktop/platform';
 
 function DiagnosticRow({
   label,
@@ -35,11 +37,13 @@ function DiagnosticRow({
 
 export default function BluetoothPrinterDiagnosticsPage() {
   const diagnostics = useMemo(() => collectPrinterRuntimeDiagnostics(), []);
+  const desktop = useMemo(() => getKhatarioDesktop(), []);
+  const [jobs, setJobs] = useState<PrintJobLogEntry[]>(() => listPrintJobs());
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify({ ...diagnostics, desktop, recentPrintJobs: jobs }, null, 2));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -48,7 +52,9 @@ export default function BluetoothPrinterDiagnosticsPage() {
   }
 
   const shellEmbedded = diagnostics.embeddedShellVersion;
-  const runtimeLabel = diagnostics.isCapacitorNative
+  const runtimeLabel = desktop
+    ? `Khatario for Windows ${desktop.version}`
+    : diagnostics.isCapacitorNative
     ? 'Capacitor native app'
     : diagnostics.isPwaStandalone
       ? 'PWA (installed)'
@@ -57,7 +63,7 @@ export default function BluetoothPrinterDiagnosticsPage() {
   return (
     <SettingsPageShell
       title="Printer diagnostics"
-      description="Runtime details for support. Share this screen when Bluetooth printing fails on a device."
+      description="Runtime details and recent print jobs for support. Copy and share this when printing fails on a device."
       icon={Activity}
     >
       <Card padding="md">
@@ -113,6 +119,59 @@ export default function BluetoothPrinterDiagnosticsPage() {
           />
           <DiagnosticRow label="User agent" value={diagnostics.userAgent} mono />
         </dl>
+      </Card>
+
+      <Card padding="md">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Recent print jobs</h2>
+          {jobs.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                clearPrintJobs();
+                setJobs([]);
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        {jobs.length === 0 ? (
+          <p className="text-sm text-text-secondary">No direct prints from this device yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-text-secondary">
+                  <th className="py-2 pr-4 font-medium">When</th>
+                  <th className="py-2 pr-4 font-medium">Printer</th>
+                  <th className="py-2 pr-4 font-medium">Type</th>
+                  <th className="py-2 pr-4 font-medium">Size</th>
+                  <th className="py-2 pr-4 font-medium">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job, i) => (
+                  <tr key={`${job.at}-${i}`} className="border-b border-border align-top last:border-0">
+                    <td className="whitespace-nowrap py-2 pr-4 text-text-secondary">{new Date(job.at).toLocaleString('en-IN')}</td>
+                    <td className="py-2 pr-4 text-text-primary">
+                      {job.printer}
+                      <span className="block text-xs text-text-muted">{job.driver}</span>
+                    </td>
+                    <td className="py-2 pr-4">{job.language}</td>
+                    <td className="whitespace-nowrap py-2 pr-4">
+                      {(job.bytes / 1024).toFixed(1)} KB · {(job.ms / 1000).toFixed(1)} s
+                    </td>
+                    <td className={`py-2 pr-4 ${job.ok ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {job.ok ? 'Sent to printer' : job.error || 'Failed'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       <Card padding="md">

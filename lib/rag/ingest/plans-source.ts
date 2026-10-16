@@ -50,6 +50,9 @@ type PlanRow = {
   price_3year?: string | number | null;
   currency: string | null;
   product_line: string | null;
+  /** False for plans kept only for existing customers. */
+  is_public?: boolean;
+  bundled_hr_plan_id?: string | null;
   features: {
     limits?: Record<string, number>;
     features?: Record<string, boolean>;
@@ -87,8 +90,13 @@ function limitValue(value: number): string {
 
 /** Live plan facts rendered as markdown; the assistant must only quote prices from this document. */
 export async function buildPlansMarkdown(): Promise<string> {
-  const plans = ((await listActiveSubscriptionPlans()) as unknown as PlanRow[]).filter(
-    (p) => p.id !== CONNECT_FREE_PLAN_ID && (HR_LAUNCHED || normalizeProductLine(p.product_line) !== 'hr'),
+  const allPlans = (await listActiveSubscriptionPlans()) as unknown as PlanRow[];
+  const planNameById = new Map(allPlans.map((p) => [p.id, p.display_name]));
+  const plans = allPlans.filter(
+    (p) =>
+      p.id !== CONNECT_FREE_PLAN_ID &&
+      p.is_public !== false &&
+      (HR_LAUNCHED || normalizeProductLine(p.product_line) !== 'hr'),
   );
   const featureRows = await queryRows<{ id: string; label: string; category: string }>(
     `SELECT id, label, category FROM platform_features WHERE is_active = true`,
@@ -117,6 +125,9 @@ export async function buildPlansMarkdown(): Promise<string> {
     lines.push(`## ${plan.display_name} plan (${productLine})`, '');
     if (plan.description) lines.push(plan.description.trim(), '');
     lines.push(priceLine(plan));
+    if (plan.bundled_hr_plan_id) {
+      lines.push(`Includes the ${planNameById.get(plan.bundled_hr_plan_id) ?? plan.bundled_hr_plan_id} HR plan at no extra cost.`);
+    }
     if (typeof plan.features?.trial_days === 'number' && plan.features.trial_days > 0) {
       lines.push(`Free trial: ${plan.features.trial_days} days.`);
     }

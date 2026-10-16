@@ -19,6 +19,8 @@ import {
 
 interface SubscriptionPlan {
   id: string;
+  /** False for plans kept only for existing customers (migration 387). */
+  is_public?: boolean;
   name: string;
   display_name: string;
   description: string;
@@ -190,7 +192,7 @@ export function UpgradeModal({
             ? initialPlan.product_line ?? 'billing'
             : null;
         const availablePlans = (data.plans || [])
-          .filter((p: SubscriptionPlan) => isPurchasableUpgradePlan(p.id))
+          .filter((p: SubscriptionPlan) => isPurchasableUpgradePlan(p.id) && p.is_public !== false)
           .filter((p: SubscriptionPlan) => {
             if (!productLine) return true;
             const line = p.product_line ?? 'billing';

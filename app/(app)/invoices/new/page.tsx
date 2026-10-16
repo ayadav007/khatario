@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ContinuousBarcodeScanner } from '@/components/ui/ContinuousBarcodeScanner';
 import { Search, Plus, Save, Printer, Eye, X, ChevronDown, Send, CreditCard, ArrowLeft, ScanLine, Bluetooth, Loader2, Bookmark, MessageCircle, Phone } from 'lucide-react';
+import { printInvoiceA4 } from '@/lib/desktop/a4-print';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
@@ -62,6 +63,7 @@ import { registerMobileBackInterceptor } from '@/lib/navigation/mobile-back-regi
 import { POSLayout } from '@/components/pos/POSLayout';
 import { applyPosTenders } from '@/lib/pos-tender';
 import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+import { usePrinterReady } from '@/hooks/usePrinterReady';
 import { useFeatureRegistry } from '@/hooks/useFeatureRegistry';
 import type { ReceiptData } from '@/lib/bluetooth/invoice-to-escpos';
 import { toast as hotToast } from 'react-hot-toast';
@@ -315,6 +317,7 @@ function NewInvoiceContent() {
   const { canQueueOffline, queueSalesFinalize, resetIdempotency } =
     useOfflineSalesFinalize();
   const bt = useBluetoothPrinter();
+  const receiptPrinter = usePrinterReady(bt, 'receipts');
   const { hasFeature } = useFeatureRegistry();
   const canBtPrint = hasFeature('barcode_thermal_printer');
   const posAllowed = usePlanFeature('settings_pos_mode');
@@ -1482,6 +1485,9 @@ function NewInvoiceContent() {
               unit: r.unit || null,
               unitPrice: price,
               amount: line,
+              taxRate: Number(r.taxPercent) || 0,
+              taxableValue: Number(r.taxableValue) || 0,
+              taxAmount: Number(r.taxAmount) || 0,
             };
           }),
         subtotal,
@@ -1523,18 +1529,6 @@ function NewInvoiceContent() {
   // current on-screen order). Used as a fallback or when auto-print is off.
   const handleBluetoothReprint = useCallback(async () => {
     if (!canBtPrint) return;
-    if (!bt.supported) {
-      toastCtx.error(
-        'Bluetooth printing is not supported in this browser. Use Chrome on Android or desktop Chrome/Edge.'
-      );
-      return;
-    }
-    if (bt.savedPrinters.length === 0) {
-      toastCtx.error(
-        'No Bluetooth printer paired. Go to Settings → Print & devices to pair one.'
-      );
-      return;
-    }
     if (rows.filter((r) => r.name).length === 0) {
       toastCtx.error('Add items before printing');
       return;
@@ -1546,8 +1540,10 @@ function NewInvoiceContent() {
           ? `${invoicePrefix}-${invoiceNumber}`
           : invoiceNumber || 'DRAFT';
       const receipt = buildReceiptFromState(identifier);
-      await bt.printReceipt(receipt);
-      toastCtx.success('Sent to Bluetooth printer');
+      const printed = await receiptPrinter.print('Connect a printer to print this bill.', (printer) =>
+        bt.printReceipt(receipt, undefined, printer)
+      );
+      if (printed) toastCtx.success('Sent to Bluetooth printer');
     } catch (err: any) {
       toastCtx.error(err?.message || 'Bluetooth print failed');
     } finally {
@@ -1751,9 +1747,12 @@ function NewInvoiceContent() {
                 );
               }
             } else if (isCapacitorNative()) {
-              toastCtx.warning(
-                'No Bluetooth printer ready. Pair one in Settings → Print & devices, then try again.'
-              );
+              const receipt = buildReceiptFromState(offlineResult.displayInvoiceNumber);
+              await receiptPrinter
+                .print('Connect a printer to print this bill.', (printer) => bt.printReceipt(receipt, undefined, printer))
+                .catch((btErr: unknown) =>
+                  toastCtx.warning((btErr as Error)?.message || 'Bluetooth print failed for offline bill')
+                );
             }
 
             setTimeout(() => {
@@ -1917,16 +1916,19 @@ function NewInvoiceContent() {
             }
           }
         } else if (isCapacitorNative()) {
-          toastCtx.warning(
-            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
-          );
+          const identifier = data.invoice.invoice_number || invoiceNumber || 'INVOICE';
+          const receipt = buildReceiptFromState(identifier);
+          const printed = await receiptPrinter
+            .print('Connect a printer to print this bill.', (printer) => bt.printReceipt(receipt, undefined, printer))
+            .catch((btErr: unknown) => {
+              toastCtx.error(`Bluetooth print failed: ${(btErr as Error)?.message || 'unknown error'}`);
+              return false;
+            });
+          if (printed) toastCtx.success('Bill sent to Bluetooth printer');
         } else {
           if (user?.id) {
-            console.log('[POS] Opening print dialog...');
-            window.open(
-              `/api/invoices/${invoiceId}/pdf?user_id=${user.id}`,
-              '_blank'
-            );
+            const result = await printInvoiceA4(invoiceId, user.id, business?.id);
+            if (result.mode === 'opened' && result.error) toastCtx.error(`${result.error} Opened the PDF instead.`);
           }
           toastCtx.success('Bill printed successfully');
         }
@@ -1969,14 +1971,18 @@ function NewInvoiceContent() {
           await bt.printReceipt(receipt);
           toastCtx.success('Bill sent to Bluetooth printer');
         } else if (isCapacitorNative()) {
-          toastCtx.warning(
-            'No Bluetooth printer ready. Pair one in Settings → Print & devices, or tap Print to Bluetooth.'
+          const identifier =
+            invoicePrefix && invoiceNumber
+              ? `${invoicePrefix}-${invoiceNumber}`
+              : (invoiceNumber || 'INVOICE');
+          const receipt = buildReceiptFromState(identifier);
+          const printed = await receiptPrinter.print('Connect a printer to print this bill.', (printer) =>
+            bt.printReceipt(receipt, undefined, printer)
           );
+          if (printed) toastCtx.success('Bill sent to Bluetooth printer');
         } else {
-          window.open(
-            `/api/invoices/${savedInvoiceId}/pdf?user_id=${user.id}`,
-            '_blank'
-          );
+          const result = await printInvoiceA4(savedInvoiceId, user.id, business?.id);
+          if (result.mode === 'opened' && result.error) toastCtx.error(`${result.error} Opened the PDF instead.`);
           toastCtx.success('Bill printed');
         }
         // Start new bill after print (POS mode)
@@ -4133,6 +4139,7 @@ function NewInvoiceContent() {
               : undefined,
         }}
       >
+        {receiptPrinter.dialog}
         <div
           key={`${documentType}-${formKey}`}
           className={`max-w-[1600px] mx-auto ${showMobileInvoiceUi ? 'space-y-1.5 -mt-1' : 'space-y-3 md:space-y-4 -mt-2 md:-mt-1'}`}

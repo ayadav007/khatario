@@ -2,6 +2,12 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Bill screen barcode scanning. -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Thermal printers: Classic Bluetooth printers paired in Settings, USB printers on OTG. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
+    <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
     <application
         android:label="${appLabel}"
         android:name="${applicationName}"

@@ -6,6 +6,7 @@ import '../../api.dart';
 import '../../format.dart';
 import '../../session.dart';
 import '../../ui/kit.dart';
+import 'printers_screen.dart';
 import 'settings_kit.dart';
 import 'settings_router.dart';
 
@@ -143,7 +144,11 @@ class _ItemsSettingsScreenState extends State<ItemsSettingsScreen> {
         ]),
         SettingsSection(title: 'Labels & printers', why: 'Barcode labels and receipt printing.', children: [
           NavSetting(label: 'Label templates', value: 'Sizes and fields on barcode labels', onTap: () => openPhoneSetting(context, widget.session, '/settings/label-templates')),
-          NavSetting(label: 'Printers & devices', value: 'Pair a Bluetooth receipt or label printer', onTap: () => openPhoneSetting(context, widget.session, '/settings/bluetooth-printer')),
+          NavSetting(
+            label: 'Printers',
+            value: 'Bluetooth, USB and Wi‑Fi bill and label printers',
+            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PrintersScreen(session: widget.session))),
+          ),
         ]),
       ],
     );

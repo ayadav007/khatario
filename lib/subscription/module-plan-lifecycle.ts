@@ -188,8 +188,9 @@ export async function moveModuleSubscriptionToFree(
   clearSubscriptionCache(businessId);
   clearModuleSubscriptionCache(businessId);
 
-  // Paid HR cancelled → hr_free; if Billing is still on, restore complimentary Lite.
-  if (moduleKey === 'hr') {
+  // Paid HR cancelled → hr_free, then the Billing bundle applies again.
+  // Billing dropped to Free → its bundled HR goes too.
+  if (moduleKey === 'hr' || moduleKey === 'billing') {
     const { ensureComplimentaryHrForBilling } = await import(
       '@/lib/subscription/ensure-complimentary-hr'
     );

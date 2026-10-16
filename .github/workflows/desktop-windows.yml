@@ -1,0 +1,87 @@
+# Build Khatario for Windows (desktop/, Tauri 2) on a clean Windows runner.
+# Manual only: Actions → "Desktop (Windows)" → Run workflow, choose staging or production.
+#
+# Output (workflow artifact "khatario-windows-<target>"):
+#   Khatario_<version>_x64-setup.exe      — installer to hand out / put on the download page
+#   Khatario_<version>_x64-setup.exe.sig  — updater signature
+#   latest.json                           — update feed; serve it at <site>/desktop/updates/latest.json
+#                                           next to the installer so installed apps update themselves
+#
+# Required GitHub repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           — updater private key (contents of the .key file)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — its password
+# The matching public key is in desktop/src-tauri/tauri.conf.json (plugins.updater.pubkey).
+#
+# Code signing of the .exe itself (removes the Windows "unknown publisher" warning) is not set up yet:
+# it needs the certificate you buy (OV/EV).
+
+name: Desktop (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which Khatario site the app opens and updates from
+        type: choice
+        options: [staging, production]
+        default: staging
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop
+    env:
+      SITE: ${{ inputs.target == 'production' && 'https://khatario.com' || 'https://staging.khatario.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ('${{ inputs.target }}' -eq 'production') {
+            cargo tauri build --config src-tauri/tauri.production.conf.json
+          } else {
+            cargo tauri build
+          }
+
+      - name: Update feed (latest.json)
+        run: |
+          $dir = 'src-tauri/target/release/bundle/nsis'
+          $exe = Get-ChildItem "$dir/*-setup.exe" | Select-Object -First 1
+          $sig = Get-Content "$($exe.FullName).sig" -Raw
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $feed = [ordered]@{
+            version   = $version
+            notes     = "Khatario $version"
+            pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $sig.Trim()
+                url       = "$env:SITE/desktop/updates/$($exe.Name)"
+              }
+            }
+          }
+          $feed | ConvertTo-Json -Depth 5 | Set-Content "$dir/latest.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: khatario-windows-${{ inputs.target }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+            desktop/src-tauri/target/release/bundle/nsis/latest.json
+          if-no-files-found: error

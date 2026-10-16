@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
 import { GSTR3BGenerator, GSTR3BFilters } from '@/lib/gst/gstr3b';
+import { fillTable51 } from '@/lib/gst/gstr3b-table51';
 import { assertReportAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getPool } from '@/lib/db';
@@ -98,6 +99,14 @@ export async function GET(request: NextRequest) {
 
     const generator = new GSTR3BGenerator();
     const data = await generator.generate(filters);
+    // 5.1 assumes the return is filed and paid on `filing_date` (default today).
+    const filingDateParam = searchParams.get('filing_date')?.trim().slice(0, 10);
+    await fillTable51(data, {
+      businessId: business_id,
+      branchId: finalBranchId,
+      gstPeriod: `${filters.year}-${String(filters.month).padStart(2, '0')}`,
+      filingDate: filingDateParam && /^\d{4}-\d{2}-\d{2}$/.test(filingDateParam) ? filingDateParam : undefined,
+    });
 
     if (exportFormat === 'json') {
       const registration = await resolveSupplierRegistration(getPool(), business_id, finalBranchId);
@@ -190,11 +199,15 @@ export async function GET(request: NextRequest) {
           },
         },
         intr_ltfee: {
-          intr_det: {
-            iamt: data.interest_late_fee.igst,
-            camt: data.interest_late_fee.cgst,
-            samt: data.interest_late_fee.sgst,
-            csamt: data.interest_late_fee.cess
+          intr_details: {
+            iamt: data.interest?.igst ?? 0,
+            camt: data.interest?.cgst ?? 0,
+            samt: data.interest?.sgst ?? 0,
+            csamt: data.interest?.cess ?? 0
+          },
+          ltfee_details: {
+            camt: data.late_fee?.cgst ?? 0,
+            samt: data.late_fee?.sgst ?? 0
           }
         },
         ledger_basis: data.ledger_basis,

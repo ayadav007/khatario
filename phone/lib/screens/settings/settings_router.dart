@@ -9,6 +9,7 @@ import '../pages/page_catalog.dart';
 import '../pages/record_page.dart';
 import 'map_form_screen.dart';
 import 'plan_billing_screen.dart';
+import 'printers_screen.dart';
 import 'settings_kit.dart';
 
 /// Opens a phone settings screen for a website href. Returns false when this href has no screen.
@@ -278,7 +279,7 @@ Widget? phoneSettingPage(AppSession session, String href) {
         titleOf: (r) => r['action']?.toString() ?? r['entity']?.toString() ?? 'Sync',
         subtitleOf: (r) => r['created_at']?.toString() ?? r['status']?.toString() ?? '',
       ),
-    '/settings/bluetooth-printer' || '/settings/bluetooth-printer/diagnostics' => const _PrinterScreen(),
+    '/settings/bluetooth-printer' || '/settings/bluetooth-printer/diagnostics' => PrintersScreen(session: session),
     '/settings/automation' => const _AutomationScreen(),
     '/items/categories' => _CategoriesScreen(session: session),
     '/settings/label-templates' => _LabelsScreen(session: session),
@@ -414,27 +415,6 @@ class _SmsScreen extends StatelessWidget {
       children: [
         SettingsSection(title: 'Provider', why: 'SMS is sent when a buyer has a phone number and no WhatsApp.', children: [
           SettingRow(label: 'Uses the provider saved for this business', help: 'WhatsApp is used first. SMS is the fallback.'),
-        ]),
-      ],
-    );
-  }
-}
-
-class _PrinterScreen extends StatelessWidget {
-  const _PrinterScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SettingsPage(
-      title: 'Printers',
-      blurb: 'Receipt and label printers on this phone.',
-      icon: LucideIcons.printer,
-      loading: false,
-      children: [
-        SettingsSection(title: 'If a print does nothing', children: [
-          SettingRow(label: 'Turn the printer on and keep it within a metre of the phone.'),
-          SettingRow(label: 'Thermal bills use the 58mm or 80mm template under Invoice templates.'),
-          SettingRow(label: 'Labels use the template under Items & stock, Label templates.'),
         ]),
       ],
     );

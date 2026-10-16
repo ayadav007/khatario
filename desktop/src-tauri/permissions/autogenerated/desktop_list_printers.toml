@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-list-printers"
+description = "Enables the desktop_list_printers command without any pre-configured scope."
+commands.allow = ["desktop_list_printers"]
+
+[[permission]]
+identifier = "deny-desktop-list-printers"
+description = "Denies the desktop_list_printers command without any pre-configured scope."
+commands.deny = ["desktop_list_printers"]

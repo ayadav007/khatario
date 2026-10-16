@@ -177,7 +177,7 @@ export function buildGstr1Snapshot(
         cess: tz.cess,
       },
       cdn: {
-        count: bundle.cdn.length,
+        count: new Set(bundle.cdn.map((n) => n.document_id)).size,
         taxable_value: tc.taxable_value,
         igst: tc.igst,
         cgst: tc.cgst,
