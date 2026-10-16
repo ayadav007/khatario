@@ -56,93 +56,86 @@ export async function POST(
     
     await client.query('BEGIN');
 
-    // Fetch invoice with items
+    // The invoice belongs to the supplier's business, not the caller's: load it by id and
+    // decide access from the hub relationship below.
     const invoiceRes = await client.query(`
       SELECT 
         i.*,
-        c.id as customer_id,
-        c.name as customer_name,
         b.id as supplier_business_id,
         b.name as supplier_business_name,
         b.state as supplier_state,
         b.state_code as supplier_state_code,
         b.gstin as supplier_gstin
       FROM invoices i
-      LEFT JOIN customers c ON c.id = i.customer_id AND c.deleted_at IS NULL
       LEFT JOIN businesses b ON i.business_id = b.id
-      WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL
-    `, [invoiceId, business_id]);
+      WHERE i.id = $1
+        AND i.deleted_at IS NULL
+        AND COALESCE(i.status, '') NOT IN ('draft', 'cancelled')
+        AND COALESCE(i.document_type, '') <> 'proforma_invoice'
+    `, [invoiceId]);
 
-    if (invoiceRes.rows.length === 0) {
+    if (invoiceRes.rows.length === 0 || invoiceRes.rows[0].business_id === business_id) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
     const invoice = invoiceRes.rows[0];
-    
-    // Verify access: Multiple ways to allow conversion:
-    // 1. Invoice is linked to a request where current business is the requester
-    // 2. Invoice is from a supplier (business) that we have a supplier relationship with
-    // 3. Customer in the invoice belongs to current business (legacy check)
-    
-    const requestRes = await client.query(`
-      SELECT requester_business_id, responder_business_id 
-      FROM quantity_requests 
-      WHERE invoice_id = $1 
+
+    // The caller must have an approved link to the issuing business...
+    const supplierRes = await client.query(`
+      SELECT id FROM suppliers
+      WHERE business_id = $1
+        AND linked_business_id = $2
+        AND approval_status = 'approved'
+        AND deleted_at IS NULL
       LIMIT 1
+    `, [business_id, invoice.business_id]);
+    const supplierId: string | null = supplierRes.rows[0]?.id ?? null;
+
+    // ...and the invoice must be addressed to the caller: either it fulfils one of the caller's
+    // quantity requests, or its recipient GSTIN is one of the caller's registrations.
+    const requestRes = await client.query(`
+      SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
+             qr.responder_item_id, i.business_id AS item_business_id
+      FROM quantity_requests qr
+      JOIN items i ON i.id = qr.item_id
+      WHERE qr.invoice_id = $1
     `, [invoiceId]);
-    
-    let hasAccess = false;
-    let accessReason = '';
-    
-    if (requestRes.rows.length > 0) {
-      // Invoice is linked to a request - verify current business is the requester
-      hasAccess = requestRes.rows[0].requester_business_id === business_id;
-      if (hasAccess) {
-        accessReason = 'linked to request';
-      }
-    }
-    
-    // If not linked to request, check if we have a supplier relationship with the invoice's business
-    if (!hasAccess && invoice.supplier_business_id) {
-      const supplierCheckRes = await client.query(`
-        SELECT s.id, s.linked_business_id, s.name
-        FROM suppliers s
-        WHERE s.business_id = $1 
-        AND s.linked_business_id = $2
+    const { partiesFromItemOwner } = await import('@/lib/quantity-request-parties');
+    const linkedRequests = requestRes.rows.filter((r: any) => {
+      const parties = partiesFromItemOwner(
+        r.requester_business_id, r.responder_business_id, r.item_business_id, r.item_id
+      );
+      return parties?.buyerBusinessId === business_id && parties.vendorBusinessId === invoice.business_id;
+    });
+
+    let addressedToCaller = linkedRequests.length > 0;
+    let accessReason = addressedToCaller ? 'linked to request' : '';
+    const recipientGstin = String(invoice.customer_gstin || '').trim().toUpperCase();
+    if (!addressedToCaller && recipientGstin) {
+      const gstinRes = await client.query(`
+        SELECT 1 FROM businesses WHERE id = $1 AND UPPER(TRIM(gstin)) = $2
+        UNION ALL
+        SELECT 1 FROM branches WHERE business_id = $1 AND UPPER(TRIM(gstin)) = $2
         LIMIT 1
-      `, [business_id, invoice.supplier_business_id]);
-      
-      if (supplierCheckRes.rows.length > 0) {
-        // We have a supplier relationship with the invoice's business
-        hasAccess = true;
-        accessReason = 'supplier relationship';
-      }
+      `, [business_id, recipientGstin]);
+      addressedToCaller = gstinRes.rows.length > 0;
+      if (addressedToCaller) accessReason = 'recipient GSTIN';
     }
-    
-    // Fallback: Check if customer belongs to current business (legacy)
-    if (!hasAccess && invoice.customer_id) {
-      const customerRes = await client.query(`
-        SELECT business_id FROM customers WHERE id = $1 AND deleted_at IS NULL
-      `, [invoice.customer_id]);
-      hasAccess = customerRes.rows.length > 0 && customerRes.rows[0].business_id === business_id;
-      if (hasAccess) {
-        accessReason = 'customer belongs to business';
-      }
-    }
-    
-    if (!hasAccess) {
+
+    if (!supplierId || !addressedToCaller) {
       await client.query('ROLLBACK');
       console.error('[Convert Invoice] Access denied:', {
         invoiceId,
         business_id,
-        invoice_business_id: invoice.supplier_business_id,
-        hasRequestLink: requestRes.rows.length > 0,
-        requestRequester: requestRes.rows[0]?.requester_business_id,
-        customer_id: invoice.customer_id
+        invoice_business_id: invoice.business_id,
+        hasApprovedLink: !!supplierId,
+        linkedRequests: linkedRequests.length,
       });
       return NextResponse.json({ 
-        error: 'You can only convert invoices that are linked to your requests or from your suppliers' 
+        error: supplierId
+          ? 'This invoice is not addressed to your business'
+          : 'The issuing business is not an approved linked supplier of yours',
       }, { status: 403 });
     }
     
@@ -205,13 +198,17 @@ export async function POST(
       }
     }
 
-    // Check if already converted
+    // Check if already converted (a cancelled purchase frees the invoice again)
     const existingPurchaseRes = await client.query(`
       SELECT id FROM purchases 
       WHERE business_id = $1 
-      AND bill_number = $2
+        AND status <> 'cancelled'
+        AND (
+          source_invoice_id = $2
+          OR (supplier_id = $3 AND bill_number = $4)
+        )
       LIMIT 1
-    `, [business_id, invoice.invoice_number]);
+    `, [business_id, invoiceId, supplierId, invoice.invoice_number]);
     
     if (existingPurchaseRes.rows.length > 0) {
       await client.query('ROLLBACK');
@@ -234,9 +231,11 @@ export async function POST(
 
     // Fetch invoice items
     const itemsRes = await client.query(`
-      SELECT * FROM invoice_items
-      WHERE invoice_id = $1
-      ORDER BY sort_order ASC
+      SELECT ii.*, COALESCE(vi.item_type, 'goods') AS vendor_item_type
+      FROM invoice_items ii
+      LEFT JOIN items vi ON vi.id = ii.item_id
+      WHERE ii.invoice_id = $1
+      ORDER BY ii.sort_order ASC
     `, [invoiceId]);
 
     const invoiceItems = itemsRes.rows;
@@ -244,6 +243,69 @@ export async function POST(
     if (invoiceItems.length === 0) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Invoice has no items' }, { status: 400 });
+    }
+
+    // Resolve each supplier line to the caller's own item. Sources, in order: the caller's
+    // explicit choice (body.item_map: invoice_item_id -> own item id), the item mapping saved
+    // on a linked quantity request, then an exact name match. Goods lines that stay unmatched
+    // stop the conversion so stock is never silently skipped.
+    const explicitMap: Record<string, string> =
+      body.item_map && typeof body.item_map === 'object' ? body.item_map : {};
+    const requestMap = new Map<string, string>();
+    for (const r of linkedRequests) {
+      if (r.responder_item_id) requestMap.set(String(r.responder_item_id), String(r.item_id));
+    }
+    const ownItems = new Map<string, { id: string; unit: string | null }>();
+    const ownItemIds = Array.from(new Set([...Object.values(explicitMap), ...requestMap.values()].map(String)));
+    if (ownItemIds.length > 0) {
+      const ownRes = await client.query(
+        `SELECT id, unit FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+        [business_id, ownItemIds]
+      );
+      for (const row of ownRes.rows) ownItems.set(String(row.id), { id: String(row.id), unit: row.unit });
+    }
+    const resolvedLines: Array<{ itemId: string | null; unit: string | null }> = [];
+    const unmatched: Array<{ invoice_item_id: string; item_name: string }> = [];
+    for (const line of invoiceItems) {
+      let match: { id: string; unit: string | null } | null = null;
+      const explicit = explicitMap[String(line.id)];
+      if (explicit) {
+        match = ownItems.get(String(explicit)) ?? null;
+        if (!match) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: `Item chosen for "${line.item_name}" was not found in your items`, code: 'ITEM_MAP_INVALID' },
+            { status: 400 }
+          );
+        }
+      }
+      if (!match && line.item_id && requestMap.has(String(line.item_id))) {
+        match = ownItems.get(requestMap.get(String(line.item_id))!) ?? null;
+      }
+      if (!match && line.item_name) {
+        const byName = await client.query(
+          `SELECT id, unit FROM items
+            WHERE business_id = $1 AND deleted_at IS NULL AND LOWER(TRIM(name)) = LOWER(TRIM($2))
+            LIMIT 1`,
+          [business_id, line.item_name]
+        );
+        if (byName.rows[0]) match = { id: String(byName.rows[0].id), unit: byName.rows[0].unit };
+      }
+      if (!match && line.vendor_item_type !== 'service') {
+        unmatched.push({ invoice_item_id: String(line.id), item_name: line.item_name });
+      }
+      resolvedLines.push({ itemId: match?.id ?? null, unit: match?.unit ?? null });
+    }
+    if (unmatched.length > 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        {
+          error: `Match these supplier items to your own items first: ${unmatched.map((u) => u.item_name).join(', ')}`,
+          code: 'ITEMS_UNMATCHED',
+          unmatched,
+        },
+        { status: 422 }
+      );
     }
 
     // Tax split is copied from the supplier's invoice; POS is the one it declared, else the
@@ -257,44 +319,6 @@ export async function POST(
       sellerReg.stateCode ||
       invoice.supplier_state_code ||
       '';
-
-    // Find or create supplier
-    let supplierId: string | null = null;
-    if (invoice.supplier_business_id) {
-      // Try to find existing supplier by linked_business_id
-      const supplierRes = await client.query(`
-        SELECT id FROM suppliers 
-        WHERE business_id = $1 
-        AND linked_business_id = $2
-        LIMIT 1
-      `, [business_id, invoice.supplier_business_id]);
-      
-      if (supplierRes.rows.length > 0) {
-        supplierId = supplierRes.rows[0].id;
-      } else {
-        // Create supplier from business details
-        const newSupplierRes = await client.query(`
-          INSERT INTO suppliers (
-            business_id, name, phone, email, address, city, state, pincode, gstin,
-            linked_business_id, approval_status
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'approved')
-          RETURNING id
-        `, [
-          business_id,
-          invoice.supplier_business_name || 'Supplier',
-          null, // Phone not available from business
-          null, // Email not available from business
-          null, // Address not available from business
-          null, // City not available from business
-          sellerReg.stateName || invoice.supplier_state || null,
-          null, // Pincode not available from business
-          invoice.supplier_gstin || null,
-          invoice.supplier_business_id
-        ]);
-        supplierId = newSupplierRes.rows[0].id;
-      }
-    }
 
     // Create purchase
     // The seller's receipts are not the buyer's payments: the bill starts unpaid and payments
@@ -312,9 +336,10 @@ export async function POST(
         status, subtotal, tax_total,
         grand_total, place_of_supply_state_code, supplier_gstin,
         cgst_total, sgst_total, igst_total, document_type,
-        itc_eligible, notes, paid_amount, balance_amount, payment_status, cess_total
+        itc_eligible, notes, paid_amount, balance_amount, payment_status, cess_total,
+        source_invoice_id, source_business_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING *
     `, [
       business_id,
@@ -338,6 +363,8 @@ export async function POST(
       balanceAmount,
       paymentStatus,
       cessTotal,
+      invoiceId,
+      invoice.business_id,
     ]);
 
     const purchase = purchaseRes.rows[0];
@@ -346,26 +373,8 @@ export async function POST(
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
       
-      // CRITICAL: Find the matching item in the customer's business inventory
-      // The item_id from the invoice belongs to the supplier's business,
-      // we need to find the matching item in the customer's business
-      let customerItemId: string | null = null;
-      
-      if (item.item_name) {
-        const itemSearchRes = await client.query(`
-          SELECT id FROM items 
-          WHERE business_id = $1 
-          AND LOWER(TRIM(name)) = LOWER(TRIM($2))
-          LIMIT 1
-        `, [business_id, item.item_name]);
-        
-        if (itemSearchRes.rows.length > 0) {
-          customerItemId = itemSearchRes.rows[0].id;
-          console.log(`[Convert Invoice] Found matching item in customer inventory: ${item.item_name} -> ${customerItemId}`);
-        } else {
-          console.warn(`[Convert Invoice] No matching item found in customer inventory for: ${item.item_name}`);
-        }
-      }
+      // The supplier's item_id belongs to their business; use the caller's matched item.
+      const customerItemId = resolvedLines[i].itemId;
       
       const locationIdForPurchase = warehouseModeEnabled ? defaultWarehouseId : null;
 
@@ -382,7 +391,7 @@ export async function POST(
         item.item_name,
         item.hsn_sac || null,
         item.quantity,
-        'PCS',
+        resolvedLines[i].unit || item.unit || 'PCS',
         item.unit_price,
         item.discount_percent || 0,
         item.discount_amount || 0,
@@ -579,13 +588,12 @@ export async function POST(
     }
 
     // Link purchase to quantity request if invoice was linked to a request
-    // (requestRes was already fetched above for access verification)
-    if (requestRes.rows.length > 0) {
+    if (linkedRequests.length > 0) {
       await client.query(`
         UPDATE quantity_requests
         SET purchase_id = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE invoice_id = $2
-      `, [purchase.id, invoiceId]);
+        WHERE id = ANY($2::uuid[])
+      `, [purchase.id, linkedRequests.map((r: any) => r.id)]);
     }
 
     await client.query('COMMIT');

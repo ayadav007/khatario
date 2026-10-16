@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       }
       const supplierOk = await client.query(
         `SELECT id FROM suppliers
-         WHERE id = $1 AND business_id = $2 AND linked_business_id = $3 AND deleted_at IS NULL`,
+         WHERE id = $1 AND business_id = $2 AND linked_business_id = $3 AND approval_status = 'approved' AND deleted_at IS NULL`,
         [supplier_id, parties.buyerBusinessId, parties.vendorBusinessId]
       );
       if (supplierOk.rows.length === 0) {

@@ -237,9 +237,13 @@ export async function POST(request: NextRequest) {
     const finalState = gstinCheck.state;
     const finalStateCode = gstinCheck.state_code || (finalState ? getStateCode(finalState) : null);
 
-    // Auto-approve when linked to business (remove approval requirement)
-    const approvalStatus = linked_business_id ? 'approved' : 'none';
-    const approvedAt = linked_business_id ? new Date() : null;
+    // A link to another business stays pending until that business approves it
+    // (POST /api/suppliers/[id]/approve); every hub gate requires approval_status = 'approved'.
+    if (linked_business_id && String(linked_business_id) === String(business_id)) {
+      return NextResponse.json({ error: 'A business cannot be its own supplier' }, { status: 400 });
+    }
+    const approvalStatus = linked_business_id ? 'pending' : 'none';
+    const approvedAt = null;
 
     // Validate: allow_low_stock_access can only be true if linked to business
     const finalAllowLowStockAccess = linked_business_id ? (allow_low_stock_access === true) : false;
@@ -323,24 +327,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If linking to a business account, send informational notification
+    // If linking to a business account, ask that business to approve the link
     if (linked_business_id) {
       const requesterBusiness = await db.queryOne(
         `SELECT name FROM businesses WHERE id = $1`,
         [business_id]
       );
-
-      const notificationType = finalAllowLowStockAccess 
-        ? 'supplier_access_granted' 
-        : 'supplier_approved';
-      
-      const notificationTitle = finalAllowLowStockAccess
-        ? '✓ Low Stock Access Granted'
-        : '🤝 Supplier Relationship Established';
-      
-      const notificationMessage = finalAllowLowStockAccess
-        ? `${requesterBusiness?.name || 'A business'} has granted you access to view their low stock alerts. You can now monitor their inventory levels.`
-        : `${requesterBusiness?.name || 'A business'} has added you as their supplier. Relationship established successfully.`;
 
       await db.query(`
         INSERT INTO notifications (
@@ -350,9 +342,9 @@ export async function POST(request: NextRequest) {
         VALUES ($1, $2, $3, $4, $5, $6, $7)
       `, [
         linked_business_id,
-        notificationType,
-        notificationTitle,
-        notificationMessage,
+        'supplier_request',
+        'New supplier request',
+        `${requesterBusiness?.name || 'A business'} wants to add you as their supplier. Approve or decline it from Supplier requests.`,
         'supplier',
         supplier.id,
         new Date()

@@ -280,16 +280,6 @@ export default function SupplierDashboardPage() {
   title="Supplier Dashboard"
   subtitle="Monitor your customers' inventory and track low stock alerts"
 
-  actions={
-    <>
-<Button
-            variant="secondary"
-            onClick={() => router.push('/suppliers/dashboard/thresholds')}
-          >
-            Manage Thresholds
-          </Button>
-    </>
-  }
 />
 
         {/* Stats Cards */}
@@ -501,12 +491,6 @@ export default function SupplierDashboardPage() {
 
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card padding="md" className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/suppliers/dashboard/thresholds')}>
-            <h3 className="font-semibold text-gray-900 mb-2">Manage Thresholds</h3>
-            <p className="text-sm text-gray-600 mb-2">Set and update low stock thresholds for your customers</p>
-            <p className="text-xs text-primary-600 font-medium">Manage Thresholds →</p>
-          </Card>
-
           <Card padding="md" className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/suppliers/dashboard/analytics')}>
             <h3 className="font-semibold text-gray-900 mb-2">Area performance</h3>
             <p className="text-sm text-gray-600 mb-2">See which areas are buying and selling, on a map and in a pivot</p>

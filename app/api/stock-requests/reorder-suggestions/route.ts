@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
        AND s.business_id = i.business_id
        AND s.deleted_at IS NULL
        AND s.linked_business_id IS NOT NULL
+       AND s.approval_status = 'approved'
       WHERE i.business_id = $1
         AND i.deleted_at IS NULL
         AND i.is_active = true

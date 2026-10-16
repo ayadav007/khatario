@@ -131,8 +131,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const itemOwner = await db.queryOne<{ business_id: string }>(
-        `SELECT business_id FROM items WHERE id = $1 AND deleted_at IS NULL`,
+      const itemOwner = await db.queryOne<{ business_id: string; name: string }>(
+        `SELECT business_id, name FROM items WHERE id = $1 AND deleted_at IS NULL`,
         [item_id]
       );
       if (!itemOwner) {
@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
           [
             responder_business_id,
             'New Quantity Request',
-            `${requesterName} requested quantity for item ${item_id}.`,
+            `${requesterName} requested ${qtyNum} of ${itemOwner.name}.`,
             row.id,
             new Date(),
           ]

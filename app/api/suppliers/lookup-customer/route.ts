@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       JOIN businesses b ON s.business_id = b.id
       WHERE s.linked_business_id = $1
       AND s.deleted_at IS NULL
-      AND s.allow_low_stock_access = true
+      AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
       AND b.name = $2
       LIMIT 1
     `, [supplierBusinessId, customerName]);

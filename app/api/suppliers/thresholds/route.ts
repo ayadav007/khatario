@@ -78,86 +78,15 @@ export async function POST(request: NextRequest) {
   const auth = requireAuthenticatedTenant(request);
   if (auth instanceof NextResponse) return auth;
 
-  try {
-    const body = await request.json();
-    const {
-      supplier_business_id,
-      customer_business_id,
-      item_id,
-      low_stock_threshold
-    } = body;
-
-    if (!supplier_business_id || !customer_business_id || !item_id || low_stock_threshold === undefined) {
-      return NextResponse.json(
-        { error: 'supplier_business_id, customer_business_id, item_id, and low_stock_threshold are required' },
-        { status: 400 }
-      );
-    }
-
-    if (String(supplier_business_id) !== auth.businessId) {
-      return NextResponse.json(
-        { error: 'You can only set thresholds for your own business', code: 'TENANT_MISMATCH' },
-        { status: 403 }
-      );
-    }
-
-    // CRITICAL: Enforce subscription feature access (supplier must have supplier_management)
-    try {
-      await assertFeatureAccess(supplier_business_id, 'supplier_management');
-    } catch (error) {
-      if (error instanceof FeatureAccessDeniedError) {
-        return error.toNextResponse();
-      }
-      throw error;
-    }
-
-    // Check if threshold already exists
-    const existing = await queryOne(
-      `SELECT id FROM supplier_item_thresholds
-      WHERE supplier_business_id = $1 AND customer_business_id = $2 AND item_id = $3`,
-      [supplier_business_id, customer_business_id, item_id]
-    );
-
-    if (existing) {
-      // Update existing threshold
-      const threshold = await queryOne(
-        `UPDATE supplier_item_thresholds
-        SET low_stock_threshold = $1, updated_at = $2
-        WHERE id = $3
-        RETURNING *`,
-        [low_stock_threshold, new Date(), existing.id]
-      );
-
-      return NextResponse.json({
-        success: true,
-        threshold,
-        message: 'Threshold updated successfully'
-      });
-    }
-
-    // Create new threshold
-    const threshold = await queryOne(
-      `INSERT INTO supplier_item_thresholds (
-        supplier_business_id, customer_business_id, item_id, low_stock_threshold
-      )
-      VALUES ($1, $2, $3, $4)
-      RETURNING *`,
-      [supplier_business_id, customer_business_id, item_id, low_stock_threshold]
-    );
-
-    return NextResponse.json({
-      success: true,
-      threshold,
-      message: 'Threshold created successfully'
-    }, { status: 201 });
-
-  } catch (error: any) {
-    console.error('Error creating threshold:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to create threshold' },
-      { status: 500 }
-    );
-  }
+  // Retired: reorder levels now come from the customer's own items (min_stock) and alerts go
+  // to the item's default supplier. See lib/low-stock-checker.ts.
+  return NextResponse.json(
+    {
+      error: "Supplier-set thresholds are retired. Alerts now follow each customer's own reorder levels.",
+      code: 'THRESHOLDS_RETIRED',
+    },
+    { status: 410 }
+  );
 }
 
 /**

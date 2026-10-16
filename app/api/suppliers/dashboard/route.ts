@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       SELECT COUNT(*) as count
       FROM suppliers s
       WHERE s.linked_business_id = $1
-      AND s.allow_low_stock_access = true
+      AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
     `, [supplierBusinessId]);
 
     if (parseInt(hasAccess?.count || '0') === 0) {
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
         AND s.linked_business_id = $1
       WHERE a.supplier_business_id = $1
       AND a.alert_status = 'active'
-      AND s.allow_low_stock_access = true
+      AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
       AND (
         -- Item has this supplier as default supplier
         -- Check if the item's default_supplier_id matches a supplier record where linked_business_id = supplierBusinessId
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       JOIN businesses cb ON i.business_id = cb.id
       JOIN suppliers s ON s.business_id = cb.id
         AND s.linked_business_id = $1
-        AND s.allow_low_stock_access = true
+        AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
       WHERE i.current_stock <= COALESCE(i.min_stock, 0)
         AND i.min_stock > 0
         AND i.is_active = true
@@ -188,13 +188,19 @@ export async function GET(request: NextRequest) {
       SELECT COUNT(DISTINCT s.business_id) as count
       FROM suppliers s
       WHERE s.linked_business_id = $1
-      AND s.allow_low_stock_access = true
+      AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
     `, [supplierBusinessId]);
 
+    // Monitored items: customer items that name this business as default supplier and share stock
     const totalThresholds = await queryOne(`
       SELECT COUNT(*) as count
-      FROM supplier_item_thresholds
-      WHERE supplier_business_id = $1
+      FROM items i
+      JOIN suppliers s ON s.id = i.default_supplier_id AND s.business_id = i.business_id
+      WHERE s.linked_business_id = $1
+        AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
+        AND s.deleted_at IS NULL
+        AND i.deleted_at IS NULL
+        AND COALESCE(i.min_stock, 0) > 0
     `, [supplierBusinessId]);
 
     const pendingRequests = await queryOne(`
@@ -264,7 +270,7 @@ export async function GET(request: NextRequest) {
             FROM suppliers s
             JOIN businesses b ON s.business_id = b.id
             WHERE s.linked_business_id = $1
-            AND s.allow_low_stock_access = true
+            AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
             AND b.name = ANY($2::text[])
           `, [supplierBusinessId, Array.from(missingBusinessIds)]);
           

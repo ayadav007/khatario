@@ -318,8 +318,8 @@ export default function NewSupplierPage() {
         router.push('/suppliers');
         return;
       }
-      if (linkedBusiness && formData.allow_low_stock_access) {
-        toast.success('Supplier created successfully! Access to low stock alerts has been granted.');
+      if (linkedBusiness) {
+        toast.success(`Supplier created. ${linkedBusiness.name} must approve the link before it becomes active.`);
       } else {
         toast.success('Supplier created successfully!');
       }
@@ -561,7 +561,7 @@ export default function NewSupplierPage() {
                     <p className="font-medium text-primary-900">Linked to Business Account</p>
                     <p className="text-sm text-primary-700 mt-1">{linkedBusiness.name}</p>
                     <p className="text-xs text-primary-600 mt-2">
-                        Relationship established immediately.
+                        The link becomes active once {linkedBusiness.name} approves it.
                     </p>
                   </div>
                 </div>

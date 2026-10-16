@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
         SELECT DISTINCT s.business_id AS customer_id
         FROM suppliers s
         WHERE s.linked_business_id = $1
-          AND s.allow_low_stock_access = true
+          AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
           AND s.deleted_at IS NULL
       ),
       sell_in AS (
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
         SELECT DISTINCT s.business_id AS customer_id
         FROM suppliers s
         WHERE s.linked_business_id = $1
-          AND s.allow_low_stock_access = true
+          AND s.allow_low_stock_access = true AND s.approval_status = 'approved'
           AND s.deleted_at IS NULL
       ),
       supplied_items AS (

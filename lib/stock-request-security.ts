@@ -53,6 +53,7 @@ export async function assertLinkedSupplier(
     SELECT id FROM suppliers
     WHERE business_id = $1
       AND linked_business_id = $2
+      AND approval_status = 'approved'
       AND deleted_at IS NULL
     LIMIT 1
     `,
@@ -77,6 +78,7 @@ export async function assertVendorLowStockAccess(
     WHERE business_id = $1
       AND linked_business_id = $2
       AND allow_low_stock_access = true
+      AND approval_status = 'approved'
       AND deleted_at IS NULL
     LIMIT 1
     `,
