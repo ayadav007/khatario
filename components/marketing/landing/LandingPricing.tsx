@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Check, Minus, Plus } from 'lucide-react';
+import { Check, Minus, Plus, UserCheck } from 'lucide-react';
 import { clsx } from 'clsx';
 import { LANDING_INTRO_SUBTEXT, LANDING_PAGE_GUTTER, LANDING_SECTION_INTRO } from '@/lib/marketing-layout';
 import { FALLBACK_PRICING_CATALOG } from '@/lib/landing-pricing-fallback';
@@ -15,6 +15,7 @@ import { LandingSegmented, useAnimatedNumber } from '@/components/marketing/land
 import { withDefaults } from '@/lib/marketing-builder/merge';
 import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-catalog';
 import {
+  bundledHrNote,
   comparisonRows,
   cycleOptions,
   planCardFeatures,
@@ -86,6 +87,7 @@ function PlanCard({
   const plan = plans[index];
   const { previous, features } = planCardFeatures(catalog, plans, index);
   const limits = planCardLimits(catalog, plan, previous);
+  const hrNote = productLine === 'billing' ? bundledHrNote(catalog) : null;
   const { perMonth, billed } = priceForCycle(plan, cycle);
   const featured = !!plan.badge;
   const top = features.slice(0, CARD_FEATURE_COUNT);
@@ -148,6 +150,12 @@ function PlanCard({
             </span>
           ))}
         </div>
+      )}
+      {hrNote && (
+        <p className="flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-600">
+          <UserCheck className="h-4 w-4 shrink-0" aria-hidden />
+          {hrNote}
+        </p>
       )}
       {top.length > 0 && (
         <div className="border-t border-slate-100 pt-5">

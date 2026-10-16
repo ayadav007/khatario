@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authenticateStaffRequest, StaffAuthError, type StaffDevice } from '@/lib/hr/staff-app/device-auth';
 
-export const STAFF_ATTENDANCE_FEATURE = 'hr_attendance';
+/** Plan switch for the Khatario Staff app (HR Starter and up). Manual attendance alone is `hr_attendance`. */
+export const STAFF_ATTENDANCE_FEATURE = 'hr_staff_app';
 
 export function staffRoute(
   label: string,

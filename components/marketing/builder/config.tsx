@@ -813,7 +813,7 @@ export const marketingConfig: Config = {
       fields: {
         kicker: text('Small heading'),
         heading: text('Heading'),
-        subtext: area('Sub-heading (the free HR Lite staff count is added from the plans)'),
+        subtext: area('Sub-heading (which plan includes the Staff app is added from the plans)'),
         points: list('Points', { title: text('Bold start'), text: area('Rest of the line') }, (p) => String(p.title ?? ''), { title: 'Point.', text: '' }, 5),
       },
       defaultProps: LANDING_STAFF_APP_DEFAULTS,

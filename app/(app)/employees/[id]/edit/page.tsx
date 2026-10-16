@@ -19,7 +19,7 @@ import { Toast, ToastType } from '@/components/ui/Toast';
 import { ReportingManagerSelect } from '@/components/hr/ReportingManagerSelect';
 import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
-import { useFullHr } from '@/hooks/useFullHr';
+import { useHrPlan } from '@/hooks/useFullHr';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 
 function dateInputValue(value: unknown): string {
@@ -32,7 +32,8 @@ export default function EditEmployeePage() {
   const params = useParams();
   const router = useRouter();
   const { business, user } = useAuth();
-  const fullHr = useFullHr();
+  const hrPlan = useHrPlan();
+  const fullHr = hrPlan.payrollSetup;
   const employeeId = params.id as string;
 
   const { status: authStatus, reason } = useAuthorizationGuard({
@@ -215,9 +216,9 @@ export default function EditEmployeePage() {
         weekly_off_override: formData.useWeeklyOffOverride
           ? { fixed_days: formData.weekly_off_fixed_days, nth_rules: [] }
           : null,
-        default_shift_id: fullHr ? formData.default_shift_id || null : null,
+        default_shift_id: hrPlan.shifts ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: fullHr ? formData.reporting_manager_id || null : null,
+        reporting_manager_id: hrPlan.leaves ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
         access_type: formData.role_id ? 'full' : 'attendance_only',
         role_id: formData.role_id || null,
@@ -383,7 +384,7 @@ export default function EditEmployeePage() {
                   value={formData.department}
                   onChange={(v) => setFormData({ ...formData, department: v })}
                 />
-                {fullHr ? (
+                {hrPlan.shifts ? (
                   <EmployeeShiftSelect
                     businessId={business?.id}
                     value={formData.default_shift_id}
@@ -406,7 +407,7 @@ export default function EditEmployeePage() {
                     ))}
                   </select>
                   <p className="mt-1 text-xs text-text-muted">
-                    {fullHr
+                    {hrPlan.shifts
                       ? 'Branch determines which holiday list applies to this employee.'
                       : 'Optional — used if you have more than one location.'}
                   </p>
@@ -464,7 +465,7 @@ export default function EditEmployeePage() {
                   value={formData.joining_date}
                   onChange={handleChange}
                 />
-                {fullHr && business?.id && user?.id ? (
+                {hrPlan.leaves && business?.id && user?.id ? (
                   <ReportingManagerSelect
                     businessId={business.id}
                     userId={user.id}

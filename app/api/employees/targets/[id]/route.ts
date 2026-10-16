@@ -5,6 +5,7 @@ import { EmployeeTarget } from '@/types/database';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 
 /**
  * DELETE /api/employees/targets/[id]
@@ -20,6 +21,8 @@ export async function DELETE(
     const tenant = requireTenantBusinessId(request, searchParams.get('business_id'));
     if (!tenant.ok) return tenant.response;
     const businessId = tenant.businessId;
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_advanced');
+    if (planDenied) return planDenied;
 
     // Verify target belongs to business
     const existing = await queryOne(

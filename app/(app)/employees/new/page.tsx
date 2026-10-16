@@ -26,14 +26,14 @@ import { HrOrgCatalogField } from '@/components/hr/HrOrgCatalogField';
 import { EmployeeShiftSelect } from '@/components/hr/EmployeeShiftSelect';
 import { EmployeeLoginRoleFields } from '@/components/hr/EmployeeLoginRoleFields';
 import { useCapabilityCheck } from '@/hooks/useCapability';
-import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
+import { hrPlanFlags } from '@/lib/subscription/hr-lite';
 
 export default function NewEmployeePage() {
   const router = useRouter();
   const { business, user } = useAuth();
   const { canAdd, loading: permissionsLoading } = usePermissions();
   const { hasCapability } = useCapabilityCheck();
-  const fullHr = hasFullHrFeatures((key) => hasCapability(key, 'view'));
+  const hrPlan = hrPlanFlags((key) => hasCapability(key, 'view'));
   const [loading, setLoading] = useState(false);
   
   // Check authorization before rendering form
@@ -152,9 +152,9 @@ export default function NewEmployeePage() {
         employee_code: formData.employee_code || null, // Auto-generate if empty
         designation: formData.designation || null,
         department: formData.department || null,
-        default_shift_id: fullHr ? formData.default_shift_id || null : null,
+        default_shift_id: hrPlan.shifts ? formData.default_shift_id || null : null,
         joining_date: formData.joining_date || null,
-        reporting_manager_id: fullHr ? formData.reporting_manager_id || null : null,
+        reporting_manager_id: hrPlan.leaves ? formData.reporting_manager_id || null : null,
         employment_type: formData.employment_type,
         access_type: formData.access_type,
         salary: formData.salary ? Number(formData.salary) : null,
@@ -164,10 +164,10 @@ export default function NewEmployeePage() {
         bank_account_number: formData.bank_account_number || null,
         bank_ifsc: formData.bank_ifsc || null,
         bank_name: formData.bank_name || null,
-        pan_number: fullHr ? formData.pan_number || null : null,
-        aadhaar_number: fullHr ? formData.aadhaar_number || null : null,
+        pan_number: hrPlan.payrollSetup ? formData.pan_number || null : null,
+        aadhaar_number: hrPlan.payrollSetup ? formData.aadhaar_number || null : null,
         created_by_user_id: user?.id,
-        send_portal_invite: fullHr ? sendPortalInvite : false,
+        send_portal_invite: hrPlan.portal ? sendPortalInvite : false,
         portal_invite_via: portalInviteVia,
       };
 
@@ -306,7 +306,7 @@ export default function NewEmployeePage() {
                     onChange={(v) => setFormData({ ...formData, department: v })}
                     placeholder="e.g. Sales"
                   />
-                  {fullHr ? (
+                  {hrPlan.shifts ? (
                     <EmployeeShiftSelect
                       businessId={business?.id}
                       value={formData.default_shift_id}
@@ -328,7 +328,7 @@ export default function NewEmployeePage() {
                       <option value="contract">Contract</option>
                     </select>
                   </div>
-                  {fullHr ? (
+                  {hrPlan.portal ? (
                     <div>
                       <label className="block text-sm font-medium text-text-secondary mb-1">
                         Access Type
@@ -351,7 +351,7 @@ export default function NewEmployeePage() {
                     value={formData.joining_date}
                     onChange={handleChange}
                   />
-                  {fullHr && business?.id && user?.id ? (
+                  {hrPlan.leaves && business?.id && user?.id ? (
                     <ReportingManagerSelect
                       businessId={business.id}
                       userId={user.id}
@@ -445,7 +445,7 @@ export default function NewEmployeePage() {
                 </div>
               </AnnotatedFormSection>
 
-              {fullHr ? (
+              {hrPlan.payrollSetup ? (
                 <AnnotatedFormSection
                   title="Documents"
                   description="Optional identity and tax identifiers."
@@ -471,7 +471,7 @@ export default function NewEmployeePage() {
                 </AnnotatedFormSection>
               ) : null}
 
-              {fullHr && business?.id ? (
+              {hrPlan.portal && business?.id ? (
                 <EmployeePortalInviteCard
                   mode="form"
                   employeeId=""

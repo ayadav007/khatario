@@ -18,7 +18,7 @@ import { ManagerTeamRollCall } from '@/components/hr/ManagerTeamRollCall';
 import { AttendanceLogLine } from '@/components/hr/AttendanceLogLine';
 import { AttendanceHistoryMatrix } from '@/components/hr/AttendanceHistoryMatrix';
 import { StaffPunchReviewQueue } from '@/components/hr/StaffPunchReviewQueue';
-import { useFullHr } from '@/hooks/useFullHr';
+import { useHrPlan } from '@/hooks/useFullHr';
 
 interface AttendanceWithEmployee extends EmployeeAttendance {
   employee_code: string;
@@ -29,7 +29,7 @@ interface AttendanceWithEmployee extends EmployeeAttendance {
 
 export default function AttendanceManagementPage() {
   const { business, user } = useAuth();
-  const fullHr = useFullHr();
+  const hrPlan = useHrPlan();
   
   // Authorization guard: Check if user can read attendance
   // Uses tri-state model: 'loading' | 'allowed' | 'denied'
@@ -244,12 +244,8 @@ export default function AttendanceManagementPage() {
                 <option value="all">All Status</option>
                 <option value="present">Present</option>
                 <option value="absent">Absent</option>
-                {fullHr ? (
-                  <>
-                    <option value="half_day">Half Day</option>
-                    <option value="leave">Leave</option>
-                  </>
-                ) : null}
+                <option value="half_day">Half Day</option>
+                {hrPlan.leaves ? <option value="leave">Leave</option> : null}
               </select>
             </div>
           </div>

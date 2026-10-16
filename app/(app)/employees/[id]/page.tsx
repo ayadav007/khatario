@@ -17,7 +17,7 @@ import { EmployeePortalInviteCard } from '@/components/hr/EmployeePortalInviteCa
 import { EmployeeSalaryStructurePanel } from '@/components/hr/EmployeeSalaryStructurePanel';
 import { StaffAppLinkCard } from '@/components/hr/StaffAppLinkCard';
 import { useCapabilityCheck } from '@/hooks/useCapability';
-import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
+import { hrPlanFlags } from '@/lib/subscription/hr-lite';
 
 interface EmployeeWithUser extends Employee {
   user_name: string;
@@ -35,7 +35,7 @@ export default function EmployeeDetailPage() {
   const router = useRouter();
   const { business, user } = useAuth();
   const { hasCapability } = useCapabilityCheck();
-  const fullHr = hasFullHrFeatures((key) => hasCapability(key, 'view'));
+  const hrPlan = hrPlanFlags((key) => hasCapability(key, 'view'));
   const employeeId = params.id as string;
   
   const [activeTab, setActiveTab] = useState<'overview' | 'salary' | 'documents' | 'face_enrollment'>('overview');
@@ -160,7 +160,7 @@ export default function EmployeeDetailPage() {
                   <Chip className={getStatusColor()}>
                     {employee.is_active && employee.user_is_active ? 'Active' : 'Inactive'}
                   </Chip>
-                  {fullHr ? (
+                  {hrPlan.portal ? (
                   <Chip className={getAccessTypeColor()}>
                     {employee.access_type === 'full' ? 'Full Access' : 'Attendance Only'}
                   </Chip>
@@ -225,7 +225,7 @@ export default function EmployeeDetailPage() {
           </div>
         </Card>
 
-        {fullHr && business?.id ? (
+        {hrPlan.portal && business?.id ? (
           <EmployeePortalInviteCard
             employeeId={employeeId}
             businessId={business.id}
@@ -251,8 +251,7 @@ export default function EmployeeDetailPage() {
             >
               Overview
             </button>
-            {fullHr ? (
-              <>
+            {hrPlan.payrollSetup ? (
             <button
               onClick={() => setActiveTab('salary')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -263,6 +262,8 @@ export default function EmployeeDetailPage() {
             >
               Salary structure
             </button>
+            ) : null}
+            {hrPlan.advanced ? (
             <button
               onClick={() => setActiveTab('documents')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -273,6 +274,8 @@ export default function EmployeeDetailPage() {
             >
               Documents ({documents.length})
             </button>
+            ) : null}
+            {hrPlan.staffApp ? (
             <button
               onClick={() => setActiveTab('face_enrollment')}
               className={`pb-3 px-1 border-b-2 font-medium transition-colors ${
@@ -283,7 +286,6 @@ export default function EmployeeDetailPage() {
             >
               Face Enrollment
             </button>
-              </>
             ) : null}
           </div>
         </div>
@@ -328,7 +330,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
-                {fullHr && employee.reporting_manager_name && (
+                {hrPlan.leaves && employee.reporting_manager_name && (
                   <div className="flex justify-between">
                     <span className="text-text-secondary">Reporting Manager:</span>
                     <span className="font-medium text-text-primary">
@@ -344,7 +346,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   </div>
                 )}
-                {fullHr ? (
+                {hrPlan.payrollSetup ? (
                 <button
                   type="button"
                   onClick={() => setActiveTab('salary')}
@@ -420,7 +422,7 @@ export default function EmployeeDetailPage() {
               </Card>
             )}
 
-            {fullHr ? (
+            {hrPlan.payrollSetup ? (
             <Card>
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-5 h-5 text-primary-600" />
@@ -451,7 +453,7 @@ export default function EmployeeDetailPage() {
           </div>
         )}
 
-        {fullHr && activeTab === 'salary' && business?.id && user?.id && (
+        {hrPlan.payrollSetup && activeTab === 'salary' && business?.id && user?.id && (
           <EmployeeSalaryStructurePanel
             employeeId={employeeId}
             businessId={business.id}
@@ -464,7 +466,7 @@ export default function EmployeeDetailPage() {
           />
         )}
 
-        {fullHr && activeTab === 'documents' && (
+        {hrPlan.advanced && activeTab === 'documents' && (
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-text-primary">Documents</h2>
@@ -510,7 +512,7 @@ export default function EmployeeDetailPage() {
           </Card>
         )}
 
-        {fullHr && activeTab === 'face_enrollment' && (
+        {hrPlan.staffApp && activeTab === 'face_enrollment' && (
           <FaceEnrollmentTab employeeId={employeeId} businessId={business?.id || ''} />
         )}
       </div>

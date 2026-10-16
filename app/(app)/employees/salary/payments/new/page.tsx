@@ -15,7 +15,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import Link from 'next/link';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { useToastContext } from '@/contexts/ToastContext';
-import { useFullHr } from '@/hooks/useFullHr';
+import { useHrPlan } from '@/hooks/useFullHr';
 import {
   type ProRataSalaryResult,
 } from '@/lib/hr/salary-payroll-helpers';
@@ -40,7 +40,8 @@ type RecoveryBreakdownRow = {
 export default function NewSalaryPaymentPage() {
   const router = useRouter();
   const { business, user } = useAuth();
-  const fullHr = useFullHr();
+  const hrPlan = useHrPlan();
+  const fullHr = hrPlan.payrollSetup;
   const toast = useToastContext();
   const [loading, setLoading] = useState(false);
   
@@ -758,7 +759,7 @@ export default function NewSalaryPaymentPage() {
                   onChange={(e) => setFormData({ ...formData, absent_days: e.target.value })}
                   min="0"
                 />
-                {fullHr ? (
+                {hrPlan.leaves ? (
                 <Input
                   label="Leave Days"
                   type="number"

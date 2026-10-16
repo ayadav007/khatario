@@ -11,6 +11,9 @@ import { useInViewOnce } from '@/hooks/useInViewOnce';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import { HR_STAFF_LITE_PLAN_ID } from '@/lib/product-lines';
 import { withDefaults } from '@/lib/marketing-builder/merge';
+import type { PricingCatalog } from '@/lib/subscription/pricing-catalog';
+
+const STAFF_APP_FEATURE = 'hr_staff_app';
 
 export type LandingStaffAppContent = {
   kicker: string;
@@ -102,11 +105,22 @@ function CheckInPhone() {
   );
 }
 
+/** Where the Staff app is sold, from the plan matrix: free with Billing (HR Lite) or from the first HR plan that has it. */
+function staffAppAvailability(catalog: PricingCatalog | null): string | null {
+  if (!catalog) return null;
+  const hrPlans = catalog.plans.filter((p) => p.productLine === 'hr');
+  const lite = hrPlans.find((p) => p.id === HR_STAFF_LITE_PLAN_ID);
+  if (lite?.features.includes(STAFF_APP_FEATURE) && lite.priceMonthly === 0) {
+    return 'Included free with every Billing plan.';
+  }
+  const first = hrPlans.find((p) => p.features.includes(STAFF_APP_FEATURE));
+  return first ? `Included from ${first.name}.` : null;
+}
+
 export function LandingStaffApp(props: Partial<LandingStaffAppContent> = {}) {
   const c = withDefaults(LANDING_STAFF_APP_DEFAULTS, props);
   const { catalog } = useLandingPlans();
-  const lite = catalog?.plans.find((p) => p.id === HR_STAFF_LITE_PLAN_ID);
-  const liteStaff = lite && lite.priceMonthly === 0 ? lite.limits.max_employees : undefined;
+  const availability = staffAppAvailability(catalog);
 
   return (
     <section id="staff-app" className="scroll-mt-24 bg-slate-50 py-20 2xl:py-28">
@@ -117,9 +131,7 @@ export function LandingStaffApp(props: Partial<LandingStaffAppContent> = {}) {
             <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl 2xl:text-5xl">{c.heading}</h2>
             <p className="mt-4 max-w-2xl text-lg leading-relaxed text-slate-600 2xl:text-xl">
               {c.subtext}
-              {liteStaff && liteStaff > 0
-                ? ` Attendance and simple salary for up to ${liteStaff} staff come free with every Billing plan.`
-                : ''}
+              {availability ? ` ${availability}` : ''}
             </p>
           </LandingReveal>
           <ul className="mt-8 space-y-4">

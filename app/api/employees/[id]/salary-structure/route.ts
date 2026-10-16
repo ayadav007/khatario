@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { planFeatureDeniedResponse } from '@/lib/subscription/require-plan-feature';
 import {
   createSalaryStructure,
   getActiveSalaryStructure,
@@ -33,6 +34,10 @@ export async function GET(
     }
 
     await authorize(userId, 'employees', 'read', { businessId, resourceId: params.id });
+
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_payroll_setup');
+
+    if (planDenied) return planDenied;
 
     const asOf = new URL(request.url).searchParams.get('as_of') ?? undefined;
     const active = await getActiveSalaryStructure(params.id, businessId, asOf);
@@ -89,6 +94,10 @@ export async function POST(
     }
 
     await authorize(userId, 'payroll', 'create', { businessId, resourceId: params.id });
+
+    const planDenied = await planFeatureDeniedResponse(businessId, 'hr_payroll_setup');
+
+    if (planDenied) return planDenied;
 
     const body = await request.json();
     const effectiveFrom = String(body?.effective_from ?? '').slice(0, 10);

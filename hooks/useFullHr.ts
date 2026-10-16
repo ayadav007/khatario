@@ -1,10 +1,10 @@
 'use client';
 
 import { useCapabilityCheck } from '@/hooks/useCapability';
-import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
+import { hrPlanFlags, type HrPlanFlags } from '@/lib/subscription/hr-lite';
 
-/** True when leave/portal (Full HR) is on the plan. False for Billing HR Lite. */
-export function useFullHr(): boolean {
+/** Per-area HR plan switches: Staff app, shifts, payroll setup, leave, portal and so on. */
+export function useHrPlan(): HrPlanFlags {
   const { hasCapability } = useCapabilityCheck();
-  return hasFullHrFeatures((key) => hasCapability(key, 'view'));
+  return hrPlanFlags((key) => hasCapability(key, 'view'));
 }

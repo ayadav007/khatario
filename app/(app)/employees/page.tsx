@@ -19,7 +19,7 @@ import { AccessDenied } from '@/components/common/AccessDenied';
 import { DeleteAction } from '@/components/common/DeleteAction';
 import { usePermissions } from '@/hooks/usePermissions';
 import { EmployeePortalResetActions } from '@/components/hr/EmployeePortalResetActions';
-import { useFullHr } from '@/hooks/useFullHr';
+import { useHrPlan } from '@/hooks/useFullHr';
 import { Switch } from '@/components/ui/Switch';
 
 interface EmployeeWithUser extends Employee {
@@ -33,7 +33,7 @@ interface EmployeeWithUser extends Employee {
 
 export default function EmployeesPage() {
   const { business, user } = useAuth();
-  const fullHr = useFullHr();
+  const { portal: fullHr } = useHrPlan();
   const router = useRouter();
   const [employees, setEmployees] = useState<EmployeeWithUser[]>([]);
   const [loading, setLoading] = useState(true);

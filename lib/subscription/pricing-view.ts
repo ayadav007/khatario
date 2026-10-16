@@ -1,5 +1,5 @@
 import type { PricingCatalog, PricingFeature, PricingLimit, PricingPlan } from '@/lib/subscription/pricing-catalog';
-import type { ProductLine } from '@/lib/product-lines';
+import { HR_STAFF_LITE_PLAN_ID, type ProductLine } from '@/lib/product-lines';
 
 /** Pure helpers that turn the pricing catalog into what the landing cards and table show. */
 
@@ -27,8 +27,9 @@ const byRank = (a: { rank: number; label?: string }, b: { rank: number; label?: 
   a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '');
 
 /**
- * Card list for a plan: what it adds over the plan before it in the same product line
- * (or everything, for the first plan), best-ranked first.
+ * Card list for a plan: what it adds over the plan before it in the same product line, best-ranked first.
+ * `previous` is set only when this plan really has every feature of the plan before it; otherwise
+ * (and for the first plan) the card lists everything the plan includes.
  */
 export function planCardFeatures(
   catalog: PricingCatalog,
@@ -36,7 +37,9 @@ export function planCardFeatures(
   index: number,
 ): { previous: PricingPlan | null; features: PricingFeature[] } {
   const plan = plans[index];
-  const previous = index > 0 ? plans[index - 1] : null;
+  const planSet = new Set(plan.features);
+  const before = index > 0 ? plans[index - 1] : null;
+  const previous = before && before.features.every((id) => planSet.has(id)) ? before : null;
   const prevSet = new Set(previous?.features ?? []);
   const featureById = new Map(catalog.features.map((f) => [f.id, f]));
   const features = plan.features
@@ -45,6 +48,20 @@ export function planCardFeatures(
     .filter((f): f is PricingFeature => !!f)
     .sort(byRank);
   return { previous, features };
+}
+
+/**
+ * Line for Billing cards about the free HR plan that comes with every Billing plan
+ * (`hr_staff_lite`, provisioned by ensure-complimentary-hr), e.g. "HR Lite included · up to 30 employees".
+ * Null when that plan is not sold for free.
+ */
+export function bundledHrNote(catalog: PricingCatalog): string | null {
+  const lite = catalog.plans.find((p) => p.id === HR_STAFF_LITE_PLAN_ID);
+  if (!lite || lite.priceMonthly !== 0) return null;
+  const limit = catalog.limits.find((l) => l.key === 'max_employees');
+  const staff = lite.limits.max_employees;
+  if (!limit || staff === undefined || staff === 0) return `${lite.name} included`;
+  return `${lite.name} included · ${staff === -1 ? `unlimited ${limit.many}` : `up to ${limitText(limit, staff)}`}`;
 }
 
 export function limitText(limit: PricingLimit, value: number): string {

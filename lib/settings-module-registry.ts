@@ -5,7 +5,6 @@
  */
 
 import type { PlatformModule } from '@/lib/platform-modules';
-import { hasFullHrFeatures } from '@/lib/subscription/hr-lite';
 
 export const SETTINGS_MODULE_ORDER: PlatformModule[] = ['billing', 'hr', 'connect', 'crm'];
 
@@ -17,8 +16,6 @@ export type SettingsNavLink = {
   /** PBAC permission module (defaults to settings in builders). */
   permissionModule?: string;
   featureKey?: string;
-  /** Hide on Billing-bundled HR Lite (needs leave/portal / paid HR). */
-  requiresFullHr?: boolean;
   searchKeywords?: string[];
   /** Modules that may open this URL. Omit on a module group to use that module. */
   accessModules?: PlatformModule[];
@@ -366,13 +363,13 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hr-employee',
             label: 'Employee management',
             searchKeywords: ['probation', 'employee id', 'visibility'],
-            requiresFullHr: true,
+            featureKey: 'hr_advanced',
           },
           {
             href: '/settings/hr-exit',
             label: 'Exit process',
             searchKeywords: ['resignation', 'notice period', 'fnf'],
-            requiresFullHr: true,
+            featureKey: 'hr_advanced',
           },
         ],
       },
@@ -380,26 +377,26 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         id: 'hr-time-attendance',
         title: 'Time & attendance',
         links: [
-          { href: '/settings/shifts', label: 'Shifts', requiresFullHr: true },
-          { href: '/hr/shifts/roster', label: 'Shift roster', requiresFullHr: true },
+          { href: '/settings/shifts', label: 'Shifts', featureKey: 'hr_shifts' },
+          { href: '/hr/shifts/roster', label: 'Shift roster', featureKey: 'hr_shifts' },
           {
             href: '/hr/shifts/bulk-assign',
             label: 'Bulk assign shifts',
             searchKeywords: ['roster', 'assign', 'shift'],
-            requiresFullHr: true,
+            featureKey: 'hr_shifts',
           },
           { href: '/settings/weekly-off', label: 'Weekly off' },
-          { href: '/settings/holiday-lists', label: 'Holiday lists', requiresFullHr: true },
-          { href: '/settings/ot-policy', label: 'Overtime policy', requiresFullHr: true },
+          { href: '/settings/holiday-lists', label: 'Holiday lists', featureKey: 'hr_shifts' },
+          { href: '/settings/ot-policy', label: 'Overtime policy', featureKey: 'hr_shifts' },
           {
             href: '/settings/attendance-policy',
             label: 'Attendance policy',
-            requiresFullHr: true,
+            featureKey: 'hr_staff_app',
           },
           {
             href: '/settings/attendance-regularization',
             label: 'Regularization',
-            requiresFullHr: true,
+            featureKey: 'hr_shifts',
           },
         ],
       },
@@ -407,20 +404,20 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
         id: 'hr-leave',
         title: 'Leave',
         links: [
-          { href: '/settings/leave-plan', label: 'Leave plan', requiresFullHr: true },
-          { href: '/settings/leave-types', label: 'Leave types', requiresFullHr: true },
-          { href: '/settings/hr-approval', label: 'HR approvals', requiresFullHr: true },
+          { href: '/settings/leave-plan', label: 'Leave plan', featureKey: 'hr_leaves' },
+          { href: '/settings/leave-types', label: 'Leave types', featureKey: 'hr_leaves' },
+          { href: '/settings/hr-approval', label: 'HR approvals', featureKey: 'hr_leaves' },
           {
             href: '/hr/leaves/year-end',
             label: 'Leave year-end',
             searchKeywords: ['carry forward', 'lapse', 'year end'],
-            requiresFullHr: true,
+            featureKey: 'hr_leaves',
           },
           {
             href: '/hr/leaves/import-balances',
             label: 'Import leave balances',
             searchKeywords: ['import', 'balances', 'opening'],
-            requiresFullHr: true,
+            featureKey: 'hr_leaves',
           },
         ],
       },
@@ -432,15 +429,15 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/payroll',
             label: 'Payroll settings',
             searchKeywords: ['pay day', 'salary', 'statutory'],
-            requiresFullHr: true,
+            featureKey: 'hr_payroll_setup',
           },
           {
             href: '/settings/salary-components',
             label: 'Salary components',
             searchKeywords: ['basic', 'hra', 'allowance', 'earning', 'deduction', 'payroll'],
-            requiresFullHr: true,
+            featureKey: 'hr_payroll_setup',
           },
-          { href: '/settings/commission-rules', label: 'Commission rules' },
+          { href: '/settings/commission-rules', label: 'Commission rules', featureKey: 'hr_commissions' },
         ],
       },
       {
@@ -451,19 +448,19 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/hiring',
             label: 'Hiring defaults',
             searchKeywords: ['recruitment', 'onboarding invite'],
-            requiresFullHr: true,
+            featureKey: 'hr_recruitment',
           },
           {
             href: '/settings/onboarding-templates',
             label: 'Onboarding templates',
             searchKeywords: ['recruitment', 'portal'],
-            requiresFullHr: true,
+            featureKey: 'hr_recruitment',
           },
           {
             href: '/settings/offer-letter',
             label: 'Offer letter template',
             searchKeywords: ['offer', 'pdf'],
-            requiresFullHr: true,
+            featureKey: 'hr_recruitment',
           },
         ],
       },
@@ -475,7 +472,7 @@ export const SETTINGS_BY_PLATFORM_MODULE: Record<PlatformModule, SettingsModuleD
             href: '/settings/employee-portal',
             label: 'Portal & kiosk',
             searchKeywords: ['ess', 'self service', 'kiosk'],
-            requiresFullHr: true,
+            featureKey: 'hr_employee_portal',
           },
         ],
       },
@@ -536,9 +533,7 @@ export type SettingsNavFilterOptions = {
 };
 
 function filterByPlan(links: SettingsNavLink[], opts: SettingsNavFilterOptions): SettingsNavLink[] {
-  const fullHr = opts.hasFeature ? hasFullHrFeatures(opts.hasFeature) : true;
   return links.filter((link) => {
-    if (link.requiresFullHr && !fullHr) return false;
     if (link.featureKey && opts.hasFeature && !opts.hasFeature(link.featureKey)) return false;
     return true;
   });

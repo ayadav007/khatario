@@ -1,5 +1,6 @@
 import type { PricingCatalog, PricingPlan } from '@/lib/subscription/pricing-catalog';
 import {
+  bundledHrNote,
   comparisonRows,
   cycleOptions,
   planCardFeatures,
@@ -115,5 +116,38 @@ describe('pricing view', () => {
     expect(priceForCycle(billing[1], 'monthly')).toEqual({ perMonth: 399, billed: null });
     expect(priceForCycle(billing[1], 'yearly')).toEqual({ perMonth: 299, billed: 3588 });
     expect(priceForCycle(billing[0], 'yearly')).toEqual({ perMonth: 0, billed: null });
+  });
+
+  it('does not claim "everything in" a plan that has features this plan lacks', () => {
+    const hr: PricingCatalog = {
+      features: [
+        { id: 'hr_employees', category: 'hr', label: 'Employee records', rank: 1 },
+        { id: 'hr_payroll', category: 'hr', label: 'Salary & payslips', rank: 3 },
+        { id: 'hr_leaves', category: 'hr', label: 'Leave management', rank: 4 },
+      ],
+      limits: [{ key: 'max_employees', one: 'employee', many: 'employees', rank: 6 }],
+      plans: [
+        plan('hr_staff_lite', ['hr_employees', 'hr_payroll'], { productLine: 'hr', limits: { max_employees: 30 } }),
+        plan('hr_starter', ['hr_employees'], { productLine: 'hr', priceMonthly: 199, limits: { max_employees: 50 } }),
+        plan('hr_pro', ['hr_employees', 'hr_payroll', 'hr_leaves'], { productLine: 'hr', priceMonthly: 499 }),
+      ],
+    };
+    const plans = plansForLine(hr, 'hr');
+    const starter = planCardFeatures(hr, plans, 1);
+    expect(starter.previous).toBeNull();
+    expect(starter.features.map((f) => f.id)).toEqual(['hr_employees']);
+    const pro = planCardFeatures(hr, plans, 2);
+    expect(pro.previous?.id).toBe('hr_starter');
+    expect(pro.features.map((f) => f.id)).toEqual(['hr_payroll', 'hr_leaves']);
+  });
+
+  it('describes the free HR plan bundled with Billing from its own limits', () => {
+    const withLite: PricingCatalog = {
+      ...catalog,
+      limits: [...catalog.limits, { key: 'max_employees', one: 'employee', many: 'employees', rank: 6 }],
+      plans: [...catalog.plans, plan('hr_staff_lite', [], { name: 'HR Lite', productLine: 'hr', limits: { max_employees: 30 } })],
+    };
+    expect(bundledHrNote(withLite)).toBe('HR Lite included · up to 30 employees');
+    expect(bundledHrNote(catalog)).toBeNull();
   });
 });
