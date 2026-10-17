@@ -477,6 +477,9 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
               ITC eligible
             </label>
           </div>
+          <p className="text-xs leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            RCM coverage: incomplete. No notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
+          </p>
           </div>
           )}
 
