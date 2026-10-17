@@ -186,12 +186,16 @@ export async function POST(request: NextRequest) {
     const access = await assertGstr2bApiAccess(request, body.business_id, 'create');
     if (!access.ok) return access.response;
     const pool = getPool();
+    const actor = await pool.query<{ name: string | null; phone: string | null }>(
+      `SELECT name, phone FROM users WHERE id = $1`,
+      [access.userId]
+    );
     for (const issue of issues) {
       if (!issue?.key || !issue.amounts) continue;
       await pool.query(
         `INSERT INTO gst_return_acknowledgements
-           (business_id, kind, period_key, snapshot_id, issue_key, facts, amounts, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+           (business_id, kind, period_key, snapshot_id, issue_key, facts, amounts, user_id, user_name, user_phone)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)`,
         [
           access.businessId,
           kind,
@@ -201,6 +205,8 @@ export async function POST(request: NextRequest) {
           JSON.stringify(issue.facts || {}),
           JSON.stringify(issue.amounts),
           access.userId,
+          actor.rows[0]?.name ?? null,
+          actor.rows[0]?.phone ?? null,
         ]
       );
     }

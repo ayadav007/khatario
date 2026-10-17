@@ -11,6 +11,7 @@ import { resolveBranchId } from '@/lib/branch-helpers';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { computeLineGst, round2 } from '@/lib/invoices/line-gst';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { debitNoteLineSuppliesGoods } from '@/lib/debit-notes/supply-goods';
 
 export const dynamic = 'force-dynamic';
 
@@ -397,7 +398,7 @@ export async function POST(request: NextRequest) {
 
     const debitNote = debitNoteRes.rows[0];
 
-    // Create debit note items and update stock (debit note reduces stock for additional charges)
+    // Price and tax adjustments do not move stock. A goods id is not a delivery.
     for (let i = 0; i < lines.length; i++) {
       const { item, qty, unitPrice, discount, taxable, cgst, sgst, igst, taxAmount, lineTotal, taxRate } = lines[i];
 
@@ -417,14 +418,11 @@ export async function POST(request: NextRequest) {
         lineTotal, i
       ]);
 
-      // Update stock if item exists (debit note = additional charge, so stock goes out)
-      if (item.item_id) {
-        // Check if item is goods (services don't update stock)
+      // A goods id is not a delivery. Stock leaves only when the line says goods were supplied.
+      if (item.item_id && item.supply_goods === true) {
         const itemTypeRes = await client.query('SELECT item_type FROM items WHERE id = $1', [item.item_id]);
-        const itemType = itemTypeRes.rows[0]?.item_type || 'goods';
-
-        if (itemType === 'goods') {
-          const qty = Number(item.qty || item.quantity) || 0;
+        if (debitNoteLineSuppliesGoods(item, itemTypeRes.rows[0]?.item_type)) {
+          const issuedQty = Number(item.qty || item.quantity) || 0;
           if (warehouseModeEnabled && defaultWarehouseId) {
             await client.query(
               `
@@ -445,10 +443,10 @@ export async function POST(request: NextRequest) {
                   last_updated = CURRENT_TIMESTAMP
               WHERE location_id = $2 AND item_id = $3
             `,
-              [qty, defaultWarehouseId, item.item_id]
+              [issuedQty, defaultWarehouseId, item.item_id]
             );
           } else {
-            await adjustBranchItemStock(client, business_id, stockBranchId, item.item_id, -qty);
+            await adjustBranchItemStock(client, business_id, stockBranchId, item.item_id, -issuedQty);
             await refreshItemGlobalStockFromBranches(client, business_id, item.item_id);
           }
 
@@ -459,7 +457,7 @@ export async function POST(request: NextRequest) {
             )
             VALUES ($1, $2, 'out', $3, 'debit_note', $4, $5)
           `,
-            [business_id, item.item_id, qty, debitNote.id, warehouseModeEnabled ? defaultWarehouseId : null]
+            [business_id, item.item_id, issuedQty, debitNote.id, warehouseModeEnabled ? defaultWarehouseId : null]
           );
         }
       }
@@ -491,7 +489,7 @@ export async function POST(request: NextRequest) {
             [item.item_id]
           );
           
-          if (itemData.rows[0]?.item_type === 'goods' && itemData.rows[0]?.purchase_price) {
+          if (item.supply_goods === true && itemData.rows[0]?.item_type === 'goods' && itemData.rows[0]?.purchase_price) {
             const itemCost = Number(itemData.rows[0].purchase_price) || 0;
             const quantity = Number(item.qty || item.quantity || 0);
             totalCogsAmount += itemCost * quantity;

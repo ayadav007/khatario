@@ -37,10 +37,11 @@ jest.mock('@/lib/activity-logger', () => ({
   getUserAgent: jest.fn(() => null),
 }));
 
-import { authorize } from '@/lib/authorization';
+import { authorize, AuthorizationError } from '@/lib/authorization';
 import { getPool, closePool } from '@/lib/db';
 import { withLedgerDelete } from '@/lib/accounting/ledger-delete-guard';
 import { getCreditNotePolicies } from '@/lib/policies/resources/credit-notes';
+import { getDebitNotePolicies } from '@/lib/policies/resources/debit-notes';
 import { RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { GET as getInvoice } from '@/app/api/invoices/[id]/route';
 import { POST as postInvoice } from '@/app/api/invoices/route';
@@ -53,7 +54,8 @@ import { PATCH as finalizePurchase } from '@/app/api/purchases/[id]/finalize/rou
 import { POST as cancelPurchase } from '@/app/api/purchases/[id]/cancel/route';
 import { PATCH as patchPurchasePayment } from '@/app/api/purchases/[id]/payments/route';
 import { PATCH as cancelCreditNote } from '@/app/api/credit-notes/[id]/cancel/route';
-import { GET as listDebitNotes } from '@/app/api/debit-notes/route';
+import { PATCH as cancelDebitNote } from '@/app/api/debit-notes/[id]/cancel/route';
+import { GET as listDebitNotes, POST as createDebitNote } from '@/app/api/debit-notes/route';
 import { PATCH as patchJournal } from '@/app/api/journal-entries/[id]/route';
 import { POST as reverseJournalRoute } from '@/app/api/journal-entries/[id]/reverse/route';
 
@@ -590,13 +592,155 @@ d('Phase 3.7 final documents (real DB)', () => {
     expect((await pool.query(`SELECT status FROM debit_notes WHERE id = $1`, [note.id])).rows[0].status).toBe('active');
   });
 
-  test('20 debit notes have no cancellation route and posted lines cannot be deleted', async () => {
-    expect(existsSync(path.join(process.cwd(), 'app/api/debit-notes/[id]/cancel/route.ts'))).toBe(false);
+  test('20 posted debit-note lines cannot be deleted', async () => {
+    expect(existsSync(path.join(process.cwd(), 'app/api/debit-notes/[id]/cancel/route.ts'))).toBe(true);
     const note = await makeDebitNote();
     const before = await linesOf(note.id);
     await expect(pool.query(`DELETE FROM ledger_entry_lines WHERE voucher_id = $1`, [note.id])).rejects.toThrow();
     expect(await linesOf(note.id)).toEqual(before);
     expect((await pool.query(`SELECT status FROM debit_notes WHERE id = $1`, [note.id])).rows[0].status).toBe('active');
+  });
+
+  test('20b an authorized debit-note cancellation reverses once and stales the returns', async () => {
+    expect(getDebitNotePolicies().some((p) => p.action === 'cancel' && p.requiresPermission === 'debit_notes.delete')).toBe(true);
+    const note = await makeDebitNote();
+    await pool.query(
+      `INSERT INTO debit_note_items (debit_note_id, item_id, description, qty, unit_price, line_total)
+       VALUES ($1, $2, 'Widget', 2, 40, 80)`,
+      [note.id, GOODS]
+    );
+    await pool.query(`UPDATE customers SET current_balance = 80 WHERE id = $1`, [CUST]);
+    const stockBefore = await stockQty();
+    await pool.query(
+      `INSERT INTO gst_period_status (business_id, kind, period_key, state, changed_at, reconciled_at)
+       VALUES ($1, 'gstr1', '2026-09', 'ready', clock_timestamp() - interval '1 minute', clock_timestamp()),
+              ($1, 'gstr3b', '2026-09', 'ready', clock_timestamp() - interval '1 minute', clock_timestamp()),
+              ($1, 'gstr9', '2026-27', 'ready', clock_timestamp() - interval '1 minute', clock_timestamp())
+       ON CONFLICT (business_id, kind, period_key) DO UPDATE
+         SET state = 'ready', reconciled_at = clock_timestamp(), changed_at = clock_timestamp() - interval '1 minute'`,
+      [B]
+    );
+    const res = await call(
+      cancelDebitNote(
+        req(`/api/debit-notes/${note.id}/cancel`, 'PATCH', { reason: 'Wrong amount', cancelled_by: OTHER }),
+        { params: { id: note.id } }
+      )
+    );
+    expect(res.status).toBe(200);
+    const saved = (await pool.query(
+      `SELECT status, cancelled_by, cancellation_reason FROM debit_notes WHERE id = $1`,
+      [note.id]
+    )).rows[0];
+    expect(saved.status).toBe('cancelled');
+    expect(saved.cancelled_by).toBe(A);
+    expect(saved.cancellation_reason).toBe('Wrong amount');
+    expect(await linesOf(note.id)).toHaveLength(4);
+    expect(Number((await pool.query(`SELECT COUNT(*)::int AS n FROM ledger_entry_reversals WHERE voucher_id = $1`, [note.id])).rows[0].n)).toBe(2);
+    expect(await stockQty()).toBe(stockBefore);
+    expect(
+      Number((await pool.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE reference_type = 'debit_note_cancel' AND reference_id = $1`, [note.id])).rows[0].n)
+    ).toBe(0);
+    expect(Number((await pool.query(`SELECT current_balance::float8 AS b FROM customers WHERE id = $1`, [CUST])).rows[0].b)).toBe(0);
+    const periods = await pool.query(
+      `SELECT kind, state FROM gst_period_status
+        WHERE business_id = $1 AND kind IN ('gstr1', 'gstr3b', 'gstr9') AND period_key IN ('2026-09', '2026-27')
+        ORDER BY kind`,
+      [B]
+    );
+    expect(periods.rows).toEqual([
+      { kind: 'gstr1', state: 'stale' },
+      { kind: 'gstr3b', state: 'stale' },
+      { kind: 'gstr9', state: 'stale' },
+    ]);
+
+    const again = await call(
+      cancelDebitNote(req(`/api/debit-notes/${note.id}/cancel`, 'PATCH', { reason: 'Again' }), { params: { id: note.id } })
+    );
+    expect(again.status).toBe(409);
+    expect(again.json.code).toBe('DEBIT_NOTE_ALREADY_CANCELLED');
+    expect(await linesOf(note.id)).toHaveLength(4);
+    expect(await stockQty()).toBe(stockBefore);
+    expect(
+      Number((await pool.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE reference_type = 'debit_note_cancel' AND reference_id = $1`, [note.id])).rows[0].n)
+    ).toBe(0);
+
+    const issued = await makeDebitNote();
+    await pool.query(
+      `INSERT INTO stock_movements (business_id, item_id, type, quantity, reference_type, reference_id)
+       VALUES ($1, $2, 'out', 2, 'debit_note', $3)`,
+      [B, GOODS, issued.id]
+    );
+    await pool.query(`UPDATE branch_item_stock SET quantity = quantity - 2 WHERE business_id = $1 AND item_id = $2`, [B, GOODS]);
+    const afterIssue = await stockQty();
+    const issuedCancel = await call(
+      cancelDebitNote(req(`/api/debit-notes/${issued.id}/cancel`, 'PATCH', { reason: 'Issued stock' }), { params: { id: issued.id } })
+    );
+    expect(issuedCancel.status).toBe(200);
+    expect(await stockQty()).toBe(afterIssue + 2);
+    expect(
+      Number((await pool.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE reference_type = 'debit_note_cancel' AND reference_id = $1`, [issued.id])).rows[0].n)
+    ).toBe(1);
+    const issuedAgain = await call(
+      cancelDebitNote(req(`/api/debit-notes/${issued.id}/cancel`, 'PATCH', { reason: 'Again' }), { params: { id: issued.id } })
+    );
+    expect(issuedAgain.status).toBe(409);
+    expect(await stockQty()).toBe(afterIssue + 2);
+    expect(await linesOf(issued.id)).toHaveLength(4);
+  });
+
+  test('20c a debit note cannot be cancelled without authority or from another business', async () => {
+    const note = await makeDebitNote();
+    const missing = await call(
+      cancelDebitNote(reqNoSession(`/api/debit-notes/${note.id}/cancel`, 'PATCH', { reason: 'No session' }), { params: { id: note.id } })
+    );
+    expect(missing.status).toBe(401);
+    auth.mockRejectedValueOnce(new AuthorizationError('no', 'PERMISSION_DENIED'));
+    const denied = await call(
+      cancelDebitNote(req(`/api/debit-notes/${note.id}/cancel`, 'PATCH', { reason: 'Denied' }), { params: { id: note.id } })
+    );
+    expect(denied.status).toBe(403);
+    const other = await call(
+      cancelDebitNote(req(`/api/debit-notes/${note.id}/cancel`, 'PATCH', { reason: 'Cross' }, B2, A), { params: { id: note.id } })
+    );
+    expect(other.status).toBe(404);
+    expect((await pool.query(`SELECT status FROM debit_notes WHERE id = $1`, [note.id])).rows[0].status).toBe('active');
+    expect(await linesOf(note.id)).toHaveLength(2);
+  });
+
+  test('20d a price adjustment does not issue stock and an explicit supply does, once', async () => {
+    const price = await call(createDebitNote(req('/api/debit-notes', 'POST', {
+      customer_id: CUST,
+      debit_note_date: '2026-09-20',
+      debit_note_number: `DN-PRICE-${tag}`,
+      items: [{ item_id: GOODS, description: 'Price increase', qty: 2, unit_price: 40, tax_rate: 0 }],
+    })));
+    expect(price.status).toBe(201);
+    const priceId = price.json.debitNote.id as string;
+    expect(await stockQty()).toBe(10);
+    expect(Number((await pool.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE reference_id = $1`, [priceId])).rows[0].n)).toBe(0);
+    expect(Number((await pool.query(`SELECT current_balance::float8 AS b FROM customers WHERE id = $1`, [CUST])).rows[0].b)).toBe(80);
+    const priceCancel = await call(cancelDebitNote(req(`/api/debit-notes/${priceId}/cancel`, 'PATCH', { reason: 'Price only' }), { params: { id: priceId } }));
+    expect(priceCancel.status).toBe(200);
+    expect(await stockQty()).toBe(10);
+    expect(Number((await pool.query(`SELECT current_balance::float8 AS b FROM customers WHERE id = $1`, [CUST])).rows[0].b)).toBe(0);
+
+    const supply = await call(createDebitNote(req('/api/debit-notes', 'POST', {
+      customer_id: CUST,
+      debit_note_date: '2026-09-20',
+      debit_note_number: `DN-GOODS-${tag}`,
+      items: [{ item_id: GOODS, description: 'Extra widgets', qty: 2, unit_price: 40, tax_rate: 0, supply_goods: true }],
+    })));
+    expect(supply.status).toBe(201);
+    const supplyId = supply.json.debitNote.id as string;
+    expect(await stockQty()).toBe(8);
+    expect(Number((await pool.query(`SELECT COUNT(*)::int AS n FROM stock_movements WHERE reference_type = 'debit_note' AND reference_id = $1 AND type = 'out'`, [supplyId])).rows[0].n)).toBe(1);
+    const supplyCancel = await call(cancelDebitNote(req(`/api/debit-notes/${supplyId}/cancel`, 'PATCH', { reason: 'Goods back' }), { params: { id: supplyId } }));
+    expect(supplyCancel.status).toBe(200);
+    expect(await stockQty()).toBe(10);
+    const supplyAgain = await call(cancelDebitNote(req(`/api/debit-notes/${supplyId}/cancel`, 'PATCH', { reason: 'Again' }), { params: { id: supplyId } }));
+    expect(supplyAgain.status).toBe(409);
+    expect(await stockQty()).toBe(10);
+    expect(await linesOf(supplyId)).toHaveLength(4);
   });
 
   test('21 a debit note from another business is not listed', async () => {

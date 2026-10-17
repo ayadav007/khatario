@@ -1,6 +1,8 @@
 /**
- * Versioned reverse-charge hints. An empty catalogue does not detect RCM.
- * A blank GSTIN is not a match.
+ * Versioned reverse-charge hints. An empty approved catalogue does not detect RCM.
+ * Candidate rows are not operational. A blank GSTIN is unknown, not a match.
+ * A code match is withheld when an exclusion, recipient class, or turnover
+ * condition on the rule has not been supplied.
  */
 
 export type RcmSupplierType = 'registered' | 'unregistered' | 'either';
@@ -16,6 +18,12 @@ export interface RcmRule {
   expenseCategory: string | null;
   sourceCitation: string;
   reviewOnly: boolean;
+  /** Absent on in-memory fixtures. Only `approved` rows are loaded from the database. */
+  status?: 'candidate' | 'approved';
+  recipientClass?: string | null;
+  turnoverMin?: number | null;
+  turnoverMax?: number | null;
+  exclusions?: string[];
 }
 
 export interface RcmBillFacts {
@@ -25,6 +33,10 @@ export interface RcmBillFacts {
   sac: string | null;
   hsn: string | null;
   expenseCategory: string | null;
+  recipientClass?: string | null;
+  annualTurnover?: number | null;
+  /** True only when the caller has checked every exclusion on the matched rule. */
+  exclusionsKnown?: boolean;
 }
 
 export type RcmMatch =
@@ -44,6 +56,11 @@ function prefixMatch(value: string | null, prefix: string | null): boolean {
 function supplierMatches(rule: RcmRule, status: RcmBillFacts['registrationStatus']): boolean {
   if (rule.supplierType === 'either') return status === 'registered' || status === 'unregistered';
   return rule.supplierType === status;
+}
+
+/** Database rows that may affect a bill. Candidates are ignored. */
+export function approvedRcmRules<T extends { status?: string }>(rules: T[]): T[] {
+  return rules.filter((rule) => rule.status === 'approved');
 }
 
 export function matchRcmRules(facts: RcmBillFacts, rules: RcmRule[]): RcmMatch {
@@ -72,6 +89,27 @@ export function matchRcmRules(facts: RcmBillFacts, rules: RcmRule[]): RcmMatch {
     const hsnOk = prefixMatch(facts.hsn, rule.hsnPrefix);
     const categoryOk = !rule.expenseCategory || rule.expenseCategory === facts.expenseCategory;
     if (sacOk && hsnOk && categoryOk && (rule.sacPrefix ? Boolean(facts.sac) : true) && (rule.hsnPrefix ? Boolean(facts.hsn) : true)) {
+      if (rule.exclusions && rule.exclusions.length > 0 && facts.exclusionsKnown !== true) {
+        return {
+          result: 'not_checked',
+          coverage: 'outside_rules',
+          message: 'RCM was not checked. An exclusion on this notification was not verified.',
+        };
+      }
+      if (rule.recipientClass && !facts.recipientClass) {
+        return {
+          result: 'not_checked',
+          coverage: 'outside_rules',
+          message: 'RCM was not checked. The recipient class for this notification was not recorded.',
+        };
+      }
+      if ((rule.turnoverMin != null || rule.turnoverMax != null) && facts.annualTurnover == null) {
+        return {
+          result: 'not_checked',
+          coverage: 'outside_rules',
+          message: 'RCM was not checked. The turnover condition for this notification was not recorded.',
+        };
+      }
       if (facts.reverseCharge) {
         return {
           result: 'no_warning',

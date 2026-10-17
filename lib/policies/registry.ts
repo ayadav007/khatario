@@ -19,6 +19,7 @@ import { getPurchasePolicies } from './resources/purchases';
 import { getPaymentPolicies } from './resources/payments';
 import { getExpensePolicies } from './resources/expenses';
 import { getCreditNotePolicies } from './resources/credit-notes';
+import { getDebitNotePolicies } from './resources/debit-notes';
 import { getSupplierPolicies } from './resources/suppliers';
 import { getHrPolicies } from './resources/hr';
 import { getWhatsAppPolicies } from './resources/whatsapp';
@@ -97,6 +98,7 @@ class PolicyRegistry {
 
       // Register credit note policies
       safeRegister(() => getCreditNotePolicies(), 'credit note');
+      safeRegister(() => getDebitNotePolicies(), 'debit note');
 
       // Register HR policies
       safeRegister(() => getHrPolicies(), 'HR');

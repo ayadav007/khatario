@@ -283,12 +283,13 @@ export async function recostAfterStockChange(
 /** Goods item ids affected by a stock document (bundles expanded). */
 export async function stockItemsForDocument(
   client: Pick<PoolClient, 'query'>,
-  kind: 'invoice' | 'credit_note' | 'purchase' | 'purchase_return',
+  kind: 'invoice' | 'credit_note' | 'debit_note' | 'purchase' | 'purchase_return',
   docId: string
 ): Promise<string[]> {
   const src = {
     invoice: ['invoice_items', 'invoice_id'],
     credit_note: ['credit_note_items', 'credit_note_id'],
+    debit_note: ['debit_note_items', 'debit_note_id'],
     purchase: ['purchase_items', 'purchase_id'],
     purchase_return: ['purchase_return_items', 'return_id'],
   }[kind];

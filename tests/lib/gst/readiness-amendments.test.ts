@@ -2,7 +2,7 @@ import { buildItcGate, type ItcGateRow } from '@/lib/gst/itc-2b-gate';
 import { reconcileAcknowledgements, type StoredAcknowledgement } from '@/lib/gst/acknowledgements';
 import { financialYearsToStale, annualReadinessIsCurrent } from '@/lib/gst/period-freshness';
 import { rule47aResult } from '@/lib/gst/rule47a';
-import { matchRcmRules, type RcmRule } from '@/lib/gst/rcm-rules';
+import { approvedRcmRules, matchRcmRules, type RcmRule } from '@/lib/gst/rcm-rules';
 import { retainDecision, type DecisionIdentity, type ItcDecision } from '@/lib/gst/decision-retention';
 import { countPendingItc, rowIsPending } from '@/lib/gst/pending-itc';
 import { assessDownload, gstr1BlockingIssues } from '@/lib/gst/return-readiness';
@@ -213,6 +213,37 @@ describe('pending count and RCM catalogue', () => {
     };
     expect(matchRcmRules(facts, [rule]).result).toBe('suspected');
     expect(matchRcmRules({ ...facts, billDate: '2024-01-01' }, [rule]).result).toBe('not_checked');
+  });
+
+  it('does not treat a blank GSTIN or an unverified exclusion as reverse charge', () => {
+    const rule: RcmRule = {
+      id: 'r',
+      catalogueVersion: 1,
+      effectiveFrom: '2017-07-01',
+      effectiveTo: null,
+      supplierType: 'unregistered',
+      sacPrefix: '9965',
+      hsnPrefix: null,
+      expenseCategory: null,
+      sourceCitation: 'Notification 13/2017 candidate',
+      reviewOnly: true,
+      status: 'candidate',
+      exclusions: ['body corporate supplying to a related person'],
+      recipientClass: 'registered',
+    };
+    const unknown = {
+      billDate: '2026-10-01',
+      registrationStatus: 'unknown' as const,
+      reverseCharge: false,
+      sac: '996511',
+      hsn: null,
+      expenseCategory: null,
+    };
+    expect(matchRcmRules(unknown, [rule]).result).toBe('not_checked');
+    const coded = { ...unknown, registrationStatus: 'unregistered' as const };
+    expect(matchRcmRules(coded, [rule]).result).toBe('not_checked');
+    expect(matchRcmRules(coded, [rule]).message).toMatch(/exclusion/i);
+    expect(approvedRcmRules([rule, { ...rule, id: 'ok', status: 'approved' as const, exclusions: [] }])).toHaveLength(1);
   });
 });
 
