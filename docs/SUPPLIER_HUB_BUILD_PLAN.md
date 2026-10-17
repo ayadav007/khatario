@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phases 0–2 and 5 committed on branch `supplier-hub-phase-0`. Phases 3–4 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 12 cases), not committed. Migrations 389–393 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phases 0–5 committed on branch `supplier-hub-phase-0`. Phase 6 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 13 cases), not committed. Migrations 389–394 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -185,6 +185,14 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 
 ## Phase 6 — Catalog ordering and new-arrival push
 
+**Built (2026-10-17):**
+- Migration 394: `supplier_collections` (draft / published / archived), and on listings a photo link, a price for connected buyers, a pack label ("Set of 4: S, M, L, XL"), an order multiple and the collection. `suppliers.mute_launches` for the buyer.
+- Publishing a collection the first time (`PATCH /api/suppliers/hub/collections/[id]` with `publish`) sends one notification to each buyer with an approved link who has not muted that supplier. Republishing does not notify again. A collection needs at least one listed item.
+- Supplier screen `/suppliers/catalog` (My catalog): create, publish, archive and delete collections; see how many buyers ordered and how many units since publishing; add items and set name, price, minimum order, multiple, pack, lead time, photo link, collection and listed. Linked from the supplier dashboard and directory settings. Linked-only listings have no 20-item limit.
+- Buyer screen `/purchases/new-arrivals` (`GET /api/suppliers/hub/new-arrivals`): collections from connected suppliers in the last 180 days, with photo, price, minimum order, pack and lead time, and the buyer's matched item if any. Filter by supplier (which also shows that supplier's other catalog items) and mute or unmute its launches. A cart per supplier is sent as a catalog order (`origin = 'catalog'`), which enforces the minimum order and multiple, then follows the normal order flow. Linked from Purchases.
+- Not done: photo upload (photos are https links for now; check the app's image policy allows supplier image hosts), sizes/colours with a price each, following only some categories, WhatsApp launch messages, and ordering together with a connection request for buyers not yet linked (6.5).
+
+
 Builds on the published catalog that already exists.
 
 6.1 **Richer listings.** Add photos (reuse the online store's image storage), sizes/colours with a price each, MOQ per design, and **sets** (for example 1 each of S/M/L/XL as one pack). Keep `public_preview` for the directory teaser. Linked-only listings have no count limit.
@@ -248,5 +256,5 @@ The phone app can already list, create, respond to and link requests. It still n
 | Phase 2 | Done, not committed |
 | Phase 5 (receive, incl. create item on receive) | Done, not committed (5.2b batch/expiry and 5.5 still open) |
 | Phase 3 + 4 (incl. catalog-order lines, variants) | Done, not committed (variants, standing orders, dispatch still open) |
-| Phase 6 (catalog ordering, new-arrival push) | L — right after Phase 5 for apparel and electronics customers |
+| Phase 6 (catalog ordering, new-arrival push) | Done, not committed (photo upload, per-size prices, WhatsApp still open) |
 | Phases 6b–7 | L, can come later |

@@ -330,6 +330,9 @@ export default function SupplierDashboardPage() {
               <Button variant="secondary" size="sm" onClick={() => router.push('/supply-orders')}>
                 Suggested orders
               </Button>
+              <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/catalog')}>
+                My catalog
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/requests')}>
                 View Requests
               </Button>

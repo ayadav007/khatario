@@ -244,6 +244,7 @@ async function prepareLines(exec: Exec, buyer: string, vendor: string, raw: NewL
     let vendorItemId = line.vendor_item_id ? String(line.vendor_item_id) : null;
     let factor = 1;
     let name = '';
+    let listing: { listed: boolean | null; moq: unknown; order_multiple: unknown } | null = null;
     if (buyerItemId) {
       const own = (
         await exec(
@@ -265,7 +266,7 @@ async function prepareLines(exec: Exec, buyer: string, vendor: string, raw: NewL
     if (vendorItemId) {
       const theirs = (
         await exec(
-          `SELECT i.name, l.display_name, l.is_active AS listed
+          `SELECT i.name, l.display_name, l.is_active AS listed, l.moq, l.order_multiple
              FROM items i
              LEFT JOIN supplier_published_listings l ON l.item_id = i.id AND l.supplier_business_id = i.business_id
             WHERE i.id = $1 AND i.business_id = $2 AND i.deleted_at IS NULL`,
@@ -273,6 +274,7 @@ async function prepareLines(exec: Exec, buyer: string, vendor: string, raw: NewL
         )
       ).rows[0];
       if (!theirs) throw new SupplyOrderInputError("An item on this order is not one of the supplier's items");
+      listing = theirs;
       if (catalogOnly && !buyerItemId && !theirs.listed) {
         throw new SupplyOrderInputError('Only items from the supplier’s published catalog can be ordered directly');
       }
@@ -294,6 +296,14 @@ async function prepareLines(exec: Exec, buyer: string, vendor: string, raw: NewL
           ? vendorQtyFor(Number(line.buyer_qty), factor)
           : NaN;
     if (!(qty > 0)) throw new SupplyOrderInputError(`Quantity for ${name} must be more than zero`);
+    if (catalogOnly && listing?.listed) {
+      const moq = Number(listing.moq) || 0;
+      const multiple = Number(listing.order_multiple) || 0;
+      if (moq > 0 && qty < moq) throw new SupplyOrderInputError(`Order at least ${moq} of ${name}`);
+      if (multiple > 0 && Math.abs(qty / multiple - Math.round(qty / multiple)) > 1e-9) {
+        throw new SupplyOrderInputError(`Order ${name} in multiples of ${multiple}`);
+      }
+    }
     out.push({ buyerItemId, vendorItemId, name: name.slice(0, 255), qty: round3(qty), factor });
   }
   return out;

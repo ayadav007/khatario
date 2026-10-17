@@ -1,15 +1,16 @@
 /**
- * Supplier Hub phases 0–5 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
+ * Supplier Hub phases 0–6 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
  * retailer A links wholesaler B, the link waits for B's approval, B's customer record for A is
  * linked, A picks B's items and reorder levels in bulk, A's reorder level raises an alert for B,
  * B's sales invoice becomes A's purchase (item matched, stock added once), and either side can
  * disconnect and reconnect. The item map remembers matches and converts cartons into pieces.
  * Incoming bills are received with short/damaged quantities and new items made from bill lines.
  * Orders: B proposes from A's low stock, A confirms, B bills, A receives; or A orders and B answers.
+ * Collections: publishing notifies connected buyers once, mute, catalog orders with MOQ and sets.
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–393 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–394 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -70,6 +71,10 @@ import { GET as orderGET, PATCH as orderPATCH } from '@/app/api/supply-orders/[i
 import { GET as invoiceDraftGET } from '@/app/api/supply-orders/[id]/invoice-draft/route';
 import { POST as suggestPOST } from '@/app/api/supply-orders/suggest/route';
 import { claimSupplyOrderForInvoice } from '@/lib/supply-orders';
+import { GET as collectionsGET, POST as collectionsPOST } from '@/app/api/suppliers/hub/collections/route';
+import { PATCH as collectionPATCH } from '@/app/api/suppliers/hub/collections/[id]/route';
+import { GET as newArrivalsGET } from '@/app/api/suppliers/hub/new-arrivals/route';
+import { POST as mutePOST } from '@/app/api/suppliers/hub/mute/route';
 import { GET as incomingBillGET } from '@/app/api/purchases/incoming-bills/[invoiceId]/route';
 import { POST as createItemPOST } from '@/app/api/purchases/incoming-bills/[invoiceId]/create-item/route';
 import {
@@ -90,7 +95,7 @@ const migration = (file: string) =>
 
 const run = enabled ? describe : describe.skip;
 
-run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
+run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
   jest.setTimeout(120000);
 
   const tag = randomUUID().slice(0, 6).toUpperCase();
@@ -125,6 +130,7 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
     await query(migration('391_supplier_item_links.sql'));
     await query(migration('392_supplier_bill_receipts.sql'));
     await query(migration('393_supply_orders.sql'));
+    await query(migration('394_supplier_collections.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -821,6 +827,102 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
     await query(`INSERT INTO suppliers (id, business_id, name, linked_business_id, approval_status) VALUES ($1, $2, 'B', $3, 'pending')`, [cSupplier, C, B]);
     const cOrder = await ordersPOST(post('/api/supply-orders', UC, C, { supplier_id: cSupplier, lines: [{ vendor_item_id: ITEM_B, qty: 1 }] }));
     expect(cOrder.status).toBe(403);
+  });
+
+  it('collections: publish notifies buyers once, mute, catalog order with MOQ and sets (Phase 6)', async () => {
+    const created = await collectionsPOST(post('/api/suppliers/hub/collections', UB, B, { name: 'Summer kurtis', season: 'Summer 2027' }));
+    expect(created.status).toBe(201);
+    const { collection } = await created.json();
+    const cctx = { params: { id: collection.id } };
+    const curl = `/api/suppliers/hub/collections/${collection.id}`;
+
+    // Nothing to publish yet.
+    expect((await collectionPATCH(call('PATCH', curl, UB, B, { action: 'publish' }), cctx)).status).toBe(400);
+    // Another business cannot touch it.
+    expect((await collectionPATCH(call('PATCH', curl, UC, C, { action: 'publish' }), cctx)).status).toBe(404);
+
+    const KURTI = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Kurti Leaf Green', 'PCS', 'goods', true)`,
+      [KURTI, B]
+    );
+    const listingBody = {
+      item_id: KURTI,
+      audience: 'linked_only',
+      collection_id: collection.id,
+      price: 450,
+      moq: 4,
+      order_multiple: 4,
+      pack_label: 'Set of 4: S, M, L, XL',
+      image_url: 'https://img.example.test/kurti.jpg',
+    };
+    expect((await createListing(post('/api/suppliers/hub/published-listings', UB, B, { ...listingBody, image_url: 'javascript:alert(1)' }))).status).toBe(400);
+    const cCol = await (await collectionsPOST(post('/api/suppliers/hub/collections', UC, C, { name: 'Not yours' }))).json();
+    expect(
+      (await createListing(post('/api/suppliers/hub/published-listings', UB, B, { ...listingBody, collection_id: cCol.collection.id }))).status
+    ).toBe(404);
+    const listed = await createListing(post('/api/suppliers/hub/published-listings', UB, B, listingBody));
+    expect(listed.status).toBe(201);
+
+    // Publishing notifies A (the one connected buyer), once.
+    const pub = await (await collectionPATCH(call('PATCH', curl, UB, B, { action: 'publish' }), cctx)).json();
+    expect(pub.notified).toBe(1);
+    const note = await queryOne(
+      `SELECT title FROM notifications WHERE business_id = $1 AND reference_id = $2`,
+      [A, collection.id]
+    );
+    expect(note.title).toContain('Summer kurtis');
+    await collectionPATCH(call('PATCH', curl, UB, B, { action: 'archive' }), cctx);
+    const again = await (await collectionPATCH(call('PATCH', curl, UB, B, { action: 'publish' }), cctx)).json();
+    expect(again.notified).toBe(0);
+
+    // A's feed shows it with A's price, MOQ and set; C (not connected) sees nothing.
+    const feed = await (await newArrivalsGET(call('GET', '/api/suppliers/hub/new-arrivals', UA, A))).json();
+    const col = feed.collections.find((c: any) => c.id === collection.id);
+    expect(col).toMatchObject({ supplier_id: supplierRowId, supplier_name: expect.any(String) });
+    expect(col.items[0]).toMatchObject({ vendor_item_id: KURTI, pack_label: 'Set of 4: S, M, L, XL' });
+    expect(Number(col.items[0].price)).toBe(450);
+    const cFeed = await (await newArrivalsGET(call('GET', '/api/suppliers/hub/new-arrivals', UC, C))).json();
+    expect(cFeed.collections).toHaveLength(0);
+
+    // Muted buyers are not notified of the next launch.
+    expect((await mutePOST(post('/api/suppliers/hub/mute', UA, A, { supplier_id: supplierRowId, muted: true }))).status).toBe(200);
+    const second = await (await collectionsPOST(post('/api/suppliers/hub/collections', UB, B, { name: 'Festive' }))).json();
+    const FESTIVE = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Festive Saree', 'PCS', 'goods', true)`,
+      [FESTIVE, B]
+    );
+    const festiveListing = await createListing(
+      post('/api/suppliers/hub/published-listings', UB, B, { ...listingBody, item_id: FESTIVE, collection_id: second.collection.id })
+    );
+    expect(festiveListing.status).toBe(201);
+    const pub2 = await (
+      await collectionPATCH(call('PATCH', `/api/suppliers/hub/collections/${second.collection.id}`, UB, B, { action: 'publish' }), {
+        params: { id: second.collection.id },
+      })
+    ).json();
+    expect(pub2.notified).toBe(0);
+    await mutePOST(post('/api/suppliers/hub/mute', UA, A, { supplier_id: supplierRowId, muted: false }));
+
+    // Ordering from the catalog respects MOQ and sets.
+    const order = (qty: number) =>
+      ordersPOST(post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, from_catalog: true, lines: [{ vendor_item_id: KURTI, qty }] }));
+    expect((await order(3)).status).toBe(400);
+    expect((await order(6)).status).toBe(400);
+    const ok = await order(8);
+    expect(ok.status).toBe(201);
+    const { order: catalogOrder } = await ok.json();
+    expect(await queryOne(`SELECT origin, status FROM supply_orders WHERE id = $1`, [catalogOrder.id])).toMatchObject({
+      origin: 'catalog',
+      status: 'pending',
+    });
+
+    // B sees who ordered from the collection.
+    const mine = await (await collectionsGET(call('GET', '/api/suppliers/hub/collections', UB, B))).json();
+    const stats = mine.collections.find((c: any) => c.id === collection.id);
+    expect(stats).toMatchObject({ item_count: 1, buyers_ordered: 1 });
+    expect(Number(stats.units_ordered)).toBe(8);
   });
 
   it('either side can disconnect, and a reconnect needs B to accept again (1.3)', async () => {

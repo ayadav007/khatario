@@ -6,6 +6,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
+import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,6 +119,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let extras: ReturnType<typeof parseListingExtras>;
+    try {
+      extras = parseListingExtras(body, businessId);
+      if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
+    } catch (e) {
+      if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+
     const pd = ['hidden', 'from_amount', 'on_request'].includes(priceDisplay)
       ? priceDisplay
       : 'on_request';
@@ -129,9 +139,10 @@ export async function POST(request: NextRequest) {
         `
         INSERT INTO supplier_published_listings (
           supplier_business_id, item_id, audience, display_name, moq, lead_time_text,
-          price_display, from_amount, sort_order, is_active
+          price_display, from_amount, sort_order, is_active,
+          image_url, price, pack_label, order_multiple, collection_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14)
         RETURNING *
         `,
         [
@@ -144,6 +155,11 @@ export async function POST(request: NextRequest) {
           pd,
           fa,
           sortOrder != null ? parseInt(String(sortOrder), 10) : 0,
+          extras.image_url ?? null,
+          extras.price ?? null,
+          extras.pack_label ?? null,
+          extras.order_multiple ?? null,
+          extras.collection_id ?? null,
         ]
       );
       return NextResponse.json({ listing: row }, { status: 201 });

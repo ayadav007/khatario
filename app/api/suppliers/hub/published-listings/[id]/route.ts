@@ -6,6 +6,7 @@ import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscriptio
 import { FeatureKeys } from '@/lib/featureKeys';
 import type { SupplierPublishedListing } from '@/types/database';
 import { SUPPLIERS_HUB_MAX_PUBLIC_PREVIEW_LISTINGS } from '@/lib/suppliers-hub';
+import { assertOwnCollection, CatalogInputError, parseListingExtras } from '@/lib/supplier-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,6 +100,17 @@ export async function PATCH(
           : null;
     if (pd !== 'from_amount') fa = null;
 
+    let extras: ReturnType<typeof parseListingExtras>;
+    try {
+      extras = parseListingExtras(body, businessId);
+      if (extras.collection_id) await assertOwnCollection(businessId, extras.collection_id);
+    } catch (e) {
+      if (e instanceof CatalogInputError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const keep = <K extends keyof typeof extras>(k: K) =>
+      extras[k] !== undefined ? extras[k] : ((existing as any)[k] ?? null);
+
     const nextDisplayName =
       displayName !== undefined ? displayName : existing.display_name;
     const nextMoq =
@@ -121,6 +133,11 @@ export async function PATCH(
         from_amount = $8,
         sort_order = $9,
         is_active = $10,
+        image_url = $11,
+        price = $12,
+        pack_label = $13,
+        order_multiple = $14,
+        collection_id = $15,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND supplier_business_id = $2
       RETURNING *
@@ -136,6 +153,11 @@ export async function PATCH(
         fa,
         nextSort,
         nextActive,
+        keep('image_url'),
+        keep('price'),
+        keep('pack_label'),
+        keep('order_multiple'),
+        keep('collection_id'),
       ]
     );
 

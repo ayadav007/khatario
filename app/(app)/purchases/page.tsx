@@ -373,6 +373,13 @@ function PurchasesPageContent() {
               </button>
               <button
                 type="button"
+                onClick={() => router.push('/purchases/new-arrivals')}
+                className="inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <span>New arrivals</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => router.push('/supply-orders')}
                 className="inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
               >

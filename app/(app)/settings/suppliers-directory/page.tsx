@@ -347,8 +347,12 @@ export default function SuppliersDirectorySettingsPage() {
             <section>
               <h3 className="settings-section-title">Published listings (public preview)</h3>
               <p className="type-body-secondary mb-4 max-w-2xl">
-                Add up to 20 items shown to buyers browsing the hub. Link-only customers see the same preview;
-                after connection, buyers may also see “linked only” lines if you add them (via API for now).
+                Add up to 20 items shown to buyers browsing the hub. Connected buyers also see your full catalog,
+                prices and collections, which you manage in{' '}
+                <a href="/suppliers/catalog" className="font-medium text-primary-600 hover:underline">
+                  My catalog
+                </a>
+                .
               </p>
 
               <div className={clsx(STACK_SECTION_CLASS, 'max-w-2xl')}>
