@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { estimateWords, highlightTimeline, normalizeHighlights, speechSegments, stillNeeds, timeHighlights, tokens } from './highlights.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const publicDir = path.join(root, 'tools/video-studio/public');
@@ -124,18 +125,17 @@ function compositionHtml({ title, subtitle, scenes }) {
     const start = scene.start.toFixed(2);
     const duration = scene.duration.toFixed(2);
     const frameId = `f${index + 1}`;
-    const mark = scene.zoom > 1 && scene.shape
-      ? `<div id="m${index + 1}" class="mark ${scene.shape}" style="left:${scene.zoomX}%;top:${scene.zoomY}%;width:${scene.markW}%;${scene.shape === 'rect' ? `height:${scene.markH}%;` : ''}"></div>`
-      : '';
+    const highlight = highlightTimeline(scene.timed, { frameId, prefix: `m${index + 1}` });
+    const marks = highlight.marks.join('');
     const caption = scene.caption
       ? (scene.media === 'video'
         ? `<p class="cap clip" data-start="${start}" data-duration="${duration}" data-track-index="${40 + index}">${escapeHtml(scene.caption)}</p>`
         : `<p class="cap">${escapeHtml(scene.caption)}</p>`)
       : '';
     const picture = scene.media === 'video'
-      ? `<div class="frame" id="${frameId}"><video id="v${index + 1}" class="clip" src="assets/shots/${scene.file}" muted playsinline data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}"></video></div>`
-      : `<div class="frame" id="${frameId}"><img src="assets/shots/${scene.file}" alt="" /></div>`;
-    const shot = `<div class="shot" id="${id}">${picture}${caption}${mark}</div>`;
+      ? `<div class="frame" id="${frameId}"><video id="v${index + 1}" class="clip" src="assets/shots/${scene.file}" muted playsinline data-start="${start}" data-duration="${duration}" data-track-index="${index + 1}"></video>${marks}</div>`
+      : `<div class="frame" id="${frameId}"><img src="assets/shots/${scene.file}" alt="" />${marks}</div>`;
+    const shot = `<div class="shot" id="${id}">${picture}${caption}</div>`;
     if (scene.media === 'video') {
       clips.push(shot);
     } else {
@@ -152,17 +152,7 @@ function compositionHtml({ title, subtitle, scenes }) {
     } else if (scene.transition === 'slide' && scene.transitionSeconds > 0) {
       tweens.push(`tl.fromTo("#${id}", { x: 1920 }, { x: 0, duration: ${scene.transitionSeconds}, ease: "power2.inOut" }, ${at});`);
     }
-    if (scene.zoom > 1) {
-      const zoomAt = (scene.start + scene.zoomAt).toFixed(2);
-      const zoomBack = (scene.start + scene.zoomAt + 1 + scene.zoomHold).toFixed(2);
-      tweens.push(`tl.set("#${frameId}", { transformOrigin: "${scene.zoomX}% ${scene.zoomY}%" }, 0);`);
-      tweens.push(`tl.fromTo("#${frameId}", { scale: 1 }, { scale: ${scene.zoom}, duration: 1, ease: "power2.inOut" }, ${zoomAt});`);
-      tweens.push(`tl.to("#${frameId}", { scale: 1, duration: 0.5, ease: "power2.inOut" }, ${zoomBack});`);
-      if (scene.shape) {
-        tweens.push(`tl.fromTo("#m${index + 1}", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, ${zoomAt});`);
-        tweens.push(`tl.to("#m${index + 1}", { opacity: 0, duration: 0.3, ease: "power1.in" }, ${zoomBack});`);
-      }
-    }
+    if (scene.timed.length) tweens.push(...highlight.tweens);
   });
   const last = scenes.items[scenes.items.length - 1];
   const total = last ? last.start + last.duration : titleDur;
@@ -182,7 +172,7 @@ function compositionHtml({ title, subtitle, scenes }) {
       .shot { position: absolute; inset: 0; overflow: hidden; }
       .frame { position: absolute; inset: 0; }
       .shot img, .shot video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
-      .mark { position: absolute; transform: translate(-50%, -50%); border: 8px solid #f58220; box-shadow: 0 0 0 4px rgba(6, 63, 53, 0.35); opacity: 0; }
+      .mark { position: absolute; box-sizing: border-box; border: 6px solid #f58220; box-shadow: 0 0 0 3px rgba(6, 63, 53, 0.35), 0 0 24px rgba(245, 130, 32, 0.45); opacity: 0; pointer-events: none; }
       .mark.circle { height: auto; aspect-ratio: 1; border-radius: 999px; }
       .mark.rect { border-radius: 18px; }
       .cap { position: absolute; left: 40px; top: 28px; max-width: 1400px; margin: 0; padding: 18px 28px; border-radius: 16px; background: #063f35; color: #f8f3e9; font-size: 36px; font-weight: 700; line-height: 1.2; }
@@ -304,10 +294,7 @@ export async function renderJob(body, log) {
     const kind = ['cut', 'crossfade', 'slide'].includes(scene.transition) ? scene.transition : 'crossfade';
     const seconds = Math.min(3, Math.max(0.2, Number(scene.transitionSeconds) || 1));
     const mediaDuration = isVideo ? await ffprobe(dest) : 0;
-    const zoomOn = scene.zoomOn === true;
-    const shape = scene.shape === 'rect' ? 'rect' : scene.shape === 'none' ? '' : 'circle';
-    let zoomAt = zoomOn ? clockSeconds(scene.zoomAt) : 0;
-    if (zoomOn && mediaDuration > 0) zoomAt = Math.min(zoomAt, Math.max(0, mediaDuration - 0.2));
+    const highlights = normalizeHighlights({ ...scene, zoomAt: clockSeconds(scene.zoomAt) });
     items.push({
       file,
       media: isVideo ? 'video' : 'image',
@@ -316,14 +303,8 @@ export async function renderJob(body, log) {
       voice: String(scene.voice || scene.caption || '').slice(0, 240),
       transition: kind,
       transitionSeconds: kind === 'cut' ? 0 : seconds,
-      zoom: zoomOn ? Math.min(3, Math.max(1.2, Number(scene.zoomScale) || 2)) : 1,
-      zoomAt,
-      zoomHold: zoomOn ? Math.min(180, Math.max(0.4, Number(scene.zoomHold) || 30)) : 0,
-      zoomX: Math.min(100, Math.max(0, Number(scene.zoomX ?? 50))),
-      zoomY: Math.min(100, Math.max(0, Number(scene.zoomY ?? 50))),
-      markW: Math.min(90, Math.max(4, Number(scene.markW) || (shape === 'rect' ? 28 : 18))),
-      markH: Math.min(90, Math.max(4, Number(scene.markH) || 24)),
-      shape: zoomOn ? shape : '',
+      highlights,
+      timed: [],
       duration: 6,
       start: 0,
     });
@@ -347,6 +328,38 @@ export async function renderJob(body, log) {
     return ffprobe(voiceFile);
   }
 
+  // Exact word times when a local speech model is installed, else a guess from the clip's pauses.
+  let transcriber = true;
+  async function wordTimes(text, file, duration) {
+    const voiceFile = path.join(composition, 'assets/voice', file);
+    if (transcriber) {
+      try {
+        const dir = path.join(job, 'transcribe', file.replace(/\.wav$/i, ''));
+        fs.mkdirSync(dir, { recursive: true });
+        const out = await run('npx', ['--yes', 'hyperframes', 'transcribe', voiceFile, '--json', '--no-runtime-install', '--optional', '-d', dir], composition, env, () => {});
+        const line = out.split(/\r?\n/).reverse().find((row) => row.trim().startsWith('{')) || '{}';
+        const result = JSON.parse(line);
+        if (result.ok === false || result.skipped) {
+          transcriber = false;
+          log('Word timing: estimated from pauses (install a speech model for exact timing).');
+        } else {
+          const listFile = path.join(dir, 'transcript.json');
+          const list = Array.isArray(result.words) ? result.words
+            : Array.isArray(result.transcript) ? result.transcript
+              : fs.existsSync(listFile) ? JSON.parse(fs.readFileSync(listFile, 'utf8')) : null;
+          const words = Array.isArray(list) ? list.filter((w) => w && typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end)) : [];
+          const said = new Set(words.flatMap((w) => tokens(w.text)));
+          const script = tokens(text);
+          if (script.length && script.filter((w) => said.has(w)).length / script.length >= 0.6) return words;
+        }
+      } catch {
+        transcriber = false;
+      }
+    }
+    const report = await ffmpeg(['-hide_banner', '-i', voiceFile, '-af', 'silencedetect=noise=-35dB:d=0.12', '-f', 'null', '-']);
+    return estimateWords(text, speechSegments(report, duration), duration);
+  }
+
   const firstEnter = items[0] ? items[0].transitionSeconds : 0;
   let titleDuration = 5;
   if (voiceOn) {
@@ -361,20 +374,30 @@ export async function renderJob(body, log) {
     const enter = items[i].transitionSeconds;
     const nextEnter = items[i + 1] ? items[i + 1].transitionSeconds : 0;
     let spoken = 0;
+    let words = null;
+    const voiceStart = Number(handoff.toFixed(2));
     if (voiceOn) {
-      spoken = await speak(items[i].voice, `${String(i + 1).padStart(2, '0')}.wav`);
-      voices.push({
-        id: `vo-${i + 1}`,
-        file: `${String(i + 1).padStart(2, '0')}.wav`,
-        start: Number(handoff.toFixed(2)),
-        track: 31 + i,
-      });
+      const file = `${String(i + 1).padStart(2, '0')}.wav`;
+      spoken = await speak(items[i].voice, file);
+      voices.push({ id: `vo-${i + 1}`, file, start: voiceStart, track: 31 + i });
+      if (items[i].highlights.some((item) => item.phrase)) words = await wordTimes(items[i].voice, file, spoken);
     }
     const spokenHold = voiceOn ? spoken + 1.2 : 5;
-    const zoomNeed = items[i].zoom > 1 ? items[i].zoomAt + 1 + items[i].zoomHold + 0.5 : 0;
-    const settled = Math.max(spokenHold, items[i].mediaDuration || 0, zoomNeed) + nextEnter;
+    // Highlights never stretch a video; a still stays up long enough for its timed ones.
+    const stillNeed = items[i].media === 'image' ? stillNeeds(items[i].highlights, words) : 0;
+    const settled = Math.max(spokenHold, items[i].mediaDuration || 0, stillNeed) + nextEnter;
     items[i].start = handoff - enter;
     items[i].duration = enter + settled + (i === items.length - 1 ? 0.4 : 0);
+    items[i].timed = timeHighlights(items[i].highlights, {
+      media: items[i].media,
+      clipStart: items[i].start,
+      visible: voiceStart,
+      until: voiceStart + settled - nextEnter,
+      words,
+    });
+    items[i].timed.forEach((item, n) => {
+      log(`Scene ${i + 1} highlight ${n + 1}: ${item.pinned ? `"${item.phrase}"` : 'set time'} at ${item.start.toFixed(1)}s`);
+    });
     handoff += settled;
   }
 
