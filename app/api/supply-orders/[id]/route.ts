@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
-import { loadOrderForParty, transitionSupplyOrder, SupplyOrderInputError } from '@/lib/supply-orders';
+import {
+  BUYER_LINE_PRICE_SQL,
+  LISTING_FOR_LINE_SQL,
+  loadOrderForParty,
+  transitionSupplyOrder,
+  SupplyOrderInputError,
+} from '@/lib/supply-orders';
 import { authorizeOrderRole, supplyOrderErrorResponse } from '@/lib/supply-order-http';
 
 export const dynamic = 'force-dynamic';
@@ -29,14 +35,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
              ${
                role === 'vendor'
                  ? 'vi.current_stock AS vendor_current_stock, vi.selling_price AS vendor_price, vi.selling_price AS unit_price'
-                 : // The buyer sees the supplier's catalog price, or its list price; never one the catalog hides.
-                   "CASE WHEN pl.price_display = 'hidden' THEN NULL ELSE COALESCE(pl.price, vi.selling_price) END AS unit_price"
+                 : `${BUYER_LINE_PRICE_SQL} AS unit_price`
              }
       FROM supply_order_lines l
       LEFT JOIN items bi ON bi.id = l.buyer_item_id
       LEFT JOIN items vi ON vi.id = l.vendor_item_id
-      LEFT JOIN supplier_published_listings pl
-        ON pl.supplier_business_id = $2 AND pl.item_id = l.vendor_item_id AND pl.is_active = true
+      ${LISTING_FOR_LINE_SQL('$2')}
       WHERE l.order_id = $1
       ORDER BY l.sort_order
       `,

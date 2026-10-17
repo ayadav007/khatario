@@ -299,11 +299,10 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                       className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
                     />
                     <span className="min-w-0">
-                      <span className="block font-medium text-gray-900">Share my low stock with this supplier</span>
+                      <span className="block font-medium text-gray-900">Share stock and sales with this supplier</span>
                       <span className="mt-0.5 block text-sm text-gray-600">
-                        {supplier.allow_low_stock_access
-                          ? 'They get an alert when an item they supply reaches your reorder level, and can propose an order.'
-                          : 'Turn on so they can see when you run low and propose an order for you to confirm.'}
+                        They are told when their items reach your reorder level and can propose an order for you to
+                        confirm. Your sales of their items count in their area totals, never shown as your shop alone.
                       </span>
                     </span>
                   </label>

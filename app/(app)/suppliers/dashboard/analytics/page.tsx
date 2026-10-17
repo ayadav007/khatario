@@ -22,6 +22,9 @@ type AnalyticsPayload = {
   pincodes: AreaPerformance[];
   pivot_items: string[];
   pivot_matrix: { state: string; cells: Record<string, number>; total: number }[];
+  min_shops_per_area?: number;
+  shops_sharing?: number;
+  hidden_shops?: { states: number; cities: number; pincodes: number };
 };
 
 const BAND_LABEL: Record<AreaPerformance['band'], string> = {
@@ -63,6 +66,7 @@ export default function SupplierAnalyticsPage() {
   }, [business?.id, period]);
 
   const rows = grain === 'state' ? data?.states : grain === 'city' ? data?.cities : data?.pincodes;
+  const hiddenHere = data?.hidden_shops?.[grain === 'state' ? 'states' : grain === 'city' ? 'cities' : 'pincodes'] ?? 0;
   const visibleRows = useMemo(() => {
     const list = rows || [];
     if (!selectedState) return list;
@@ -73,7 +77,7 @@ export default function SupplierAnalyticsPage() {
     <div className="max-w-7xl mx-auto space-y-6">
       <PageHeader
         title="Area performance"
-        subtitle="Where customers are buying from you, and where those goods are selling onward. Only customers who granted low-stock access are included."
+        subtitle="Where shops buy from you, and where your goods sell onward. Only shops that chose to share their stock and sales with you are included, and only as area totals."
       />
 
       <div className="flex flex-wrap gap-2">
@@ -112,10 +116,19 @@ export default function SupplierAnalyticsPage() {
         </div>
       ) : !data || data.states.length === 0 ? (
         <Card padding="lg">
-          <p className="text-center text-gray-500">No linked customers have granted low-stock access yet.</p>
+          <p className="text-center text-gray-500">
+            {data?.shops_sharing
+              ? `${data.shops_sharing} shop${data.shops_sharing === 1 ? ' shares' : 's share'} with you so far. Area totals appear once at least ${data.min_shops_per_area ?? 3} shops in an area share, so no single shop's sales can be seen.`
+              : 'No connected shops share their stock and sales with you yet.'}
+          </p>
         </Card>
       ) : (
         <>
+          {hiddenHere > 0 && (
+            <p className="text-xs text-gray-500">
+              {hiddenHere} shop{hiddenHere === 1 ? ' is' : 's are'} not shown at this level: an area needs at least {data.min_shops_per_area ?? 3} shops before its totals appear.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3 text-xs text-gray-600">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-700" /> Doing well</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-700" /> Watch</span>

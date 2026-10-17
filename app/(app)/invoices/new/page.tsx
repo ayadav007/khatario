@@ -2287,7 +2287,9 @@ function NewInvoiceContent() {
           window.matchMedia('(max-width: 1023px)').matches;
         if (mobilePost && data.invoice?.id) {
           router.push(
-            `/invoices/${data.invoice.id}/view?from=generate&type=${encodeURIComponent(documentType)}`
+            `/invoices/${data.invoice.id}/view?from=generate&type=${encodeURIComponent(documentType)}${
+              searchParams.get('supply_order_id') ? `&supply_order_id=${encodeURIComponent(searchParams.get('supply_order_id') as string)}` : ''
+            }`
           );
         } else {
           setShareModalOpen(true);

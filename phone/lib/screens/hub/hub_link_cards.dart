@@ -138,9 +138,10 @@ class _HubSupplierLinkCardState extends State<HubSupplierLinkCard> {
                     contentPadding: EdgeInsets.zero,
                     value: link['stock_shared'] == true,
                     onChanged: _busy ? null : _share,
-                    title: Text('Share low stock', style: AppText.bodyStrong),
+                    title: Text('Share stock and sales with them', style: AppText.bodyStrong),
                     subtitle: Text(
-                      'They see items they supply to you once stock reaches your reorder level, and can suggest an order.',
+                      'They are told when their items reach your reorder level and can propose an order. '
+                      'Your sales of their items count in their area totals, never shown as your shop alone.',
                       style: AppText.caption,
                     ),
                   ),
@@ -244,7 +245,7 @@ class _HubCustomerLinkCardState extends State<HubCustomerLinkCard> {
               ]),
               if (status == 'approved') ...[
                 const SizedBox(height: AppSpace.sm),
-                Text(link['stock_shared'] == true ? 'Shares low stock with you.' : 'Does not share low stock.', style: AppText.caption),
+                Text(link['stock_shared'] == true ? 'Shares stock and sales with you.' : 'Does not share stock and sales.', style: AppText.caption),
                 const SizedBox(height: AppSpace.sm),
                 KButton.secondary(
                   label: 'Orders with this buyer',

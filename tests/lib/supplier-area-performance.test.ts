@@ -1,4 +1,12 @@
-import { aggregateAreas, assignBands, topItemPivot, type AreaPerformance } from '@/lib/supplier-area-performance';
+import {
+  aggregateAreas,
+  aggregateAreasPrivately,
+  assignBands,
+  statesWithEnoughShops,
+  topItemPivot,
+  OTHER_AREAS_LABEL,
+  type AreaPerformance,
+} from '@/lib/supplier-area-performance';
 
 function row(partial: Partial<AreaPerformance> & Pick<AreaPerformance, 'label'>): AreaPerformance {
   return {
@@ -60,5 +68,36 @@ describe('supplier area performance', () => {
     expect(pivot.matrix[0].state).toBe('Rajasthan');
     expect(pivot.matrix[0].cells.Atta).toBe(500);
     expect(pivot.matrix[0].cells.Rice).toBeUndefined();
+  });
+
+  describe('privacy floor', () => {
+    const shop = (state: string, city: string, sellThrough = 100) => ({
+      state, city, pincode: '', sellIn: 0, sellThrough, lowStockItems: 0,
+    });
+
+    it('shows areas with enough shops and pools the small ones', () => {
+      const facts = [
+        shop('Rajasthan', 'Jaipur'), shop('Rajasthan', 'Jaipur'), shop('Rajasthan', 'Jaipur'),
+        shop('Gujarat', 'Surat'), shop('Gujarat', 'Rajkot'), shop('Goa', 'Panaji'),
+      ];
+      const { areas, hiddenShops } = aggregateAreasPrivately(facts, 'city');
+      expect(areas.map((a) => a.label).sort()).toEqual(['Jaipur, Rajasthan', OTHER_AREAS_LABEL].sort());
+      expect(areas.find((a) => a.label === OTHER_AREAS_LABEL)?.customerCount).toBe(3);
+      expect(hiddenShops).toBe(0);
+    });
+
+    it('leaves out a pool too small to hide one shop', () => {
+      const facts = [shop('Rajasthan', 'Jaipur'), shop('Rajasthan', 'Jaipur'), shop('Rajasthan', 'Jaipur'), shop('Goa', 'Panaji', 999)];
+      const { areas, hiddenShops } = aggregateAreasPrivately(facts, 'state');
+      expect(areas.map((a) => a.label)).toEqual(['Rajasthan']);
+      expect(hiddenShops).toBe(1);
+    });
+
+    it('shows nothing for a single sharing shop', () => {
+      const { areas, hiddenShops } = aggregateAreasPrivately([shop('Goa', 'Panaji')], 'state');
+      expect(areas).toEqual([]);
+      expect(hiddenShops).toBe(1);
+      expect(statesWithEnoughShops([shop('Goa', 'Panaji')]).size).toBe(0);
+    });
   });
 });

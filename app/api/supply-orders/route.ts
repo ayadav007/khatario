@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
-import { createSupplyOrder } from '@/lib/supply-orders';
+import { createSupplyOrder, listSupplyOrders } from '@/lib/supply-orders';
 import { authorizeOrderRole, supplyOrderErrorResponse } from '@/lib/supply-order-http';
 
 export const dynamic = 'force-dynamic';
-
-const STATUS_GROUPS: Record<string, string[]> = {
-  action: [], // filled per role below
-  open: ['draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced'],
-  done: ['received', 'declined', 'cancelled'],
-};
 
 /**
  * GET /api/supply-orders?role=buyer|vendor&group=action|open|done|all
@@ -26,38 +20,7 @@ export async function GET(request: NextRequest) {
     const group = searchParams.get('group') || 'action';
     await authorizeOrderRole(auth.userId, auth.businessId, role, 'read');
 
-    const statuses =
-      group === 'action'
-        ? role === 'vendor'
-          ? ['draft', 'pending', 'confirmed', 'partial']
-          : ['proposed', 'invoiced']
-        : STATUS_GROUPS[group] ?? null;
-
-    const mine = role === 'buyer' ? 'o.buyer_business_id' : 'o.vendor_business_id';
-    const theirs = role === 'buyer' ? 'o.vendor_business_id' : 'o.buyer_business_id';
-    const args: any[] = [auth.businessId];
-    let statusSql = '';
-    if (statuses) {
-      args.push(statuses);
-      statusSql = `AND o.status = ANY($2::text[])`;
-    }
-    const orders = await db.queryRows(
-      `
-      SELECT o.id, o.status, o.origin, o.need_by, o.created_at, o.updated_at, o.invoice_id,
-             ${theirs} AS other_business_id, ob.name AS other_business_name,
-             (SELECT COUNT(*)::int FROM supply_order_lines l WHERE l.order_id = o.id) AS line_count,
-             inv.invoice_number
-      FROM supply_orders o
-      JOIN businesses ob ON ob.id = ${theirs}
-      LEFT JOIN invoices inv ON inv.id = o.invoice_id
-      WHERE ${mine} = $1
-        ${statusSql}
-        ${role === 'buyer' ? "AND o.status <> 'draft'" : ''}
-      ORDER BY o.updated_at DESC
-      LIMIT 200
-      `,
-      args
-    );
+    const orders = await listSupplyOrders(auth.businessId, role, group);
     return NextResponse.json({ role, orders });
   } catch (error) {
     return supplyOrderErrorResponse(error, 'Failed to load orders');

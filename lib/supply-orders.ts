@@ -387,6 +387,68 @@ export async function loadOrderForParty(
   return { order, role: order.buyer_business_id === businessId ? 'buyer' : 'vendor' };
 }
 
+/**
+ * SQL: price per supplier unit a connected buyer sees for an order line, given the supplier's
+ * item `vi` and its active catalog listing `pl` (LEFT JOINed with LISTING_FOR_LINE_SQL). The
+ * catalog price wins; otherwise the supplier's list price, unless the listing hides prices.
+ */
+export const BUYER_LINE_PRICE_SQL = `COALESCE(pl.price, CASE WHEN pl.id IS NULL OR pl.price_display <> 'hidden' THEN vi.selling_price END)`;
+
+/** SQL join for `pl`, the active listing of line `l`'s supplier item; `vendorParam` is the supplier's business id. */
+export const LISTING_FOR_LINE_SQL = (vendorParam: string) =>
+  `LEFT JOIN supplier_published_listings pl
+     ON pl.supplier_business_id = ${vendorParam} AND pl.item_id = l.vendor_item_id AND pl.is_active = true`;
+
+const STATUS_GROUPS: Record<string, SupplyOrderStatus[]> = {
+  open: ['draft', 'proposed', 'pending', 'confirmed', 'partial', 'invoiced'],
+  done: ['received', 'declined', 'cancelled'],
+};
+
+/** Statuses that wait on this side: the supplier's drafts, orders to answer and to bill; the buyer's proposals and bills. */
+export const ACTION_STATUSES: Record<'buyer' | 'vendor', SupplyOrderStatus[]> = {
+  vendor: ['draft', 'pending', 'confirmed', 'partial'],
+  buyer: ['proposed', 'invoiced'],
+};
+
+/**
+ * Orders of `businessId` as buyer or supplier. group: action (waiting on this side), open, done
+ * or all. The buyer never sees the supplier's drafts.
+ */
+export async function listSupplyOrders(
+  businessId: string,
+  role: 'buyer' | 'vendor',
+  group: string,
+  client?: PoolClient
+) {
+  const statuses = group === 'action' ? ACTION_STATUSES[role] : STATUS_GROUPS[group] ?? null;
+  const mine = role === 'buyer' ? 'o.buyer_business_id' : 'o.vendor_business_id';
+  const theirs = role === 'buyer' ? 'o.vendor_business_id' : 'o.buyer_business_id';
+  const args: any[] = [businessId];
+  let statusSql = '';
+  if (statuses) {
+    args.push(statuses);
+    statusSql = `AND o.status = ANY($2::text[])`;
+  }
+  const { rows } = await execFor(client)(
+    `
+    SELECT o.id, o.status, o.origin, o.need_by, o.created_at, o.updated_at, o.invoice_id,
+           ${theirs} AS other_business_id, ob.name AS other_business_name,
+           (SELECT COUNT(*)::int FROM supply_order_lines l WHERE l.order_id = o.id) AS line_count,
+           inv.invoice_number
+    FROM supply_orders o
+    JOIN businesses ob ON ob.id = ${theirs}
+    LEFT JOIN invoices inv ON inv.id = o.invoice_id
+    WHERE ${mine} = $1
+      ${statusSql}
+      ${role === 'buyer' ? "AND o.status <> 'draft'" : ''}
+    ORDER BY o.updated_at DESC
+    LIMIT 200
+    `,
+    args
+  );
+  return rows;
+}
+
 export type LineEdit = {
   id: string;
   qty?: number | string | null;

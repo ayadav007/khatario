@@ -15,6 +15,7 @@ type Scene = {
   voice: string;
   transition?: 'cut' | 'crossfade' | 'slide';
   transitionSeconds?: number;
+  highlights?: Highlight[];
   zoomOn?: boolean;
   zoomAt?: number;
   zoomHold?: number;
@@ -25,6 +26,18 @@ type Scene = {
   shape?: 'circle' | 'rect' | 'none';
 };
 
+type Highlight = {
+  phrase: string;
+  at: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  shape: 'circle' | 'rect' | 'none';
+  zoom: number;
+  hold: number;
+};
+
 type Preset = {
   title: string;
   subtitle: string;
@@ -33,10 +46,11 @@ type Preset = {
   scenes: Scene[];
 };
 
-function formatClock(seconds: number) {
-  const total = Math.max(0, Math.round(seconds || 0));
-  const minutes = Math.floor(total / 60);
-  return `${minutes}:${String(total % 60).padStart(2, '0')}`;
+function formatTime(seconds: number) {
+  const tenths = Math.max(0, Math.round((seconds || 0) * 10));
+  const minutes = Math.floor(tenths / 600);
+  const rest = (tenths % 600) / 10;
+  return `${minutes}:${rest < 10 ? '0' : ''}${rest.toFixed(1)}`;
 }
 
 function parseClock(value: string) {
@@ -47,50 +61,111 @@ function parseClock(value: string) {
   return parts[0];
 }
 
-function AimFrame({ scene, onPoint, onTime, onMark }: { scene: Scene; onPoint: (x: number, y: number) => void; onTime: (seconds: number) => void; onMark: (patch: Partial<Scene>) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const frameRef = useRef<HTMLButtonElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [now, setNow] = useState(scene.zoomAt || 0);
-  const [duration, setDuration] = useState(0);
-  const [box, setBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const src = scene.preview || (scene.image ? `/api/admin/videos/shots/${scene.image}` : '');
-  const mark = box || {
+function words(text: string) {
+  return text.toLowerCase().split(/\s+/).map((word) => word.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+}
+
+/** Mirrors the server: exact phrase, else the first word as a prefix, else not found. */
+function phraseMatch(voice: string, phrase: string): 'exact' | 'word' | 'missing' {
+  const want = words(phrase);
+  const have = words(voice);
+  if (!want.length) return 'missing';
+  for (let i = 0; i + want.length <= have.length; i += 1) {
+    if (want.every((token, j) => have[i + j] === token)) return 'exact';
+  }
+  return have.some((token) => token.startsWith(want[0])) ? 'word' : 'missing';
+}
+
+function highlightsOf(scene: Scene): Highlight[] {
+  if (scene.highlights) return scene.highlights;
+  if (!scene.zoomOn) return [];
+  const shape = scene.shape || 'circle';
+  return [{
+    phrase: '',
+    at: scene.zoomAt || 0,
     x: scene.zoomX ?? 50,
     y: scene.zoomY ?? 50,
-    w: scene.markW ?? (scene.shape === 'rect' ? 28 : 18),
-    h: scene.markH ?? 24,
-  };
+    w: scene.markW ?? (shape === 'rect' ? 28 : 14),
+    h: scene.markH ?? 16,
+    shape,
+    zoom: 2,
+    hold: Math.min(scene.zoomHold ?? 2, 30),
+  }];
+}
 
-  function beginDrag(event: ReactPointerEvent, resizing: boolean) {
+const fieldClass = 'mt-1 block rounded-lg border border-gray-300 px-2 py-1.5 text-sm font-medium normal-case text-gray-900';
+
+function SceneCard({ scene, index, voiceOn, onChange, onReplace, onRemove }: {
+  scene: Scene;
+  index: number;
+  voiceOn: boolean;
+  onChange: (patch: Partial<Scene>) => void;
+  onReplace: () => void;
+  onRemove: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const voiceRef = useRef<HTMLTextAreaElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [now, setNow] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [picked, setPicked] = useState('');
+  const [drag, setDrag] = useState<{ i: number; x: number; y: number; w: number; h: number } | null>(null);
+  const list = highlightsOf(scene);
+  const isVideo = scene.media === 'video' && Boolean(scene.preview);
+  const src = scene.preview || (scene.image ? `/api/admin/videos/shots/${scene.image}` : '');
+
+  function save(next: Highlight[]) {
+    onChange({ highlights: next, zoomOn: false });
+  }
+
+  function update(i: number, patch: Partial<Highlight>) {
+    save(list.map((item, n) => (n === i ? { ...item, ...patch } : item)));
+  }
+
+  function add(patch: Partial<Highlight>) {
+    const time = videoRef.current ? Math.round(videoRef.current.currentTime * 10) / 10 : 1;
+    save([...list, { phrase: '', at: time, x: 50, y: 50, w: 14, h: 16, shape: 'circle', zoom: 1.5, hold: 2, ...patch }]);
+    setSelected(list.length);
+  }
+
+  function remove(i: number) {
+    save(list.filter((_, n) => n !== i));
+    setSelected(null);
+  }
+
+  function select(i: number) {
+    setSelected(i);
+    const video = videoRef.current;
+    const item = list[i];
+    if (video && video.paused && item && !(voiceOn && phraseMatch(scene.voice, item.phrase) !== 'missing')) {
+      video.currentTime = Math.min(item.at, Math.max(0, (video.duration || item.at) - 0.05));
+    }
+  }
+
+  function beginDrag(event: ReactPointerEvent, i: number, resizing: boolean) {
     event.preventDefault();
     event.stopPropagation();
+    setSelected(i);
     const bounds = frameRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const startX = event.clientX;
     const startY = event.clientY;
-    const origin = { ...mark };
+    const origin = list[i];
+    const rect = origin.shape === 'rect';
     const move = (ev: PointerEvent) => {
       const dx = ((ev.clientX - startX) / bounds.width) * 100;
       const dy = ((ev.clientY - startY) / bounds.height) * 100;
-      const next = resizing
-        ? {
-            ...origin,
-            w: Math.min(90, Math.max(4, origin.w + dx)),
-            h: scene.shape === 'rect' ? Math.min(90, Math.max(4, origin.h + dy)) : origin.h,
-          }
-        : {
-            ...origin,
-            x: Math.min(100, Math.max(0, Math.round((origin.x + dx) * 10) / 10)),
-            y: Math.min(100, Math.max(0, Math.round((origin.y + dy) * 10) / 10)),
-          };
-      setBox(next);
+      setDrag(resizing
+        ? { i, x: origin.x, y: origin.y, w: Math.min(90, Math.max(3, origin.w + dx)), h: rect ? Math.min(90, Math.max(3, origin.h + dy)) : origin.h }
+        : { i, x: Math.min(100, Math.max(0, Math.round((origin.x + dx) * 10) / 10)), y: Math.min(100, Math.max(0, Math.round((origin.y + dy) * 10) / 10)), w: origin.w, h: origin.h });
     };
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
-      setBox((current) => {
-        if (current) onMark({ zoomX: current.x, zoomY: current.y, markW: current.w, markH: current.h });
+      setDrag((current) => {
+        if (current) update(current.i, { x: current.x, y: current.y, w: Math.round(current.w * 10) / 10, h: Math.round(current.h * 10) / 10 });
         return null;
       });
     };
@@ -102,120 +177,252 @@ function AimFrame({ scene, onPoint, onTime, onMark }: { scene: Scene; onPoint: (
     const video = videoRef.current;
     if (!video) return;
     const reveal = () => video.play().then(() => video.pause()).catch(() => undefined);
-    const seek = () => {
-      const limit = Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.05) : scene.zoomAt || 0;
-      const next = Math.min(scene.zoomAt || 0, limit);
-      if (Math.abs(video.currentTime - next) > 0.05) video.currentTime = next;
-    };
-    const onData = () => {
-      if ((scene.zoomAt || 0) > 0.05) {
-        video.addEventListener('seeked', reveal, { once: true });
-        seek();
-      } else {
-        reveal();
-      }
-    };
-    video.addEventListener('loadeddata', onData);
-    if (video.readyState >= 2) onData();
-    return () => video.removeEventListener('loadeddata', onData);
+    video.addEventListener('loadeddata', reveal, { once: true });
+    if (video.readyState >= 2) void reveal();
+    return () => video.removeEventListener('loadeddata', reveal);
   }, [src]);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !video.paused) return;
-    const limit = Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.05) : scene.zoomAt || 0;
-    const next = Math.min(scene.zoomAt || 0, limit);
-    if (Math.abs(video.currentTime - next) > 0.2) video.currentTime = next;
-  }, [scene.zoomAt]);
+  function readPick() {
+    const box = voiceRef.current;
+    if (!box) return;
+    setPicked(box.value.slice(box.selectionStart, box.selectionEnd).trim().slice(0, 80));
+  }
 
   return (
-    <div className="max-w-xl">
-      <button
-        ref={frameRef}
-        type="button"
-        className="relative block aspect-video w-full overflow-hidden rounded-lg bg-black"
-        onClick={(event) => {
-          const video = videoRef.current;
-          if (video) video.pause();
-          const box = event.currentTarget.getBoundingClientRect();
-          const x = Math.round(((event.clientX - box.left) / box.width) * 1000) / 10;
-          const y = Math.round(((event.clientY - box.top) / box.height) * 1000) / 10;
-          onPoint(x, y);
-          if (video) onTime(Math.round(video.currentTime * 10) / 10);
-        }}
-      >
-        {scene.media === 'video' && scene.preview ? (
-          <video
-            ref={videoRef}
-            src={scene.preview}
-            muted
-            playsInline
-            preload="auto"
-            className="h-full w-full object-cover"
-            onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
-            onTimeUpdate={(event) => setNow(event.currentTarget.currentTime || 0)}
-            onPlay={() => setPlaying(true)}
-            onPause={(event) => {
-              setPlaying(false);
-              onTime(Math.round(event.currentTarget.currentTime * 10) / 10);
-            }}
-          />
-        ) : src ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt="" className="h-full w-full object-cover" />
-        ) : null}
-        {scene.zoomOn && scene.shape !== 'none' ? (
-          <i
-            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-grab border-[3px] border-[#f58220] ${scene.shape === 'rect' ? 'rounded-lg' : 'aspect-square rounded-full'}`}
-            style={{ left: `${mark.x}%`, top: `${mark.y}%`, width: `${mark.w}%`, height: scene.shape === 'rect' ? `${mark.h}%` : undefined }}
-            onPointerDown={(event) => beginDrag(event, false)}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <b
-              className="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm bg-[#f58220]"
-              onPointerDown={(event) => beginDrag(event, true)}
+    <article className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="max-w-xl">
+        <div
+          ref={frameRef}
+          className="relative block aspect-video w-full cursor-crosshair overflow-hidden rounded-lg bg-black"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            const x = Math.round(((event.clientX - box.left) / box.width) * 1000) / 10;
+            const y = Math.round(((event.clientY - box.top) / box.height) * 1000) / 10;
+            const video = videoRef.current;
+            const time = video ? { at: Math.round(video.currentTime * 10) / 10 } : {};
+            if (selected !== null && list[selected]) update(selected, { x, y, ...time });
+            else add({ x, y });
+          }}
+        >
+          {isVideo ? (
+            <video
+              ref={videoRef}
+              src={scene.preview}
+              muted
+              playsInline
+              preload="auto"
+              className="h-full w-full object-cover"
+              onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+              onTimeUpdate={(event) => setNow(event.currentTarget.currentTime || 0)}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
             />
-          </i>
+          ) : src ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt="" className="h-full w-full object-cover" />
+          ) : null}
+          {list.map((item, i) => {
+            const live = drag && drag.i === i ? drag : item;
+            const active = selected === i;
+            const shape = item.shape === 'none' ? 'rect' : item.shape;
+            return (
+              <i
+                key={i}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-grab border-[#f58220] ${active ? 'border-[3px]' : 'border-2 opacity-60'} ${item.shape === 'none' ? 'border-dashed' : ''} ${shape === 'rect' ? 'rounded-lg' : 'aspect-square rounded-full'}`}
+                style={{ left: `${live.x}%`, top: `${live.y}%`, width: `${live.w}%`, height: shape === 'rect' ? `${live.h}%` : undefined }}
+                onPointerDown={(event) => beginDrag(event, i, false)}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className="absolute -left-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#f58220] text-[11px] font-bold not-italic text-white">{i + 1}</span>
+                {active ? (
+                  <b className="absolute -bottom-1.5 -right-1.5 h-3.5 w-3.5 cursor-nwse-resize rounded-sm bg-[#f58220]" onPointerDown={(event) => beginDrag(event, i, true)} />
+                ) : null}
+              </i>
+            );
+          })}
+        </div>
+        {isVideo ? (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium"
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                if (video.paused) void video.play();
+                else video.pause();
+              }}
+            >
+              {playing ? 'Pause' : 'Play'}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.1}
+              value={Math.min(now, duration || now)}
+              className="min-w-0 flex-1"
+              onChange={(event) => {
+                const video = videoRef.current;
+                const at = Number(event.target.value);
+                if (video) video.currentTime = at;
+                setNow(at);
+              }}
+            />
+            <span className="w-14 text-sm font-semibold tabular-nums text-gray-700">{formatTime(now)}</span>
+          </div>
         ) : null}
-      </button>
-      {scene.media === 'video' && scene.preview ? (
-        <div className="mt-2 flex items-center gap-2">
+        <p className="mt-2 text-sm text-gray-500">
+          {selected !== null && list[selected]
+            ? `Click the picture to move highlight ${selected + 1}${isVideo ? ' (it keeps playing)' : ''}. Drag the corner to resize.`
+            : 'Click the picture to add a highlight there.'}
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold uppercase text-gray-500">On-screen caption</label>
+        <textarea className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} value={scene.caption} onChange={(e) => onChange({ caption: e.target.value })} />
+        <label className="mt-3 block text-xs font-semibold uppercase text-gray-500">Spoken line</label>
+        <textarea
+          ref={voiceRef}
+          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
+          rows={2}
+          value={scene.voice}
+          onChange={(e) => onChange({ voice: e.target.value })}
+          onSelect={readPick}
+          onKeyUp={readPick}
+          onMouseUp={readPick}
+        />
+        {picked && voiceOn ? (
           <button
             type="button"
-            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium"
+            className="mt-1 rounded-lg bg-[#f58220] px-3 py-1.5 text-sm font-semibold text-white"
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              if (video.paused) {
-                video.muted = false;
-                void video.play();
-              } else video.pause();
+              add({ phrase: picked });
+              const box = voiceRef.current;
+              if (box) box.setSelectionRange(box.selectionEnd, box.selectionEnd);
+              setPicked('');
             }}
           >
-            {playing ? 'Pause' : 'Play'}
+            Highlight “{picked}” when it is said
           </button>
-          <input
-            type="range"
-            min={0}
-            max={duration || 0}
-            step={0.1}
-            value={Math.min(now, duration || now)}
-            className="min-w-0 flex-1"
-            onChange={(event) => {
-              const video = videoRef.current;
-              const at = Number(event.target.value);
-              if (video) {
-                video.pause();
-                video.currentTime = at;
-              }
-              setNow(at);
-              onTime(Math.round(at * 10) / 10);
-            }}
-          />
-          <span className="w-12 text-sm font-semibold tabular-nums text-gray-700">{formatClock(now)}</span>
+        ) : (
+          <p className="mt-1 text-sm text-gray-500">Select words in the spoken line, such as “New invoice”, to highlight that spot when the voice says them.</p>
+        )}
+
+        <div className="mt-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-800">Highlights</h3>
+          <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium" onClick={() => add({})}>
+            Add highlight
+          </button>
         </div>
-      ) : null}
-    </div>
+        {list.length === 0 ? <p className="mt-1 text-sm text-gray-500">None yet.</p> : null}
+        <div className="mt-2 space-y-2">
+          {list.map((item, i) => {
+            const match = voiceOn ? phraseMatch(scene.voice, item.phrase) : 'missing';
+            const usesTime = match === 'missing';
+            return (
+              <div
+                key={i}
+                className={`rounded-lg border p-3 ${selected === i ? 'border-[#f58220] bg-orange-50' : 'border-gray-200'}`}
+                onClick={() => select(i)}
+              >
+                <div className="flex flex-wrap items-end gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f58220] text-xs font-bold text-white">{i + 1}</span>
+                  <label className="min-w-[12rem] flex-1 text-xs font-semibold uppercase text-gray-500">
+                    When the voice says
+                    <input className={`${fieldClass} w-full`} value={item.phrase} placeholder="e.g. New invoice" onChange={(e) => update(i, { phrase: e.target.value })} />
+                  </label>
+                  <label className="text-xs font-semibold uppercase text-gray-500">
+                    Mark
+                    <select className={fieldClass} value={item.shape} onChange={(e) => update(i, { shape: e.target.value as Highlight['shape'] })}>
+                      <option value="circle">Circle</option>
+                      <option value="rect">Rectangle</option>
+                      <option value="none">Zoom only</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold uppercase text-gray-500">
+                    Zoom
+                    <select className={fieldClass} value={String(item.zoom)} onChange={(e) => update(i, { zoom: Number(e.target.value) })}>
+                      <option value="1">None</option>
+                      <option value="1.5">1.5×</option>
+                      <option value="2">2×</option>
+                      <option value="2.5">2.5×</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold uppercase text-gray-500">
+                    Seconds
+                    <input type="number" min={0.5} max={30} step={0.5} className={`${fieldClass} w-20`} value={item.hold} onChange={(e) => update(i, { hold: Number(e.target.value) })} />
+                  </label>
+                  {usesTime ? (
+                    <label className="text-xs font-semibold uppercase text-gray-500">
+                      {isVideo ? 'At video time' : 'After the scene starts'}
+                      <input
+                        className={`${fieldClass} w-24`}
+                        defaultValue={formatTime(item.at)}
+                        key={`${i}-${item.at}`}
+                        onBlur={(e) => update(i, { at: parseClock(e.target.value) })}
+                      />
+                    </label>
+                  ) : null}
+                  <button type="button" className="pb-1.5 text-sm font-medium text-red-700" onClick={(event) => { event.stopPropagation(); remove(i); }}>
+                    Remove
+                  </button>
+                </div>
+                <p className={`mt-1 text-xs ${match === 'exact' ? 'text-green-700' : 'text-gray-500'}`}>
+                  {!voiceOn
+                    ? 'The voice is off, so this shows at the time you set.'
+                    : match === 'exact'
+                      ? 'Shows when the voice says these words.'
+                      : match === 'word'
+                        ? `Only “${words(item.phrase)[0]}” matches the spoken line, so it shows on that word.`
+                        : item.phrase
+                          ? 'These words are not in the spoken line, so it shows at the time you set.'
+                          : 'No words picked, so it shows at the time you set.'}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <label className="text-xs font-semibold uppercase text-gray-500">
+            Transition
+            <select
+              className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium normal-case text-gray-900"
+              value={scene.transition || 'crossfade'}
+              onChange={(e) => onChange({ transition: e.target.value as Scene['transition'] })}
+            >
+              <option value="cut">Cut</option>
+              <option value="crossfade">Crossfade</option>
+              <option value="slide">Slide</option>
+            </select>
+          </label>
+          <label className="text-xs font-semibold uppercase text-gray-500">
+            Seconds
+            <input
+              type="number"
+              min={0.2}
+              max={3}
+              step={0.1}
+              className="mt-1 block w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900"
+              value={scene.transitionSeconds ?? 1}
+              disabled={(scene.transition || 'crossfade') === 'cut'}
+              onChange={(e) => onChange({ transitionSeconds: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium" onClick={onReplace}>
+            Change picture
+          </button>
+          <button type="button" className="text-sm font-medium text-red-700" onClick={onRemove}>
+            Remove scene {index + 1}
+          </button>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -378,7 +585,7 @@ export default function AdminVideosPage() {
         Videos
       </h1>
       <p className="mt-2 max-w-2xl text-gray-600">
-        The voice reads the spoken line under each scene. Turn on Zoom, type a time such as 3:25, and click the face or button on that frame. The view moves in over 1 second, holds, then moves back in half a second.
+        The voice reads the spoken line under each scene. To point at something, select words in the spoken line, such as “New invoice”, press Highlight, then click that button on the picture. The circle or rectangle, and the zoom if you pick one, appears exactly when those words are said. Videos keep playing the whole time.
       </p>
 
       <label className="mt-6 block text-sm font-semibold text-gray-700" htmlFor="video-title">Title</label>
@@ -415,78 +622,15 @@ export default function AdminVideosPage() {
 
       <div className="mt-6 space-y-3">
         {scenes.map((scene, index) => (
-          <article key={`${scene.image || scene.media || 'scene'}-${index}`} className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-            <AimFrame
-              scene={scene}
-              onPoint={(x, y) => updateScene(index, { zoomOn: true, zoomX: x, zoomY: y, shape: scene.shape || 'circle' })}
-              onTime={(seconds) => updateScene(index, { zoomAt: seconds })}
-              onMark={(patch) => updateScene(index, patch)}
-            />
-            <div>
-              <label className="block text-xs font-semibold uppercase text-gray-500">On-screen caption</label>
-              <textarea className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} value={scene.caption} onChange={(e) => updateScene(index, { caption: e.target.value })} />
-              <label className="mt-3 block text-xs font-semibold uppercase text-gray-500">Spoken line</label>
-              <textarea className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={2} value={scene.voice} onChange={(e) => updateScene(index, { voice: e.target.value })} />
-              <div className="mt-3 flex flex-wrap gap-3">
-                <label className="text-xs font-semibold uppercase text-gray-500">
-                  Transition
-                  <select
-                    className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium normal-case text-gray-900"
-                    value={scene.transition || 'crossfade'}
-                    onChange={(e) => updateScene(index, { transition: e.target.value as Scene['transition'] })}
-                  >
-                    <option value="cut">Cut</option>
-                    <option value="crossfade">Crossfade</option>
-                    <option value="slide">Slide</option>
-                  </select>
-                </label>
-                <label className="text-xs font-semibold uppercase text-gray-500">
-                  Seconds
-                  <input
-                    type="number"
-                    min={0.2}
-                    max={3}
-                    step={0.1}
-                    className="mt-1 block w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900"
-                    value={scene.transitionSeconds ?? 1}
-                    disabled={(scene.transition || 'crossfade') === 'cut'}
-                    onChange={(e) => updateScene(index, { transitionSeconds: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-              <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-                <input type="checkbox" checked={scene.zoomOn === true} onChange={(e) => updateScene(index, { zoomOn: e.target.checked, zoomX: scene.zoomX ?? 50, zoomY: scene.zoomY ?? 50, shape: scene.shape || 'circle' })} />
-                Zoom into this frame
-              </label>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <label className="text-xs font-semibold uppercase text-gray-500">
-                  Zoom at
-                  <input className="mt-1 block w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium normal-case text-gray-900" defaultValue={formatClock(scene.zoomAt || 0)} key={`${index}-at-${scene.zoomAt || 0}`} onBlur={(e) => updateScene(index, { zoomAt: parseClock(e.target.value) })} />
-                </label>
-                <label className="text-xs font-semibold uppercase text-gray-500">
-                  Hold for seconds
-                  <input type="number" min={0.4} max={180} step={1} className="mt-1 block w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-900" value={scene.zoomHold ?? 30} onChange={(e) => updateScene(index, { zoomHold: Number(e.target.value) })} />
-                </label>
-                <label className="text-xs font-semibold uppercase text-gray-500">
-                  Mark
-                  <select className="mt-1 block rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium normal-case text-gray-900" value={scene.shape || 'circle'} onChange={(e) => updateScene(index, { shape: e.target.value as Scene['shape'] })}>
-                    <option value="circle">Circle</option>
-                    <option value="rect">Rectangle</option>
-                    <option value="none">No mark</option>
-                  </select>
-                </label>
-              </div>
-              <p className="mt-2 text-sm text-gray-500">Drag the mark to move it. Drag the orange corner to resize it.</p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium" onClick={() => replaceMedia(index)}>
-                  Change picture
-                </button>
-                <button type="button" className="text-sm font-medium text-red-700" onClick={() => setScenes((current) => current.filter((_, i) => i !== index))}>
-                  Remove scene {index + 1}
-                </button>
-              </div>
-            </div>
-          </article>
+          <SceneCard
+            key={`${scene.image || scene.media || 'scene'}-${index}`}
+            scene={scene}
+            index={index}
+            voiceOn={voice}
+            onChange={(patch) => updateScene(index, patch)}
+            onReplace={() => replaceMedia(index)}
+            onRemove={() => setScenes((current) => current.filter((_, i) => i !== index))}
+          />
         ))}
       </div>
 

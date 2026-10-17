@@ -24,9 +24,9 @@ export function notificationHref(n: NotificationRef): string | null {
   // Supplier Hub
   if (refType === 'supply_order' && id) return `/supply-orders/${id}`;
   if (refType === 'supplier_collection') return '/purchases/new-arrivals';
-  if (type === 'hub_connection_request') return '/settings/suppliers-directory';
+  if (type === 'hub_connection_request') return '/suppliers/hub';
   if (type === 'hub_connection_accepted') return '/suppliers';
-  if (type === 'hub_connection_declined') return '/suppliers/hub';
+  if (type === 'hub_connection_declined') return '/suppliers/hub/find';
   if (type === 'low_stock_alert') return '/supply-orders?role=vendor';
   if (refType === 'business') return '/suppliers';
 

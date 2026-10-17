@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { useToastContext } from '@/contexts/ToastContext';
 import { SUPPLY_ORDER_STATUS_LABEL, supplyOrderChipVariant } from '@/components/suppliers/supplyOrderStatus';
+import { NewOrderSheet } from '@/components/suppliers/hub/NewOrderSheet';
 
 type Row = {
   id: string;
@@ -36,6 +37,20 @@ export default function SupplyOrdersPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const [partners, setPartners] = useState<{ supplierId: string; name: string; city: string | null }[] | null>(null);
+
+  const openNewOrder = async () => {
+    setNewOrderOpen(true);
+    if (partners) return;
+    try {
+      const res = await fetch('/api/suppliers/hub/home');
+      const data = await res.json();
+      setPartners(res.ok ? data.buying?.partners || [] : []);
+    } catch {
+      setPartners([]);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -94,22 +109,20 @@ export default function SupplyOrdersPage() {
     <div className="space-y-4">
       <PageHeader
         title="Supplier orders"
-        subtitle="Orders with your connected suppliers and buyers. Suppliers propose from your low stock, you confirm, they bill, you receive."
+        subtitle={role === 'buyer' ? 'Orders you place with your suppliers.' : 'Orders from the shops you supply.'}
         actions={
           role === 'vendor' ? (
             <Button variant="secondary" onClick={refreshSuggestions} disabled={refreshing}>
               {refreshing ? 'Checking…' : 'Check buyers’ low stock'}
             </Button>
           ) : (
-            <Link href="/suppliers">
-              <Button variant="secondary">New order (pick a supplier)</Button>
-            </Link>
+            <Button onClick={openNewOrder}>New order</Button>
           )
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-gray-200 p-0.5">
+      <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+        <div className="inline-flex shrink-0 rounded-lg border border-gray-200 p-0.5">
           <Button size="sm" variant={role === 'buyer' ? 'primary' : 'ghost'} onClick={() => switchRole('buyer')}>
             Buying
           </Button>
@@ -118,7 +131,7 @@ export default function SupplyOrdersPage() {
           </Button>
         </div>
         {GROUPS.map((g) => (
-          <Button key={g.key} size="sm" variant={group === g.key ? 'secondary' : 'ghost'} onClick={() => setGroup(g.key)}>
+          <Button key={g.key} size="sm" className="shrink-0" variant={group === g.key ? 'secondary' : 'ghost'} onClick={() => setGroup(g.key)}>
             {g.label}
           </Button>
         ))}
@@ -130,7 +143,16 @@ export default function SupplyOrdersPage() {
             <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
           </div>
         ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-text-secondary">No orders here.</p>
+          <div className="py-8 text-center">
+            <p className="text-sm text-text-secondary">
+              {group === 'action' ? 'Nothing needs you right now.' : 'No orders here.'}
+            </p>
+            {group === 'action' && (
+              <Button size="sm" variant="ghost" className="mt-2" onClick={() => setGroup('open')}>
+                See open orders
+              </Button>
+            )}
+          </div>
         ) : (
           <ul className="divide-y divide-gray-100">
             {rows.map((o) => (
@@ -158,6 +180,7 @@ export default function SupplyOrdersPage() {
           </ul>
         )}
       </Card>
+      <NewOrderSheet open={newOrderOpen} onClose={() => setNewOrderOpen(false)} partners={partners || []} loading={!partners} />
     </div>
   );
 }

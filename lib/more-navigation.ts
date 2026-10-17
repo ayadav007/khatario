@@ -113,7 +113,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     const s = section(
       'Supplier',
       [
+        { href: '/suppliers/hub', label: 'Supplier Hub' },
         { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
+        { href: '/suppliers/catalog', label: 'My Catalog' },
         { href: '/suppliers/requests', label: 'Requests to Fulfill' },
       ],
       ctx
@@ -142,7 +144,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     'Purchases',
     [
       { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
-      { href: '/suppliers/hub', label: 'Suppliers Hub', module: 'purchases' },
+      { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
       { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
