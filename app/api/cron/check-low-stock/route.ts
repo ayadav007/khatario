@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkLowStockForAllBusinesses } from '@/lib/low-stock-checker';
+import { buildSuggestedOrders } from '@/lib/supply-orders';
 import { assertCronAuthorized } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
@@ -15,10 +16,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const stats = await checkLowStockForAllBusinesses();
+    // One suggested order per connected buyer and supplier, topped up with newly low items.
+    const suggestions = await buildSuggestedOrders();
     return NextResponse.json({
       success: true,
       message: 'Low stock check completed',
-      stats,
+      stats: { ...stats, suggested_orders: suggestions.orders, suggested_lines: suggestions.lines },
     });
 
   } catch (error: any) {

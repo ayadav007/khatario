@@ -326,9 +326,14 @@ export default function SupplierDashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Customers with Low Stock</h2>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/requests')}>
-              View Requests
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => router.push('/supply-orders')}>
+                Suggested orders
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => router.push('/suppliers/requests')}>
+                View Requests
+              </Button>
+            </div>
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-12">

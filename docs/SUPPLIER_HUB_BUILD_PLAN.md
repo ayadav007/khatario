@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phases 0–2 committed on branch `supplier-hub-phase-0`. Phase 5 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 10 cases), not committed. Migrations 389–392 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phases 0–2 and 5 committed on branch `supplier-hub-phase-0`. Phases 3–4 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 12 cases), not committed. Migrations 389–393 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -111,6 +111,16 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 
 ## Phase 3 — Low stock → suggested order
 
+**Built with Phase 4 (2026-10-17):**
+- Migration 393: `supply_orders` and `supply_order_lines` (quantities in the supplier's unit, with the item map's conversion stored per line), `items.reorder_qty` and `items.max_stock`. One open suggested draft per pair. A trigger checks line items belong to the right businesses.
+- `lib/supply-orders.ts`: suggested quantity (max_stock − stock, else reorder_qty, else twice the reorder level minus stock), whole supplier packs when the factor is above 1, the daily build of suggested drafts (also on demand from the supplier), creating orders from either side, and every step in one place.
+- Flow: supplier draft → **proposed** → buyer **confirms** (can change quantities); or buyer order → **pending** → supplier answers per line (**confirmed / partial / declined**, picking its own item where missing, which is learned into the item map). Then **invoiced** → **received**. Cancel before billing; a disconnect cancels unbilled orders. A supplier's draft is invisible to the buyer until sent.
+- The daily low-stock cron also builds suggested drafts and notifies each supplier once per buyer.
+- Ordering a supplier item directly (catalog order) is allowed only for items in their published catalog.
+- Screens: `/supply-orders` (Buying / Selling; Needs you, Open, Done), `/supply-orders/[id]` with the actions for each side, `/supply-orders/new?supplier_id=` pre-filled with that supplier's low items. Linked from Purchases, the supplier page and the supplier dashboard.
+- Not done: variant-level reordering (3.4b), standing orders (3.4c), average-sales fallback (3.1), and a reorder-qty / max-stock editor (the columns exist; the bulk items screen edits only the reorder level). Older single-item quantity requests stay as they were.
+
+
 3.1 **Reorder settings on A's items.** Use the existing `min_stock`, and add `reorder_qty`, or `max_stock` so the suggestion is "max minus current". If neither is set, fall back to average daily sales × lead time.
 
 3.2 **Check on every way stock goes out, not just invoices.** Today the check runs only from `app/api/invoices/route.ts`. It also needs to run for POS, stock adjustments, transfers and returns to supplier. Simplest: one helper called from the shared stock-change functions, plus the cron as a safety net.
@@ -131,6 +141,9 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 - Nothing can be invoiced until A has confirmed.
 
 ## Phase 4 — B fulfils
+
+**Built:** "Create bill" on a confirmed order opens the invoice composer with `?supply_order_id=` (customer = the supplier's linked record for the buyer, lines = its own items and confirmed quantities at its selling price). Saving links the invoice to the order (it must be billed to that buyer), marks it billed and tells the buyer; the existing credit-limit check applies. Receiving the bill marks the order received. Not done: dispatch status (4.4).
+
 
 4.1 **"Create invoice from order."** The invoice is prefilled with B's mapped items, the confirmed quantities, B's linked customer record for A, and B's prices for A. It links back to the order.
 
@@ -234,6 +247,6 @@ The phone app can already list, create, respond to and link requests. It still n
 | Phase 1 | Done, not committed |
 | Phase 2 | Done, not committed |
 | Phase 5 (receive, incl. create item on receive) | Done, not committed (5.2b batch/expiry and 5.5 still open) |
-| Phase 3 + 4 (incl. catalog-order lines, variants) | L |
+| Phase 3 + 4 (incl. catalog-order lines, variants) | Done, not committed (variants, standing orders, dispatch still open) |
 | Phase 6 (catalog ordering, new-arrival push) | L — right after Phase 5 for apparel and electronics customers |
 | Phases 6b–7 | L, can come later |

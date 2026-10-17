@@ -9,6 +9,7 @@ import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
 import { saveItemLink } from '@/lib/supplier-item-links';
+import { markSupplyOrderReceived } from '@/lib/supply-orders';
 import { inBuyerUnits, loadBillForBuyer, loadBillLines, parseItemMap, resolveBillLines } from '@/lib/supplier-bills';
 
 export const dynamic = 'force-dynamic';
@@ -568,6 +569,8 @@ export async function POST(
         invoiceId,
       ]
     );
+
+    await markSupplyOrderReceived(client, business_id, invoiceId, purchase.id);
 
     if (linkedRequests.length > 0) {
       await client.query(`

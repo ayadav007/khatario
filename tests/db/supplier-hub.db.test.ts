@@ -1,14 +1,15 @@
 /**
- * Supplier Hub phases 0–2 and 5 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
+ * Supplier Hub phases 0–5 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
  * retailer A links wholesaler B, the link waits for B's approval, B's customer record for A is
  * linked, A picks B's items and reorder levels in bulk, A's reorder level raises an alert for B,
  * B's sales invoice becomes A's purchase (item matched, stock added once), and either side can
  * disconnect and reconnect. The item map remembers matches and converts cartons into pieces.
  * Incoming bills are received with short/damaged quantities and new items made from bill lines.
+ * Orders: B proposes from A's low stock, A confirms, B bills, A receives; or A orders and B answers.
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–392 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–393 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -64,6 +65,11 @@ import { POST as setThreshold } from '@/app/api/suppliers/thresholds/route';
 import { POST as convertInvoice } from '@/app/api/invoices/[id]/convert-to-purchase/route';
 import { PATCH as mapRequestItem } from '@/app/api/stock-requests/[id]/route';
 import { GET as incomingGET } from '@/app/api/purchases/incoming-bills/route';
+import { GET as ordersGET, POST as ordersPOST } from '@/app/api/supply-orders/route';
+import { GET as orderGET, PATCH as orderPATCH } from '@/app/api/supply-orders/[id]/route';
+import { GET as invoiceDraftGET } from '@/app/api/supply-orders/[id]/invoice-draft/route';
+import { POST as suggestPOST } from '@/app/api/supply-orders/suggest/route';
+import { claimSupplyOrderForInvoice } from '@/lib/supply-orders';
 import { GET as incomingBillGET } from '@/app/api/purchases/incoming-bills/[invoiceId]/route';
 import { POST as createItemPOST } from '@/app/api/purchases/incoming-bills/[invoiceId]/create-item/route';
 import {
@@ -118,6 +124,7 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
     await query(migration('390_supplier_hub_links.sql'));
     await query(migration('391_supplier_item_links.sql'));
     await query(migration('392_supplier_bill_receipts.sql'));
+    await query(migration('393_supply_orders.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -673,6 +680,149 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
     expect(pendingNow.bills.map((b: any) => b.invoice_id)).not.toContain(BILL);
   });
 
+  it('orders: B proposes from low stock, A confirms, B bills, A receives (Phases 3–4)', async () => {
+    // A low item matched to B's carton of 12.
+    const LOW_A = randomUUID();
+    const VEND_LOW = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, min_stock, current_stock, is_active, default_supplier_id)
+       VALUES ($1, $2, 'Good Day 75g', 'PCS', 'goods', 20, 5, true, $3)`,
+      [LOW_A, A, supplierRowId]
+    );
+    await query(`INSERT INTO branch_item_stock (business_id, branch_id, item_id, quantity) VALUES ($1, $2, $3, 5)`, [A, BRA, LOW_A]);
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, selling_price, tax_rate)
+       VALUES ($1, $2, 'GOOD DAY 75G BOX12', 'BOX', 'goods', true, 240, 0)`,
+      [VEND_LOW, B]
+    );
+    const linkUrl = `/api/suppliers/${supplierRowId}/item-links`;
+    expect(
+      (await itemLinksPOST(post(linkUrl, UA, A, { vendor_item_id: VEND_LOW, buyer_item_id: LOW_A, factor: 12 }), { params: { id: supplierRowId } })).status
+    ).toBe(200);
+
+    // B builds suggestions: one draft for A with the low item, in boxes (35 packs -> 3 boxes).
+    const sug = await (await suggestPOST(call('POST', '/api/supply-orders/suggest', UB, B))).json();
+    expect(sug.lines).toBeGreaterThanOrEqual(1);
+    const draft = await queryOne(
+      `SELECT o.id, l.id AS line_id, l.qty, l.vendor_item_id, l.buyer_units_per_vendor_unit AS factor
+         FROM supply_orders o JOIN supply_order_lines l ON l.order_id = o.id
+        WHERE o.buyer_business_id = $1 AND o.vendor_business_id = $2 AND o.status = 'draft' AND l.buyer_item_id = $3`,
+      [A, B, LOW_A]
+    );
+    expect(draft).toMatchObject({ vendor_item_id: VEND_LOW });
+    expect(Number(draft.qty)).toBe(3);
+    expect(Number(draft.factor)).toBe(12);
+    // Running again adds nothing for items already on an open order.
+    const again = await (await suggestPOST(call('POST', '/api/supply-orders/suggest', UB, B))).json();
+    expect(again.lines).toBe(0);
+
+    const orderUrl = `/api/supply-orders/${draft.id}`;
+    const octx = { params: { id: draft.id } };
+    // A cannot see B's draft yet; C never can.
+    expect((await orderGET(call('GET', orderUrl, UA, A), octx)).status).toBe(404);
+    expect((await orderGET(call('GET', orderUrl, UC, C), octx)).status).toBe(404);
+    // A cannot confirm before B sends it.
+    expect((await orderPATCH(call('PATCH', orderUrl, UA, A, { action: 'confirm' }), octx)).status).toBe(404);
+
+    // B sends it with 4 boxes; A confirms 5.
+    const sent = await orderPATCH(call('PATCH', orderUrl, UB, B, { action: 'send', lines: [{ id: draft.line_id, qty: 4 }] }), octx);
+    expect((await sent.json()).status).toBe('proposed');
+    const asA = await (await ordersGET(call('GET', '/api/supply-orders?role=buyer&group=action', UA, A))).json();
+    expect(asA.orders.map((o: any) => o.id)).toContain(draft.id);
+    expect((await orderPATCH(call('PATCH', orderUrl, UB, B, { action: 'confirm' }), octx)).status).toBe(409);
+    const confirmed = await orderPATCH(call('PATCH', orderUrl, UA, A, { action: 'confirm', lines: [{ id: draft.line_id, qty: 5 }] }), octx);
+    expect((await confirmed.json()).status).toBe('confirmed');
+    const detailA = await (await orderGET(call('GET', orderUrl, UA, A), octx)).json();
+    expect(detailA.lines[0]).toMatchObject({ qty: 5, confirmed_qty: 5, buyer_qty: 60, vendor_item_id: null });
+
+    // B gets the bill draft: A's linked customer record and its own item.
+    const draftBill = await (await invoiceDraftGET(call('GET', `${orderUrl}/invoice-draft`, UB, B), octx)).json();
+    expect(draftBill.customer_id).toBe(CUST_A_AT_B);
+    expect(draftBill.lines).toEqual([expect.objectContaining({ item_id: VEND_LOW, quantity: 5, selling_price: 240 })]);
+    expect((await invoiceDraftGET(call('GET', `${orderUrl}/invoice-draft`, UA, A), octx)).status).toBe(404);
+
+    // B raises the bill (as the invoice API does) and it links to the order.
+    const ORDER_BILL = randomUUID();
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'final', 'tax_invoice', '29', 1200, 0, 0, 0, 0, 1200, 0, 1200, 'unpaid', $5)`,
+      [ORDER_BILL, B, CUST_A_AT_B, `ORD-${tag}`, BRB]
+    );
+    await query(
+      `INSERT INTO invoice_items (invoice_id, item_id, item_name, quantity, unit, unit_price, taxable_value, line_total, sort_order)
+       VALUES ($1, $2, 'GOOD DAY 75G BOX12', 5, 'BOX', 240, 1200, 1200, 0)`,
+      [ORDER_BILL, VEND_LOW]
+    );
+    const { getPool } = await import('@/lib/db');
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await expect(
+        claimSupplyOrderForInvoice(client, B, draft.id, { id: ORDER_BILL, customer_id: null })
+      ).rejects.toThrow('Bill the order to the buyer');
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      await claimSupplyOrderForInvoice(client, B, draft.id, { id: ORDER_BILL, customer_id: CUST_A_AT_B, invoice_number: `ORD-${tag}` });
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    expect((await queryOne(`SELECT status, invoice_id FROM supply_orders WHERE id = $1`, [draft.id]))).toMatchObject({
+      status: 'invoiced',
+      invoice_id: ORDER_BILL,
+    });
+
+    // A receives it: 5 boxes become 60 packs, and the order is marked received.
+    const before = Number((await queryOne(`SELECT current_stock FROM items WHERE id = $1`, [LOW_A])).current_stock);
+    const rec = await convertInvoice(post(`/api/invoices/${ORDER_BILL}/convert-to-purchase`, UA, A, {}), { params: { id: ORDER_BILL } });
+    expect(rec.status).toBe(201);
+    const { purchase } = await rec.json();
+    const after = Number((await queryOne(`SELECT current_stock FROM items WHERE id = $1`, [LOW_A])).current_stock);
+    expect(after - before).toBe(60);
+    expect(await queryOne(`SELECT status, purchase_id FROM supply_orders WHERE id = $1`, [draft.id])).toMatchObject({
+      status: 'received',
+      purchase_id: purchase.id,
+    });
+  });
+
+  it('orders: A orders, B confirms part, A cancels; catalog-only rule (Phases 3–4)', async () => {
+    const res = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ buyer_item_id: ITEM_A, buyer_qty: 300 }] })
+    );
+    expect(res.status).toBe(201);
+    const { order } = await res.json();
+    expect(order.status).toBe('pending');
+    const line = await queryOne(`SELECT id, qty, vendor_item_id FROM supply_order_lines WHERE order_id = $1`, [order.id]);
+    expect(line.vendor_item_id).toBe(ITEM_B);
+    expect(Number(line.qty)).toBe(3); // 300 packs -> 3 cartons of 144
+
+    const octx = { params: { id: order.id } };
+    const url = `/api/supply-orders/${order.id}`;
+    // Only B answers a pending order, and not more than asked.
+    expect((await orderPATCH(call('PATCH', url, UA, A, { action: 'respond' }), octx)).status).toBe(409);
+    expect((await orderPATCH(call('PATCH', url, UB, B, { action: 'respond', lines: [{ id: line.id, confirmed_qty: 9 }] }), octx)).status).toBe(400);
+    const partial = await orderPATCH(call('PATCH', url, UB, B, { action: 'respond', lines: [{ id: line.id, confirmed_qty: 2 }] }), octx);
+    expect((await partial.json()).status).toBe('partial');
+    const cancelled = await orderPATCH(call('PATCH', url, UA, A, { action: 'cancel' }), octx);
+    expect((await cancelled.json()).status).toBe('cancelled');
+    expect((await orderPATCH(call('PATCH', url, UA, A, { action: 'cancel' }), octx)).status).toBe(409);
+
+    // Ordering a supplier item directly needs it to be in their published catalog.
+    const UNLISTED = randomUUID();
+    await query(`INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Secret item', 'PCS', 'goods', true)`, [UNLISTED, B]);
+    const direct = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, from_catalog: true, lines: [{ vendor_item_id: UNLISTED, qty: 1 }] })
+    );
+    expect(direct.status).toBe(400);
+    // C is not connected to B.
+    const cSupplier = randomUUID();
+    await query(`INSERT INTO suppliers (id, business_id, name, linked_business_id, approval_status) VALUES ($1, $2, 'B', $3, 'pending')`, [cSupplier, C, B]);
+    const cOrder = await ordersPOST(post('/api/supply-orders', UC, C, { supplier_id: cSupplier, lines: [{ vendor_item_id: ITEM_B, qty: 1 }] }));
+    expect(cOrder.status).toBe(403);
+  });
+
   it('either side can disconnect, and a reconnect needs B to accept again (1.3)', async () => {
     // A third party cannot end it.
     const stranger = await linkDELETE(call('DELETE', `/api/suppliers/hub/link?supplier_id=${supplierRowId}`, UC, C));
@@ -684,6 +834,12 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
        VALUES ($1, $2, $3, 5, 'pending')`,
       [A, B, ITEM_A]
     );
+
+    // An open order between them is cancelled by the disconnect.
+    const open = await ordersPOST(
+      post('/api/supply-orders', UA, A, { supplier_id: supplierRowId, lines: [{ buyer_item_id: ITEM_A, buyer_qty: 10 }] })
+    );
+    const { order: openOrder } = await open.json();
 
     // B disconnects from its customer record.
     const res = await linkDELETE(call('DELETE', `/api/suppliers/hub/link?customer_id=${CUST_A_AT_B}`, UB, B));
@@ -707,6 +863,8 @@ run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
       [A]
     );
     expect(pending.n).toBe(0);
+
+    expect((await queryOne(`SELECT status FROM supply_orders WHERE id = $1`, [openOrder.id])).status).toBe('cancelled');
 
     // Hub access has stopped.
     const reqRes = await createStockRequest(

@@ -2174,6 +2174,7 @@ function NewInvoiceContent() {
         expiry_date: documentType === 'proforma_invoice' ? (expiryDate || undefined) : undefined, 
         estimate_status: finalEstimateStatus,
         work_order_id: searchParams.get('work_order_id') || undefined,
+        supply_order_id: searchParams.get('supply_order_id') || undefined,
       };
       // PHASE 2: Construct full invoice number from prefix + number
       const fullInvoiceNumber = invoicePrefix && invoiceNumber ? `${invoicePrefix}-${invoiceNumber}` : invoiceNumber;
@@ -2733,6 +2734,54 @@ function NewInvoiceContent() {
       })
       .catch((err) => console.error('[Convert] Failed to load source estimate:', err));
   }, [convertFromId, business?.id, user?.id, savedInvoiceId, branchLoading, calculateRow]);
+
+  // ?supply_order_id=: bill a confirmed Supplier Hub order. Customer and lines come from the
+  // order; nothing is saved until Generate/Save, which links the invoice back to the order.
+  const supplyOrderId = searchParams.get('supply_order_id');
+  const supplyOrderPrefillDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!supplyOrderId || !business?.id || savedInvoiceId || branchLoading) return;
+    if (supplyOrderPrefillDoneRef.current === supplyOrderId) return;
+    supplyOrderPrefillDoneRef.current = supplyOrderId;
+    fetch(`/api/supply-orders/${supplyOrderId}/invoice-draft`)
+      .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .then(({ ok, data }) => {
+        if (!ok) {
+          toastCtx.error(data?.error || 'Could not load this order');
+          return;
+        }
+        if (data.customer_id) setCustomerId(data.customer_id);
+        setRows(
+          (data.lines || []).map((line: any) => {
+            let price = Number(line.selling_price) || 0;
+            const taxRate = Number(line.tax_rate) || 0;
+            if (line.gst_included && taxRate > 0) price = price / (1 + taxRate / 100);
+            return calculateRow({
+              itemId: line.item_id,
+              name: line.name,
+              quantity: Number(line.quantity) || 1,
+              freeQty: 0,
+              unit: line.unit || 'PCS',
+              price,
+              discountPercent: 0,
+              discountAmount: 0,
+              taxPercent: taxRate,
+              taxAmount: 0,
+              hsnSac: line.hsn_sac || '',
+              taxableValue: 0,
+              cgstAmount: 0,
+              sgstAmount: 0,
+              igstAmount: 0,
+              total: 0,
+              gstIncluded: !!line.gst_included,
+              priceUserOverride: false,
+            });
+          })
+        );
+        setIsDirty(true);
+      })
+      .catch(() => toastCtx.error('Could not load this order'));
+  }, [supplyOrderId, business?.id, savedInvoiceId, branchLoading, calculateRow, toastCtx]);
 
   // ?work_order_id=: open the invoice for review. Nothing is saved until Generate/Save.
   const workOrderId = searchParams.get('work_order_id');

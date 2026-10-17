@@ -156,6 +156,14 @@ export async function disconnectSupplierLink(params: {
       WHERE buyer_business_id = $1 AND supplier_business_id = $2 AND status = 'pending'`,
     [buyerBusinessId, vendorBusinessId]
   );
+  // Orders not yet billed stop; billed ones can still be received.
+  await exec(
+    `UPDATE supply_orders
+        SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE buyer_business_id = $1 AND vendor_business_id = $2
+        AND status IN ('draft', 'proposed', 'pending', 'confirmed', 'partial')`,
+    [buyerBusinessId, vendorBusinessId]
+  );
 
   const otherId = actorBusinessId === buyerBusinessId ? vendorBusinessId : buyerBusinessId;
   const actor = await exec(`SELECT name FROM businesses WHERE id = $1`, [actorBusinessId]);

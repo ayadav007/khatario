@@ -221,6 +221,14 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                   )}
                   {link.status === 'approved' && (
                     <Link
+                      href={`/supply-orders/new?supplier_id=${supplier.id}`}
+                      className="text-sm font-medium text-primary-600 hover:underline"
+                    >
+                      New order
+                    </Link>
+                  )}
+                  {link.status === 'approved' && (
+                    <Link
                       href={`/suppliers/${supplier.id}/item-links`}
                       className="text-sm font-medium text-primary-600 hover:underline"
                     >

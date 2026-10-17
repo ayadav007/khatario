@@ -402,6 +402,7 @@ export async function POST(request: NextRequest) {
       round_off,
       request_id,
       work_order_id,
+      supply_order_id,
       // Estimates/Quotations fields for proforma invoices
       expiry_date,
       estimate_status,
@@ -2515,6 +2516,16 @@ export async function POST(request: NextRequest) {
       await claimWorkOrderForInvoice(client, business_id, String(work_order_id), invoice.id);
     }
 
+    // Supplier Hub: this sale bills a confirmed order from a connected buyer.
+    if (!invoiceId && supply_order_id && document_type !== 'proforma_invoice') {
+      const { claimSupplyOrderForInvoice } = await import('@/lib/supply-orders');
+      await claimSupplyOrderForInvoice(client, business_id, String(supply_order_id), {
+        id: invoice.id,
+        customer_id: invoice.customer_id ?? customer_id ?? null,
+        invoice_number: invoice.invoice_number,
+      });
+    }
+
     if (!invoiceId && request_id) {
       try {
         const requestRes = await client.query(`
@@ -2809,6 +2820,9 @@ export async function POST(request: NextRequest) {
     console.error('[InvoiceAPI] Error creating invoice:', error.message, error.code);
     if (error?.name === 'WorkOrderInputError' && error.status) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error?.name === 'SupplyOrderInputError' && error.status) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
     if (error?.name === 'CustomerCreditError' && error.status) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
