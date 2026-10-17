@@ -4,24 +4,21 @@ export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
-import { AnnotatedFormSection } from '@/components/ui/AnnotatedFormSection';
-import { Input } from '@/components/ui/Input';
 import { NumericBlurField } from '@/components/ui/NumericBlurField';
-import { Button } from '@/components/ui/Button';
 import { ItemAutocomplete } from '@/components/ui/ItemAutocomplete';
-import { Plus, Trash2, Save, Loader2, ArrowLeft, FileUp, ScanLine } from 'lucide-react';
+import { Trash2, Loader2, ScanLine, Upload, FileText, CheckCircle2, ChevronRight, X, Search, MoreVertical } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { Supplier, Item, Account } from '@/types/database';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { InvoiceUploader } from '@/components/invoices/InvoiceUploader';
+import { PurchaseBillUploadModal, type PurchaseBillSource } from '@/components/purchases/PurchaseBillUploadModal';
+import { calculateItemNameSimilarity } from '@/lib/matching/item-name-similarity';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { summarizeInvoiceCorrectionDelta } from '@/lib/services/invoice-extract/invoiceExtractionCorrectionSummary';
 import { normalizeExtractionEnvelope } from '@/lib/purchases/extraction-envelope-normalize';
@@ -208,6 +205,31 @@ export default function NewPurchasePage() {
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [showUploader, setShowUploader] = useState(false);
+  /** Bill the desktop form was last filled from (drives the "Filled from" banner). */
+  const [billSource, setBillSource] = useState<PurchaseBillSource | null>(null);
+  const [fillAt, setFillAt] = useState<Date | null>(null);
+  const [fillBannerOpen, setFillBannerOpen] = useState(true);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogueBusy, setCatalogueBusy] = useState(false);
+  /** Desktop action bar is fixed (app shell's overflow-x-hidden breaks sticky), so it tracks the form's box. */
+  const [desktopFormEl, setDesktopFormEl] = useState<HTMLFormElement | null>(null);
+  const [footerBox, setFooterBox] = useState<{ left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!desktopFormEl) return;
+    const measure = () => {
+      const r = desktopFormEl.getBoundingClientRect();
+      setFooterBox({ left: r.left, width: r.width });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(desktopFormEl);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [desktopFormEl]);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [lastInvoiceFillTrace, setLastInvoiceFillTrace] = useState<LastInvoiceFillTrace | null>(null);
   const extractionLearnRef = useRef<{
@@ -572,10 +594,16 @@ export default function NewPurchasePage() {
   }
 
   // Handle invoice extraction completion — fills the purchase form inline (no review modal).
-  const handleExtractionComplete = async (result: any) => {
+  const handleExtractionComplete = async (result: any, source?: PurchaseBillSource) => {
     const normalized = normalizeExtractionEnvelope(result);
     setExtractedData(normalized);
     setShowUploader(false);
+    setBillSource((prev) => {
+      if (prev?.url && prev.url !== source?.url) URL.revokeObjectURL(prev.url);
+      return source ?? { name: 'scanned bill', size: null, type: '', url: null };
+    });
+    setFillAt(new Date());
+    setFillBannerOpen(true);
 
     if (normalized?.data) {
       extractionLearnRef.current = {
@@ -1446,869 +1474,1116 @@ export default function NewPurchasePage() {
     }
   }
 
-  const renderDesktopForm = () => (
-      <form onSubmit={(e) => { e.preventDefault(); handleSubmit('draft'); }}>
-        <div className="space-y-6">
-        <AnnotatedFormSection
-          title="Quick fill from invoice"
-          description="Upload a supplier bill — extracted supplier, lines, and amounts are filled straight into this form for you to edit (no separate review popup)."
-        >
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-primary-200 rounded-lg p-4 dark:from-primary-900/40 dark:to-indigo-950/40 dark:border-primary-800">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center space-x-2">
-              <FileUp className="w-5 h-5 text-primary-600" />
-              <h3 className="text-sm font-semibold text-gray-900">Quick Fill from Invoice</h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowUploader(!showUploader)}
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-            >
-              {showUploader ? 'Hide' : 'Upload Invoice'}
-            </button>
-          </div>
-          
-          {showUploader && (
-            <InvoiceUploader
-              businessId={business!.id}
-              onExtractionComplete={handleExtractionComplete}
-              onError={handleExtractionError}
-            />
-          )}
-          
-          {!showUploader && (
-            <p className="text-xs text-text-secondary">
-              Upload a bill — data is applied to this form directly so you can edit supplier and lines here.
-            </p>
-          )}
-          {invoiceFillTracePanel}
-        </div>
-        </AnnotatedFormSection>
+  const unlinkedLines = purchaseItems.filter(
+    (i) => !(i.item_id || '').trim() && (i.item_name || '').trim().length > 0
+  );
+  const linkedSupplierId = resolveSupplierId();
+  const billGstinMissing =
+    Boolean(billSource) &&
+    !String(extractedData?.data?.supplier?.gstin || '').trim() &&
+    !(formData.supplier_gstin || '').trim();
+  const needsWarehouse =
+    warehouses.length > 0 && purchaseItems.some((i) => i.item_type !== 'service') && !selectedWarehouseId;
+  const checks: Array<{ key: string; label: string; target: string }> = [];
+  if (!linkedSupplierId) checks.push({ key: 'supplier', label: supplierSearch.trim() ? 'Supplier not linked' : 'Pick a supplier', target: 'purchase-supplier-card' });
+  if (billGstinMissing) checks.push({ key: 'gstin', label: 'GSTIN not found on bill', target: 'purchase-supplier-card' });
+  if (unlinkedLines.length > 0)
+    checks.push({
+      key: 'items',
+      label: `${unlinkedLines.length} item${unlinkedLines.length === 1 ? '' : 's'} not in catalogue`,
+      target: 'purchase-items-card',
+    });
+  if (needsWarehouse) checks.push({ key: 'warehouse', label: 'Pick a receiving warehouse', target: 'purchase-supplier-card' });
+  const discountTotal = round2(
+    (purchaseGstDoc?.lineComputeds || []).reduce((s, c) => s + (Number(c.discountAmount) || 0), 0)
+  );
+  const discountAccounts = accounts.filter(
+    (acc) =>
+      acc.is_active &&
+      ((acc.account_type === 'income' && /discount/i.test(acc.account_name)) ||
+        (acc.account_type === 'expense' && /purchase/i.test(acc.account_name)))
+  );
+  const fieldClass =
+    'h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100';
+  const labelClass = 'mb-1.5 block text-sm font-medium text-text-primary';
+  const cellInputClass =
+    'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right tabular-nums text-text-primary hover:border-border focus:border-primary-400 focus:bg-surface focus:outline-none';
 
-        <AnnotatedFormSection
-          title="Supplier and bill"
-          description="Pick a supplier from the list (click a row). Enter bill ID, dates, place of supply, and document type."
+  function scrollToCard(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function toggleLineDetails(id: string) {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setLineDiscountPercent(id: string, raw: string) {
+    const v = round2(parseFloat(raw) || 0);
+    setPurchaseItems(
+      purchaseItems.map((pItem) => {
+        if (pItem.id !== id) return pItem;
+        let next: PurchaseItem = {
+          ...pItem,
+          discount_percent: v,
+          discount_amount: v > 0 ? 0 : (pItem.discount_amount ?? 0),
+          discount_on_tax_inclusive: v > 0 ? false : pItem.discount_on_tax_inclusive,
+        };
+        if (next.invoice_inclusive_line_total != null) next = applyInvoiceAnchorDeriveUnitPrice(next);
+        return next;
+      })
+    );
+  }
+
+  function setLineDiscountAmount(id: string, raw: string) {
+    const v = round2(parseFloat(raw) || 0);
+    setPurchaseItems(
+      purchaseItems.map((pItem) => {
+        if (pItem.id !== id) return pItem;
+        let next: PurchaseItem = {
+          ...pItem,
+          discount_amount: v,
+          discount_percent: v > 0 ? 0 : pItem.discount_percent,
+          discount_on_tax_inclusive: v > 0 ? (pItem.discount_on_tax_inclusive ?? false) : false,
+        };
+        if (next.invoice_inclusive_line_total != null) next = applyInvoiceAnchorDeriveUnitPrice(next);
+        return next;
+      })
+    );
+  }
+
+  function linkLineToCatalogItem(lineId: string, selectedItem: any) {
+    const isBarcodeScan = purchaseItems.some((p) => p.id === lineId && !p.item_id && p.item_name === '');
+    setPurchaseItems(
+      purchaseItems.map((pItem) => {
+        if (pItem.id !== lineId) return pItem;
+        return {
+          ...pItem,
+          item_id: selectedItem.id,
+          item_name: selectedItem.name,
+          item_type: selectedItem.item_type || 'goods',
+          hsn_sac: selectedItem.hsn_sac || '',
+          unit: selectedItem.unit || (selectedItem.item_type === 'service' ? 'NOS' : 'pcs'),
+          unit_price: roundExclusiveUnitPrice(Number(selectedItem.purchase_price) || 0),
+          tax_rate: round2(Number(selectedItem.tax_rate) || 0),
+          quantity: isBarcodeScan ? 1 : pItem.quantity,
+          invoice_inclusive_line_total: undefined,
+          fromBillExtract: false,
+          track_batch: selectedItem.track_batch || false,
+          track_serial: selectedItem.track_serial || false,
+          batch_number: selectedItem.track_batch ? (pItem.batch_number || '') : undefined,
+          serial_numbers: selectedItem.track_serial ? (pItem.serial_numbers || '') : undefined,
+        };
+      })
+    );
+    if (selectedItem.track_batch || selectedItem.track_serial) {
+      setExpandedItems((prev) => new Set([...prev, lineId]));
+    }
+    if (isBarcodeScan) {
+      setTimeout(() => {
+        const q = document.querySelector(
+          `input[data-purchase-item-id="${lineId}"][data-field="quantity"]`
+        ) as HTMLInputElement | null;
+        q?.focus();
+        q?.select();
+      }, 100);
+    }
+  }
+
+  /** Links bill lines to existing catalogue items by close name match; keeps the bill's qty, rate and tax. */
+  function matchUnlinkedAutomatically() {
+    const catalogue = items.filter((it) => (it as { is_active?: boolean }).is_active !== false);
+    let linked = 0;
+    const next = purchaseItems.map((line) => {
+      if ((line.item_id || '').trim() || !(line.item_name || '').trim()) return line;
+      let best: Item | null = null;
+      let bestScore = 0;
+      for (const it of catalogue) {
+        const score = calculateItemNameSimilarity(line.item_name, it.name);
+        if (score > bestScore) {
+          best = it;
+          bestScore = score;
+        }
+      }
+      if (!best || bestScore < 85) return line;
+      linked += 1;
+      return {
+        ...line,
+        item_id: best.id,
+        item_name: best.name,
+        hsn_sac: line.hsn_sac || String((best as { hsn_sac?: string }).hsn_sac || ''),
+      };
+    });
+    setPurchaseItems(next);
+    if (linked === 0) toast.warning('No close matches in your catalogue. Link the items one by one, or add them.');
+    else toast.success(`Linked ${linked} of ${unlinkedLines.length} items. Check the names before saving.`);
+  }
+
+  async function addUnlinkedToCatalogue() {
+    if (!business?.id || catalogueBusy) return;
+    setCatalogueBusy(true);
+    const created = new Map<string, string>();
+    let failed = 0;
+    try {
+      for (const line of unlinkedLines) {
+        try {
+          const res = await fetch('/api/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              business_id: business.id,
+              name: line.item_name.trim(),
+              hsn_sac: line.hsn_sac || '',
+              unit: line.unit || 'PCS',
+              tax_rate: line.tax_rate || 0,
+              purchase_price: line.unit_price || 0,
+              item_type: line.item_type === 'service' ? 'service' : 'goods',
+              is_active: true,
+            }),
+          });
+          const data = await safeJsonParse<{ item?: { id?: string } }>(res);
+          if (res.ok && data?.item?.id) created.set(line.id, data.item.id);
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      if (created.size > 0) {
+        setPurchaseItems((prev) =>
+          prev.map((p) => (created.has(p.id) ? { ...p, item_id: created.get(p.id)!, fromBillExtract: false } : p))
+        );
+        void fetchItems();
+      }
+      if (failed > 0) toast.error(`Added ${created.size} items; ${failed} could not be added.`);
+      else toast.success(`Added ${created.size} items to your catalogue.`);
+    } finally {
+      setCatalogueBusy(false);
+    }
+  }
+
+  const renderDesktopForm = () => (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleSubmit('draft');
+      }}
+      ref={setDesktopFormEl}
+      className="mx-auto w-full max-w-[1300px] pb-28"
+    >
+      <nav className="text-sm text-text-secondary" aria-label="Breadcrumb">
+        <button type="button" onClick={() => router.push('/purchases')} className="hover:text-text-primary">
+          Purchases
+        </button>
+        <span className="mx-1.5 text-text-muted">/</span>
+        <span>New purchase</span>
+      </nav>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold text-text-primary">{editingPurchaseId ? 'Edit draft purchase' : 'New purchase'}</h1>
+          <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-medium text-text-secondary dark:bg-white/10">
+            {editingPurchaseId ? 'Draft' : 'Draft · not saved yet'}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowUploader(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-primary-500 bg-surface px-5 py-2.5 text-sm font-semibold text-primary-500 hover:bg-primary-50 dark:border-primary-300 dark:text-primary-200"
         >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <label className="block text-sm font-medium text-text-secondary">Supplier *</label>
-              {supplierNeedsCatalogLink && (
-                <span className="text-xs font-medium rounded border border-green-200 bg-green-50 px-2 py-0.5 text-green-800">
-                  New party
-                </span>
-              )}
+          <Upload className="h-4 w-4" /> Upload bill
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-5">
+        {billSource && fillBannerOpen && (
+          <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-surface px-4 py-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-[#f1eee6] dark:bg-white/5" aria-hidden>
+              <FileText className="h-5 w-5 text-text-muted" />
             </div>
-            <div className="relative supplier-dropdown-container">
-              <input
-                type="text"
-                className="input w-full"
-                placeholder="Search supplier..."
-                value={supplierSearch}
-                onChange={(e) => {
-                  setSupplierSearch(e.target.value);
-                  setShowSupplierDropdown(true);
-                }}
-                onFocus={() => setShowSupplierDropdown(true)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter') return;
-                  if (filteredSuppliers.length !== 1) return;
-                  e.preventDefault();
-                  const s = filteredSuppliers[0];
-                  pickSupplier(s);
-                }}
-              />
-              {showSupplierDropdown && (filteredSuppliers.length > 0 || supplierSearch.trim().length > 0) && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto flex flex-col">
-                  {filteredSuppliers.length === 0 && supplierSearch.trim().length > 0 && (
-                    <div className="px-4 py-3 text-sm text-gray-600 border-b border-gray-100">
-                      No supplier matches &quot;{supplierSearch.trim()}&quot;
-                    </div>
-                  )}
-                  {filteredSuppliers.map((supplier) => (
-                    <div
-                      key={supplier.id}
-                      className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                      onClick={() => pickSupplier(supplier)}
-                    >
-                      <div className="font-medium">{supplier.name}</div>
-                      {supplier.phone && (
-                        <div className="text-xs text-gray-500">{supplier.phone}</div>
-                      )}
-                    </div>
-                  ))}
-                  <div className="border-t border-gray-100 bg-slate-50 px-3 py-2 shrink-0">
-                    <button
-                      type="button"
-                      className="text-sm font-medium text-primary-600 hover:text-primary-700"
-                      onClick={() => {
-                        setShowSupplierDropdown(false);
-                        openAddSupplierModal();
-                      }}
-                    >
-                      + Add new supplier{supplierSearch.trim() ? ` (“${supplierSearch.trim()}”)` : ''}
-                    </button>
-                  </div>
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-x-1.5 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-primary-500" />
+                <span className="font-semibold text-text-primary">Filled from {billSource.name}</span>
+                <span className="text-xs text-text-muted">
+                  · {purchaseItems.length} item{purchaseItems.length === 1 ? '' : 's'} · ₹{totals.grandTotal.toFixed(2)}
+                  {fillAt ? ` · ${formatDistanceToNow(fillAt, { addSuffix: true })}` : ''}
+                </span>
+              </p>
+              {checks.some((c) => c.key !== 'warehouse') && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {checks
+                    .filter((c) => c.key !== 'warehouse')
+                    .map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => scrollToCard(c.target)}
+                        className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200"
+                      >
+                        {c.label}
+                      </button>
+                    ))}
                 </div>
               )}
             </div>
-            {supplierNeedsCatalogLink && supplierSearch.trim().length > 0 && (
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary">
-                <span>Not linked to your supplier list yet.</span>
-                <button
-                  type="button"
-                  className="link-primary font-medium whitespace-nowrap focus:outline-none focus:ring-2 rounded focus:ring-primary-500"
-                  onClick={() => setShowSupplierDropdown(true)}
-                >
-                  Choose existing supplier
-                </button>
-                <span className="text-text-muted" aria-hidden>
-                  ·
-                </span>
-                <button
-                  type="button"
-                  className="link-primary font-medium whitespace-nowrap focus:outline-none focus:ring-2 rounded focus:ring-primary-500"
-                  onClick={() => openAddSupplierModal()}
-                >
-                  Create supplier
-                </button>
-              </p>
+            <div className="flex items-center gap-5 text-sm font-semibold">
+              {billSource.url && (
+                <a href={billSource.url} target="_blank" rel="noreferrer" className="text-primary-500 hover:underline dark:text-primary-200">
+                  View bill
+                </a>
+              )}
+              <button type="button" onClick={() => setShowUploader(true)} className="text-primary-500 hover:underline dark:text-primary-200">
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={() => setFillBannerOpen(false)}
+                className="rounded p-1 text-text-muted hover:bg-black/5 hover:text-text-primary"
+                aria-label="Hide bill summary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <section id="purchase-supplier-card" className="scroll-mt-4 rounded-2xl border border-border bg-surface p-6">
+          <h2 className="text-base font-semibold text-text-primary">Supplier &amp; bill</h2>
+          <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-3">
+            <div className="md:col-span-2">
+              <label className={labelClass}>
+                Supplier <span className="text-red-600">*</span>
+              </label>
+              <div className="supplier-dropdown-container relative">
+                <input
+                  type="text"
+                  className={`${fieldClass} ${supplierNeedsCatalogLink ? 'border-amber-300 bg-amber-50/60 dark:bg-amber-900/20' : ''}`}
+                  placeholder="Search your suppliers"
+                  value={supplierSearch}
+                  onChange={(e) => {
+                    setSupplierSearch(e.target.value);
+                    setShowSupplierDropdown(true);
+                  }}
+                  onFocus={() => setShowSupplierDropdown(true)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    if (filteredSuppliers.length !== 1) return;
+                    e.preventDefault();
+                    pickSupplier(filteredSuppliers[0]);
+                  }}
+                />
+                {showSupplierDropdown && (filteredSuppliers.length > 0 || supplierSearch.trim().length > 0) && (
+                  <div className="absolute z-50 mt-1 flex max-h-60 w-full flex-col overflow-auto rounded-lg border border-border bg-surface shadow-lg">
+                    {filteredSuppliers.length === 0 && supplierSearch.trim().length > 0 && (
+                      <div className="border-b border-border px-4 py-3 text-sm text-text-secondary">
+                        No supplier matches &quot;{supplierSearch.trim()}&quot;
+                      </div>
+                    )}
+                    {filteredSuppliers.map((supplier) => (
+                      <div
+                        key={supplier.id}
+                        className="cursor-pointer px-4 py-2 text-sm hover:bg-black/5"
+                        onClick={() => pickSupplier(supplier)}
+                      >
+                        <div className="font-medium text-text-primary">{supplier.name}</div>
+                        {supplier.phone && <div className="text-xs text-text-muted">{supplier.phone}</div>}
+                      </div>
+                    ))}
+                    <div className="shrink-0 border-t border-border px-3 py-2">
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary-500 hover:underline dark:text-primary-200"
+                        onClick={() => {
+                          setShowSupplierDropdown(false);
+                          openAddSupplierModal();
+                        }}
+                      >
+                        + Add new supplier{supplierSearch.trim() ? ` (“${supplierSearch.trim()}”)` : ''}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {supplierNeedsCatalogLink && supplierSearch.trim().length > 0 && (
+                <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-800 dark:text-amber-200">
+                  <span>New party — not in your supplier list.</span>
+                  <button type="button" className="font-semibold text-primary-500 underline dark:text-primary-200" onClick={() => setShowSupplierDropdown(true)}>
+                    Link existing
+                  </button>
+                  <button type="button" className="font-semibold text-primary-500 underline dark:text-primary-200" onClick={() => openAddSupplierModal()}>
+                    Create supplier
+                  </button>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className={labelClass}>Bill number</label>
+              <input
+                className={fieldClass}
+                value={formData.bill_number}
+                onChange={(e) => setFormData({ ...formData, bill_number: e.target.value })}
+                placeholder="As printed on the bill"
+              />
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                Bill date <span className="text-red-600">*</span>
+              </label>
+              <input
+                type="date"
+                className={fieldClass}
+                value={formData.bill_date}
+                onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Due date</label>
+              <input
+                type="date"
+                className={fieldClass}
+                value={formData.due_date}
+                min={formData.bill_date}
+                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                title="Leave blank if due on the bill date"
+                data-testid="purchase-due-date"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Document type</label>
+              <select
+                className={fieldClass}
+                value={formData.document_type}
+                onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
+              >
+                <option value="tax_invoice">Tax invoice</option>
+                <option value="bill_of_supply">Bill of supply</option>
+                <option value="bill_of_entry">Bill of entry (import of goods)</option>
+                <option value="import_service">Import of services</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Supplier GSTIN</label>
+              <input
+                className={fieldClass}
+                value={formData.supplier_gstin}
+                onChange={(e) =>
+                  setFormData({ ...formData, supplier_gstin: e.target.value.toUpperCase().replace(/\s/g, '') })
+                }
+                placeholder="15-character GSTIN"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Supplier state</label>
+              <select
+                className={fieldClass}
+                value={formData.supplier_state_code || ''}
+                onChange={(e) => setFormData({ ...formData, supplier_state_code: e.target.value })}
+              >
+                <option value="">Auto from GSTIN</option>
+                {INDIAN_STATES.map((state) => (
+                  <option key={state} value={getStateCode(state)}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Place of supply</label>
+              <select
+                className={fieldClass}
+                value={formData.place_of_supply_state_code || business?.state_code || ''}
+                onChange={(e) => setFormData({ ...formData, place_of_supply_state_code: e.target.value })}
+              >
+                <option value="">Select state</option>
+                {INDIAN_STATES.map((state) => (
+                  <option key={state} value={getStateCode(state)}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {formData.document_type === 'bill_of_entry' && (
+              <div>
+                <label className={labelClass}>Port code</label>
+                <input
+                  className={fieldClass}
+                  placeholder="e.g. INMAA, INBOM"
+                  value={formData.port_code}
+                  onChange={(e) => setFormData({ ...formData, port_code: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-text-muted">Port where the goods came in (needed for a bill of entry).</p>
+              </div>
+            )}
+            {warehouses.length > 0 && (
+              <div>
+                <label className={labelClass}>
+                  Receiving warehouse <span className="text-red-600">*</span>
+                </label>
+                {warehousesLoading ? (
+                  <p className="py-3 text-sm text-text-muted">Loading warehouses…</p>
+                ) : (
+                  <select
+                    className={`${fieldClass} ${needsWarehouse ? 'border-amber-300' : ''}`}
+                    value={selectedWarehouseId}
+                    onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                  >
+                    {warehouses.map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                        {wh.warehouse_code ? ` (${wh.warehouse_code})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             )}
           </div>
 
-          <Input
-            label="Invoice / Bill number"
-            value={formData.bill_number}
-            onChange={(e) => setFormData({ ...formData, bill_number: e.target.value })}
-            placeholder="Invoice number"
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 gap-y-6">
-          <Input
-            label="Supplier GSTIN"
-            value={formData.supplier_gstin}
-            onChange={(e) =>
-              setFormData({ ...formData, supplier_gstin: e.target.value.toUpperCase().replace(/\s/g, '') })
-            }
-            placeholder="15-character GSTIN"
-          />
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Supplier state (GST)</label>
-            <select
-              className="input w-full"
-              value={formData.supplier_state_code || ''}
-              onChange={(e) => setFormData({ ...formData, supplier_state_code: e.target.value })}
-            >
-              <option value="">Select / auto from GSTIN</option>
-              {INDIAN_STATES.map((state) => (
-                <option key={state} value={getStateCode(state)}>
-                  {state}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Price mode</label>
-            <select
-              className="input w-full"
-              value={formData.price_mode}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  price_mode: e.target.value === 'inclusive' ? 'inclusive' : 'exclusive',
-                })
-              }
-            >
-              <option value="exclusive">Exclusive (rate before GST)</option>
-              <option value="inclusive">Inclusive (rate includes GST)</option>
-            </select>
-          </div>
-        </div>
-        <p className="text-xs text-text-secondary -mt-2 mb-2">
-          Tax type is automatic:{' '}
-          {totals.intraState
-            ? 'intra-state (CGST + SGST) when supplier state matches your business state.'
-            : 'inter-state (IGST) when supplier state differs.'}
-        </p>
-        <label className="flex items-center gap-2 text-sm text-text-secondary mb-2">
-          <input
-            type="checkbox"
-            checked={showAdvancedTax}
-            onChange={(e) => setShowAdvancedTax(e.target.checked)}
-            className="rounded border-border"
-          />
-          Advanced tax edit (manual CGST / SGST / IGST per line)
-        </label>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 gap-y-6">
-          <Input
-            label="Bill Date *"
-            type="date"
-            value={formData.bill_date}
-            onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
-            required
-          />
-
-          <Input
-            label="Due Date"
-            type="date"
-            value={formData.due_date}
-            min={formData.bill_date}
-            onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-            helperText="Leave blank if due on the bill date"
-            data-testid="purchase-due-date"
-          />
-
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">
-              Place of Supply
-            </label>
-            <select
-              className="input w-full"
-              value={formData.place_of_supply_state_code || business?.state_code || ''}
-              onChange={(e) => {
-                setFormData({
-                  ...formData,
-                  place_of_supply_state_code: e.target.value,
-                });
-              }}
-            >
-              <option value="">Select State</option>
-              {INDIAN_STATES.map(state => (
-                <option key={state} value={getStateCode(state)}>
-                  {state}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">
-              Document Type
-            </label>
-            <select
-              className="input w-full"
-              value={formData.document_type}
-              onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-            >
-              <option value="tax_invoice">Tax Invoice</option>
-              <option value="bill_of_supply">Bill of Supply</option>
-              <option value="bill_of_entry">Bill of Entry (Import of Goods)</option>
-              <option value="import_service">Import of Services</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Port Code - Only for Bill of Entry (Imports) */}
-        {formData.document_type === 'bill_of_entry' && (
-          <div>
-            <Input
-              label="Port Code"
-              placeholder="Enter port code (e.g., INMAA, INBOM)"
-              value={formData.port_code}
-              onChange={(e) => setFormData({ ...formData, port_code: e.target.value })}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Port code where goods were imported (required for Bill of Entry)
+          {warehousesEnabled && effectivePurchaseBranchId && !warehousesLoading && warehouses.length === 0 && (
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              No warehouses are linked to this branch. Finalizing goods may fail until you add one in Settings.
             </p>
-          </div>
-        )}
+          )}
 
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={formData.is_reverse_charge}
-              onChange={(e) => setFormData({ ...formData, is_reverse_charge: e.target.checked })}
-              className="w-4 h-4 rounded border-gray-300"
-            />
-            <span className="text-sm text-text-secondary">Reverse Charge</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={formData.itc_eligible}
-              onChange={(e) => setFormData({ ...formData, itc_eligible: e.target.checked })}
-              className="w-4 h-4 rounded border-gray-300"
-            />
-            <span className="text-sm text-text-secondary">ITC Eligible</span>
-          </label>
-        </div>
-        <p className="text-xs text-gray-500">
-          RCM coverage: incomplete. No notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-text-secondary mb-1">Supplier registration on this supply</label>
-            <select
-              value={formData.supplier_registration_status}
-              onChange={(e) => setFormData({ ...formData, supplier_registration_status: e.target.value as 'registered' | 'unregistered' | 'unknown' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="unknown">Unknown</option>
-              <option value="registered">Registered</option>
-              <option value="unregistered">Unregistered</option>
-            </select>
+          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-5">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-text-secondary">Prices are</span>
+              <div className="inline-flex rounded-lg bg-black/5 p-1 dark:bg-white/10" role="radiogroup" aria-label="Prices are">
+                {(['exclusive', 'inclusive'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={formData.price_mode === mode}
+                    onClick={() => setFormData({ ...formData, price_mode: mode })}
+                    className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                      formData.price_mode === mode
+                        ? 'bg-surface text-text-primary shadow-sm'
+                        : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    {mode === 'exclusive' ? 'Before GST' : 'GST inclusive'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={formData.itc_eligible}
+                onChange={(e) => setFormData({ ...formData, itc_eligible: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+              />
+              ITC eligible
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={formData.is_reverse_charge}
+                onChange={(e) => setFormData({ ...formData, is_reverse_charge: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+              />
+              Reverse charge
+            </label>
+            <span className="ml-auto rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-500 dark:bg-primary-900/40 dark:text-primary-200">
+              {totals.intraState ? 'Intra-state · CGST + SGST' : 'Inter-state · IGST'}
+            </span>
           </div>
-          <div>
-            <label className="block text-sm text-text-secondary mb-1">Date goods or services were received</label>
-            <input
-              type="date"
-              value={formData.supply_received_on}
-              onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-        </div>
-        </AnnotatedFormSection>
 
-        {warehouses.length > 0 && (
-        <AnnotatedFormSection
-          title="Receiving warehouse"
-          description="Stock for goods lines is received here when you finalize (branch follows your access)."
-        >
-          <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
-            <label className="block text-sm font-medium text-text-secondary">Receiving warehouse *</label>
-            {warehousesLoading ? (
-              <p className="text-sm text-gray-500">Loading warehouses…</p>
-            ) : (
-              <>
+          <details className="group mt-5 border-t border-border pt-4">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-primary-500 dark:text-primary-200">
+              <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+              More details — registration, received date, manual tax
+            </summary>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className={labelClass}>Supplier registration on this supply</label>
                 <select
-                  className="input w-full"
-                  value={selectedWarehouseId}
-                  onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                  className={fieldClass}
+                  value={formData.supplier_registration_status}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      supplier_registration_status: e.target.value as 'registered' | 'unregistered' | 'unknown',
+                    })
+                  }
                 >
-                  {warehouses.map((wh) => (
-                    <option key={wh.id} value={wh.id}>
-                      {wh.name}
-                      {wh.warehouse_code ? ` (${wh.warehouse_code})` : ''}
-                    </option>
-                  ))}
+                  <option value="unknown">Unknown</option>
+                  <option value="registered">Registered</option>
+                  <option value="unregistered">Unregistered</option>
                 </select>
-                <p className="text-xs text-text-secondary">Finalized goods are received into this warehouse (branch: resolved from your access).</p>
-              </>
-            )}
-          </div>
-        </AnnotatedFormSection>
-        )}
-        {warehousesEnabled && effectivePurchaseBranchId && !warehousesLoading && warehouses.length === 0 && (
-          <AnnotatedFormSection title="Receiving warehouse" description="Set up storage locations before finalizing goods purchases.">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            No warehouses are linked to this branch. If warehouse stock is enabled, finalize may fail for goods until you add warehouses in Settings.
-          </div>
-          </AnnotatedFormSection>
-        )}
+              </div>
+              <div>
+                <label className={labelClass}>Date goods or services were received</label>
+                <input
+                  type="date"
+                  className={fieldClass}
+                  value={formData.supply_received_on}
+                  onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
+                />
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 self-end pb-3 text-sm text-text-primary">
+                <input
+                  type="checkbox"
+                  checked={showAdvancedTax}
+                  onChange={(e) => setShowAdvancedTax(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary-500 focus:ring-primary-500"
+                />
+                Enter CGST / SGST / IGST by hand per line
+              </label>
+            </div>
+            <p className="mt-3 text-xs text-text-muted">
+              Reverse charge coverage is incomplete: no notified-supply rules are loaded. A blank GSTIN does not mean the supplier is
+              unregistered.
+            </p>
+          </details>
+        </section>
 
-        <AnnotatedFormSection
-          title="Line items"
-          description="Add goods or services, adjust quantities, tax, and discounts. Expand rows for batch or serial details when tracking is enabled."
-        >
-        <div>
-          <div className="flex flex-wrap justify-end gap-2 mb-4">
-            <div className="flex gap-2 flex-wrap">
-              <Button type="button" variant="secondary" onClick={() => addItem(false)} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Add Goods
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => addItem(true)} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Add Service
-              </Button>
+        <section id="purchase-items-card" className="scroll-mt-4 overflow-hidden rounded-2xl border border-border bg-surface">
+          <div className="flex flex-wrap items-center gap-3 px-6 pt-5">
+            <h2 className="text-base font-semibold text-text-primary">Items</h2>
+            <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-text-secondary dark:bg-white/10">
+              {purchaseItems.length}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex h-11 w-[360px] max-w-full items-center gap-2 rounded-lg border border-border px-3 focus-within:border-primary-400">
+                <Search className="h-4 w-4 shrink-0 text-text-muted" />
+                <ItemAutocomplete
+                  value={catalogQuery}
+                  onChange={setCatalogQuery}
+                  placeholder="Add item — search catalogue"
+                  className="!min-h-0 !py-1 !text-sm !font-normal"
+                  warehouseId={selectedWarehouseId || undefined}
+                  onSelect={(picked) => {
+                    const row = purchaseLineFromCatalogPick(picked as unknown as Record<string, unknown>);
+                    setPurchaseItems((prev) => [...prev, row]);
+                    if (row.track_batch || row.track_serial) setExpandedItems((open) => new Set([...open, row.id]));
+                    setCatalogQuery('');
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => addItem(true)}
+                className="h-11 rounded-lg border border-border px-4 text-sm font-semibold text-text-primary hover:bg-black/5"
+              >
+                + Service
+              </button>
             </div>
           </div>
 
-          {purchaseItems.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No items added.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
+          {unlinkedLines.length > 0 && (
+            <div className="mx-6 mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
+              <span>
+                {unlinkedLines.length} item{unlinkedLines.length === 1 ? '' : 's'}
+                {billSource ? ' from the bill' : ''} {unlinkedLines.length === 1 ? "isn't" : "aren't"} in your catalogue. Link them so
+                stock updates on save.
+              </span>
+              <span className="ml-auto flex gap-4 font-semibold">
+                <button type="button" onClick={matchUnlinkedAutomatically} className="text-primary-500 underline dark:text-primary-200">
+                  Match automatically
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void addUnlinkedToCatalogue()}
+                  disabled={catalogueBusy}
+                  className="inline-flex items-center gap-1.5 text-primary-500 underline disabled:opacity-60 dark:text-primary-200"
+                >
+                  {catalogueBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Add all to catalogue
+                </button>
+              </span>
+            </div>
+          )}
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="border-y border-border bg-black/[0.02] text-xs font-semibold uppercase tracking-wide text-text-secondary dark:bg-white/5">
+                  <th className="w-12 py-3 pl-6 text-left">#</th>
+                  <th className="py-3 text-left">Item</th>
+                  <th className="w-28 py-3 text-left">HSN / SAC</th>
+                  <th className="w-24 py-3 text-right">Qty</th>
+                  <th className="w-28 py-3 text-right">Rate ₹</th>
+                  <th className="w-20 py-3 text-right">Disc %</th>
+                  <th className="w-20 py-3 text-right">GST</th>
+                  <th className="w-32 py-3 text-right">Amount ₹</th>
+                  <th className="w-24 py-3 pr-4" aria-label="Row actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseItems.length === 0 && (
                   <tr>
-                    <th className="text-left py-2 px-3">Item</th>
-                    <th className="text-left py-2 px-3">HSN/SAC</th>
-                    <th className="text-right py-2 px-3">Qty</th>
-                    <th className="text-right py-2 px-3">Rate</th>
-                    <th className="text-right py-2 px-3">Disc %</th>
-                    <th className="text-right py-2 px-3">Disc ₹</th>
-                    <th className="text-left py-2 px-3">Discount Account</th>
-                    <th className="text-right py-2 px-3">GST %</th>
-                    <th className="text-right py-2 px-3">Taxable ₹</th>
-                    {showAdvancedTax && (
-                      <>
-                        <th className="text-right py-2 px-3">CGST ₹</th>
-                        <th className="text-right py-2 px-3">SGST ₹</th>
-                        <th className="text-right py-2 px-3">IGST ₹</th>
-                      </>
-                    )}
-                    <th className="text-right py-2 px-3">Line total</th>
-                    <th className="w-10"></th>
+                    <td colSpan={9} className="px-6 py-10 text-center text-text-muted">
+                      No items yet. Search the catalogue above, add a line, or upload the bill.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {purchaseItems.map((item, itemIdx) => {
-                    const hasTracking = (item as any).track_batch || (item as any).track_serial;
-                    const isExpanded = expandedItems.has(item.id);
-                    const lineComputed = purchaseGstDoc?.lineComputeds[itemIdx];
-                    return (
-                      <React.Fragment key={item.id}>
-                        <tr className="border-b">
-                          <td className="py-2 px-3">
-                            <div className="space-y-1 min-w-[10rem]">
-                              {!(item.item_id || '').trim() && (item.item_name || '').trim().length > 0 && (
-                                <span className="inline-block text-2xs font-semibold uppercase rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-800">
-                                  New item
-                                </span>
-                              )}
+                )}
+                {purchaseItems.map((item, itemIdx) => {
+                  const isExpanded = expandedItems.has(item.id);
+                  const lineComputed = purchaseGstDoc?.lineComputeds[itemIdx];
+                  const isUnlinked = !(item.item_id || '').trim() && (item.item_name || '').trim().length > 0;
+                  return (
+                    <React.Fragment key={item.id}>
+                      <tr className={isExpanded ? '' : 'border-b border-border'}>
+                        <td className="py-2.5 pl-6 align-middle text-text-muted">{itemIdx + 1}</td>
+                        <td className="py-2.5 pr-3 align-middle">
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
                               <ItemAutocomplete
-                              value={item.item_name}
-                              onChange={(value) => updateItem(item.id, 'item_name', value)}
-                              onSelect={(selectedItem) => {
-                                const isBarcodeScan = !item.item_id && item.item_name === ''; // Detect if this is a new/empty row
-                                
-                                // Batch all updates in a single state update to avoid race conditions
-                                setPurchaseItems(purchaseItems.map(pItem => {
-                                  if (pItem.id === item.id) {
-                                    return {
-                                      ...pItem,
-                                      item_id: selectedItem.id,
-                                      item_name: selectedItem.name,
-                                      item_type: selectedItem.item_type || 'goods',
-                                      hsn_sac: selectedItem.hsn_sac || '',
-                                      unit: selectedItem.unit || (selectedItem.item_type === 'service' ? 'NOS' : 'pcs'),
-                                      unit_price: roundExclusiveUnitPrice(
-                                        Number(selectedItem.purchase_price) || 0,
-                                      ),
-                                      tax_rate: round2(Number(selectedItem.tax_rate) || 0),
-                                      quantity: isBarcodeScan ? 1 : pItem.quantity,
-                                      invoice_inclusive_line_total: undefined,
-                                      fromBillExtract: false,
-                                      // Set tracking flags if item has batch/serial tracking
-                                      track_batch: (selectedItem as any).track_batch || false,
-                                      track_serial: (selectedItem as any).track_serial || false,
-                                      // Initialize batch/serial fields if tracking is enabled
-                                      batch_number: (selectedItem as any).track_batch ? (pItem.batch_number || '') : undefined,
-                                      serial_numbers: (selectedItem as any).track_serial ? (pItem.serial_numbers || '') : undefined,
-                                    };
-                                  }
-                                  return pItem;
-                                }));
-                                
-                                // Auto-expand if tracking is enabled
-                                if ((selectedItem as any).track_batch || (selectedItem as any).track_serial) {
-                                  setExpandedItems(prev => new Set([...prev, item.id]));
-                                }
-                                
-                                // Auto-focus quantity field after barcode scan
-                                if (isBarcodeScan) {
-                                  setTimeout(() => {
-                                    const quantityInput = document.querySelector(`input[data-purchase-item-id="${item.id}"][data-field="quantity"]`) as HTMLInputElement;
-                                    quantityInput?.focus();
-                                    quantityInput?.select();
-                                  }, 100);
-                                }
-                              }}
-                              warehouseId={selectedWarehouseId || undefined}
-                            />
-                            {!(item.item_id || '').trim() && (
-                              <p className="text-caption text-text-secondary leading-snug">
-                                Not in catalogue — search above to link to inventory.
-                              </p>
-                            )}
-                            {item.item_type !== 'service' && (
-                              <label
-                                className="flex items-center gap-1.5 text-caption text-text-secondary cursor-pointer"
-                                title="Machinery or equipment used in business (GSTR-9 Table 6B capital goods)"
+                                value={item.item_name}
+                                onChange={(value) => updateItem(item.id, 'item_name', value)}
+                                onSelect={(selectedItem) => linkLineToCatalogItem(item.id, selectedItem)}
+                                placeholder={item.item_type === 'service' ? 'Service name' : 'Item name'}
+                                className="!min-h-0 !py-1 !text-sm !font-medium"
+                                warehouseId={selectedWarehouseId || undefined}
+                              />
+                            </div>
+                            {isUnlinked && (
+                              <span
+                                className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                title="Search in the name box to link this line to a catalogue item"
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={!!item.is_capital_goods}
-                                  onChange={(e) => updateItem(item.id, 'is_capital_goods', e.target.checked)}
-                                />
-                                Capital goods
-                              </label>
-                            )}
-                            {item.item_type !== 'service' && (
-                              <label
-                                className="flex items-center gap-1.5 text-caption text-text-secondary"
-                                title="Compensation cess on the supplier's bill (tobacco, aerated drinks, motor vehicles, coal)"
-                              >
-                                Cess ₹
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  step="any"
-                                  min={0}
-                                  className="w-24 rounded border border-border px-1 py-0.5 text-right"
-                                  value={item.cess_amount ?? ''}
-                                  onChange={(e) =>
-                                    updateItem(item.id, 'cess_amount', e.target.value === '' ? undefined : Number(e.target.value))
-                                  }
-                                />
-                              </label>
+                                Not linked
+                              </span>
                             )}
                           </div>
-                          </td>
-                          <td className="py-2 px-3"><input type="text" className="w-full border-none bg-transparent outline-none" value={item.hsn_sac} onChange={(e) => updateItem(item.id, 'hsn_sac', e.target.value)} /></td>
-                          <td className="py-2 px-3">
-                            <input 
-                              type="number" 
-                              inputMode="decimal"
-                              step="any" 
-                              className="w-full text-right border-none bg-transparent outline-none" 
-                              value={item.quantity} 
-                              onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                              data-purchase-item-id={item.id}
-                              data-field="quantity"
-                            />
-                          </td>
-                          <td className="py-2 px-3"><input type="number" inputMode="decimal" step="any" className="w-full text-right border-none bg-transparent outline-none" value={item.unit_price} onChange={(e) => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)} /></td>
-                          <td className="py-2 px-3"><input type="number" inputMode="decimal" className="w-full text-right border-none bg-transparent outline-none" value={item.discount_percent} onChange={(e) => {
-                            const v = round2(parseFloat(e.target.value) || 0);
-                            setPurchaseItems(purchaseItems.map(pItem => {
-                              if (pItem.id !== item.id) return pItem;
-                              let next: PurchaseItem = {
-                                ...pItem,
-                                discount_percent: v,
-                                discount_amount: v > 0 ? 0 : (pItem.discount_amount ?? 0),
-                                discount_on_tax_inclusive: v > 0 ? false : pItem.discount_on_tax_inclusive,
-                              };
-                              if (next.invoice_inclusive_line_total != null) {
-                                next = applyInvoiceAnchorDeriveUnitPrice(next);
-                              }
-                              return next;
-                            }));
-                          }} /></td>
-                          <td className="py-2 px-3">
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <input
+                            type="text"
+                            className={`${cellInputClass} !text-left`}
+                            placeholder="Add"
+                            value={item.hsn_sac}
+                            onChange={(e) => updateItem(item.id, 'hsn_sac', e.target.value)}
+                          />
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="any"
+                            className={cellInputClass}
+                            value={item.quantity}
+                            onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                            data-purchase-item-id={item.id}
+                            data-field="quantity"
+                          />
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="any"
+                            className={cellInputClass}
+                            value={item.unit_price}
+                            onChange={(e) => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                          />
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            className={cellInputClass}
+                            value={item.discount_percent}
+                            onChange={(e) => setLineDiscountPercent(item.id, e.target.value)}
+                            title={(item.discount_amount ?? 0) > 0 ? `₹${item.discount_amount} discount set in line details` : undefined}
+                          />
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <div className="flex items-center justify-end">
                             <input
                               type="number"
                               inputMode="decimal"
-                              className="w-full text-right border-none bg-transparent outline-none"
-                              value={item.discount_amount ?? 0}
-                              onChange={(e) => {
-                                const v = round2(parseFloat(e.target.value) || 0);
-                                setPurchaseItems(purchaseItems.map(pItem => {
-                                  if (pItem.id !== item.id) return pItem;
-                                  let next: PurchaseItem = {
-                                    ...pItem,
-                                    discount_amount: v,
-                                    discount_percent: v > 0 ? 0 : pItem.discount_percent,
-                                    discount_on_tax_inclusive:
-                                      v > 0 ? (pItem.discount_on_tax_inclusive ?? false) : false,
-                                  };
-                                  if (next.invoice_inclusive_line_total != null) {
-                                    next = applyInvoiceAnchorDeriveUnitPrice(next);
-                                  }
-                                  return next;
-                                }));
-                              }}
+                              className={`${cellInputClass} w-14`}
+                              value={item.tax_rate}
+                              onChange={(e) => updateItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
+                              aria-label="GST rate percent"
                             />
-                            {formData.price_mode === 'exclusive' && (item.discount_amount ?? 0) > 0 && (
-                              <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-2xs leading-tight text-text-secondary">
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-border text-primary-600 focus:ring-primary-500"
-                                  checked={item.discount_on_tax_inclusive === true}
-                                  onChange={(e) =>
-                                    updateItem(item.id, 'discount_on_tax_inclusive', e.target.checked)
-                                  }
-                                />
-                                <span>Discount applies to price incl. GST (MRP-style)</span>
-                              </label>
-                            )}
-                          </td>
-                          <td className="py-2 px-3">
-                            <select
-                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
-                              value={item.discount_account_id || ''}
-                              onChange={(e) => updateItem(item.id, 'discount_account_id', e.target.value || undefined)}
+                            <span className="text-text-secondary">%</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 align-middle">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            className={`${cellInputClass} font-semibold`}
+                            title="Line total as on the bill (incl. GST). Editing it adjusts the rate."
+                            value={
+                              item.invoice_inclusive_line_total != null
+                                ? item.invoice_inclusive_line_total
+                                : (lineComputed?.lineTotal ?? '')
+                            }
+                            onChange={(e) => setLineItemInvoiceTotal(item.id, e.target.value)}
+                          />
+                        </td>
+                        <td className="py-2.5 pr-4 align-middle">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => toggleLineDetails(item.id)}
+                              className={`rounded-md p-2 text-text-secondary hover:bg-black/5 ${isExpanded ? 'bg-black/5 text-text-primary' : ''}`}
+                              aria-expanded={isExpanded}
+                              aria-label={isExpanded ? 'Hide line details' : 'Show line details'}
                             >
-                              <option value="">No Account</option>
-                              {accounts
-                                .filter(acc =>
-                                  acc.is_active &&
-                                  ((acc.account_type === 'income' && /discount/i.test(acc.account_name)) ||
-                                    (acc.account_type === 'expense' && /purchase/i.test(acc.account_name))))
-                                .map(account => (
-                                  <option key={account.id} value={account.id}>
-                                    {account.account_code} - {account.account_name}
-                                  </option>
-                                ))}
-                            </select>
-                          </td>
-                          <td className="py-2 px-3"><input type="number" inputMode="decimal" className="w-full text-right border-none bg-transparent outline-none" value={item.tax_rate} onChange={(e) => updateItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)} /></td>
-                          <td className="py-2 px-3 text-right tabular-nums text-text-secondary whitespace-nowrap">
-                            {lineComputed != null ? lineComputed.taxableValue.toFixed(2) : '—'}
-                          </td>
-                          {showAdvancedTax && (
-                            <>
-                              <td className="py-2 px-3">
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeItem(item.id)}
+                              className="rounded-md p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              aria-label="Remove line"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-border">
+                          <td />
+                          <td colSpan={8} className="pb-3 pr-6">
+                            <div className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-[#faf8f3] p-4 md:grid-cols-4 dark:bg-white/5">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-text-secondary">Unit</label>
                                 <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  className="w-full text-right border-none bg-transparent outline-none text-xs"
-                                  value={item.manual_cgst ?? ''}
-                                  placeholder="auto"
-                                  onChange={(e) => {
-                                    const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                    updateItem(item.id, 'manual_cgst', v);
-                                  }}
+                                  className={`${fieldClass} !h-10`}
+                                  list="purchase-unit-options"
+                                  value={item.unit}
+                                  onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
                                 />
-                              </td>
-                              <td className="py-2 px-3">
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  className="w-full text-right border-none bg-transparent outline-none text-xs"
-                                  value={item.manual_sgst ?? ''}
-                                  placeholder="auto"
-                                  onChange={(e) => {
-                                    const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                    updateItem(item.id, 'manual_sgst', v);
-                                  }}
-                                />
-                              </td>
-                              <td className="py-2 px-3">
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  className="w-full text-right border-none bg-transparent outline-none text-xs"
-                                  value={item.manual_igst ?? ''}
-                                  placeholder="auto"
-                                  onChange={(e) => {
-                                    const v = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                    updateItem(item.id, 'manual_igst', v);
-                                  }}
-                                />
-                              </td>
-                            </>
-                          )}
-                          <td className="py-2 px-3 text-right">
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              className="w-full text-right border-none bg-transparent outline-none min-w-[4.5rem]"
-                              title="Tax-inclusive line total from the bill; edits adjust Rate to match GST & discount."
-                              value={
-                                item.invoice_inclusive_line_total != null
-                                  ? item.invoice_inclusive_line_total
-                                  : (lineComputed?.lineTotal ?? '')
-                              }
-                              onChange={(e) => setLineItemInvoiceTotal(item.id, e.target.value)}
-                            />
-                            <p className="text-2xs text-text-muted leading-tight mt-0.5 max-w-[8rem] ml-auto">
-                              From invoice; edit to match bill — Rate updates.
-                            </p>
-                          </td>
-                          <td className="py-2 px-3 text-center">
-                            <div className="flex items-center gap-1">
-                              {hasTracking && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setExpandedItems(prev => {
-                                      const newSet = new Set(prev);
-                                      if (isExpanded) {
-                                        newSet.delete(item.id);
-                                      } else {
-                                        newSet.add(item.id);
-                                      }
-                                      return newSet;
-                                    });
-                                  }}
-                                  className="text-primary-500 hover:text-primary-700 text-xs px-2 py-1"
-                                  title={isExpanded ? 'Hide batch/serial fields' : 'Show batch/serial fields'}
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-text-secondary">Discount account</label>
+                                <select
+                                  className={`${fieldClass} !h-10`}
+                                  value={item.discount_account_id || ''}
+                                  onChange={(e) => updateItem(item.id, 'discount_account_id', e.target.value || undefined)}
                                 >
-                                  {isExpanded ? '−' : '+'}
-                                </button>
+                                  <option value="">None</option>
+                                  {discountAccounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                      {account.account_code} - {account.account_name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-text-secondary">Discount ₹</label>
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  className={`${fieldClass} !h-10`}
+                                  value={item.discount_amount ?? 0}
+                                  onChange={(e) => setLineDiscountAmount(item.id, e.target.value)}
+                                />
+                                {formData.price_mode === 'exclusive' && (item.discount_amount ?? 0) > 0 && (
+                                  <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-xs text-text-secondary">
+                                    <input
+                                      type="checkbox"
+                                      className="rounded border-border text-primary-500"
+                                      checked={item.discount_on_tax_inclusive === true}
+                                      onChange={(e) => updateItem(item.id, 'discount_on_tax_inclusive', e.target.checked)}
+                                    />
+                                    On price incl. GST (MRP-style)
+                                  </label>
+                                )}
+                              </div>
+                              {item.item_type !== 'service' ? (
+                                <div>
+                                  <label
+                                    className="mb-1 block text-xs font-medium text-text-secondary"
+                                    title="Compensation cess on the supplier's bill (tobacco, aerated drinks, motor vehicles, coal)"
+                                  >
+                                    Cess ₹
+                                  </label>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="any"
+                                    min={0}
+                                    placeholder="0.00"
+                                    className={`${fieldClass} !h-10`}
+                                    value={item.cess_amount ?? ''}
+                                    onChange={(e) =>
+                                      updateItem(item.id, 'cess_amount', e.target.value === '' ? undefined : Number(e.target.value))
+                                    }
+                                  />
+                                </div>
+                              ) : (
+                                <div />
                               )}
-                              <button type="button" onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-700">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <p className="self-center text-xs text-text-secondary">
+                                Taxable value:{' '}
+                                <span className="font-semibold tabular-nums text-text-primary">
+                                  ₹{lineComputed != null ? lineComputed.taxableValue.toFixed(2) : '—'}
+                                </span>
+                              </p>
+                              {item.item_type !== 'service' && (
+                                <label
+                                  className="flex cursor-pointer items-center gap-2 self-center text-sm text-text-primary"
+                                  title="Machinery or equipment used in business (GSTR-9 Table 6B capital goods)"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-border text-primary-500"
+                                    checked={!!item.is_capital_goods}
+                                    onChange={(e) => updateItem(item.id, 'is_capital_goods', e.target.checked)}
+                                  />
+                                  Capital goods
+                                </label>
+                              )}
+                              {showAdvancedTax &&
+                                (['manual_cgst', 'manual_sgst', 'manual_igst'] as const).map((field) => (
+                                  <div key={field}>
+                                    <label className="mb-1 block text-xs font-medium text-text-secondary">
+                                      {field.replace('manual_', '').toUpperCase()} ₹
+                                    </label>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      placeholder="auto"
+                                      className={`${fieldClass} !h-10`}
+                                      value={item[field] ?? ''}
+                                      onChange={(e) =>
+                                        updateItem(item.id, field, e.target.value === '' ? undefined : parseFloat(e.target.value))
+                                      }
+                                    />
+                                  </div>
+                                ))}
+                              {item.track_batch && (
+                                <>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-text-secondary">Batch number *</label>
+                                    <input
+                                      className={`${fieldClass} !h-10`}
+                                      value={item.batch_number || ''}
+                                      onChange={(e) => updateItem(item.id, 'batch_number', e.target.value)}
+                                      placeholder="Enter batch number"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-text-secondary">Manufacturing date</label>
+                                    <input
+                                      type="date"
+                                      className={`${fieldClass} !h-10`}
+                                      value={item.manufacturing_date || ''}
+                                      onChange={(e) => updateItem(item.id, 'manufacturing_date', e.target.value)}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-medium text-text-secondary">Expiry date</label>
+                                    <input
+                                      type="date"
+                                      className={`${fieldClass} !h-10`}
+                                      value={item.expiry_date || ''}
+                                      onChange={(e) => updateItem(item.id, 'expiry_date', e.target.value)}
+                                    />
+                                  </div>
+                                </>
+                              )}
+                              {item.track_serial && (
+                                <div className="col-span-2">
+                                  <label className="mb-1 block text-xs font-medium text-text-secondary">
+                                    Serial numbers * (one per line or comma-separated)
+                                  </label>
+                                  <textarea
+                                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                                    rows={3}
+                                    value={item.serial_numbers || ''}
+                                    onChange={(e) => updateItem(item.id, 'serial_numbers', e.target.value)}
+                                    placeholder="SN001&#10;SN002"
+                                  />
+                                  <p className="mt-1 text-xs text-text-muted">Enter {item.quantity} serial number(s).</p>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
-                        {hasTracking && isExpanded && (
-                          <tr className="border-b bg-gray-50">
-                            <td colSpan={showAdvancedTax ? 14 : 11} className="py-3 px-3">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                {(item as any).track_batch && (
-                                  <>
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-700 mb-1">Batch Number *</label>
-                                      <input
-                                        type="text"
-                                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                        value={item.batch_number || ''}
-                                        onChange={(e) => updateItem(item.id, 'batch_number', e.target.value)}
-                                        placeholder="Enter batch number"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-700 mb-1">Manufacturing Date</label>
-                                      <input
-                                        type="date"
-                                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                        value={item.manufacturing_date || ''}
-                                        onChange={(e) => updateItem(item.id, 'manufacturing_date', e.target.value)}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-700 mb-1">Expiry Date</label>
-                                      <input
-                                        type="date"
-                                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                        value={item.expiry_date || ''}
-                                        onChange={(e) => updateItem(item.id, 'expiry_date', e.target.value)}
-                                      />
-                                    </div>
-                                  </>
-                                )}
-                                {(item as any).track_serial && (
-                                  <div className={(item as any).track_batch ? '' : 'md:col-span-2'}>
-                                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                                      Serial Numbers * (one per line or comma-separated)
-                                    </label>
-                                    <textarea
-                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                      rows={3}
-                                      value={item.serial_numbers || ''}
-                                      onChange={(e) => updateItem(item.id, 'serial_numbers', e.target.value)}
-                                      placeholder="SN001&#10;SN002&#10;SN003"
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                      Enter {item.quantity} serial number(s) for quantity {item.quantity}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        </AnnotatedFormSection>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            <datalist id="purchase-unit-options">
+              {['pcs', 'kg', 'g', 'l', 'ml', 'box', 'pack', 'dozen', 'm', 'NOS'].map((u) => (
+                <option key={u} value={u} />
+              ))}
+            </datalist>
+          </div>
 
-        <AnnotatedFormSection title="Amount summary" description="Totals follow Indian GST: supplier state vs your business state sets CGST+SGST vs IGST. Use price mode for inclusive retail bills.">
-        <div className="border-t border-border pt-4 flex justify-end">
-          <div className="w-full max-w-2xl space-y-3 text-sm">
-            <div className="flex justify-between text-text-secondary"><span>Subtotal (taxable):</span><span>₹{totals.subtotal.toFixed(2)}</span></div>
-            {(totals.cgstTotal > 0.005 || totals.sgstTotal > 0.005) && (
-              <>
-                <div className="flex justify-between text-text-secondary"><span>CGST:</span><span>₹{totals.cgstTotal.toFixed(2)}</span></div>
-                <div className="flex justify-between text-text-secondary"><span>SGST:</span><span>₹{totals.sgstTotal.toFixed(2)}</span></div>
-              </>
-            )}
-            {totals.igstTotal > 0.005 && totals.cgstTotal < 0.005 && totals.sgstTotal < 0.005 && (
-              <div className="flex justify-between text-text-secondary"><span>IGST:</span><span>₹{totals.igstTotal.toFixed(2)}</span></div>
-            )}
-            {totals.taxTotal > 0.005 && totals.cgstTotal < 0.005 && totals.sgstTotal < 0.005 && totals.igstTotal < 0.005 && (
-              <div className="flex justify-between text-text-secondary"><span>GST:</span><span>₹{totals.taxTotal.toFixed(2)}</span></div>
-            )}
-            {totals.cessTotal > 0.005 && (
-              <div className="flex justify-between text-text-secondary"><span>Cess:</span><span>₹{totals.cessTotal.toFixed(2)}</span></div>
-            )}
-            {totals.slabSummary.length > 0 && (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-text-secondary uppercase tracking-wide">
-                  GST summary (by rate)
-                </div>
-                <table className="w-full text-xs">
+          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-4">
+            <button type="button" onClick={() => addItem(false)} className="text-sm font-semibold text-primary-500 hover:underline dark:text-primary-200">
+              + Add line
+            </button>
+            {totals.slabSummary.some((r) => r.total_tax > 0.005) && (
+              <details className="w-full max-w-xl text-xs">
+                <summary className="cursor-pointer text-right font-semibold text-text-secondary">GST by rate</summary>
+                <table className="mt-2 w-full">
                   <thead>
                     <tr className="border-b border-border text-text-secondary">
-                      <th className="text-left py-2 px-3">Rate</th>
-                      <th className="text-right py-2 px-3">Taxable</th>
-                      <th className="text-right py-2 px-3">CGST</th>
-                      <th className="text-right py-2 px-3">SGST</th>
-                      <th className="text-right py-2 px-3">IGST</th>
-                      <th className="text-right py-2 px-3">Tax</th>
+                      <th className="py-1.5 text-left">Rate</th>
+                      <th className="py-1.5 text-right">Taxable</th>
+                      <th className="py-1.5 text-right">CGST</th>
+                      <th className="py-1.5 text-right">SGST</th>
+                      <th className="py-1.5 text-right">IGST</th>
+                      <th className="py-1.5 text-right">Tax</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="tabular-nums">
                     {totals.slabSummary.map((row) => (
                       <tr key={row.gst_rate} className="border-b border-border last:border-0">
-                        <td className="py-2 px-3">{row.gst_rate}%</td>
-                        <td className="text-right py-2 px-3">₹{row.taxable_value.toFixed(2)}</td>
-                        <td className="text-right py-2 px-3">₹{row.cgst.toFixed(2)}</td>
-                        <td className="text-right py-2 px-3">₹{row.sgst.toFixed(2)}</td>
-                        <td className="text-right py-2 px-3">₹{row.igst.toFixed(2)}</td>
-                        <td className="text-right py-2 px-3 font-medium">₹{row.total_tax.toFixed(2)}</td>
+                        <td className="py-1.5">{row.gst_rate}%</td>
+                        <td className="py-1.5 text-right">₹{row.taxable_value.toFixed(2)}</td>
+                        <td className="py-1.5 text-right">₹{row.cgst.toFixed(2)}</td>
+                        <td className="py-1.5 text-right">₹{row.sgst.toFixed(2)}</td>
+                        <td className="py-1.5 text-right">₹{row.igst.toFixed(2)}</td>
+                        <td className="py-1.5 text-right font-semibold">₹{row.total_tax.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </details>
             )}
-            {Math.abs(Number(formData.round_off) || 0) > 0.005 && (
-              <div className="flex justify-between text-text-secondary">
-                <span>Round off:</span>
-                <span>₹{(Number(formData.round_off) || 0).toFixed(2)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-lg font-bold text-text-primary border-t border-border pt-2"><span>Grand Total:</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
           </div>
-        </div>
-        </AnnotatedFormSection>
+        </section>
 
-        <AnnotatedFormSection title="Payment and notes" description="Optional payment recorded now and internal notes for this bill.">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
-          <NumericBlurField
-            label="Paid Amount"
-            variant="boxed"
-            mode="money"
-            value={formData.paid_amount}
-            onCommit={(v) => setFormData((prev) => ({ ...prev, paid_amount: v }))}
-          />
-          <NumericBlurField
-            label="Round off"
-            variant="boxed"
-            mode="money"
-            value={formData.round_off}
-            onCommit={(v) => setFormData((prev) => ({ ...prev, round_off: v }))}
-          />
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Notes</label>
-            <textarea className="input w-full min-h-[5rem]" rows={3} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
+        <section className="rounded-2xl border border-border bg-surface p-6">
+          <h2 className="text-base font-semibold text-text-primary">Payment &amp; notes</h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <NumericBlurField
+              label="Amount paid now ₹"
+              variant="boxed"
+              mode="money"
+              value={formData.paid_amount}
+              onCommit={(v) => setFormData((prev) => ({ ...prev, paid_amount: v }))}
+            />
+            <div>
+              <label className={labelClass}>Paid via</label>
+              <select className={fieldClass} value="cash" disabled title="Payments recorded here go to cash. Record bank or UPI payments after saving.">
+                <option value="cash">Cash</option>
+              </select>
+              <p className="mt-1 text-xs text-text-muted">Recorded when you finalize. For bank or UPI, record a payment after saving.</p>
+            </div>
+            <div className="md:col-span-3">
+              <label className={labelClass}>Internal notes</label>
+              <textarea
+                className="min-h-[5rem] w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                rows={3}
+                placeholder="Only visible to your team"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
-        </AnnotatedFormSection>
+        </section>
 
-        </div>
+        {invoiceFillTracePanel}
+      </div>
 
-        <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4 dark:border-border-dark">
-          <Button type="button" variant="secondary" onClick={() => handleSubmit('draft')} disabled={loading}>
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save as Draft
-          </Button>
-          <div className="flex flex-col gap-1">
-            <Button 
-              type="button" 
-              onClick={() => handleSubmit('final')} 
-              disabled={loading || !isOnline}
+      <div
+        className={`fixed bottom-0 z-30 border-t border-border bg-surface/95 py-3 shadow-[0_-6px_20px_rgba(0,0,0,0.05)] backdrop-blur ${footerBox ? '' : 'invisible'}`}
+        style={footerBox ? { left: footerBox.left, width: footerBox.width } : undefined}
+      >
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4">
+          {checks.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => scrollToCard(checks[0].target)}
+              title={checks.map((c) => c.label).join(' · ')}
+              className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3.5 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-200"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} {isOnline ? 'Save & Finalize' : 'Sync Required'}
-            </Button>
-            <p className="text-2xs text-center text-text-muted">
-              {isOnline ? '⚠️ This will affect GST filing' : '⚠️ Offline: Sync to file GST'}
-            </p>
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+              {checks.length} thing{checks.length === 1 ? '' : 's'} to check
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3.5 py-2 text-sm font-semibold text-primary-500 dark:bg-primary-900/40 dark:text-primary-200">
+              <CheckCircle2 className="h-4 w-4" /> Ready to save
+            </span>
+          )}
+          <dl className="flex flex-wrap items-end gap-x-6 gap-y-2 text-sm">
+            <div>
+              <dt className="text-xs text-text-secondary">
+                Subtotal · {purchaseItems.length} item{purchaseItems.length === 1 ? '' : 's'}
+              </dt>
+              <dd className="font-semibold tabular-nums text-text-primary">₹{totals.subtotal.toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-secondary">Discount</dt>
+              <dd className="font-semibold tabular-nums text-text-primary">₹{discountTotal.toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-secondary">{totals.intraState ? 'CGST + SGST' : 'IGST'}</dt>
+              <dd className="font-semibold tabular-nums text-text-primary">₹{totals.taxTotal.toFixed(2)}</dd>
+            </div>
+            {totals.cessTotal > 0.005 && (
+              <div>
+                <dt className="text-xs text-text-secondary">Cess</dt>
+                <dd className="font-semibold tabular-nums text-text-primary">₹{totals.cessTotal.toFixed(2)}</dd>
+              </div>
+            )}
+            <div className="w-24">
+              <NumericBlurField
+                label="Round off"
+                variant="boxed"
+                mode="money"
+                compact
+                value={formData.round_off}
+                onCommit={(v) => setFormData((prev) => ({ ...prev, round_off: v }))}
+              />
+            </div>
+          </dl>
+          <div className="ml-auto flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs text-text-secondary">Grand total</p>
+              <p className="text-2xl font-bold tabular-nums text-text-primary">₹{totals.grandTotal.toFixed(2)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSubmit('draft')}
+              disabled={loading}
+              className="h-12 rounded-lg border border-border bg-surface px-5 text-sm font-semibold text-text-primary hover:bg-black/5 disabled:opacity-60"
+            >
+              Save as draft
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSubmit('final')}
+              disabled={loading || !isOnline}
+              title={isOnline ? 'Finalizing updates stock and counts in your GST returns' : 'You are offline — connect to finalize'}
+              className="inline-flex h-12 items-center gap-2 rounded-lg bg-primary-500 px-6 text-sm font-semibold text-white hover:bg-primary-600 disabled:opacity-60"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isOnline ? 'Save & finalize' : 'Sync required'}
+            </button>
           </div>
         </div>
-      </form>
+      </div>
+    </form>
   );
 
 
   return (
     <>
     <div className="w-full min-w-0 max-w-none space-y-4">
-        <MobileDuplicatePageChrome
-          className="mb-4"
-          title="New Purchase"
-          onBack={() => router.back()}
-          trailing={formData.status ? <StatusBadge status={formData.status} className="hidden md:flex" /> : undefined}
-        />
+        {isMobile && (
+          <MobileDuplicatePageChrome
+            className="mb-4"
+            title="New Purchase"
+            onBack={() => router.back()}
+            trailing={formData.status ? <StatusBadge status={formData.status} className="hidden md:flex" /> : undefined}
+          />
+        )}
 
         {isMobile && business?.id ? (
           <MobileNewPurchaseScrollForm
@@ -2368,6 +2643,17 @@ export default function NewPurchasePage() {
           priceField="purchase_price"
           confirmLabel="Add to purchase"
           onApply={handlePurchasePickerApply}
+        />
+      )}
+
+      {business?.id && user?.id && !isMobile && (
+        <PurchaseBillUploadModal
+          open={showUploader}
+          onClose={() => setShowUploader(false)}
+          businessId={business.id}
+          userId={user.id}
+          onExtractionComplete={handleExtractionComplete}
+          onError={handleExtractionError}
         />
       )}
 
