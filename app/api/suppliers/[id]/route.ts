@@ -3,7 +3,7 @@ import * as db from '@/lib/db';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { Supplier } from '@/types/database';
-import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, getSessionScopedBusinessId, getAuthenticatedUserId } from '@/lib/auth-helpers';
 import { normalizePhoneOrNull } from '@/lib/utils/phone';
 import { normalizePan, panFromGstin } from '@/lib/tax/pan';
 import { resolveGstinAndState } from '@/lib/tax/gstin';
@@ -157,8 +157,9 @@ export async function PUT(
       notes,
       is_active,
       allow_low_stock_access,
-      updated_by_user_id, // REQUIRED for authorization
     } = body;
+    // The acting user comes from the session only; a user id in the body is ignored.
+    const updated_by_user_id = getAuthenticatedUserId(request);
 
     if (pan && !normalizePan(pan)) {
       return NextResponse.json(
@@ -168,10 +169,7 @@ export async function PUT(
     }
 
     if (!updated_by_user_id) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Sign in again to update this supplier' }, { status: 401 });
     }
 
     // Get supplier first to get business_id and linked_business_id

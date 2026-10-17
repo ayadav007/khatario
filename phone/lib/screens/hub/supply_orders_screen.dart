@@ -374,7 +374,8 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
     final name = role == 'buyer'
         ? (hubText(line['buyer_item_name']) ?? line['item_name']?.toString() ?? '')
         : (hubText(l.vendorItem?['name']) ?? hubText(line['vendor_item_name']) ?? line['item_name']?.toString() ?? '');
-    final unit = role == 'vendor' ? hubText(line['vendor_unit']) : (factor != 1 ? 'supplier units' : hubText(line['buyer_unit']));
+    final unit = role == 'vendor' || factor != 1 ? (hubText(line['vendor_unit']) ?? 'packs') : hubText(line['buyer_unit']);
+    final price = line['unit_price'] == null ? null : toNum(line['unit_price']);
     final qty = double.tryParse(l.qty.text) ?? toNum(line['qty']).toDouble();
     final confirmedQty = line['confirmed_qty'] == null ? null : toNum(line['confirmed_qty']);
     final needsItem = canPickItem && line['vendor_item_id'] == null && l.vendorItem == null;
@@ -391,7 +392,7 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
                   if (role == 'vendor' && line['buyer_stock_at_suggestion'] != null) 'buyer had ${qtyText(toNum(line['buyer_stock_at_suggestion']))}',
                   if (role == 'vendor' && line['vendor_current_stock'] != null) 'you have ${qtyText(toNum(line['vendor_current_stock']))}',
                   if (role == 'buyer' && line['buyer_current_stock'] != null) 'in stock ${qtyText(toNum(line['buyer_current_stock']))}',
-                  if (factor != 1) '1 = ${qtyText(factor)} ${line['buyer_unit'] ?? 'units'}',
+                  if (factor != 1) '1 ${line['vendor_unit'] ?? 'pack'} = ${qtyText(factor)} ${line['buyer_unit'] ?? 'units'}',
                 ].join(' · '),
                 style: AppText.caption,
               ),
@@ -407,6 +408,12 @@ class _SupplyOrderScreenState extends State<SupplyOrderScreen> {
         ]),
         if (role == 'buyer' && factor != 1)
           Text('= ${qtyText(qty * factor)} ${line['buyer_unit'] ?? 'units'}', style: AppText.caption),
+        if (price != null)
+          Text(
+            '${inr(price, maxFraction: 2)} / ${unit ?? 'unit'} · ${inr((qtyEditable ? qty : (confirmedQty ?? toNum(line['qty']))) * price, maxFraction: 2)}',
+            style: AppText.caption,
+            textAlign: TextAlign.right,
+          ),
         if (confirmedQty != null && confirmedQty != toNum(line['qty']) && !qtyEditable)
           Text('Asked ${qtyText(toNum(line['qty']))}, confirmed ${qtyText(confirmedQty)}', style: AppText.caption.copyWith(color: AppColors.due)),
         if (responding) ...[

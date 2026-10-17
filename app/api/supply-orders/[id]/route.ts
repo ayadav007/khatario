@@ -25,15 +25,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
              ${role === 'vendor' ? 'l.buyer_stock_at_suggestion,' : ''}
              bi.name AS buyer_item_name, bi.unit AS buyer_unit,
              ${role === 'buyer' ? 'bi.current_stock AS buyer_current_stock, bi.min_stock AS buyer_min_stock,' : ''}
-             vi.name AS vendor_item_name, vi.unit AS vendor_unit
-             ${role === 'vendor' ? ', vi.current_stock AS vendor_current_stock, vi.selling_price AS vendor_price' : ''}
+             vi.name AS vendor_item_name, vi.unit AS vendor_unit,
+             ${
+               role === 'vendor'
+                 ? 'vi.current_stock AS vendor_current_stock, vi.selling_price AS vendor_price, vi.selling_price AS unit_price'
+                 : // The buyer sees the supplier's catalog price, or its list price; never one the catalog hides.
+                   "CASE WHEN pl.price_display = 'hidden' THEN NULL ELSE COALESCE(pl.price, vi.selling_price) END AS unit_price"
+             }
       FROM supply_order_lines l
       LEFT JOIN items bi ON bi.id = l.buyer_item_id
       LEFT JOIN items vi ON vi.id = l.vendor_item_id
+      LEFT JOIN supplier_published_listings pl
+        ON pl.supplier_business_id = $2 AND pl.item_id = l.vendor_item_id AND pl.is_active = true
       WHERE l.order_id = $1
       ORDER BY l.sort_order
       `,
-      [order.id]
+      [order.id, order.vendor_business_id]
     );
     const names = await db.queryRows<{ id: string; name: string }>(
       `SELECT id, name FROM businesses WHERE id = ANY($1::uuid[])`,
@@ -64,6 +71,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         qty: Number(l.qty),
         confirmed_qty: l.confirmed_qty == null ? null : Number(l.confirmed_qty),
         factor: Number(l.factor),
+        unit_price: l.unit_price == null ? null : Number(l.unit_price),
         buyer_qty: Math.round(Number(l.qty) * Number(l.factor) * 1000) / 1000,
         // The supplier sees the buyer's item only by the line's name.
         buyer_item_id: role === 'buyer' ? l.buyer_item_id : null,

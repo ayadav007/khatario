@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Bell, X, Check, AlertCircle, Info, CheckCircle, AlertTriangle } from 'lucide-react';
 
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { notificationHref } from '@/lib/notifications/notification-href';
 
 export interface Notification {
   id: string;
@@ -24,6 +26,7 @@ interface NotificationCenterProps {
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({ businessId }) => {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const { notifications, unreadNotificationCount, refreshNotifications, markNotificationAsRead, markAllNotificationsAsRead } = useNotifications();
 
@@ -35,6 +38,12 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
       refreshNotifications();
     }
   }, [isOpen, refreshNotifications]);
+
+  const open = (id: string, href: string) => {
+    markNotificationAsRead(id);
+    setIsOpen(false);
+    router.push(href);
+  };
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
@@ -124,14 +133,28 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
               ) : (
                 notifications.map((notification) => {
                   const Icon = getIcon(notification.type as Notification['type']);
+                  const href = notificationHref(notification);
                   return (
                     <div
                       key={notification.id}
+                      role={href ? 'button' : undefined}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={href ? () => open(notification.id, href) : undefined}
+                      onKeyDown={
+                        href
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                open(notification.id, href);
+                              }
+                            }
+                          : undefined
+                      }
                       className={`rounded-lg border p-3 ${
                         notification.is_read
                           ? 'border-gray-200 bg-gray-50'
                           : 'border-primary-200 bg-white'
-                      }`}
+                      }${href ? ' cursor-pointer transition-colors hover:border-primary-300' : ''}`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`rounded-lg p-2 ${getColor(notification.type as Notification['type'])}`}>
@@ -161,7 +184,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                             {!notification.is_read && (
                               <button
                                 type="button"
-                                onClick={() => markNotificationAsRead(notification.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  markNotificationAsRead(notification.id);
+                                }}
                                 className="shrink-0 rounded p-1 transition-colors hover:bg-gray-100"
                                 aria-label="Mark as read"
                               >
@@ -169,19 +195,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ business
                               </button>
                             )}
                           </div>
-                          {typeof notification.actionUrl === 'string' && notification.actionUrl && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="mt-2"
-                              onClick={() => {
-                                window.location.href = notification.actionUrl as string;
-                              }}
-                            >
-                              {(typeof notification.actionLabel === 'string'
-                                ? notification.actionLabel
-                                : null) || 'View'}
-                            </Button>
+                          {href && (
+                            <p className="mt-2 text-xs font-medium text-primary-600">
+                              {(typeof notification.actionLabel === 'string' && notification.actionLabel) || 'Open'} ›
+                            </p>
                           )}
                         </div>
                       </div>

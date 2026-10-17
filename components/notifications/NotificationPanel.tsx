@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { notificationHref } from '@/lib/notifications/notification-href';
 
 interface Notification {
   id: string;
@@ -42,30 +43,8 @@ export function NotificationPanel() {
 
   const handleNotificationClick = (notification: Notification) => {
     handleMarkAsRead(notification.id);
-    
-    // Navigate based on notification type
-    if (notification.type === 'supplier_request') {
-      router.push('/suppliers/requests');
-    } else if (notification.type === 'low_stock_alert') {
-      router.push('/suppliers/dashboard');
-    } else if (notification.reference_type === 'supplier' && notification.reference_id) {
-      router.push(`/suppliers/${notification.reference_id}`);
-    } else if (notification.type === 'invoice_nearing_due' || notification.type === 'invoice_overdue') {
-      if (notification.reference_id) {
-        router.push(`/invoices/${notification.reference_id}`);
-      } else {
-        router.push('/invoices');
-      }
-    } else if (notification.type === 'todo_reminder') {
-      router.push('/tools/todo');
-    } else if (notification.type === 'store_enquiry') {
-      router.push('/settings/online-store/enquiries');
-    } else if (notification.type === 'gst_compliance') {
-      router.push('/reports/gst/compliance');
-    } else if (notification.reference_type === 'whatsapp_conversation' && notification.reference_id) {
-      router.push(`/whatsapp/conversations?c=${encodeURIComponent(notification.reference_id)}`);
-    }
-    
+    const href = notificationHref(notification);
+    if (href) router.push(href);
     setIsOpen(false);
   };
 

@@ -27,6 +27,8 @@ type Line = {
   vendor_item_name: string | null;
   vendor_unit: string | null;
   vendor_current_stock?: string | null;
+  /** Per supplier unit: the supplier's price, or for the buyer the catalog / list price (null if hidden). */
+  unit_price?: number | null;
 };
 
 type Detail = {
@@ -48,6 +50,7 @@ type Detail = {
 type Edit = { qty?: string; confirmed_qty?: string; vendor_item_id?: string; vendor_item_name?: string; remove?: boolean };
 
 const fmt = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 });
+const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 /** One Supplier Hub order, with the actions open to this side at its current step. */
 export default function SupplyOrderPage({ params }: { params: { id: string } }) {
@@ -120,8 +123,19 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
   const vendorResponds = role === 'vendor' && s === 'pending';
   const qtyEditable = vendorEditsDraft || buyerConfirms;
   const canPickVendorItem = vendorEditsDraft || vendorResponds;
-  const canCancel = ['draft', 'proposed', 'pending', 'confirmed', 'partial'].includes(s);
+  // Where the other side is waiting on an answer, Decline is the way out; Cancel covers the rest.
+  const canCancel = ['draft', 'proposed', 'pending', 'confirmed', 'partial'].includes(s) && !buyerConfirms && !vendorResponds;
   const setEdit = (id: string, patch: Edit) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const lineQty = (l: Line) => {
+    const e = edits[l.id] || {};
+    if (e.remove) return 0;
+    if (qtyEditable && e.qty != null && e.qty !== '') return Number(e.qty) || 0;
+    if (vendorResponds && e.confirmed_qty != null && e.confirmed_qty !== '') return Number(e.confirmed_qty) || 0;
+    return l.confirmed_qty ?? l.qty;
+  };
+  const priced = lines.filter((l) => l.unit_price != null && !edits[l.id]?.remove);
+  const total = priced.reduce((sum, l) => sum + lineQty(l) * Number(l.unit_price), 0);
+  const allPriced = priced.length === lines.filter((l) => !edits[l.id]?.remove).length;
 
   return (
     <div className="space-y-4">
@@ -165,7 +179,7 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
                       {role === 'vendor' && l.buyer_stock_at_suggestion != null ? `Buyer had ${fmt(Number(l.buyer_stock_at_suggestion))} left · ` : ''}
                       {role === 'vendor' && l.vendor_current_stock != null ? `You have ${fmt(Number(l.vendor_current_stock))}` : ''}
                       {role === 'buyer' && l.buyer_current_stock != null ? `In stock ${fmt(Number(l.buyer_current_stock))}` : ''}
-                      {l.factor !== 1 ? ` · 1 supplier unit = ${fmt(l.factor)} ${l.buyer_unit || 'units'}` : ''}
+                      {l.factor !== 1 ? ` · 1 ${l.vendor_unit || 'pack'} = ${fmt(l.factor)} ${l.buyer_unit || 'units'}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
@@ -182,7 +196,7 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
                       <span className="font-semibold">{fmt(l.confirmed_qty ?? l.qty)}</span>
                     )}
                     <span className="text-text-secondary">
-                      {role === 'vendor' ? l.vendor_unit || 'units' : l.factor !== 1 ? 'supplier units' : l.buyer_unit || 'units'}
+                      {role === 'vendor' || l.factor !== 1 ? l.vendor_unit || 'packs' : l.buyer_unit || 'units'}
                     </span>
                     {role === 'buyer' && l.factor !== 1 && (
                       <span className="text-xs text-text-secondary">= {fmt(qty * l.factor)} {unit || 'units'}</span>
@@ -194,6 +208,14 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
                     )}
                   </div>
                 </div>
+
+                {l.unit_price != null && (
+                  <p className="text-right text-xs text-text-secondary">
+                    {inr(Number(l.unit_price))} / {(role === 'vendor' || l.factor !== 1 ? l.vendor_unit : l.buyer_unit) || 'unit'}
+                    {' · '}
+                    <span className="font-medium text-text-primary">{inr(lineQty(l) * Number(l.unit_price))}</span>
+                  </p>
+                )}
 
                 {l.confirmed_qty != null && l.confirmed_qty !== l.qty && !qtyEditable && (
                   <p className="text-xs text-amber-700">Asked for {fmt(l.qty)}; supplier confirmed {fmt(l.confirmed_qty)}.</p>
@@ -235,6 +257,18 @@ export default function SupplyOrderPage({ params }: { params: { id: string } }) 
             );
           })}
         </ul>
+        {priced.length > 0 && (
+          <div className="mt-2 flex items-baseline justify-between border-t border-gray-100 pt-3">
+            <span className="text-sm text-text-secondary">
+              {role === 'buyer' ? 'Estimated total' : 'Total'}
+              {!allPriced ? ' (priced lines)' : ''}
+            </span>
+            <span className="text-lg font-semibold text-text-primary">{inr(total)}</span>
+          </div>
+        )}
+        {role === 'buyer' && priced.length > 0 && (
+          <p className="mt-1 text-xs text-text-secondary">From the supplier&apos;s prices, before tax. Their bill is final.</p>
+        )}
       </Card>
 
       <Card padding="md" className="flex flex-wrap gap-2">

@@ -39,7 +39,9 @@ export default function SupplyOrdersPage() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('supply-orders-role');
+      // A link (e.g. a low-stock notification) can pick the side; otherwise use the last one used.
+      const fromUrl = new URLSearchParams(window.location.search).get('role');
+      const saved = fromUrl || localStorage.getItem('supply-orders-role');
       if (saved === 'vendor' || saved === 'buyer') setRole(saved);
     } catch {
       /* storage unavailable */

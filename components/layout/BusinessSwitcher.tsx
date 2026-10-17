@@ -5,6 +5,7 @@ import { Briefcase, ChevronDown, Loader2, Check, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLayoutData } from '@/contexts/LayoutDataContext';
+import { pathAfterBusinessSwitch } from '@/lib/business-switch-path';
 
 export type MyBusinessOption = {
   id: string;
@@ -116,7 +117,9 @@ export function BusinessSwitcher({ mobile }: BusinessSwitcherProps) {
           toast.error(msg);
           return;
         }
-        window.location.reload();
+        const next = pathAfterBusinessSwitch(window.location.pathname, window.location.search);
+        if (next === `${window.location.pathname}${window.location.search}`) window.location.reload();
+        else window.location.assign(next);
       } catch {
         toast.error('Network error while switching business');
       } finally {

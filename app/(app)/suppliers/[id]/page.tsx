@@ -154,6 +154,32 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
       .catch(() => {});
   }, [params.id, user?.id]);
 
+  const toggleStockSharing = async (checked: boolean) => {
+    if (!supplier?.linked_business_id) {
+      toast.warning('Supplier must be linked to a business account to grant low stock access.');
+      return;
+    }
+    setUpdatingAccess(true);
+    try {
+      const res = await fetch(`/api/suppliers/${supplier.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow_low_stock_access: checked }),
+      });
+      if (res.ok) {
+        refetch();
+      } else {
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.error || 'Failed to update access');
+      }
+    } catch (error) {
+      console.error('Error updating access:', error);
+      toast.error('Failed to update access');
+    } finally {
+      setUpdatingAccess(false);
+    }
+  };
+
   if (loading) {
     return (
       
@@ -185,8 +211,8 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
 
         {/* Supplier Header */}
         <Card padding="md">
-          <div className="flex items-start justify-between mb-6">
-            <div>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
               <h2 className="text-xl font-bold text-text-primary mb-2 hidden md:block">{supplier.name}</h2>
               {supplier.phone && (
                 <p className="text-text-secondary flex items-center gap-2">
@@ -208,105 +234,8 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
               <p className="text-text-secondary text-sm mt-1">
                 PAN: {supplier.pan || 'Not recorded (TDS at the higher s.206AA rate)'}
               </p>
-              {supplier.linked_business_id && link && (
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <Chip variant={link.status === 'approved' ? 'success' : link.status === 'pending' ? 'warning' : 'default'}>{LINK_LABEL[link.status] ?? link.status}</Chip>
-                  {link.status === 'approved' && (
-                    <Link
-                      href={`/suppliers/${supplier.id}/items`}
-                      className="text-sm font-medium text-primary-600 hover:underline"
-                    >
-                      Choose items this supplier supplies
-                    </Link>
-                  )}
-                  {link.status === 'approved' && (
-                    <Link
-                      href={`/supply-orders/new?supplier_id=${supplier.id}`}
-                      className="text-sm font-medium text-primary-600 hover:underline"
-                    >
-                      New order
-                    </Link>
-                  )}
-                  {link.status === 'approved' && (
-                    <Link
-                      href={`/suppliers/${supplier.id}/item-links`}
-                      className="text-sm font-medium text-primary-600 hover:underline"
-                    >
-                      Item matches
-                    </Link>
-                  )}
-                  {(link.status === 'approved' || link.status === 'pending') && (
-                    <Button size="sm" variant="ghost" onClick={disconnect} disabled={linkBusy}>
-                      {link.status === 'pending' ? 'Withdraw link request' : 'Disconnect'}
-                    </Button>
-                  )}
-                  {(link.status === 'disconnected' || link.status === 'rejected') && (
-                    <Button size="sm" variant="secondary" onClick={reconnect} disabled={linkBusy}>
-                      Ask to reconnect
-                    </Button>
-                  )}
-                </div>
-              )}
-              {supplier.linked_business_id && link?.status === 'approved' && (
-                <div className="mt-4 p-3 bg-slate-50 border border-primary-200 rounded-lg">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={supplier.allow_low_stock_access || false}
-                      onChange={async (e) => {
-                        if (!supplier.linked_business_id) {
-                          toast.warning('Supplier must be linked to a business account to grant low stock access.');
-                          return;
-                        }
-                        if (!user?.id || !business?.id) {
-                          toast.error('You must be signed in to update supplier settings.');
-                          return;
-                        }
-                        setUpdatingAccess(true);
-                        try {
-                          const res = await fetch(`/api/suppliers/${supplier.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              business_id: business.id,
-                              allow_low_stock_access: e.target.checked,
-                              updated_by_user_id: user.id,
-                            }),
-                          });
-                          if (res.ok) {
-                            refetch();
-                          } else {
-                            const error = await res.json();
-                            toast.error(error.error || 'Failed to update access');
-                          }
-                        } catch (error) {
-                          console.error('Error updating access:', error);
-                          toast.error('Failed to update access');
-                        } finally {
-                          setUpdatingAccess(false);
-                        }
-                      }}
-                      disabled={updatingAccess || !supplier.linked_business_id}
-                      className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded disabled:opacity-50"
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Allow supplier to see low stock</p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {supplier.allow_low_stock_access 
-                          ? 'Supplier can view your low stock alerts'
-                          : 'Enable to allow supplier to view your low stock alerts'}
-                      </p>
-                      {!supplier.linked_business_id && (
-                        <p className="text-xs text-amber-600 mt-1">
-                          Link to business account first to enable this feature
-                        </p>
-                      )}
-                    </div>
-                  </label>
-                </div>
-              )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2">
               <Button 
                 variant="secondary"
                 onClick={() => {
@@ -339,6 +268,61 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
               />
             </div>
           </div>
+
+          {supplier.linked_business_id && link && (
+            <div className="mb-6 rounded-xl border border-gray-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-text-primary">Supplier Hub</p>
+                <Chip variant={link.status === 'approved' ? 'success' : link.status === 'pending' ? 'warning' : 'default'}>
+                  {LINK_LABEL[link.status] ?? link.status}
+                </Chip>
+              </div>
+              {link.status === 'approved' && (
+                <>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Link href={`/supply-orders/new?supplier_id=${supplier.id}`}>
+                      <Button className="w-full">New order</Button>
+                    </Link>
+                    <Link href={`/suppliers/${supplier.id}/items`}>
+                      <Button variant="secondary" className="w-full">Items they supply</Button>
+                    </Link>
+                    <Link href={`/suppliers/${supplier.id}/item-links`}>
+                      <Button variant="secondary" className="w-full">Item matches</Button>
+                    </Link>
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-slate-50 p-3">
+                    <input
+                      type="checkbox"
+                      checked={supplier.allow_low_stock_access || false}
+                      onChange={(e) => toggleStockSharing(e.target.checked)}
+                      disabled={updatingAccess}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-gray-900">Share my low stock with this supplier</span>
+                      <span className="mt-0.5 block text-sm text-gray-600">
+                        {supplier.allow_low_stock_access
+                          ? 'They get an alert when an item they supply reaches your reorder level, and can propose an order.'
+                          : 'Turn on so they can see when you run low and propose an order for you to confirm.'}
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+              <div className="mt-3 flex justify-end border-t border-gray-100 pt-3">
+                {(link.status === 'approved' || link.status === 'pending') && (
+                  <Button size="sm" variant="ghost" onClick={disconnect} disabled={linkBusy}>
+                    {link.status === 'pending' ? 'Withdraw link request' : 'Disconnect'}
+                  </Button>
+                )}
+                {(link.status === 'disconnected' || link.status === 'rejected') && (
+                  <Button size="sm" variant="secondary" onClick={reconnect} disabled={linkBusy}>
+                    Ask to reconnect
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

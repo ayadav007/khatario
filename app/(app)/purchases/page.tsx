@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Plus, ShoppingCart, Calendar, DollarSign, User, Tag, Eye, Edit, RotateCcw, Filter, Search, CreditCard, X, Loader2 } from 'lucide-react';
+import { Plus, ShoppingCart, Calendar, DollarSign, User, Tag, Eye, Edit, RotateCcw, Search, CreditCard, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,7 @@ import { FeatureRouteGuard } from '@/components/guards/FeatureRouteGuard';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { useToastContext } from '@/contexts/ToastContext';
 import { buildApiUrl } from '@/lib/api-helpers';
+import { PurchaseHubShortcuts } from '@/components/purchases/PurchaseHubShortcuts';
 import { ListPageHeader } from '@/components/layout/ListPageHeader';
 import { SplitPaneLayout } from '@/components/layout/SplitPaneLayout';
 import { PurchaseDetailPanel } from '@/components/purchases/PurchaseDetailPanel';
@@ -366,39 +367,10 @@ function PurchasesPageContent() {
             <>
               <button
                 type="button"
-                onClick={() => router.push('/purchases/incoming')}
-                className="inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <span>Incoming bills</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/purchases/new-arrivals')}
-                className="inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <span>New arrivals</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/supply-orders')}
-                className="inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <span>Supplier orders</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => router.push('/purchases/requests')}
                 className="hidden md:inline-flex items-center space-x-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 <span>Requests</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowMobileFilters(true)}
-                className="p-2 bg-white border border-gray-200 rounded-lg md:hidden text-text-secondary"
-                aria-label="Filters"
-              >
-                <Filter className="w-5 h-5" />
               </button>
               <button
                 type="button"
@@ -411,6 +383,8 @@ function PurchasesPageContent() {
             </>
           }
         />
+
+        <PurchaseHubShortcuts onOpenFilters={() => setShowMobileFilters(true)} />
 
         {/* Mobile Filter Bottom Sheet */}
         {showMobileFilters && (
