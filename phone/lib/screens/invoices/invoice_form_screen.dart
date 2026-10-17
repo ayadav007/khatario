@@ -20,12 +20,16 @@ import 'invoice_scan.dart';
 /// `app/(app)/invoices/new/page.tsx`): customer, dates, items, notes, totals, settlement.
 /// The server recalculates GST, stock and the ledger; this screen sends lines only.
 class InvoiceFormScreen extends StatefulWidget {
-  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice'});
+  const InvoiceFormScreen({super.key, required this.session, this.invoiceId, this.customerId, this.documentType = 'tax_invoice', this.supplyOrderId});
 
   final AppSession session;
   final String? invoiceId;
   final String? customerId;
   final String documentType;
+
+  /// Bill a confirmed Supplier Hub order: customer and lines come from the order, and saving
+  /// links the invoice back to it.
+  final String? supplyOrderId;
 
   @override
   State<InvoiceFormScreen> createState() => _InvoiceFormScreenState();
@@ -107,6 +111,38 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       _loadNextNumber();
       _loadDefaults();
       if (widget.customerId != null) _loadCustomer(widget.customerId!);
+      if (widget.supplyOrderId != null) _loadSupplyOrder(widget.supplyOrderId!);
+    }
+  }
+
+  Future<void> _loadSupplyOrder(String orderId) async {
+    try {
+      final body = await widget.session.api.getJson('/api/supply-orders/$orderId/invoice-draft');
+      if (!mounted) return;
+      final customerId = body['customer_id']?.toString();
+      final lines = body['lines'] is List ? (body['lines'] as List).whereType<Map>() : const <Map>[];
+      setState(() {
+        _lines
+          ..clear()
+          ..addAll([
+            for (final l in lines)
+              InvoiceLineDraft(
+                itemId: l['item_id']?.toString(),
+                name: l['name']?.toString() ?? '',
+                quantity: toNum(l['quantity']).toDouble(),
+                unitPrice: l['gst_included'] == true && toNum(l['tax_rate']) > 0
+                    ? toNum(l['selling_price']) / (1 + toNum(l['tax_rate']) / 100)
+                    : toNum(l['selling_price']).toDouble(),
+                unit: l['unit']?.toString() ?? 'PCS',
+                taxRate: toNum(l['tax_rate']).toDouble(),
+                hsn: l['hsn_sac']?.toString(),
+              ),
+          ]);
+        _customerId = customerId;
+      });
+      if (customerId != null) _loadCustomer(customerId);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -313,7 +349,10 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     }
     setState(() => _saving = true);
     try {
-      final body = await widget.session.api.postJson('/api/invoices', invoiceCreateBody(draft));
+      final body = await widget.session.api.postJson('/api/invoices', {
+        ...invoiceCreateBody(draft),
+        if (widget.supplyOrderId != null && _isNew) 'supply_order_id': widget.supplyOrderId,
+      });
       final invoice = body['invoice'] is Map ? body['invoice'] as Map : body;
       final number = invoice['invoice_number']?.toString();
       final id = invoice['id']?.toString();

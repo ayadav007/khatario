@@ -704,11 +704,15 @@ class _PurchaseDetailScreenState extends State<PurchaseDetailScreen> {
 }
 
 class PurchaseReturnForm extends StatefulWidget {
-  const PurchaseReturnForm({super.key, required this.session, this.purchaseId, this.supplierId});
+  const PurchaseReturnForm({super.key, required this.session, this.purchaseId, this.supplierId, this.prefillQty, this.reason});
 
   final AppSession session;
   final String? purchaseId;
   final String? supplierId;
+
+  /// Quantities to start with per item id (for example a bill received short or damaged).
+  final Map<String, double>? prefillQty;
+  final String? reason;
 
   @override
   State<PurchaseReturnForm> createState() => _PurchaseReturnFormState();
@@ -753,6 +757,25 @@ class _PurchaseReturnFormState extends State<PurchaseReturnForm> {
         _suppliers = _list(results[0], const ['suppliers']);
         _items = _list(results[1], const ['items']);
         _supplierId ??= widget.supplierId;
+        final prefill = widget.prefillQty;
+        if (prefill != null && prefill.isNotEmpty) {
+          for (final line in _lines) {
+            line.dispose();
+          }
+          _lines.clear();
+          for (final entry in prefill.entries) {
+            final item = _items.where((i) => i['id']?.toString() == entry.key).firstOrNull;
+            if (item == null) continue;
+            final line = _ReturnLine()
+              ..item = item
+              ..taxRate = toNum(item['tax_rate']).toDouble();
+            line.qty.text = entry.value.toString();
+            line.price.text = toNum(item['purchase_price']).toString();
+            _lines.add(line);
+          }
+          if (_lines.isEmpty) _lines.add(_ReturnLine());
+        }
+        if (widget.reason != null && _reason.text.isEmpty) _reason.text = widget.reason!;
         _loading = false;
       });
     } on ApiException catch (e) {

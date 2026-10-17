@@ -13,6 +13,7 @@ import '../../format.dart';
 import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/detail_panel_shell.dart';
+import '../hub/hub_link_cards.dart';
 import '../../ui/kit.dart';
 import '../../whatsapp_compose.dart';
 import '../invoices/invoice_detail_screen.dart';
@@ -246,7 +247,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 onShare: () => _statement(true),
               ),
             'history' => _History(loading: _historyLoading, rows: _history),
-            _ => _Overview(customer: customer, api: _api),
+            _ => _Overview(customer: customer, api: _api, session: widget.session),
           },
           bottomBar: KBottomBar(children: [
             if (phone.isNotEmpty) KIconTile(icon: LucideIcons.phone, label: 'Call', onTap: () => launchUrl(Uri(scheme: 'tel', path: phone))),
@@ -318,10 +319,11 @@ class _BalanceHero extends StatelessWidget {
 }
 
 class _Overview extends StatelessWidget {
-  const _Overview({required this.customer, required this.api});
+  const _Overview({required this.customer, required this.api, required this.session});
 
   final Map<String, dynamic> customer;
   final KhatarioApi api;
+  final AppSession session;
 
   String? _s(dynamic v) {
     final t = v?.toString().trim() ?? '';
@@ -340,6 +342,8 @@ class _Overview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_s(customer['linked_business_id']) != null && _s(customer['id']) != null)
+            HubCustomerLinkCard(session: session, customerId: customer['id'].toString()),
           KInfoCard(title: 'Primary Details', rows: [
             ('Name', _s(customer['name']) ?? ''),
             if (_s(customer['company_name']) != null) ('Company', _s(customer['company_name'])!),

@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phases 0–5 committed on branch `supplier-hub-phase-0`. Phase 6 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 13 cases), not committed. Migrations 389–394 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phases 0–6 committed on branch `supplier-hub-phase-0`. Phase 7 (phone) built with widget tests (`phone/test/hub_test.dart`), not committed. Migrations 389–394 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -221,6 +221,17 @@ Builds on the published catalog that already exists.
 
 ## Phase 7 — Phone app
 
+**Built (2026-10-17), in `phone/lib/screens/hub/`, using the phone kit (`lib/ui/kit.dart`):**
+- Incoming bills list and the receive screen: each line's match and quantity in your unit, pick your item (suggestions, then search), create a new item from the line, units per supplier unit, short and damaged per line, then create the purchase. Afterwards it shows the shortfall and opens the purchase return form pre-filled as the debit note.
+- Supplier orders: Buying / Selling with Needs you, Open, Done, All. The order screen has each side's steps (send, confirm with changed quantities, answer per line and pick your item, decline, cancel), Create bill (the phone invoice form now takes `supplyOrderId`, pre-fills and links on save) and Receive bill. New order from a supplier starts from that supplier's low items. Suppliers can check buyers' low stock on demand.
+- New arrivals: collections by supplier with photo, price, minimum, pack and lead time, a cart per supplier sent as a catalog order, and mute or unmute a supplier's launches.
+- Connect: Suppliers Hub directory search, a supplier profile with Ask to connect (or New order / New arrivals once connected), and connection requests to accept, decline or withdraw.
+- Link cards: on a supplier on Khatario (status, share low stock switch, disconnect / withdraw / ask to reconnect, New order, New arrivals) and on a customer who is a connected buyer (status, sharing, disconnect, orders).
+- More menu: Incoming Bills, Supplier Orders, New Arrivals under Purchases; Orders from Buyers under Supplier. Suppliers Hub and Requests to Fulfill now open the native screens.
+- Checks: `flutter analyze` shows only an existing warning in `app_shell.dart`. `flutter test`: 107 passed (including the 3 new hub tests), 6 failed. The same 6 golden tests fail at the previous commit too, with the same pixel diffs, so these changes add no new failures.
+- Not done: managing your own catalog and collections on the phone (supplier side stays on the web), the item matches list screen, and checking on a real device.
+
+
 Catalog browsing and the new-arrivals feed matter most on the phone: retailers look at new designs on the phone, not on a desktop.
 
 The phone app can already list, create, respond to and link requests. It still needs:
@@ -257,4 +268,5 @@ The phone app can already list, create, respond to and link requests. It still n
 | Phase 5 (receive, incl. create item on receive) | Done, not committed (5.2b batch/expiry and 5.5 still open) |
 | Phase 3 + 4 (incl. catalog-order lines, variants) | Done, not committed (variants, standing orders, dispatch still open) |
 | Phase 6 (catalog ordering, new-arrival push) | Done, not committed (photo upload, per-size prices, WhatsApp still open) |
-| Phases 6b–7 | L, can come later |
+| Phase 6b | L, can come later |
+| Phase 7 (phone) | Done, not committed; not yet checked on a device |

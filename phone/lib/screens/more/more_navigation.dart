@@ -99,6 +99,7 @@ List<MoreNavSection> buildMoreMenuSections({
   if (isSupplier && _isNavSectionVisible('Supplier', enabledModules)) {
     final s = section('Supplier', const [
       MoreNavItem('/suppliers/dashboard', 'Supplier Dashboard'),
+      MoreNavItem('/supply-orders?role=vendor', 'Orders from Buyers'),
       MoreNavItem('/suppliers/requests', 'Requests to Fulfill'),
     ]);
     if (s != null) out.add(s);
@@ -119,6 +120,9 @@ List<MoreNavSection> buildMoreMenuSections({
   final purchases = section('Purchases', const [
     MoreNavItem('/suppliers', 'Suppliers', module: 'purchases'),
     MoreNavItem('/suppliers/hub', 'Suppliers Hub', module: 'purchases'),
+    MoreNavItem('/purchases/incoming', 'Incoming Bills', module: 'purchases'),
+    MoreNavItem('/supply-orders', 'Supplier Orders', module: 'purchases'),
+    MoreNavItem('/purchases/new-arrivals', 'New Arrivals', module: 'purchases'),
     MoreNavItem('/purchases', 'All Purchases', module: 'purchases'),
     MoreNavItem('/purchases/requests', 'Requests', module: 'purchases'),
     MoreNavItem('/purchase-orders', 'Purchase Orders', module: 'purchases'),

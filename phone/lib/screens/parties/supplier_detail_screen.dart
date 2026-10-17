@@ -7,6 +7,7 @@ import '../../session.dart';
 import '../../theme.dart';
 import '../../ui/detail_panel_shell.dart';
 import '../../ui/kit.dart';
+import '../hub/hub_link_cards.dart';
 import 'party_logic.dart';
 
 /// `SupplierDetailPanel`: Overview, Transactions and History. Purchases stay on the server.
@@ -176,6 +177,8 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (_s(supplier['linked_business_id']) != null)
+                      HubSupplierLinkCard(session: widget.session, supplierId: widget.supplierId, supplierName: name),
                     KInfoCard(title: 'Primary Details', rows: [
                       ('Name', name),
                       if (phone.isNotEmpty) ('Phone', phone),
