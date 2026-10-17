@@ -92,8 +92,9 @@ export async function POST(
     `, [business_id, invoice.business_id]);
     const supplierId: string | null = supplierRes.rows[0]?.id ?? null;
 
-    // ...and the invoice must be addressed to the caller: either it fulfils one of the caller's
-    // quantity requests, or its recipient GSTIN is one of the caller's registrations.
+    // ...and the invoice must be addressed to the caller: it fulfils one of the caller's
+    // quantity requests, its customer record is linked to the caller, or its recipient GSTIN
+    // is one of the caller's registrations.
     const requestRes = await client.query(`
       SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
              qr.responder_item_id, i.business_id AS item_business_id
@@ -111,6 +112,14 @@ export async function POST(
 
     let addressedToCaller = linkedRequests.length > 0;
     let accessReason = addressedToCaller ? 'linked to request' : '';
+    if (!addressedToCaller && invoice.customer_id) {
+      const linkedRes = await client.query(
+        `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2 AND linked_business_id = $3`,
+        [invoice.customer_id, invoice.business_id, business_id]
+      );
+      addressedToCaller = linkedRes.rows.length > 0;
+      if (addressedToCaller) accessReason = 'linked customer';
+    }
     const recipientGstin = String(invoice.customer_gstin || '').trim().toUpperCase();
     if (!addressedToCaller && recipientGstin) {
       const gstinRes = await client.query(`

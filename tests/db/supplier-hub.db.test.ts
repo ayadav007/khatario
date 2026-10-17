@@ -1,11 +1,13 @@
 /**
- * Supplier Hub phase 0 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md, B1–B6):
- * retailer A links wholesaler B, the link waits for B's approval, A's own reorder level raises
- * an alert for B, and B's sales invoice becomes A's purchase (item matched, stock added once).
+ * Supplier Hub phases 0–1 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
+ * retailer A links wholesaler B, the link waits for B's approval, B's customer record for A is
+ * linked, A picks B's items and reorder levels in bulk, A's reorder level raises an alert for B,
+ * B's sales invoice becomes A's purchase (item matched, stock added once), and either side can
+ * disconnect and reconnect.
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migration 389 is applied in beforeAll.
+ * to kh_phase2_test; migrations 389 and 390 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -61,15 +63,18 @@ import { POST as setThreshold } from '@/app/api/suppliers/thresholds/route';
 import { POST as convertInvoice } from '@/app/api/invoices/[id]/convert-to-purchase/route';
 import { POST as createListing } from '@/app/api/suppliers/hub/published-listings/route';
 import { PATCH as patchListing } from '@/app/api/suppliers/hub/published-listings/[id]/route';
+import { POST as linkedCustomer } from '@/app/api/suppliers/hub/linked-customer/route';
+import { GET as linkGET, DELETE as linkDELETE } from '@/app/api/suppliers/hub/link/route';
+import { POST as connectPOST } from '@/app/api/suppliers/hub/connection-requests/route';
+import { PATCH as connectPATCH } from '@/app/api/suppliers/hub/connection-requests/[id]/route';
+import { GET as supplierItemsGET, POST as supplierItemsPOST } from '@/app/api/suppliers/[id]/items/route';
 
-const migration389 = fs.readFileSync(
-  path.join(__dirname, '../../database/migrations/389_purchase_source_invoice.sql'),
-  'utf8'
-);
+const migration = (file: string) =>
+  fs.readFileSync(path.join(__dirname, '../../database/migrations', file), 'utf8');
 
 const run = enabled ? describe : describe.skip;
 
-run('Supplier Hub phase 0 (kh_phase2_test)', () => {
+run('Supplier Hub phases 0–1 (kh_phase2_test)', () => {
   jest.setTimeout(120000);
 
   const tag = randomUUID().slice(0, 6).toUpperCase();
@@ -91,9 +96,16 @@ run('Supplier Hub phase 0 (kh_phase2_test)', () => {
   });
   const post = (url: string, user: string, biz: string, body: object) =>
     new NextRequest(`http://localhost${url}`, { method: 'POST', headers: headers(user, biz), body: JSON.stringify(body) });
+  const call = (method: string, url: string, user: string, biz: string, body?: object) =>
+    new NextRequest(`http://localhost${url}`, {
+      method,
+      headers: headers(user, biz),
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
   beforeAll(async () => {
-    await query(migration389);
+    await query(migration('389_purchase_source_invoice.sql'));
+    await query(migration('390_supplier_hub_links.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -239,6 +251,73 @@ run('Supplier Hub phase 0 (kh_phase2_test)', () => {
     expect(reqNote?.message).not.toContain(ITEM_A);
   });
 
+  it("approval links B's existing customer record for A, never a new one by name (1.1)", async () => {
+    const linked = await queryOne(
+      `SELECT id FROM customers WHERE business_id = $1 AND linked_business_id = $2 AND deleted_at IS NULL`,
+      [B, A]
+    );
+    expect(linked?.id).toBe(CUST_A_AT_B);
+    const count = await queryOne(`SELECT COUNT(*)::int AS n FROM customers WHERE business_id = $1`, [B]);
+    expect(count.n).toBe(1);
+
+    const res = await linkedCustomer(post('/api/suppliers/hub/linked-customer', UB, B, { buyer_business_id: A }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).customer_id).toBe(CUST_A_AT_B);
+
+    // C has no link from A, so it cannot fetch or create a customer record for A.
+    const stranger = await linkedCustomer(post('/api/suppliers/hub/linked-customer', UC, C, { buyer_business_id: A }));
+    expect(stranger.status).toBe(403);
+
+    // Both sides see the link as live.
+    const asA = await (await linkGET(call('GET', `/api/suppliers/hub/link?supplier_id=${supplierRowId}`, UA, A))).json();
+    expect(asA).toMatchObject({ side: 'buyer', status: 'approved', stock_shared: true, other_business_id: B });
+    const asB = await (await linkGET(call('GET', `/api/suppliers/hub/link?customer_id=${CUST_A_AT_B}`, UB, B))).json();
+    expect(asB).toMatchObject({ side: 'vendor', status: 'approved', other_business_id: A });
+  });
+
+  it('A picks the items B supplies and their reorder levels in bulk (1.4)', async () => {
+    const SECOND = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, min_stock, current_stock, is_active)
+       VALUES ($1, $2, 'Marie Gold 120g', 'PCS', 'goods', 0, 2, true)`,
+      [SECOND, A]
+    );
+    const url = `/api/suppliers/${supplierRowId}/items`;
+    const ctx = { params: { id: supplierRowId } };
+
+    // B's item cannot be assigned from A's books.
+    expect((await supplierItemsPOST(post(url, UA, A, { assign: [ITEM_B] }), ctx)).status).toBe(400);
+    // B cannot use A's supplier row.
+    expect((await supplierItemsPOST(post(url, UB, B, { assign: [SECOND] }), ctx)).status).toBe(404);
+    // A negative reorder level is refused.
+    expect((await supplierItemsPOST(post(url, UA, A, { min_stock: { [SECOND]: -1 } }), ctx)).status).toBe(400);
+
+    const ok = await supplierItemsPOST(post(url, UA, A, { assign: [SECOND], min_stock: { [SECOND]: 6 } }), ctx);
+    expect(ok.status).toBe(200);
+    const item = await queryOne(`SELECT default_supplier_id, min_stock FROM items WHERE id = $1`, [SECOND]);
+    expect(item.default_supplier_id).toBe(supplierRowId);
+    expect(Number(item.min_stock)).toBe(6);
+    // Saving raised B's alert straight away (2 in stock, reorder at 6).
+    const alert = await queryOne(
+      `SELECT alert_status FROM low_stock_alerts WHERE item_id = $1 AND supplier_business_id = $2`,
+      [SECOND, B]
+    );
+    expect(alert?.alert_status).toBe('active');
+
+    const list = await (await supplierItemsGET(call('GET', `${url}?filter=assigned`, UA, A), ctx)).json();
+    expect(list.items.map((r: any) => r.id).sort()).toEqual([ITEM_A, SECOND].sort());
+
+    // Unassigning clears the default and closes the alert.
+    expect((await supplierItemsPOST(post(url, UA, A, { unassign: [SECOND] }), ctx)).status).toBe(200);
+    const after = await queryOne(`SELECT default_supplier_id FROM items WHERE id = $1`, [SECOND]);
+    expect(after.default_supplier_id).toBeNull();
+    const closed = await queryOne(
+      `SELECT alert_status FROM low_stock_alerts WHERE item_id = $1 AND supplier_business_id = $2`,
+      [SECOND, B]
+    );
+    expect(closed.alert_status).toBe('resolved');
+  });
+
   it('supplier-set thresholds are retired (B4)', async () => {
     const res = await setThreshold(
       post('/api/suppliers/thresholds', UB, B, {
@@ -350,5 +429,89 @@ run('Supplier Hub phase 0 (kh_phase2_test)', () => {
     await checkLowStockForItem(ITEM_A, A);
     const alert = await queryOne(`SELECT alert_status FROM low_stock_alerts WHERE item_id = $1`, [ITEM_A]);
     expect(alert.alert_status).toBe('resolved');
+  });
+
+  it('either side can disconnect, and a reconnect needs B to accept again (1.3)', async () => {
+    // A third party cannot end it.
+    const stranger = await linkDELETE(call('DELETE', `/api/suppliers/hub/link?supplier_id=${supplierRowId}`, UC, C));
+    expect(stranger.status).toBe(404);
+
+    // A pending request between them is closed by the disconnect.
+    await query(
+      `INSERT INTO quantity_requests (requester_business_id, responder_business_id, item_id, requested_qty, status)
+       VALUES ($1, $2, $3, 5, 'pending')`,
+      [A, B, ITEM_A]
+    );
+
+    // B disconnects from its customer record.
+    const res = await linkDELETE(call('DELETE', `/api/suppliers/hub/link?customer_id=${CUST_A_AT_B}`, UB, B));
+    expect(res.status).toBe(200);
+    const row = await queryOne(
+      `SELECT approval_status, allow_low_stock_access, disconnected_by_business_id FROM suppliers WHERE id = $1`,
+      [supplierRowId]
+    );
+    expect(row).toMatchObject({
+      approval_status: 'disconnected',
+      allow_low_stock_access: false,
+      disconnected_by_business_id: B,
+    });
+    const note = await queryOne(
+      `SELECT 1 AS ok FROM notifications WHERE business_id = $1 AND title = 'Supplier link ended'`,
+      [A]
+    );
+    expect(note?.ok).toBe(1);
+    const pending = await queryOne(
+      `SELECT COUNT(*)::int AS n FROM quantity_requests WHERE requester_business_id = $1 AND status = 'pending'`,
+      [A]
+    );
+    expect(pending.n).toBe(0);
+
+    // Hub access has stopped.
+    const reqRes = await createStockRequest(
+      post('/api/stock-requests', UA, A, {
+        requests: [{ requester_business_id: A, responder_business_id: B, item_id: ITEM_A, requested_qty: 5 }],
+      })
+    );
+    expect(reqRes.status).toBe(400);
+
+    // Disconnecting again has nothing to end.
+    const again = await linkDELETE(call('DELETE', `/api/suppliers/hub/link?supplier_id=${supplierRowId}`, UA, A));
+    expect(again.status).toBe(409);
+
+    // A asks to reconnect; the link stays down until B accepts.
+    await query(
+      `INSERT INTO business_discovery (business_id, visibility) VALUES ($1, 'directory')
+       ON CONFLICT (business_id) DO UPDATE SET visibility = 'directory'`,
+      [B]
+    );
+    const ask = await connectPOST(post('/api/suppliers/hub/connection-requests', UA, A, { supplier_business_id: B }));
+    expect(ask.status).toBe(201);
+    const { request: connReq } = await ask.json();
+    const still = await queryOne(`SELECT approval_status FROM suppliers WHERE id = $1`, [supplierRowId]);
+    expect(still.approval_status).toBe('disconnected');
+
+    // A cannot accept its own request, even claiming to be B in the body.
+    const selfAccept = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${connReq.id}`, UA, A, {
+        action: 'accept',
+        business_id: B,
+        updated_by_user_id: UB,
+      }),
+      { params: { id: connReq.id } }
+    );
+    expect(selfAccept.status).toBe(403);
+
+    const accept = await connectPATCH(
+      call('PATCH', `/api/suppliers/hub/connection-requests/${connReq.id}`, UB, B, { action: 'accept' }),
+      { params: { id: connReq.id } }
+    );
+    expect(accept.status).toBe(200);
+    const back = await queryOne(`SELECT approval_status, disconnected_at FROM suppliers WHERE id = $1`, [supplierRowId]);
+    expect(back).toMatchObject({ approval_status: 'approved', disconnected_at: null });
+    const customers = await queryOne(
+      `SELECT COUNT(*)::int AS n FROM customers WHERE business_id = $1 AND linked_business_id = $2`,
+      [B, A]
+    );
+    expect(customers.n).toBe(1);
   });
 });

@@ -11,6 +11,7 @@ import {
   platformModuleErrorResponse,
 } from '@/lib/security/require-platform-module';
 import { noteShopChanged } from '@/lib/rag/tenant-reindex';
+import { isOwnSupplier } from '@/lib/supplier-hub-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -314,6 +315,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    if (default_supplier_id && !(await isOwnSupplier(business_id, String(default_supplier_id)))) {
+      return NextResponse.json({ error: 'Default supplier was not found in your suppliers' }, { status: 400 });
     }
 
     // Validation: Services cannot have stock or variants

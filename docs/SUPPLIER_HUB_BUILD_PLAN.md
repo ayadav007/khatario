@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phase 0 (B1–B6) built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`). Migration 389 is applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phase 0 (B1–B6) committed on branch `supplier-hub-phase-0`. Phase 1 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 8 cases), not committed. Migrations 389 and 390 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -71,6 +71,16 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 `app/api/suppliers/hub/published-listings/route.ts` (and `[id]`) take `business_id` from the body/query fallback and authorise with `created_by_user_id` from the body. That breaks the rule "never trust client-sent `business_id`, `user_id` or `created_by`". Fix: use the session tenant (`requireAuthenticatedTenant`) like the stock-request routes.
 
 ## Phase 1 — Relationship, both directions
+
+**Built (2026-10-17):**
+- Migration 390: `customers.linked_business_id` (one per supplier and buyer), backfill by unique GSTIN match, `suppliers` status `disconnected` with `disconnected_at` / `disconnected_by_business_id`.
+- `lib/supplier-hub-links.ts`: `ensureVendorCustomerLink` (reuse B's customer for A by GSTIN, phone, then email; else create it) runs on both approval paths. `disconnectSupplierLink` stops sharing, closes alerts, declines pending requests, cancels pending connection requests and notifies the other side.
+- `POST /api/suppliers/hub/linked-customer` replaces the name matching on both request pages. The converter also accepts invoices whose customer is linked to the caller.
+- `GET/DELETE /api/suppliers/hub/link?supplier_id=|customer_id=`: status and disconnect from either side. Supplier page shows status, Disconnect / Withdraw / Ask to reconnect. Customer page shows the link card.
+- `/suppliers/[id]/items` with `GET/POST /api/suppliers/[id]/items`: tick items and set reorder levels in bulk; alerts update on save. Item create/update now refuse a default supplier from another business.
+- Connection-request routes take business and user from the session only (same class as B6).
+- Not done: stock sharing is still off by default after accept (A turns it on on the supplier page). The supplier dashboard keeps its name-based fallback, which only runs when an alert has no buyer id.
+
 
 1.1 **One relationship record, both sides.** Accepting a connection currently creates only A's supplier row. It should also create or link **B's customer row for A**: add `customers.linked_business_id`. B's screens currently find A by **name** (`lookup-customer`, the requests page). Replace that with the link.
 
@@ -203,7 +213,7 @@ The phone app can already list, create, respond to and link requests. It still n
 | Step | Size |
 |---|---|
 | Phase 0 (B1–B6) | Done |
-| Phase 1 | S–M |
+| Phase 1 | Done, not committed |
 | Phase 2 | M |
 | Phase 5 (receive, incl. create item on receive) | M–L — do this before Phase 3, because it pays off even without alerts |
 | Phase 3 + 4 (incl. catalog-order lines, variants) | L |

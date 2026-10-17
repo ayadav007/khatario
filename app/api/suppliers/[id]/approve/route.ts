@@ -6,6 +6,7 @@ import { Supplier } from '@/types/database';
 export const dynamic = 'force-dynamic';
 
 import { requireTenantBusinessId } from '@/lib/auth-helpers';
+import { ensureVendorCustomerLink } from '@/lib/supplier-hub-links';
 
 /**
  * Approve or reject a supplier relationship request
@@ -108,13 +109,18 @@ export async function POST(
 
     const updatedSupplier = await queryOne<Supplier>(updateQuery, updateParams);
 
+    // The approving supplier gets a customer record linked to the buyer.
+    if (action === 'approve') {
+      await ensureVendorCustomerLink(businessId, supplier.business_id);
+    }
+
     // Create notification for the requester
     const notificationTitle = action === 'approve' 
       ? '✓ Supplier Request Approved'
       : '✗ Supplier Request Rejected';
     
     const notificationMessage = action === 'approve'
-      ? `${supplier.name} has approved your supplier relationship request. You can now track their inventory and set stock thresholds.`
+      ? `${supplier.name} has approved your supplier relationship request. Their bills can now come straight into your purchases.`
       : `${supplier.name} has declined your supplier relationship request. ${rejection_reason ? `Reason: ${rejection_reason}` : ''}`;
 
     await query(

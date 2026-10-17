@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
+import { ensureVendorCustomerLink } from '@/lib/supplier-hub-links';
 import type { SupplierConnectionRequest } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * PATCH /api/suppliers/hub/connection-requests/[id]
- * Body: { action: 'accept' | 'decline' | 'cancel', updated_by_user_id }
+ * Body: { action: 'accept' | 'decline' | 'cancel' }. Business and user come from the session only.
  * accept/decline: supplier business only; cancel: buyer only (pending).
  */
 export async function PATCH(
@@ -16,21 +17,12 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId: updatedByUserId } = auth;
     const body = await request.json();
-    const businessId = getBusinessIdFromRequest(request, body);
-    const userId = getUserIdFromRequest(request, body);
-    const { action, updated_by_user_id: updatedByUserId } = body;
+    const { action } = body;
     const id = params.id;
-
-    if (!businessId || !id) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-    }
-    if (!updatedByUserId) {
-      return NextResponse.json(
-        { error: 'updated_by_user_id is required for authorization' },
-        { status: 400 }
-      );
-    }
     if (!['accept', 'decline', 'cancel'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
@@ -138,6 +130,8 @@ export async function PATCH(
         UPDATE suppliers SET
           approval_status = 'approved',
           approved_at = COALESCE(approved_at, CURRENT_TIMESTAMP),
+          disconnected_at = NULL,
+          disconnected_by_business_id = NULL,
           rejected_at = NULL,
           rejection_reason = NULL,
           linked_business_id = $2,
@@ -186,6 +180,8 @@ export async function PATCH(
         ]
       );
     }
+
+    await ensureVendorCustomerLink(row.supplier_business_id, row.buyer_business_id);
 
     await db.query(
       `

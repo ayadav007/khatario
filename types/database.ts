@@ -681,6 +681,8 @@ export interface Customer {
   id: string;
   business_id: string;
   name: string;
+  /** Buyer business on Khatario this customer stands for (Supplier Hub link) */
+  linked_business_id?: string | null;
   company_name?: string;
   phone?: string;
   email?: string;

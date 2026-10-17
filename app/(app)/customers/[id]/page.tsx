@@ -16,6 +16,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs';
 import LeadProfileCard from '@/components/customers/LeadProfileCard';
 import { CustomerPortalAccessCard } from '@/components/customers/CustomerPortalAccessCard';
+import { HubCustomerLinkCard } from '@/components/suppliers/HubCustomerLinkCard';
 import { useToastContext } from '@/contexts/ToastContext';
 import { useMobileHeaderTitleOverride } from '@/contexts/MobileHeaderTitleContext';
 import { CustomerLedgerView } from '@/components/customers/CustomerLedgerView';
@@ -339,6 +340,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               {customer.gstin && (
                 <p className="text-text-secondary text-sm mt-1">GSTIN: {customer.gstin}</p>
               )}
+              {customer.linked_business_id && <HubCustomerLinkCard customerId={customer.id} />}
             </div>
             <div className="flex flex-row flex-wrap items-stretch gap-2 w-full min-w-0 sm:w-auto sm:justify-end sm:shrink-0 sm:max-w-none">
               <Link href={`/customers/${params.id}/edit`} className="min-w-0 flex-1 sm:flex-initial">

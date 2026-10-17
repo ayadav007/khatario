@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
+import { linkedCustomerId } from '@/lib/supplier-hub-client';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -576,28 +577,15 @@ export default function SupplierRequestsPage() {
                 size="sm"
                           variant="secondary"
                           onClick={async () => {
-                            // Find customer by matching name (since customers don't have linked_business_id)
-                            try {
-                              const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
-                              const customerData = await customerRes.json();
-                              // Match by requester_name
-                              const customer = customerData.customers?.find((c: any) => 
-                                c.name === buyerName || 
-                                c.name?.toLowerCase() === buyerName?.toLowerCase()
-                              );
-                              
-                              if (!customer) {
-                                toast.error(`Customer "${buyerName}" not found. Please create this customer first in your Customers list.`);
-                                return;
-                              }
-                              
+                                                        try {
+                              const customerId = await linkedCustomerId(buyerIsRequester ? req.requester_business_id : req.responder_business_id);
                               // Navigate to new sales order with pre-filled data
                               if (!req.responder_item_id) {
                                 toast.error('Map your catalog item before creating a sales order.');
                                 return;
                               }
                               const params = new URLSearchParams({
-                                customer_id: customer.id,
+                                customer_id: customerId,
                                 item_id: req.responder_item_id,
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
                                 request_id: req.id
@@ -605,7 +593,7 @@ export default function SupplierRequestsPage() {
                               router.push(`/sales-orders/new?${params.toString()}`);
                             } catch (error) {
                               console.error('Error finding customer:', error);
-                              toast.error('Failed to find customer. Please try again.');
+                              toast.error(error instanceof Error ? error.message : 'Failed to find customer. Please try again.');
                             }
                           }}
                         >
@@ -615,28 +603,15 @@ export default function SupplierRequestsPage() {
                           size="sm"
                 variant="secondary"
                           onClick={async () => {
-                            // Find customer by matching name (since customers don't have linked_business_id)
-                            try {
-                              const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
-                              const customerData = await customerRes.json();
-                              // Match by requester_name
-                              const customer = customerData.customers?.find((c: any) => 
-                                c.name === buyerName || 
-                                c.name?.toLowerCase() === buyerName?.toLowerCase()
-                              );
-                              
-                              if (!customer) {
-                                toast.error(`Customer "${buyerName}" not found. Please create this customer first in your Customers list.`);
-                                return;
-                              }
-                              
+                                                        try {
+                              const customerId = await linkedCustomerId(buyerIsRequester ? req.requester_business_id : req.responder_business_id);
                               // Navigate to new invoice with pre-filled data
                               if (!req.responder_item_id) {
                                 toast.error('Map your catalog item before creating an invoice.');
                                 return;
                               }
                               const params = new URLSearchParams({
-                                customer_id: customer.id,
+                                customer_id: customerId,
                                 item_id: req.responder_item_id,
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
                                 request_id: req.id
@@ -644,7 +619,7 @@ export default function SupplierRequestsPage() {
                               router.push(`/invoices/new?${params.toString()}`);
                             } catch (error) {
                               console.error('Error finding customer:', error);
-                              toast.error('Failed to find customer. Please try again.');
+                              toast.error(error instanceof Error ? error.message : 'Failed to find customer. Please try again.');
                             }
                           }}
                         >

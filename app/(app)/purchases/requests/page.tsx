@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
+import { linkedCustomerId } from '@/lib/supplier-hub-client';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -836,77 +837,10 @@ function PurchaseRequestsContent() {
                               return;
                             }
                             try {
-                              const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
-                              const customerData = await customerRes.json();
-                              // Match by responder_name (Tandoor Studio)
-                              const customer = customerData.customers?.find((c: any) => 
-                                c.name === parties.buyerName || 
-                                c.name?.toLowerCase() === parties.buyerName?.toLowerCase()
-                              );
-                              
-                              if (!customer) {
-                                // Navigate to new customer page with business details pre-filled
-                                // Fetch business details to pre-fill phone, email, GSTIN, address
-                                try {
-                                  const businessRes = await fetch(`/api/businesses/${parties.buyerBusinessId}`);
-                                  if (businessRes.ok) {
-                                    const businessData = await businessRes.json();
-                                    const biz = businessData.business || businessData;
-                                    const returnParams = new URLSearchParams({
-                                      item_id: req.responder_item_id || '',
-                                      qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                      request_id: req.id,
-                                      action: 'create_sales_order'
-                                    });
-                                    const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                    
-                                    // Pre-fill business details including company name (business name)
-                                    const params = new URLSearchParams({
-                                      return_url: returnUrl
-                                    });
-                                    // Use business name for both customer name and company name
-                                    if (biz.name) {
-                                      params.set('name', biz.name);
-                                      params.set('company_name', biz.name);
-                                    }
-                                    if (biz.phone) params.set('phone', biz.phone);
-                                    if (biz.email) params.set('email', biz.email);
-                                    if (biz.gstin) params.set('gstin', biz.gstin);
-                                    if (biz.address || biz.address_line1) params.set('address', biz.address || biz.address_line1);
-                                    if (biz.city) params.set('city', biz.city);
-                                    if (biz.state) params.set('state', biz.state);
-                                    if (biz.pincode) params.set('pincode', biz.pincode);
-                                    
-                                    router.push(`/customers/new?${params.toString()}`);
-                                  } else {
-                                    // Fallback if business fetch fails
-                                    const returnParams = new URLSearchParams({
-                                      item_id: req.responder_item_id || '',
-                                      qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                      request_id: req.id,
-                                      action: 'create_sales_order'
-                                    });
-                                    const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                    router.push(`/customers/new?return_url=${returnUrl}`);
-                                  }
-                                } catch (error) {
-                                  console.error('Error fetching business details:', error);
-                                  // Fallback
-                                  const returnParams = new URLSearchParams({
-                                    item_id: req.responder_item_id || '',
-                                    qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                    request_id: req.id,
-                                    action: 'create_sales_order'
-                                  });
-                                  const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                  router.push(`/customers/new?return_url=${returnUrl}`);
-                                }
-                                return;
-                              }
-                              
+                              const customerId = await linkedCustomerId(parties.buyerBusinessId);
                               // Navigate to new sales order with pre-filled data
                               const params = new URLSearchParams({
-                                customer_id: customer.id,
+                                customer_id: customerId,
                                 item_id: req.responder_item_id || '',
                                 item_name: req.item_name || '',
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
@@ -915,7 +849,7 @@ function PurchaseRequestsContent() {
                               router.push(`/sales-orders/new?${params.toString()}`);
                             } catch (error) {
                               console.error('Error finding customer:', error);
-                              toast.error('Failed to find customer. Please try again.');
+                              toast.error(error instanceof Error ? error.message : 'Failed to find customer. Please try again.');
                             }
                           }}
                         >
@@ -930,77 +864,10 @@ function PurchaseRequestsContent() {
                               return;
                             }
                             try {
-                              const customerRes = await fetch(`/api/customers?business_id=${business?.id}&limit=200&user_id=${user?.id}`);
-                              const customerData = await customerRes.json();
-                              // Match by responder_name (Tandoor Studio)
-                              const customer = customerData.customers?.find((c: any) => 
-                                c.name === parties.buyerName || 
-                                c.name?.toLowerCase() === parties.buyerName?.toLowerCase()
-                              );
-                              
-                              if (!customer) {
-                                // Navigate to new customer page with business details pre-filled
-                                // Fetch business details to pre-fill phone, email, GSTIN, address
-                                try {
-                                  const businessRes = await fetch(`/api/businesses/${parties.buyerBusinessId}`);
-                                  if (businessRes.ok) {
-                                    const businessData = await businessRes.json();
-                                    const biz = businessData.business || businessData;
-                                    const returnParams = new URLSearchParams({
-                                      item_id: req.responder_item_id || '',
-                                      qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                      request_id: req.id,
-                                      action: 'create_invoice'
-                                    });
-                                    const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                    
-                                    // Pre-fill business details including company name (business name)
-                                    const params = new URLSearchParams({
-                                      return_url: returnUrl
-                                    });
-                                    // Use business name for both customer name and company name
-                                    if (biz.name) {
-                                      params.set('name', biz.name);
-                                      params.set('company_name', biz.name);
-                                    }
-                                    if (biz.phone) params.set('phone', biz.phone);
-                                    if (biz.email) params.set('email', biz.email);
-                                    if (biz.gstin) params.set('gstin', biz.gstin);
-                                    if (biz.address || biz.address_line1) params.set('address', biz.address || biz.address_line1);
-                                    if (biz.city) params.set('city', biz.city);
-                                    if (biz.state) params.set('state', biz.state);
-                                    if (biz.pincode) params.set('pincode', biz.pincode);
-                                    
-                                    router.push(`/customers/new?${params.toString()}`);
-                                  } else {
-                                    // Fallback if business fetch fails
-                                    const returnParams = new URLSearchParams({
-                                      item_id: req.responder_item_id || '',
-                                      qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                      request_id: req.id,
-                                      action: 'create_invoice'
-                                    });
-                                    const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                    router.push(`/customers/new?return_url=${returnUrl}`);
-                                  }
-                                } catch (error) {
-                                  console.error('Error fetching business details:', error);
-                                  // Fallback
-                                  const returnParams = new URLSearchParams({
-                                    item_id: req.responder_item_id || '',
-                                    qty: (req.confirmed_qty || req.requested_qty).toString(),
-                                    request_id: req.id,
-                                    action: 'create_invoice'
-                                  });
-                                  const returnUrl = encodeURIComponent(`/purchases/requests?${returnParams.toString()}`);
-                                  router.push(`/customers/new?return_url=${returnUrl}`);
-                                }
-                                return;
-                              }
-                              
+                              const customerId = await linkedCustomerId(parties.buyerBusinessId);
                               // Navigate to new invoice with pre-filled data
                               const params = new URLSearchParams({
-                                customer_id: customer.id,
+                                customer_id: customerId,
                                 item_id: req.responder_item_id || '',
                                 item_name: req.item_name || '',
                                 qty: (req.confirmed_qty || req.requested_qty).toString(),
@@ -1009,7 +876,7 @@ function PurchaseRequestsContent() {
                               router.push(`/invoices/new?${params.toString()}`);
                             } catch (error) {
                               console.error('Error finding customer:', error);
-                              toast.error('Failed to find customer. Please try again.');
+                              toast.error(error instanceof Error ? error.message : 'Failed to find customer. Please try again.');
                             }
                           }}
                         >

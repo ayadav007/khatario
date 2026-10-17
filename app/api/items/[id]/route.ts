@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isOwnSupplier } from '@/lib/supplier-hub-links';
 import { queryOne, query, queryRows, getPool } from '@/lib/db';
 import { validateBundleComponentItems } from '@/lib/bundle-items-validation';
 import { Item } from '@/types/database';
@@ -320,6 +321,10 @@ export async function PATCH(
     }
 
     // Handle selling_price for services or items with variants
+    if (default_supplier_id && !(await isOwnSupplier(businessId, String(default_supplier_id)))) {
+      return NextResponse.json({ error: 'Default supplier was not found in your suppliers' }, { status: 400 });
+    }
+
     const finalSellingPrice = (item_type === 'service' || finalHasVariants)
       ? (selling_price !== undefined && selling_price !== null && selling_price !== '' ? Number(selling_price) : null)
       : (Number(selling_price) || 0);

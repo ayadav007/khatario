@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as db from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
-import { getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
+import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import type { SupplierConnectionRequest } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/suppliers/hub/connection-requests — incoming + outgoing for current business
- * POST — buyer creates request (body: supplier_business_id, message?, created_by_user_id, business_id)
+ * POST — buyer creates request (body: supplier_business_id, message?)
+ * Business and user come from the session only.
  */
 export async function GET(request: NextRequest) {
   try {
-    const businessId = getBusinessIdFromRequest(request);
-    const userId = getUserIdFromRequest(request);
-    if (!businessId || !userId) {
-      return NextResponse.json({ error: 'business_id and user context required' }, { status: 400 });
-    }
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId, userId } = auth;
     try {
       await authorize(userId, 'purchases', 'read', { businessId });
     } catch (error) {
@@ -63,25 +62,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireAuthenticatedTenant(request);
+    if (auth instanceof NextResponse) return auth;
+    const { businessId: buyerBusinessId, userId: createdByUserId } = auth;
     const body = await request.json();
-    const buyerBusinessId = getBusinessIdFromRequest(request, body);
-    const {
-      supplier_business_id: supplierBusinessId,
-      message,
-      created_by_user_id: createdByUserId,
-    } = body;
+    const { supplier_business_id: supplierBusinessId, message } = body;
 
-    if (!buyerBusinessId || !supplierBusinessId) {
-      return NextResponse.json(
-        { error: 'business_id and supplier_business_id are required' },
-        { status: 400 }
-      );
-    }
-    if (!createdByUserId) {
-      return NextResponse.json(
-        { error: 'created_by_user_id is required for authorization' },
-        { status: 400 }
-      );
+    if (!supplierBusinessId) {
+      return NextResponse.json({ error: 'supplier_business_id is required' }, { status: 400 });
     }
     if (buyerBusinessId === supplierBusinessId) {
       return NextResponse.json({ error: 'Cannot connect a business to itself' }, { status: 400 });
