@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phases 0 and 1 committed on branch `supplier-hub-phase-0`. Phase 2 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 9 cases), not committed. Migrations 389–391 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phases 0–2 committed on branch `supplier-hub-phase-0`. Phase 5 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 10 cases), not committed. Migrations 389–392 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -142,6 +142,15 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 
 ## Phase 5 — A receives (B's invoice becomes A's purchase)
 
+**Built (2026-10-17):**
+- `lib/supplier-bills.ts`: one place for "may this buyer see this bill" and line matching, used by the converter, the inbox and the receive screen.
+- Inbox `/purchases/incoming` (`GET /api/purchases/incoming-bills?status=pending|received|all`): bills from approved connected suppliers addressed to the buyer (linked customer, recipient GSTIN, or a request). Only bills dated on or after the link was approved (or tied to a request) are listed, so bills typed in by hand before connecting don't come back. A bill whose number matches an existing hand-entered purchase from that supplier is flagged. Linked from the Purchases page.
+- Receive screen `/purchases/incoming/[invoiceId]` (`GET /api/purchases/incoming-bills/[invoiceId]`): each line with your item and quantity in your unit, change the match, short/damaged quantities and a note per line, a delivery note.
+- Migration 392: `supplier_bill_receipts` and `supplier_bill_receipt_lines`. **Decision:** the purchase is always recorded exactly as billed, so GST and the amount owed match the supplier's invoice. Short and damaged quantities go on the receipt, the supplier is notified, and "Record debit note for these" opens the purchase return form pre-filled (`?return_qty=` and `?reason=`). Purchase returns have no draft state (they post stock, balance and ledger at once), so the buyer confirms the debit note there.
+- Create item from a supplier line (`POST /api/purchases/incoming-bills/[invoiceId]/create-item`): name, HSN, GST rate and unit from the line; cost = rate ÷ units per supplier unit; optional selling price; default supplier set; match saved.
+- Not done: batch and expiry carry-over (5.2b), sizes/colours and photos when creating an item, and the payment suggestion (5.5). The pre-filled purchase return form is not covered by the DB test.
+
+
 5.1 **Incoming bills inbox** for A. It lists every final invoice from a linked supplier whose customer is A's linked record, whether or not it came from a request. This also covers ordinary sales between two Khatario users.
 
 5.2 **Receive screen.** For each line it shows the mapped A item (map it here if missing), the invoiced quantity converted to A's unit, and the quantity accepted. Short and damaged quantities are entered separately.
@@ -224,7 +233,7 @@ The phone app can already list, create, respond to and link requests. It still n
 | Phase 0 (B1–B6) | Done |
 | Phase 1 | Done, not committed |
 | Phase 2 | Done, not committed |
-| Phase 5 (receive, incl. create item on receive) | M–L — do this before Phase 3, because it pays off even without alerts |
+| Phase 5 (receive, incl. create item on receive) | Done, not committed (5.2b batch/expiry and 5.5 still open) |
 | Phase 3 + 4 (incl. catalog-order lines, variants) | L |
 | Phase 6 (catalog ordering, new-arrival push) | L — right after Phase 5 for apparel and electronics customers |
 | Phases 6b–7 | L, can come later |

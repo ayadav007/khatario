@@ -8,7 +8,8 @@ import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helper
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
-import { loadItemLinks, saveItemLink, suggestBuyerItems, type ItemSuggestion } from '@/lib/supplier-item-links';
+import { saveItemLink } from '@/lib/supplier-item-links';
+import { inBuyerUnits, loadBillForBuyer, loadBillLines, parseItemMap, resolveBillLines } from '@/lib/supplier-bills';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,98 +59,13 @@ export async function POST(
     await client.query('BEGIN');
 
     // The invoice belongs to the supplier's business, not the caller's: load it by id and
-    // decide access from the hub relationship below.
-    const invoiceRes = await client.query(`
-      SELECT 
-        i.*,
-        b.id as supplier_business_id,
-        b.name as supplier_business_name,
-        b.state as supplier_state,
-        b.state_code as supplier_state_code,
-        b.gstin as supplier_gstin
-      FROM invoices i
-      LEFT JOIN businesses b ON i.business_id = b.id
-      WHERE i.id = $1
-        AND i.deleted_at IS NULL
-        AND COALESCE(i.status, '') NOT IN ('draft', 'cancelled')
-        AND COALESCE(i.document_type, '') <> 'proforma_invoice'
-    `, [invoiceId]);
-
-    if (invoiceRes.rows.length === 0 || invoiceRes.rows[0].business_id === business_id) {
+    // decide access from the hub relationship (lib/supplier-bills).
+    const access = await loadBillForBuyer(client, invoiceId, business_id);
+    if (!access.ok) {
       await client.query('ROLLBACK');
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
-
-    const invoice = invoiceRes.rows[0];
-
-    // The caller must have an approved link to the issuing business...
-    const supplierRes = await client.query(`
-      SELECT id FROM suppliers
-      WHERE business_id = $1
-        AND linked_business_id = $2
-        AND approval_status = 'approved'
-        AND deleted_at IS NULL
-      LIMIT 1
-    `, [business_id, invoice.business_id]);
-    const supplierId: string | null = supplierRes.rows[0]?.id ?? null;
-
-    // ...and the invoice must be addressed to the caller: it fulfils one of the caller's
-    // quantity requests, its customer record is linked to the caller, or its recipient GSTIN
-    // is one of the caller's registrations.
-    const requestRes = await client.query(`
-      SELECT qr.id, qr.requester_business_id, qr.responder_business_id, qr.item_id,
-             qr.responder_item_id, i.business_id AS item_business_id
-      FROM quantity_requests qr
-      JOIN items i ON i.id = qr.item_id
-      WHERE qr.invoice_id = $1
-    `, [invoiceId]);
-    const { partiesFromItemOwner } = await import('@/lib/quantity-request-parties');
-    const linkedRequests = requestRes.rows.filter((r: any) => {
-      const parties = partiesFromItemOwner(
-        r.requester_business_id, r.responder_business_id, r.item_business_id, r.item_id
-      );
-      return parties?.buyerBusinessId === business_id && parties.vendorBusinessId === invoice.business_id;
-    });
-
-    let addressedToCaller = linkedRequests.length > 0;
-    let accessReason = addressedToCaller ? 'linked to request' : '';
-    if (!addressedToCaller && invoice.customer_id) {
-      const linkedRes = await client.query(
-        `SELECT 1 FROM customers WHERE id = $1 AND business_id = $2 AND linked_business_id = $3`,
-        [invoice.customer_id, invoice.business_id, business_id]
-      );
-      addressedToCaller = linkedRes.rows.length > 0;
-      if (addressedToCaller) accessReason = 'linked customer';
-    }
-    const recipientGstin = String(invoice.customer_gstin || '').trim().toUpperCase();
-    if (!addressedToCaller && recipientGstin) {
-      const gstinRes = await client.query(`
-        SELECT 1 FROM businesses WHERE id = $1 AND UPPER(TRIM(gstin)) = $2
-        UNION ALL
-        SELECT 1 FROM branches WHERE business_id = $1 AND UPPER(TRIM(gstin)) = $2
-        LIMIT 1
-      `, [business_id, recipientGstin]);
-      addressedToCaller = gstinRes.rows.length > 0;
-      if (addressedToCaller) accessReason = 'recipient GSTIN';
-    }
-
-    if (!supplierId || !addressedToCaller) {
-      await client.query('ROLLBACK');
-      console.error('[Convert Invoice] Access denied:', {
-        invoiceId,
-        business_id,
-        invoice_business_id: invoice.business_id,
-        hasApprovedLink: !!supplierId,
-        linkedRequests: linkedRequests.length,
-      });
-      return NextResponse.json({ 
-        error: supplierId
-          ? 'This invoice is not addressed to your business'
-          : 'The issuing business is not an approved linked supplier of yours',
-      }, { status: 403 });
-    }
-    
-    console.log('[Convert Invoice] Access granted:', { invoiceId, business_id, reason: accessReason });
+    const { invoice, supplierId, linkedRequests } = access;
 
     let purchaseBranchId: string;
     try {
@@ -239,148 +155,69 @@ export async function POST(
       throw error;
     }
 
-    // Fetch invoice items
-    const itemsRes = await client.query(`
-      SELECT ii.*, COALESCE(vi.item_type, 'goods') AS vendor_item_type, vi.barcode AS vendor_barcode
-      FROM invoice_items ii
-      LEFT JOIN items vi ON vi.id = ii.item_id
-      WHERE ii.invoice_id = $1
-      ORDER BY ii.sort_order ASC
-    `, [invoiceId]);
-
-    const invoiceItems = itemsRes.rows;
+    const invoiceItems = await loadBillLines(client, invoiceId);
 
     if (invoiceItems.length === 0) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Invoice has no items' }, { status: 400 });
     }
 
-    // Resolve each supplier line to the caller's own item and unit. Sources, in order:
-    //   1. the caller's choice: body.item_map[invoice_item_id] = own item id, or
-    //      { item_id, factor } where factor = own units per supplier unit (carton of 144 -> 144)
-    //   2. the saved item map for this supplier (supplier_item_links)
-    //   3. the mapping on a linked quantity request
-    //   4. an exact name match
-    // Goods lines that stay unmatched stop the conversion so stock is never silently skipped;
-    // the response suggests likely items for each.
-    type Choice = { itemId: string; factor: number | null };
-    const explicitMap = new Map<string, Choice>();
-    if (body.item_map && typeof body.item_map === 'object') {
-      for (const [lineId, v] of Object.entries(body.item_map as Record<string, unknown>)) {
-        const asObject = typeof v === 'object' && v ? (v as { item_id?: unknown; factor?: unknown }) : null;
-        const itemId = typeof v === 'string' ? v : asObject?.item_id;
-        if (!itemId) continue;
-        const rawFactor = asObject?.factor != null ? Number(asObject.factor) : null;
-        if (rawFactor != null && !(rawFactor > 0)) {
-          await client.query('ROLLBACK');
-          return NextResponse.json(
-            { error: 'Units per supplier unit must be more than zero', code: 'ITEM_MAP_INVALID' },
-            { status: 400 }
-          );
-        }
-        explicitMap.set(String(lineId), { itemId: String(itemId), factor: rawFactor });
-      }
+    // Map each supplier line to the caller's own item and unit (lib/supplier-bills): the
+    // caller's choice in body.item_map, the saved item map, a linked request, then exact name.
+    // Goods lines that stay unmatched stop the conversion so stock is never silently skipped.
+    const parsedMap = parseItemMap(body.item_map);
+    if ('error' in parsedMap) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: parsedMap.error, code: 'ITEM_MAP_INVALID' }, { status: 400 });
     }
-    const savedLinks = await loadItemLinks(
-      business_id,
-      invoice.business_id,
-      invoiceItems.map((l: any) => l.item_id).filter(Boolean).map(String),
-      client
-    );
-    const requestMap = new Map<string, string>();
-    for (const r of linkedRequests) {
-      if (r.responder_item_id) requestMap.set(String(r.responder_item_id), String(r.item_id));
+    const resolution = await resolveBillLines(client, {
+      buyerBusinessId: business_id,
+      vendorBusinessId: invoice.business_id,
+      lines: invoiceItems,
+      linkedRequests,
+      choices: parsedMap.map,
+    });
+    if (!resolution.ok) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: resolution.error, code: 'ITEM_MAP_INVALID' }, { status: 400 });
     }
-    const ownItems = new Map<string, { id: string; unit: string | null }>();
-    const ownItemIds = Array.from(
-      new Set([...Array.from(explicitMap.values()).map((c) => c.itemId), ...Array.from(requestMap.values())])
-    );
-    if (ownItemIds.length > 0) {
-      const ownRes = await client.query(
-        `SELECT id, unit FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
-        [business_id, ownItemIds]
-      );
-      for (const row of ownRes.rows) ownItems.set(String(row.id), { id: String(row.id), unit: row.unit });
-    }
-
-    type Resolved = {
-      itemId: string | null;
-      unit: string | null;
-      factor: number;
-      /** How to remember this match: a person chose it, it was learned, or it came from the map. */
-      learnedFrom: 'manual' | 'conversion' | null;
-    };
-    const resolvedLines: Resolved[] = [];
-    const unmatched: Array<{
-      invoice_item_id: string;
-      item_name: string;
-      quantity: number;
-      unit: string | null;
-      suggestions: ItemSuggestion[];
-    }> = [];
-    for (const line of invoiceItems) {
-      let resolved: Resolved | null = null;
-      const explicit = explicitMap.get(String(line.id));
-      const saved = line.item_id ? savedLinks.get(String(line.item_id)) : undefined;
-      if (explicit) {
-        const own = ownItems.get(explicit.itemId);
-        if (!own) {
-          await client.query('ROLLBACK');
-          return NextResponse.json(
-            { error: `Item chosen for "${line.item_name}" was not found in your items`, code: 'ITEM_MAP_INVALID' },
-            { status: 400 }
-          );
-        }
-        const savedFactor = saved && saved.buyerItemId === own.id ? saved.factor : 1;
-        resolved = { itemId: own.id, unit: own.unit, factor: explicit.factor ?? savedFactor, learnedFrom: 'manual' };
-      }
-      if (!resolved && saved) {
-        resolved = { itemId: saved.buyerItemId, unit: saved.buyerUnit, factor: saved.factor, learnedFrom: null };
-      }
-      if (!resolved && line.item_id && requestMap.has(String(line.item_id))) {
-        const own = ownItems.get(requestMap.get(String(line.item_id))!);
-        if (own) resolved = { itemId: own.id, unit: own.unit, factor: 1, learnedFrom: 'conversion' };
-      }
-      if (!resolved && line.item_name) {
-        const byName = await client.query(
-          `SELECT id, unit FROM items
-            WHERE business_id = $1 AND deleted_at IS NULL AND LOWER(TRIM(name)) = LOWER(TRIM($2))
-            LIMIT 1`,
-          [business_id, line.item_name]
-        );
-        if (byName.rows[0]) {
-          resolved = {
-            itemId: String(byName.rows[0].id),
-            unit: byName.rows[0].unit,
-            factor: 1,
-            learnedFrom: 'conversion',
-          };
-        }
-      }
-      if (!resolved && line.vendor_item_type !== 'service') {
-        unmatched.push({
-          invoice_item_id: String(line.id),
-          item_name: line.item_name,
-          quantity: Number(line.quantity) || 0,
-          unit: line.unit ?? null,
-          suggestions: await suggestBuyerItems(
-            business_id,
-            { name: line.item_name, hsn: line.hsn_sac, barcode: line.vendor_barcode },
-            client
-          ),
-        });
-      }
-      resolvedLines.push(resolved ?? { itemId: null, unit: null, factor: 1, learnedFrom: null });
-    }
-    if (unmatched.length > 0) {
+    const resolvedLines = resolution.resolved;
+    if (resolution.unmatched.length > 0) {
       await client.query('ROLLBACK');
       return NextResponse.json(
         {
-          error: `Match these supplier items to your own items first: ${unmatched.map((u) => u.item_name).join(', ')}`,
+          error: `Match these supplier items to your own items first: ${resolution.unmatched.map((u) => u.item_name).join(', ')}`,
           code: 'ITEMS_UNMATCHED',
-          unmatched,
+          unmatched: resolution.unmatched,
         },
         { status: 422 }
+      );
+    }
+
+    // What actually arrived (body.received: { [invoice_item_id]: { short_qty, damaged_qty, note } },
+    // in the caller's unit). The purchase still matches the bill; shortfalls are recorded on the
+    // receipt and settled with a purchase return.
+    const receivedInput: Record<string, any> =
+      body.received && typeof body.received === 'object' ? body.received : {};
+    const receiptLines = invoiceItems.map((line: any, i: number) => {
+      const billed = inBuyerUnits(line, resolvedLines[i].factor).qty;
+      const r = receivedInput[String(line.id)] || {};
+      return {
+        invoiceItemId: String(line.id),
+        buyerItemId: resolvedLines[i].itemId,
+        itemName: String(resolvedLines[i].itemName || line.item_name || ''),
+        billed,
+        short: Math.max(0, Number(r.short_qty) || 0),
+        damaged: Math.max(0, Number(r.damaged_qty) || 0),
+        note: typeof r.note === 'string' && r.note.trim() ? r.note.trim().slice(0, 500) : null,
+      };
+    });
+    const overReceived = receiptLines.find((l: any) => l.short + l.damaged > l.billed + 1e-6);
+    if (overReceived) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: `Short and damaged for "${overReceived.itemName}" are more than the ${overReceived.billed} billed`, code: 'RECEIPT_QTY_INVALID' },
+        { status: 400 }
       );
     }
 
@@ -452,9 +289,7 @@ export async function POST(
       // The supplier's item_id belongs to their business; use the caller's matched item, in the
       // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
       const customerItemId = resolvedLines[i].itemId;
-      const factor = resolvedLines[i].factor || 1;
-      const ownQty = Math.round((Number(item.quantity) || 0) * factor * 10000) / 10000;
-      const ownRate = Math.round(((Number(item.unit_price) || 0) / factor) * 10000) / 10000;
+      const { qty: ownQty, rate: ownRate } = inBuyerUnits(item, resolvedLines[i].factor);
       
       const locationIdForPurchase = warehouseModeEnabled ? defaultWarehouseId : null;
 
@@ -688,6 +523,52 @@ export async function POST(
       );
     }
 
+    const issues = receiptLines.filter((l: any) => l.short > 0 || l.damaged > 0);
+    const receiptRes = await client.query(
+      `INSERT INTO supplier_bill_receipts (
+         buyer_business_id, vendor_business_id, invoice_id, purchase_id, status, notes, received_by_user_id
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        business_id,
+        invoice.business_id,
+        invoiceId,
+        purchase.id,
+        issues.length ? 'received_with_issues' : 'received',
+        typeof body.receipt_notes === 'string' && body.receipt_notes.trim() ? body.receipt_notes.trim().slice(0, 1000) : null,
+        userId,
+      ]
+    );
+    const receipt = receiptRes.rows[0];
+    for (const l of receiptLines) {
+      await client.query(
+        `INSERT INTO supplier_bill_receipt_lines (
+           receipt_id, invoice_item_id, buyer_item_id, item_name, billed_qty, short_qty, damaged_qty, note
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [receipt.id, l.invoiceItemId, l.buyerItemId, l.itemName, l.billed, l.short, l.damaged, l.note]
+      );
+    }
+
+    // Tell the supplier the bill was received, and what was short or damaged.
+    const buyerName = (await client.query(`SELECT name FROM businesses WHERE id = $1`, [business_id])).rows[0]?.name || 'Your customer';
+    const issueText = issues
+      .map((l: any) => `${l.itemName}: ${[l.short ? `${l.short} short` : '', l.damaged ? `${l.damaged} damaged` : ''].filter(Boolean).join(', ')}`)
+      .join('; ');
+    await client.query(
+      `INSERT INTO notifications (business_id, type, title, message, reference_type, reference_id, created_at)
+       VALUES ($1, 'general', $2, $3, 'invoice', $4, CURRENT_TIMESTAMP)`,
+      [
+        invoice.business_id,
+        issues.length ? `Bill ${invoice.invoice_number} received with issues` : `Bill ${invoice.invoice_number} received`,
+        issues.length
+          ? `${buyerName} received bill ${invoice.invoice_number} with issues. ${issueText}. Expect a debit note for these.`
+          : `${buyerName} received bill ${invoice.invoice_number} in full.`,
+        invoiceId,
+      ]
+    );
+
     if (linkedRequests.length > 0) {
       await client.query(`
         UPDATE quantity_requests
@@ -698,7 +579,19 @@ export async function POST(
 
     await client.query('COMMIT');
 
-    return NextResponse.json({ purchase }, { status: 201 });
+    return NextResponse.json(
+      {
+        purchase,
+        receipt,
+        shortfalls: issues.map((l: any) => ({
+          item_id: l.buyerItemId,
+          item_name: l.itemName,
+          short_qty: l.short,
+          damaged_qty: l.damaged,
+        })),
+      },
+      { status: 201 }
+    );
   } catch (error: any) {
     await client.query('ROLLBACK');
     console.error('Error converting invoice to purchase:', error);

@@ -65,6 +65,9 @@ export default function NewPurchaseReturnPage() {
 
   // Get purchase_id and supplier_id from URL params if provided
   const [urlParams, setUrlParams] = useState<{ purchase_id?: string; supplier_id?: string }>({});
+  // Quantities to pre-fill per bill item (?return_qty=itemId:qty,itemId:qty), e.g. from a
+  // supplier bill received short or damaged.
+  const prefillQtyRef = useRef<Map<string, number> | null>(null);
 
   const [formData, setFormData] = useState({
     supplier_id: '',
@@ -86,6 +89,17 @@ export default function NewPurchaseReturnPage() {
       const params = new URLSearchParams(window.location.search);
       const purchaseId = params.get('purchase_id');
       const supplierId = params.get('supplier_id');
+      const returnQty = params.get('return_qty');
+      if (returnQty) {
+        const map = new Map<string, number>();
+        for (const pair of returnQty.split(',')) {
+          const [itemId, qty] = pair.split(':');
+          if (itemId && Number(qty) > 0) map.set(itemId, Number(qty));
+        }
+        prefillQtyRef.current = map.size ? map : null;
+      }
+      const prefillReason = params.get('reason');
+      if (prefillReason) setFormData((prev) => ({ ...prev, reason: prev.reason || prefillReason.slice(0, 200) }));
       if (purchaseId || supplierId) {
         setUrlParams({ purchase_id: purchaseId || undefined, supplier_id: supplierId || undefined });
       }
@@ -205,7 +219,13 @@ export default function NewPurchaseReturnPage() {
       }
       const data = await response.json();
       const purchase = data.purchase;
-      const loadedItems = formLinesFromPurchase(purchase.items || []);
+      const prefill = prefillQtyRef.current;
+      prefillQtyRef.current = null;
+      const loadedItems = prefill
+        ? formLinesFromPurchase(purchase.items || []).map((line) =>
+            scaleLinkedReturnLine(line, (line.item_id && prefill.get(line.item_id)) || 0)
+          )
+        : formLinesFromPurchase(purchase.items || []);
       const linkedPurchase: Purchase = {
         id: purchase.id,
         bill_number: purchase.bill_number,

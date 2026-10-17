@@ -1,13 +1,14 @@
 /**
- * Supplier Hub phases 0–2 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
+ * Supplier Hub phases 0–2 and 5 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
  * retailer A links wholesaler B, the link waits for B's approval, B's customer record for A is
  * linked, A picks B's items and reorder levels in bulk, A's reorder level raises an alert for B,
  * B's sales invoice becomes A's purchase (item matched, stock added once), and either side can
  * disconnect and reconnect. The item map remembers matches and converts cartons into pieces.
+ * Incoming bills are received with short/damaged quantities and new items made from bill lines.
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389–391 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–392 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -62,6 +63,9 @@ import { POST as createStockRequest } from '@/app/api/stock-requests/route';
 import { POST as setThreshold } from '@/app/api/suppliers/thresholds/route';
 import { POST as convertInvoice } from '@/app/api/invoices/[id]/convert-to-purchase/route';
 import { PATCH as mapRequestItem } from '@/app/api/stock-requests/[id]/route';
+import { GET as incomingGET } from '@/app/api/purchases/incoming-bills/route';
+import { GET as incomingBillGET } from '@/app/api/purchases/incoming-bills/[invoiceId]/route';
+import { POST as createItemPOST } from '@/app/api/purchases/incoming-bills/[invoiceId]/create-item/route';
 import {
   GET as itemLinksGET,
   POST as itemLinksPOST,
@@ -80,7 +84,7 @@ const migration = (file: string) =>
 
 const run = enabled ? describe : describe.skip;
 
-run('Supplier Hub phases 0–2 (kh_phase2_test)', () => {
+run('Supplier Hub phases 0–5 (kh_phase2_test)', () => {
   jest.setTimeout(120000);
 
   const tag = randomUUID().slice(0, 6).toUpperCase();
@@ -113,6 +117,7 @@ run('Supplier Hub phases 0–2 (kh_phase2_test)', () => {
     await query(migration('389_purchase_source_invoice.sql'));
     await query(migration('390_supplier_hub_links.sql'));
     await query(migration('391_supplier_item_links.sql'));
+    await query(migration('392_supplier_bill_receipts.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -552,6 +557,120 @@ run('Supplier Hub phases 0–2 (kh_phase2_test)', () => {
     const learnedRow = await queryOne(`SELECT id FROM supplier_item_links WHERE vendor_item_id = $1`, [OTHER_B]);
     const del = await itemLinksDELETE(call('DELETE', `${url}?link_id=${learnedRow.id}`, UA, A), ctx);
     expect(del.status).toBe(200);
+  });
+
+  it('incoming bills: receive with short/damaged, create a new item from a line (Phase 5)', async () => {
+    // A bill from before the link was approved is not listed (A may have typed it in already).
+    const OLD_BILL = randomUUID();
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, DATE '2020-01-01', 'final', 'tax_invoice', '29', 100, 0, 0, 0, 0, 100, 0, 100, 'unpaid', $5)`,
+      [OLD_BILL, B, CUST_A_AT_B, `OLD-${tag}`, BRB]
+    );
+
+    // A new bill: one known carton line and one new design A has never stocked.
+    const BILL = randomUUID();
+    const NEW_DESIGN = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active, hsn_sac)
+       VALUES ($1, $2, 'Kurti Floral Blue M', 'PCS', 'goods', true, '6204')`,
+      [NEW_DESIGN, B]
+    );
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'final', 'tax_invoice', '29', 5940, 0, 0, 0, 0, 5940, 0, 5940, 'unpaid', $5)`,
+      [BILL, B, CUST_A_AT_B, `HUB3-${tag}`, BRB]
+    );
+    const [LINE_CTN, LINE_NEW] = [randomUUID(), randomUUID()];
+    await query(
+      `INSERT INTO invoice_items (id, invoice_id, item_id, item_name, hsn_sac, quantity, unit, unit_price, taxable_value, line_total, sort_order)
+       VALUES ($1, $3, $4, 'PARLE G 50GM CTN', NULL, 1, 'CTN', 1440, 1440, 1440, 0),
+              ($2, $3, $5, 'Kurti Floral Blue M', '6204', 10, 'PCS', 450, 4500, 4500, 1)`,
+      [LINE_CTN, LINE_NEW, BILL, ITEM_B, NEW_DESIGN]
+    );
+
+    const inbox = await (await incomingGET(call('GET', '/api/purchases/incoming-bills?status=pending', UA, A))).json();
+    const ids = inbox.bills.map((b: any) => b.invoice_id);
+    expect(ids).toContain(BILL);
+    expect(ids).not.toContain(OLD_BILL);
+    expect(ids).not.toContain(INVOICE); // already received
+    const all = await (await incomingGET(call('GET', '/api/purchases/incoming-bills?status=received', UA, A))).json();
+    expect(all.bills.map((b: any) => b.invoice_id)).toEqual(expect.arrayContaining([INVOICE]));
+    // Another business sees none of A's bills.
+    const cInbox = await (await incomingGET(call('GET', '/api/purchases/incoming-bills?status=all', UC, C))).json();
+    expect(cInbox.bills).toHaveLength(0);
+
+    const ctx = { params: { invoiceId: BILL } };
+    expect((await incomingBillGET(call('GET', `/api/purchases/incoming-bills/${BILL}`, UC, C), ctx)).status).toBe(403);
+    const detail = await (await incomingBillGET(call('GET', `/api/purchases/incoming-bills/${BILL}`, UA, A), ctx)).json();
+    const ctn = detail.lines.find((l: any) => l.invoice_item_id === LINE_CTN);
+    expect(ctn.match).toMatchObject({ item_id: ITEM_A, factor: 144, quantity: 144, rate: 10 });
+    const fresh = detail.lines.find((l: any) => l.invoice_item_id === LINE_NEW);
+    expect(fresh.match).toBeNull();
+    expect(detail.purchase).toBeNull();
+
+    // A creates its own item from the new line.
+    const createUrl = `/api/purchases/incoming-bills/${BILL}/create-item`;
+    expect((await createItemPOST(post(createUrl, UC, C, { invoice_item_id: LINE_NEW }), ctx)).status).toBe(403);
+    expect((await createItemPOST(post(createUrl, UA, A, { invoice_item_id: LINE_NEW, factor: 0 }), ctx)).status).toBe(400);
+    const made = await createItemPOST(post(createUrl, UA, A, { invoice_item_id: LINE_NEW, selling_price: 799 }), ctx);
+    expect(made.status).toBe(201);
+    const { item: newItem } = await made.json();
+    const row = await queryOne(
+      `SELECT business_id, name, unit, hsn_sac, purchase_price, selling_price, default_supplier_id FROM items WHERE id = $1`,
+      [newItem.id]
+    );
+    expect(row).toMatchObject({ business_id: A, name: 'Kurti Floral Blue M', unit: 'PCS', hsn_sac: '6204', default_supplier_id: supplierRowId });
+    expect(Number(row.purchase_price)).toBe(450);
+    expect(Number(row.selling_price)).toBe(799);
+
+    // More short than billed is refused.
+    const convertUrl = `/api/invoices/${BILL}/convert-to-purchase`;
+    const over = await convertInvoice(post(convertUrl, UA, A, { received: { [LINE_CTN]: { short_qty: 200 } } }), {
+      params: { id: BILL },
+    });
+    expect(over.status).toBe(400);
+    expect((await over.json()).code).toBe('RECEIPT_QTY_INVALID');
+
+    // Receive: 4 packs short from the carton, 1 kurti damaged.
+    const res = await convertInvoice(
+      post(convertUrl, UA, A, {
+        received: { [LINE_CTN]: { short_qty: 4 }, [LINE_NEW]: { damaged_qty: 1, note: 'torn' } },
+        receipt_notes: 'Box 2 was wet',
+      }),
+      { params: { id: BILL } }
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.receipt.status).toBe('received_with_issues');
+    expect(body.shortfalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ item_id: ITEM_A, short_qty: 4, damaged_qty: 0 }),
+        expect.objectContaining({ item_id: newItem.id, short_qty: 0, damaged_qty: 1 }),
+      ])
+    );
+    // The purchase matches the bill in full; the shortfall waits for the debit note.
+    const lines = await query(`SELECT item_id, quantity FROM purchase_items WHERE purchase_id = $1`, [body.purchase.id]);
+    const qtyOf = (id: string) => Number(lines.rows.find((r: any) => r.item_id === id)?.quantity);
+    expect(qtyOf(ITEM_A)).toBe(144);
+    expect(qtyOf(newItem.id)).toBe(10);
+
+    const note = await queryOne(
+      `SELECT message FROM notifications WHERE business_id = $1 AND reference_id = $2 ORDER BY created_at DESC LIMIT 1`,
+      [B, BILL]
+    );
+    expect(note.message).toContain('4 short');
+    expect(note.message).toContain('1 damaged');
+
+    const after = await (await incomingBillGET(call('GET', `/api/purchases/incoming-bills/${BILL}`, UA, A), ctx)).json();
+    expect(after.purchase).toMatchObject({ id: body.purchase.id, receipt_status: 'received_with_issues' });
+    expect(after.receipt_lines).toHaveLength(2);
+    const pendingNow = await (await incomingGET(call('GET', '/api/purchases/incoming-bills?status=pending', UA, A))).json();
+    expect(pendingNow.bills.map((b: any) => b.invoice_id)).not.toContain(BILL);
   });
 
   it('either side can disconnect, and a reconnect needs B to accept again (1.3)', async () => {
