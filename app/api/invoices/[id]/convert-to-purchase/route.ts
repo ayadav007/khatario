@@ -304,7 +304,7 @@ export async function POST(
       `, [
         purchase.id,
         customerItemId, // Use customer's item_id, not supplier's
-        item.item_name,
+        resolvedLines[i].itemName || item.item_name, // and the caller's own name for it
         item.hsn_sac || null,
         ownQty,
         resolvedLines[i].unit || item.unit || 'PCS',

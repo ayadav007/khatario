@@ -251,6 +251,31 @@ The phone app can already list, create, respond to and link requests. It still n
   - Linking without B accepting is rejected.
 - **End-to-end on localhost:** connect, set default supplier, sell down to trigger an alert, B proposes, A confirms, B invoices, A receives with a short line, then check stock, ledgers and both GST registers.
 
+## Staging walk-through (2026-10-17)
+
+Run on `staging.khatario.com` with one owner's two businesses: **Test addition business** as supplier B, **Global Enterprises** as retailer A. Test records are prefixed "HUB TEST" (items, collection, debit note HUB-TEST-DN1).
+
+Worked end to end:
+- B listed in the directory, A requested, B accepted. B got a customer record for A, linked to A's business.
+- B's catalog: collection created, kurti listed with price ₹450, min 4, in 4s, set label, lead time. Publishing notified A once.
+- A: bulk items screen set B as default supplier with reorder level 20; the item showed "at or below reorder level".
+- A ordered from the low items (35 PCS). B picked its own item (Biscuit Box 12) and confirmed 3 of 35 (partly confirmed).
+- B: Create bill pre-filled A's customer and 3 boxes × ₹240. Saving linked BOS-001 to the order (billed).
+- A: the learned match appeared as "From a request". A set 1 BOX = 12 PCS. The receive screen showed "Adds 36 PCS". A recorded 4 short and received it: purchase 36 PCS × ₹20 = ₹720, stock 5 → 41, order received.
+- Debit note from the shortfall pre-filled 4 PCS (₹80). Saved as HUB-TEST-DN1, stock 41 → 37.
+- New arrivals: 6 kurtis refused ("in multiples of 4"), 8 accepted as a catalog order. B saw it under Needs you, and the collection showed 1 buyer, 8 units.
+
+Found and fixed (needs redeploy):
+- **Supplier edits failed on staging**: the supplier update API writes `suppliers.notes`, which no migration created. This broke the low-stock sharing switch and any supplier edit. Fixed by migration **395_suppliers_notes.sql**.
+- **New arrivals cart bar hidden** behind the mobile bottom nav below `lg`. Moved it above the nav.
+- **Purchase line name** used the supplier's item name. It now uses the buyer's own item name.
+
+Still open:
+- Low-stock sharing and suggested orders couldn't be tested on staging until 395 is deployed.
+- Staging cron has no `check-low-stock` entry, so suggested drafts won't build on their own. Add one (for example daily) to the staging crontab.
+- When the supplier picks its item for a line that had no match, the quantity stays in the buyer's units (35 PCS shown as "35 units" against B's BOX). The supplier should see the buyer's unit, and the conversion should be set when matching on that screen.
+- The bill pre-fill doesn't set the place of supply. B also had to complete its business address and give the item an HSN before the bill could be finalised; those are existing invoice rules.
+
 ## Decisions (agreed 2026-10-16)
 
 1. **Who starts the order:** B proposes and A confirms. A can also start an order; nothing is invoiced until A has confirmed.

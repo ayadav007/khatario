@@ -166,7 +166,7 @@ export default function NewArrivalsPage() {
   };
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-4 pb-40 lg:pb-24">
       <PageHeader
         title="New arrivals"
         subtitle="New collections from your connected suppliers. Add quantities and send the order to the supplier to confirm."
@@ -236,7 +236,8 @@ export default function NewArrivalsPage() {
       )}
 
       {cartBySupplier.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white p-3 shadow-lg">
+        // Sits above the mobile bottom nav (fixed, z-30, hidden from lg) so the order buttons stay tappable.
+        <div className="fixed inset-x-0 bottom-[calc(var(--mobile-nav-h,4rem)+env(safe-area-inset-bottom,0px))] z-40 border-t border-gray-200 bg-white p-3 shadow-lg lg:bottom-0">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2">
             {cartBySupplier.map((c) => (
               <Button key={c.sid} onClick={() => send(c.sid)} disabled={sending === c.sid}>
