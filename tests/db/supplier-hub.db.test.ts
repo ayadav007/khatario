@@ -89,6 +89,8 @@ import { GET as linkGET, DELETE as linkDELETE } from '@/app/api/suppliers/hub/li
 import { POST as connectPOST } from '@/app/api/suppliers/hub/connection-requests/route';
 import { PATCH as connectPATCH } from '@/app/api/suppliers/hub/connection-requests/[id]/route';
 import { GET as supplierItemsGET, POST as supplierItemsPOST } from '@/app/api/suppliers/[id]/items/route';
+import { GET as hubHomeGET } from '@/app/api/suppliers/hub/home/route';
+import { GET as areaReportGET } from '@/app/api/suppliers/dashboard/analytics/route';
 
 const migration = (file: string) =>
   fs.readFileSync(path.join(__dirname, '../../database/migrations', file), 'utf8');
@@ -1015,5 +1017,33 @@ run('Supplier Hub phases 0–6 (kh_phase2_test)', () => {
       [B, A]
     );
     expect(customers.n).toBe(1);
+  });
+
+  it('hub home shows each side its own work; the area report never shows a lone shop', async () => {
+    const buyerHome = await hubHomeGET(call('GET', '/api/suppliers/hub/home', UA, A));
+    expect(buyerHome.status).toBe(200);
+    const a = await buyerHome.json();
+    expect(a.roles.buying).toBe(true);
+    expect(a.buying.partners.map((p: any) => p.supplierId)).toContain(supplierRowId);
+    expect(a.inbox.every((i: any) => i.side === 'buying')).toBe(true);
+
+    const sellerHome = await hubHomeGET(call('GET', '/api/suppliers/hub/home', UB, B));
+    expect(sellerHome.status).toBe(200);
+    const b = await sellerHome.json();
+    expect(b.roles.selling).toBe(true);
+    expect(b.selling.buyers).toBeGreaterThanOrEqual(1);
+    expect(b.selling.insights.fillRate === null || (b.selling.insights.fillRate >= 0 && b.selling.insights.fillRate <= 1)).toBe(true);
+    for (const item of b.inbox) expect(item.action).toBeTruthy();
+
+    // A shares stock and sales with B, but as the only sharing shop it must not show up as an area.
+    await query(`UPDATE suppliers SET allow_low_stock_access = true WHERE id = $1`, [supplierRowId]);
+    const report = await areaReportGET(call('GET', '/api/suppliers/dashboard/analytics?period=fy', UB, B));
+    expect(report.status).toBe(200);
+    const r = await report.json();
+    expect(r.shops_sharing).toBe(1);
+    expect(r.states).toEqual([]);
+    expect(r.cities).toEqual([]);
+    expect(r.pivot_matrix).toEqual([]);
+    expect(r.hidden_shops.states).toBe(1);
   });
 });

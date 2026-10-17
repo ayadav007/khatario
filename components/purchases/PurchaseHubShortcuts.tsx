@@ -2,30 +2,32 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Filter, Inbox, Package, Sparkles } from 'lucide-react';
+import { Filter, Inbox, Package, Sparkles, Store } from 'lucide-react';
 
-type Counts = { bills: number; orders: number };
+type Counts = { waiting: number; bills: number; proposals: number; arrivals: number };
 
 /**
- * Supplier Hub shortcuts on the Purchases page, on every screen size, with how many
- * bills are waiting to be received and how many orders need the buyer.
+ * Supplier Hub shortcuts on the Purchases page, on every screen size: the hub itself with how
+ * much is waiting on the buyer, then bills to receive, orders to confirm and new arrivals.
  */
 export function PurchaseHubShortcuts({ onOpenFilters }: { onOpenFilters?: () => void }) {
-  const [counts, setCounts] = useState<Counts>({ bills: 0, orders: 0 });
+  const [counts, setCounts] = useState<Counts>({ waiting: 0, bills: 0, proposals: 0, arrivals: 0 });
 
   useEffect(() => {
     let alive = true;
-    const count = (url: string, key: 'bills' | 'orders') =>
-      fetch(url)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => (Array.isArray(d?.[key]) ? d[key].length : 0))
-        .catch(() => 0);
-    Promise.all([
-      count('/api/purchases/incoming-bills?status=pending', 'bills'),
-      count('/api/supply-orders?role=buyer&group=action', 'orders'),
-    ]).then(([bills, orders]) => {
-      if (alive) setCounts({ bills, orders });
-    });
+    fetch('/api/suppliers/hub/home')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d?.buying) return;
+        const buyingInbox = (d.inbox || []).filter((i: { side: string }) => i.side === 'buying');
+        setCounts({
+          waiting: buyingInbox.length,
+          bills: d.buying.billsToReceive || 0,
+          proposals: buyingInbox.filter((i: { kind: string }) => i.kind === 'order_to_confirm').length,
+          arrivals: d.buying.newCollections || 0,
+        });
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -37,19 +39,25 @@ export function PurchaseHubShortcuts({ onOpenFilters }: { onOpenFilters?: () => 
 
   return (
     <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+      <Link href="/suppliers/hub" className={`${chip} border-primary-200 text-primary-700`}>
+        <Store className="h-4 w-4" />
+        Supplier Hub
+        {counts.waiting > 0 && <span className={badge}>{counts.waiting}</span>}
+      </Link>
       <Link href="/purchases/incoming" className={chip}>
         <Inbox className="h-4 w-4" />
         Incoming bills
         {counts.bills > 0 && <span className={badge}>{counts.bills}</span>}
       </Link>
-      <Link href="/supply-orders" className={chip}>
+      <Link href="/supply-orders?role=buyer" className={chip}>
         <Package className="h-4 w-4" />
         Supplier orders
-        {counts.orders > 0 && <span className={badge}>{counts.orders}</span>}
+        {counts.proposals > 0 && <span className={badge}>{counts.proposals}</span>}
       </Link>
       <Link href="/purchases/new-arrivals" className={chip}>
         <Sparkles className="h-4 w-4" />
         New arrivals
+        {counts.arrivals > 0 && <span className={badge}>{counts.arrivals}</span>}
       </Link>
       {onOpenFilters && (
         <button type="button" onClick={onOpenFilters} className={`${chip} md:hidden`} aria-label="Filters">

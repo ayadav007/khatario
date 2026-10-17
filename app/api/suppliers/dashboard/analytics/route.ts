@@ -2,13 +2,49 @@ import { NextRequest, NextResponse } from 'next/server';
 import { queryRows } from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import {
-  aggregateAreas,
+  aggregateAreasPrivately,
+  statesWithEnoughShops,
+  MIN_SHOPS_PER_AREA,
   topItemPivot,
   type CustomerAreaFact,
   type ItemAreaAmount,
 } from '@/lib/supplier-area-performance';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * SQL CTE body (needs the linked CTE, $2 = from, $3 = to): the linked shops' posted sales lines. A
+ * bundle line (for example a 1 kg packet made from loose rice) is credited to its component
+ * items, split by each component's share of the bundle's value, so repacked goods still count.
+ */
+const SOLD_LINES_SQL = `
+  sold_lines AS (
+    SELECT inv.business_id AS customer_id, ii.item_id, ii.item_name, ii.line_total AS amount
+      FROM invoices inv
+      JOIN invoice_items ii ON ii.invoice_id = inv.id
+     WHERE inv.status = 'final'
+       AND inv.invoice_date >= $2::date AND inv.invoice_date <= $3::date
+       AND inv.business_id IN (SELECT customer_id FROM linked)
+    UNION ALL
+    SELECT inv.business_id, bi.item_id, ci.name, ii.line_total * w.share
+      FROM invoices inv
+      JOIN invoice_items ii ON ii.invoice_id = inv.id
+      JOIN bundle_items bi ON bi.bundle_id = ii.item_id
+      JOIN items ci ON ci.id = bi.item_id
+      JOIN LATERAL (
+        SELECT CASE
+                 WHEN SUM(b2.quantity * COALESCE(i2.selling_price, 0)) > 0
+                   THEN (bi.quantity * COALESCE(ci.selling_price, 0)) / SUM(b2.quantity * COALESCE(i2.selling_price, 0))
+                 ELSE 1.0 / COUNT(*)
+               END AS share
+          FROM bundle_items b2
+          JOIN items i2 ON i2.id = b2.item_id
+         WHERE b2.bundle_id = bi.bundle_id
+      ) w ON true
+     WHERE inv.status = 'final'
+       AND inv.invoice_date >= $2::date AND inv.invoice_date <= $3::date
+       AND inv.business_id IN (SELECT customer_id FROM linked)
+  )`;
 
 const PERIODS = ['30d', '90d', 'fy'] as const;
 type PeriodKey = (typeof PERIODS)[number];
@@ -100,15 +136,12 @@ export async function GET(request: NextRequest) {
         JOIN linked l ON l.customer_id = t.customer_business_id
         WHERE t.supplier_business_id = $1
       ),
+      ${SOLD_LINES_SQL},
       sell_through AS (
-        SELECT inv.business_id AS customer_id, COALESCE(SUM(ii.line_total), 0) AS amount
-        FROM invoices inv
-        JOIN invoice_items ii ON ii.invoice_id = inv.id
-        JOIN supplied_items si ON si.item_id = ii.item_id AND si.customer_id = inv.business_id
-        WHERE inv.status = 'final'
-          AND inv.invoice_date >= $2::date
-          AND inv.invoice_date <= $3::date
-        GROUP BY inv.business_id
+        SELECT sl.customer_id, COALESCE(SUM(sl.amount), 0) AS amount
+        FROM sold_lines sl
+        JOIN supplied_items si ON si.item_id = sl.item_id AND si.customer_id = sl.customer_id
+        GROUP BY sl.customer_id
       ),
       low_stock AS (
         SELECT i.business_id AS customer_id, COUNT(*)::int AS n
@@ -177,32 +210,41 @@ export async function GET(request: NextRequest) {
         JOIN linked l ON l.customer_id = t.customer_business_id
         WHERE t.supplier_business_id = $1
       )
-      SELECT cb.state, ii.item_name, COALESCE(SUM(ii.line_total), 0)::text AS sell_through
-      FROM invoices inv
-      JOIN invoice_items ii ON ii.invoice_id = inv.id
-      JOIN supplied_items si ON si.item_id = ii.item_id AND si.customer_id = inv.business_id
-      JOIN businesses cb ON cb.id = inv.business_id
-      WHERE inv.status = 'final'
-        AND inv.invoice_date >= $2::date
-        AND inv.invoice_date <= $3::date
-      GROUP BY cb.state, ii.item_name
+      ,${SOLD_LINES_SQL}
+      SELECT cb.state, sl.item_name, COALESCE(SUM(sl.amount), 0)::text AS sell_through
+      FROM sold_lines sl
+      JOIN supplied_items si ON si.item_id = sl.item_id AND si.customer_id = sl.customer_id
+      JOIN businesses cb ON cb.id = sl.customer_id
+      GROUP BY cb.state, sl.item_name
       `,
       [auth.businessId, period.from, period.to]
     );
 
-    const itemAmounts: ItemAreaAmount[] = itemRows.map((row) => ({
-      state: row.state || '',
-      itemName: row.item_name,
-      sellThrough: Number(row.sell_through) || 0,
-    }));
+    // Per-item sales only for states with enough shops that no single shop shows through.
+    const openStates = statesWithEnoughShops(facts);
+    const itemAmounts: ItemAreaAmount[] = itemRows
+      .map((row) => ({
+        state: (row.state || '').trim() || 'Unknown',
+        itemName: row.item_name,
+        sellThrough: Number(row.sell_through) || 0,
+      }))
+      .filter((row) => openStates.has(row.state));
     const pivot = topItemPivot(itemAmounts);
+
+    const states = aggregateAreasPrivately(facts, 'state');
+    const cities = aggregateAreasPrivately(facts, 'city');
+    const pincodes = aggregateAreasPrivately(facts, 'pincode');
 
     return NextResponse.json({
       success: true,
       period: { key: periodKey, from: period.from, to: period.to },
-      states: aggregateAreas(facts, 'state'),
-      cities: aggregateAreas(facts, 'city').slice(0, 80),
-      pincodes: aggregateAreas(facts, 'pincode').slice(0, 100),
+      states: states.areas,
+      cities: cities.areas.slice(0, 80),
+      pincodes: pincodes.areas.slice(0, 100),
+      // Areas with fewer than this many shops are pooled or left out so no shop's sales show alone.
+      min_shops_per_area: MIN_SHOPS_PER_AREA,
+      shops_sharing: facts.length,
+      hidden_shops: { states: states.hiddenShops, cities: cities.hiddenShops, pincodes: pincodes.hiddenShops },
       pivot_items: pivot.items,
       pivot_matrix: pivot.matrix,
     });

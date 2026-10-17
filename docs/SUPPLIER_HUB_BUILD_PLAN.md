@@ -276,6 +276,56 @@ Still open:
 - When the supplier picks its item for a line that had no match, the quantity stays in the buyer's units (35 PCS shown as "35 units" against B's BOX). The supplier should see the buyer's unit, and the conversion should be set when matching on that screen.
 - The bill pre-fill doesn't set the place of supply. B also had to complete its business address and give the item an HSN before the bill could be finalised; those are existing invoice rules.
 
+## UX plan: what goes where (2026-10-17)
+
+The hub must take work away, not add a new place to check. So: **one door, one list of what's waiting, every action one tap from that list.** Everything else sits one level down, and nobody has to learn "supplier units", order states or which menu holds what.
+
+### One door
+
+| Where | What it shows |
+|---|---|
+| Menu (web sidebar, mobile More, phone app More) | One entry, **Supplier Hub**, under Purchases. For a wholesaler, also first under the Supplier section. Replaces the separate Suppliers Hub / Incoming Bills / Supplier Orders / New Arrivals entries. |
+| Purchases page | The shortcut row starts with **Supplier Hub** and a count of what's waiting. |
+| Notifications | Every hub notification opens the exact order, bill or request (done). |
+| Supplier / customer page | A Supplier Hub panel with the actions for that one partner (done for suppliers). |
+
+### Supplier Hub home (`/suppliers/hub`)
+
+1. **Needs you**: one list across buying and selling, most urgent first. Each card says what happened in plain words, shows the money involved, and has the action as its main button:
+
+   | Card | Who | Main button |
+   |---|---|---|
+   | Bill from X to receive · ₹960 | Retailer | Receive |
+   | X proposed an order · 1 item · ~₹960 | Retailer | Confirm (no screen change); Open to change quantities |
+   | X is low on 3 of your items | Wholesaler | Review & send |
+   | X ordered · answer quantities | Wholesaler | Answer |
+   | Order from X confirmed · ready to bill | Wholesaler | Create bill |
+   | X wants to connect | Wholesaler | Accept / Decline, right on the card |
+
+   Empty: "All caught up".
+2. **Buying | Selling** switch, shown only when the business does both, remembered per device:
+   - Buying: Orders, Incoming bills, New arrivals, My suppliers, each with a count. **New order** opens a sheet listing connected suppliers, not the full supplier list. **Find suppliers** opens the directory.
+   - Selling: Orders, Buyers low on stock, My catalog, My buyers. Plus a **Your buyers** card: fill rate over 90 days, and buyers who haven't ordered in 30+ days, each with Propose order.
+3. **First time** (nothing connected): three short steps ("Find your supplier → they approve → bills and orders arrive here") and one button. A wholesaler also sees "Publish your catalog".
+
+The directory moves to `/suppliers/hub/find`; business profiles stay at `/suppliers/hub/[businessId]`.
+
+### Consent
+
+- The retailer's switch says exactly what it shares: **low-stock alerts on that supplier's items, suggested orders, and your sales of their items in the supplier's area report**.
+- The area report never shows an area with fewer than 3 shops; those are grouped as "Other areas", so no single shop's sales can be read off it.
+
+### Order of work
+
+1. Consent wording and the 3-shop rule. **Done** (web and phone wording; area report pools or hides areas under 3 shops, including the item-by-state table).
+2. Hub home and its API, with the inbox's one-tap actions. **Done** (`/suppliers/hub`, `GET /api/suppliers/hub/home`; Confirm, Send, Accept and Decline on the card; drafts with unmatched lines say Review instead).
+3. Menus, Purchases shortcut and the directory move. **Done** (directory at `/suppliers/hub/find` with Connected / Request sent badges).
+4. New-order sheet. **Done** (hub home and Supplier orders page; after billing an order on a phone, the bill screen leads back to the order).
+5. Wholesaler insights: fill rate and quiet buyers. **Done** (Your buyers card on the Selling side).
+6. Packet and combo sales count in "sold onward": a bundle line is credited to its component items. **Done**.
+7. Phone app: the same hub home and one menu entry. **Next.**
+8. Repack ("open a bag into packets", with wastage) for shops that sell loose goods in their own packs. **Proposed**, a general inventory feature.
+
 ## Decisions (agreed 2026-10-16)
 
 1. **Who starts the order:** B proposes and A confirms. A can also start an order; nothing is invoiced until A has confirmed.

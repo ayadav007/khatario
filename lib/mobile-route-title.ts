@@ -65,8 +65,11 @@ export function getMobileRouteTitle(
   // —— Suppliers ——
   if (p === '/suppliers') return 'Suppliers';
   if (p === '/suppliers/new') return 'Create supplier';
-  if (p === '/suppliers/hub') return 'Suppliers hub';
-  if (p.startsWith('/suppliers/hub/')) return 'Hub profile';
+  if (p === '/suppliers/hub') return 'Supplier Hub';
+  if (p === '/suppliers/hub/find') return 'Find suppliers';
+  if (p.startsWith('/suppliers/hub/')) return 'Supplier profile';
+  if (p === '/suppliers/catalog') return 'My catalog';
+  if (p === '/suppliers/dashboard/analytics') return 'Area report';
   if (p === '/suppliers/requests') return 'Requests to fulfill';
   if (p.startsWith('/suppliers/')) {
     if (p.endsWith('/edit')) return 'Edit supplier';
@@ -76,9 +79,15 @@ export function getMobileRouteTitle(
   // —— Purchases & stock ——
   if (p === '/purchases/scan-record') return 'Scan & Record Bills';
   if (p === '/purchases/requests') return 'Purchase requests';
+  if (p === '/purchases/incoming') return 'Incoming bills';
+  if (p.startsWith('/purchases/incoming/')) return 'Receive bill';
+  if (p === '/purchases/new-arrivals') return 'New arrivals';
   if (p.startsWith('/purchases/') && !p.endsWith('/new')) return 'Purchase';
   if (p === '/purchases/new') return 'New purchase';
   if (p === '/purchases') return 'Purchases';
+  if (p === '/supply-orders') return 'Supplier orders';
+  if (p === '/supply-orders/new') return 'New order';
+  if (p.startsWith('/supply-orders/')) return 'Order';
   if (p.startsWith('/purchase-orders')) return 'Purchase orders';
   if (p.startsWith('/purchase-returns/')) return 'Purchase return';
   if (p === '/purchase-returns') return 'Purchase returns';

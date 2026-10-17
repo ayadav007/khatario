@@ -7,6 +7,7 @@
 
 import type { PoolClient } from 'pg';
 import { partiesFromItemOwner } from './quantity-request-parties';
+import { execFor } from './supplier-hub-links';
 import { loadItemLinks, suggestBuyerItems, type ItemSuggestion } from './supplier-item-links';
 
 /**
@@ -45,6 +46,61 @@ export const BILL_ADDRESSED_TO_BUYER_SQL = `
   AND COALESCE(inv.status, '') NOT IN ('draft', 'cancelled')
   AND COALESCE(inv.document_type, '') <> 'proforma_invoice'
 `;
+
+export type IncomingBillStatus = 'pending' | 'received' | 'all';
+
+/**
+ * Bills from connected suppliers addressed to `buyerBusinessId`: pending (not yet a purchase),
+ * received, or all. Only bills dated on or after the link was approved (or raised against one of
+ * its requests) are listed, and a bill matching a hand-entered purchase is flagged as a duplicate.
+ */
+export async function listIncomingBills(buyerBusinessId: string, status: IncomingBillStatus, client?: PoolClient) {
+  const statusSql =
+    status === 'received' ? 'AND pur.id IS NOT NULL' : status === 'all' ? '' : 'AND pur.id IS NULL';
+  const { rows } = await execFor(client)(
+    `
+      SELECT
+        inv.id AS invoice_id, inv.invoice_number, inv.invoice_date, inv.grand_total,
+        inv.business_id AS supplier_business_id, vb.name AS supplier_name, sup.id AS supplier_id,
+        (SELECT COUNT(*)::int FROM invoice_items ii WHERE ii.invoice_id = inv.id) AS line_count,
+        pur.id AS purchase_id, pur.bill_number AS purchase_bill_number,
+        rc.status AS receipt_status, rc.received_at,
+        EXISTS (
+          SELECT 1 FROM purchases dup
+          WHERE dup.business_id = $1 AND dup.supplier_id = sup.id
+            AND dup.status <> 'cancelled'
+            AND dup.source_invoice_id IS NULL
+            AND UPPER(TRIM(dup.bill_number)) = UPPER(TRIM(inv.invoice_number))
+        ) AS possible_duplicate
+      FROM invoices inv
+      JOIN businesses vb ON vb.id = inv.business_id
+      JOIN LATERAL (
+        SELECT s.id, s.approved_at FROM suppliers s
+        WHERE s.business_id = $1 AND s.linked_business_id = inv.business_id
+          AND s.approval_status = 'approved' AND s.deleted_at IS NULL
+        ORDER BY s.approved_at DESC NULLS LAST
+        LIMIT 1
+      ) sup ON true
+      LEFT JOIN LATERAL (
+        SELECT p.id, p.bill_number FROM purchases p
+        WHERE p.business_id = $1 AND p.source_invoice_id = inv.id AND p.status <> 'cancelled'
+        LIMIT 1
+      ) pur ON true
+      LEFT JOIN supplier_bill_receipts rc ON rc.purchase_id = pur.id
+      WHERE ${BILL_ADDRESSED_TO_BUYER_SQL}
+        AND (
+          sup.approved_at IS NULL
+          OR inv.invoice_date >= sup.approved_at::date
+          OR EXISTS (SELECT 1 FROM quantity_requests qr WHERE qr.invoice_id = inv.id)
+        )
+        ${statusSql}
+      ORDER BY inv.invoice_date DESC, inv.created_at DESC
+      LIMIT 200
+      `,
+    [buyerBusinessId]
+  );
+  return rows;
+}
 
 export type LinkedRequest = {
   id: string;

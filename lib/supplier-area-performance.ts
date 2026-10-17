@@ -39,6 +39,53 @@ function labelFor(fact: CustomerAreaFact, level: AreaLevel): string {
   return `${clean(fact.pincode)} · ${clean(fact.city)}, ${clean(fact.state)}`;
 }
 
+/**
+ * Fewest shops an area may hold before its figures are shown. Below this, one shop's sales
+ * could be read straight off the report, so small areas are pooled or left out.
+ */
+export const MIN_SHOPS_PER_AREA = 3;
+
+export const OTHER_AREAS_LABEL = 'Other areas';
+
+/**
+ * Areas with at least `minShops` shops, plus the smaller ones pooled into one "Other areas"
+ * row when that pool itself reaches `minShops`. `hiddenShops` counts shops left out.
+ */
+export function aggregateAreasPrivately(
+  facts: CustomerAreaFact[],
+  level: AreaLevel,
+  minShops = MIN_SHOPS_PER_AREA
+): { areas: AreaPerformance[]; hiddenShops: number } {
+  const all = aggregateAreas(facts, level);
+  const shown = all.filter((a) => a.customerCount >= minShops);
+  const small = all.filter((a) => a.customerCount < minShops);
+  const pooledShops = small.reduce((n, a) => n + a.customerCount, 0);
+  if (pooledShops >= minShops) {
+    shown.push({
+      state: '',
+      city: '',
+      pincode: '',
+      label: OTHER_AREAS_LABEL,
+      customerCount: pooledShops,
+      sellIn: small.reduce((n, a) => n + a.sellIn, 0),
+      sellThrough: small.reduce((n, a) => n + a.sellThrough, 0),
+      lowStockItems: small.reduce((n, a) => n + a.lowStockItems, 0),
+      band: 'quiet',
+    });
+    return { areas: assignBands(shown), hiddenShops: 0 };
+  }
+  return { areas: assignBands(shown), hiddenShops: pooledShops };
+}
+
+/** States holding at least `minShops` shops, for filtering per-state breakdowns. */
+export function statesWithEnoughShops(facts: CustomerAreaFact[], minShops = MIN_SHOPS_PER_AREA): Set<string> {
+  return new Set(
+    aggregateAreas(facts, 'state')
+      .filter((a) => a.customerCount >= minShops)
+      .map((a) => a.state)
+  );
+}
+
 export function aggregateAreas(facts: CustomerAreaFact[], level: AreaLevel): AreaPerformance[] {
   const groups = new Map<string, AreaPerformance>();
   for (const fact of facts) {

@@ -8,9 +8,7 @@ describe('notificationHref', () => {
     expect(notificationHref({ type: 'general', reference_type: 'supply_order', reference_id: id })).toBe(`/supply-orders/${id}`);
     expect(notificationHref({ type: 'general', reference_type: 'supplier_collection', reference_id: id })).toBe('/purchases/new-arrivals');
     expect(notificationHref({ type: 'low_stock_alert', reference_type: 'item', reference_id: id })).toBe('/supply-orders?role=vendor');
-    expect(notificationHref({ type: 'hub_connection_request', reference_type: 'supplier_connection_request', reference_id: id })).toBe(
-      '/settings/suppliers-directory'
-    );
+    expect(notificationHref({ type: 'hub_connection_request', reference_type: 'supplier_connection_request', reference_id: id })).toBe('/suppliers/hub');
     expect(notificationHref({ type: 'general', reference_type: 'invoice', reference_id: id })).toBe(`/invoices/${id}`);
   });
 

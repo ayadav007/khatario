@@ -533,7 +533,9 @@ export const Sidebar = React.memo(function Sidebar() {
         icon: Store,
         collapsible: true,
         subItems: [
+          { href: '/suppliers/hub', label: 'Supplier Hub' },
           { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
+          { href: '/suppliers/catalog', label: 'My Catalog' },
           { href: '/suppliers/requests', label: 'Requests to Fulfill' },
         ],
       }
@@ -563,7 +565,7 @@ export const Sidebar = React.memo(function Sidebar() {
       collapsible: true,
       subItems: [
         { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
-        { href: '/suppliers/hub', label: 'Suppliers Hub', module: 'purchases' },
+        { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
         { href: '/purchases', label: 'All Purchases', module: 'purchases' },
         { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
         { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },

@@ -55,6 +55,9 @@ export default function PublicInvoiceViewPage() {
   const invoiceId = params.id as string;
   const { user, business } = useAuth();
   const fromGenerate = searchParams.get('from') === 'generate';
+  // Billed from a Supplier Hub order: say where the bill went and lead back to the order.
+  const supplyOrderId = searchParams.get('supply_order_id');
+  const doneHref = supplyOrderId ? `/supply-orders/${encodeURIComponent(supplyOrderId)}` : '/invoices';
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState('');
   const [invoice, setInvoice] = useState<InvoiceSummary | null>(null);
@@ -211,6 +214,12 @@ export default function PublicInvoiceViewPage() {
             </div>
           ) : null}
 
+          {supplyOrderId && invoice ? (
+            <p className="mx-4 mt-3 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">
+              Sent to {invoice.customer_name || 'the buyer'} in the Supplier Hub. It becomes their purchase when they receive it.
+            </p>
+          ) : null}
+
           {invoice && invoice.status !== 'cancelled' ? (
             <div className="mx-4 mt-3">
               <InvoicePlanExtras
@@ -233,9 +242,9 @@ export default function PublicInvoiceViewPage() {
             <Button
               variant="primary"
               className="w-full h-12 text-base font-semibold rounded-xl"
-              onClick={() => router.push('/invoices')}
+              onClick={() => router.push(doneHref)}
             >
-              Done
+              {supplyOrderId ? 'Back to order' : 'Done'}
             </Button>
           </div>
         </div>
@@ -264,8 +273,8 @@ export default function PublicInvoiceViewPage() {
                 <Share2 className="w-4 h-4 mr-2" />
                 Share
               </Button>
-              <Button variant="primary" onClick={() => router.push('/invoices')}>
-                Done
+              <Button variant="primary" onClick={() => router.push(doneHref)}>
+                {supplyOrderId ? 'Back to order' : 'Done'}
               </Button>
             </div>
           </div>

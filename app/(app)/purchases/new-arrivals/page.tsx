@@ -201,7 +201,7 @@ export default function NewArrivalsPage() {
         <Card padding="md">
           <p className="py-8 text-center text-sm text-text-secondary">
             {suppliers.length === 0
-              ? 'Connect with suppliers in the Suppliers Hub to see their new collections here.'
+              ? 'Connect with your suppliers in the Supplier Hub to see their new collections here.'
               : 'No new collections yet.'}
           </p>
         </Card>

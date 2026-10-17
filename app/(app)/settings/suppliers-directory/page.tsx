@@ -38,7 +38,7 @@ interface ListingRow {
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: 'hidden', label: 'Hidden — not discoverable' },
   { value: 'link_only', label: 'Link only — profile by URL, not listed in search' },
-  { value: 'directory', label: 'Directory — searchable in Suppliers Hub' },
+  { value: 'directory', label: 'Directory — searchable in the Supplier Hub' },
 ];
 
 export default function SuppliersDirectorySettingsPage() {
@@ -242,7 +242,7 @@ export default function SuppliersDirectorySettingsPage() {
   return (
     <SettingsPageShell
       title="Suppliers directory"
-      description="Let other businesses find you in the Suppliers Hub and request a connection."
+      description="Let other businesses find you in the Supplier Hub and ask to connect."
       icon={Store}
     >
       {loading ? (
@@ -407,8 +407,8 @@ export default function SuppliersDirectorySettingsPage() {
 
             <p className="type-body-secondary">
               Browse the directory as a buyer:{' '}
-              <Link href="/suppliers/hub" className="link-primary">
-                Suppliers Hub
+              <Link href="/suppliers/hub/find" className="link-primary">
+                Find suppliers
               </Link>
             </p>
           </div>
