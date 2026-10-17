@@ -6,6 +6,7 @@ import {
   cancelPostedInvoiceInTransaction,
   releaseWorkOrderAfterInvoiceCancel,
 } from '@/lib/invoices/cancel-final-invoice';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +152,10 @@ export async function PATCH(
       await releaseWorkOrderAfterInvoiceCancel(client, businessScope, id);
       }
 
+      await markGstReadinessStale(client, businessScope, {
+        dates: [inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : null],
+        monthly: ['gstr1', 'gstr3b'],
+      });
       await client.query('COMMIT');
     } catch (error: any) {
       await client.query('ROLLBACK');

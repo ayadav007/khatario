@@ -8,9 +8,10 @@
  * Per bill, in the period of its first reconciliation row (the bill's month):
  * - MISSING_IN_2B, NOT_ELIGIBLE (2B says ineligible) or a blocking decision → all its ITC is held.
  * - MATCHED / PARTIALLY_MATCHED → only tax above what 2B shows, head by head, is held.
- * - A decision ITC_ELIGIBLE_THIS_PERIOD overrides all of the above (user accepts the claim).
+ * - ITC_ELIGIBLE_THIS_PERIOD does not release a MISSING_IN_2B or NOT_ELIGIBLE hold.
+ *   On a matched row it releases only the tax 2B shows, head by head.
  * Held ITC is released in the earliest of: the period a decision defers it to, or a later period
- * whose reconciliation finds it in 2B. ITC_NOT_ELIGIBLE / IGNORE never release.
+ * whose reconciliation finds it MATCHED or PARTIALLY_MATCHED. ITC_NOT_ELIGIBLE / IGNORE never release.
  * Imports and bills without a supplier GSTIN (unregistered RCM) do not depend on 2B, and blocked
  * credit (s.17(5)) never reaches the input ledger, so none of these is held.
  */
@@ -82,16 +83,18 @@ export function buildItcGate(rows: ItcGateRow[], period: string, reconciled: boo
     list.sort((a, b) => a.filing_period.localeCompare(b.filing_period));
     const first = list[0];
     if (first.is_import_goods || first.is_import_services || first.blocked || !String(first.supplier_gstin || '').trim()) continue;
-    if (first.decision === 'ITC_ELIGIBLE_THIS_PERIOD') continue;
 
     let itc: ItcHeads;
     let reason: string;
+    const acceptedWithout2b =
+      first.decision === 'ITC_ELIGIBLE_THIS_PERIOD' &&
+      (first.match_status === 'MISSING_IN_2B' || first.match_status === 'NOT_ELIGIBLE');
     if (BLOCKING.has(first.decision ?? '')) {
       itc = { ...first.books };
       reason = first.decision!;
-    } else if (first.match_status === 'MISSING_IN_2B' || first.match_status === 'NOT_ELIGIBLE') {
+    } else if (first.match_status === 'MISSING_IN_2B' || first.match_status === 'NOT_ELIGIBLE' || acceptedWithout2b) {
       itc = { ...first.books };
-      reason = first.match_status;
+      reason = acceptedWithout2b ? 'OVERRIDE_WITHOUT_2B' : first.match_status;
     } else {
       itc = zero();
       for (const h of HEADS) itc[h] = r2(Math.max(0, first.books[h] - first.gstr2b[h]));
@@ -107,7 +110,7 @@ export function buildItcGate(rows: ItcGateRow[], period: string, reconciled: boo
           candidates.push(r.deferred_to_period);
         }
         if (r.filing_period > first.filing_period && !BLOCKING.has(r.decision ?? '') &&
-            (r.match_status === 'MATCHED' || r.match_status === 'PARTIALLY_MATCHED' || r.decision === 'ITC_ELIGIBLE_THIS_PERIOD')) {
+            (r.match_status === 'MATCHED' || r.match_status === 'PARTIALLY_MATCHED')) {
           candidates.push(r.filing_period);
         }
       }
@@ -150,7 +153,13 @@ export async function loadItcGate(
               (p.itc_eligible = false) AS blocked
          FROM gstr2b_reconciliation r
          JOIN purchases p ON p.id = r.purchase_id AND p.deleted_at IS NULL
-         LEFT JOIN reconciliation_decisions rd ON rd.reconciliation_id = r.id
+         LEFT JOIN LATERAL (
+           SELECT decision, deferred_to_period
+             FROM reconciliation_decisions
+            WHERE reconciliation_id = r.id
+            ORDER BY decision_date DESC, created_at DESC
+            LIMIT 1
+         ) rd ON true
         WHERE r.business_id = $1 AND r.filing_period <= $2
           AND ($3::uuid[] IS NULL OR p.branch_id = ANY($3::uuid[]))`,
       [businessId, period, branchIds]

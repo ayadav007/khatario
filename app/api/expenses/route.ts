@@ -3,6 +3,9 @@ import * as db from '@/lib/db';
 import { postExpenseVoucher, ExpenseValidationError, type ExpenseSplit } from '@/lib/accounting/expense-posting';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
 import { periodGuardResponse } from '@/lib/http/period-guards';
+import { checkGstin } from '@/lib/tax/gstin';
+import { parseRegistrationStatus } from '@/lib/gst/rule47a';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { getAuthenticatedUserId, getUserIdFromRequest, getBusinessIdFromRequest } from '@/lib/auth-helpers';
@@ -141,7 +144,21 @@ export async function POST(request: NextRequest) {
       cgst_amount: rawCgst,
       sgst_amount: rawSgst,
       igst_amount: rawIgst,
+      supplier_gstin: rawSupplierGstin,
+      supply_received_on: rawReceived,
+      supplier_registration_status: rawStatus,
     } = body;
+    const registrationStatus = parseRegistrationStatus(rawStatus);
+    const supplyReceivedOn =
+      typeof rawReceived === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawReceived) ? rawReceived : null;
+    let supplierGstin: string | null = null;
+    if (typeof rawSupplierGstin === 'string' && rawSupplierGstin.trim()) {
+      const gstinCheck = checkGstin(rawSupplierGstin);
+      if (!gstinCheck.valid) {
+        return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
+      }
+      supplierGstin = gstinCheck.gstin;
+    }
 
     const category_id =
       rawCategoryId && String(rawCategoryId).trim() ? String(rawCategoryId).trim() : null;
@@ -336,9 +353,10 @@ export async function POST(request: NextRequest) {
            business_id, branch_id, category_id, amount, description,
            expense_date, payment_mode, reference_number, created_by,
            cgst_amount, sgst_amount, igst_amount,
-           itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id
+           itc_eligible, is_reverse_charge, tds_section, tds_amount, supplier_id,
+           supplier_gstin, supply_received_on, supplier_registration_status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          RETURNING *`,
         [
           business_id, finalBranchId, category_id || null, amount, description,
@@ -346,6 +364,7 @@ export async function POST(request: NextRequest) {
           cgstAmt, sgstAmt, igstAmt,
           tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount,
           isOnAccount ? supplier_id : null,
+          supplierGstin, supplyReceivedOn, registrationStatus,
         ]
       );
       expense = ins.rows[0];
@@ -372,6 +391,10 @@ export async function POST(request: NextRequest) {
           [split.paymentCredit, supplier_id, business_id]
         );
       }
+      await markGstReadinessStale(client, business_id, {
+        dates: [String(expense_date).slice(0, 10)],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
       await client.query('COMMIT');
     } catch (ledgerError: any) {
       await client.query('ROLLBACK').catch(() => {});

@@ -28,6 +28,7 @@ import {
 } from '@/lib/security/require-platform-module';
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
+import { finishCreditAlert } from '@/lib/credit-alert-finish';
 import { FeatureKeys } from '@/lib/featureKeys';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
 import { assertFeatureAccess, FeatureAccessDeniedError } from '@/lib/subscription/feature-access';
@@ -2578,6 +2579,22 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    if (status === 'final') {
+      const { markGstReadinessStale } = await import('@/lib/gst/period-freshness');
+      const { invoiceReadinessSpan } = await import('@/lib/gst/document-dates');
+      const locked = existingInvoiceRow as { status?: string; invoice_date?: string | Date } | null;
+      const span = invoiceReadinessSpan({
+        priorStatus: locked?.status ?? null,
+        priorDate: locked?.invoice_date ? String(locked.invoice_date).slice(0, 10) : null,
+        nextStatus: status,
+        nextDate: invoice_date ? String(invoice_date).slice(0, 10) : null,
+      });
+      await markGstReadinessStale(client, business_id, {
+        from: span?.from,
+        to: span?.to,
+        monthly: ['gstr1', 'gstr3b'],
+      });
+    }
     await client.query('COMMIT');
     
     // Transaction committed successfully — ledger entries were posted INSIDE the
@@ -2774,16 +2791,22 @@ export async function POST(request: NextRequest) {
 
           // PHASE 5.4: Check and send credit alerts (async, non-blocking)
           if (projectedMetrics) {
-            checkAndSendCreditAlerts(
-              business_id,
-              'customer',
-              invoice.customer_id,
-              creditLimit,
-              currentBalance,
-              projectedMetrics,
-              'invoice',
-              invoice.id
-            ).catch(err => console.error('Error sending credit alert:', err));
+            try {
+              await finishCreditAlert(
+                checkAndSendCreditAlerts(
+                  business_id,
+                  'customer',
+                  invoice.customer_id,
+                  creditLimit,
+                  currentBalance,
+                  projectedMetrics,
+                  'invoice',
+                  invoice.id
+                )
+              );
+            } catch (alertError) {
+              console.error('Error sending credit alert:', alertError);
+            }
           }
         }
       } catch (creditError) {

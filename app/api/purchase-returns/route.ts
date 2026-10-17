@@ -18,6 +18,7 @@ import {
   resolveCreatedByUserId,
 } from '@/lib/auth-helpers';
 import { authorize, AuthorizationError } from '@/lib/authorization';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 /**
  * GET /api/purchase-returns
@@ -395,6 +396,10 @@ export async function POST(request: NextRequest) {
       poolClient: client,
     });
 
+    await markGstReadinessStale(client, business_id, {
+      dates: [return_date ? String(return_date).slice(0, 10) : null],
+      monthly: ['gstr2b', 'gstr3b'],
+    });
     await client.query('COMMIT');
     return NextResponse.json({ purchaseReturn }, { status: 201 });
   } catch (error: any) {

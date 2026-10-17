@@ -201,6 +201,13 @@ function GSTR1PageContent() {
           : `GSTR1_${month.toString().padStart(2, '0')}_${year}.json`;
       }
       
+      const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+      const gate = await confirmReturnDownload('gstr1', `${year}-${month.toString().padStart(2, '0')}`);
+      if (!gate.ok) {
+        if (gate.message) toast.error(gate.message);
+        return;
+      }
+
       const res = await fetch(url);
       if (!res.ok) {
         const error = await res.json();

@@ -13,6 +13,7 @@
  */
 
 import { getPool } from '@/lib/db';
+import { applyStoredDecisionRetention } from '@/lib/gst/decision-retention';
 
 export interface ReconciliationMatch {
   reconciliation_id?: string;
@@ -449,6 +450,7 @@ export class GSTR2BReconciliationEngine {
     // longer produced are removed only when nobody has decided on them.
     await client.query('BEGIN');
     try {
+      await applyStoredDecisionRetention(client, business_id, filing_period, matches);
       const keptIds: string[] = [];
       for (const match of matches) {
         const query = `
@@ -553,7 +555,24 @@ export class GSTR2BReconciliationEngine {
     try {
       await client.query('BEGIN');
       
-      // Insert/Update decision (one decision per reconciliation record)
+      await client.query(
+        `INSERT INTO reconciliation_decision_history (
+           reconciliation_id, business_id, decision, decision_date, decided_by_user_id,
+           remarks, eligible_itc_amount, deferred_to_period,
+           supplier_gstin, invoice_number, invoice_date, document_type, filing_period,
+           books_igst, books_cgst, books_sgst, books_cess, match_status, retention_reason
+         )
+         SELECT d.reconciliation_id, d.business_id, d.decision, d.decision_date, d.decided_by_user_id,
+                d.remarks, d.eligible_itc_amount, d.deferred_to_period,
+                r.supplier_gstin, r.invoice_number, r.invoice_date, r.document_type, r.filing_period,
+                r.books_igst, r.books_cgst, r.books_sgst, r.books_cess, r.match_status, 'superseded'
+           FROM reconciliation_decisions d
+           JOIN gstr2b_reconciliation r ON r.id = d.reconciliation_id
+          WHERE d.reconciliation_id = $1`,
+        [decision.reconciliation_id]
+      );
+
+      // The current row is replaced. The history insert above keeps the previous decision.
       const insertQuery = `
         INSERT INTO reconciliation_decisions (
           reconciliation_id, business_id, decision, decided_by_user_id,

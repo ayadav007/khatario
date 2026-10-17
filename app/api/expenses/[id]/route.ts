@@ -6,6 +6,9 @@ import { periodGuardResponse } from '@/lib/http/period-guards';
 import { ExpenseValidationError, ON_ACCOUNT_MODES } from '@/lib/accounting/expense-posting';
 import { parseExpenseTaxFields, type ExpenseCategoryRow } from '@/lib/accounting/expense-fields';
 import { deleteExpenseByReversal, repostExpense, type ExpenseRow } from '@/lib/accounting/expense-corrections';
+import { checkGstin } from '@/lib/tax/gstin';
+import { parseRegistrationStatus } from '@/lib/gst/rule47a';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +17,9 @@ async function loadExpense(id: string, businessId: string): Promise<ExpenseRow |
     `SELECT id, business_id, branch_id, category_id, amount, description,
             to_char(expense_date, 'YYYY-MM-DD') AS expense_date, payment_mode, reference_number,
             cgst_amount, sgst_amount, igst_amount, itc_eligible, is_reverse_charge,
-            tds_section, tds_amount, supplier_id
+            tds_section, tds_amount, supplier_id, supplier_gstin,
+            to_char(supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
+            supplier_registration_status
        FROM expenses WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
     [id, businessId]
   );
@@ -70,7 +75,30 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       sgst_amount: body.sgst_amount !== undefined ? String(Number(body.sgst_amount) || 0) : old.sgst_amount,
       igst_amount: body.igst_amount !== undefined ? String(Number(body.igst_amount) || 0) : old.igst_amount,
       supplier_id: body.supplier_id !== undefined ? (body.supplier_id || null) : old.supplier_id,
+      supplier_gstin: old.supplier_gstin ?? null,
+      supply_received_on: old.supply_received_on ?? null,
+      supplier_registration_status: old.supplier_registration_status ?? 'unknown',
     };
+    if (body.supplier_registration_status !== undefined) {
+      next.supplier_registration_status = parseRegistrationStatus(body.supplier_registration_status);
+    }
+    if (body.supply_received_on !== undefined) {
+      next.supply_received_on =
+        typeof body.supply_received_on === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.supply_received_on)
+          ? body.supply_received_on
+          : null;
+    }
+    if (body.supplier_gstin !== undefined) {
+      if (typeof body.supplier_gstin === 'string' && body.supplier_gstin.trim()) {
+        const gstinCheck = checkGstin(body.supplier_gstin);
+        if (!gstinCheck.valid) {
+          return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
+        }
+        next.supplier_gstin = gstinCheck.gstin;
+      } else {
+        next.supplier_gstin = null;
+      }
+    }
     if (!ON_ACCOUNT_MODES.includes(String(next.payment_mode || '').toLowerCase())) next.supplier_id = null;
 
     const guard = await periodGuardResponse({
@@ -124,6 +152,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
       }
+      await markGstReadinessStale(client, businessId, {
+        from: old.expense_date,
+        to: next.expense_date,
+        monthly: ['gstr2b', 'gstr3b'],
+      });
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
@@ -186,6 +219,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
         await client.query('ROLLBACK');
         return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
       }
+      await markGstReadinessStale(client, businessId, {
+        dates: [old.expense_date],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});

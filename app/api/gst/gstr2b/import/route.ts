@@ -12,6 +12,7 @@ import { getPool } from '@/lib/db';
 import crypto from 'crypto';
 import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 import { parseGstr2bJson, totalEligibleItc } from '@/lib/gst/gstr2b-portal-parser';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -144,6 +145,10 @@ export async function POST(request: NextRequest) {
       inserted += res.rowCount || 0;
     }
     await client.query('UPDATE gstr2b_imports SET total_invoices = $1 WHERE id = $2', [inserted, importId]);
+    await markGstReadinessStale(client, access.businessId, {
+      dates: [`${filing_period}-01`],
+      monthly: ['gstr2b', 'gstr3b'],
+    });
     await client.query('COMMIT');
 
     return NextResponse.json({

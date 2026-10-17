@@ -5,6 +5,7 @@ import { getBusinessIdFromRequest, getUserIdFromRequest } from '@/lib/auth-helpe
 import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { movePurchaseReturnStock } from '@/lib/purchases/purchase-return-stock';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,6 +129,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       [pr.id, userId, reason]
     );
     await recostAfterStockChange(client, businessId, await stockItemsForDocument(client, 'purchase_return', pr.id));
+    await markGstReadinessStale(client, businessId, {
+      dates: [returnDate],
+      monthly: ['gstr2b', 'gstr3b'],
+    });
     await client.query('COMMIT');
 
     const { logActivity, getClientIP, getUserAgent } = await import('@/lib/activity-logger');

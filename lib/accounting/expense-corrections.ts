@@ -21,6 +21,9 @@ export type ExpenseRow = {
   tds_section: string | null;
   tds_amount: string | null;
   supplier_id: string | null;
+  supplier_gstin?: string | null;
+  supply_received_on?: string | null;
+  supplier_registration_status?: string | null;
 };
 
 export type ExpenseTax = {
@@ -80,12 +83,15 @@ export async function repostExpense(
        category_id = $3, amount = $4, description = $5, expense_date = $6, payment_mode = $7,
        reference_number = $8, cgst_amount = $9, sgst_amount = $10, igst_amount = $11,
        itc_eligible = $12, is_reverse_charge = $13, tds_section = $14, tds_amount = $15,
-       supplier_id = $16, updated_at = CURRENT_TIMESTAMP
+       supplier_id = $16, supplier_gstin = $17, supply_received_on = $18,
+       supplier_registration_status = $19, updated_at = CURRENT_TIMESTAMP
      WHERE id = $1 AND business_id = $2`,
     [
       old.id, businessId, next.category_id, next.amount, next.description, next.expense_date, next.payment_mode,
       next.reference_number, next.cgst_amount, next.sgst_amount, next.igst_amount,
       tax.itcEligible, tax.isReverseCharge, tax.tdsSection, tax.tdsAmount, next.supplier_id,
+      next.supplier_gstin ?? null, next.supply_received_on ?? null,
+      next.supplier_registration_status ?? 'unknown',
     ]
   );
   await postExpenseVoucher(client, {
