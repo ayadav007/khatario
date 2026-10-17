@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { GSTR2BReconciliationEngine, UserDecision } from '@/lib/gst/gstr2b-reconciliation';
 import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
+import { getPool } from '@/lib/db';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
 
@@ -74,7 +76,19 @@ export async function POST(request: NextRequest) {
     };
     
     await reconciliationEngine.recordDecision(access.businessId, userDecision);
-    
+    const period = await getPool().query<{ filing_period: string; invoice_date: string }>(
+      `SELECT filing_period, to_char(invoice_date, 'YYYY-MM-DD') AS invoice_date
+         FROM gstr2b_reconciliation WHERE id = $1 AND business_id = $2`,
+      [reconciliation_id, access.businessId]
+    );
+    const row = period.rows[0];
+    if (row) {
+      await markGstReadinessStale(getPool(), access.businessId, {
+        dates: [row.invoice_date || `${row.filing_period}-01`],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Decision recorded successfully'

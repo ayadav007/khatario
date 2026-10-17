@@ -7,6 +7,7 @@ import { reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { creditNoteHasLiveApplications } from '@/lib/credit-notes/customer-credit';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,6 +150,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       await recomputeInvoiceBalance(client, cn.invoice_id, businessId);
     }
     await recostAfterStockChange(client, businessId, await stockItemsForDocument(client, 'credit_note', cn.id));
+    await markGstReadinessStale(client, businessId, {
+      dates: [cn.credit_note_date ? String(cn.credit_note_date).slice(0, 10) : null],
+      monthly: ['gstr1', 'gstr3b'],
+    });
 
     await client.query('COMMIT');
     return NextResponse.json({ creditNote: updated.rows[0] });

@@ -378,6 +378,9 @@ function AddExpenseModal({
     igst_amount: num(expense?.igst_amount),
     itc_eligible: expense ? expense.itc_eligible !== false : true,
     is_reverse_charge: !!expense?.is_reverse_charge,
+    supplier_registration_status: (expense as { supplier_registration_status?: string } | null)?.supplier_registration_status || 'unknown',
+    supply_received_on: '',
+    supplier_gstin: '',
     tds_section: expense?.tds_section || '',
     tds_amount: num(expense?.tds_amount),
   });
@@ -450,7 +453,10 @@ function AddExpenseModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
+        <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          RCM coverage is incomplete until notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
+        </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -559,10 +565,30 @@ function AddExpenseModal({
               <span>
                 Reverse charge (RCM)
                 <span className="block text-xs text-gray-500">
-                  For GTA, advocate, unregistered-dealer notified services: enter the GST you must pay; it is
-                  booked to RCM payable.
+                  RCM coverage is incomplete until notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
                 </span>
               </span>
+            </label>
+            <label className="block text-sm text-gray-700">
+              Supplier registration on this supply
+              <select
+                value={formData.supplier_registration_status}
+                onChange={(e) => setFormData({ ...formData, supplier_registration_status: e.target.value })}
+                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="unknown">Unknown</option>
+                <option value="registered">Registered</option>
+                <option value="unregistered">Unregistered</option>
+              </select>
+            </label>
+            <label className="block text-sm text-gray-700">
+              Date received
+              <input
+                type="date"
+                value={formData.supply_received_on}
+                onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
+                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
             </label>
           </div>
 

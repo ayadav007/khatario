@@ -228,27 +228,37 @@ describe('e-invoicing', () => {
 });
 
 describe('RCM self-invoice', () => {
-  const bill = (bill_date: string, id = bill_date): RcmUnregisteredBill => ({
-    purchase_id: id,
-    bill_number: `RC-${id}`,
-    bill_date,
+  const bill = (
+    supply_received_on: string | null,
+    extra: Partial<RcmUnregisteredBill> = {},
+  ): RcmUnregisteredBill => ({
+    purchase_id: supply_received_on ?? 'unknown',
+    bill_number: 'RC-1',
+    bill_date: '2026-09-01',
     supplier_name: 'Local transporter',
     tax: 900,
+    registration_status: 'unregistered',
+    reverse_charge: true,
+    supply_received_on,
+    ...extra,
   });
 
-  it('reminds within 30 days of the purchase, more urgently in the last 5', () => {
-    const f = rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20'), bill('2026-10-05'), bill('2026-09-01')])!;
+  it('uses receipt plus 30 days only when the supplier is unregistered and reverse charge is on', () => {
+    const f = rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20'), bill('2026-10-05')])!;
     expect(f.dueDate).toBe('2026-10-20');
     expect(f.severity).toBe('info');
-    expect(f.amount).toBe(1800);
-    expect((f.details.rcm_bills as unknown[]).length).toBe(2);
+    expect(f.message).toMatch(/outside the app/);
     const urgent = rcmSelfInvoiceFinding('2026-10-17', [bill('2026-09-20')])!;
     expect(urgent.severity).toBe('warning');
-    expect(urgent.stage).toBe('5d');
   });
 
-  it('drops bills past their 30 days', () => {
-    expect(rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-01')])).toBeNull();
+  it('does not calculate a date from the bill date when receipt or status is missing', () => {
+    const missingReceipt = rcmSelfInvoiceFinding('2026-10-10', [bill(null)])!;
+    expect(missingReceipt.dueDate).toBeNull();
+    expect(missingReceipt.message).toMatch(/unverified/);
+    const unknown = rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20', { registration_status: 'unknown' })])!;
+    expect(unknown.dueDate).toBeNull();
+    expect(rcmSelfInvoiceFinding('2026-10-10', [bill('2026-09-20', { registration_status: 'registered' })])).toBeNull();
   });
 });
 

@@ -19,7 +19,6 @@ import {
   gstr3bFindings,
   previousFyRange,
   rcmSelfInvoiceFinding,
-  SELF_INVOICE_DAYS,
   type EwayCandidate,
   type RcmUnregisteredBill,
   itcDeadlineFinding,
@@ -198,21 +197,56 @@ async function sumTaxableSales(businessId: string, from: string, to: string): Pr
 }
 
 async function loadRcmUnregisteredBills(businessId: string, asOn: string): Promise<RcmUnregisteredBill[]> {
-  const rows = await queryRows<Omit<RcmUnregisteredBill, 'tax'> & { tax: string }>(
+  type Row = Omit<RcmUnregisteredBill, 'tax'> & {
+    tax: string;
+    document: string;
+    registration_status: string;
+    supply_received_on: string | null;
+    reverse_charge: boolean;
+  };
+  const purchases = await queryRows<Row>(
     `SELECT p.id AS purchase_id, p.bill_number, to_char(p.bill_date, 'YYYY-MM-DD') AS bill_date, s.name AS supplier_name,
-            (COALESCE(p.igst_total, 0) + COALESCE(p.cgst_total, 0) + COALESCE(p.sgst_total, 0))::text AS tax
+            (COALESCE(p.igst_total, 0) + COALESCE(p.cgst_total, 0) + COALESCE(p.sgst_total, 0))::text AS tax,
+            'purchase' AS document,
+            COALESCE(p.supplier_registration_status, 'unknown') AS registration_status,
+            to_char(p.supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
+            p.is_reverse_charge AS reverse_charge
        FROM purchases p
        LEFT JOIN suppliers s ON s.id = p.supplier_id
       WHERE p.business_id = $1::uuid AND p.deleted_at IS NULL
         AND COALESCE(p.status, '') NOT IN ('draft', 'cancelled')
         AND p.is_reverse_charge = true
-        AND COALESCE(TRIM(p.supplier_gstin), '') = ''
-        AND p.bill_date BETWEEN ($2::date - $3::int) AND $2::date
+        AND p.bill_date BETWEEN ($2::date - 400) AND $2::date
       ORDER BY p.bill_date
       LIMIT 200`,
-    [businessId, asOn, SELF_INVOICE_DAYS],
+    [businessId, asOn],
   );
-  return rows.map((r) => ({ ...r, tax: Number(r.tax) }));
+  const expenses = await queryRows<Row>(
+    `SELECT e.id AS purchase_id, e.reference_number AS bill_number, to_char(e.expense_date, 'YYYY-MM-DD') AS bill_date,
+            s.name AS supplier_name,
+            (COALESCE(e.igst_amount, 0) + COALESCE(e.cgst_amount, 0) + COALESCE(e.sgst_amount, 0))::text AS tax,
+            'expense' AS document,
+            COALESCE(e.supplier_registration_status, 'unknown') AS registration_status,
+            to_char(e.supply_received_on, 'YYYY-MM-DD') AS supply_received_on,
+            e.is_reverse_charge AS reverse_charge
+       FROM expenses e
+       LEFT JOIN suppliers s ON s.id = e.supplier_id
+      WHERE e.business_id = $1::uuid AND e.deleted_at IS NULL
+        AND e.is_reverse_charge = true
+        AND e.expense_date BETWEEN ($2::date - 400) AND $2::date
+      ORDER BY e.expense_date
+      LIMIT 200`,
+    [businessId, asOn],
+  );
+  return [...purchases, ...expenses].map((r) => ({
+    ...r,
+    tax: Number(r.tax),
+    document: r.document === 'expense' ? 'expense' : 'purchase',
+    registration_status:
+      r.registration_status === 'registered' || r.registration_status === 'unregistered' ? r.registration_status : 'unknown',
+    reverse_charge: r.reverse_charge !== false,
+    supply_received_on: r.supply_received_on || null,
+  }));
 }
 
 export interface Evaluation {

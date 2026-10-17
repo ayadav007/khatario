@@ -88,7 +88,8 @@ export function isValidGstin(value: unknown): boolean {
 
 /**
  * Normalises an optional GSTIN field from a request body.
- * Empty → null (unregistered); invalid → error message; valid → canonical GSTIN + derived state/PAN.
+ * Empty → null (number not entered; this is not an unregistered-supplier finding).
+ * Invalid → error message. Valid → canonical GSTIN. A valid checksum is not proof the registration is active.
  */
 export function parseOptionalGstin(
   value: unknown

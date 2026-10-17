@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { GSTR2BReconciliationEngine } from '@/lib/gst/gstr2b-reconciliation';
 import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
+import { getPool } from '@/lib/db';
+import { markGstReadinessStale, markReturnReconciled } from '@/lib/gst/period-freshness';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
 
@@ -40,7 +42,13 @@ export async function POST(request: NextRequest) {
     if (!access.ok) return access.response;
     
     const matches = await reconciliationEngine.reconcile(access.businessId, filing_period);
-    
+    const pool = getPool();
+    await markGstReadinessStale(pool, access.businessId, {
+      dates: [`${filing_period}-01`],
+      monthly: ['gstr3b'],
+    });
+    await markReturnReconciled(pool, access.businessId, 'gstr2b', filing_period);
+
     return NextResponse.json({
       success: true,
       filing_period,

@@ -5,6 +5,7 @@ import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access'
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { calculateCreditMetrics, getCreditWarningMessage } from '@/lib/credit-utils';
 import { checkAndSendCreditAlerts } from '@/lib/credit-alerts';
+import { finishCreditAlert } from '@/lib/credit-alert-finish';
 import { FeatureKeys } from '@/lib/featureKeys';
 import {
   getAuthenticatedUserId,
@@ -18,6 +19,11 @@ import { resolveCatalogItemIdForPurchase } from '@/lib/matching/resolve-catalog-
 import { createCatalogItemFromAdHocPurchaseLine } from '@/lib/purchases/create-catalog-item-from-purchase-line';
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
+import { checkGstin } from '@/lib/tax/gstin';
+import { parseRegistrationStatus } from '@/lib/gst/rule47a';
+import { matchRcmRules, type RcmRule } from '@/lib/gst/rcm-rules';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { resolvePurchaseItemName } from '@/lib/purchases/purchase-line-name';
 import { purchaseLineItcType } from '@/lib/purchases/itc-type';
 import { purchaseCessTotal, purchaseLineCess } from '@/lib/purchases/cess';
 import { resolveSupplierRegistration } from '@/lib/gst/registration';
@@ -305,7 +311,62 @@ export async function POST(request: NextRequest) {
       invoice_number: invoice_number_input,
       supplier_gstin: supplier_gstin_input,
       extraction_job_id,
+      supply_received_on: supply_received_on_input,
+      supplier_registration_status: registration_input,
+      duplicate_reason: duplicate_reason_input,
     } = body;
+    const draftId = typeof (body as { id?: unknown }).id === 'string' ? (body as { id: string }).id : null;
+    const allowDuplicate = (body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill === true;
+    const registrationStatus = parseRegistrationStatus(registration_input);
+    const supplyReceivedOn =
+      typeof supply_received_on_input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(supply_received_on_input)
+        ? supply_received_on_input
+        : null;
+    if (typeof supplier_gstin_input === 'string' && supplier_gstin_input.trim()) {
+      const gstinCheck = checkGstin(supplier_gstin_input);
+      if (!gstinCheck.valid) {
+        return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
+      }
+    }
+    const ruleRows = await client.query<{
+      id: string; catalogue_version: number; effective_from: string; effective_to: string | null;
+      supplier_type: RcmRule['supplierType']; sac_prefix: string | null; hsn_prefix: string | null;
+      expense_category: string | null; source_citation: string; review_only: boolean;
+    }>(
+      `SELECT id, catalogue_version, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
+              to_char(effective_to, 'YYYY-MM-DD') AS effective_to, supplier_type, sac_prefix, hsn_prefix,
+              expense_category, source_citation, review_only
+         FROM gst_rcm_rules`
+    );
+    const rcm = matchRcmRules(
+      {
+        billDate: String(bill_date).slice(0, 10),
+        registrationStatus,
+        reverseCharge: Boolean(is_reverse_charge),
+        sac: null,
+        hsn: null,
+        expenseCategory: null,
+      },
+      ruleRows.rows.map((row) => ({
+        id: row.id,
+        catalogueVersion: row.catalogue_version,
+        effectiveFrom: row.effective_from,
+        effectiveTo: row.effective_to,
+        supplierType: row.supplier_type,
+        sacPrefix: row.sac_prefix,
+        hsnPrefix: row.hsn_prefix,
+        expenseCategory: row.expense_category,
+        sourceCitation: row.source_citation,
+        reviewOnly: row.review_only,
+      }))
+    );
+    const rcmReview = (body as { rcm_review?: string }).rcm_review;
+    if (rcm.result === 'suspected' && rcmReview !== 'on' && rcmReview !== 'not_reverse_charge') {
+      return NextResponse.json(
+        { error: rcm.message, code: 'RCM_REVIEW_REQUIRED', citation: rcm.citation },
+        { status: 409 }
+      );
+    }
 
     const normalizedSupplierId =
       supplier_id != null && String(supplier_id).trim() !== ''
@@ -481,11 +542,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let overrideExistingId: string | null = null;
+    let overrideReason: string | null = null;
+    let overrideSupplierName: string | null = null;
     if (normalizedSupplierId) {
-      const supOk = await queryOne<{ id: string }>(
-        `SELECT id FROM suppliers WHERE id = $1 AND business_id = $2 AND (is_active IS NULL OR is_active = true)`,
+      const supOk = await queryOne<{ id: string; name: string }>(
+        `SELECT id, name FROM suppliers WHERE id = $1 AND business_id = $2 AND (is_active IS NULL OR is_active = true)`,
         [normalizedSupplierId, business_id]
       );
+      overrideSupplierName = supOk?.name ?? null;
       if (!supOk) {
         return NextResponse.json(
           { error: 'Supplier not found for this business', code: 'SUPPLIER_INVALID' },
@@ -493,23 +558,37 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if ((body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill !== true) {
-        const duplicate = await findDuplicateSupplierBill(client, {
-          businessId: business_id,
-          supplierId: normalizedSupplierId,
-          billNumber: invoice_number_input || bill_number,
-          billDate: bill_date,
-        });
-        if (duplicate) {
-          return NextResponse.json(
-            {
-              error: `Bill ${duplicate.bill_number} from this supplier is already recorded (${String(duplicate.bill_date).slice(0, 10)}, ${duplicate.status}). Recording it again would claim ITC twice.`,
-              code: 'DUPLICATE_SUPPLIER_BILL',
-              existing_purchase_id: duplicate.id,
-            },
-            { status: 409 }
-          );
-        }
+      const duplicate = await findDuplicateSupplierBill(client, {
+        businessId: business_id,
+        supplierId: normalizedSupplierId,
+        billNumber: invoice_number_input || bill_number,
+        billDate: bill_date,
+        excludePurchaseId: draftId,
+      });
+      const duplicateReason = typeof duplicate_reason_input === 'string' ? duplicate_reason_input.trim() : '';
+      if (duplicate && !allowDuplicate) {
+        return NextResponse.json(
+          {
+            error: `Bill ${duplicate.bill_number} from this supplier is already recorded (${String(duplicate.bill_date).slice(0, 10)}, ${duplicate.status}). Recording it again would claim ITC twice.`,
+            code: 'DUPLICATE_SUPPLIER_BILL',
+            existing_purchase_id: duplicate.id,
+          },
+          { status: 409 }
+        );
+      }
+      if (duplicate && allowDuplicate && !duplicateReason) {
+        return NextResponse.json(
+          {
+            error: 'A duplicate bill needs a reason before it can be saved.',
+            code: 'DUPLICATE_REASON_REQUIRED',
+            existing_purchase_id: duplicate.id,
+          },
+          { status: 409 }
+        );
+      }
+      if (duplicate && allowDuplicate) {
+        overrideExistingId = duplicate.id;
+        overrideReason = duplicateReason;
       }
     }
 
@@ -669,8 +748,79 @@ export async function POST(request: NextRequest) {
       paymentStatus = 'partially_paid';
     }
 
-    // Insert purchase
-    const purchaseResult = await client.query(
+    // Insert a new bill, or replace a draft the purchase form opened with ?edit=
+    let purchaseResult;
+    if (draftId) {
+      const existing = await client.query(
+        `SELECT id, status FROM purchases
+          WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [draftId, business_id]
+      );
+      if (!existing.rows[0]) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: 'Purchase not found' }, { status: 404 });
+      }
+      if (existing.rows[0].status !== 'draft') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'Only a draft purchase can be edited. Cancel a final bill and record a new one.',
+            code: 'PURCHASE_NOT_EDITABLE',
+          },
+          { status: 409 }
+        );
+      }
+      purchaseResult = await client.query(
+        `UPDATE purchases SET
+           branch_id = $1, supplier_id = $2, bill_number = $3, bill_date = $4,
+           status = $5, subtotal = $6, tax_total = $7, cgst_total = $8, sgst_total = $9, igst_total = $10,
+           round_off = $11, grand_total = $12, paid_amount = $13, balance_amount = $14, payment_status = $15, notes = $16,
+           place_of_supply_state_code = $17, is_reverse_charge = $18, supplier_gstin = $19,
+           document_type = $20, port_code = $21, itc_eligible = $22,
+           price_mode = $23, supplier_state_code = $24, invoice_number = $25, cess_total = $26, due_date = $27,
+           supply_received_on = $28, supplier_registration_status = $29, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $30 AND business_id = $31
+         RETURNING *`,
+        [
+          finalBranchId,
+          normalizedSupplierId,
+          bill_number || null,
+          bill_date,
+          status,
+          finalSubtotal,
+          finalTaxTotal,
+          finalCgstTotal,
+          finalSgstTotal,
+          finalIgstTotal,
+          finalRoundOff,
+          finalGrandTotal,
+          paid_amount,
+          balanceAmount,
+          paymentStatus,
+          notes || null,
+          finalPlaceOfSupply || null,
+          is_reverse_charge,
+          effectiveSupplierGstin,
+          document_type,
+          port_code || null,
+          itc_eligible,
+          headerPriceMode,
+          (supplierStateResolved && String(supplierStateResolved).trim().length >= 2
+            ? String(supplierStateResolved).trim().slice(0, 2)
+            : supplierStateForGst) || null,
+          invoiceNumberStored,
+          cessTotal,
+          dueDate,
+          supplyReceivedOn,
+          registrationStatus,
+          draftId,
+          business_id,
+        ]
+      );
+      await client.query(`DELETE FROM purchase_items WHERE purchase_id = $1`, [draftId]);
+    } else {
+      purchaseResult = await client.query(
       `
       INSERT INTO purchases (
         business_id, branch_id, supplier_id, bill_number, bill_date,
@@ -678,9 +828,10 @@ export async function POST(request: NextRequest) {
         round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
         place_of_supply_state_code, is_reverse_charge, supplier_gstin,
         document_type, port_code, itc_eligible,
-        price_mode, supplier_state_code, invoice_number, cess_total, due_date
+        price_mode, supplier_state_code, invoice_number, cess_total, due_date,
+        supply_received_on, supplier_registration_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
       RETURNING *
     `,
       [
@@ -714,12 +865,27 @@ export async function POST(request: NextRequest) {
         invoiceNumberStored,
         cessTotal,
         dueDate,
+        supplyReceivedOn,
+        registrationStatus,
       ]
     );
+    }
 
     const purchase = purchaseResult.rows[0];
     const uuidRe =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    for (const item of items as Array<{ item_id?: string | null; item_name?: string | null }>) {
+      const name = await resolvePurchaseItemName(client, business_id, item);
+      if (!name) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Each purchase line needs an item name or a catalogue product.', code: 'ITEM_NAME_REQUIRED' },
+          { status: 400 }
+        );
+      }
+      item.item_name = name;
+    }
 
     // Insert purchase items with GST breakdown
     for (let i = 0; i < items.length; i++) {
@@ -1035,6 +1201,38 @@ export async function POST(request: NextRequest) {
       purchaseStatus: status === 'final' ? 'final' : 'draft',
     });
 
+    if (overrideExistingId && overrideReason) {
+      const existingBill = await client.query<{ bill_number: string | null; bill_date: string }>(
+        `SELECT bill_number, to_char(bill_date, 'YYYY-MM-DD') AS bill_date
+           FROM purchases WHERE id = $1 AND business_id = $2`,
+        [overrideExistingId, business_id]
+      );
+      await client.query(
+        `INSERT INTO purchase_duplicate_overrides
+           (business_id, purchase_id, existing_purchase_id, reason, created_by,
+            purchase_bill_number, purchase_bill_date, existing_bill_number, existing_bill_date, supplier_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9::date, $10)`,
+        [
+          business_id,
+          purchase.id,
+          overrideExistingId,
+          overrideReason,
+          created_by,
+          bill_number || null,
+          String(bill_date).slice(0, 10),
+          existingBill.rows[0]?.bill_number ?? null,
+          existingBill.rows[0]?.bill_date ?? null,
+          overrideSupplierName,
+        ]
+      );
+    }
+    if (status !== 'draft') {
+      await markGstReadinessStale(client, business_id, {
+        dates: [String(bill_date).slice(0, 10)],
+        monthly: ['gstr2b', 'gstr3b'],
+      });
+    }
+
     await client.query('COMMIT');
 
     // CRITICAL: Log activity for audit trail
@@ -1098,16 +1296,22 @@ export async function POST(request: NextRequest) {
           );
 
           if (projectedMetrics) {
-            checkAndSendCreditAlerts(
-              business_id,
-              'supplier',
-              purchase.supplier_id,
-              creditLimit,
-              currentBalance,
-              projectedMetrics,
-              'purchase',
-              purchase.id
-            ).catch((err) => console.error('Error sending credit alert:', err));
+            try {
+              await finishCreditAlert(
+                checkAndSendCreditAlerts(
+                  business_id,
+                  'supplier',
+                  purchase.supplier_id,
+                  creditLimit,
+                  currentBalance,
+                  projectedMetrics,
+                  'purchase',
+                  purchase.id
+                )
+              );
+            } catch (alertError) {
+              console.error('Error sending credit alert:', alertError);
+            }
           }
         }
       } catch (creditError) {

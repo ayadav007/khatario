@@ -11,6 +11,7 @@ import { releaseDocumentAdvances } from '@/lib/accounting/advance-service';
 import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { RULE37_REAVAIL, RULE37_REVERSAL } from '@/lib/gst/rule37';
 import { recostAfterStockChange, stockItemsForDocument } from '@/lib/inventory/fifo-recost';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export class PurchaseCancelError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -218,6 +219,10 @@ export async function cancelFinalPurchase(
     [p.purchaseId, p.businessId, p.userId, p.reason]
   );
   await recostAfterStockChange(client, p.businessId, await stockItemsForDocument(client, 'purchase', p.purchaseId));
+  await markGstReadinessStale(client, p.businessId, {
+    dates: [purchase.bill_date ? String(purchase.bill_date).slice(0, 10) : null],
+    monthly: ['gstr2b', 'gstr3b'],
+  });
 
   return { reversedLines, releasedAdvance: released, stockMovements };
 }

@@ -13,6 +13,8 @@ import { shouldUseSoftDelete } from '@/lib/soft-delete-entitlements';
 import { cancelFinalPurchase, PurchaseCancelError } from '@/lib/purchases/cancel-purchase';
 import { deleteDraftPurchase } from '@/lib/purchases/delete-draft-purchase';
 import { purchaseReturnLineKey } from '@/lib/purchases/purchase-return-lines';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
+import { rejectDocumentDateChange } from '@/lib/gst/document-dates';
 
 export const dynamic = 'force-dynamic';
 
@@ -178,6 +180,18 @@ export async function GET(
 }
 
 /**
+ * Purchase bill dates are fixed once the bill is recorded.
+ * Cancel the bill and record a new one if the date was wrong.
+ */
+export async function PUT() {
+  return rejectDocumentDateChange('purchase');
+}
+
+export async function PATCH() {
+  return rejectDocumentDateChange('purchase');
+}
+
+/**
  * DELETE /api/purchases/[id]
  * - Final bill: cancelled through reversal (lib/purchases/cancel-purchase.ts); nothing posted is
  *   deleted. With soft delete the cancelled bill is also hidden from lists, as before.
@@ -294,6 +308,10 @@ export async function DELETE(
         purchaseId,
         userId,
         softDelete: useSoftDeletePurchase,
+      });
+      await markGstReadinessStale(client, purchase.business_id, {
+        dates: [purchase.bill_date ? String(purchase.bill_date).slice(0, 10) : null],
+        monthly: ['gstr2b', 'gstr3b'],
       });
       await client.query('COMMIT');
       return NextResponse.json({

@@ -4,6 +4,7 @@
  * it applies. Nothing here is tax advice: every alert names its provision and suggests a CA.
  */
 import { daysBetween, RULE37_DAYS, type Rule37Row } from '@/lib/gst/rule37';
+import { rule47aResult, type Rule47aSupply } from '@/lib/gst/rule47a';
 import {
   calculateLateFee,
   gstr3bDueDateIso,
@@ -519,28 +520,51 @@ export interface RcmUnregisteredBill {
   bill_date: string;
   supplier_name: string | null;
   tax: number;
+  document?: 'purchase' | 'expense';
+  registration_status?: Rule47aSupply['registrationStatus'];
+  supply_received_on?: string | null;
+  reverse_charge?: boolean;
 }
 
 export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]): ComplianceFinding | null {
-  const open = bills
-    .map((b) => ({ ...b, due: addDays(b.bill_date, SELF_INVOICE_DAYS) }))
-    .filter((b) => b.bill_date <= asOn && b.due >= asOn);
-  if (!open.length) return null;
-  open.sort((a, b) => a.due.localeCompare(b.due));
-  const firstDue = open[0].due;
-  const daysLeft = daysBetween(asOn, firstDue);
-  const tax = round2(open.reduce((s, b) => s + b.tax, 0));
+  const evaluated = bills.map((b) => {
+    const supply: Rule47aSupply = {
+      id: b.purchase_id,
+      document: b.document ?? 'purchase',
+      number: b.bill_number,
+      supplierName: b.supplier_name,
+      tax: b.tax,
+      reverseCharge: b.reverse_charge !== false,
+      registrationStatus: b.registration_status ?? 'unknown',
+      supplyReceivedOn: b.supply_received_on ?? null,
+    };
+    return { bill: b, result: rule47aResult(supply) };
+  });
+  const deadlines = evaluated
+    .filter((e): e is typeof e & { result: { kind: 'deadline'; due: string } } => e.result.kind === 'deadline')
+    .filter((e) => e.result.due >= asOn);
+  const unverified = evaluated.filter((e) => e.result.kind === 'unverified');
+  if (!deadlines.length && !unverified.length) return null;
+
+  deadlines.sort((a, b) => a.result.due.localeCompare(b.result.due));
+  const firstDue = deadlines[0]?.result.due ?? null;
+  const daysLeft = firstDue ? daysBetween(asOn, firstDue) : null;
+  const tax = round2([...deadlines, ...unverified].reduce((s, e) => s + e.bill.tax, 0));
+  const unverifiedNote = unverified.length
+    ? ` ${plural(unverified.length, 'supply')} still ${unverified.length === 1 ? 'has' : 'have'} an unverified Rule 47A deadline.`
+    : '';
   return {
     checkId: 'rcm_self_invoice',
-    key: 'rcm_self_invoice:open',
-    severity: daysLeft <= 5 ? 'warning' : 'info',
-    stage: daysLeftStage(daysLeft, [5, 30]) ?? '30d',
-    title: `Issue a self-invoice for ${plural(open.length, 'reverse charge purchase')}`,
-    message:
-      `${plural(open.length, 'purchase')} under reverse charge ${open.length === 1 ? 'is' : 'are'} from a supplier without a GSTIN. ` +
-      `You must issue a self-invoice within 30 days of receiving the goods or services, the first by ${formatDate(firstDue)}, ` +
-      `and a payment voucher when you pay the supplier. Pay the reverse charge tax in cash through GSTR-3B; ITC can then be claimed. ` +
-      `Khatario does not create self-invoices yet, so keep one in your records.`,
+    key: firstDue ? 'rcm_self_invoice:open' : 'rcm_self_invoice:unverified',
+    severity: daysLeft !== null && daysLeft <= 5 ? 'warning' : 'info',
+    stage: daysLeft === null ? 'unverified' : (daysLeftStage(daysLeft, [5, 30]) ?? '30d'),
+    title: firstDue
+      ? `Issue a self-invoice for ${plural(deadlines.length, 'reverse charge supply')}`
+      : 'Rule 47A deadline is unverified',
+    message: firstDue
+      ? `${plural(deadlines.length, 'supply')} under reverse charge from an unregistered supplier ${deadlines.length === 1 ? 'needs' : 'need'} a self-invoice by ${formatDate(firstDue)} (30 days from receipt). ` +
+        `Khatario does not create the self-invoice. Issue it outside the app and pay the tax in cash through GSTR-3B.${unverifiedNote}`
+      : `Supplier status or the receipt date is not established, so no Rule 47A date is calculated.${unverifiedNote}`,
     legalRef: 'CGST Act, Section 31(3)(f) and (g); CGST Rules, Rule 47A',
     actionUrl: null,
     actionLabel: null,
@@ -548,13 +572,17 @@ export function rcmSelfInvoiceFinding(asOn: string, bills: RcmUnregisteredBill[]
     dueDate: firstDue,
     amount: tax > 0 ? tax : null,
     details: {
-      rcm_bills: open.slice(0, 20).map((b) => ({
-        purchase_id: b.purchase_id,
-        bill_number: b.bill_number,
-        bill_date: b.bill_date,
-        supplier_name: b.supplier_name,
-        self_invoice_by: b.due,
-        tax: round2(b.tax),
+      rcm_bills: deadlines.slice(0, 20).map((e) => ({
+        purchase_id: e.bill.purchase_id,
+        bill_number: e.bill.bill_number,
+        bill_date: e.bill.bill_date,
+        supplier_name: e.bill.supplier_name,
+        self_invoice_by: e.result.kind === 'deadline' ? e.result.due : null,
+        tax: round2(e.bill.tax),
+      })),
+      unverified: unverified.slice(0, 20).map((e) => ({
+        purchase_id: e.bill.purchase_id,
+        message: e.result.kind === 'unverified' ? e.result.message : '',
       })),
     },
   };

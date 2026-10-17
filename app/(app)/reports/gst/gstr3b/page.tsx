@@ -121,6 +121,12 @@ export default function GSTR3BPage() {
       export: format
     });
     
+    const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+    const gate = await confirmReturnDownload('gstr3b', `${year}-${month.toString().padStart(2, '0')}`);
+    if (!gate.ok) {
+      if (gate.message) toast.error(gate.message);
+      return;
+    }
     window.open(`/api/reports/gst/gstr3b?${query}`, '_blank');
   };
 

@@ -6,6 +6,7 @@ import { AlertCircle, FileText, Calendar, Clock, Package, X, ChevronRight } from
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
+import { itcMenuPresentation } from '@/lib/gst/pending-itc';
 
 interface PendingAction {
   id: string;
@@ -32,9 +33,31 @@ interface PendingActionsButtonProps {
 
 export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [itcPending, setItcPending] = useState<{ count: number | null; note: string | null }>({
+    count: null,
+    note: null,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const { isPrimaryAdmin } = useAuth();
   const { currentBranchId } = useBranch();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/gst/itc-decisions/pending');
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        setItcPending(itcMenuPresentation(body));
+      } catch {
+        if (!cancelled) setItcPending({ count: 0, note: null });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Draft count comes from API (draftInvoicesCount), not from the last 5 "recent" rows — that
@@ -88,8 +111,8 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
       },
       {
         id: 'itc',
-        label: 'ITC Decisions Pending',
-        count: 0, // Placeholder - replace with actual ITC count
+        label: itcPending.note || 'ITC Decisions Pending',
+        count: itcPending.note ? 0 : itcPending.count || 0,
         href: '/reports/gst/gstr2b-reconciliation',
         color: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-200 dark:bg-amber-950/35 dark:border-amber-800',
         icon: Clock,
@@ -103,11 +126,11 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
         icon: Package,
       },
     ];
-  }, [data, isPrimaryAdmin, currentBranchId]);
+  }, [data, isPrimaryAdmin, currentBranchId, itcPending]);
 
   // Calculate total pending count
   const totalPending = pendingActions.reduce((sum, action) => sum + action.count, 0);
-  const hasPendingActions = totalPending > 0;
+  const hasPendingActions = totalPending > 0 || Boolean(itcPending.note);
 
   // Close when clicking outside
   useEffect(() => {
@@ -144,7 +167,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
         >
           PENDING
         </div>
-        {hasPendingActions && (
+        {hasPendingActions && totalPending > 0 && (
           <span className="absolute top-2 text-2xs font-bold bg-red-500 rounded-full w-5 h-5 flex items-center justify-center">
             {totalPending > 9 ? '9+' : totalPending}
           </span>
@@ -173,7 +196,7 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
           <div className="space-y-2">
             {hasPendingActions ? (
               pendingActions
-                .filter((action) => action.count > 0)
+                .filter((action) => action.count > 0 || (action.id === 'itc' && (itcPending.note || itcPending.count !== null)))
                 .map((action) => {
                   const Icon = action.icon;
                   return (
@@ -198,7 +221,11 @@ export const PendingActionsButton: React.FC<PendingActionsButtonProps> = ({ data
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-2xl font-bold text-gray-900">{action.count}</span>
+                          {action.id === 'itc' && itcPending.note ? (
+                            <span className="text-xs font-medium text-right max-w-[9rem]">{itcPending.note}</span>
+                          ) : action.id === 'itc' && itcPending.count === null ? null : (
+                            <span className="text-2xl font-bold text-gray-900">{action.count}</span>
+                          )}
                           <ChevronRight className="w-5 h-5 text-gray-400" />
                         </div>
                       </div>

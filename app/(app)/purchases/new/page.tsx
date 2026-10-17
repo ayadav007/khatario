@@ -192,6 +192,8 @@ export default function NewPurchasePage() {
     status: 'draft',
     place_of_supply_state_code: '',
     is_reverse_charge: false,
+    supplier_registration_status: 'unknown' as 'registered' | 'unregistered' | 'unknown',
+    supply_received_on: '',
     document_type: 'tax_invoice',
     port_code: '',
     itc_eligible: true,
@@ -204,6 +206,7 @@ export default function NewPurchasePage() {
   });
   const [showAdvancedTax, setShowAdvancedTax] = useState(false);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [showUploader, setShowUploader] = useState(false);
   const [extractedData, setExtractedData] = useState<any>(null);
   const [lastInvoiceFillTrace, setLastInvoiceFillTrace] = useState<LastInvoiceFillTrace | null>(null);
@@ -336,6 +339,56 @@ export default function NewPurchasePage() {
       /* ignore corrupt payload */
     }
   }, [pathname, isMobile, business?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = new URLSearchParams(window.location.search).get('edit');
+    if (!id || !business?.id) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`/api/purchases/${id}`, { credentials: 'include' });
+      if (!res.ok || cancelled) return;
+      const data = await res.json();
+      const purchase = data.purchase;
+      if (!purchase || purchase.status !== 'draft' || cancelled) return;
+      setEditingPurchaseId(purchase.id);
+      setSupplierSearch(purchase.supplier_name || '');
+      setFormData((prev) => ({
+        ...prev,
+        supplier_id: purchase.supplier_id || '',
+        bill_number: purchase.bill_number || '',
+        bill_date: String(purchase.bill_date || prev.bill_date).slice(0, 10),
+        due_date: purchase.due_date ? String(purchase.due_date).slice(0, 10) : '',
+        notes: purchase.notes || '',
+        place_of_supply_state_code: purchase.place_of_supply_state_code || prev.place_of_supply_state_code,
+        is_reverse_charge: Boolean(purchase.is_reverse_charge),
+        supplier_registration_status: purchase.supplier_registration_status || 'unknown',
+        supply_received_on: purchase.supply_received_on ? String(purchase.supply_received_on).slice(0, 10) : '',
+        supplier_gstin: purchase.supplier_gstin || '',
+        itc_eligible: purchase.itc_eligible !== false,
+      }));
+      setPurchaseItems(
+        (purchase.items || []).map((item: { id: string; item_id?: string; item_name?: string; hsn_sac?: string; quantity?: number; unit?: string; unit_price?: number; discount_percent?: number; tax_rate?: number; line_item_type?: string }, index: number) => ({
+          id: item.id || `item-${index}`,
+          item_id: item.item_id || '',
+          item_name: item.item_name || '',
+          item_type: item.line_item_type === 'service' ? 'service' : 'goods',
+          hsn_sac: item.hsn_sac || '',
+          quantity: Number(item.quantity) || 1,
+          unit: item.unit || 'pcs',
+          unit_price: Number(item.unit_price) || 0,
+          discount_percent: Number(item.discount_percent) || 0,
+          discount_amount: 0,
+          discount_on_tax_inclusive: false,
+          tax_rate: Number(item.tax_rate) || 0,
+          fromBillExtract: false,
+        }))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [business?.id]);
 
   const effectivePurchaseBranchId = useMemo(() => {
     if (userBranchId) return userBranchId;
@@ -1241,6 +1294,7 @@ export default function NewPurchasePage() {
 
       const payload = {
         ...formData,
+        ...(editingPurchaseId ? { id: editingPurchaseId } : {}),
         supplier_id: supplierId,
         status,
         business_id: business.id,
@@ -1680,6 +1734,32 @@ export default function NewPurchasePage() {
             />
             <span className="text-sm text-text-secondary">ITC Eligible</span>
           </label>
+        </div>
+        <p className="text-xs text-gray-500">
+          RCM coverage: incomplete. No notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Supplier registration on this supply</label>
+            <select
+              value={formData.supplier_registration_status}
+              onChange={(e) => setFormData({ ...formData, supplier_registration_status: e.target.value as 'registered' | 'unregistered' | 'unknown' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="unknown">Unknown</option>
+              <option value="registered">Registered</option>
+              <option value="unregistered">Unregistered</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">Date goods or services were received</label>
+            <input
+              type="date"
+              value={formData.supply_received_on}
+              onChange={(e) => setFormData({ ...formData, supply_received_on: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
         </div>
         </AnnotatedFormSection>
 

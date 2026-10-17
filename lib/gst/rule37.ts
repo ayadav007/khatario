@@ -207,5 +207,12 @@ export async function syncRule37ForBill(
 
   const reversed = await post('reverse');
   const reavailed = await post('reavail');
+  if (reversed > 0 || reavailed > 0) {
+    const { markGstReadinessStale } = await import('@/lib/gst/period-freshness');
+    await markGstReadinessStale(client, p.businessId, {
+      dates: [p.entryDate],
+      monthly: ['gstr3b'],
+    });
+  }
   return { reversed, reavailed };
 }

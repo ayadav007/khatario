@@ -10,6 +10,7 @@ import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib
 import { resolveBranchId } from '@/lib/branch-helpers';
 import { recomputeInvoiceBalance } from '@/lib/invoices/invoice-balance';
 import { computeLineGst, round2 } from '@/lib/invoices/line-gst';
+import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -517,6 +518,10 @@ export async function POST(request: NextRequest) {
       poolClient: client,
     });
 
+    await markGstReadinessStale(client, business_id, {
+      dates: [debit_note_date ? String(debit_note_date).slice(0, 10) : null],
+      monthly: ['gstr1', 'gstr3b'],
+    });
     await client.query('COMMIT');
 
     return NextResponse.json({ debitNote }, { status: 201 });

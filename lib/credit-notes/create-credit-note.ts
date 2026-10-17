@@ -429,5 +429,11 @@ export async function createCreditNoteInTransaction(client: PoolClient, input: C
     poolClient: client,
   });
 
+  const { markGstReadinessStale } = await import('@/lib/gst/period-freshness');
+  await markGstReadinessStale(client, business_id, {
+    dates: [String(credit_note_date).slice(0, 10)],
+    monthly: ['gstr1', 'gstr3b'],
+  });
+
   return creditNote;
 }

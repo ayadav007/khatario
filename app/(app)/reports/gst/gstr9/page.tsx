@@ -124,6 +124,13 @@ export default function GSTR9Page() {
       overrides: JSON.stringify(overrides)
     });
     
+    const { confirmReturnDownload } = await import('@/lib/gst/confirm-return-download');
+    const fyKey = `${financialYear}-${String(financialYear + 1).slice(2)}`;
+    const gate = await confirmReturnDownload('gstr9', fyKey);
+    if (!gate.ok) {
+      if (gate.message) toast.error(gate.message);
+      return;
+    }
     window.open(`/api/reports/gst/gstr9?${query}`, '_blank');
   };
 
