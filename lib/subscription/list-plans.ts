@@ -4,7 +4,8 @@ import * as db from '@/lib/db';
  * Active subscription plans with Feature/Limits registry merged into JSONB features.
  * Shared by admin, tenant, and public plan listing routes.
  */
-export async function listActiveSubscriptionPlans() {
+export async function listActiveSubscriptionPlans(options?: { includeInactive?: boolean }) {
+  const activeOnly = options?.includeInactive ? '' : 'WHERE is_active = true';
   const select = (extra: string) => `
     SELECT 
       ${extra}
@@ -23,8 +24,8 @@ export async function listActiveSubscriptionPlans() {
       created_at,
       updated_at
     FROM subscription_plans
-    WHERE is_active = true
-    ORDER BY sort_order ASC
+    ${activeOnly}
+    ORDER BY sort_order ASC, id ASC
   `;
   // is_public / bundled_hr_plan_id come from migration 387.
   let plans: Record<string, unknown>[];

@@ -207,9 +207,13 @@ export default function PlansManagement() {
         {plans.map((plan) => (
           <div
             key={plan.id}
-            className={`bg-white rounded-xl shadow-sm border-2 ${
-              plan.id === 'growth' ? 'border-primary-500' : 'border-gray-200'
-            } p-6 hover:shadow-lg transition`}
+            className={`rounded-xl shadow-sm border-2 p-6 hover:shadow-lg transition ${
+              !plan.is_active
+                ? 'border-amber-300 bg-amber-50/40'
+                : plan.id === 'growth'
+                  ? 'border-primary-500 bg-white'
+                  : 'border-gray-200 bg-white'
+            }`}
           >
             {/* Header */}
             <div className="flex justify-between items-start mb-4">
@@ -220,7 +224,13 @@ export default function PlansManagement() {
                 </div>
                 <p className="text-sm text-gray-600">{plan.description}</p>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getPlanColor(plan.id)}`}>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  plan.is_active
+                    ? getPlanColor(plan.id)
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}
+              >
                 {plan.is_active ? 'Active' : 'Inactive'}
               </span>
             </div>

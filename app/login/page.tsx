@@ -2,16 +2,25 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import Link from 'next/link';
+import { FileText, MessageCircle, Users } from 'lucide-react';
 import {
   isConnectAgentSeat,
   resolveHomePathForUser,
 } from '@/lib/users/connect-seats';
+
+const SHOP_POINTS = [
+  { icon: FileText, label: 'GST bills and estimates' },
+  { icon: Users, label: 'Customer and supplier khata' },
+  { icon: MessageCircle, label: 'Collect on WhatsApp' },
+] as const;
+
+const loginField = 'min-h-14 rounded-xl px-4 !text-base md:min-h-16 md:!text-lg';
+const loginButton = 'w-full !min-h-12 !text-base md:!min-h-14 md:!text-lg';
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -223,17 +232,52 @@ export default function LoginPage() {
     }
   };
 
+  const heading = mode === 'login' ? 'Sign in' : 'Reset your password';
+  const subheading =
+    mode === 'login'
+      ? step === 'auth'
+        ? `Signing in as ${phone}`
+        : 'Use the mobile number on your business account.'
+      : 'We send one code on WhatsApp and one to your email. Both are required.';
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md" padding="lg">
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary-500 rounded-xl flex items-center justify-center mb-4">
-            <span className="text-white font-bold text-2xl">KB</span>
-          </div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">Khatario</h1>
-          <p className="text-text-secondary text-sm">
-            {mode === 'login' ? 'Sign in to your business' : 'Reset your password'}
-          </p>
+    <div className="flex min-h-screen flex-col bg-[#f4f1ea] dark:bg-slate-950 lg:grid lg:grid-cols-2">
+      <aside className="relative overflow-hidden bg-[#063F35] px-5 py-5 text-white sm:px-8 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14 xl:px-16">
+        <div
+          className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute -bottom-24 -left-16 h-64 w-64 rounded-full bg-[#F58220]/20"
+          aria-hidden
+        />
+        <div className="relative">
+          <p className="text-lg font-semibold tracking-tight">Khatario</p>
+          <p className="mt-1 text-sm text-white/80 lg:hidden">Sign in to your shop</p>
+          <h1 className="mt-16 hidden max-w-md text-4xl font-bold leading-tight lg:block">
+            Your shop&apos;s bills, parties, and dues, in one place.
+          </h1>
+          <ul className="mt-8 hidden space-y-4 lg:block">
+            {SHOP_POINTS.map(({ icon: Icon, label }) => (
+              <li key={label} className="flex items-center gap-3 text-base text-white/90">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10">
+                  <Icon className="h-4 w-4" aria-hidden />
+                </span>
+                {label}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative mt-10 hidden text-sm text-white/70 lg:block">
+          GST billing for Indian businesses
+        </p>
+      </aside>
+
+      <main className="flex flex-1 items-center justify-center bg-white px-5 py-10 dark:bg-slate-900 sm:px-10 lg:px-16 lg:py-16">
+      <div className="w-full max-w-xl [&_label]:!text-base [&_label]:sm:!text-lg">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold tracking-tight text-text-primary sm:text-4xl">{heading}</h2>
+          <p className="mt-3 text-base leading-relaxed text-text-secondary sm:text-lg">{subheading}</p>
         </div>
 
         {mode === 'login' ? (
@@ -242,7 +286,7 @@ export default function LoginPage() {
             e.preventDefault();
             handleContinue();
           }}
-          className="space-y-4"
+          className="space-y-6"
         >
           {sessionNotice && (
             <div
@@ -263,6 +307,7 @@ export default function LoginPage() {
 
           <div className={step === 'phone' ? 'block' : 'hidden'}>
             <Input
+              className={loginField}
               inputRef={phoneInputRef}
               type="tel"
               label="Phone Number"
@@ -283,6 +328,7 @@ export default function LoginPage() {
           {step === 'auth' && (
             <>
               <Input
+                className={loginField}
                 type="password"
                 label="Password"
                 placeholder="Enter your password"
@@ -303,7 +349,7 @@ export default function LoginPage() {
           )}
 
           {mode === 'login' && (step === 'auth' || step === 'phone') ? (
-            <p className="text-right text-sm">
+            <p className="text-right text-base">
               <button
                 type="button"
                 className="text-primary-500 hover:text-primary-600 font-medium"
@@ -319,7 +365,7 @@ export default function LoginPage() {
           ) : null}
 
           {mode === 'login' ? (
-          <Button type="submit" className="w-full" isLoading={loading}>
+          <Button type="submit" size="lg" className={loginButton} isLoading={loading}>
             {step === 'phone' ? 'Continue' : 'Login'}
           </Button>
           ) : null}
@@ -327,12 +373,13 @@ export default function LoginPage() {
         ) : null}
 
         {mode === 'forgot-request' ? (
-          <form onSubmit={handleForgotRequest} className="space-y-4">
+          <form onSubmit={handleForgotRequest} className="space-y-6">
             {info && (
               <div className="p-3 bg-green-50 text-green-800 text-sm rounded-md border border-green-200">{info}</div>
             )}
             {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-md">{error}</div>}
             <Input
+              className={loginField}
               type="tel"
               label="Login phone number"
               placeholder="Phone you use to sign in"
@@ -342,6 +389,7 @@ export default function LoginPage() {
               autoComplete="tel"
             />
             <Input
+              className={loginField}
               type="email"
               label="Account email"
               placeholder="Email on this business account"
@@ -349,10 +397,7 @@ export default function LoginPage() {
               onChange={(e) => setResetEmail(e.target.value)}
               autoComplete="email"
             />
-            <p className="text-xs text-text-secondary">
-              We send two different codes: one on WhatsApp to this phone, one to this email. Both are required.
-            </p>
-            <Button type="submit" className="w-full" isLoading={loading}>
+            <Button type="submit" size="lg" className={loginButton} isLoading={loading}>
               Send WhatsApp and email codes
             </Button>
             <button
@@ -370,12 +415,13 @@ export default function LoginPage() {
         ) : null}
 
         {mode === 'forgot-verify' ? (
-          <form onSubmit={handleForgotVerify} className="space-y-4">
+          <form onSubmit={handleForgotVerify} className="space-y-6">
             {info && (
               <div className="p-3 bg-green-50 text-green-800 text-sm rounded-md border border-green-200">{info}</div>
             )}
             {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-md">{error}</div>}
             <Input
+              className={loginField}
               type="text"
               inputMode="numeric"
               maxLength={6}
@@ -385,6 +431,7 @@ export default function LoginPage() {
               onChange={(e) => setWhatsappCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             />
             <Input
+              className={loginField}
               type="text"
               inputMode="numeric"
               maxLength={6}
@@ -394,6 +441,7 @@ export default function LoginPage() {
               onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             />
             <Input
+              className={loginField}
               type="password"
               label="New password"
               placeholder="At least 8 characters"
@@ -402,6 +450,7 @@ export default function LoginPage() {
               autoComplete="new-password"
             />
             <Input
+              className={loginField}
               type="password"
               label="Confirm new password"
               placeholder="Re-enter password"
@@ -409,7 +458,7 @@ export default function LoginPage() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
             />
-            <Button type="submit" className="w-full" isLoading={loading}>
+            <Button type="submit" size="lg" className={loginButton} isLoading={loading}>
               Reset password
             </Button>
             <button
@@ -425,15 +474,16 @@ export default function LoginPage() {
           </form>
         ) : null}
 
-        <div className="mt-6 text-center">
-          <p className="text-sm text-text-secondary">
+        <div className="mt-8 text-center">
+          <p className="text-base text-text-secondary">
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-primary-500 hover:text-primary-600 font-medium">
               Create a new account
             </Link>
           </p>
         </div>
-      </Card>
+      </div>
+      </main>
     </div>
   );
 }

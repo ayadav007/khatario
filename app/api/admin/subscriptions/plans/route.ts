@@ -9,13 +9,17 @@ export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/admin/subscriptions/plans
- * Fetch all subscription plans
- *
- * Public read (marketing landing, upgrade UI). POST requires platform admin.
+ * Public callers (marketing, upgrade UI) receive active plans only.
+ * A signed-in platform admin also receives inactive plans, so they can be
+ * found and turned back on from Admin → Plans.
+ * POST requires platform admin.
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const plansWithRegistry = await listActiveSubscriptionPlans();
+    const auth = await requirePlatformRequest(request, 'viewer');
+    const plansWithRegistry = await listActiveSubscriptionPlans({
+      includeInactive: auth.ok,
+    });
     return NextResponse.json({ plans: plansWithRegistry });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
