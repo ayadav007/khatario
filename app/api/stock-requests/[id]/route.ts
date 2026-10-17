@@ -3,6 +3,7 @@ import * as db from '@/lib/db';
 import { requireAuthenticatedTenant } from '@/lib/stock-request-security';
 import { partiesFromItemOwner } from '@/lib/quantity-request-parties';
 import { logQuantityRequestEvent } from '@/lib/quantity-request-audit';
+import { saveItemLink } from '@/lib/supplier-item-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +77,16 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       `,
       [responderItemId, params.id]
     );
+
+    // Remember the match so later requests and bills between these two map on their own.
+    await saveItemLink({
+      buyerBusinessId: parties.buyerBusinessId,
+      vendorBusinessId: parties.vendorBusinessId,
+      buyerItemId: parties.buyerItemId,
+      vendorItemId: responderItemId,
+      source: 'request',
+      userId: auth.userId,
+    });
 
     await logQuantityRequestEvent({
       quantityRequestId: params.id,

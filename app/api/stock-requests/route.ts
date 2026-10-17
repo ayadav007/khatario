@@ -192,6 +192,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Pre-fill the supplier's item from the saved item map (most recently used match).
+      const knownMatch = await db.queryOne<{ vendor_item_id: string }>(
+        `SELECT vendor_item_id FROM supplier_item_links
+          WHERE buyer_business_id = $1 AND vendor_business_id = $2 AND buyer_item_id = $3
+          ORDER BY (source = 'manual') DESC, last_used_at DESC NULLS LAST
+          LIMIT 1`,
+        [parties.buyerBusinessId, parties.vendorBusinessId, item_id]
+      );
+
       const row = await db.queryOne(
         `
         INSERT INTO quantity_requests (
@@ -203,8 +212,9 @@ export async function POST(request: NextRequest) {
           notes,
           low_stock_alert_id,
           parent_request_id,
+          responder_item_id,
           status
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
         RETURNING *
         `,
         [
@@ -216,6 +226,7 @@ export async function POST(request: NextRequest) {
           notes || null,
           low_stock_alert_id || null,
           parent_request_id || null,
+          knownMatch?.vendor_item_id ?? null,
         ]
       );
 

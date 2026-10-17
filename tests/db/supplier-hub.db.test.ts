@@ -1,13 +1,13 @@
 /**
- * Supplier Hub phases 0–1 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
+ * Supplier Hub phases 0–2 on a real database (docs/SUPPLIER_HUB_BUILD_PLAN.md):
  * retailer A links wholesaler B, the link waits for B's approval, B's customer record for A is
  * linked, A picks B's items and reorder levels in bulk, A's reorder level raises an alert for B,
  * B's sales invoice becomes A's purchase (item matched, stock added once), and either side can
- * disconnect and reconnect.
+ * disconnect and reconnect. The item map remembers matches and converts cartons into pieces.
  * Opt-in, disposable DB only:
  *   SUPPLIER_HUB_DB_TEST=1 npx jest tests/db/supplier-hub.db.test.ts --runInBand
  * (or set PHASE2_TEST_DATABASE_URL). Connection details come from .env with the database forced
- * to kh_phase2_test; migrations 389 and 390 are applied in beforeAll.
+ * to kh_phase2_test; migrations 389–391 are applied in beforeAll.
  */
 import fs from 'fs';
 import path from 'path';
@@ -61,6 +61,12 @@ import { POST as approveSupplier } from '@/app/api/suppliers/[id]/approve/route'
 import { POST as createStockRequest } from '@/app/api/stock-requests/route';
 import { POST as setThreshold } from '@/app/api/suppliers/thresholds/route';
 import { POST as convertInvoice } from '@/app/api/invoices/[id]/convert-to-purchase/route';
+import { PATCH as mapRequestItem } from '@/app/api/stock-requests/[id]/route';
+import {
+  GET as itemLinksGET,
+  POST as itemLinksPOST,
+  DELETE as itemLinksDELETE,
+} from '@/app/api/suppliers/[id]/item-links/route';
 import { POST as createListing } from '@/app/api/suppliers/hub/published-listings/route';
 import { PATCH as patchListing } from '@/app/api/suppliers/hub/published-listings/[id]/route';
 import { POST as linkedCustomer } from '@/app/api/suppliers/hub/linked-customer/route';
@@ -74,7 +80,7 @@ const migration = (file: string) =>
 
 const run = enabled ? describe : describe.skip;
 
-run('Supplier Hub phases 0–1 (kh_phase2_test)', () => {
+run('Supplier Hub phases 0–2 (kh_phase2_test)', () => {
   jest.setTimeout(120000);
 
   const tag = randomUUID().slice(0, 6).toUpperCase();
@@ -106,6 +112,7 @@ run('Supplier Hub phases 0–1 (kh_phase2_test)', () => {
   beforeAll(async () => {
     await query(migration('389_purchase_source_invoice.sql'));
     await query(migration('390_supplier_hub_links.sql'));
+    await query(migration('391_supplier_item_links.sql'));
     for (const [biz, user, branch, name, gstin] of [
       [A, UA, BRA, `Hub Retailer ${tag}`, GSTIN_A],
       [B, UB, BRB, `Hub Wholesaler ${tag}`, null],
@@ -398,7 +405,10 @@ run('Supplier Hub phases 0–1 (kh_phase2_test)', () => {
     expect(unmatched.status).toBe(422);
     const unmatchedBody = await unmatched.json();
     expect(unmatchedBody.code).toBe('ITEMS_UNMATCHED');
-    expect(unmatchedBody.unmatched).toEqual([{ invoice_item_id: INVOICE_LINE, item_name: 'PARLE G 50GM CTN' }]);
+    expect(unmatchedBody.unmatched).toHaveLength(1);
+    expect(unmatchedBody.unmatched[0]).toMatchObject({ invoice_item_id: INVOICE_LINE, item_name: 'PARLE G 50GM CTN' });
+    // The likely match is suggested even though the names differ.
+    expect(unmatchedBody.unmatched[0].suggestions[0]?.id).toBe(ITEM_A);
 
     // Mapping to an item that is not A's is refused.
     const foreign = await convert(UA, A, { item_map: { [INVOICE_LINE]: ITEM_B } });
@@ -429,6 +439,119 @@ run('Supplier Hub phases 0–1 (kh_phase2_test)', () => {
     await checkLowStockForItem(ITEM_A, A);
     const alert = await queryOne(`SELECT alert_status FROM low_stock_alerts WHERE item_id = $1`, [ITEM_A]);
     expect(alert.alert_status).toBe('resolved');
+  });
+
+  it('the item map remembers matches and converts cartons into pieces (Phase 2)', async () => {
+    const url = `/api/suppliers/${supplierRowId}/item-links`;
+    const ctx = { params: { id: supplierRowId } };
+
+    // The first conversion saved A's hand-picked match.
+    const first = await (await itemLinksGET(call('GET', url, UA, A), ctx)).json();
+    expect(first.links).toHaveLength(1);
+    expect(first.links[0]).toMatchObject({ vendor_item_id: ITEM_B, buyer_item_id: ITEM_A, source: 'manual' });
+    expect(Number(first.links[0].factor)).toBe(1);
+
+    // A learned match from a request never replaces a hand-set one.
+    const pending = await queryOne(
+      `SELECT id FROM quantity_requests WHERE requester_business_id = $1 AND status = 'pending' LIMIT 1`,
+      [A]
+    );
+    const OTHER_B = randomUUID();
+    await query(
+      `INSERT INTO items (id, business_id, name, unit, item_type, is_active) VALUES ($1, $2, 'Parle G loose', 'PCS', 'goods', true)`,
+      [OTHER_B, B]
+    );
+    const mapRes = await mapRequestItem(
+      call('PATCH', `/api/stock-requests/${pending.id}`, UB, B, { responder_item_id: ITEM_B }),
+      { params: { id: pending.id } }
+    );
+    expect(mapRes.status).toBe(200);
+    const kept = await queryOne(
+      `SELECT source, buyer_item_id FROM supplier_item_links WHERE vendor_item_id = $1 AND buyer_business_id = $2`,
+      [ITEM_B, A]
+    );
+    expect(kept).toMatchObject({ source: 'manual', buyer_item_id: ITEM_A });
+    // A new supplier item picked on a request is learned.
+    await mapRequestItem(call('PATCH', `/api/stock-requests/${pending.id}`, UB, B, { responder_item_id: OTHER_B }), {
+      params: { id: pending.id },
+    });
+    const learned = await queryOne(
+      `SELECT source, buyer_item_id FROM supplier_item_links WHERE vendor_item_id = $1 AND buyer_business_id = $2`,
+      [OTHER_B, A]
+    );
+    expect(learned).toMatchObject({ source: 'request', buyer_item_id: ITEM_A });
+
+    // B sells in cartons of 144; A stocks single packs.
+    expect((await itemLinksPOST(post(url, UA, A, { vendor_item_id: ITEM_B, buyer_item_id: ITEM_A, factor: 0 }), ctx)).status).toBe(400);
+    expect((await itemLinksPOST(post(url, UA, A, { vendor_item_id: ITEM_A, buyer_item_id: ITEM_A }), ctx)).status).toBe(400);
+    expect((await itemLinksPOST(post(url, UB, B, { vendor_item_id: ITEM_B, buyer_item_id: ITEM_A }), ctx)).status).toBe(404);
+    const setFactor = await itemLinksPOST(post(url, UA, A, { vendor_item_id: ITEM_B, buyer_item_id: ITEM_A, factor: 144 }), ctx);
+    expect(setFactor.status).toBe(200);
+
+    // A second bill for 2 cartons at ₹1,440 each converts with no matching step.
+    const INVOICE_2 = randomUUID();
+    await query(
+      `INSERT INTO invoices (id, business_id, customer_id, invoice_number, invoice_date, status, document_type,
+          place_of_supply_state_code, subtotal, tax_total, cgst_total, sgst_total, igst_total, grand_total,
+          paid_amount, balance_amount, payment_status, branch_id)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'final', 'tax_invoice', '29', 2880, 0, 0, 0, 0, 2880, 0, 2880, 'unpaid', $5)`,
+      [INVOICE_2, B, CUST_A_AT_B, `HUB2-${tag}`, BRB]
+    );
+    await query(
+      `INSERT INTO invoice_items (invoice_id, item_id, item_name, quantity, unit, unit_price, taxable_value, line_total, sort_order)
+       VALUES ($1, $2, 'PARLE G 50GM CTN', 2, 'CTN', 1440, 2880, 2880, 0)`,
+      [INVOICE_2, ITEM_B]
+    );
+    const before = Number((await queryOne(`SELECT current_stock FROM items WHERE id = $1`, [ITEM_A])).current_stock);
+    const conv = await convertInvoice(post(`/api/invoices/${INVOICE_2}/convert-to-purchase`, UA, A, {}), {
+      params: { id: INVOICE_2 },
+    });
+    expect(conv.status).toBe(201);
+    const { purchase } = await conv.json();
+    const line = await queryOne(
+      `SELECT item_id, quantity, unit, unit_price, line_total FROM purchase_items WHERE purchase_id = $1`,
+      [purchase.id]
+    );
+    expect(line.item_id).toBe(ITEM_A);
+    expect(Number(line.quantity)).toBe(288);
+    expect(line.unit).toBe('PCS');
+    expect(Number(line.unit_price)).toBe(10);
+    expect(Number(line.line_total)).toBe(2880);
+    const after = Number((await queryOne(`SELECT current_stock FROM items WHERE id = $1`, [ITEM_A])).current_stock);
+    expect(after - before).toBe(288);
+    const used = await queryOne(
+      `SELECT last_rate, buyer_units_per_vendor_unit FROM supplier_item_links WHERE vendor_item_id = $1 AND buyer_business_id = $2`,
+      [ITEM_B, A]
+    );
+    expect(Number(used.last_rate)).toBe(1440);
+    expect(Number(used.buyer_units_per_vendor_unit)).toBe(144);
+
+    // New requests for A's item pre-fill B's item from the map.
+    const newReq = await createStockRequest(
+      post('/api/stock-requests', UA, A, {
+        requests: [{ requester_business_id: A, responder_business_id: B, item_id: ITEM_A, requested_qty: 1 }],
+      })
+    );
+    // Only one pending request per item and supplier; close the old one first if needed.
+    if (newReq.status === 409) {
+      await query(`UPDATE quantity_requests SET status = 'declined' WHERE id = $1`, [pending.id]);
+      const retry = await createStockRequest(
+        post('/api/stock-requests', UA, A, {
+          requests: [{ requester_business_id: A, responder_business_id: B, item_id: ITEM_A, requested_qty: 1 }],
+        })
+      );
+      expect(retry.status).toBe(200);
+      expect((await retry.json()).created[0].responder_item_id).toBe(ITEM_B);
+    } else {
+      expect(newReq.status).toBe(200);
+      expect((await newReq.json()).created[0].responder_item_id).toBe(ITEM_B);
+    }
+
+    // B cannot read A's item map; A can remove a match.
+    expect((await itemLinksGET(call('GET', url, UB, B), ctx)).status).toBe(404);
+    const learnedRow = await queryOne(`SELECT id FROM supplier_item_links WHERE vendor_item_id = $1`, [OTHER_B]);
+    const del = await itemLinksDELETE(call('DELETE', `${url}?link_id=${learnedRow.id}`, UA, A), ctx);
+    expect(del.status).toBe(200);
   });
 
   it('either side can disconnect, and a reconnect needs B to accept again (1.3)', async () => {

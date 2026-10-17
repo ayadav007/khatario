@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { linkedCustomerId } from '@/lib/supplier-hub-client';
+import { ConvertBillButton } from '@/components/suppliers/ConvertBillButton';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -792,33 +793,7 @@ function PurchaseRequestsContent() {
                     <div className="text-xs text-purple-600 font-medium mt-1 flex items-center gap-2">
                       <span>🧾 Invoice: {req.invoice_number}</span>
                       {req.invoice_id && canCreate && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={async () => {
-                            if (!confirm('Convert this invoice to a purchase? Stock will be added.')) return;
-                            try {
-                              const res = await fetch(`/api/invoices/${req.invoice_id}/convert-to-purchase`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ business_id: business?.id, created_by: user?.id })
-                              });
-                              const data = await res.json();
-                              if (res.ok) {
-                                toast.success(`Invoice converted to purchase! Purchase created: ${data.purchase.bill_number || data.purchase.id}`);
-                                fetchRequests(); // Refresh list
-                              } else {
-                                toast.error(data.error || 'Failed to convert invoice to purchase');
-                              }
-                            } catch (err) {
-                              console.error('Error converting invoice:', err);
-                              toast.error('Error converting invoice to purchase');
-                            }
-                          }}
-                          className="text-xs"
-                        >
-                          Convert to Purchase
-                        </Button>
+                        <ConvertBillButton invoiceId={req.invoice_id} onConverted={fetchRequests} className="text-xs" />
                       )}
                     </div>
                   )}

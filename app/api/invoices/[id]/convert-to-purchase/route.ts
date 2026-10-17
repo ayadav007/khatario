@@ -8,6 +8,7 @@ import { getUserIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helper
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { periodGuardResponse } from '@/lib/http/period-guards';
 import { adjustBranchItemStock, refreshItemGlobalStockFromBranches } from '@/lib/branch-stock';
+import { loadItemLinks, saveItemLink, suggestBuyerItems, type ItemSuggestion } from '@/lib/supplier-item-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -240,7 +241,7 @@ export async function POST(
 
     // Fetch invoice items
     const itemsRes = await client.query(`
-      SELECT ii.*, COALESCE(vi.item_type, 'goods') AS vendor_item_type
+      SELECT ii.*, COALESCE(vi.item_type, 'goods') AS vendor_item_type, vi.barcode AS vendor_barcode
       FROM invoice_items ii
       LEFT JOIN items vi ON vi.id = ii.item_id
       WHERE ii.invoice_id = $1
@@ -254,18 +255,46 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice has no items' }, { status: 400 });
     }
 
-    // Resolve each supplier line to the caller's own item. Sources, in order: the caller's
-    // explicit choice (body.item_map: invoice_item_id -> own item id), the item mapping saved
-    // on a linked quantity request, then an exact name match. Goods lines that stay unmatched
-    // stop the conversion so stock is never silently skipped.
-    const explicitMap: Record<string, string> =
-      body.item_map && typeof body.item_map === 'object' ? body.item_map : {};
+    // Resolve each supplier line to the caller's own item and unit. Sources, in order:
+    //   1. the caller's choice: body.item_map[invoice_item_id] = own item id, or
+    //      { item_id, factor } where factor = own units per supplier unit (carton of 144 -> 144)
+    //   2. the saved item map for this supplier (supplier_item_links)
+    //   3. the mapping on a linked quantity request
+    //   4. an exact name match
+    // Goods lines that stay unmatched stop the conversion so stock is never silently skipped;
+    // the response suggests likely items for each.
+    type Choice = { itemId: string; factor: number | null };
+    const explicitMap = new Map<string, Choice>();
+    if (body.item_map && typeof body.item_map === 'object') {
+      for (const [lineId, v] of Object.entries(body.item_map as Record<string, unknown>)) {
+        const asObject = typeof v === 'object' && v ? (v as { item_id?: unknown; factor?: unknown }) : null;
+        const itemId = typeof v === 'string' ? v : asObject?.item_id;
+        if (!itemId) continue;
+        const rawFactor = asObject?.factor != null ? Number(asObject.factor) : null;
+        if (rawFactor != null && !(rawFactor > 0)) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Units per supplier unit must be more than zero', code: 'ITEM_MAP_INVALID' },
+            { status: 400 }
+          );
+        }
+        explicitMap.set(String(lineId), { itemId: String(itemId), factor: rawFactor });
+      }
+    }
+    const savedLinks = await loadItemLinks(
+      business_id,
+      invoice.business_id,
+      invoiceItems.map((l: any) => l.item_id).filter(Boolean).map(String),
+      client
+    );
     const requestMap = new Map<string, string>();
     for (const r of linkedRequests) {
       if (r.responder_item_id) requestMap.set(String(r.responder_item_id), String(r.item_id));
     }
     const ownItems = new Map<string, { id: string; unit: string | null }>();
-    const ownItemIds = Array.from(new Set([...Object.values(explicitMap), ...requestMap.values()].map(String)));
+    const ownItemIds = Array.from(
+      new Set([...Array.from(explicitMap.values()).map((c) => c.itemId), ...Array.from(requestMap.values())])
+    );
     if (ownItemIds.length > 0) {
       const ownRes = await client.query(
         `SELECT id, unit FROM items WHERE business_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
@@ -273,37 +302,75 @@ export async function POST(
       );
       for (const row of ownRes.rows) ownItems.set(String(row.id), { id: String(row.id), unit: row.unit });
     }
-    const resolvedLines: Array<{ itemId: string | null; unit: string | null }> = [];
-    const unmatched: Array<{ invoice_item_id: string; item_name: string }> = [];
+
+    type Resolved = {
+      itemId: string | null;
+      unit: string | null;
+      factor: number;
+      /** How to remember this match: a person chose it, it was learned, or it came from the map. */
+      learnedFrom: 'manual' | 'conversion' | null;
+    };
+    const resolvedLines: Resolved[] = [];
+    const unmatched: Array<{
+      invoice_item_id: string;
+      item_name: string;
+      quantity: number;
+      unit: string | null;
+      suggestions: ItemSuggestion[];
+    }> = [];
     for (const line of invoiceItems) {
-      let match: { id: string; unit: string | null } | null = null;
-      const explicit = explicitMap[String(line.id)];
+      let resolved: Resolved | null = null;
+      const explicit = explicitMap.get(String(line.id));
+      const saved = line.item_id ? savedLinks.get(String(line.item_id)) : undefined;
       if (explicit) {
-        match = ownItems.get(String(explicit)) ?? null;
-        if (!match) {
+        const own = ownItems.get(explicit.itemId);
+        if (!own) {
           await client.query('ROLLBACK');
           return NextResponse.json(
             { error: `Item chosen for "${line.item_name}" was not found in your items`, code: 'ITEM_MAP_INVALID' },
             { status: 400 }
           );
         }
+        const savedFactor = saved && saved.buyerItemId === own.id ? saved.factor : 1;
+        resolved = { itemId: own.id, unit: own.unit, factor: explicit.factor ?? savedFactor, learnedFrom: 'manual' };
       }
-      if (!match && line.item_id && requestMap.has(String(line.item_id))) {
-        match = ownItems.get(requestMap.get(String(line.item_id))!) ?? null;
+      if (!resolved && saved) {
+        resolved = { itemId: saved.buyerItemId, unit: saved.buyerUnit, factor: saved.factor, learnedFrom: null };
       }
-      if (!match && line.item_name) {
+      if (!resolved && line.item_id && requestMap.has(String(line.item_id))) {
+        const own = ownItems.get(requestMap.get(String(line.item_id))!);
+        if (own) resolved = { itemId: own.id, unit: own.unit, factor: 1, learnedFrom: 'conversion' };
+      }
+      if (!resolved && line.item_name) {
         const byName = await client.query(
           `SELECT id, unit FROM items
             WHERE business_id = $1 AND deleted_at IS NULL AND LOWER(TRIM(name)) = LOWER(TRIM($2))
             LIMIT 1`,
           [business_id, line.item_name]
         );
-        if (byName.rows[0]) match = { id: String(byName.rows[0].id), unit: byName.rows[0].unit };
+        if (byName.rows[0]) {
+          resolved = {
+            itemId: String(byName.rows[0].id),
+            unit: byName.rows[0].unit,
+            factor: 1,
+            learnedFrom: 'conversion',
+          };
+        }
       }
-      if (!match && line.vendor_item_type !== 'service') {
-        unmatched.push({ invoice_item_id: String(line.id), item_name: line.item_name });
+      if (!resolved && line.vendor_item_type !== 'service') {
+        unmatched.push({
+          invoice_item_id: String(line.id),
+          item_name: line.item_name,
+          quantity: Number(line.quantity) || 0,
+          unit: line.unit ?? null,
+          suggestions: await suggestBuyerItems(
+            business_id,
+            { name: line.item_name, hsn: line.hsn_sac, barcode: line.vendor_barcode },
+            client
+          ),
+        });
       }
-      resolvedLines.push({ itemId: match?.id ?? null, unit: match?.unit ?? null });
+      resolvedLines.push(resolved ?? { itemId: null, unit: null, factor: 1, learnedFrom: null });
     }
     if (unmatched.length > 0) {
       await client.query('ROLLBACK');
@@ -382,8 +449,12 @@ export async function POST(
     for (let i = 0; i < invoiceItems.length; i++) {
       const item = invoiceItems[i];
       
-      // The supplier's item_id belongs to their business; use the caller's matched item.
+      // The supplier's item_id belongs to their business; use the caller's matched item, in the
+      // caller's unit: quantity x factor, rate / factor (line value and tax are unchanged).
       const customerItemId = resolvedLines[i].itemId;
+      const factor = resolvedLines[i].factor || 1;
+      const ownQty = Math.round((Number(item.quantity) || 0) * factor * 10000) / 10000;
+      const ownRate = Math.round(((Number(item.unit_price) || 0) / factor) * 10000) / 10000;
       
       const locationIdForPurchase = warehouseModeEnabled ? defaultWarehouseId : null;
 
@@ -399,9 +470,9 @@ export async function POST(
         customerItemId, // Use customer's item_id, not supplier's
         item.item_name,
         item.hsn_sac || null,
-        item.quantity,
+        ownQty,
         resolvedLines[i].unit || item.unit || 'PCS',
-        item.unit_price,
+        ownRate,
         item.discount_percent || 0,
         item.discount_amount || 0,
         item.tax_rate || 0,
@@ -431,8 +502,8 @@ export async function POST(
           }
           
           if (itemType === 'goods') {
-            const quantity = Number(item.quantity) || 0;
-            const unitCost = Number(item.unit_price) || 0;
+            const quantity = ownQty;
+            const unitCost = ownRate;
             
             // Check if item tracks batch/serial (if columns exist)
             let trackBatch = false;
@@ -597,6 +668,26 @@ export async function POST(
     }
 
     // Link purchase to quantity request if invoice was linked to a request
+    // Remember each match for the next bill from this supplier.
+    for (let i = 0; i < invoiceItems.length; i++) {
+      const line = invoiceItems[i];
+      const r = resolvedLines[i];
+      if (!r.itemId || !line.item_id) continue;
+      await saveItemLink(
+        {
+          buyerBusinessId: business_id,
+          vendorBusinessId: invoice.business_id,
+          buyerItemId: r.itemId,
+          vendorItemId: String(line.item_id),
+          factor: r.learnedFrom ? r.factor : null,
+          source: r.learnedFrom ?? 'conversion',
+          rate: Number(line.unit_price) || null,
+          userId,
+        },
+        client
+      );
+    }
+
     if (linkedRequests.length > 0) {
       await client.query(`
         UPDATE quantity_requests

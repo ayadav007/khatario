@@ -219,6 +219,14 @@ export default function SupplierDetailPage({ params }: { params: { id: string } 
                       Choose items this supplier supplies
                     </Link>
                   )}
+                  {link.status === 'approved' && (
+                    <Link
+                      href={`/suppliers/${supplier.id}/item-links`}
+                      className="text-sm font-medium text-primary-600 hover:underline"
+                    >
+                      Item matches
+                    </Link>
+                  )}
                   {(link.status === 'approved' || link.status === 'pending') && (
                     <Button size="sm" variant="ghost" onClick={disconnect} disabled={linkBusy}>
                       {link.status === 'pending' ? 'Withdraw link request' : 'Disconnect'}

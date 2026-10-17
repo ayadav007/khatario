@@ -11,9 +11,9 @@
 import type { PoolClient } from 'pg';
 import * as db from './db';
 
-type Exec = (sql: string, params?: any[]) => Promise<{ rows: any[]; rowCount: number | null }>;
+export type Exec = (sql: string, params?: any[]) => Promise<{ rows: any[]; rowCount: number | null }>;
 
-function execFor(client?: PoolClient): Exec {
+export function execFor(client?: PoolClient): Exec {
   return client ? (sql, params) => client.query(sql, params) : (sql, params) => db.query(sql, params);
 }
 

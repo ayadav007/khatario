@@ -1,6 +1,6 @@
 # Supplier Hub — build plan
 
-Status: Phase 0 (B1–B6) committed on branch `supplier-hub-phase-0`. Phase 1 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 8 cases), not committed. Migrations 389 and 390 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
+Status: Phases 0 and 1 committed on branch `supplier-hub-phase-0`. Phase 2 built and tested on `kh_phase2_test` (`tests/db/supplier-hub.db.test.ts`, 9 cases), not committed. Migrations 389–391 are applied only to the test DB. Written 2026-10-16 from a review of the current code.
 
 ## The target flow
 
@@ -91,6 +91,15 @@ The thresholds page lists **B's own items** (`/api/items?business_id=<B>`), so `
 1.4 **Default supplier setup.** Add a bulk screen: "Set B as the default supplier for these items", with filters by category and by past purchases from B. The server checks that the chosen supplier is A's own linked supplier. Optionally, add a backup supplier per item.
 
 ## Phase 2 — Item map (core of the feature)
+
+**Built (2026-10-17):**
+- Migration 391: `supplier_item_links` (one row per buyer, supplier and supplier item; `buyer_units_per_vendor_unit` > 0; source `manual` / `request` / `conversion`; `last_rate`). A trigger checks each item belongs to the business it names. Seeded from requests where the supplier already picked its item.
+- `lib/supplier-item-links.ts`: save (a hand-set match is never overwritten by a learned one), load, and suggest (same barcode, then name similarity with an HSN nudge).
+- Learned from: the supplier mapping a request item, and every bill conversion. New requests pre-fill the supplier's item from the map.
+- Converter order: the buyer's choice (with units per supplier unit) → saved map → request mapping → exact name. Quantity is multiplied and rate divided by the factor; line value and tax stay as billed. Unmatched lines come back with up to 3 suggestions each.
+- Screens: `/suppliers/[id]/item-links` (needs a match / matched, edit factor, remove), and a matching dialog on "Convert to Purchase" (`components/suppliers/ConvertBillButton.tsx`).
+- Not done: only the buyer confirms matches (the supplier's request pick is learned but not shown to them as a match). `items.pack_size` is not used as a default factor yet, because the column is missing on the test DB; the factor defaults to 1.
+
 
 2.1 New table `supplier_item_links`: `buyer_business_id`, `vendor_business_id`, `buyer_item_id`, `vendor_item_id`, `buyer_units_per_vendor_unit` (B sells a carton of 24 and A stocks single pieces), `last_rate`, `is_active`. It's unique per buyer item and vendor.
 
@@ -214,7 +223,7 @@ The phone app can already list, create, respond to and link requests. It still n
 |---|---|
 | Phase 0 (B1–B6) | Done |
 | Phase 1 | Done, not committed |
-| Phase 2 | M |
+| Phase 2 | Done, not committed |
 | Phase 5 (receive, incl. create item on receive) | M–L — do this before Phase 3, because it pays off even without alerts |
 | Phase 3 + 4 (incl. catalog-order lines, variants) | L |
 | Phase 6 (catalog ordering, new-arrival push) | L — right after Phase 5 for apparel and electronics customers |
