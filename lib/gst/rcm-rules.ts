@@ -47,6 +47,98 @@ export type RcmMatch =
 const INCOMPLETE =
   'RCM coverage: incomplete. No notified-supply rules are loaded.';
 
+/** Shown beside Reverse charge while no approved rule is loaded. */
+export const RCM_PURCHASE_INACTIVE_NOTICE =
+  'Automatic RCM checks are not active yet. Please verify whether reverse charge applies to this purchase.';
+
+export const RCM_EXPENSE_INACTIVE_NOTICE =
+  'Automatic RCM checks are not active yet. Please verify whether reverse charge applies to this expense.';
+
+/** Still shown after some rules are approved. A partial catalogue is not full detection. */
+export const RCM_PURCHASE_PARTIAL_NOTICE =
+  'Automatic RCM checks are not complete. Approved rules do not cover every notified supply. Please verify whether reverse charge applies to this purchase.';
+
+export const RCM_EXPENSE_PARTIAL_NOTICE =
+  'Automatic RCM checks are not complete. Approved rules do not cover every notified supply. Please verify whether reverse charge applies to this expense.';
+
+export interface RcmDashboardStatus {
+  status: string;
+  approvedRules: number;
+  action: string;
+  explanation: string;
+  /** This is a limit of automated coverage, not a mistake in the customer's books. */
+  customerViolation: false;
+  /** Must not stop a GSTR-1, GSTR-3B, or GSTR-9 file on its own. */
+  blocksExport: false;
+}
+
+/**
+ * The rule table can store approved rows. It has no marker that those rows are
+ * the full notified-supply list, so a positive count is not complete coverage.
+ */
+export function rcmCatalogueIsComplete(_approvedCount: number): boolean {
+  return false;
+}
+
+/** Null only when the approved catalogue is recorded as complete. That state is not available. */
+export function formRcmNotice(kind: 'purchase' | 'expense', approvedCount: number): string | null {
+  const inactive = kind === 'purchase' ? RCM_PURCHASE_INACTIVE_NOTICE : RCM_EXPENSE_INACTIVE_NOTICE;
+  const partial = kind === 'purchase' ? RCM_PURCHASE_PARTIAL_NOTICE : RCM_EXPENSE_PARTIAL_NOTICE;
+  if (!Number.isFinite(approvedCount) || approvedCount <= 0) return inactive;
+  if (!rcmCatalogueIsComplete(approvedCount)) return partial;
+  return null;
+}
+
+export function rcmDashboardStatus(approvedCount: number): RcmDashboardStatus {
+  const count = Number.isFinite(approvedCount) && approvedCount > 0 ? Math.floor(approvedCount) : 0;
+  if (count === 0) {
+    return {
+      status: 'Automatic RCM detection is not active.',
+      approvedRules: 0,
+      action: 'Verify RCM applicability manually when recording relevant purchases and expenses.',
+      explanation: 'Khatario cannot currently detect all notified RCM transactions automatically.',
+      customerViolation: false,
+      blocksExport: false,
+    };
+  }
+  return {
+    status: 'Automatic RCM detection is limited to the approved rules loaded so far.',
+    approvedRules: count,
+    action: 'Verify RCM applicability manually when a purchase or expense is not covered by those rules.',
+    explanation: 'An approved rule count does not mean every notified RCM category is covered.',
+    customerViolation: false,
+    blocksExport: false,
+  };
+}
+
+export type RcmApplicability =
+  | { outcome: 'inactive'; approvedCount: number; message: string }
+  | { outcome: 'unverified'; approvedCount: number; reason: 'missing_facts' | 'no_match' | 'withheld'; message: string }
+  | { outcome: 'matched'; approvedCount: number; citation: string; message: string };
+
+/** A non-match is not a successful "no reverse charge" result. */
+export function classifyRcmApplicability(approvedCount: number, match: RcmMatch): RcmApplicability {
+  const count = Number.isFinite(approvedCount) && approvedCount > 0 ? Math.floor(approvedCount) : 0;
+  if (count === 0 || (match.result === 'not_checked' && match.coverage === 'incomplete')) {
+    return { outcome: 'inactive', approvedCount: count, message: RCM_PURCHASE_INACTIVE_NOTICE };
+  }
+  if (match.result === 'suspected' || match.result === 'no_warning') {
+    return {
+      outcome: 'matched',
+      approvedCount: count,
+      citation: match.result === 'suspected' ? match.citation : '',
+      message: match.message,
+    };
+  }
+  const missing = /SAC|HSN|category|exclusion|recipient|turnover|not recorded/i.test(match.message);
+  return {
+    outcome: 'unverified',
+    approvedCount: count,
+    reason: missing ? ( /exclusion|recipient|turnover/.test(match.message) ? 'withheld' : 'missing_facts' ) : 'no_match',
+    message: match.message,
+  };
+}
+
 function prefixMatch(value: string | null, prefix: string | null): boolean {
   if (!prefix) return true;
   if (!value) return false;

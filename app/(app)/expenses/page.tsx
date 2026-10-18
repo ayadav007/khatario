@@ -16,6 +16,7 @@ import {
   type AccountingErrorView,
 } from '@/lib/accounting-ui/errors';
 import { buildReversalUrl, REVERSAL_COPY } from '@/lib/accounting-ui/reversal';
+import { RcmCoverageNotice } from '@/components/gst/RcmCoverageNotice';
 
 interface Expense {
   id: string;
@@ -454,9 +455,6 @@ function AddExpenseModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
-        <p className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          RCM coverage is incomplete until notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
-        </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -562,13 +560,9 @@ function AddExpenseModal({
                 checked={formData.is_reverse_charge}
                 onChange={(e) => setFormData({ ...formData, is_reverse_charge: e.target.checked })}
               />
-              <span>
-                Reverse charge (RCM)
-                <span className="block text-xs text-gray-500">
-                  RCM coverage is incomplete until notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
-                </span>
-              </span>
+              <span>Reverse charge (RCM)</span>
             </label>
+            <RcmCoverageNotice kind="expense" />
             <label className="block text-sm text-gray-700">
               Supplier registration on this supply
               <select

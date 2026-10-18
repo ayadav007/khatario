@@ -64,6 +64,12 @@ export default function GstCompliancePage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [assistantOn, setAssistantOn] = useState(false);
   const [marking, setMarking] = useState<{ period: string; label: string } | null>(null);
+  const [rcmCoverage, setRcmCoverage] = useState<{
+    status: string;
+    approvedRules: number;
+    action: string;
+    explanation: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     if (!business?.id) return;
@@ -89,6 +95,21 @@ export default function GstCompliancePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/gst/rcm-coverage')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { dashboard?: { status: string; approvedRules: number; action: string; explanation: string } } | null) => {
+        if (!cancelled && data?.dashboard) setRcmCoverage(data.dashboard);
+      })
+      .catch(() => {
+        if (!cancelled) setRcmCoverage(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     fetch('/api/assistant/chat?channel=trial_app', { credentials: 'include' })
@@ -175,6 +196,18 @@ export default function GstCompliancePage() {
     </>
   }
 />
+
+      {rcmCoverage && (
+        <section
+          data-rcm-coverage-status="app-limitation"
+          className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+        >
+          <p className="font-semibold">{rcmCoverage.status}</p>
+          <p className="mt-1">Approved rules: {rcmCoverage.approvedRules}.</p>
+          <p className="mt-1">{rcmCoverage.action}</p>
+          <p className="mt-1">{rcmCoverage.explanation}</p>
+        </section>
+      )}
 
       {skipped && (
         <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">

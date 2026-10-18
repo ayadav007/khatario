@@ -13,6 +13,7 @@ import { PurchaseDocumentTotals } from '@/lib/purchase-gst-calculator';
 import { round2, roundExclusiveUnitPrice, roundRetailQty } from '@/lib/numeric-precision';
 import { NumericBlurField } from '@/components/ui/NumericBlurField';
 import { ChevronDown } from 'lucide-react';
+import { RcmCoverageNotice } from '@/components/gst/RcmCoverageNotice';
 import { clsx } from 'clsx';
 
 export interface PurchaseFormState {
@@ -311,6 +312,17 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
           </button>
         </div>
 
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            className="rounded border-border text-primary-600 focus:ring-primary-500"
+            checked={props.formData.is_reverse_charge}
+            onChange={(e) => props.setFormData({ ...props.formData, is_reverse_charge: e.target.checked })}
+          />
+          Reverse charge
+        </label>
+        <RcmCoverageNotice kind="purchase" />
+
           {billEditOpen && (
           <div className="space-y-3">
           <div className="grid grid-cols-2 gap-x-3 gap-y-3">
@@ -457,29 +469,15 @@ export function MobileNewPurchaseScrollForm(props: MobileNewPurchaseScrollFormPr
             />
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
-              <input
-                type="checkbox"
-                className="rounded border-border text-primary-600 focus:ring-primary-500"
-                checked={props.formData.is_reverse_charge}
-                onChange={(e) => props.setFormData({ ...props.formData, is_reverse_charge: e.target.checked })}
-              />
-              Reverse charge
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
-              <input
-                type="checkbox"
-                className="rounded border-border text-primary-600 focus:ring-primary-500"
-                checked={props.formData.itc_eligible}
-                onChange={(e) => props.setFormData({ ...props.formData, itc_eligible: e.target.checked })}
-              />
-              ITC eligible
-            </label>
-          </div>
-          <p className="text-xs leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            RCM coverage: incomplete. No notified-supply rules are loaded. A blank GSTIN does not mean the supplier is unregistered.
-          </p>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              className="rounded border-border text-primary-600 focus:ring-primary-500"
+              checked={props.formData.itc_eligible}
+              onChange={(e) => props.setFormData({ ...props.formData, itc_eligible: e.target.checked })}
+            />
+            ITC eligible
+          </label>
           </div>
           )}
 

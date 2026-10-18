@@ -18,6 +18,7 @@ import { Supplier, Item, Account } from '@/types/database';
 import { INDIAN_STATES, getStateCode } from '@/lib/gst-utils';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { PurchaseBillUploadModal, type PurchaseBillSource } from '@/components/purchases/PurchaseBillUploadModal';
+import { RcmCoverageNotice } from '@/components/gst/RcmCoverageNotice';
 import { calculateItemNameSimilarity } from '@/lib/matching/item-name-similarity';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
 import { summarizeInvoiceCorrectionDelta } from '@/lib/services/invoice-extract/invoiceExtractionCorrectionSummary';
@@ -1998,6 +1999,9 @@ export default function NewPurchasePage() {
               {totals.intraState ? 'Intra-state · CGST + SGST' : 'Inter-state · IGST'}
             </span>
           </div>
+          <div className="mt-3 max-w-3xl">
+            <RcmCoverageNotice kind="purchase" />
+          </div>
 
           <details className="group mt-5 border-t border-border pt-4">
             <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-primary-500 dark:text-primary-200">
@@ -2041,10 +2045,6 @@ export default function NewPurchasePage() {
                 Enter CGST / SGST / IGST by hand per line
               </label>
             </div>
-            <p className="mt-3 text-xs text-text-muted">
-              Reverse charge coverage is incomplete: no notified-supply rules are loaded. A blank GSTIN does not mean the supplier is
-              unregistered.
-            </p>
           </details>
         </section>
 

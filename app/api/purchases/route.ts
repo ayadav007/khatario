@@ -21,7 +21,8 @@ import { supplierPayableAmount } from '@/lib/purchases/supplier-payable';
 import { findDuplicateSupplierBill } from '@/lib/purchases/duplicate-supplier-bill';
 import { checkGstin } from '@/lib/tax/gstin';
 import { parseRegistrationStatus } from '@/lib/gst/rule47a';
-import { approvedRcmRules, matchRcmRules, type RcmRule } from '@/lib/gst/rcm-rules';
+import { matchRcmRules } from '@/lib/gst/rcm-rules';
+import { loadApprovedRcmRules } from '@/lib/gst/rcm-catalogue';
 import { markGstReadinessStale } from '@/lib/gst/period-freshness';
 import { resolvePurchaseItemName } from '@/lib/purchases/purchase-line-name';
 import { purchaseLineItcType } from '@/lib/purchases/itc-type';
@@ -328,20 +329,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: gstinCheck.error, code: 'GSTIN_INVALID' }, { status: 400 });
       }
     }
-    const ruleRows = await client.query<{
-      id: string; catalogue_version: number; effective_from: string; effective_to: string | null;
-      supplier_type: RcmRule['supplierType']; sac_prefix: string | null; hsn_prefix: string | null;
-      expense_category: string | null; source_citation: string; review_only: boolean;
-      status: 'candidate' | 'approved'; recipient_class: string | null;
-      turnover_min: string | null; turnover_max: string | null; exclusions: string[] | null;
-    }>(
-      `SELECT id, catalogue_version, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
-              to_char(effective_to, 'YYYY-MM-DD') AS effective_to, supplier_type, sac_prefix, hsn_prefix,
-              expense_category, source_citation, review_only, status, recipient_class,
-              turnover_min, turnover_max, exclusions
-         FROM gst_rcm_rules
-        WHERE status = 'approved'`
-    );
+    const approvedRules = await loadApprovedRcmRules(client);
     const rcm = matchRcmRules(
       {
         billDate: String(bill_date).slice(0, 10),
@@ -351,23 +339,7 @@ export async function POST(request: NextRequest) {
         hsn: null,
         expenseCategory: null,
       },
-      approvedRcmRules(ruleRows.rows).map((row) => ({
-        id: row.id,
-        catalogueVersion: row.catalogue_version,
-        effectiveFrom: row.effective_from,
-        effectiveTo: row.effective_to,
-        supplierType: row.supplier_type,
-        sacPrefix: row.sac_prefix,
-        hsnPrefix: row.hsn_prefix,
-        expenseCategory: row.expense_category,
-        sourceCitation: row.source_citation,
-        reviewOnly: row.review_only,
-        status: row.status,
-        recipientClass: row.recipient_class,
-        turnoverMin: row.turnover_min == null ? null : Number(row.turnover_min),
-        turnoverMax: row.turnover_max == null ? null : Number(row.turnover_max),
-        exclusions: Array.isArray(row.exclusions) ? row.exclusions : [],
-      }))
+      approvedRules
     );
     const rcmReview = (body as { rcm_review?: string }).rcm_review;
     if (rcm.result === 'suspected' && rcmReview !== 'on' && rcmReview !== 'not_reverse_charge') {
