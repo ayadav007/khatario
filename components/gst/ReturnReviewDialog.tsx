@@ -29,9 +29,10 @@ export function ReturnReviewDialogHost() {
 
   useEffect(() => {
     if (!request) return;
+    const current = request;
     function onKey(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
-      request.resolve(false);
+      current.resolve(false);
       setRequest(null);
     }
     window.addEventListener('keydown', onKey);
