@@ -7,12 +7,22 @@ export const dynamic = 'force-dynamic';
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GSTR2BReconciliationEngine } from '@/lib/gst/gstr2b-reconciliation';
+import { GSTR2BReconciliationEngine, type MissingReference } from '@/lib/gst/gstr2b-reconciliation';
 import { assertGstr2bApiAccess } from '@/lib/gst/gstr2b-route-guard';
 import { getPool } from '@/lib/db';
 import { markGstReadinessStale, markReturnReconciled } from '@/lib/gst/period-freshness';
 
 const reconciliationEngine = new GSTR2BReconciliationEngine();
+
+function publicMissingReference(row: MissingReference) {
+  return {
+    source: row.source,
+    reason: row.reason,
+    purchase_id: row.purchase_id,
+    gstr2b_invoice_id: row.gstr2b_invoice_id,
+    bill_date: row.bill_date,
+  };
+}
 
 /**
  * POST /api/gst/gstr2b/reconcile
@@ -41,7 +51,7 @@ export async function POST(request: NextRequest) {
     const access = await assertGstr2bApiAccess(request, business_id, 'create');
     if (!access.ok) return access.response;
     
-    const matches = await reconciliationEngine.reconcile(access.businessId, filing_period);
+    const { matches, missing_references } = await reconciliationEngine.reconcile(access.businessId, filing_period);
     const pool = getPool();
     await markGstReadinessStale(pool, access.businessId, {
       dates: [`${filing_period}-01`],
@@ -53,6 +63,7 @@ export async function POST(request: NextRequest) {
       success: true,
       filing_period,
       total_invoices: matches.length,
+      missing_references: missing_references.map(publicMissingReference),
       matches: matches.map(m => ({
         ...m,
         invoice_date: typeof m.invoice_date === 'string' ? m.invoice_date : m.invoice_date.toISOString().split('T')[0]
@@ -141,9 +152,16 @@ export async function GET(request: NextRequest) {
         return acc;
       }, {});
       
+      const missing_references = await reconciliationEngine.listMissingReferences(
+        client,
+        access.businessId,
+        filing_period
+      );
+
       return NextResponse.json({
         filing_period,
         summary,
+        missing_references: missing_references.map(publicMissingReference),
         invoices: result.rows.map((row: any) => ({
           id: row.id,
           match_status: row.match_status,

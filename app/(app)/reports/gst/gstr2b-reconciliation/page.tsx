@@ -90,6 +90,12 @@ export default function GSTR2BReconciliationPage() {
   
   const [invoices, setInvoices] = useState<ReconciliationInvoice[]>([]);
   const [summary, setSummary] = useState<ReconciliationSummary>({});
+  const [missingReferences, setMissingReferences] = useState<Array<{
+    source: string;
+    reason: string;
+    purchase_id: string | null;
+    bill_date: string | null;
+  }>>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -112,6 +118,7 @@ export default function GSTR2BReconciliationPage() {
       if (res.ok) {
         setInvoices(data.invoices || []);
         setSummary(data.summary || {});
+        setMissingReferences(data.missing_references || []);
       } else {
         console.error('Error:', data.error);
         // If no reconciliation exists, summary will be empty - that's OK
@@ -177,7 +184,12 @@ export default function GSTR2BReconciliationPage() {
       const data = await res.json();
       
       if (res.ok) {
-        toast.success(`Reconciliation completed. ${data.total_invoices} invoices processed.`);
+        const leftOut = Array.isArray(data.missing_references) ? data.missing_references.length : 0;
+        toast.success(
+          leftOut
+            ? `Reconciliation completed. ${data.total_invoices} invoices processed. ${leftOut} without a bill number were left out.`
+            : `Reconciliation completed. ${data.total_invoices} invoices processed.`
+        );
         await fetchReconciliation();
       } else {
         toast.error(`Reconciliation failed: ${data.error}`);
@@ -373,6 +385,31 @@ export default function GSTR2BReconciliationPage() {
             </button>
           </div>
         </div>
+
+        {missingReferences.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <h3 className="text-sm font-semibold text-amber-900 mb-1">
+              {missingReferences.length} document{missingReferences.length === 1 ? '' : 's'} left out of matching
+            </h3>
+            <p className="text-sm text-amber-800 mb-2">
+              These purchases have no supplier bill number, so they were not matched and were not given a made-up number. Enter the number printed on the bill, then run reconciliation again.
+            </p>
+            <ul className="text-sm text-amber-900 space-y-1">
+              {missingReferences.map((row) => (
+                <li key={row.purchase_id || row.bill_date || row.reason}>
+                  {row.purchase_id ? (
+                    <a className="underline" href={`/purchases/${row.purchase_id}`}>
+                      Purchase {row.purchase_id}
+                    </a>
+                  ) : (
+                    'Statement line'
+                  )}
+                  {row.bill_date ? ` · ${row.bill_date}` : ''} · no bill number
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Summary Cards */}
         {Object.keys(summary).length > 0 && (

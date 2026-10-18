@@ -80,36 +80,123 @@ export function normalizeDocNumber(no: unknown): string {
     .replace(/(^|[^0-9])0+(?=[0-9])/g, '$1');
 }
 
+/** A supplier invoice number we can store and match. Null, empty and whitespace are not numbers. */
+export function isBlankInvoiceNumber(no: unknown): boolean {
+  return String(no ?? '').trim() === '';
+}
+
+export interface MissingReference {
+  source: 'books' | 'gstr2b';
+  reason: 'missing_invoice_number' | 'missing_invoice_date';
+  purchase_id: string | null;
+  gstr2b_invoice_id: string | null;
+  supplier_gstin: string;
+  bill_date: string | null;
+}
+
+export interface ReconciliationResult {
+  matches: ReconciliationMatch[];
+  missing_references: MissingReference[];
+}
+
 const TOLERANCE_DAYS = 2; // Allow 2 days tolerance for invoice date matching
 const TOLERANCE_AMOUNT = 1; // Allow ₹1 tolerance per tax head and on taxable value
+
+function periodWindow(filing_period: string) {
+  const [year, month] = filing_period.split('-').map(Number);
+  const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+  const endDate = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+  const fyStart = month >= 4 ? year : year - 1;
+  const carryFrom = `${fyStart - 1}-04-01`;
+  return { startDate, endDate, carryFrom };
+}
 
 export class GSTR2BReconciliationEngine {
   private pool = getPool();
 
   /**
-   * Perform reconciliation for a given filing period
-   * Returns invoice-level matches
+   * Perform reconciliation for a given filing period.
+   * Purchases and statement lines with no invoice number are left out of matching and returned
+   * as missing_references. They are not written to gstr2b_reconciliation and the source bills
+   * are not changed.
    */
-  async reconcile(business_id: string, filing_period: string): Promise<ReconciliationMatch[]> {
+  async reconcile(business_id: string, filing_period: string): Promise<ReconciliationResult> {
     const client = await this.pool.connect();
     
     try {
-      // 1. Fetch purchases from books (purchase register)
-      const booksInvoices = await this.fetchBooksInvoices(client, business_id, filing_period);
-      
-      // 2. Fetch GSTR-2B invoices (from portal data)
-      const gstr2bInvoices = await this.fetchGSTR2BInvoices(client, business_id, filing_period);
-      
-      // 3. Perform matching
+      const missing_references = await this.listMissingReferences(client, business_id, filing_period);
+      const blankPurchases = new Set(
+        missing_references.filter((row) => row.purchase_id).map((row) => row.purchase_id)
+      );
+      const blankStatements = new Set(
+        missing_references.filter((row) => row.gstr2b_invoice_id).map((row) => row.gstr2b_invoice_id)
+      );
+
+      const booksInvoices = (await this.fetchBooksInvoices(client, business_id, filing_period))
+        .filter((row) => !blankPurchases.has(row.purchase_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
+      const gstr2bInvoices = (await this.fetchGSTR2BInvoices(client, business_id, filing_period))
+        .filter((row) => !blankStatements.has(row.gstr2b_invoice_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
+
       const matches = await this.matchInvoices(client, business_id, filing_period, booksInvoices, gstr2bInvoices);
-      
-      // 4. Store reconciliation records
       await this.storeReconciliationRecords(client, business_id, filing_period, matches);
-      
-      return matches;
+
+      return { matches, missing_references };
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Purchases in the filing window, and statement lines for the period, that have no invoice
+   * number. Same date window as the books query, including carry-forward. Read-only.
+   */
+  async listMissingReferences(client: any, business_id: string, filing_period: string): Promise<MissingReference[]> {
+    const { startDate, endDate, carryFrom } = periodWindow(filing_period);
+    const books = await client.query(
+      `SELECT p.id AS purchase_id, p.bill_date,
+              UPPER(TRIM(COALESCE(NULLIF(TRIM(p.supplier_gstin), ''), s.gstin, ''))) AS supplier_gstin,
+              p.bill_number
+         FROM purchases p
+         LEFT JOIN suppliers s ON s.id = p.supplier_id
+        WHERE p.business_id = $1
+          AND COALESCE(p.status, '') NOT IN ('cancelled', 'draft')
+          AND p.deleted_at IS NULL
+          AND (
+            (p.bill_date >= $2::date AND p.bill_date <= $3::date)
+            OR (p.bill_date >= $4::date AND p.bill_date < $2::date)
+          )
+          AND (p.bill_number IS NULL OR btrim(p.bill_number) = '' OR p.bill_date IS NULL)`,
+      [business_id, startDate, endDate, carryFrom]
+    );
+    const statements = await client.query(
+      `SELECT id AS gstr2b_invoice_id, supplier_gstin, invoice_date, invoice_number
+         FROM gstr2b_invoices
+        WHERE business_id = $1 AND filing_period = $2
+          AND (invoice_number IS NULL OR btrim(invoice_number) = '')`,
+      [business_id, filing_period]
+    );
+    const out: MissingReference[] = [];
+    for (const row of books.rows) {
+      out.push({
+        source: 'books',
+        reason: !row.bill_date ? 'missing_invoice_date' : 'missing_invoice_number',
+        purchase_id: row.purchase_id,
+        gstr2b_invoice_id: null,
+        supplier_gstin: row.supplier_gstin || '',
+        bill_date: row.bill_date ? String(row.bill_date).slice(0, 10) : null,
+      });
+    }
+    for (const row of statements.rows) {
+      out.push({
+        source: 'gstr2b',
+        reason: 'missing_invoice_number',
+        purchase_id: null,
+        gstr2b_invoice_id: row.gstr2b_invoice_id,
+        supplier_gstin: row.supplier_gstin || '',
+        bill_date: row.invoice_date ? String(row.invoice_date).slice(0, 10) : null,
+      });
+    }
+    return out;
   }
 
   /**
@@ -120,11 +207,7 @@ export class GSTR2BReconciliationEngine {
    * not reported as "only in 2B".
    */
   private async fetchBooksInvoices(client: any, business_id: string, filing_period: string) {
-    const [year, month] = filing_period.split('-').map(Number);
-    const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-    const endDate = `${year}-${month.toString().padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
-    const fyStart = month >= 4 ? year : year - 1;
-    const carryFrom = `${fyStart - 1}-04-01`;
+    const { startDate, endDate, carryFrom } = periodWindow(filing_period);
 
     const query = `
       SELECT
@@ -453,6 +536,9 @@ export class GSTR2BReconciliationEngine {
       await applyStoredDecisionRetention(client, business_id, filing_period, matches);
       const keptIds: string[] = [];
       for (const match of matches) {
+        if (isBlankInvoiceNumber(match.invoice_number) || !match.invoice_date) {
+          throw new Error('Reconciliation row is missing an invoice number or date');
+        }
         const query = `
           INSERT INTO gstr2b_reconciliation (
             business_id, filing_period,
@@ -505,7 +591,7 @@ export class GSTR2BReconciliationEngine {
           match.purchase_id || null,
           match.gstr2b_invoice_id || null,
           match.match_status,
-          match.supplier_gstin,
+          match.supplier_gstin || '',
           match.invoice_number,
           match.invoice_date,
           match.document_type,

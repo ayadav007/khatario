@@ -399,7 +399,7 @@ d('GST returns audit scenario (real DB)', () => {
 
   test('GSTR-2B reconciliation', async () => {
     const engine = new GSTR2BReconciliationEngine();
-    const m = await engine.reconcile(B, '2026-09');
+    const m = (await engine.reconcile(B, '2026-09')).matches;
     out.recon = m.map((r) => ({ s: r.match_status, no: r.invoice_number, g: r.supplier_gstin, books: r.books_itc_amount, b2b: r.gstr2b_cgst + r.gstr2b_sgst + r.gstr2b_igst }));
     const A = 'GSTR-2B';
     const st = (no: string) => m.filter((r) => r.invoice_number === `${no}-${tag}`).map((r) => r.match_status);
@@ -418,7 +418,7 @@ d('GST returns audit scenario (real DB)', () => {
     check(A, 'No unexpected "only in 2B" lines', '—', [], m.filter((r) => r.match_status === 'ONLY_IN_2B').map((r) => r.invoice_number));
 
     // October: the late supplier's September bill is found in October's 2B.
-    const oct = await engine.reconcile(B, '2026-10');
+    const oct = (await engine.reconcile(B, '2026-10')).matches;
     check(A, 'September bill matched in October 2B', 's.16(2)(aa)', ['MATCHED'],
       oct.filter((r) => r.invoice_number === `P04-LATE-FILER-${tag}`).map((r) => r.match_status));
 
