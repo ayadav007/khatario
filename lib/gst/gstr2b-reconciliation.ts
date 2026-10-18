@@ -133,9 +133,9 @@ export class GSTR2BReconciliationEngine {
       );
 
       const booksInvoices = (await this.fetchBooksInvoices(client, business_id, filing_period))
-        .filter((row) => !blankPurchases.has(row.purchase_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
+        .filter((row: any) => !blankPurchases.has(row.purchase_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
       const gstr2bInvoices = (await this.fetchGSTR2BInvoices(client, business_id, filing_period))
-        .filter((row) => !blankStatements.has(row.gstr2b_invoice_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
+        .filter((row: any) => !blankStatements.has(row.gstr2b_invoice_id) && !isBlankInvoiceNumber(row.invoice_number) && row.invoice_date);
 
       const matches = await this.matchInvoices(client, business_id, filing_period, booksInvoices, gstr2bInvoices);
       await this.storeReconciliationRecords(client, business_id, filing_period, matches);
