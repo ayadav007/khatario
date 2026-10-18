@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Check, Loader2 } from 'lucide-react';
 
 interface HSNResult {
@@ -38,7 +39,9 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
   const [loading, setLoading] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
 
   // Sync with external value
   useEffect(() => {
@@ -48,13 +51,39 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
   // Click outside handler
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      if (wrapperRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setIsOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function placeMenu() {
+      const input = inputRef.current;
+      if (!input) return;
+      const rect = input.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 260 && rect.top > spaceBelow;
+      setMenuStyle({
+        position: 'fixed',
+        top: openUp ? rect.top - 4 : rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        transform: openUp ? 'translateY(-100%)' : undefined,
+        zIndex: 80,
+      });
+    }
+    placeMenu();
+    window.addEventListener('scroll', placeMenu, true);
+    window.addEventListener('resize', placeMenu);
+    return () => {
+      window.removeEventListener('scroll', placeMenu, true);
+      window.removeEventListener('resize', placeMenu);
+    };
+  }, [isOpen, results, loading, query]);
 
   // Debounced search
   useEffect(() => {
@@ -154,12 +183,12 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
         )}
       </div>
 
-      {isOpen && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+      {isOpen && results.length > 0 && menuStyle && createPortal(
+        <div ref={menuRef} style={menuStyle} className="bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
           {results.map((result, index) => (
             <div
               key={`${result.code}-${result.gst_rate ?? 'none'}-${index}`}
-              onClick={() => handleSelect(result)}
+              onMouseDown={() => handleSelect(result)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
                 index === highlightedIndex
                   ? 'bg-slate-50 border-l-2 border-primary-500'
@@ -233,13 +262,15 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
               </div>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
 
-      {isOpen && !loading && query.length >= 2 && results.length === 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-text-secondary">
+      {isOpen && !loading && query.length >= 2 && results.length === 0 && menuStyle && createPortal(
+        <div ref={menuRef} style={menuStyle} className="bg-white border border-gray-200 rounded-md shadow-lg p-4 text-center text-sm text-text-secondary">
           No HSN/SAC codes found for "{query}"
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
