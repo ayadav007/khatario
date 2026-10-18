@@ -1,6 +1,7 @@
 /**
  * Mobile "More" menu — same section titles and labels as desktop Sidebar,
- * filtered by module permissions and plan features (RBAC).
+ * filtered by module permissions and plan features (RBAC). The phone app gets this
+ * same menu from GET /api/navigation/more, so this is the only list to edit.
  */
 
 import {
@@ -113,6 +114,7 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
         { href: '/suppliers/hub', label: 'Supplier Hub' },
         { href: '/suppliers/dashboard', label: 'Supplier Dashboard' },
         { href: '/suppliers/catalog', label: 'My Catalog' },
+        { href: '/supply-orders?role=vendor', label: 'Orders from Buyers' },
         { href: '/suppliers/requests', label: 'Requests to Fulfill' },
       ],
       ctx
@@ -142,6 +144,9 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     [
       { href: '/suppliers', label: 'Suppliers', module: 'purchases' },
       { href: '/suppliers/hub', label: 'Supplier Hub', module: 'purchases' },
+      { href: '/purchases/incoming', label: 'Incoming Bills', module: 'purchases' },
+      { href: '/supply-orders', label: 'Supplier Orders', module: 'purchases' },
+      { href: '/purchases/new-arrivals', label: 'New Arrivals', module: 'purchases' },
       { href: '/purchases', label: 'All Purchases', module: 'purchases' },
       { href: '/purchases/requests', label: 'Requests', module: 'purchases' },
       { href: '/purchase-orders', label: 'Purchase Orders', module: 'purchases' },
@@ -205,9 +210,16 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     [
       { href: '/accounts', label: 'Chart of Accounts', module: 'settings', featureKey: 'accounting_chart', isLocked: !hasFeature(hasCapability, 'accounting_chart') },
       { href: '/journal-entries', label: 'Journal Entries', module: 'journal' },
+      { href: '/contra', label: 'Contra', module: 'journal' },
+      { href: '/advances', label: 'Advances', module: 'journal' },
+      { href: '/recurring-invoices', label: 'Recurring invoices', module: 'invoices' },
+      { href: '/fixed-assets', label: 'Fixed assets', module: 'journal' },
+      { href: '/bank/import', label: 'Bank import', module: 'settings' },
+      { href: '/bank/reconciliation', label: 'Bank reconciliation', module: 'settings' },
       { href: '/ledger', label: 'Ledger', module: 'invoices' },
       { href: '/payments/in', label: 'Payments In', module: 'payments' },
       { href: '/payments/out', label: 'Payments Out', module: 'payments' },
+      { href: '/payments/reconciliation', label: 'Reconciliation', module: 'payments' },
       { href: '/provisions', label: 'Provisions', module: 'settings', featureKey: 'accounting_provisions', isLocked: !hasFeature(hasCapability, 'accounting_provisions') },
       { href: '/tds', label: 'TDS/TCS', module: 'settings', featureKey: 'accounting_tds', isLocked: !hasFeature(hasCapability, 'accounting_tds') },
     ],
@@ -229,7 +241,32 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
       { href: '/reports/gst/gstr1', label: 'GST Returns (GSTR-1)', module: 'reports' },
       { href: '/reports/gst/cash-ledger', label: 'GST Cash Ledger', module: 'reports' },
       { href: '/reports/sales/summary', label: 'Sales — Summary', module: 'reports' },
+      { href: '/reports/sales/invoice-wise', label: 'Sales — Invoice-wise', module: 'reports' },
+      { href: '/reports/sales/item-wise', label: 'Sales — Item-wise', module: 'reports' },
+      { href: '/reports/sales/party-wise', label: 'Sales — Party-wise', module: 'reports' },
+      { href: '/reports/sales/tax-wise', label: 'Sales — Tax-wise', module: 'reports' },
+      { href: '/reports/sales/payment-mode', label: 'Sales — Payment mode', module: 'reports' },
+      { href: '/reports/sales/discount', label: 'Sales — Discount', module: 'reports' },
+      { href: '/reports/sales/credit', label: 'Sales — Credit', module: 'reports' },
+      { href: '/reports/sales/cancelled', label: 'Sales — Cancelled', module: 'reports' },
+      { href: '/reports/sales/returns', label: 'Sales — Returns', module: 'reports' },
+      { href: '/reports/sales/b2b-b2c', label: 'Sales — B2B vs B2C', module: 'reports' },
       { href: '/reports/purchase/summary', label: 'Purchase — Summary', module: 'reports' },
+      { href: '/reports/purchase/invoice-wise', label: 'Purchase — Invoice-wise', module: 'reports' },
+      { href: '/reports/purchase/supplier-wise', label: 'Purchase — Supplier-wise', module: 'reports' },
+      { href: '/reports/purchase/item-wise', label: 'Purchase — Item-wise', module: 'reports' },
+      { href: '/reports/purchase/returns', label: 'Purchase — Returns', module: 'reports' },
+      { href: '/reports/purchase/credit', label: 'Purchase — Credit', module: 'reports' },
+      { href: '/reports/purchase/tax-wise', label: 'Purchase — Tax-wise', module: 'reports' },
+      { href: '/reports/gst/compliance', label: 'GST alerts', module: 'reports' },
+      { href: '/reports/gst/gstr2b', label: 'GSTR-2B', module: 'reports' },
+      { href: '/reports/gst/gstr2b-reconciliation', label: 'GSTR-2B reconciliation', module: 'reports' },
+      { href: '/reports/gst/reconciliation', label: 'GSTR-1 vs 3B', module: 'reports' },
+      { href: '/reports/gst/gstr3b', label: 'GSTR-3B', module: 'reports' },
+      { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
+      { href: '/reports/deleted', label: 'Deleted items', module: 'reports' },
+      { href: '/reports/stock/valuation', label: 'Stock valuation', module: 'reports' },
+      { href: '/reports/credit-risk', label: 'Credit risk', module: 'reports' },
     ],
     ctx
   );
@@ -296,22 +333,22 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           isLocked: !whatsappUnlocked,
           featureKey: 'whatsapp_bot',
         },
-          {
-            href: '/whatsapp/send-message',
-            label: 'Send Message',
-            module: 'whatsapp',
-            isLocked: !whatsappUnlocked,
-            featureKey: 'whatsapp_bot',
-          },
-          {
-            href: '/whatsapp/who-to-message',
-            label: 'Who to message',
-            module: 'whatsapp',
-            isLocked: !whatsappUnlocked,
-            featureKey: 'whatsapp_bot',
-          },
-          {
-            href: '/whatsapp/campaigns',
+        {
+          href: '/whatsapp/send-message',
+          label: 'Send Message',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/who-to-message',
+          label: 'Who to message',
+          module: 'whatsapp',
+          isLocked: !whatsappUnlocked,
+          featureKey: 'whatsapp_bot',
+        },
+        {
+          href: '/whatsapp/campaigns',
           label: 'Campaigns',
           module: 'whatsapp',
           isLocked: !whatsappUnlocked,
@@ -375,6 +412,15 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
     { href: '/tools/hsn-finder', label: 'HSN/SAC Finder' },
     { href: '/tools/gst-calculator', label: 'GST Calculator' },
     { href: '/tools/google-lead-extractor', label: 'Lead Extractor' },
+    { href: '/tools/tds-calculator', label: 'TDS Calculator' },
+    { href: '/tools/discount-calculator', label: 'Discount Calculator' },
+    { href: '/tools/price-margin-calculator', label: 'Price Calculator' },
+    { href: '/tools/pan-validator', label: 'PAN Validator' },
+    { href: '/tools/gstin-validator', label: 'GSTIN Validator' },
+    { href: '/tools/interest-calculator', label: 'Interest Calculator' },
+    { href: '/tools/emi-calculator', label: 'EMI Calculator' },
+    { href: '/tools/currency-converter', label: 'Currency Converter' },
+    { href: '/tools/invoice-number-generator', label: 'Invoice Generator' },
   ];
   const tools = section('Tools', toolsItems, ctx);
   if (tools) out.push(tools);

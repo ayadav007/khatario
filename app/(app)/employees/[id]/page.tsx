@@ -236,7 +236,7 @@ export default function EmployeeDetailPage() {
           />
         ) : null}
 
-        {hasCapability('hr_attendance', 'view') ? <StaffAppLinkCard employeeId={employeeId} /> : null}
+        {hrPlan.staffApp && hasCapability('hr_attendance', 'view') ? <StaffAppLinkCard employeeId={employeeId} /> : null}
 
         {/* Tabs */}
         <div className="border-b border-border">

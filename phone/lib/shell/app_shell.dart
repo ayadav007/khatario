@@ -111,7 +111,6 @@ class _AppShellState extends State<AppShell> {
   List<String> _enabledFeatures = const [];
   bool _featuresLoaded = false;
   CapabilitySnapshot? _snapshot;
-  bool _warehousesEnabled = false;
 
   /// Kept so Parties can open on Suppliers when More asks for that list.
   bool _openedFromMore = false;
@@ -252,7 +251,6 @@ class _AppShellState extends State<AppShell> {
     _loadBusinesses();
     _loadNotifications();
     _loadCapabilities();
-    _loadWarehousesSetting();
   }
 
   Future<void> _loadBadges() async {
@@ -318,13 +316,6 @@ class _AppShellState extends State<AppShell> {
         enabledFeatures: ids,
       );
     });
-  }
-
-  Future<void> _loadWarehousesSetting() async {
-    try {
-      final body = await _api.getJson('/api/settings/warehouses?business_id=${widget.session.businessId}');
-      if (mounted) setState(() => _warehousesEnabled = body['warehouses_enabled'] == true);
-    } catch (_) {}
   }
 
   Capabilities? get _capabilities {
@@ -622,8 +613,6 @@ class _AppShellState extends State<AppShell> {
           key: ValueKey('more-${widget.session.businessId}'),
           session: widget.session,
           banners: _banners,
-          capabilities: _capabilities,
-          warehousesEnabled: _warehousesEnabled,
           onNavigate: _openFromMore,
           onOpen: _openAnything,
           onSignOut: widget.onSignOut,

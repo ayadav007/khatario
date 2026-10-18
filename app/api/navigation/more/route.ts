@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest, requirePortalSession, requireTenantBusinessId } from '@/lib/auth-helpers';
-import { loadHrNavSectionForUser } from '@/lib/hr/hr-nav-for-user';
+import { loadMoreMenuForUser } from '@/lib/navigation/more-menu-for-user';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/navigation/hr
- * The HR menu section for the signed-in user: the items their plan includes and their role can open.
- * Returns: { section: { title, items: [{ href, label }] } | null }
+ * GET /api/navigation/more
+ * The More menu for the signed-in user, built from `lib/more-navigation.ts` with their plan and role.
+ * Returns: { sections: [{ title, items: [{ href, label, locked }] }] }
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,15 +21,15 @@ export async function GET(request: NextRequest) {
     const tenant = requireTenantBusinessId(request);
     if (!tenant.ok) return tenant.response;
 
-    const section = await loadHrNavSectionForUser(tenant.businessId, userId);
+    const sections = await loadMoreMenuForUser(tenant.businessId, userId);
     return NextResponse.json({
-      section: section && {
+      sections: sections.map((section) => ({
         title: section.title,
-        items: section.items.map((item) => ({ href: item.href, label: item.label })),
-      },
+        items: section.items.map((item) => ({ href: item.href, label: item.label, locked: !!item.isLocked })),
+      })),
     });
   } catch (error: unknown) {
-    console.error('[HR navigation] Failed to build HR menu:', error);
-    return NextResponse.json({ error: 'Failed to load HR menu' }, { status: 500 });
+    console.error('[More navigation] Failed to build menu:', error);
+    return NextResponse.json({ error: 'Failed to load menu' }, { status: 500 });
   }
 }

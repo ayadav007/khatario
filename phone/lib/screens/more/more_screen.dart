@@ -3,21 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../capability.dart';
 import '../../session.dart';
 import '../../shell/shell_banners.dart';
 import '../../theme.dart';
 import '../../ui/kit.dart';
 import 'more_navigation.dart';
 
-/// Copy of `app/(app)/more/page.tsx` at the mobile breakpoint.
+/// Copy of `app/(app)/more/page.tsx` at the mobile breakpoint. The sections come from the server.
 class MoreScreen extends StatefulWidget {
   const MoreScreen({
     super.key,
     required this.session,
     required this.banners,
-    required this.capabilities,
-    required this.warehousesEnabled,
     required this.onNavigate,
     required this.onOpen,
     required this.onSignOut,
@@ -25,10 +22,6 @@ class MoreScreen extends StatefulWidget {
 
   final AppSession session;
   final ShellBannersController banners;
-
-  /// Null until the capability snapshot is loaded (`snapshotLoaded`).
-  final Capabilities? capabilities;
-  final bool warehousesEnabled;
 
   /// A menu row: website href and label.
   final void Function(String href, String label) onNavigate;
@@ -73,54 +66,37 @@ const _sectionIcons = {
 };
 
 class _MoreScreenState extends State<MoreScreen> {
-  bool _isSupplier = false;
-  MoreNavSection? _hrSection;
+  /// Null while loading.
+  List<MoreNavSection>? _sections;
+  bool _failed = false;
   Map<String, bool> _openSections = const {};
 
   @override
   void initState() {
     super.initState();
-    _probeSupplier();
-    _loadHrSection();
+    _loadMenu();
   }
 
-  /// The server decides which HR items this user sees, so the phone matches the website.
-  Future<void> _loadHrSection() async {
+  /// The server builds the menu from the website's list with this user's plan and role.
+  Future<void> _loadMenu() async {
+    setState(() => _failed = false);
     try {
-      final data = await widget.session.api.getJson('/api/navigation/hr').timeout(const Duration(seconds: 8));
-      if (mounted) setState(() => _hrSection = parseHrNavSection(data));
+      final data = await widget.session.api.getJson('/api/navigation/more').timeout(const Duration(seconds: 10));
+      final sections = parseMoreMenu(data);
+      if (mounted) {
+        setState(() {
+          _sections = sections;
+          _failed = sections == null;
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() => _hrSection = null);
-    }
-  }
-
-  Future<void> _probeSupplier() async {
-    final businessId = widget.session.businessId;
-    if (businessId == null) return;
-    try {
-      final data = await widget.session.api
-          .getJson('/api/suppliers/dashboard?supplier_business_id=$businessId')
-          .timeout(const Duration(seconds: 4));
-      final stats = data['stats'];
-      final active = stats is Map ? stats['active_customers'] : null;
-      if (mounted) setState(() => _isSupplier = (active is num ? active : 0) > 0);
-    } catch (_) {
-      if (mounted) setState(() => _isSupplier = false);
+      if (mounted) setState(() => _failed = true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final caps = widget.capabilities;
-    final sections = caps == null
-        ? const <MoreNavSection>[]
-        : buildMoreMenuSections(
-            caps: caps,
-            isSupplier: _isSupplier,
-            warehousesEnabled: widget.warehousesEnabled,
-            enabledModules: widget.session.raw['platform'] is Map ? widget.session.enabledModules : const ['billing'],
-            hrSection: _hrSection,
-          );
+    final sections = _sections;
     return ListView(
       key: const PageStorageKey('more'),
       padding: const EdgeInsets.only(bottom: 40),
@@ -133,8 +109,8 @@ class _MoreScreenState extends State<MoreScreen> {
         ),
         Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: caps == null
-              ? const _MenuLoading()
+          child: sections == null
+              ? (_failed ? _MenuFailed(onRetry: _loadMenu) : const _MenuLoading())
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -170,6 +146,26 @@ class _MoreScreenState extends State<MoreScreen> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _MenuFailed extends StatelessWidget {
+  const _MenuFailed({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 48),
+      child: Column(
+        children: [
+          Text('Could not load the menu.', style: AppText.caption),
+          const SizedBox(height: 8),
+          TextButton(onPressed: onRetry, child: const Text('Try again')),
+        ],
+      ),
     );
   }
 }
