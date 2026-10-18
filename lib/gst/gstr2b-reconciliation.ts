@@ -153,7 +153,7 @@ export class GSTR2BReconciliationEngine {
   async listMissingReferences(client: any, business_id: string, filing_period: string): Promise<MissingReference[]> {
     const { startDate, endDate, carryFrom } = periodWindow(filing_period);
     const books = await client.query(
-      `SELECT p.id AS purchase_id, p.bill_date,
+      `SELECT p.id AS purchase_id, to_char(p.bill_date, 'YYYY-MM-DD') AS bill_date,
               UPPER(TRIM(COALESCE(NULLIF(TRIM(p.supplier_gstin), ''), s.gstin, ''))) AS supplier_gstin,
               p.bill_number
          FROM purchases p
