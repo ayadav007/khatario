@@ -23,6 +23,12 @@ describe('isPublicMarketingSurface', () => {
     expect(isPublicMarketingSurface('/blog/gst-bills', 'khatario.com')).toBe(true);
   });
 
+  it('keeps the employee portal on its own sign-in page', () => {
+    expect(isPublicMarketingSurface('/hr-lite-check/employees', 'staging.khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/hr-lite-check/employees/attendance', 'staging.khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/dashboard', 'staging.khatario.com')).toBe(false);
+  });
+
   it('does not send platform admin routes through business /login', () => {
     expect(isPublicMarketingSurface('/admin', 'khatario.com')).toBe(true);
     expect(isPublicMarketingSurface('/admin/plans', 'khatario.com')).toBe(true);
