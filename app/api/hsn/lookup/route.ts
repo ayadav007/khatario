@@ -14,6 +14,16 @@ interface HSNResult {
   rate_condition?: string | null;
 }
 
+interface HSNLookupRow {
+  code: string;
+  description: string;
+  category: string;
+  is_service: boolean;
+  source: string;
+  gst_rate: number | null;
+  rate_condition: string | null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -67,7 +77,7 @@ export async function GET(request: NextRequest) {
       limit,
     ]);
 
-    const withRates = results.flatMap((result) => {
+    const withRates = results.flatMap((result): HSNLookupRow[] => {
       const rates = result.is_service ? [] : gstRatesForCode(result.code);
       if (rates.length === 0) {
         return [{ ...result, source: 'database', gst_rate: null, rate_condition: null }];
