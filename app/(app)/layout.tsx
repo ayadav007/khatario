@@ -37,6 +37,7 @@ import { SyncStatusBanner } from '@/components/system/SyncStatusBanner';
 import { ModuleShellGuard } from '@/components/layout/ModuleShellGuard';
 import { WebAccessGate } from '@/components/layout/WebAccessGate';
 import { DesktopZoomShortcuts } from '@/components/desktop/DesktopZoomShortcuts';
+import { ReturnReviewDialogHost } from '@/components/gst/ReturnReviewDialog';
 
 const GlobalSubscriptionUsageStrip = dynamic(
   () =>
@@ -163,6 +164,7 @@ function AppRouteLayoutInner({
           </div>
           <BottomNav />
           <PromotionModal />
+          <ReturnReviewDialogHost />
           <ProductTour />
           <TrialExtensionModal />
           {!isFullWidthPage && !isDocumentComposer ? (

@@ -1,4 +1,5 @@
 import type { AckIssue } from '@/lib/gst/acknowledgements';
+import { confirmReturnReview } from '@/lib/gst/return-review-prompt';
 
 export interface DownloadGate {
   ok: boolean;
@@ -31,10 +32,7 @@ export async function confirmReturnDownload(
     if (depth > 0) {
       return { ok: false, message: 'Those items changed again. Review the return and try the download once more.' };
     }
-    const accepted = window.confirm(
-      `${needs.length} item${needs.length === 1 ? '' : 's'} on this return need review before the file is generated. ` +
-        'The file is for upload only. Filing is recorded separately. Continue?'
-    );
+    const accepted = await confirmReturnReview(needs);
     if (!accepted) return { ok: false, message: null };
     const saved = await fetch('/api/gst/return-readiness', {
       method: 'POST',
