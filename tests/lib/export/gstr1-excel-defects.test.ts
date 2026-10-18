@@ -70,7 +70,46 @@ function report() {
       },
     ],
     sez: [],
-    cdn: [],
+    cdn: [
+      {
+        gstin_uin_recipient: null,
+        receiver_name: null,
+        note_number: 'CN-401702',
+        note_date: '2026-10-18',
+        note_type: 'C' as const,
+        place_of_supply: '27',
+        invoice_value: 1180,
+        original_invoice_number: 'INV-066',
+        original_invoice_date: '2026-10-18',
+        note_supply_type: 'Regular',
+        cdnur_typ: 'B2CL' as const,
+        tax_rate: 18,
+        taxable_value: 1000,
+        igst_amount: 180,
+        cgst_amount: 0,
+        sgst_amount: 0,
+        cess_amount: 0,
+      },
+      {
+        gstin_uin_recipient: null,
+        receiver_name: null,
+        note_number: 'CN-401703',
+        note_date: '2026-10-18',
+        note_type: 'C' as const,
+        place_of_supply: '96',
+        invoice_value: 590,
+        original_invoice_number: 'INV-068',
+        original_invoice_date: '2026-10-18',
+        note_supply_type: 'Regular',
+        cdnur_typ: 'EXPWP' as const,
+        tax_rate: 18,
+        taxable_value: 500,
+        igst_amount: 90,
+        cgst_amount: 0,
+        sgst_amount: 0,
+        cess_amount: 0,
+      },
+    ],
     at: [{ place_of_supply: '29', rate: 18, taxable_value: 3000, igst: 0, cgst: 270, sgst: 270, cess: 0 }],
     atadj: [{ place_of_supply: '29', rate: 18, taxable_value: 1000, igst: 0, cgst: 90, sgst: 90, cess: 0 }],
     doc_issues: [
@@ -148,12 +187,30 @@ describe('GSTR-1 workbook defects', () => {
       if (cell(summary, r, 1) === 'B2CL') b2clLabel = String(cell(summary, r, 2));
     }
     expect(exportIgst).toBe(450);
-    expect(grand).toBe(100000 + 2500);
+    expect(grand).toBe(100000 + 2500 + 1500);
     expect(b2clLabel).toContain('1,00,000');
 
     const master = book.getWorksheet('Master')!;
     expect(cell(master, 3, 2)).toBe('2026-27');
     expect(cell(master, 4, 2)).toBe('2610');
+  });
+
+  it('writes the CDNUR GST rate under Rate for B2CL and EXPWP notes', async () => {
+    const book = await load(await generateOfficialGSTR1Excel(report() as any, filters as any, '29', '29AAAAA0000A1Z5'));
+    const sheet = book.getWorksheet('CDNUR')!;
+    const headers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((c) => cell(sheet, 1, c));
+    expect(headers).not.toContain('Applicable % of Tax Rate');
+    expect(cell(sheet, 1, 8)).toBe('Rate');
+    expect(cell(sheet, 2, 1)).toBe('B2CL');
+    expect(cell(sheet, 2, 2)).toBe('CN-401702');
+    expect(cell(sheet, 2, 8)).toBe(18);
+    expect(cell(sheet, 2, 9)).toBe(1000);
+    expect(cell(sheet, 2, 10)).toBe(180);
+    expect(cell(sheet, 3, 1)).toBe('EXPWP');
+    expect(cell(sheet, 3, 2)).toBe('CN-401703');
+    expect(cell(sheet, 3, 8)).toBe(18);
+    expect(cell(sheet, 3, 9)).toBe(500);
+    expect(cell(sheet, 3, 10)).toBe(90);
   });
 
   it('fills advance and document sheets from the report, without collapsing series', async () => {

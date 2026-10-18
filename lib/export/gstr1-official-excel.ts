@@ -459,7 +459,7 @@ export async function generateOfficialGSTR1Excel(
     { header: 'Place Of Supply', key: 'place_of_supply', width: 15 },
     { header: 'Note Supply Type', key: 'note_supply_type', width: 18 },
     { header: 'Note Value', key: 'note_value', width: 15 },
-    { header: 'Applicable % of Tax Rate', key: 'rate', width: 20 },
+    { header: 'Rate', key: 'rate', width: 8 },
     { header: 'Taxable Value', key: 'taxable_value', width: 15 },
     { header: 'Integrated Tax', key: 'igst', width: 15 },
     { header: 'Central Tax', key: 'cgst', width: 15 },
