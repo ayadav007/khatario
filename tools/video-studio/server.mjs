@@ -8,12 +8,14 @@ import { estimateWords, highlightTimeline, normalizeHighlights, speechSegments, 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const publicDir = path.join(root, 'tools/video-studio/public');
 const port = Number(process.env.VIDEO_STUDIO_PORT || 4317);
+// The Windows defaults are the dev box; elsewhere ffmpeg, python and chrome come from PATH or env.
+const isWindows = process.platform === 'win32';
 const ffmpegBin = process.env.FFMPEG_BIN
-  || 'C:\\Users\\Abhishek\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.2-full_build\\bin';
+  || (isWindows ? 'C:\\Users\\Abhishek\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.2-full_build\\bin' : '');
 const python = process.env.HYPERFRAMES_PYTHON
-  || path.join(process.env.LOCALAPPDATA || '', 'Programs/Python/Python312/python.exe');
+  || (isWindows ? path.join(process.env.LOCALAPPDATA || '', 'Programs/Python/Python312/python.exe') : undefined);
 const chrome = process.env.HYPERFRAMES_BROWSER_PATH
-  || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  || (isWindows ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : undefined);
 
 const invoiceShots = path.join(root, 'brag-output/invoice-how-to/shots');
 
@@ -53,10 +55,22 @@ function readBody(req) {
   });
 }
 
+// npm ships beside node.exe on Windows but under lib/ on Linux/macOS (nvm, system installs).
+export function findNpxCli(execPath = process.execPath, override = process.env.NPX_CLI) {
+  const nodeDir = path.dirname(execPath);
+  const candidates = [
+    override,
+    path.join(nodeDir, 'node_modules/npm/bin/npx-cli.js'),
+    path.join(nodeDir, '../lib/node_modules/npm/bin/npx-cli.js'),
+  ].filter(Boolean);
+  return candidates.find((file) => fs.existsSync(file)) || null;
+}
+
 function run(command, args, cwd, env, onLine) {
-  const npxCli = path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
-  const bin = command === 'npx' ? process.execPath : command;
-  const argv = command === 'npx' ? [npxCli, ...args] : args;
+  // Run npx through this node so it works without a shell; fall back to npx on PATH.
+  const npxCli = command === 'npx' ? findNpxCli() : null;
+  const bin = npxCli ? process.execPath : command;
+  const argv = npxCli ? [npxCli, ...args] : args;
   return new Promise((resolve, reject) => {
     const child = spawn(bin, argv, { cwd, env, shell: false, windowsHide: true });
     let text = '';
@@ -75,7 +89,7 @@ function run(command, args, cwd, env, onLine) {
 
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
-    const bin = path.join(ffmpegBin, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    const bin = path.join(ffmpegBin, isWindows ? 'ffmpeg.exe' : 'ffmpeg');
     const child = spawn(bin, args, { windowsHide: true });
     let text = '';
     child.stderr.on('data', (d) => { text += d.toString(); });
@@ -97,7 +111,7 @@ async function boostVoice(file) {
 
 function ffprobe(file) {
   return new Promise((resolve, reject) => {
-    const bin = path.join(ffmpegBin, 'ffprobe.exe');
+    const bin = path.join(ffmpegBin, isWindows ? 'ffprobe.exe' : 'ffprobe');
     const child = spawn(bin, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], { windowsHide: true });
     let out = '';
     child.stdout.on('data', (d) => { out += d.toString(); });
@@ -310,12 +324,10 @@ export async function renderJob(body, log) {
     });
   }
 
-  const env = {
-    ...process.env,
-    PATH: `${ffmpegBin};${process.env.PATH || ''}`,
-    HYPERFRAMES_PYTHON: python,
-    HYPERFRAMES_BROWSER_PATH: chrome,
-  };
+  const env = { ...process.env };
+  if (ffmpegBin) env.PATH = [ffmpegBin, process.env.PATH || ''].join(path.delimiter);
+  if (python) env.HYPERFRAMES_PYTHON = python;
+  if (chrome) env.HYPERFRAMES_BROWSER_PATH = chrome;
   const voices = [];
 
   async function speak(text, file) {
