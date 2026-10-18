@@ -58,6 +58,8 @@ export interface CreatePurchaseInput {
   supplier_state_code?: string | null;
   invoice_number?: string | null;
   supplier_gstin?: string | null;
+  original_bill_number?: string | null;
+  original_bill_date?: string | null;
   extraction_job_id?: string | null;
 }
 
@@ -369,9 +371,10 @@ export async function createPurchaseInTransaction(
       round_off, grand_total, paid_amount, balance_amount, payment_status, notes,
       place_of_supply_state_code, is_reverse_charge, supplier_gstin,
       document_type, port_code, itc_eligible,
-      price_mode, supplier_state_code, invoice_number, cess_total
+      price_mode, supplier_state_code, invoice_number, cess_total,
+      original_bill_number, original_bill_date
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
     RETURNING *
     `,
     [
@@ -402,6 +405,8 @@ export async function createPurchaseInTransaction(
       supplierStateForGst || null,
       invoiceNumberStored,
       cessTotal,
+      body.original_bill_number?.trim() || null,
+      body.original_bill_date || null,
     ]
   );
 
@@ -524,6 +529,14 @@ export async function createPurchaseInTransaction(
       );
     }
 
+    if (status === 'final' && body.document_type === 'supplier_credit_note' && !lineIsService) {
+      throw new PurchaseCreateServiceError(
+        'A supplier credit note reduces the bill. It does not receive stock. Enter a service line, or use a purchase return when goods go back to the supplier.',
+        400,
+        'SUPPLIER_CREDIT_NOTE_NO_STOCK'
+      );
+    }
+
     if (status === 'final' && effectiveItemId && !lineIsService) {
       const itemTypeRes = await client.query(
         'SELECT item_type, track_batch, track_serial FROM items WHERE id = $1 AND business_id = $2',
@@ -584,33 +597,58 @@ export async function createPurchaseInTransaction(
     );
     totalInventoryAmount = Number(invRes.rows[0]?.total) || 0;
 
-    const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
+    const isSupplierCredit = body.document_type === 'supplier_credit_note';
+    if (isSupplierCredit) totalInventoryAmount = 0;
+
+    const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
     const isCashPurchase =
       !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
-    await createPurchaseLedgerEntries({
-      businessId: business_id,
-      purchaseId: purchase.id,
-      purchaseNumber: body.bill_number || String(purchase.id).substring(0, 8),
-      purchaseDate: body.bill_date,
-      grandTotal: finalGrandTotal,
-      supplierId: normalizedSupplierId,
-      isCashPurchase,
-      inventoryAmount: totalInventoryAmount,
-      branchId: finalBranchId,
-      poolClient: client,
-      taxableValue: finalSubtotal,
-      cgstTotal: gstDoc.cgstTotal,
-      sgstTotal: gstDoc.sgstTotal,
-      igstTotal: gstDoc.igstTotal,
-      cessTotal,
-      itcEligible: body.itc_eligible !== false,
-      isReverseCharge: !!body.is_reverse_charge,
-    });
+    if (isSupplierCredit) {
+      await createPurchaseReturnLedgerEntries({
+        businessId: business_id,
+        purchaseReturnId: purchase.id,
+        returnNumber: body.bill_number || String(purchase.id).substring(0, 8),
+        returnDate: body.bill_date,
+        grandTotal: finalGrandTotal,
+        supplierId: normalizedSupplierId,
+        inventoryAmount: 0,
+        branchId: finalBranchId,
+        poolClient: client,
+        taxableValue: finalSubtotal,
+        cgstTotal: gstDoc.cgstTotal,
+        sgstTotal: gstDoc.sgstTotal,
+        igstTotal: gstDoc.igstTotal,
+        cessTotal,
+        itcEligible: body.itc_eligible !== false,
+        isReverseCharge: !!body.is_reverse_charge,
+        voucherType: 'supplier_credit_note',
+      });
+    } else {
+      await createPurchaseLedgerEntries({
+        businessId: business_id,
+        purchaseId: purchase.id,
+        purchaseNumber: body.bill_number || String(purchase.id).substring(0, 8),
+        purchaseDate: body.bill_date,
+        grandTotal: finalGrandTotal,
+        supplierId: normalizedSupplierId,
+        isCashPurchase,
+        inventoryAmount: totalInventoryAmount,
+        branchId: finalBranchId,
+        poolClient: client,
+        taxableValue: finalSubtotal,
+        cgstTotal: gstDoc.cgstTotal,
+        sgstTotal: gstDoc.sgstTotal,
+        igstTotal: gstDoc.igstTotal,
+        cessTotal,
+        itcEligible: body.itc_eligible !== false,
+        isReverseCharge: !!body.is_reverse_charge,
+      });
+    }
 
     if (normalizedSupplierId) {
       await client.query(
         `UPDATE suppliers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [balanceAmount, normalizedSupplierId]
+        [isSupplierCredit ? -balanceAmount : balanceAmount, normalizedSupplierId]
       );
     }
 

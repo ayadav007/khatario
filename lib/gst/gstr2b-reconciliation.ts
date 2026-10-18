@@ -85,6 +85,24 @@ export function isBlankInvoiceNumber(no: unknown): boolean {
   return String(no ?? '').trim() === '';
 }
 
+/** Books document types that are supplier-issued notes, not purchase invoices or purchase returns. */
+export function booksNoteKind(documentType: unknown): 'credit_note' | 'debit_note' | null {
+  const type = String(documentType || '');
+  if (type === 'supplier_credit_note' || type === 'credit_note') return 'credit_note';
+  if (type === 'supplier_debit_note' || type === 'debit_note') return 'debit_note';
+  return null;
+}
+
+function portalMatchKey(inv: { document_type?: string; supplier_gstin?: string; invoice_number?: string }): string | null {
+  const gstin = String(inv.supplier_gstin || '').trim().toUpperCase();
+  const number = normalizeDocNumber(inv.invoice_number);
+  if (inv.document_type === 'credit_note') return `credit_note|${gstin}|${number}`;
+  if (inv.document_type === 'debit_note') return `debit_note|${gstin}|${number}`;
+  if (inv.document_type === 'import_goods') return `IMPG|${number}`;
+  if (inv.document_type === 'invoice') return `${gstin}|${number}`;
+  return null;
+}
+
 export interface MissingReference {
   source: 'books' | 'gstr2b';
   reason: 'missing_invoice_number' | 'missing_invoice_date';
@@ -345,23 +363,21 @@ export class GSTR2BReconciliationEngine {
     const matches: ReconciliationMatch[] = [];
     const matched2BIds = new Set<string>();
 
-    // Supplier invoices (b2b) match on supplier GSTIN + invoice number; imports (impg) on the
-    // bill of entry number. Credit / debit notes in 2B are not matched against bills.
+    // Supplier invoices match on GSTIN + invoice number. Import goods match on the bill of
+    // entry. Supplier credit and debit notes match on GSTIN + note number + note type, never
+    // against an invoice or a purchase return.
     const gstr2bMap = new Map<string, any[]>();
     gstr2bInvoices.forEach((inv: any) => {
-      const key = inv.document_type === 'import_goods'
-        ? `IMPG|${normalizeDocNumber(inv.invoice_number)}`
-        : inv.document_type === 'invoice'
-          ? `${String(inv.supplier_gstin || '').trim().toUpperCase()}|${normalizeDocNumber(inv.invoice_number)}`
-          : null;
+      const key = portalMatchKey(inv);
       if (!key) return;
       if (!gstr2bMap.has(key)) gstr2bMap.set(key, []);
       gstr2bMap.get(key)!.push(inv);
     });
 
     for (const bookInv of booksInvoices) {
-      const isImportGoods = bookInv.purchase_document_type === 'bill_of_entry' ||
-        (bookInv.supplier_state_code === '96' && !bookInv.has_service_item);
+      const noteKind = booksNoteKind(bookInv.purchase_document_type || bookInv.document_type);
+      const isImportGoods = !noteKind && (bookInv.purchase_document_type === 'bill_of_entry' ||
+        (bookInv.supplier_state_code === '96' && !bookInv.has_service_item));
       const isImportService = !isImportGoods && bookInv.supplier_state_code === '96' && bookInv.is_reverse_charge;
       // s.9(4): a domestic reverse-charge bill from an unregistered supplier is self-invoiced and
       // never appears in 2B.
@@ -371,7 +387,7 @@ export class GSTR2BReconciliationEngine {
         supplier_gstin: bookInv.supplier_gstin || '',
         invoice_number: bookInv.invoice_number,
         invoice_date: bookInv.invoice_date,
-        document_type: bookInv.document_type,
+        document_type: noteKind || bookInv.document_type,
         books_taxable_value: bookInv.taxable_value,
         books_igst: bookInv.igst_amount,
         books_cgst: bookInv.cgst_amount,
@@ -381,7 +397,7 @@ export class GSTR2BReconciliationEngine {
         purchase_id: bookInv.purchase_id,
         is_import_goods: isImportGoods,
         is_import_services: isImportService,
-        is_credit_note: bookInv.document_type === 'credit_note',
+        is_credit_note: noteKind === 'credit_note',
       };
 
       if (isImportService) {
@@ -396,9 +412,11 @@ export class GSTR2BReconciliationEngine {
         continue;
       }
 
-      const key = isImportGoods
-        ? `IMPG|${normalizeDocNumber(bookInv.invoice_number)}`
-        : `${bookInv.supplier_gstin}|${normalizeDocNumber(bookInv.invoice_number)}`;
+      const key = noteKind
+        ? `${noteKind}|${String(bookInv.supplier_gstin || '').trim().toUpperCase()}|${normalizeDocNumber(bookInv.invoice_number)}`
+        : isImportGoods
+          ? `IMPG|${normalizeDocNumber(bookInv.invoice_number)}`
+          : `${String(bookInv.supplier_gstin || '').trim().toUpperCase()}|${normalizeDocNumber(bookInv.invoice_number)}`;
       const matched2B = this.findMatch(bookInv, gstr2bMap.get(key) ?? [], matched2BIds);
 
       if (!matched2B) {

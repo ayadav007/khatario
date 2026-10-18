@@ -193,6 +193,8 @@ export default function NewPurchasePage() {
     supplier_registration_status: 'unknown' as 'registered' | 'unregistered' | 'unknown',
     supply_received_on: '',
     document_type: 'tax_invoice',
+    original_bill_number: '',
+    original_bill_date: '',
     port_code: '',
     itc_eligible: true,
     notes: '',
@@ -1823,12 +1825,20 @@ export default function NewPurchasePage() {
             </div>
 
             <div>
-              <label className={labelClass}>Bill number</label>
+              <label className={labelClass}>
+                {formData.document_type === 'supplier_credit_note' || formData.document_type === 'supplier_debit_note'
+                  ? 'Note number'
+                  : 'Bill number'}
+              </label>
               <input
                 className={fieldClass}
                 value={formData.bill_number}
                 onChange={(e) => setFormData({ ...formData, bill_number: e.target.value })}
-                placeholder="As printed on the bill"
+                placeholder={
+                  formData.document_type === 'supplier_credit_note' || formData.document_type === 'supplier_debit_note'
+                    ? 'As printed on the supplier note'
+                    : 'As printed on the bill'
+                }
               />
             </div>
 
@@ -1867,8 +1877,32 @@ export default function NewPurchasePage() {
                 <option value="bill_of_supply">Bill of supply</option>
                 <option value="bill_of_entry">Bill of entry (import of goods)</option>
                 <option value="import_service">Import of services</option>
+                <option value="supplier_credit_note">Supplier credit note</option>
+                <option value="supplier_debit_note">Supplier debit note</option>
               </select>
             </div>
+            {(formData.document_type === 'supplier_credit_note' || formData.document_type === 'supplier_debit_note') && (
+              <>
+                <div>
+                  <label className={labelClass}>Original supplier invoice</label>
+                  <input
+                    className={fieldClass}
+                    value={formData.original_bill_number}
+                    onChange={(e) => setFormData({ ...formData, original_bill_number: e.target.value })}
+                    placeholder="Invoice this note adjusts"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Original invoice date</label>
+                  <input
+                    type="date"
+                    className={fieldClass}
+                    value={formData.original_bill_date}
+                    onChange={(e) => setFormData({ ...formData, original_bill_date: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
 
             <div>
               <label className={labelClass}>Supplier GSTIN</label>

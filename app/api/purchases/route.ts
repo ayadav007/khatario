@@ -316,6 +316,14 @@ export async function POST(request: NextRequest) {
       supplier_registration_status: registration_input,
       duplicate_reason: duplicate_reason_input,
     } = body;
+    const originalBillNumber =
+      typeof body.original_bill_number === 'string' && body.original_bill_number.trim()
+        ? body.original_bill_number.trim()
+        : null;
+    const originalBillDate =
+      typeof body.original_bill_date === 'string' && body.original_bill_date.trim()
+        ? body.original_bill_date.trim()
+        : null;
     const draftId = typeof (body as { id?: unknown }).id === 'string' ? (body as { id: string }).id : null;
     const allowDuplicate = (body as { allow_duplicate_bill?: boolean }).allow_duplicate_bill === true;
     const registrationStatus = parseRegistrationStatus(registration_input);
@@ -853,6 +861,13 @@ export async function POST(request: NextRequest) {
     }
 
     const purchase = purchaseResult.rows[0];
+    await client.query(
+      `UPDATE purchases SET original_bill_number = $1, original_bill_date = $2
+        WHERE id = $3 AND business_id = $4`,
+      [originalBillNumber, originalBillDate, purchase.id, business_id]
+    );
+    purchase.original_bill_number = originalBillNumber;
+    purchase.original_bill_date = originalBillDate;
     const uuidRe =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -995,6 +1010,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      if (status === 'final' && document_type === 'supplier_credit_note' && !lineIsService) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          {
+            error: 'A supplier credit note reduces the bill. It does not receive stock. Enter a service line, or use a purchase return when goods go back to the supplier.',
+            code: 'SUPPLIER_CREDIT_NOTE_NO_STOCK',
+          },
+          { status: 400 }
+        );
+      }
+
       if (status === 'final' && !lineIsService && !effectiveItemId) {
         await client.query('ROLLBACK');
         return NextResponse.json(
@@ -1083,42 +1109,63 @@ export async function POST(request: NextRequest) {
       totalInventoryAmount = Number(invRes.rows[0]?.total) || 0;
     }
 
+    const isSupplierCredit = document_type === 'supplier_credit_note';
+    if (isSupplierCredit) totalInventoryAmount = 0;
+
     // Create ledger entries for purchase (only if status is final)
     let itcWarning: string | null = null;
     if (status === 'final') {
-      const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
+      const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
       const isCashPurchase =
         !normalizedSupplierId || (paid_amount > 0 && paid_amount >= supplierPayable);
 
-      const posted = await createPurchaseLedgerEntries({
-        businessId: business_id,
-        purchaseId: purchase.id,
-        purchaseNumber: bill_number || purchase.id.substring(0, 8),
-        purchaseDate: bill_date,
-        grandTotal: finalGrandTotal,
-        supplierId: normalizedSupplierId,
-        isCashPurchase: isCashPurchase,
-        inventoryAmount: totalInventoryAmount,
-        branchId: finalBranchId,
-        poolClient: client,
-        // PHASE-3: GST split. Tax debits Input CGST/SGST/IGST when ITC is eligible;
-        // for blocked credits (s.17(5), itc_eligible=false) tax stays inside Purchases.
-        // For RCM purchases the dual-entry (Dr Input + Cr RCM Output) is also created.
-        taxableValue: finalSubtotal,
-        cgstTotal: finalCgstTotal,
-        sgstTotal: finalSgstTotal,
-        igstTotal: finalIgstTotal,
-        cessTotal,
-        itcEligible: itc_eligible !== false,
-        isReverseCharge: !!is_reverse_charge,
-      });
-      if (posted.itcBlockedReason) {
-        purchase.itc_eligible = false;
-        itcWarning = `Input GST not claimed: ${posted.itcBlockedReason}. Tax booked to cost.`;
+      if (isSupplierCredit) {
+        await createPurchaseReturnLedgerEntries({
+          businessId: business_id,
+          purchaseReturnId: purchase.id,
+          returnNumber: bill_number || purchase.id.substring(0, 8),
+          returnDate: bill_date,
+          grandTotal: finalGrandTotal,
+          supplierId: normalizedSupplierId,
+          inventoryAmount: 0,
+          branchId: finalBranchId,
+          poolClient: client,
+          taxableValue: finalSubtotal,
+          cgstTotal: finalCgstTotal,
+          sgstTotal: finalSgstTotal,
+          igstTotal: finalIgstTotal,
+          cessTotal,
+          itcEligible: itc_eligible !== false,
+          isReverseCharge: !!is_reverse_charge,
+          voucherType: 'supplier_credit_note',
+        });
+      } else {
+        const posted = await createPurchaseLedgerEntries({
+          businessId: business_id,
+          purchaseId: purchase.id,
+          purchaseNumber: bill_number || purchase.id.substring(0, 8),
+          purchaseDate: bill_date,
+          grandTotal: finalGrandTotal,
+          supplierId: normalizedSupplierId,
+          isCashPurchase: isCashPurchase,
+          inventoryAmount: totalInventoryAmount,
+          branchId: finalBranchId,
+          poolClient: client,
+          taxableValue: finalSubtotal,
+          cgstTotal: finalCgstTotal,
+          sgstTotal: finalSgstTotal,
+          igstTotal: finalIgstTotal,
+          cessTotal,
+          itcEligible: itc_eligible !== false,
+          isReverseCharge: !!is_reverse_charge,
+        });
+        if (posted.itcBlockedReason) {
+          purchase.itc_eligible = false;
+          itcWarning = `Input GST not claimed: ${posted.itcBlockedReason}. Tax booked to cost.`;
+        }
       }
     }
 
-    // Update supplier current_balance (only if status is final and supplier exists)
     if (status === 'final' && normalizedSupplierId) {
       await client.query(
         `
@@ -1127,7 +1174,7 @@ export async function POST(request: NextRequest) {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $2
       `,
-        [balanceAmount, normalizedSupplierId]
+        [isSupplierCredit ? -balanceAmount : balanceAmount, normalizedSupplierId]
       );
     }
 

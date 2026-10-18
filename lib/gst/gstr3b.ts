@@ -553,10 +553,10 @@ export class GSTR3BGenerator {
               WHEN p.document_type = 'bill_of_entry' THEN 'import_goods'
               ELSE 'regular' END AS bucket,
          (p.itc_eligible IS DISTINCT FROM false) AS eligible,
-         COALESCE(SUM(p.subtotal), 0)   AS taxable,
-         COALESCE(SUM(p.igst_total), 0) AS igst,
-         COALESCE(SUM(p.cgst_total), 0) AS cgst,
-         COALESCE(SUM(p.sgst_total), 0) AS sgst
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.subtotal ELSE p.subtotal END), 0)   AS taxable,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.igst_total ELSE p.igst_total END), 0) AS igst,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.cgst_total ELSE p.cgst_total END), 0) AS cgst,
+         COALESCE(SUM(CASE WHEN p.document_type = 'supplier_credit_note' THEN -p.sgst_total ELSE p.sgst_total END), 0) AS sgst
        FROM purchases p
       WHERE p.business_id = $1::uuid
         AND p.deleted_at IS NULL
@@ -588,7 +588,8 @@ export class GSTR3BGenerator {
       [business_id, startOfMonth, endOfMonth, branch]
     );
     const table5Res = await pool.query(
-      `SELECT pi.taxable_value, COALESCE(pi.tax_amount, 0) AS tax_amount, pi.hsn_sac,
+      `SELECT CASE WHEN p.document_type = 'supplier_credit_note' THEN -pi.taxable_value ELSE pi.taxable_value END AS taxable_value,
+              CASE WHEN p.document_type = 'supplier_credit_note' THEN -COALESCE(pi.tax_amount, 0) ELSE COALESCE(pi.tax_amount, 0) END AS tax_amount, pi.hsn_sac,
               COALESCE(p.is_reverse_charge, false) AS is_rcm,
               (p.document_type = 'bill_of_entry' OR p.supplier_state_code = '96') AS is_import,
               COALESCE(NULLIF(p.supplier_state_code, ''), LEFT(s.gstin, 2)) AS supplier_state,

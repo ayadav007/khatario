@@ -1819,6 +1819,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
   cessTotal?: number;
   itcEligible?: boolean;
   isReverseCharge?: boolean;
+  /** purchase_return for goods sent back; supplier_credit_note for a note the supplier issued. */
+  voucherType?: 'purchase_return' | 'supplier_credit_note';
   // PHASE-5: shared transaction client.
   poolClient?: PoolClient;
 }): Promise<void> {
@@ -1839,6 +1841,8 @@ export async function createPurchaseReturnLedgerEntries(params: {
     isReverseCharge = false,
     poolClient,
   } = params;
+  const voucherType = params.voucherType ?? 'purchase_return';
+  const noteLabel = voucherType === 'supplier_credit_note' ? 'Supplier credit note' : 'Purchase return';
 
   const accounts = await getDefaultAccounts(businessId);
 
@@ -1872,14 +1876,14 @@ export async function createPurchaseReturnLedgerEntries(params: {
   await createLedgerEntryLine({
     businessId,
     voucherId: purchaseReturnId,
-    voucherType: 'purchase_return',
+    voucherType,
     accountId: returnsAccount.id,
     entryDate: returnDate,
     debit: 0,
     credit: purchasesCredit,
     narration: useGstSplit
-      ? `Purchase return (taxable) - ${returnNumber}`
-      : `Purchase return - ${returnNumber}`,
+      ? `${noteLabel} (taxable) - ${returnNumber}`
+      : `${noteLabel} - ${returnNumber}`,
     referenceNumber: returnNumber,
     branchId: params.branchId,
     poolClient,
@@ -1889,7 +1893,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
   if (useGstSplit) {
     if (cgstTotal > 0 && accounts.inputCgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputCgst.id, entryDate: returnDate,
         debit: 0, credit: cgstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input CGST reversal - ${returnNumber}`,
@@ -1898,7 +1902,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (sgstTotal > 0 && accounts.inputSgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputSgst.id, entryDate: returnDate,
         debit: 0, credit: sgstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input SGST reversal - ${returnNumber}`,
@@ -1907,7 +1911,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (igstTotal > 0 && accounts.inputIgst) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputIgst.id, entryDate: returnDate,
         debit: 0, credit: igstTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input IGST reversal - ${returnNumber}`,
@@ -1916,7 +1920,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
     if (cessTotal > 0 && accounts.inputCess) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.inputCess.id, entryDate: returnDate,
         debit: 0, credit: cessTotal,
         narration: `${isReverseCharge ? 'RCM ' : ''}Input Cess reversal - ${returnNumber}`,
@@ -1927,7 +1931,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     // RCM source had Cr RCM Output for the tax — so the return must Dr RCM Output to undo it.
     if (rcmReady && accounts.rcmOutput) {
       await createLedgerEntryLine({
-        businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+        businessId, voucherId: purchaseReturnId, voucherType,
         accountId: accounts.rcmOutput.id, entryDate: returnDate,
         debit: totalGst, credit: 0,
         narration: `RCM Output Tax reversal - ${returnNumber}`,
@@ -1936,7 +1940,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     }
   } else if (rcmNoItc && accounts.rcmOutput) {
     await createLedgerEntryLine({
-      businessId, voucherId: purchaseReturnId, voucherType: 'purchase_return',
+      businessId, voucherId: purchaseReturnId, voucherType,
       accountId: accounts.rcmOutput.id, entryDate: returnDate,
       debit: totalGst, credit: 0,
       narration: `RCM Output Tax reversal (ITC not claimed) - ${returnNumber}`,
@@ -1953,12 +1957,12 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: accounts.accountsPayable.id,
       entryDate: returnDate,
       debit: apDebit,
       credit: 0,
-      narration: `Purchase return ${returnNumber} - Reduce payables`,
+      narration: `${noteLabel} ${returnNumber} - Reduce payables`,
       referenceNumber: returnNumber,
       branchId: params.branchId,
       poolClient,
@@ -1974,7 +1978,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: cashAccount.id,
       entryDate: returnDate,
       debit: apDebit,
@@ -1991,7 +1995,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: accounts.inventory.id,
       entryDate: returnDate,
       debit: 0,
@@ -2006,7 +2010,7 @@ export async function createPurchaseReturnLedgerEntries(params: {
     await createLedgerEntryLine({
       businessId,
       voucherId: purchaseReturnId,
-      voucherType: 'purchase_return',
+      voucherType,
       accountId: returnsAccount.id,
       entryDate: returnDate,
       debit: inventoryAmount,

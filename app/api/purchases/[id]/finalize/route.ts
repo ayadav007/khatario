@@ -366,8 +366,9 @@ export async function PATCH(
 
     // A draft posts nothing, so the purchase voucher and supplier balance are booked here.
     const already = await client.query(
-      `SELECT 1 FROM ledger_entry_lines WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = 'purchase' LIMIT 1`,
-      [purchase.business_id, id]
+      `SELECT 1 FROM ledger_entry_lines
+        WHERE business_id = $1 AND voucher_id = $2 AND voucher_type = ANY($3::text[]) LIMIT 1`,
+      [purchase.business_id, id, ['purchase', 'supplier_credit_note']]
     );
     if (already.rows.length === 0) {
       const invRes = await client.query(
@@ -383,32 +384,55 @@ export async function PATCH(
       const grandTotal = Number(purchase.grand_total) || 0;
       const paid = Number(purchase.paid_amount) || 0;
       const balance = Number(purchase.balance_amount ?? grandTotal - paid) || 0;
-      const { createPurchaseLedgerEntries } = await import('@/lib/ledger-utils');
-      const posted = await createPurchaseLedgerEntries({
-        businessId: purchase.business_id,
-        purchaseId: id,
-        purchaseNumber: purchase.bill_number || String(id).substring(0, 8),
-        purchaseDate: billDay,
-        grandTotal,
-        supplierId: purchase.supplier_id || null,
-        isCashPurchase: !purchase.supplier_id || (paid > 0 && balance <= 0.005),
-        inventoryAmount: Number(invRes.rows[0]?.total) || 0,
-        branchId: stockBranchId,
-        poolClient: client,
-        taxableValue: Number(purchase.subtotal) || 0,
-        cgstTotal: Number(purchase.cgst_total) || 0,
-        sgstTotal: Number(purchase.sgst_total) || 0,
-        igstTotal: Number(purchase.igst_total) || 0,
-        cessTotal: Number(purchase.cess_total) || 0,
-        itcEligible: purchase.itc_eligible !== false,
-        isReverseCharge: purchase.is_reverse_charge === true,
-      });
-      itcWarning = posted.itcBlockedReason;
+      const isSupplierCredit = purchase.document_type === 'supplier_credit_note';
+      const { createPurchaseLedgerEntries, createPurchaseReturnLedgerEntries } = await import('@/lib/ledger-utils');
+      if (isSupplierCredit) {
+        await createPurchaseReturnLedgerEntries({
+          businessId: purchase.business_id,
+          purchaseReturnId: id,
+          returnNumber: purchase.bill_number || String(id).substring(0, 8),
+          returnDate: billDay,
+          grandTotal,
+          supplierId: purchase.supplier_id || null,
+          inventoryAmount: 0,
+          branchId: stockBranchId,
+          poolClient: client,
+          taxableValue: Number(purchase.subtotal) || 0,
+          cgstTotal: Number(purchase.cgst_total) || 0,
+          sgstTotal: Number(purchase.sgst_total) || 0,
+          igstTotal: Number(purchase.igst_total) || 0,
+          cessTotal: Number(purchase.cess_total) || 0,
+          itcEligible: purchase.itc_eligible !== false,
+          isReverseCharge: purchase.is_reverse_charge === true,
+          voucherType: 'supplier_credit_note',
+        });
+      } else {
+        const posted = await createPurchaseLedgerEntries({
+          businessId: purchase.business_id,
+          purchaseId: id,
+          purchaseNumber: purchase.bill_number || String(id).substring(0, 8),
+          purchaseDate: billDay,
+          grandTotal,
+          supplierId: purchase.supplier_id || null,
+          isCashPurchase: !purchase.supplier_id || (paid > 0 && balance <= 0.005),
+          inventoryAmount: Number(invRes.rows[0]?.total) || 0,
+          branchId: stockBranchId,
+          poolClient: client,
+          taxableValue: Number(purchase.subtotal) || 0,
+          cgstTotal: Number(purchase.cgst_total) || 0,
+          sgstTotal: Number(purchase.sgst_total) || 0,
+          igstTotal: Number(purchase.igst_total) || 0,
+          cessTotal: Number(purchase.cess_total) || 0,
+          itcEligible: purchase.itc_eligible !== false,
+          isReverseCharge: purchase.is_reverse_charge === true,
+        });
+        itcWarning = posted.itcBlockedReason;
+      }
       if (purchase.supplier_id && balance !== 0) {
         await client.query(
           `UPDATE suppliers SET current_balance = COALESCE(current_balance, 0) + $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND business_id = $3`,
-          [balance, purchase.supplier_id, purchase.business_id]
+          [isSupplierCredit ? -balance : balance, purchase.supplier_id, purchase.business_id]
         );
       }
     }

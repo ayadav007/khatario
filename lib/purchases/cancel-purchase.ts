@@ -148,9 +148,10 @@ export async function cancelFinalPurchase(
   });
 
   const reason = `Purchase ${purchase.bill_number || purchase.purchase_number || ''} cancelled`.replace(/\s+/g, ' ');
+  const ledgerVoucher = purchase.document_type === 'supplier_credit_note' ? 'supplier_credit_note' : 'purchase';
   let reversedLines = await reverseVoucherLedgerEntries(client, {
     businessId: p.businessId,
-    voucherType: 'purchase',
+    voucherType: ledgerVoucher,
     voucherId: p.purchaseId,
     reason,
     actorId: p.userId,
@@ -192,10 +193,11 @@ export async function cancelFinalPurchase(
         (Number(purchase.advance_adjusted) || 0)
     );
     if (net !== 0) {
+      const balanceEffect = purchase.document_type === 'supplier_credit_note' ? -net : net;
       await client.query(
         `UPDATE suppliers SET current_balance = current_balance - $1, updated_at = CURRENT_TIMESTAMP
           WHERE id = $2 AND business_id = $3`,
-        [net, purchase.supplier_id, p.businessId]
+        [balanceEffect, purchase.supplier_id, p.businessId]
       );
     }
   }

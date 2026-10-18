@@ -136,8 +136,8 @@ export async function GET(request: NextRequest) {
         SELECT 
           match_status,
           COUNT(*) as count,
-          COALESCE(SUM(books_itc_amount), 0) as total_books_itc,
-          COALESCE(SUM(gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess), 0) as total_gstr2b_itc
+          COALESCE(SUM(CASE WHEN is_credit_note THEN -books_itc_amount ELSE books_itc_amount END), 0) as total_books_itc,
+          COALESCE(SUM(CASE WHEN is_credit_note THEN -(gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess) ELSE (gstr2b_igst + gstr2b_cgst + gstr2b_sgst + gstr2b_cess) END), 0) as total_gstr2b_itc
         FROM gstr2b_reconciliation
         WHERE business_id = $1 AND filing_period = $2
         GROUP BY match_status
