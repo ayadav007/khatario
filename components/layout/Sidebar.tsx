@@ -13,8 +13,8 @@ import {
   Receipt,
   BarChart3,
   Settings,
-  Menu,
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Truck,
   ArrowDownToLine,
@@ -78,6 +78,7 @@ import {
 } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
 import { featureIdForPath } from '@/lib/subscription/plan-path-gate';
+import { collectNavHrefs, pickActiveNavHref } from '@/lib/navigation/nav-active';
 
 /** Shown while sidebar waits for capability snapshot + warehouses + supplier + report map. */
 function SidebarNavSkeleton({ collapsed }: { collapsed: boolean }) {
@@ -583,14 +584,14 @@ export const Sidebar = React.memo(function Sidebar() {
       subItems: [
         { href: '/items', label: 'Items', module: 'items', tourId: 'nav-items' },
         { href: '/pricing/party-item', label: 'Party Pricing', module: 'items' },
-        // Bulk barcode label printing — gated on the Phase-1 feature.
-        ...(hasFeature('barcode_label_printing') ? [{
+        {
           href: '/items/barcodes',
           label: 'Print Labels',
           module: 'items',
           icon: Printer,
           featureKey: 'barcode_label_printing',
-        }] : []),
+          isLocked: !hasFeature('barcode_label_printing'),
+        },
         // Show Warehouses if enabled in settings
         // Lock it if feature is not in plan (user needs to upgrade)
         // Hide completely if disabled in settings
@@ -701,12 +702,13 @@ export const Sidebar = React.memo(function Sidebar() {
             { href: '/reports/gst/gstr9', label: 'GSTR-9', module: 'reports' },
           ],
         },
-        ...(hasFeature('barcode_label_printing') ? [{
+        {
           href: '/reports/label-print-log',
           label: 'Label Printing Activity',
           module: 'reports',
           featureKey: 'barcode_label_printing',
-        }] : []),
+          isLocked: !hasFeature('barcode_label_printing'),
+        },
       ],
     },
     
@@ -723,8 +725,110 @@ export const Sidebar = React.memo(function Sidebar() {
         isLocked: item.featureKey ? !hasFeature(item.featureKey) : false,
       })),
     },
-    
-    // 8. MORE (Tools, WhatsApp, Settings - less frequently used)
+
+    // Connect is a product, same rank as Sales and HR — not a tool under More.
+    ...(hasPlatformModule('connect')
+      ? [
+          {
+            label: 'Connect',
+            icon: MessageSquare,
+            collapsible: true,
+            subItems: [
+              {
+                href: '/whatsapp/dashboard',
+                label: 'Dashboard',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/conversations',
+                label: 'Conversations',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/reminders',
+                label: 'Payment Reminders',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/orders',
+                label: 'Order Verification',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/flows',
+                label: 'Flows',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/send-message',
+                label: 'Send Message',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/who-to-message',
+                label: 'Who to message',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/campaigns',
+                label: 'Campaigns',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/contacts',
+                label: 'Contacts',
+                module: 'whatsapp_inbox',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/contacts/groups',
+                label: 'Contact Groups',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/group-extractor',
+                label: 'Group Extractor',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/whatsapp/unsubscribes',
+                label: 'Unsubscribes',
+                module: 'whatsapp',
+                isLocked: !hasWhatsAppAddon(),
+                featureKey: 'whatsapp_bot',
+              },
+              {
+                href: '/settings/whatsapp',
+                label: 'WhatsApp Settings',
+                module: 'whatsapp',
+              },
+            ],
+          },
+        ]
+      : []),
+
+    // Tools, billing-only WhatsApp settings, and Settings.
     {
       label: 'More',
       icon: Settings,
@@ -762,105 +866,6 @@ export const Sidebar = React.memo(function Sidebar() {
                 href: '/settings/whatsapp',
                 label: 'WhatsApp',
                 icon: MessageSquare,
-              },
-            ]
-          : []),
-        ...(hasPlatformModule('connect')
-          ? [
-              {
-                label: 'Connect',
-                collapsible: true,
-                subItems: [
-                  {
-                    href: '/whatsapp/dashboard',
-                    label: 'Dashboard',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/conversations',
-                    label: 'Conversations',
-                    module: 'whatsapp_inbox',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/reminders',
-                    label: 'Payment Reminders',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/orders',
-                    label: 'Order Verification',
-                    module: 'whatsapp_inbox',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/flows',
-                    label: 'Flows',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/send-message',
-                    label: 'Send Message',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/who-to-message',
-                    label: 'Who to message',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/campaigns',
-                    label: 'Campaigns',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/contacts',
-                    label: 'Contacts',
-                    module: 'whatsapp_inbox',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/contacts/groups',
-                    label: 'Contact Groups',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/group-extractor',
-                    label: 'Group Extractor',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/whatsapp/unsubscribes',
-                    label: 'Unsubscribes',
-                    module: 'whatsapp',
-                    isLocked: !hasWhatsAppAddon(),
-                    featureKey: 'whatsapp_bot',
-                  },
-                  {
-                    href: '/settings/whatsapp',
-                    label: 'WhatsApp Settings',
-                    module: 'whatsapp',
-                  },
-                ],
               },
             ]
           : []),
@@ -986,41 +991,28 @@ export const Sidebar = React.memo(function Sidebar() {
       }),
     }));
 
-    const hrefs = groups.flatMap((group) => group.links.map((link) => link.href));
-
-    return {
-      hrefs,
-      items: [
-        ...items,
-        {
-          href: '/settings',
-          label: 'All settings',
-          icon: SlidersHorizontal,
-        },
-        {
-          href: homeHref,
-          label: 'Back to Dashboard',
-          icon: ArrowLeft,
-        },
-      ],
-    };
+    return [
+      ...items,
+      {
+        href: '/settings',
+        label: 'All settings',
+        icon: SlidersHorizontal,
+      },
+      {
+        href: homeHref,
+        label: 'Back to Dashboard',
+        icon: ArrowLeft,
+      },
+    ];
   }, [isSettingsPage, enabledModules, hasFeature, homeHref]);
 
-  const settingsNavItems = settingsNavModel?.items ?? null;
-  const settingsHrefs = settingsNavModel?.hrefs ?? [];
+  const settingsNavItems = settingsNavModel;
 
+  // Capability snapshot and warehouse setting decide which rows exist.
+  // Supplier status and report definitions fill in after the menu is visible.
   const sidebarReady = useMemo(
-    () =>
-      snapshotLoaded &&
-      warehousesSettingLoaded &&
-      supplierStatusResolved &&
-      reportsDefinitionsResolved,
-    [
-      snapshotLoaded,
-      warehousesSettingLoaded,
-      supplierStatusResolved,
-      reportsDefinitionsResolved,
-    ]
+    () => snapshotLoaded && warehousesSettingLoaded,
+    [snapshotLoaded, warehousesSettingLoaded]
   );
 
   // Filter navItems based on capability (only show items user can view)
@@ -1073,79 +1065,23 @@ export const Sidebar = React.memo(function Sidebar() {
     return () => window.removeEventListener('khatario-tour:expand', onExpand);
   }, []);
 
-  // Helper function to check if a navigation item is active.
-  // Settings links strip hashes, and a parent stays inactive when a longer settings link matches.
-  const isItemActive = (href: string): boolean => {
-    if (!href) return false;
+  const activeNavHref = useMemo(() => {
+    if (!visibleNavItems?.length || !pathname) return null;
+    return pickActiveNavHref(
+      collectNavHrefs(visibleNavItems),
+      pathname,
+      searchParamsKey,
+      locationHash,
+    );
+  }, [visibleNavItems, pathname, searchParamsKey, locationHash]);
 
-    const hashIdx = href.indexOf('#');
-    const hash = hashIdx >= 0 ? href.slice(hashIdx + 1) : '';
-    const beforeHash = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
-    const qIdx = beforeHash.indexOf('?');
-    const path = qIdx >= 0 ? beforeHash.slice(0, qIdx) : beforeHash;
-    const queryString = qIdx >= 0 ? beforeHash.slice(qIdx + 1) : '';
+  const isItemActive = (href: string): boolean => href !== '' && href === activeNavHref;
 
-    const pathMatch = pathname === path || Boolean(pathname?.startsWith(`${path}/`));
-    if (!pathMatch) return false;
-
-    if (hash) {
-      return pathname === path && locationHash === hash;
-    }
-
-    if (queryString) {
-      const hrefParams = new URLSearchParams(queryString);
-      for (const [key, value] of hrefParams.entries()) {
-        if (searchParams.get(key) !== value) return false;
-      }
-      if (settingsHrefs.length === 0) return true;
-    } else if (settingsHrefs.length === 0) {
-      return searchParams.toString() === '';
-    } else if (pathname === path && searchParams.toString() !== '') {
-      return false;
-    }
-
-    if (
-      pathname === path &&
-      locationHash &&
-      settingsHrefs.some((other) => {
-        const otherHashIdx = other.indexOf('#');
-        if (otherHashIdx < 0) return false;
-        const otherPath = other.slice(0, otherHashIdx).split('?')[0];
-        return otherPath === path && other.slice(otherHashIdx + 1) === locationHash;
-      })
-    ) {
-      return false;
-    }
-
-    if (pathname !== path && settingsHrefs.length > 0) {
-      const longer = settingsHrefs.some((other) => {
-        const otherPath = other.split('#')[0].split('?')[0];
-        if (otherPath.length <= path.length) return false;
-        return pathname === otherPath || Boolean(pathname?.startsWith(`${otherPath}/`));
-      });
-      if (longer) return false;
-    }
-
-    return true;
-  };
-
-  // Helper function to check if any sub-item is active
   const isAnySubItemActive = (item: any): boolean => {
     if (!item.subItems) return false;
-    
-    // Check direct sub-items
     for (const subItem of item.subItems) {
-      if (subItem.href && isItemActive(subItem.href)) {
-        return true;
-      }
-      // Check nested sub-items
-      if (subItem.subItems) {
-        for (const nestedItem of subItem.subItems) {
-          if (nestedItem.href && isItemActive(nestedItem.href)) {
-            return true;
-          }
-        }
-      }
+      if (subItem.href && isItemActive(subItem.href)) return true;
+      if (subItem.subItems && isAnySubItemActive(subItem)) return true;
     }
     return false;
   };
@@ -1175,8 +1111,8 @@ export const Sidebar = React.memo(function Sidebar() {
 
       return hasChanges ? newOpenSections : prevOpenSections;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads pathname/searchParamsKey
-  }, [pathname, searchParamsKey, sidebarReady, locationHash]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isAnySubItemActive reads the active href
+  }, [pathname, searchParamsKey, sidebarReady, locationHash, activeNavHref]);
 
   // Restore scroll position after render
   useEffect(() => {
@@ -1252,6 +1188,9 @@ export const Sidebar = React.memo(function Sidebar() {
                       href={item.href || '#'}
                       prefetch={false}
                       data-tour={item.tourId}
+                      aria-expanded={item.collapsible ? isExpanded : undefined}
+                      aria-current={isActive ? 'page' : undefined}
+                      title={item.label}
                       onClick={(e) => {
                         // If sidebar is collapsed and item is collapsible, expand sidebar first
                         if (sidebarCollapsed && item.collapsible) {
@@ -1295,12 +1234,12 @@ export const Sidebar = React.memo(function Sidebar() {
                         isActive
                           ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
                           : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                        sidebarCollapsed && 'justify-center'
+                        sidebarCollapsed && 'justify-center',
+                        'min-w-0'
                       )}
-                      title={sidebarCollapsed ? item.label : undefined}
                     >
                       {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
-                      {!sidebarCollapsed && <span>{item.label}</span>}
+                      {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                       {sidebarCollapsed && (
                         <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
                           {item.label}
@@ -1349,18 +1288,23 @@ export const Sidebar = React.memo(function Sidebar() {
                               'text-text-secondary hover:text-text-primary',
                               'cursor-pointer opacity-75'
                             )}
-                            title={sidebarCollapsed ? item.label : 'Upgrade to unlock'}
+                            title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
                           >
-                            {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0')} />}
+                            <span className="relative flex-shrink-0">
+                              {Icon && <Icon className="w-5 h-5" />}
+                              {sidebarCollapsed && (
+                                <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
+                              )}
+                            </span>
                             {!sidebarCollapsed && (
                               <>
-                                <span>{item.label}</span>
-                                <Lock className="w-4 h-4 ml-auto text-amber-500" />
+                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
                               </>
                             )}
                             {sidebarCollapsed && (
                               <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label}
+                                {item.label} — upgrade to unlock
                               </div>
                             )}
                           </button>
@@ -1377,18 +1321,23 @@ export const Sidebar = React.memo(function Sidebar() {
                             'text-text-secondary hover:text-text-primary',
                             'cursor-pointer opacity-75'
                           )}
-                          title={sidebarCollapsed ? item.label : 'Upgrade to unlock'}
+                          title={sidebarCollapsed ? `${item.label} — upgrade to unlock` : 'Upgrade to unlock'}
                         >
-                          {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0')} />}
+                          <span className="relative flex-shrink-0">
+                            {Icon && <Icon className="w-5 h-5" />}
+                            {sidebarCollapsed && (
+                              <Lock className="absolute -right-1.5 -top-1.5 h-3 w-3 text-amber-500" aria-hidden />
+                            )}
+                          </span>
                           {!sidebarCollapsed && (
                             <>
-                              <span>{item.label}</span>
-                              <Lock className="w-4 h-4 ml-auto text-amber-500" />
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              <Lock className="w-4 h-4 ml-auto text-amber-500" aria-hidden />
                             </>
                           )}
                           {sidebarCollapsed && (
                               <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
-                                {item.label}
+                                {item.label} — upgrade to unlock
                               </div>
                             )}
                           </button>
@@ -1409,18 +1358,27 @@ export const Sidebar = React.memo(function Sidebar() {
                         href={item.href!}
                         prefetch={false}
                         data-tour={item.tourId}
+                        aria-current={isActive ? 'page' : undefined}
                         className={clsx(
-                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative',
+                          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative min-w-0',
                           'hover:bg-slate-100 dark:hover:bg-slate-700/90',
                           isActive
                             ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-white font-medium'
                             : 'text-text-secondary hover:text-text-primary dark:hover:text-white',
-                          sidebarCollapsed && 'justify-center'
+                          sidebarCollapsed && 'justify-center',
+                          !sidebarCollapsed && createRoute && 'pr-16'
                         )}
-                        title={sidebarCollapsed ? item.label : undefined}
+                        title={item.label}
                       >
                         {Icon && <Icon className={clsx('w-5 h-5 flex-shrink-0', isActive && 'text-primary-600 dark:text-white')} />}
-                            {!sidebarCollapsed && <span className="flex-1">{item.label}</span>}
+                        {!sidebarCollapsed && (
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        )}
+                        {!sidebarCollapsed && item.badge && (
+                          <span className="shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                            {item.badge}
+                          </span>
+                        )}
                         {sidebarCollapsed && (
                           <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none">
                             {item.label}
@@ -1468,7 +1426,10 @@ export const Sidebar = React.memo(function Sidebar() {
         )}
       >
         {/* Header */}
-        <div className={clsx("flex items-center p-4 border-b border-border flex-shrink-0", sidebarCollapsed ? "justify-center" : "justify-between")}>
+        <div className={clsx(
+          "flex border-b border-border flex-shrink-0",
+          sidebarCollapsed ? "flex-col items-center gap-2 p-3" : "flex-row items-center justify-between p-4"
+        )}>
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {business?.logo_url ? (
@@ -1497,20 +1458,23 @@ export const Sidebar = React.memo(function Sidebar() {
               <img 
                 src={business.logo_url} 
                 alt={businessName}
-                className="w-8 h-8 rounded-lg object-contain mb-1"
+                className="w-8 h-8 rounded-lg object-contain"
               />
             ) : (
-              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center mb-1">
+              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">{businessInitials.substring(0, 1)}</span>
               </div>
             )
           )}
           
           <button
+            type="button"
             onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!sidebarCollapsed}
             className={clsx("p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/90 rounded-lg transition-colors text-text-secondary", !sidebarCollapsed && "ml-2")}
           >
-             {sidebarCollapsed ? null : <ChevronLeft className="w-5 h-5" />}
+             {sidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
         </div>
 

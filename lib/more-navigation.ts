@@ -296,15 +296,22 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
           isLocked: !whatsappUnlocked,
           featureKey: 'whatsapp_bot',
         },
-        {
-          href: '/whatsapp/send-message',
-          label: 'Send Message',
-          module: 'whatsapp',
-          isLocked: !whatsappUnlocked,
-          featureKey: 'whatsapp_bot',
-        },
-        {
-          href: '/whatsapp/campaigns',
+          {
+            href: '/whatsapp/send-message',
+            label: 'Send Message',
+            module: 'whatsapp',
+            isLocked: !whatsappUnlocked,
+            featureKey: 'whatsapp_bot',
+          },
+          {
+            href: '/whatsapp/who-to-message',
+            label: 'Who to message',
+            module: 'whatsapp',
+            isLocked: !whatsappUnlocked,
+            featureKey: 'whatsapp_bot',
+          },
+          {
+            href: '/whatsapp/campaigns',
           label: 'Campaigns',
           module: 'whatsapp',
           isLocked: !whatsappUnlocked,
