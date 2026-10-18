@@ -19,6 +19,7 @@ import {
   CircleDollarSign,
   GitBranch,
   Video,
+  Newspaper,
   Menu,
   X,
   LayoutTemplate,
@@ -43,6 +44,7 @@ const FULL_SCREEN_PATHS = ['/admin/site-builder'];
 const navigation: AdminNavItem[] = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
   { name: 'Site Builder', href: '/admin/site-builder', icon: LayoutTemplate, requiresAdmin: true },
+  { name: 'Blog', href: '/admin/blog', icon: Newspaper, requiresAdmin: true },
   { name: 'Marketing', href: '/admin/social', icon: Megaphone, requiresAdmin: true },
   { name: 'Businesses', href: '/admin/businesses', icon: Building2 },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
@@ -76,7 +78,9 @@ function AdminNavLinks({
       {navigation.map((item) => {
         if (item.requiresSuper && role !== 'super_admin') return null;
         if (item.requiresAdmin && role !== 'admin' && role !== 'super_admin') return null;
-        const isActive = pathname === item.href;
+        const isActive = item.href === '/admin'
+          ? pathname === '/admin'
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
         return (
           <Link

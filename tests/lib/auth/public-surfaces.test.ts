@@ -19,6 +19,8 @@ describe('isPublicMarketingSurface', () => {
   it('keeps marketing and rewritten /store paths public', () => {
     expect(isPublicMarketingSurface('/store/cart', 'staging.khatario.com')).toBe(true);
     expect(isPublicMarketingSurface('/signup', 'staging.khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/blog', 'khatario.com')).toBe(true);
+    expect(isPublicMarketingSurface('/blog/gst-bills', 'khatario.com')).toBe(true);
   });
 
   it('does not send platform admin routes through business /login', () => {

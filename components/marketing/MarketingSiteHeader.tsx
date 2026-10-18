@@ -54,7 +54,7 @@ const INDUSTRY_LINKS: MegaLink[] = [
 ];
 
 const RESOURCE_LINKS: MegaLink[] = [
-  { href: '/guides', label: 'Blogs', icon: BookOpen },
+  { href: '/blog', label: 'Blogs', icon: BookOpen },
   { href: '/guides', label: 'Use Cases', icon: UserCircle },
   { href: '/guides', label: 'Guides', icon: HelpCircle },
   { href: '/#pricing', label: 'Success Stories', icon: Flag },

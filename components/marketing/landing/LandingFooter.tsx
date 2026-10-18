@@ -26,6 +26,12 @@ export function LandingFooter() {
           <span className="text-slate-600" aria-hidden>
             ·
           </span>
+          <Link href="/blog" className="text-slate-300 hover:text-white">
+            Blog
+          </Link>
+          <span className="text-slate-600" aria-hidden>
+            ·
+          </span>
           <Link href="/guides" className="text-slate-300 hover:text-white">
             Guides
           </Link>
