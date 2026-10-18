@@ -1376,11 +1376,11 @@ export default function NewItemPage() {
                   value={formData.hsn_sac}
                   onChange={(code) => setFormData({ ...formData, hsn_sac: code })}
                   onSelect={(result) => {
-                    const updates: any = { hsn_sac: result.code };
-                    // If SAC code (starts with 99), auto-switch to service
-                    if (result.code.startsWith('99')) {
-                      updates.item_type = 'service';
-                    }
+                    const updates: any = {
+                      hsn_sac: result.code,
+                      item_type: result.is_service ? 'service' : 'goods',
+                    };
+                    if (result.is_service) updates.is_bundle = false;
                     if (result.gst_rate) {
                       updates.tax_rate = result.gst_rate.toString();
                     }

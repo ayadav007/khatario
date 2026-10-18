@@ -11,6 +11,128 @@ import fs from 'fs';
 import path from 'path';
 import type { GSTR1Filters } from '@/lib/gst/gstr1';
 
+/**
+ * The GST workbook pre-creates up to 120,000 styled rows and, on some sheets, every column out to XFC.
+ * ExcelJS turns that into millions of cells and the server runs out of memory.
+ * Rows 1–4 are the header. Data starts at row 5. Each sheet keeps at most 10 blank rows under that header.
+ */
+const TEMPLATE_MAX_COL = 32;
+const HEADER_ROWS = 4;
+const MAX_EMPTY_ROWS = 10;
+const TEMPLATE_MAX_ROW = HEADER_ROWS + MAX_EMPTY_ROWS;
+
+function columnIndex(letters: string): number {
+  let n = 0;
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+}
+
+function columnLetters(index: number): string {
+  let n = index;
+  let letters = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters;
+}
+
+function clampCellRef(value: string, maxCol: number, maxRow: number): string {
+  return value
+    .split(/\s+/)
+    .map((part) => {
+      const match = /^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/.exec(part);
+      if (!match) return part;
+      const startCol = columnIndex(match[1]);
+      const startRow = Number(match[2]);
+      if (startCol > maxCol || startRow > maxRow) return '';
+      if (!match[3]) return `${match[1]}${startRow}`;
+      const endCol = Math.min(columnIndex(match[3]), maxCol);
+      const endRow = Math.min(Number(match[4]), maxRow);
+      return `${match[1]}${startRow}:${columnLetters(endCol)}${endRow}`;
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function slimCells(row: string, maxCol: number): string {
+  return row.replace(/<c r="([A-Z]+)(\d+)"(?:\s[^>]*?)?(?:\/>|>[\s\S]*?<\/c>)/g, (cell, letters: string) =>
+    columnIndex(letters) > maxCol ? '' : cell
+  );
+}
+
+export function slimWorksheetXml(xml: string, maxCol = TEMPLATE_MAX_COL, maxRow = TEMPLATE_MAX_ROW): string {
+  const parts: string[] = [];
+  let cursor = 0;
+  while (cursor < xml.length) {
+    const start = xml.indexOf('<row ', cursor);
+    if (start === -1) {
+      parts.push(xml.slice(cursor));
+      break;
+    }
+    parts.push(xml.slice(cursor, start));
+    const end = xml.indexOf('</row>', start);
+    if (end === -1) {
+      parts.push(xml.slice(start));
+      break;
+    }
+    const row = xml.slice(start, end + '</row>'.length);
+    const rowNumber = Number(/^<row r="(\d+)"/.exec(row)?.[1] ?? 0);
+    if (rowNumber > 0 && rowNumber <= maxRow) parts.push(slimCells(row, maxCol));
+    cursor = end + '</row>'.length;
+  }
+  const slim = parts
+    .join('')
+    .replace(/<col\b[^>]*\/>/g, (tag) => {
+      const min = Number(/min="(\d+)"/.exec(tag)?.[1] ?? 1);
+      const max = Number(/max="(\d+)"/.exec(tag)?.[1] ?? min);
+      if (min > maxCol) return '';
+      return max > maxCol ? tag.replace(/max="\d+"/, `max="${maxCol}"`) : tag;
+    })
+    .replace(/<dataValidation\b[^>]*>[\s\S]*?<\/dataValidation>/g, (tag) => {
+      const sq = /sqref="([^"]*)"/.exec(tag);
+      if (!sq) return tag;
+      const next = clampCellRef(sq[1], maxCol, maxRow);
+      if (!next) return '';
+      return tag.replace(sq[0], `sqref="${next}"`);
+    });
+  return slim
+    .replace(/spans="([^"]+)"/g, (_all, spans: string) => {
+      const kept = spans
+        .split(/\s+/)
+        .map((part) => {
+          const [start, end] = part.split(':').map(Number);
+          if (!end || end <= maxCol) return part;
+          if (start > maxCol) return '';
+          return `${start}:${maxCol}`;
+        })
+        .filter(Boolean);
+      return `spans="${kept[0] || `1:${maxCol}`}"`;
+    })
+    .replace(/<dimension ref="[^"]+"\s*\/>/, `<dimension ref="A1:AF${maxRow}"/>`);
+}
+
+async function loadTemplateWorkbook(): Promise<ExcelJS.Workbook> {
+  const JSZip = require('jszip') as {
+    loadAsync(data: Buffer): Promise<{
+      files: Record<string, { dir: boolean; async(type: 'nodebuffer'): Promise<Buffer> }>;
+      file(name: string, data: string | Buffer): void;
+      generateAsync(opts: { type: 'nodebuffer'; compression: 'DEFLATE' }): Promise<Buffer>;
+    }>;
+  };
+  const zip = await JSZip.loadAsync(fs.readFileSync(templatePath()));
+  for (const name of Object.keys(zip.files)) {
+    if (!/^xl\/worksheets\/sheet\d+\.xml$/.test(name)) continue;
+    const xml = (await zip.files[name].async('nodebuffer')).toString('utf8');
+    zip.file(name, slimWorksheetXml(xml));
+  }
+  const slimmed = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(slimmed as unknown as ExcelJS.Buffer);
+  return workbook;
+}
+
 const DATA_START_ROW = 5;
 
 function formatDateForGSTN(dateStr: string | Date): string {
@@ -168,6 +290,32 @@ export type Gstr1OfflineReport = {
   } | null;
 };
 
+function rowHasValue(row: ExcelJS.Row): boolean {
+  const values = row.values as Array<ExcelJS.CellValue | undefined>;
+  return values.some((value, index) => index > 0 && value !== null && value !== undefined && value !== '');
+}
+
+function clearTemplateDataRows(workbook: ExcelJS.Workbook) {
+  for (const ws of workbook.worksheets) {
+    for (let n = DATA_START_ROW; n <= Math.min(ws.rowCount, TEMPLATE_MAX_ROW); n++) {
+      ws.getRow(n).eachCell({ includeEmpty: false }, (cell) => {
+        cell.value = null;
+      });
+    }
+  }
+}
+
+function trimSheets(workbook: ExcelJS.Workbook) {
+  for (const ws of workbook.worksheets) {
+    let last = HEADER_ROWS;
+    ws.eachRow((row, n) => {
+      if (rowHasValue(row) && n > last) last = n;
+    });
+    const limit = Math.max(last, HEADER_ROWS + MAX_EMPTY_ROWS);
+    if (ws.rowCount > limit) ws.spliceRows(limit + 1, ws.rowCount - limit);
+  }
+}
+
 function setRowCells(ws: ExcelJS.Worksheet, rowIndex: number, values: (string | number | null | undefined)[]) {
   const row = ws.getRow(rowIndex);
   values.forEach((v, i) => {
@@ -186,9 +334,8 @@ export async function generateGstr1OfflineToolV22Excel(
   _businessStateCode: string,
   _businessGstin: string
 ): Promise<Buffer> {
-  const tp = templatePath();
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(tp);
+  const workbook = await loadTemplateWorkbook();
+  clearTemplateDataRows(workbook);
 
   // ─── b2b,sez,de (A–M) ─────────────────────────────────────────────────────
   const wsB2b = workbook.getWorksheet('b2b,sez,de');
@@ -383,6 +530,7 @@ export async function generateGstr1OfflineToolV22Excel(
     ]);
   }
 
+  trimSheets(workbook);
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

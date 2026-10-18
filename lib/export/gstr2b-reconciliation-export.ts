@@ -3,53 +3,61 @@ import ExcelJS from 'exceljs';
 
 export interface ReconciliationExportOptions {
   business_id: string;
+  filing_period?: string;
   from_date?: string;
   to_date?: string;
   status?: string;
 }
 
+export function filingPeriodFromRange(fromDate?: string, toDate?: string): string | null {
+  const source = fromDate || toDate;
+  const match = source?.match(/^(\d{4}-\d{2})/);
+  return match ? match[1] : null;
+}
+
 export async function generateReconciliationExcel(options: ReconciliationExportOptions): Promise<Buffer> {
-  const { business_id, from_date, to_date, status } = options;
+  const { business_id, status } = options;
+  const filingPeriod = options.filing_period || filingPeriodFromRange(options.from_date, options.to_date);
+  if (!filingPeriod || !/^\d{4}-\d{2}$/.test(filingPeriod)) {
+    throw new Error('filing_period must be in YYYY-MM format');
+  }
 
   let query = `
-    SELECT 
-      p.bill_number as book_invoice_no,
-      p.bill_date as book_invoice_date,
-      p.supplier_gstin as book_gstin,
-      s.name as supplier_name,
-      p.taxable_value as book_taxable,
-      p.cgst_amount as book_cgst,
-      p.sgst_amount as book_sgst,
-      p.igst_amount as book_igst,
-      gr.match_status,
-      gr.gstr2b_invoice_no,
-      gr.gstr2b_invoice_date,
-      gr.gstr2b_taxable,
-      gr.gstr2b_cgst,
-      gr.gstr2b_sgst,
-      gr.gstr2b_igst,
+    SELECT
+      r.invoice_number as book_invoice_no,
+      r.invoice_date as book_invoice_date,
+      r.supplier_gstin as book_gstin,
+      COALESCE(s.name, gi.supplier_name) as supplier_name,
+      r.books_taxable_value as book_taxable,
+      r.books_cgst as book_cgst,
+      r.books_sgst as book_sgst,
+      r.books_igst as book_igst,
+      r.match_status,
+      CASE WHEN r.gstr2b_invoice_id IS NULL THEN NULL ELSE r.invoice_number END as gstr2b_invoice_no,
+      CASE WHEN r.gstr2b_invoice_id IS NULL THEN NULL ELSE r.invoice_date END as gstr2b_invoice_date,
+      r.gstr2b_taxable_value as gstr2b_taxable,
+      r.gstr2b_cgst,
+      r.gstr2b_sgst,
+      r.gstr2b_igst,
       rd.decision,
       rd.remarks,
       rd.decision_date
-    FROM purchases p
-    LEFT JOIN suppliers s ON p.supplier_id = s.id
-    LEFT JOIN gstr2b_reconciliation gr ON p.id = gr.purchase_id
-    LEFT JOIN reconciliation_decisions rd ON gr.id = rd.reconciliation_id
-    WHERE p.business_id = $1
+    FROM gstr2b_reconciliation r
+    LEFT JOIN purchases p ON p.id = r.purchase_id AND p.business_id = r.business_id
+    LEFT JOIN suppliers s ON s.id = p.supplier_id
+    LEFT JOIN gstr2b_invoices gi ON gi.id = r.gstr2b_invoice_id AND gi.business_id = r.business_id
+    LEFT JOIN reconciliation_decisions rd ON rd.reconciliation_id = r.id
+    WHERE r.business_id = $1
+      AND r.filing_period = $2
   `;
-  const params: any[] = [business_id];
+  const params: any[] = [business_id, filingPeriod];
 
-  if (from_date && to_date) {
-    query += ` AND p.bill_date BETWEEN $2 AND $3`;
-    params.push(from_date, to_date);
-  }
-
-  if (status && status !== 'all') {
-    query += ` AND gr.match_status = $${params.length + 1}`;
+  if (status && status.toLowerCase() !== 'all') {
+    query += ` AND r.match_status = $${params.length + 1}`;
     params.push(status);
   }
 
-  query += ` ORDER BY p.bill_date DESC`;
+  query += ` ORDER BY r.invoice_date DESC, r.invoice_number`;
 
   const rows = await db.queryRows(query, params);
 

@@ -3,6 +3,7 @@
  * Source: https://tutorial.gst.gov.in/downloads/HSN_SAC.xlsx
  */
 
+const os = require('os');
 const ExcelJS = require('exceljs');
 const { Pool } = require('pg');
 const fs = require('fs');
@@ -51,14 +52,10 @@ if (!dbConfig.password || dbConfig.password === '') {
 
 const pool = new Pool(dbConfig);
 
-// Download file if not exists
+// Always download. A leftover temp file would otherwise keep the previous GST list.
 async function downloadFile(url, filepath) {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(filepath)) {
-      console.log('File already exists, skipping download');
-      resolve();
-      return;
-    }
+    if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
 
     console.log(`Downloading ${url}...`);
     const file = fs.createWriteStream(filepath);
@@ -101,148 +98,69 @@ function extractKeywords(description) {
   return [...new Set(words)]; // Remove duplicates
 }
 
-// Determine if code is service (SAC) or goods (HSN)
-function isServiceCode(code) {
-  if (!code) return false;
-  const codeStr = String(code).trim();
-  // SAC codes start with 99 and are 6 digits
-  return /^99\d{4}$/.test(codeStr);
+function cellText(cell) {
+  if (!cell || cell.value == null) return '';
+  if (typeof cell.text === 'string' && cell.text.trim()) return cell.text.trim();
+  const value = cell.value;
+  if (typeof value === 'object' && Array.isArray(value.richText)) {
+    return value.richText.map((part) => part.text || '').join('').trim();
+  }
+  return String(value).trim();
 }
 
-// Determine category from description
-function determineCategory(description) {
-  if (!description) return null;
-  
-  const desc = description.toLowerCase();
-  
-  if (desc.includes('service') || desc.includes('consulting') || desc.includes('maintenance')) {
-    return 'Services';
+function parseCodeSheet(worksheet, isService) {
+  const records = [];
+  let skipped = 0;
+
+  for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    const code = cellText(row.getCell(1)).replace(/\s+/g, '');
+    const description = cellText(row.getCell(2)).replace(/\s+/g, ' ').trim();
+
+    if (!/^\d{2,8}$/.test(code) || !description) {
+      skipped++;
+      continue;
+    }
+
+    records.push({
+      code,
+      description,
+      gst_rate: null,
+      is_service: isService,
+      category: isService ? 'Services' : 'Goods',
+      keywords: extractKeywords(description),
+    });
   }
-  if (desc.includes('food') || desc.includes('beverage') || desc.includes('preparation')) {
-    return 'Food & Beverages';
-  }
-  if (desc.includes('medicine') || desc.includes('pharmaceutical') || desc.includes('drug')) {
-    return 'Healthcare';
-  }
-  if (desc.includes('textile') || desc.includes('fabric') || desc.includes('garment')) {
-    return 'Textiles';
-  }
-  if (desc.includes('electronic') || desc.includes('computer') || desc.includes('mobile')) {
-    return 'Electronics';
-  }
-  if (desc.includes('vehicle') || desc.includes('automobile') || desc.includes('car')) {
-    return 'Automobiles';
-  }
-  if (desc.includes('furniture') || desc.includes('chair') || desc.includes('table')) {
-    return 'Furniture';
-  }
-  
-  return null;
+
+  console.log(`${worksheet.name}: ${records.length} codes, skipped ${skipped}`);
+  return records;
 }
 
-// Parse Excel file
+// Official GST workbook: HSN_MSTR (goods) and SAC_MSTR (services). No rate column.
 async function parseExcelFile(filepath) {
   console.log('Reading Excel file...');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filepath);
-  
-  const worksheet = workbook.getWorksheet(1); // Get first worksheet
-  if (!worksheet) {
-    throw new Error('No worksheet found in Excel file');
+
+  const hsnSheet = workbook.getWorksheet('HSN_MSTR') || workbook.worksheets[0];
+  const sacSheet = workbook.getWorksheet('SAC_MSTR') || workbook.worksheets[1];
+  if (!hsnSheet || !sacSheet) {
+    throw new Error('Workbook must contain the HSN and SAC sheets');
   }
-  
-  console.log(`Found worksheet: ${worksheet.name}`);
-  console.log(`Total rows: ${worksheet.rowCount}`);
-  
-  // Find header row (usually row 1)
-  const headerRow = worksheet.getRow(1);
-  const headers = {};
-  
-  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const headerValue = String(cell.value || '').toLowerCase().trim();
-    headers[colNumber] = headerValue;
-  });
-  
-  console.log('Headers found:', headers);
-  
-  // Try to identify column indices
-  let codeCol = null;
-  let descCol = null;
-  let rateCol = null;
-  
-  // Common column names in GST HSN/SAC files
-  const codeNames = ['code', 'hsn', 'sac', 'hsn/sac', 'hsn code', 'sac code'];
-  const descNames = ['description', 'desc', 'item description', 'goods description', 'service description'];
-  const rateNames = ['gst rate', 'rate', 'tax rate', 'gst', 'cgst', 'sgst'];
-  
-  for (const [colNum, header] of Object.entries(headers)) {
-    const headerLower = header.toLowerCase();
-    if (!codeCol && codeNames.some(name => headerLower.includes(name))) {
-      codeCol = parseInt(colNum);
-    }
-    if (!descCol && descNames.some(name => headerLower.includes(name))) {
-      descCol = parseInt(colNum);
-    }
-    if (!rateCol && rateNames.some(name => headerLower.includes(name))) {
-      rateCol = parseInt(colNum);
+
+  const byCode = new Map();
+  for (const record of [
+    ...parseCodeSheet(hsnSheet, false),
+    ...parseCodeSheet(sacSheet, true),
+  ]) {
+    const existing = byCode.get(record.code);
+    if (!existing || record.description.length > existing.description.length) {
+      byCode.set(record.code, record);
     }
   }
-  
-  if (!codeCol || !descCol) {
-    // If we can't find headers, try first two columns
-    console.log('Could not identify headers, using first two columns as code and description');
-    codeCol = 1;
-    descCol = 2;
-  }
-  
-  console.log(`Using columns - Code: ${codeCol}, Description: ${descCol}, Rate: ${rateCol || 'N/A'}`);
-  
-  const records = [];
-  let skipped = 0;
-  
-  // Read data rows (skip header row)
-  for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
-    const row = worksheet.getRow(rowNum);
-    const code = row.getCell(codeCol)?.value;
-    const description = row.getCell(descCol)?.value;
-    const rate = rateCol ? row.getCell(rateCol)?.value : null;
-    
-    // Skip empty rows
-    if (!code && !description) {
-      skipped++;
-      continue;
-    }
-    
-    const codeStr = String(code || '').trim();
-    const descStr = String(description || '').trim();
-    
-    // Skip if code is empty
-    if (!codeStr) {
-      skipped++;
-      continue;
-    }
-    
-    // Parse GST rate
-    let gstRate = null;
-    if (rate !== null && rate !== undefined) {
-      const rateStr = String(rate).replace('%', '').trim();
-      const rateNum = parseFloat(rateStr);
-      if (!isNaN(rateNum)) {
-        gstRate = rateNum;
-      }
-    }
-    
-    records.push({
-      code: codeStr,
-      description: descStr,
-      gst_rate: gstRate,
-      is_service: isServiceCode(codeStr),
-      category: determineCategory(descStr),
-      keywords: extractKeywords(descStr)
-    });
-  }
-  
-  console.log(`Parsed ${records.length} records (skipped ${skipped} empty rows)`);
+
+  const records = [...byCode.values()];
+  console.log(`Parsed ${records.length} unique codes`);
   return records;
 }
 
@@ -254,69 +172,34 @@ async function importToDatabase(records) {
   
   try {
     await client.query('BEGIN');
-    
+    await client.query('DELETE FROM hsn_sac_master');
+
+    const chunkSize = 400;
     let inserted = 0;
-    let updated = 0;
-    let errors = 0;
-    
-    for (const record of records) {
-      try {
-        // Check if code already exists
-        const existing = await client.query(
-          'SELECT id FROM hsn_sac_master WHERE code = $1',
-          [record.code]
-        );
-        
-        if (existing.rows.length > 0) {
-          // Update existing
-          await client.query(
-            `UPDATE hsn_sac_master 
-             SET description = $1, 
-                 gst_rate = $2, 
-                 category = $3, 
-                 is_service = $4, 
-                 keywords = $5,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE code = $6`,
-            [
-              record.description,
-              record.gst_rate,
-              record.category,
-              record.is_service,
-              record.keywords,
-              record.code
-            ]
-          );
-          updated++;
-        } else {
-          // Insert new
-          await client.query(
-            `INSERT INTO hsn_sac_master (code, description, gst_rate, category, is_service, keywords)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
-              record.code,
-              record.description,
-              record.gst_rate,
-              record.category,
-              record.is_service,
-              record.keywords
-            ]
-          );
-          inserted++;
-        }
-      } catch (err) {
-        console.error(`Error processing code ${record.code}:`, err.message);
-        errors++;
-      }
+
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      const values = [];
+      const params = [];
+      chunk.forEach((record, index) => {
+        const base = index * 5;
+        values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+        params.push(record.code, record.description, record.category, record.is_service, record.keywords);
+      });
+
+      await client.query(
+        `INSERT INTO hsn_sac_master (code, description, category, is_service, keywords)
+         VALUES ${values.join(', ')}`,
+        params
+      );
+      inserted += chunk.length;
     }
-    
+
     await client.query('COMMIT');
-    
+
     console.log('\n=== Import Summary ===');
-    console.log(`Inserted: ${inserted}`);
-    console.log(`Updated: ${updated}`);
-    console.log(`Errors: ${errors}`);
-    console.log(`Total: ${records.length}`);
+    console.log(`Replaced master with ${inserted} codes`);
+    console.log('GST rates left empty. This file has no rate column.');
     
   } catch (error) {
     await client.query('ROLLBACK');
@@ -328,7 +211,7 @@ async function importToDatabase(records) {
 
 // Main function
 async function main() {
-  const filepath = path.join(__dirname, 'HSN_SAC.xlsx');
+  const filepath = path.join(os.tmpdir(), 'HSN_SAC.xlsx');
   const url = 'https://tutorial.gst.gov.in/downloads/HSN_SAC.xlsx';
   
   try {

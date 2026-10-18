@@ -6,9 +6,10 @@ import { Search, Check, Loader2 } from 'lucide-react';
 interface HSNResult {
   code: string;
   description: string;
-  gst_rate: number;
+  gst_rate: number | null;
   category: string;
   is_service: boolean;
+  rate_condition?: string | null;
   source?: string;
   confidence?: string;
   warnings?: string[];
@@ -157,7 +158,7 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
           {results.map((result, index) => (
             <div
-              key={result.code}
+              key={`${result.code}-${result.gst_rate ?? 'none'}-${index}`}
               onClick={() => handleSelect(result)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
                 index === highlightedIndex
@@ -176,9 +177,11 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
                     }`}>
                       {result.is_service ? 'SAC' : 'HSN'}
                     </span>
-                    <span className="text-xs text-text-secondary">
-                      {result.gst_rate}% GST
-                    </span>
+                    {result.gst_rate != null && (
+                      <span className="text-xs text-text-secondary">
+                        {result.gst_rate}% GST
+                      </span>
+                    )}
                     {result.source === 'ai' && (
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         result.confidence === 'high'
@@ -194,6 +197,11 @@ export const HSNLookup: React.FC<HSNLookupProps> = ({
                   <p className="text-sm text-text-secondary line-clamp-1">
                     {result.description}
                   </p>
+                  {result.rate_condition && (
+                    <p className="text-xs text-text-secondary mt-1 line-clamp-2">
+                      {result.rate_condition}
+                    </p>
+                  )}
                   {result.useCase && (
                     <p className="text-xs text-primary-600 mt-1 font-medium">
                       💡 {result.useCase}

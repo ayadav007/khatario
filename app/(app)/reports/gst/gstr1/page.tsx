@@ -210,13 +210,13 @@ function GSTR1PageContent() {
 
       const res = await fetch(url);
       if (!res.ok) {
-        const error = await res.json();
-        if (error.code === 'GSTIN_MISSING') {
+        const error = await res.json().catch(() => null);
+        if (error?.code === 'GSTIN_MISSING') {
           toast.error(`${error.error} — ${error.message}`);
           ensureProfile(profileContext);
           return;
         }
-        toast.error(error.error || 'Export failed');
+        toast.error(error?.error || 'Export failed. The file was not created.');
         return;
       }
       

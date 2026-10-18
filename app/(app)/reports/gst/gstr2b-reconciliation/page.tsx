@@ -194,16 +194,15 @@ export default function GSTR2BReconciliationPage() {
     if (!business) return;
     setExporting(true);
     try {
-      // Split filing period into from/to dates for the export
-      const [year, month] = filingPeriod.split('-');
-      const fromDate = `${year}-${month}-01`;
-      const toDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
-      
+      const status = activeTab === 'ALL' ? 'all' : activeTab;
       const res = await fetch(
-        `/api/gst/gstr2b/export?business_id=${business.id}&from_date=${fromDate}&to_date=${toDate}&status=${activeTab.toLowerCase() === 'all' ? 'all' : activeTab}`
+        `/api/gst/gstr2b/export?business_id=${business.id}&filing_period=${filingPeriod}&status=${status}`
       );
-      
-      if (!res.ok) throw new Error('Export failed');
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.details || data?.error || 'Export failed');
+      }
       
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -215,7 +214,7 @@ export default function GSTR2BReconciliationPage() {
       link.remove();
     } catch (error) {
       console.error('Export error:', error);
-      toast.error('Failed to export reconciliation report');
+      toast.error(error instanceof Error ? error.message : 'Failed to export reconciliation report');
     } finally {
       setExporting(false);
     }
