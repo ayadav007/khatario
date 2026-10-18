@@ -325,7 +325,7 @@ export function ManagerTeamRollCall({
       : 'Tap a status for each person — saves automatically';
 
   return (
-    <div className="pb-24 lg:pb-6">
+    <div className="pb-[calc(var(--mobile-nav-h,4rem)+env(safe-area-inset-bottom,0px)+5.5rem)] lg:pb-6">
       <MobileDuplicatePageChrome title={pageTitle} description={pageDescription} />
 
       {/* Sticky summary + search (mobile-first) */}
@@ -595,7 +595,7 @@ export function ManagerTeamRollCall({
       {simpleStatuses && canViewWages ? <StaffWagePanel date={date} /> : null}
 
       {simpleStatuses ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white p-3 lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0">
+        <div className="fixed inset-x-0 bottom-[calc(var(--mobile-nav-h,4rem)+env(safe-area-inset-bottom,0px))] z-40 border-t border-border bg-white p-3 shadow-[0_-6px_20px_rgba(15,23,42,0.06)] lg:static lg:bottom-auto lg:z-auto lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
           <button
             type="button"
             disabled={savingAll}
