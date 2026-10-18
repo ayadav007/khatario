@@ -1,7 +1,7 @@
 import '../../capability.dart';
 
-/// Port of `lib/more-navigation.ts` (with `SALES_NAV_ITEMS`, `HR_ADMIN_NAV_ITEMS` and
-/// `NAV_SECTION_MODULE`).
+/// Port of `lib/more-navigation.ts` (with `SALES_NAV_ITEMS` and `NAV_SECTION_MODULE`).
+/// The HR section comes from the server instead: see [parseHrNavSection].
 class MoreNavItem {
   const MoreNavItem(this.href, this.label, {this.module, this.featureKey, this.isLocked = false});
 
@@ -44,39 +44,28 @@ const _salesNavItems = [
   ('/debit-notes', 'Debit Notes', 'debit_notes', null),
 ];
 
-/// `HR_ADMIN_NAV_ITEMS`: href, label, module, featureKey, requiresFullHr.
-const _hrAdminNavItems = [
-  ('/hr/dashboard', 'HR Dashboard', 'employees', 'hr_employees', true),
-  ('/employees', 'All Employees', 'employees', 'hr_employees', false),
-  ('/employees/org-chart', 'Org chart', 'employees', 'hr_employees', true),
-  ('/employees/manager', 'Manager', 'leave_requests', 'hr_leaves', true),
-  ('/employees/new', 'Add Employee', 'employees', 'hr_employees', false),
-  ('/employees/recruitment', 'Recruitment', 'recruitment', 'hr_employees', true),
-  ('/employees/attendance', 'Attendance', 'attendance', 'hr_attendance', false),
-  ('/hr/shifts/roster', 'Shift roster', 'attendance', 'hr_attendance', true),
-  ('/hr/shifts/bulk-assign', 'Bulk assign shifts', 'attendance', 'hr_attendance', true),
-  ('/employees/leaves', 'Leaves', 'leave_requests', 'hr_leaves', true),
-  ('/employees/leaves/calendar', 'Leave calendar', 'leave_requests', 'hr_leaves', true),
-  ('/hr/leaves/year-end', 'Leave year-end', 'leave_requests', 'hr_leaves', true),
-  ('/hr/leaves/import-balances', 'Import leave balances', 'leave_requests', 'hr_leaves', true),
-  ('/employees/salary/payments', 'Salary Payments', 'payroll', 'hr_payroll', false),
-  ('/employees/salary/advances', 'Salary Advances', 'payroll', 'hr_payroll', false),
-  ('/employees/expenses', 'Employee Expenses', 'employees', 'hr_employees', false),
-  ('/employees/commissions', 'Commissions', 'commissions', 'hr_employees', false),
-  ('/hr/engagement', 'Engagement', 'employees', 'hr_employees', true),
-  ('/hr/documents', 'HR Documents', 'employees', 'hr_employees', true),
-  ('/hr/exits', 'Exits', 'employees', 'hr_employees', true),
-  ('/hr/reports', 'HR Reports', 'employees', 'hr_employees', true),
-  ('/employees/performance', 'Performance', 'employees', 'hr_employees', true),
-  ('/employees/tasks', 'Tasks', 'employees', 'hr_employees', true),
-  ('/activity-logs', 'Activity Logs', 'settings', null, true),
-];
+/// `{ section: { title, items: [{ href, label }] } | null }` from GET /api/navigation/hr. The server picks
+/// the HR items from the website's list (`lib/hr/hr-admin-nav.ts`), so the phone never keeps its own copy.
+MoreNavSection? parseHrNavSection(Map<String, dynamic> json) {
+  final section = json['section'];
+  if (section is! Map) return null;
+  final title = section['title'];
+  final items = section['items'];
+  if (title is! String || items is! List) return null;
+  final parsed = [
+    for (final item in items)
+      if (item is Map && item['href'] is String && item['label'] is String)
+        MoreNavItem(item['href'] as String, item['label'] as String),
+  ];
+  return parsed.isEmpty ? null : (title: title, items: parsed);
+}
 
 List<MoreNavSection> buildMoreMenuSections({
   required Capabilities caps,
   required bool isSupplier,
   required bool warehousesEnabled,
   required List<String> enabledModules,
+  MoreNavSection? hrSection,
 }) {
   bool hasFeature(String key) => caps.has(key, 'view');
 
@@ -219,15 +208,7 @@ List<MoreNavSection> buildMoreMenuSections({
   ]);
   if (reports != null) out.add(reports);
 
-  // `hasFullHrFeatures`
-  final fullHr = hasFeature('hr_leaves') || hasFeature('hr_employee_portal');
-  final hr = section(fullHr ? 'HR & Employees' : 'Staff', [
-    for (final (href, label, module, featureKey, requiresFullHr) in _hrAdminNavItems)
-      if (fullHr || !requiresFullHr)
-        MoreNavItem(href, label,
-            module: module, featureKey: featureKey, isLocked: featureKey != null && !hasFeature(featureKey)),
-  ]);
-  if (hr != null) out.add(hr);
+  if (hrSection != null) out.add(hrSection);
 
   final hasConnect = enabledModules.contains('connect');
   final hasBilling = enabledModules.contains('billing');

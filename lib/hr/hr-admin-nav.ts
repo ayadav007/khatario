@@ -3,6 +3,7 @@
  * Keep labels/hrefs in sync here — do not duplicate lists in Sidebar / more-navigation.
  */
 
+import { isNavSectionVisible, type PlatformModule } from '@/lib/platform-modules';
 import { isBeyondHrLite } from '@/lib/subscription/hr-lite';
 
 export type HrAdminNavItem = {
@@ -58,4 +59,23 @@ export function getVisibleHrAdminNavItems(
   hasFeature: (featureKey: string) => boolean,
 ): HrAdminNavItem[] {
   return HR_ADMIN_NAV_ITEMS.filter((item) => hasFeature(item.featureKey));
+}
+
+export type HrNavSection = { title: string; items: HrAdminNavItem[] };
+
+/**
+ * The HR section of the More menu: the plan picks the items, the role must allow each item's module,
+ * and the business must have the HR module. The phone app gets this from GET /api/navigation/hr.
+ */
+export function buildHrNavSection(input: {
+  hasFeature: (featureKey: string) => boolean;
+  roleAllowsModule: (moduleKey: string) => boolean;
+  enabledModules: PlatformModule[];
+}): HrNavSection | null {
+  const title = getHrNavSectionTitle(input.hasFeature);
+  if (!isNavSectionVisible(title, input.enabledModules)) return null;
+  const items = getVisibleHrAdminNavItems(input.hasFeature).filter(
+    (item) => !item.module || input.roleAllowsModule(item.module),
+  );
+  return items.length > 0 ? { title, items } : null;
 }

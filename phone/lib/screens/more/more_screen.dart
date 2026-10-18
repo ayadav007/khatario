@@ -48,6 +48,7 @@ const _sectionTints = {
   'Accounting': AppTints.indigo,
   'Reports': AppTints.violet,
   'HR & Employees': AppTints.rose,
+  'Staff': AppTints.rose,
   'Connect': AppTints.green,
   'WhatsApp': AppTints.green,
   'Tools': AppTints.orange,
@@ -63,6 +64,7 @@ const _sectionIcons = {
   'Accounting': LucideIcons.dollarSign,
   'Reports': LucideIcons.chartColumn,
   'HR & Employees': LucideIcons.userCheck,
+  'Staff': LucideIcons.userCheck,
   'Connect': LucideIcons.messageSquare,
   'WhatsApp': LucideIcons.messageSquare,
   'Tools': LucideIcons.wrench,
@@ -72,12 +74,24 @@ const _sectionIcons = {
 
 class _MoreScreenState extends State<MoreScreen> {
   bool _isSupplier = false;
+  MoreNavSection? _hrSection;
   Map<String, bool> _openSections = const {};
 
   @override
   void initState() {
     super.initState();
     _probeSupplier();
+    _loadHrSection();
+  }
+
+  /// The server decides which HR items this user sees, so the phone matches the website.
+  Future<void> _loadHrSection() async {
+    try {
+      final data = await widget.session.api.getJson('/api/navigation/hr').timeout(const Duration(seconds: 8));
+      if (mounted) setState(() => _hrSection = parseHrNavSection(data));
+    } catch (_) {
+      if (mounted) setState(() => _hrSection = null);
+    }
   }
 
   Future<void> _probeSupplier() async {
@@ -105,6 +119,7 @@ class _MoreScreenState extends State<MoreScreen> {
             isSupplier: _isSupplier,
             warehousesEnabled: widget.warehousesEnabled,
             enabledModules: widget.session.raw['platform'] is Map ? widget.session.enabledModules : const ['billing'],
+            hrSection: _hrSection,
           );
     return ListView(
       key: const PageStorageKey('more'),

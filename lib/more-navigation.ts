@@ -7,10 +7,7 @@ import {
   isNavSectionVisible,
   type PlatformModule,
 } from '@/lib/platform-modules';
-import {
-  getHrNavSectionTitle,
-  getVisibleHrAdminNavItems,
-} from '@/lib/hr/hr-admin-nav';
+import { buildHrNavSection } from '@/lib/hr/hr-admin-nav';
 import { SALES_NAV_ITEMS } from '@/lib/navigation/sales-nav-items';
 
 export type MoreNavItem = {
@@ -238,19 +235,22 @@ export function buildMoreMenuSections(ctx: MoreNavContext): MoreNavSection[] {
   );
   if (reports) out.push(reports);
 
-  const hrFeatureCheck = (key: string) => hasFeature(hasCapability, key);
-  const hr = section(
-    getHrNavSectionTitle(hrFeatureCheck),
-    getVisibleHrAdminNavItems(hrFeatureCheck).map((item) => ({
-      href: item.href,
-      label: item.label,
-      module: item.module,
-      featureKey: item.featureKey,
-      isLocked: item.featureKey ? !hasFeature(hasCapability, item.featureKey) : false,
-    })),
-    ctx
-  );
-  if (hr) out.push(hr);
+  const hr = buildHrNavSection({
+    hasFeature: (key) => hasFeature(hasCapability, key),
+    roleAllowsModule: (moduleKey) => roleAllowsModule(ctx, moduleKey, 'view'),
+    enabledModules: ctx.enabledModules,
+  });
+  if (hr) {
+    out.push({
+      title: hr.title,
+      items: hr.items.map((item) => ({
+        href: item.href,
+        label: item.label,
+        module: item.module,
+        featureKey: item.featureKey,
+      })),
+    });
+  }
 
   // Mirror desktop Sidebar: Connect tree, or billing-only WhatsApp settings link.
   const hasConnect = ctx.enabledModules.includes('connect');

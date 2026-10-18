@@ -20,7 +20,8 @@ const _featureRegistryIds = {
   'dashboard_analytics', 'customer_management',
   'dead_stock_widget',
   'tools_todo',
-  'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_leaves',
+  'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_leaves', 'hr_staff_app', 'hr_shifts', 'hr_payroll_setup',
+  'hr_commissions', 'hr_recruitment', 'hr_advanced',
   'sales_delivery_challans', 'sales_work_orders', 'sales_new_invoice', 'eway_bill', 'e_invoice',
   'advanced_online_store', 'advanced_multi_currency', 'advanced_barcode', 'advanced_custom_branding',
   'advanced_ledger', 'workflow_automation', 'settings_multidevice_login', 'report_builder', 'party_pricing',
@@ -94,6 +95,12 @@ const _featureAliasMap = {
   'hr_attendance': 'hr_attendance',
   'hr_payroll': 'hr_payroll',
   'hr_leaves': 'hr_leaves',
+  'hr_staff_app': 'hr_staff_app',
+  'hr_shifts': 'hr_shifts',
+  'hr_payroll_setup': 'hr_payroll_setup',
+  'hr_commissions': 'hr_commissions',
+  'hr_recruitment': 'hr_recruitment',
+  'hr_advanced': 'hr_advanced',
   'online_store': 'advanced_online_store',
   'advanced_online_store': 'advanced_online_store',
   'multi_currency': 'advanced_multi_currency',
@@ -166,11 +173,14 @@ const _hrAuthModuleToFeature = {
   'attendance': 'hr_attendance',
   'leaves': 'hr_leaves',
   'leave_requests': 'hr_leaves',
-  'commissions': 'hr_employees',
-  'recruitment': 'hr_employees',
+  'commissions': 'hr_commissions',
+  'recruitment': 'hr_recruitment',
 };
 
-const _hrRegistryIds = {'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_leaves', 'hr_employee_portal'};
+const _hrRegistryIds = {
+  'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_leaves', 'hr_employee_portal', 'hr_staff_app', 'hr_shifts',
+  'hr_payroll_setup', 'hr_commissions', 'hr_recruitment', 'hr_advanced',
+};
 
 String? _hrPlanFeatureForCapabilityCheck(String resource) =>
     _hrRegistryIds.contains(resource) ? resource : _hrAuthModuleToFeature[resource];

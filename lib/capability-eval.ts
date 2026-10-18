@@ -3,7 +3,7 @@
  * Distinguishes subscription/plan denial vs role permission denial.
  */
 
-import { loadCapabilitySnapshot } from '@/lib/capability-snapshot';
+import { loadCapabilitySnapshot, type CapabilitySnapshot } from '@/lib/capability-snapshot';
 import {
   FEATURE_ALIAS_MAP,
   FEATURE_REGISTRY_IDS,
@@ -47,7 +47,7 @@ export interface CapabilityEvalInput {
  */
 export function evaluateCapabilityAccess(
   input: CapabilityEvalInput
-): { allowed: boolean; denialReason?: CapabilityDenialReason; indeterminate?: boolean } {
+): CapabilityEvalResult {
   const {
     resource: res,
     action,
@@ -61,7 +61,29 @@ export function evaluateCapabilityAccess(
     return { allowed: false, indeterminate: true };
   }
 
-  const snapshot = loadCapabilitySnapshot(businessId, userId);
+  return evaluateCapabilityWithSnapshot(loadCapabilitySnapshot(businessId, userId), {
+    resource: res,
+    action,
+    sessionIsPrimaryAdmin,
+    sessionPermissions,
+  });
+}
+
+/** The parts of a capability snapshot the evaluation reads; the server builds one from the database. */
+export type CapabilityEvalSnapshot = Pick<CapabilitySnapshot, 'permissions' | 'isPrimaryAdmin' | 'enabledFeatures'>;
+
+export type CapabilityEvalResult = {
+  allowed: boolean;
+  denialReason?: CapabilityDenialReason;
+  indeterminate?: boolean;
+};
+
+/** Same rules as `evaluateCapabilityAccess`, on a snapshot the caller supplies (works on the server). */
+export function evaluateCapabilityWithSnapshot(
+  snapshot: CapabilityEvalSnapshot | null,
+  input: Pick<CapabilityEvalInput, 'resource' | 'action' | 'sessionIsPrimaryAdmin' | 'sessionPermissions'>
+): CapabilityEvalResult {
+  const { resource: res, action, sessionIsPrimaryAdmin, sessionPermissions } = input;
 
   const hrPlanFeature = getHrPlanFeatureForCapabilityCheck(res);
   if (hrPlanFeature) {
