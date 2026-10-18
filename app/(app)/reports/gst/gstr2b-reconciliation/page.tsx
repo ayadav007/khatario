@@ -98,6 +98,13 @@ export default function GSTR2BReconciliationPage() {
   }>>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<{
+    source: string;
+    filing_period: string;
+    invoices_imported: number;
+    duplicates_skipped: number;
+    sections: Array<{ sheet: string; status: string; documents: number; reason?: string }>;
+  } | null>(null);
 
   useEffect(() => {
     if (business) {
@@ -143,21 +150,36 @@ export default function GSTR2BReconciliationPage() {
       formData.append('filing_period', filingPeriod);
       formData.append('file', selectedFile);
       formData.append('user_id', user.id);
-      
+
       const res = await fetch('/api/gst/gstr2b/import', {
         method: 'POST',
         body: formData
       });
-      
+
       const data = await res.json();
-      
-      if (res.ok) {
-        toast.success(`Successfully imported ${data.invoices_imported} invoices`);
+
+      if (res.ok && data.success) {
+        const skipped = data.sections?.filter((section: { status: string }) => section.status !== 'imported') || [];
+        setImportSummary({
+          source: data.source || 'json',
+          filing_period: data.filing_period || filingPeriod,
+          invoices_imported: data.invoices_imported,
+          duplicates_skipped: data.duplicates_skipped || 0,
+          sections: data.sections || [],
+        });
+        toast.success(
+          `Imported ${data.invoices_imported} documents from ${data.source === 'excel' ? 'Excel' : 'JSON'}` +
+            (data.duplicates_skipped ? `. ${data.duplicates_skipped} duplicate rows skipped.` : '.') +
+            (skipped.length ? ` ${skipped.length} sheets were not document lists.` : '')
+        );
         setSelectedFile(null);
-        // Trigger reconciliation after import
         await handleReconcile();
       } else {
-        toast.error(`Import failed: ${data.error}`);
+        const rowError = Array.isArray(data.errors) && data.errors[0]
+          ? ` (${data.errors[0].sheet || 'workbook'} row ${data.errors[0].row}: ${data.errors[0].message})`
+          : '';
+        toast.error(`Import failed: ${data.error}${rowError}`);
+        setImportSummary(null);
       }
     } catch (error) {
       console.error('Import error:', error);
@@ -342,8 +364,24 @@ export default function GSTR2BReconciliationPage() {
               <div className="flex gap-2">
                 <input
                   type="file"
-                  accept=".json"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    if (file && file.size > 8 * 1024 * 1024) {
+                      toast.error('File is larger than 8 MB');
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                    const lower = file?.name.toLowerCase() || '';
+                    if (file && !lower.endsWith('.json') && !lower.endsWith('.xlsx')) {
+                      toast.error('Upload a GSTR-2B JSON or Excel file.');
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                    setSelectedFile(file);
+                  }}
                   className="text-sm"
                 />
                 <button
@@ -384,6 +422,25 @@ export default function GSTR2BReconciliationPage() {
               Refresh
             </button>
           </div>
+          <p className="mt-2 text-xs text-gray-500">JSON or Excel downloaded from the GST portal. A second upload of the same file is rejected.</p>
+          {importSummary && (
+            <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <p>
+                {importSummary.source === 'excel' ? 'Excel' : 'JSON'} import for {importSummary.filing_period}:{' '}
+                {importSummary.invoices_imported} documents saved
+                {importSummary.duplicates_skipped ? `, ${importSummary.duplicates_skipped} duplicate rows skipped` : ''}.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {importSummary.sections.map((section) => (
+                  <li key={`${section.sheet}-${section.status}`}>
+                    {section.sheet}: {section.status}
+                    {section.status === 'imported' ? ` (${section.documents})` : ''}
+                    {section.reason ? ` — ${section.reason}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {missingReferences.length > 0 && (
