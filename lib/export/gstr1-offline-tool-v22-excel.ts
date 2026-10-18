@@ -256,6 +256,22 @@ export type Gstr1OfflineReport = {
     cess_amount?: number;
     rate?: number;
   }>;
+  hsn_b2b?: Gstr1OfflineReport['hsn'];
+  hsn_b2c?: Gstr1OfflineReport['hsn'];
+  at?: Array<{
+    place_of_supply: string;
+    rate: number;
+    taxable_value: number;
+    cess?: number;
+  }>;
+  atadj?: Gstr1OfflineReport['at'];
+  doc_issues?: Array<{
+    nature: string;
+    from: string;
+    to: string;
+    totnum: number;
+    cancel: number;
+  }>;
   nil: Array<{
     description: string;
     nil_supply: number;
@@ -482,12 +498,13 @@ export async function generateGstr1OfflineToolV22Excel(
     }
   }
 
-  // ─── hsn(b2b) (A–K) — all HSN rows here; hsn(b2c) left empty ───────────────
-  const wsHsnB2b = workbook.getWorksheet('hsn(b2b)');
-  if (wsHsnB2b) {
-    r = DATA_START_ROW;
-    for (const item of report.hsn) {
-      setRowCells(wsHsnB2b, r++, [
+  // hsn(b2b) and hsn(b2c) stay separate even when SAC, rate and UQC match.
+  const writeHsn = (sheetName: string, rows: Gstr1OfflineReport['hsn']) => {
+    const ws = workbook.getWorksheet(sheetName);
+    if (!ws) return;
+    let row = DATA_START_ROW;
+    for (const item of rows) {
+      setRowCells(ws, row++, [
         item.hsn_sac || 'NA',
         item.description || '',
         item.uqc || 'NOS',
@@ -501,7 +518,9 @@ export async function generateGstr1OfflineToolV22Excel(
         Math.round((item.cess_amount || 0) * 100) / 100,
       ]);
     }
-  }
+  };
+  writeHsn('hsn(b2b)', report.hsn_b2b ?? []);
+  writeHsn('hsn(b2c)', report.hsn_b2c ?? []);
 
   // ─── exemp ─────────────────────────────────────────────────────────────────
   const wsExemp = workbook.getWorksheet('exemp');
@@ -517,17 +536,36 @@ export async function generateGstr1OfflineToolV22Excel(
     }
   }
 
-  // ─── docs ──────────────────────────────────────────────────────────────────
+  const writeAdvance = (sheetName: string, rows: NonNullable<Gstr1OfflineReport['at']>) => {
+    const ws = workbook.getWorksheet(sheetName);
+    if (!ws) return;
+    let row = DATA_START_ROW;
+    for (const item of rows) {
+      setRowCells(ws, row++, [
+        (item.place_of_supply || '').substring(0, 2),
+        '',
+        item.rate,
+        Math.round(item.taxable_value * 100) / 100,
+        Math.round((item.cess || 0) * 100) / 100,
+      ]);
+    }
+  };
+  writeAdvance('at', report.at ?? []);
+  writeAdvance('atadj', report.atadj ?? []);
+
+  // ─── docs — one row per series, not one range across natures ───────────────
   const wsDocs = workbook.getWorksheet('docs');
-  if (wsDocs && report.doc_issue_summary && report.doc_issue_summary.totnum > 0) {
-    const d = report.doc_issue_summary;
-    setRowCells(wsDocs, DATA_START_ROW, [
-      'Invoices for outward supply',
-      d.from,
-      d.to,
-      d.totnum,
-      d.cancel ?? 0,
-    ]);
+  if (wsDocs) {
+    const series = report.doc_issues ?? [];
+    series.forEach((d, i) => {
+      setRowCells(wsDocs, DATA_START_ROW + i, [
+        d.nature,
+        d.from,
+        d.to,
+        d.totnum,
+        d.cancel ?? 0,
+      ]);
+    });
   }
 
   trimSheets(workbook);
