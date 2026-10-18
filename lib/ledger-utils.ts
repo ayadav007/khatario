@@ -575,6 +575,7 @@ export async function createLedgerEntryLine(params: {
     | 'opening_balance'
     | 'credit_note'
     | 'purchase_return'
+    | 'supplier_credit_note'
     | 'debit_note'
     | 'gst_setoff'
     | 'gst_payment'
