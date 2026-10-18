@@ -1,3 +1,5 @@
+import 'record_format.dart';
+
 /// Every More-menu and settings route that is not already a dedicated phone screen.
 enum PageQuery { none, range, month, financialYear }
 
@@ -13,6 +15,11 @@ class AppPage {
 
   /// `gst`, `hsn`, or `leads`.
   final String? tool;
+
+  /// Same page under the menu's own wording ("GSTR-9", not "Gstr9").
+  AppPage withTitle(String label) => label.trim().isEmpty || label.startsWith('/')
+      ? this
+      : AppPage(href, label, path, listKey: listKey, query: query, estimate: estimate, tool: tool);
 }
 
 /// Same groups as the website settings hub (`lib/settings-module-registry.ts`).
@@ -124,6 +131,7 @@ const _settingsRedirect = {
 /// Website pages with no GET the phone can list (forms, wizards, device setup).
 /// Their path is the website href, so the phone offers to open them there.
 const _webOnly = {
+  '/employees/new',
   '/pricing/party-item',
   '/hr/leaves/year-end',
   '/hr/leaves/import-balances',
@@ -220,7 +228,7 @@ const appPages = <AppPage>[
   AppPage('/hr/engagement', 'Engagement', '/api/hr/announcements'),
   AppPage('/employees/org-chart', 'Org chart', '/api/employees/org-chart'),
   AppPage('/employees/manager', 'Manager', '/api/employees/manager/dashboard'),
-  AppPage('/employees/leaves/calendar', 'Leave calendar', '/api/employees/leave-calendar'),
+  AppPage('/employees/leaves/calendar', 'Leave calendar', '/api/employees/leave-calendar', listKey: 'leaves'),
   AppPage('/employees/performance', 'Performance', '/api/employees/performance'),
   AppPage('/bank/import', 'Bank import', '/api/bank-accounts', listKey: 'accounts'),
   AppPage('/bank/reconciliation', 'Bank reconciliation', '/api/bank/reconciliation'),
@@ -359,6 +367,7 @@ String _titleFromPath(String href) {
 }
 
 String _apiFor(String href) {
+  if (_webOnly.contains(href)) return href;
   var path = href;
   if (path.endsWith('/new')) path = path.substring(0, path.length - 4);
   path = path.replaceAll('/edit', '');
@@ -460,20 +469,40 @@ String? _toolFor(String href) => switch (href) {
     };
 
 const _titleKeys = [
-  'invoice_number',
   'credit_note_number',
   'debit_note_number',
+  'invoice_number',
   'bill_number',
   'order_number',
   'voucher_number',
   'account_name',
+  'item_name',
+  'product_name',
+  'employee_name',
+  'party_name',
   'name',
   'title',
   'customer_name',
   'supplier_name',
   'description',
+  'user_name',
   'phone',
   'code',
+  'reference_number',
+  'order_payment_reference',
+  'utr',
+  'provider',
+  'payment_mode',
+  'payment_method',
+  'sale_type',
+  'status_category',
+  'hsn_code',
+  'tax_rate',
+  'gst_rate',
+  'label',
+  'period',
+  'month',
+  'date',
 ];
 
 const _amountKeys = ['grand_total', 'amount', 'balance', 'total', 'stock_value', 'net_profit'];
@@ -481,15 +510,17 @@ const _amountKeys = ['grand_total', 'amount', 'balance', 'total', 'stock_value',
 String recordTitle(Map<String, dynamic> row) {
   for (final key in _titleKeys) {
     final value = row[key]?.toString();
-    if (value != null && value.isNotEmpty) return value;
+    if (value == null || value.isEmpty) continue;
+    if (key.endsWith('_rate')) return '${formatField(key, row[key]) ?? value}% GST';
+    return formatField(key, row[key]) ?? value;
   }
-  return row['id']?.toString() ?? 'Record';
+  return fallbackTitle(row) ?? 'Record';
 }
 
 String? recordAmount(Map<String, dynamic> row) {
   for (final key in _amountKeys) {
     final value = row[key];
-    if (value == null || value == '') continue;
+    if (value == null || value == '' || value is Map || value is List) continue;
     return value.toString();
   }
   return null;
@@ -509,6 +540,28 @@ List<Map<String, dynamic>> recordsFromBody(dynamic body, String? listKey) {
       return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     }
   }
-  if (map['error'] == null && map.isNotEmpty) return [map];
+  if (map['error'] == null && map.isNotEmpty && !_isEmptyListEnvelope(map)) return [map];
   return const [];
+}
+
+/// `{items: [], pagination: {...}}`: an empty list with paging metadata, not a record to show.
+const _envelopeKeys = {'pagination', 'meta', 'success', 'total', 'count', 'page', 'limit', 'message', 'scope', 'filters', 'summary', 'totals'};
+
+bool _isEmptyListEnvelope(Map<String, dynamic> map) {
+  final hasEmptyList = map.values.any((v) => v is List && v.isEmpty);
+  if (!hasEmptyList) return false;
+  return map.entries.every((e) => (e.value is List && (e.value as List).isEmpty) || _envelopeKeys.contains(e.key));
+}
+
+/// A dashboard or report object (headline numbers, not just a wrapped list), shown whole.
+bool isReportObject(dynamic body) {
+  if (body is! Map || body.isEmpty || body['error'] != null) return false;
+  return body.entries.any((e) {
+    final key = e.key.toString();
+    if (_envelopeKeys.contains(key) && key != 'summary' && key != 'totals') return false;
+    final value = e.value;
+    if (value is List || value == null || isTechnicalKey(key, value)) return false;
+    if (value is Map) return plainFields(Map<String, dynamic>.from(value)).isNotEmpty;
+    return formatField(key, value) != null;
+  });
 }

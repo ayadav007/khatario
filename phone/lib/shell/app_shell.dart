@@ -223,7 +223,7 @@ class _AppShellState extends State<AppShell> {
       ));
       return;
     }
-    final page = pageForHref(href);
+    final page = pageForHref(href)?.withTitle(label);
     if (page != null) {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecordPage(session: widget.session, page: page)));
       return;

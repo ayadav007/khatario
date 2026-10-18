@@ -19,7 +19,6 @@ void main() {
       '/settings/period-locks',
       '/settings/account-mappings',
       '/settings/users',
-      '/employees',
       '/settings/roles',
       '/settings/whatsapp/team',
       '/settings/activity',

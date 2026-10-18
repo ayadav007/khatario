@@ -32,7 +32,7 @@ Widget? phoneSettingPage(AppSession session, String href) {
     '/settings/financial-years' => _YearsScreen(session: session),
     '/settings/period-locks' => _LocksScreen(session: session),
     '/settings/account-mappings' => _MappingsScreen(session: session),
-    '/settings/users' || '/employees' => _UsersScreen(session: session),
+    '/settings/users' => _UsersScreen(session: session),
     '/settings/roles' => _RolesScreen(session: session),
     '/settings/whatsapp/team' => _UsersScreen(session: session, agents: true),
     '/settings/activity' => JsonListScreen(

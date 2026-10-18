@@ -17,7 +17,11 @@ import '../purchases/bill_form_screen.dart';
 import '../invoices/invoice_form_screen.dart';
 import '../parties/customer_form_logic.dart';
 import '../parties/supplier_form_screen.dart';
+import '../hr/employees_screen.dart';
+import '../reports/cash_flow_screen.dart';
+import '../reports/financial_statements_screens.dart';
 import 'page_catalog.dart';
+import 'record_format.dart';
 
 /// List, report, or tool for a website route that does not have its own screen yet.
 class RecordPage extends StatefulWidget {
@@ -51,7 +55,7 @@ class _RecordPageState extends State<RecordPage> {
   void initState() {
     super.initState();
     final href = widget.page.href;
-    if (widget.page.tool == null && href != '/settings' && href != '/settings/features' && href != '/tools' && href != '/suppliers/new' && href != '/expenses/new') {
+    if (dedicatedPageScreen(widget.session, href) == null && widget.page.tool == null && href != '/settings' && href != '/settings/features' && href != '/tools' && href != '/suppliers/new' && href != '/expenses/new') {
       _load();
     } else {
       _loading = false;
@@ -79,7 +83,14 @@ class _RecordPageState extends State<RecordPage> {
     final now = DateTime.now();
     if (base.startsWith('/api/gst/gstr2b/reconcile')) {
       final period = '${now.year}-${now.month.toString().padLeft(2, '0')}';
-      base = '$base${base.contains('?') ? '&' : '?'}filing_period=$period';
+      // This GET names the business in the query; the server checks it against the session.
+      final businessId = Uri.encodeQueryComponent(widget.session.businessId ?? '');
+      base = '$base${base.contains('?') ? '&' : '?'}filing_period=$period&business_id=$businessId';
+    }
+    if (base.startsWith('/api/employees/leave-calendar')) {
+      final first = DateTime(now.year, now.month, 1);
+      final last = DateTime(now.year, now.month + 1, 0);
+      base = '$base${base.contains('?') ? '&' : '?'}start_date=${ymd(first)}&end_date=${ymd(last)}';
     }
     if (base.startsWith('/api/offline-sync/history')) {
       final userId = widget.session.user['id']?.toString() ?? '';
@@ -91,6 +102,12 @@ class _RecordPageState extends State<RecordPage> {
     final from = '$startYear-04-01';
     final to = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final joiner = base.contains('?') ? '&' : '?';
+    // Reports whose API takes its own date parameter instead of a range or month.
+    if (base.startsWith('/api/gst/cash-ledger')) return '$base${joiner}as_on_date=$to';
+    if (base.startsWith('/api/reports/gst/gstr9')) return '$base${joiner}financial_year=$startYear';
+    if (base.startsWith('/api/reports/gst/reconciliation')) {
+      return '$base${joiner}period=${now.year}-${now.month.toString().padLeft(2, '0')}';
+    }
     return switch (page.query) {
       PageQuery.range => '$base${joiner}from_date=$from&to_date=$to',
       PageQuery.month => '$base${joiner}month=${now.month}&year=${now.year}',
@@ -117,8 +134,8 @@ class _RecordPageState extends State<RecordPage> {
           _loading = false;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _error = _serverTrouble; _loading = false; });
     }
   }
 
@@ -129,8 +146,8 @@ class _RecordPageState extends State<RecordPage> {
     try {
       final body = await widget.session.api.getData('/api/hsn/lookup?q=${Uri.encodeQueryComponent(q)}&limit=10');
       if (mounted) setState(() { _body = body; _loading = false; });
-    } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _error = _serverTrouble; _loading = false; });
     }
   }
 
@@ -156,7 +173,12 @@ class _RecordPageState extends State<RecordPage> {
     if (page.href == '/settings/subscription') return PlanBillingScreen(session: widget.session);
     if (page.href == '/suppliers/new') return SupplierFormScreen(session: widget.session);
     if (page.href == '/expenses/new') return ExpenseFormScreen(session: widget.session);
-    if (page.href == '/whatsapp/conversations') return ChatsInboxScreen(session: widget.session);
+    // The inbox is built for the Chats tab, which supplies the Scaffold (Material) around it.
+    if (page.href == '/whatsapp/conversations') {
+      return Scaffold(backgroundColor: AppColors.bg, body: ChatsInboxScreen(session: widget.session));
+    }
+    final dedicated = dedicatedPageScreen(widget.session, page.href);
+    if (dedicated != null) return dedicated;
     final content = _content(page);
     if (widget.embedded) return content;
     return Scaffold(
@@ -342,6 +364,12 @@ class _RecordPageState extends State<RecordPage> {
         return SettingsEditor(session: widget.session, path: widget.page.path, draft: draft);
       }
     }
+    // Reports keep their totals and every table, so show the whole object rather than one list.
+    final listKey = widget.page.listKey;
+    final hasList = listKey != null && _body is Map && (_body as Map)[listKey] is List;
+    if ((widget.page.query != PageQuery.none || !hasList) && isReportObject(_body)) {
+      return _detail(Map<String, dynamic>.from(_body as Map));
+    }
     final rows = recordsFromBody(_body, widget.page.listKey);
     if (rows.isEmpty) {
       return ListView(children: const [KEmptyState(icon: LucideIcons.inbox, title: 'Nothing here yet')]);
@@ -381,7 +409,7 @@ class _RecordPageState extends State<RecordPage> {
     final title = recordTitle(row);
     final amount = recordAmount(row);
     final numeric = amount == null ? null : num.tryParse(amount);
-    final status = row['status']?.toString() ?? row['payment_status']?.toString();
+    final status = _scalarText(row['status']) ?? _scalarText(row['payment_status']);
     final party = (row['customer_name'] ?? row['supplier_name'] ?? row['party_name'])?.toString() ?? '';
     return KListRow(
       onTap: () => _openRow(row),
@@ -420,19 +448,18 @@ class _RecordPageState extends State<RecordPage> {
   String _subtitle(Map<String, dynamic> row) {
     final date = row['invoice_date'] ?? row['bill_date'] ?? row['payment_date'] ?? row['created_at'] ?? row['date'];
     final parsed = DateTime.tryParse(date?.toString() ?? '');
-    final status = row['status']?.toString() ?? row['payment_mode']?.toString() ?? '';
+    final status = _scalarText(row['status']) ?? _scalarText(row['payment_mode']) ?? '';
     return [if (parsed != null) ddMMMyyyy(parsed.toLocal()), if (status.isNotEmpty) status].join(' · ');
   }
 
   Widget _detail(Map<String, dynamic> row) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.xl),
-      children: [
-        KInfoCard(
-          title: 'Details',
-          rows: _settingRows(row),
-        ),
-      ],
+    return RefreshIndicator(
+      color: AppColors.brand,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.xl),
+        children: [RecordSections(row: row)],
+      ),
     );
   }
 
@@ -598,26 +625,11 @@ class _RecordPageState extends State<RecordPage> {
   }
 }
 
-List<(String, String)> _settingRows(Map<String, dynamic> row, [String prefix = '']) {
-  final rows = <(String, String)>[];
-  for (final entry in row.entries) {
-    final value = entry.value;
-    final label = prefix.isEmpty ? _label(entry.key) : '$prefix · ${_label(entry.key)}';
-    if (value is Map) {
-      rows.addAll(_settingRows(Map<String, dynamic>.from(value), _label(entry.key)));
-    } else if (value is List) {
-      if (value.isNotEmpty) rows.add((label, '${value.length}'));
-    } else if (value != null && value.toString().isNotEmpty) {
-      rows.add((label, value.toString()));
-    }
-  }
-  return rows;
-}
+/// Shown instead of a raw network exception (a server 500, a timeout).
+const _serverTrouble = 'The server could not load this right now. Pull down or try again in a moment.';
 
-String _label(String key) {
-  final words = key.replaceAll('_', ' ').trim();
-  return words.isEmpty ? key : words[0].toUpperCase() + words.substring(1);
-}
+/// A plain text value; objects and lists (a status breakdown, say) are not a status.
+String? _scalarText(dynamic value) => value is String || value is num || value is bool ? value.toString() : null;
 
 /// Calculator / validator output.
 class _ResultCard extends StatelessWidget {
@@ -681,15 +693,7 @@ class _DetailPage extends StatelessWidget {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(AppSpace.gutter, AppSpace.xs, AppSpace.gutter, AppSpace.xl),
-                children: [
-                  KInfoCard(
-                    title: 'Details',
-                    rows: [
-                      for (final entry in row.entries)
-                        if (entry.value is! Map && entry.value is! List) (_label(entry.key), entry.value?.toString() ?? ''),
-                    ],
-                  ),
-                ],
+                children: [RecordSections(row: row)],
               ),
             ),
           ],
@@ -698,6 +702,79 @@ class _DetailPage extends StatelessWidget {
     );
   }
 }
+
+/// A record or report object as labelled sections: plain fields first, then each nested object or list.
+class RecordSections extends StatelessWidget {
+  const RecordSections({super.key, required this.row});
+
+  final Map<String, dynamic> row;
+
+  static const _maxItems = 50;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = plainFields(row);
+    final nested = nestedSections(row);
+    if (fields.isEmpty && nested.isEmpty) {
+      return const KEmptyState(icon: LucideIcons.inbox, title: 'Nothing to show yet');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (fields.isNotEmpty) KInfoCard(title: 'Overview', rows: fields),
+        for (final section in nested)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpace.md),
+            child: switch (section) {
+              NestedFields(:final title, :final rows) => KInfoCard(title: title, rows: rows),
+              NestedValues(:final title, :final values) => KInfoCard(title: title, rows: [for (final (i, v) in values.indexed) ('${i + 1}', v)]),
+              NestedList(:final title, :final items) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    KSectionHeader(title, trailing: Text('${items.length}', style: AppText.caption)),
+                    KCard(
+                      child: KDivided(children: [
+                        for (final item in items.take(_maxItems)) _item(context, item),
+                        if (items.length > _maxItems)
+                          Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Text('${items.length - _maxItems} more on the website', style: AppText.caption),
+                          ),
+                      ]),
+                    ),
+                  ],
+                ),
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _item(BuildContext context, Map<String, dynamic> item) {
+    final title = recordTitle(item);
+    final amount = primaryAmount(item);
+    final details = plainFields(item).where((f) => f.$2 != title && (amount == null || f.$1 != fieldLabel(amount.$1))).take(2).map((f) => '${f.$1}: ${f.$2}').join(' · ');
+    final hasMore = plainFields(item).length > 3 || nestedSections(item).isNotEmpty;
+    return KListRow(
+      title: title,
+      subtitle: details,
+      trailing: amount == null
+          ? (hasMore ? const Icon(LucideIcons.chevronRight, size: 18, color: AppColors.ink3) : null)
+          : Text(formatField(amount.$1, amount.$2) ?? '', style: AppText.bodyStrong.copyWith(fontFeatures: AppText.tabular)),
+      onTap: hasMore ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => _DetailPage(title: title, row: item))) : null,
+    );
+  }
+}
+
+/// Routes in [appPages] that now have their own phone screen instead of the generic list.
+Widget? dedicatedPageScreen(AppSession session, String href) => switch (href) {
+      '/employees' => EmployeesScreen(session: session),
+      '/reports/cash-flow' => CashFlowScreen(session: session),
+      '/reports/profit-loss' => ProfitLossScreen(session: session),
+      '/reports/balance-sheet' => BalanceSheetScreen(session: session),
+      '/reports/trial-balance' => TrialBalanceScreen(session: session),
+      _ => null,
+    };
 
 Future<void> openWebsitePage(String href) async {
   final uri = Uri.parse('https://staging.khatario.com$href');
