@@ -82,8 +82,12 @@ export function MyAccountsView({ businessId }: { businessId: string }) {
     setError(null);
     try {
       const res = await fetch('/api/accounts/my-accounts');
-      const data = await safeJsonParse(res);
-      if (!res.ok) {
+      const data = await safeJsonParse<{
+        accounts?: MyAccount[];
+        groups?: MyGroup[];
+        manual_account_ids?: string[];
+      }>(res);
+      if (!res.ok || !data) {
         setError(getApiErrorMessage(data, 'Could not load My Accounts'));
         setAccounts([]);
         return;

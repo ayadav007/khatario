@@ -46,8 +46,8 @@ export function AddToMyAccountsDialog({
     (async () => {
       try {
         const res = await fetch(`/api/accounts?business_id=${businessId}`);
-        const data = await safeJsonParse(res);
-        if (!cancelled && res.ok) setAccounts(data.accounts || []);
+        const data = await safeJsonParse<{ accounts?: PickerAccount[] }>(res);
+        if (!cancelled && res.ok && data) setAccounts(data.accounts || []);
       } finally {
         if (!cancelled) setLoading(false);
       }
