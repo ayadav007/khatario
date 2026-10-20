@@ -11,8 +11,9 @@ export function formatJournalNumber(year: string, seq: number): string {
 
 /**
  * Next JRN/YYYY/nnnnnn number. Serialised per business with a transaction-scoped
- * advisory lock and counted over journal_entries (soft-deleted rows included), so
- * a deleted journal never frees its number for reuse. Must run inside BEGIN.
+ * advisory lock. journal_entries is the source (soft-deleted rows included, so a
+ * deleted journal never frees its number). Archived ledger_entries numbers are
+ * included only so an old number is not issued again. Must run inside BEGIN.
  */
 export async function allocateJournalVoucherNumber(
   client: PoolClient,

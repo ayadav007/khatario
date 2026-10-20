@@ -3,9 +3,11 @@ import { queryOne, query } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import { parseOpeningBalance } from '@/lib/accounting/account-hierarchy';
 import {
   AccountRuleError,
   assertGroupMatchesType,
+  assertValidParentAccount,
   setAccountOpeningBalance,
 } from '@/lib/accounting/account-rules';
 import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS } from '@/lib/accounting/pl-sections';
@@ -252,19 +254,38 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
         }
       }
 
+      if (updates.parent_account_id === '') updates.parent_account_id = null;
+      if (updates.parent_account_id !== undefined) {
+        try {
+          await assertValidParentAccount({
+            businessId: business_id,
+            accountType: existing.account_type,
+            parentAccountId: (updates.parent_account_id as string | null) || null,
+            accountId,
+          });
+        } catch (e) {
+          if (e instanceof AccountRuleError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+          }
+          throw e;
+        }
+      }
+
       if (updates.opening_balance !== undefined || updates.opening_balance_type !== undefined) {
-        const amount = updates.opening_balance !== undefined
-          ? Number(updates.opening_balance)
-          : Number(existing.opening_balance || 0);
-        const type = (updates.opening_balance_type ?? existing.opening_balance_type ?? 'debit') as string;
-        if (!Number.isFinite(amount) || amount < 0 || (type !== 'debit' && type !== 'credit')) {
-          return NextResponse.json(
-            { error: 'opening_balance must be a non-negative number and opening_balance_type debit or credit' },
-            { status: 400 }
-          );
+        const opening = parseOpeningBalance(
+          updates.opening_balance !== undefined ? updates.opening_balance : existing.opening_balance,
+          updates.opening_balance_type ?? existing.opening_balance_type ?? 'debit',
+        );
+        if (!opening.ok) {
+          return NextResponse.json({ error: opening.error, code: 'INVALID_OPENING_BALANCE' }, { status: 400 });
         }
         try {
-          await setAccountOpeningBalance({ businessId: business_id, accountId, amount, type });
+          await setAccountOpeningBalance({
+            businessId: business_id,
+            accountId,
+            amount: opening.amount,
+            type: opening.type,
+          });
         } catch (e) {
           if (e instanceof AccountRuleError) {
             return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
@@ -334,8 +355,14 @@ export const PATCH = withPremiumSubscriptionApi<{ id: string }>(
       return NextResponse.json({ account });
     } catch (error: any) {
       console.error('Error updating account:', error);
+      if (error instanceof AccountRuleError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      if (error?.code === '23505') {
+        return NextResponse.json({ error: 'Account code already exists' }, { status: 409 });
+      }
       return NextResponse.json(
-        { error: error.message || 'Internal server error' },
+        { error: 'Could not update the account. Check the details and try again.' },
         { status: 500 }
       );
     }
@@ -385,29 +412,51 @@ export const DELETE = withPremiumSubscriptionApi<{ id: string }>(
         );
       }
 
-      // Check if account has transactions
-      const hasTransactions = await queryOne(
-        'SELECT COUNT(*) as count FROM ledger_entries WHERE account_id = $1',
-        [accountId]
+      const childCount = await queryOne<{ count: string }>(
+        'SELECT COUNT(*) as count FROM accounts WHERE parent_account_id = $1 AND business_id = $2',
+        [accountId, businessId]
+      );
+      const hasChildren = parseInt(childCount?.count || '0') > 0;
+
+      // Posted lines are the books. Archived ledger_entries rows still reference the
+      // account, so they block a hard delete until that history is retired.
+      const hasTransactions = await queryOne<{ count: string }>(
+        `SELECT (
+            (SELECT COUNT(*) FROM ledger_entry_lines WHERE account_id = $1 AND business_id = $2)
+            + (SELECT COUNT(*) FROM ledger_entries WHERE account_id = $1)
+          )::text as count`,
+        [accountId, businessId]
       );
 
       if (parseInt(hasTransactions?.count || '0') > 0) {
-        // Soft delete - set is_active = false
         await query(
           'UPDATE accounts SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND business_id = $2',
           [accountId, businessId]
         );
-        return NextResponse.json({ message: 'Account deactivated (has transactions)' });
+        return NextResponse.json({
+          message: hasChildren
+            ? 'Account deactivated. Its sub-accounts and existing transactions were left in place.'
+            : 'Account deactivated (has transactions)',
+        });
       }
 
-      // Hard delete if no transactions
+      if (hasChildren) {
+        return NextResponse.json(
+          {
+            error: 'Move or remove the sub-accounts under this account before deleting it.',
+            code: 'ACCOUNT_HAS_CHILDREN',
+          },
+          { status: 400 }
+        );
+      }
+
       await query('DELETE FROM accounts WHERE id = $1 AND business_id = $2', [accountId, businessId]);
 
       return NextResponse.json({ message: 'Account deleted successfully' });
     } catch (error: any) {
       console.error('Error deleting account:', error);
       return NextResponse.json(
-        { error: error.message || 'Internal server error' },
+        { error: 'Could not delete the account. Check whether it still has sub-accounts or transactions.' },
         { status: 500 }
       );
     }

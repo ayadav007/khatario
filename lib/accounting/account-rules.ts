@@ -1,13 +1,13 @@
 import type { PoolClient } from 'pg';
-import { getPool, queryOne } from '@/lib/db';
+import { getPool, queryOne, queryRows } from '@/lib/db';
+import { parentCreatesCycle, parentTypeError } from '@/lib/accounting/account-hierarchy';
 import { deleteVoucher } from '@/lib/accounting/voucher-posting';
 import {
   getFinancialYearStartDate,
   getOrCreateOpeningBalanceAdjustmentAccount,
 } from '@/lib/ledger-utils';
 
-export const ACCOUNT_TYPES = ['asset', 'liability', 'income', 'expense', 'capital'] as const;
-export type AccountType = (typeof ACCOUNT_TYPES)[number];
+export { ACCOUNT_TYPE_VALUES as ACCOUNT_TYPES, type AccountType } from '@/lib/accounting/account-hierarchy';
 
 export class AccountRuleError extends Error {
   constructor(message: string, public code: string, public status = 400) {
@@ -33,6 +33,53 @@ export async function assertGroupMatchesType(
     throw new AccountRuleError(
       `A ${accountType} account cannot be placed under "${group.group_name}" (${group.group_type} group)`,
       'ACCOUNT_TYPE_GROUP_MISMATCH'
+    );
+  }
+}
+
+/**
+ * Parent account is a ledger relationship, separate from account group.
+ * The parent must be another account of the same type in this business,
+ * and the link must not point at the account itself or at one of its children.
+ */
+export async function assertValidParentAccount(opts: {
+  businessId: string;
+  accountType: string;
+  parentAccountId: string | null | undefined;
+  accountId?: string | null;
+}): Promise<void> {
+  const parentId = opts.parentAccountId || null;
+  if (!parentId) return;
+
+  const rows = await queryRows<{
+    id: string;
+    parent_account_id: string | null;
+    account_type: string;
+  }>(
+    `SELECT id, parent_account_id, account_type
+       FROM accounts
+      WHERE business_id = $1`,
+    [opts.businessId]
+  );
+  const parent = rows.find((row) => row.id === parentId);
+  if (!parent) {
+    throw new AccountRuleError(
+      'Parent account was not found in this business.',
+      'PARENT_NOT_FOUND'
+    );
+  }
+  const typeError = parentTypeError(opts.accountType, parent.account_type);
+  if (typeError) {
+    throw new AccountRuleError(typeError, 'PARENT_TYPE_MISMATCH');
+  }
+  const cycle = parentCreatesCycle(rows, opts.accountId ?? null, parentId);
+  if (cycle === 'self') {
+    throw new AccountRuleError('An account cannot be its own parent.', 'PARENT_SELF');
+  }
+  if (cycle === 'cycle') {
+    throw new AccountRuleError(
+      'That parent would create a circular account hierarchy.',
+      'PARENT_CYCLE'
     );
   }
 }

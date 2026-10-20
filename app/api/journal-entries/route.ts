@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest, getBusinessIdFromRequest, requireTenantBusinessId } from '@/lib/auth-helpers';
+import { getUserIdFromRequest, getBusinessIdFromRequest, requireStrictSession, requireTenantBusinessId } from '@/lib/auth-helpers';
 import { queryRows, queryOne, query, getPool } from '@/lib/db';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { enforceAccess, enforceAccessErrorResponse } from '@/lib/enforce-access';
@@ -169,6 +169,9 @@ export async function GET(request: NextRequest) {
  * Create a new journal entry
  */
 export async function POST(request: NextRequest) {
+  const session = await requireStrictSession(request);
+  if (!session.ok) return session.response;
+
   const pool = getPool();
   const client = await pool.connect();
 
@@ -176,12 +179,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const tenant = requireTenantBusinessId(request, body.business_id);
     if (!tenant.ok) return tenant.response;
-    const sessionUserId = getUserIdFromRequest(request);
-    if (!sessionUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
     const business_id = tenant.businessId;
-    const created_by = sessionUserId;
+    const created_by = session.userId;
     const {
       branch_id, // CRITICAL: Branch ID for branch-wise accounting
       entry_date,
@@ -428,48 +427,6 @@ export async function POST(request: NextRequest) {
         line.narration || narration || null,
         reference_number || null,
         lineBranchId,
-      ]);
-
-      // Also create entry in ledger_entries for backward compatibility
-      const account = await client.query('SELECT nature FROM accounts WHERE id = $1', [line.account_id]);
-      const accountNature = account.rows[0]?.nature || 'debit';
-      
-      // Calculate balance (simplified - would need to fetch current balance)
-      const currentBalance = await client.query(`
-        SELECT get_account_balance($1, $2, $3, $4) as balance
-      `, [line.account_id, business_id, entry_date, finalBranchId]);
-      
-      const balance = parseFloat(currentBalance.rows[0]?.balance || '0');
-      const debit = parseFloat(line.debit?.toString() || '0');
-      const credit = parseFloat(line.credit?.toString() || '0');
-      
-      let newBalance = balance;
-      if (accountNature === 'debit') {
-        newBalance = balance + debit - credit;
-      } else {
-        newBalance = balance + credit - debit;
-      }
-
-      await client.query(`
-        INSERT INTO ledger_entries (
-          business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-          transaction_id, debit, credit, balance, description,
-          voucher_number, voucher_type, reference_number
-        )
-        VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, $8, $9, $10, $11, $12)
-      `, [
-        business_id,
-        lineBranchId,
-        entry_date,
-        line.account_id,
-        voucherId,
-        debit,
-        credit,
-        newBalance,
-        line.narration || narration || 'Journal Entry',
-        voucherNumber,
-        'journal',
-        reference_number || null,
       ]);
     }
 

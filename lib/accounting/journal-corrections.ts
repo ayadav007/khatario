@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { activeLedgerLineSql, reverseVoucherLedgerEntries, REVERSAL_NARRATION_PREFIX } from '@/lib/ledger-reversal';
+import { activeLedgerLineSql, reverseVoucherLedgerEntries } from '@/lib/ledger-reversal';
 import { type JournalLineInput, toJournalAmount } from '@/lib/accounting/journal-lines';
 
 type ActiveLine = {
@@ -25,63 +25,18 @@ export async function activeJournalLines(client: PoolClient, businessId: string,
   ).rows;
 }
 
-async function insertMirrorRow(
-  client: PoolClient,
-  r: {
-    businessId: string;
-    branchId: string | null;
-    date: string | Date;
-    accountId: string;
-    voucherId: string;
-    debit: number;
-    credit: number;
-    description: string;
-    voucherNumber: string | null;
-    reference: string | null;
-  }
-) {
-  await client.query(
-    `INSERT INTO ledger_entries (
-       business_id, branch_id, entry_date, account_id, account_type, transaction_type,
-       transaction_id, debit, credit, balance, description,
-       voucher_number, voucher_type, reference_number
-     ) VALUES ($1, $2, $3, $4, 'account', 'journal', $5, $6, $7, 0, $8, $9, 'journal', $10)`,
-    [r.businessId, r.branchId, r.date, r.accountId, r.voucherId, r.debit, r.credit, r.description, r.voucherNumber, r.reference]
-  );
-}
-
-/**
- * Reverses the journal's current posting in ledger_entry_lines (linked reversal lines) and
- * appends matching reversal rows to the legacy ledger_entries mirror, so both stay net-equal
- * without deleting anything. Returns the number of lines reversed.
- */
+/** Reverses the journal's current posting in ledger_entry_lines. Returns the number of lines reversed. */
 async function reverseJournalPosting(
   client: PoolClient,
-  p: { businessId: string; voucherId: string; userId: string; reason: string; voucherNumber: string | null }
+  p: { businessId: string; voucherId: string; userId: string; reason: string }
 ): Promise<number> {
-  const active = await activeJournalLines(client, p.businessId, p.voucherId);
-  const n = await reverseVoucherLedgerEntries(client, {
+  return reverseVoucherLedgerEntries(client, {
     businessId: p.businessId,
     voucherType: 'journal',
     voucherId: p.voucherId,
     reason: p.reason,
     actorId: p.userId,
   });
-  for (const l of active) {
-    await insertMirrorRow(client, {
-      businessId: p.businessId,
-      branchId: l.branch_id,
-      date: l.entry_date,
-      accountId: l.account_id,
-      voucherId: p.voucherId,
-      debit: Number(l.credit) || 0,
-      credit: Number(l.debit) || 0,
-      description: `${REVERSAL_NARRATION_PREFIX} ${p.reason} (${l.narration || ''})`.slice(0, 500),
-      voucherNumber: p.voucherNumber,
-      reference: l.reference_number,
-    });
-  }
-  return n;
 }
 
 /**
@@ -107,7 +62,6 @@ export async function repostJournal(
     voucherId: p.voucherId,
     userId: p.userId,
     reason: 'Journal corrected',
-    voucherNumber: p.voucherNumber,
   });
   let posted = 0;
   for (const line of p.lines) {
@@ -121,18 +75,6 @@ export async function repostJournal(
        ) VALUES ($1, $2, 'journal', $3, $4, $5, $6, $7, $8, $9)`,
       [p.businessId, p.voucherId, line.account_id, p.entryDate, d, c, lineNarration, p.reference, p.branchId]
     );
-    await insertMirrorRow(client, {
-      businessId: p.businessId,
-      branchId: p.branchId,
-      date: p.entryDate,
-      accountId: line.account_id as string,
-      voucherId: p.voucherId,
-      debit: d,
-      credit: c,
-      description: lineNarration || 'Journal Entry',
-      voucherNumber: p.voucherNumber,
-      reference: p.reference,
-    });
     posted++;
   }
   return { reversed, posted };
@@ -170,8 +112,8 @@ export const JOURNAL_REVERSAL_REASON_PREFIX = 'Journal reversed:';
 export type JournalReverseResult = 'reversed' | 'not_found' | 'already_reversed';
 
 /**
- * Reversal of a posted journal on the caller's transaction: its current posting is mirrored and
- * linked under the same voucher, and the journal stays live as a reversed record.
+ * Reversal of a posted journal on the caller's transaction: its current posting is reversed
+ * under the same voucher, and the journal stays live as a reversed record.
  */
 export async function reverseJournal(
   client: PoolClient,
@@ -188,7 +130,6 @@ export async function reverseJournal(
     voucherId: p.voucherId,
     userId: p.userId,
     reason: `${JOURNAL_REVERSAL_REASON_PREFIX} ${p.reason}`,
-    voucherNumber: head.rows[0].voucher_number,
   });
   if (reversed === 0) return 'already_reversed';
   await client.query(
@@ -218,7 +159,6 @@ export async function deleteJournalByReversal(
     voucherId: p.voucherId,
     userId: p.userId,
     reason: p.reason ? `Journal deleted: ${p.reason}` : 'Journal deleted',
-    voucherNumber: head.rows[0].voucher_number,
   });
   await client.query(
     `UPDATE journal_entries

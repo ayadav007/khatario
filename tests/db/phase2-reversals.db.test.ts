@@ -772,11 +772,11 @@ d('Phase 2 reversal-based corrections (real DB)', () => {
     expect(rows.filter((r) => r.is_reversal).every((r) => r.d === '2026-09-15')).toBe(true);
     expectVoucherConsistent(rows);
 
-    const mirror = await pool.query<{ dr: string; cr: string }>(
-      `SELECT SUM(debit) AS dr, SUM(credit) AS cr FROM ledger_entries WHERE business_id = $1 AND transaction_id = $2`,
+    const mirror = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM ledger_entries WHERE business_id = $1 AND transaction_id = $2`,
       [B, voucherId]
     );
-    expect(Number(mirror.rows[0].dr)).toBe(Number(mirror.rows[0].cr));
+    expect(Number(mirror.rows[0].n)).toBe(0);
 
     expect(await tx((c) => deleteJournalByReversal(c, { businessId: B, voucherId, userId: U, reason: 'Posted twice' }))).toBe(true);
     rows = await lines('journal', voucherId);
