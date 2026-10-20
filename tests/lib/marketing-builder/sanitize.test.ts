@@ -1,3 +1,5 @@
+import { imageAltPublishError } from '@/lib/marketing-builder/publish-checks';
+import { isSafeCanonical } from '@/lib/marketing-builder/seo';
 import { sanitizeMarketingDocument, MARKETING_DOC_MAX_BYTES } from '@/lib/marketing-builder/sanitize';
 import { isSafeHref, isSafeImageSrc, youtubeId } from '@/lib/marketing-builder/safe-url';
 import { detectImageType, isMediaFileName } from '@/lib/marketing-builder/media';
@@ -122,10 +124,67 @@ describe('sanitizeMarketingDocument', () => {
     expect(sanitizeMarketingDocument(doc(content)).ok).toBe(false);
   });
 
+  it('keeps a same-site canonical and drops an external one', () => {
+    const result = sanitizeMarketingDocument(
+      doc([{ type: 'Text', props: { id: 't1', text: 'hi' } }], {
+        canonical: 'https://khatario.com/pricing',
+        robots: 'noindex',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.root.props.canonical).toBe('https://khatario.com/pricing');
+    expect(result.data.root.props.robots).toBe('noindex');
+
+    const evil = sanitizeMarketingDocument(
+      doc([{ type: 'Text', props: { id: 't1', text: 'hi' } }], { canonical: 'https://evil.example/home', robots: 'whatever' }),
+    );
+    expect(evil.ok).toBe(true);
+    if (!evil.ok) return;
+    expect(evil.data.root.props.canonical).toBe('');
+    expect(evil.data.root.props.robots).toBe('index');
+  });
+
+  it('requires alt text on images only at publish', () => {
+    const withImage = doc([
+      {
+        type: 'Section',
+        props: {
+          id: 's1',
+          content: [{ type: 'Image', props: { id: 'i1', image: `/media/marketing/${HASH}.webp`, alt: '' } }],
+        },
+      },
+    ]);
+    const clean = sanitizeMarketingDocument(withImage);
+    expect(clean.ok).toBe(true);
+    if (!clean.ok) return;
+    expect(imageAltPublishError(clean.data)).toMatch(/alt text/i);
+    const fixed = sanitizeMarketingDocument(
+      doc([{ type: 'Image', props: { id: 'i1', image: `/media/marketing/${HASH}.webp`, alt: 'Shop counter' } }]),
+    );
+    expect(fixed.ok).toBe(true);
+    if (!fixed.ok) return;
+    expect(imageAltPublishError(fixed.data)).toBeNull();
+  });
+
   it('rejects documents nested too deeply', () => {
     let inner: unknown = { type: 'Text', props: { id: 'leaf', text: 'x' } };
     for (let i = 0; i < 20; i++) inner = { type: 'Card', props: { id: `c${i}`, content: [inner] } };
     expect(sanitizeMarketingDocument(doc([inner])).ok).toBe(false);
+  });
+});
+
+describe('canonical', () => {
+  it('allows site paths and the public hosts only', () => {
+    expect(isSafeCanonical('')).toBe(true);
+    expect(isSafeCanonical('/')).toBe(true);
+    expect(isSafeCanonical('/pricing')).toBe(true);
+    expect(isSafeCanonical('https://khatario.com/')).toBe(true);
+    expect(isSafeCanonical('https://staging.khatario.com/')).toBe(true);
+    expect(isSafeCanonical('http://localhost:3000/')).toBe(true);
+    expect(isSafeCanonical('//evil.example')).toBe(false);
+    expect(isSafeCanonical('https://evil.example/')).toBe(false);
+    expect(isSafeCanonical('javascript:alert(1)')).toBe(false);
   });
 });
 

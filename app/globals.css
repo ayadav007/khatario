@@ -1478,6 +1478,24 @@
   font-family: var(--mb-heading-font, inherit);
 }
 
+@keyframes mb-motion-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mb-motion-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.mb-motion-fade { animation: mb-motion-fade 0.6s ease both; }
+.mb-motion-rise { animation: mb-motion-rise 0.7s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mb-motion-fade,
+  .mb-motion-rise { animation: none; }
+}
+
 /**
  * Mobile app shell — native-feeling patterns for Capacitor / <lg.
  * Brand stays Khatario teal; structure follows Material 3 / Flutter density.

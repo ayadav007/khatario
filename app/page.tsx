@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { LandingPage } from '@/components/marketing/landing/LandingPage';
 import { getPublishedMarketingDocument } from '@/lib/marketing-builder/pages-repo';
+import { marketingRobots, resolveCanonical } from '@/lib/marketing-builder/seo';
 import { isSafeImageSrc } from '@/lib/marketing-builder/safe-url';
 import { loadPricingCatalog } from '@/lib/subscription/pricing-catalog';
 
@@ -19,14 +20,20 @@ export async function generateMetadata(): Promise<Metadata> {
   const props = (doc?.root?.props ?? {}) as Record<string, unknown>;
   const title = rootText(props.title, TITLE);
   const description = rootText(props.description, DESCRIPTION);
+  const ogTitle = rootText(props.ogTitle, title);
+  const ogDescription = rootText(props.ogDescription, description);
   const ogImage = typeof props.ogImage === 'string' && isSafeImageSrc(props.ogImage) ? props.ogImage : null;
   const images = ogImage ? [{ url: ogImage }] : undefined;
+  const canonical = resolveCanonical(props.canonical);
+  const hidden = marketingRobots(props.robots) === 'noindex';
 
   return {
     title: { absolute: title },
     description,
-    openGraph: { title, description, type: 'website', siteName: 'Khatario', ...(images ? { images } : {}) },
-    twitter: { card: 'summary_large_image', title, description, ...(images ? { images: images.map((i) => i.url) } : {}) },
+    ...(canonical ? { alternates: { canonical } } : {}),
+    ...(hidden ? { robots: { index: false, follow: false } } : {}),
+    openGraph: { title: ogTitle, description: ogDescription, type: 'website', siteName: 'Khatario', ...(images ? { images } : {}) },
+    twitter: { card: 'summary_large_image', title: ogTitle, description: ogDescription, ...(images ? { images: images.map((i) => i.url) } : {}) },
   };
 }
 

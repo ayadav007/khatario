@@ -14,6 +14,7 @@ import {
   useTone,
   type Align,
 } from '@/components/marketing/builder/blocks/tone';
+import { useMarketingEditing } from '@/components/marketing/builder/MarketingEditingContext';
 import { youtubeId } from '@/lib/marketing-builder/safe-url';
 
 function SmartLink({
@@ -129,11 +130,24 @@ export function TextBlock({ text, size, align, width }: TextProps) {
 
 /* Image -------------------------------------------------------------------- */
 
+export type ImageFocal = 'center' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right';
+
+export const IMAGE_FOCAL: Record<ImageFocal, string> = {
+  center: 'object-center',
+  top: 'object-top',
+  bottom: 'object-bottom',
+  left: 'object-left',
+  right: 'object-right',
+  'top-left': 'object-left-top',
+  'top-right': 'object-right-top',
+};
+
 export type ImageProps = {
   image: string;
   alt: string;
   aspect: 'auto' | '16/9' | '16/10' | '4/3' | '1/1' | '3/4';
   fit: 'cover' | 'contain';
+  focal?: ImageFocal;
   rounded: 'none' | 'md' | 'xl';
   shadow: boolean;
   caption?: string;
@@ -179,7 +193,7 @@ export function ImageBlock(p: ImageProps) {
           alt={p.alt}
           fill
           sizes="(min-width: 1024px) 60vw, 100vw"
-          className={p.fit === 'contain' ? 'object-contain' : 'object-cover object-top'}
+          className={clsx(p.fit === 'contain' ? 'object-contain' : 'object-cover', IMAGE_FOCAL[p.focal ?? 'top'])}
         />
       </div>
     );
@@ -399,16 +413,23 @@ export function StatsBlock({ items, columns, style }: StatsProps) {
 
 /* Screenshot --------------------------------------------------------------- */
 
-export type ScreenshotProps = { image: string; alt: string; frame: 'browser' | 'phone' | 'none'; caption?: string };
+export type ScreenshotProps = {
+  image: string;
+  alt: string;
+  frame: 'browser' | 'phone' | 'none';
+  focal?: ImageFocal;
+  caption?: string;
+};
 
-export function ScreenshotBlock({ image, alt, frame, caption }: ScreenshotProps) {
+export function ScreenshotBlock({ image, alt, frame, focal, caption }: ScreenshotProps) {
   const tone = useTone();
   if (!image) return <ImagePlaceholder label="Choose a screenshot" />;
+  const crop = clsx('object-cover', IMAGE_FOCAL[focal ?? (frame === 'phone' ? 'top' : 'top-left')]);
   const body =
     frame === 'phone' ? (
       <div className="mx-auto w-full max-w-[18rem] rounded-[2.2rem] border-[10px] border-slate-900 bg-slate-900 shadow-2xl">
         <div className="relative aspect-[9/19] overflow-hidden rounded-[1.6rem] bg-white">
-          <MarketingImg src={image} alt={alt} fill sizes="288px" className="object-cover object-top" />
+          <MarketingImg src={image} alt={alt} fill sizes="288px" className={crop} />
         </div>
       </div>
     ) : frame === 'browser' ? (
@@ -419,12 +440,12 @@ export function ScreenshotBlock({ image, alt, frame, caption }: ScreenshotProps)
           <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
         </div>
         <div className="relative aspect-[16/10]">
-          <MarketingImg src={image} alt={alt} fill sizes="(min-width: 1024px) 60vw, 100vw" className="object-cover object-left-top" />
+          <MarketingImg src={image} alt={alt} fill sizes="(min-width: 1024px) 60vw, 100vw" className={crop} />
         </div>
       </div>
     ) : (
       <div className="relative aspect-[16/10] overflow-hidden rounded-2xl">
-        <MarketingImg src={image} alt={alt} fill sizes="(min-width: 1024px) 60vw, 100vw" className="object-cover object-left-top" />
+        <MarketingImg src={image} alt={alt} fill sizes="(min-width: 1024px) 60vw, 100vw" className={crop} />
       </div>
     );
   return (
@@ -445,6 +466,7 @@ export type VideoProps = { videoUrl: string; title: string };
 
 export function VideoBlock({ videoUrl, title }: VideoProps) {
   const id = youtubeId(videoUrl ?? '');
+  const editing = useMarketingEditing();
   if (!id) return <ImagePlaceholder label="Paste a YouTube link" />;
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900 shadow-xl">
@@ -455,7 +477,8 @@ export function VideoBlock({ videoUrl, title }: VideoProps) {
         allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
-        className="absolute inset-0 h-full w-full"
+        tabIndex={editing ? -1 : undefined}
+        className={clsx('absolute inset-0 h-full w-full', editing && 'pointer-events-none')}
       />
     </div>
   );

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isBlockType } from '@/lib/marketing-builder/block-types';
+import { isSafeCanonical, marketingRobots } from '@/lib/marketing-builder/seo';
 import { isSafeHref, isSafeImageSrc, youtubeId } from '@/lib/marketing-builder/safe-url';
 
 export const MARKETING_DOC_MAX_BYTES = 1_000_000;
@@ -49,6 +50,8 @@ function cleanString(key: string, value: string): string {
   if (/href$/i.test(key)) return isSafeHref(v) ? v.trim() : '';
   if (/(image|src)$/i.test(key)) return isSafeImageSrc(v) ? v.trim() : '';
   if (key === 'videoUrl') return v.trim() === '' || youtubeId(v) ? v.trim() : '';
+  if (key === 'canonical') return isSafeCanonical(v) ? v.trim() : '';
+  if (key === 'robots') return marketingRobots(v.trim());
   return v;
 }
 

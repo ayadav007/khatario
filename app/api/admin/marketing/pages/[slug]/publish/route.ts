@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { requirePlatformRequest } from '@/lib/platform-request-auth';
 import { logAdminAction } from '@/lib/platform-auth';
+import { imageAltPublishError } from '@/lib/marketing-builder/publish-checks';
 import { sanitizeMarketingDocument } from '@/lib/marketing-builder/sanitize';
 import { publishMarketingPage } from '@/lib/marketing-builder/pages-repo';
 import { scheduleKbReindex } from '@/lib/rag/queue';
@@ -26,6 +27,8 @@ export async function POST(request: NextRequest, { params }: { params: { slug: s
 
   const clean = sanitizeMarketingDocument(body.data);
   if (!clean.ok) return NextResponse.json({ error: clean.error }, { status: 422 });
+  const altError = imageAltPublishError(clean.data);
+  if (altError) return NextResponse.json({ error: altError }, { status: 422 });
 
   const result = await publishMarketingPage(s.slug, clean.data, auth.admin.id);
   revalidatePath(MARKETING_PAGE_PATHS[s.slug]);

@@ -2,6 +2,7 @@
 
 import { clsx } from 'clsx';
 import type { CSSProperties, ReactNode } from 'react';
+import { useMarketingEditing } from '@/components/marketing/builder/MarketingEditingContext';
 import { LANDING_PAGE_GUTTER } from '@/lib/marketing-layout';
 import { cleanAnchor, ToneProvider, useTone, type Tone } from '@/components/marketing/builder/blocks/tone';
 
@@ -12,6 +13,9 @@ export type SectionProps = {
   overlay: 'none' | 'light' | 'medium' | 'strong';
   width: 'full' | 'wide' | 'narrow';
   paddingY: 'none' | 'sm' | 'md' | 'lg' | 'xl';
+  paddingX?: 'default' | 'tight' | 'wide';
+  textTone?: 'auto' | 'light' | 'dark';
+  motion?: 'none' | 'fade' | 'rise';
   border: 'none' | 'top' | 'bottom' | 'both';
   anchor?: string;
 };
@@ -47,6 +51,12 @@ const SECTION_BORDER: Record<SectionProps['border'], string> = {
   both: 'border-y border-slate-200/80',
 };
 
+const SECTION_PX: Record<NonNullable<SectionProps['paddingX']>, string> = {
+  default: LANDING_PAGE_GUTTER,
+  tight: 'mx-auto w-full px-3 sm:px-4',
+  wide: 'mx-auto w-full px-6 sm:px-10 lg:px-16 xl:px-24',
+};
+
 const OVERLAY: Record<SectionProps['overlay'], string> = {
   none: '',
   light: 'bg-slate-900/30',
@@ -59,11 +69,13 @@ export function sectionTone(background: SectionBackground): Tone {
 }
 
 export function SectionBlock({ children, ...p }: SectionProps & { children: ReactNode }) {
-  const tone = sectionTone(p.background);
+  const editing = useMarketingEditing();
+  const tone: Tone = p.textTone === 'light' || p.textTone === 'dark' ? p.textTone : sectionTone(p.background);
   const style: CSSProperties | undefined =
     p.background === 'image' && p.backgroundImage
       ? { backgroundImage: `url("${p.backgroundImage.replace(/["\\\n]/g, '')}")` }
       : undefined;
+  const motion = !editing && p.motion === 'fade' ? 'mb-motion-fade' : !editing && p.motion === 'rise' ? 'mb-motion-rise' : '';
 
   return (
     <section
@@ -73,6 +85,7 @@ export function SectionBlock({ children, ...p }: SectionProps & { children: Reac
         SECTION_BG[p.background] ?? SECTION_BG.white,
         SECTION_PY[p.paddingY] ?? SECTION_PY.lg,
         SECTION_BORDER[p.border] ?? '',
+        motion,
       )}
       style={style}
     >
@@ -85,7 +98,7 @@ export function SectionBlock({ children, ...p }: SectionProps & { children: Reac
           aria-hidden
         />
       )}
-      <div className={clsx(LANDING_PAGE_GUTTER, 'relative', SECTION_WIDTH[p.width])}>
+      <div className={clsx(SECTION_PX[p.paddingX ?? 'default'], 'relative', SECTION_WIDTH[p.width])}>
         <ToneProvider tone={tone}>{children}</ToneProvider>
       </div>
     </section>
