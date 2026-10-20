@@ -3,9 +3,11 @@ import { queryRows, queryOne } from '@/lib/db';
 import { Account } from '@/types/database';
 import { authorize, AuthorizationError } from '@/lib/authorization';
 import { withPremiumSubscriptionApi } from '@/lib/security';
+import { natureForAccountType, parseOpeningBalance } from '@/lib/accounting/account-hierarchy';
 import {
   AccountRuleError,
   assertGroupMatchesType,
+  assertValidParentAccount,
   setAccountOpeningBalance,
 } from '@/lib/accounting/account-rules';
 import { isAllowedPlSection, isPlSection, PL_SECTION_LABELS, plSectionFromGroup } from '@/lib/accounting/pl-sections';
@@ -44,9 +46,12 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
         SELECT 
           a.*,
           ag.group_name as account_group_name,
-          ag.group_code as account_group_code
+          ag.group_code as account_group_code,
+          p.account_code as parent_account_code,
+          p.account_name as parent_account_name
         FROM accounts a
         LEFT JOIN account_groups ag ON a.account_group_id = ag.id
+        LEFT JOIN accounts p ON p.id = a.parent_account_id AND p.business_id = a.business_id
         WHERE a.business_id = $1
         ORDER BY a.account_code
       `, [businessId]);
@@ -63,9 +68,11 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
         const account = accountMap.get(acc.id)!;
         if (acc.parent_account_id) {
           const parent = accountMap.get(acc.parent_account_id);
-          if (parent) {
+          if (parent && parent.id !== account.id) {
             if (!parent.children) parent.children = [];
             parent.children.push(account);
+          } else {
+            rootAccounts.push(account);
           }
         } else {
           rootAccounts.push(account);
@@ -79,9 +86,12 @@ export const GET = withPremiumSubscriptionApi({}, async (ctx) => {
       SELECT 
         a.*,
         ag.group_name as account_group_name,
-        ag.group_code as account_group_code
+        ag.group_code as account_group_code,
+        p.account_code as parent_account_code,
+        p.account_name as parent_account_name
       FROM accounts a
       LEFT JOIN account_groups ag ON a.account_group_id = ag.id
+      LEFT JOIN accounts p ON p.id = a.parent_account_id AND p.business_id = a.business_id
       WHERE a.business_id = $1
     `;
     const params: any[] = [businessId];
@@ -253,37 +263,36 @@ export const POST = withPremiumSubscriptionApi(
         );
       }
 
-      // Validate nature matches account type
-      const validNatures: Record<string, string[]> = {
-        asset: ['debit'],
-        liability: ['credit'],
-        income: ['credit'],
-        expense: ['debit'],
-        capital: ['credit'],
-      };
-
-      if (!validNatures[account_type]?.includes(nature)) {
+      const expectedNature = natureForAccountType(account_type);
+      if (!expectedNature || nature !== expectedNature) {
         return NextResponse.json(
-          { error: `Invalid nature for account type ${account_type}. Expected: ${validNatures[account_type]?.join(' or ')}` },
+          {
+            error: expectedNature
+              ? `A ${account_type} account must use ${expectedNature} nature.`
+              : 'Account type must be asset, liability, income, expense, or capital.',
+            code: 'INVALID_NATURE',
+          },
           { status: 400 }
         );
       }
 
+      const opening = parseOpeningBalance(opening_balance, opening_balance_type);
+      if (!opening.ok) {
+        return NextResponse.json({ error: opening.error, code: 'INVALID_OPENING_BALANCE' }, { status: 400 });
+      }
+
       try {
         await assertGroupMatchesType(business_id, account_group_id, account_type);
+        await assertValidParentAccount({
+          businessId: business_id,
+          accountType: account_type,
+          parentAccountId: parent_account_id || null,
+        });
       } catch (e) {
         if (e instanceof AccountRuleError) {
           return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
         }
         throw e;
-      }
-
-      const obAmount = Number(opening_balance) || 0;
-      if (obAmount < 0 || (opening_balance_type !== 'debit' && opening_balance_type !== 'credit')) {
-        return NextResponse.json(
-          { error: 'opening_balance must be non-negative and opening_balance_type debit or credit' },
-          { status: 400 }
-        );
       }
 
       // Omitted section = the database default for the group (trigger from migration 334).
@@ -327,19 +336,19 @@ export const POST = withPremiumSubscriptionApi(
           account_group_id,
           parent_account_id || null,
           nature,
-          opening_balance_type,
+          opening.type,
           description || null,
           sort_order,
           ...(withSection ? [plSection] : []),
         ]
       );
 
-      if (account && obAmount > 0) {
+      if (account && opening.amount > 0) {
         await setAccountOpeningBalance({
           businessId: business_id,
           accountId: account.id,
-          amount: obAmount,
-          type: opening_balance_type as 'debit' | 'credit',
+          amount: opening.amount,
+          type: opening.type,
         });
         account = await queryOne<Account>('SELECT * FROM accounts WHERE id = $1', [account.id]);
       }
@@ -365,8 +374,14 @@ export const POST = withPremiumSubscriptionApi(
       return NextResponse.json({ account }, { status: 201 });
     } catch (error: any) {
       console.error('Error creating account:', error);
+      if (error instanceof AccountRuleError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      if (error?.code === '23505') {
+        return NextResponse.json({ error: 'Account code already exists' }, { status: 409 });
+      }
       return NextResponse.json(
-        { error: error.message || 'Internal server error' },
+        { error: 'Could not create the account. Check the details and try again.' },
         { status: 500 }
       );
     }

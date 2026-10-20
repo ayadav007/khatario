@@ -10,7 +10,10 @@ import { Input } from '@/components/ui/Input';
 import { ProfileSection } from '@/components/settings/business-profile/ProfileSection';
 import { MobileDuplicatePageChrome } from '@/components/layout/MobileDuplicatePageChrome';
 import { AccessDenied } from '@/components/common/AccessDenied';
-import { PlSectionSelect } from '@/components/accounts/PlSectionSelect';
+import { AccountGroupPicker } from '@/components/accounts/AccountGroupPicker';
+import { OpeningAsOfDate } from '@/components/accounts/OpeningAsOfDate';
+import { ParentAccountPicker } from '@/components/accounts/ParentAccountPicker';
+import { NATURE_HELP } from '@/lib/accounting/account-hierarchy';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuthorizationGuard } from '@/hooks/useAuthorizationGuard';
 import { safeJsonParse, getApiErrorMessage } from '@/lib/api-utils';
@@ -84,6 +87,7 @@ export default function EditAccountPage() {
   const [initial, setInitial] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [subAccount, setSubAccount] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,6 +115,7 @@ export default function EditAccountPage() {
         setAccounts(list);
         setForm(f);
         setInitial(f);
+        setSubAccount(Boolean(f.parent_account_id));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -134,10 +139,8 @@ export default function EditAccountPage() {
 
   const isSystem = !!account.is_system;
   const isPl = account.account_type === 'income' || account.account_type === 'expense';
-  const typeGroups = groups.filter((g) => g.group_type === account.account_type);
   const selectedGroup = groups.find((g) => g.id === form.account_group_id);
   const defaultPlSection = plSectionFromGroup(account.account_type, selectedGroup?.group_code, selectedGroup?.group_type);
-  const parentOptions = accounts.filter((a) => a.account_type === account.account_type && a.id !== account.id);
   const set = (patch: Partial<FormState>) => setForm({ ...form, ...patch });
 
   const buildChanges = (): Record<string, unknown> => {
@@ -224,56 +227,49 @@ export default function EditAccountPage() {
               </div>
             </AccountSection>
 
-            <AccountSection title="Classification" description="Group, optional parent, and where it shows in Profit & Loss.">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Account Group *</label>
-                  <select
-                    value={form.account_group_id}
-                    onChange={(e) => set({ account_group_id: e.target.value, pl_section: '' })}
-                    className="input w-full"
-                    disabled={isSystem}
-                  >
-                    {typeGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.group_code} - {g.group_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Parent Account (Optional)</label>
-                  <select
-                    value={form.parent_account_id}
-                    onChange={(e) => set({ parent_account_id: e.target.value })}
-                    className="input w-full"
-                    disabled={isSystem}
-                  >
-                    <option value="">None (Top-level account)</option>
-                    {parentOptions.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_code} - {a.account_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {isPl && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6 mt-6">
-                  <PlSectionSelect
-                    accountType={account.account_type}
-                    value={form.pl_section}
-                    defaultSection={defaultPlSection}
-                    onChange={(pl_section) => set({ pl_section })}
-                    disabled={isSystem}
-                    disabledReason="System accounts keep their standard Profit & Loss section."
+            <AccountSection title="Classification" description="The group classifies the account. A parent, if you choose one, only organises this ledger under another ledger.">
+              <AccountGroupPicker
+                groups={groups}
+                value={form.account_group_id}
+                accountType={account.account_type}
+                disabled={isSystem}
+                onChange={(group) => set({ account_group_id: group?.id || form.account_group_id, pl_section: '' })}
+              />
+              <p className="text-xs text-text-secondary">
+                Nature stays {account.nature}. It follows the account type and is not changed from this form.
+                {isPl ? ' Profit & Loss uses the section for this group.' : ''}
+              </p>
+              {!isSystem && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={subAccount}
+                    onChange={(event) => {
+                      setSubAccount(event.target.checked);
+                      if (!event.target.checked) set({ parent_account_id: '' });
+                    }}
                   />
-                </div>
+                  Make this a sub-account
+                </label>
+              )}
+              {subAccount && (
+                <ParentAccountPicker
+                  accounts={accounts}
+                  groups={groups}
+                  accountType={account.account_type}
+                  value={form.parent_account_id}
+                  excludeAccountId={account.id}
+                  disabled={isSystem}
+                  onChange={(parent_account_id) => set({ parent_account_id })}
+                />
               )}
             </AccountSection>
 
             {!isSystem && (
-              <AccountSection title="Opening balance" description="Starting amount and whether it is debit or credit.">
+              <AccountSection
+                title="Opening balance"
+                description="Balance brought forward from earlier books. Saving replaces the existing opening entry for this account. It does not add a second one."
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 gap-y-6">
                   <Input
                     label="Opening Balance"
@@ -293,8 +289,12 @@ export default function EditAccountPage() {
                       <option value="debit">Debit</option>
                       <option value="credit">Credit</option>
                     </select>
+                    <p className="mt-1 text-xs text-text-secondary">
+                      {NATURE_HELP[account.nature] ?? ''} Saving replaces the existing opening entry. It does not add a second one.
+                    </p>
                   </div>
                 </div>
+                {business?.id && <OpeningAsOfDate businessId={business.id} />}
               </AccountSection>
             )}
 
