@@ -219,11 +219,11 @@
   .landing-cta-shimmer {
     background-image: linear-gradient(
       110deg,
-      var(--color-primary-600, #115e59) 0%,
-      var(--color-primary-600, #115e59) 40%,
-      var(--color-primary-400, #2dd4bf) 50%,
-      var(--color-primary-600, #115e59) 60%,
-      var(--color-primary-600, #115e59) 100%
+      var(--color-primary-600, #032B23) 0%,
+      var(--color-primary-600, #032B23) 40%,
+      var(--color-primary-400, #45625c) 50%,
+      var(--color-primary-600, #032B23) 60%,
+      var(--color-primary-600, #032B23) 100%
     );
     background-size: 200% 100%;
     animation: landing-cta-shimmer 4s ease-in-out infinite;
@@ -359,20 +359,20 @@
     /* Khatario brand: cream canvas, deep green text, white cards. */
     --color-background: #F8F3E9;
     --color-surface: #ffffff;
-    --color-text-primary: #063F35;
+    --color-text-primary: #032B23;
     --color-text-secondary: #3d5c56;
     --color-text-muted: #6d8580;
     --color-border: #e4ddd0;
-    --color-primary-50: #eef2f1;
-    --color-primary-100: #dae2e1;
-    --color-primary-200: #afc2be;
-    --color-primary-300: #7e9b96;
-    --color-primary-400: #47716a;
-    --color-primary-500: #063F35;
-    --color-primary-600: #05362e;
-    --color-primary-700: #042d26;
-    --color-primary-800: #03251f;
-    --color-primary-900: #031c18;
+    --color-primary-50: #edf0f0;
+    --color-primary-100: #d9dfde;
+    --color-primary-200: #aebbb9;
+    --color-primary-300: #7c918d;
+    --color-primary-400: #45625c;
+    --color-primary-500: #032B23;
+    --color-primary-600: #032B23;
+    --color-primary-700: #021f19;
+    --color-primary-800: #021914;
+    --color-primary-900: #011310;
     --color-accent-50: #fef6ef;
     --color-accent-100: #feecde;
     --color-accent-200: #fcd7b8;
@@ -547,7 +547,7 @@
    * Desktop sidebar: deep green field, cream type, cream selected row, orange mark.
    */
   aside.khatario-sidebar {
-    background-color: #063F35;
+    background-color: #032B23;
     border-right: 1px solid rgba(248, 243, 233, 0.12);
     color: #F8F3E9;
   }
@@ -576,11 +576,11 @@
 
   aside.khatario-sidebar .bg-primary-500 {
     background-color: #F8F3E9;
-    color: #063F35;
+    color: #032B23;
   }
 
   aside.khatario-sidebar .bg-primary-500 .text-white {
-    color: #063F35;
+    color: #032B23;
   }
 
   aside.khatario-sidebar .bg-primary-600 {
@@ -590,7 +590,7 @@
   aside.khatario-sidebar a.bg-slate-100,
   aside.khatario-sidebar button.bg-slate-100 {
     background-color: #F8F3E9;
-    color: #063F35;
+    color: #032B23;
     box-shadow: inset 3px 0 0 #F58220;
   }
 
@@ -598,7 +598,7 @@
   aside.khatario-sidebar a.bg-slate-100 .text-primary-600,
   aside.khatario-sidebar button.bg-slate-100 .text-text-primary,
   aside.khatario-sidebar button.bg-slate-100 .text-primary-600 {
-    color: #063F35;
+    color: #032B23;
   }
 
   aside.khatario-sidebar .bg-slate-100\/50,
@@ -614,26 +614,26 @@
   aside.khatario-sidebar a.bg-slate-100:hover,
   aside.khatario-sidebar button.bg-slate-100:hover {
     background-color: #F8F3E9;
-    color: #063F35;
+    color: #032B23;
   }
 
   html:not(.dark) .khatario-brand {
     --color-background: #F8F3E9;
     --color-surface: #ffffff;
-    --color-text-primary: #063F35;
+    --color-text-primary: #032B23;
     --color-text-secondary: #3d5c56;
     --color-text-muted: #6d8580;
     --color-border: #e4ddd0;
-    --color-primary-50: #eef2f1;
-    --color-primary-100: #dae2e1;
-    --color-primary-200: #afc2be;
-    --color-primary-300: #7e9b96;
-    --color-primary-400: #47716a;
-    --color-primary-500: #063F35;
-    --color-primary-600: #05362e;
-    --color-primary-700: #042d26;
-    --color-primary-800: #03251f;
-    --color-primary-900: #031c18;
+    --color-primary-50: #edf0f0;
+    --color-primary-100: #d9dfde;
+    --color-primary-200: #aebbb9;
+    --color-primary-300: #7c918d;
+    --color-primary-400: #45625c;
+    --color-primary-500: #032B23;
+    --color-primary-600: #032B23;
+    --color-primary-700: #021f19;
+    --color-primary-800: #021914;
+    --color-primary-900: #011310;
     --color-accent-50: #fef6ef;
     --color-accent-100: #feecde;
     --color-accent-200: #fcd7b8;

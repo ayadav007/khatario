@@ -59,9 +59,10 @@ export const LANDING_HERO_DEFAULTS: LandingHeroContent = {
   secondaryHref: '/book-demo',
   tertiaryLabel: 'See pricing',
   tertiaryHref: '#pricing',
-  visual: 'mockup',
-  image: '',
-  imageAlt: '',
+  visual: 'image',
+  image: '/marketing/khatario-small-business-hero.jpg',
+  imageAlt:
+    'A shop owner with a laptop showing Khatario, surrounded by invoices, inventory, GST billing, and reports',
 };
 
 type HeroText = { badges: string[]; subhead: string; footnote: string; cta: string };
@@ -213,6 +214,8 @@ export function LandingHero(props: Partial<LandingHeroContent> = {}) {
               src={content.image}
               alt={content.imageAlt}
               priority
+              width={1024}
+              height={861}
               sizes="(min-width: 1024px) 50vw, 100vw"
               className="rounded-2xl shadow-2xl shadow-slate-900/10"
             />

@@ -18,7 +18,7 @@ import {
 } from '@/lib/portal-theme';
 
 const PRESET_PRIMARY: { label: string; hex: string }[] = [
-  { label: 'Khatario green', hex: '#063F35' },
+  { label: 'Khatario green', hex: '#032B23' },
   { label: 'Blue', hex: '#2563eb' },
   { label: 'Indigo', hex: '#4f46e5' },
   { label: 'Violet', hex: '#7c3aed' },

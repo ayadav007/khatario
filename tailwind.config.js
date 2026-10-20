@@ -24,18 +24,18 @@ module.exports = {
         ],
       },
       colors: {
-        /** Driven by business portal theme via --color-primary-* on :root (fallbacks = default teal). */
+        /** Driven by business portal theme via --color-primary-* on :root (fallbacks = logo green). */
         primary: {
-          50: 'var(--color-primary-50, #eef2f1)',
-          100: 'var(--color-primary-100, #dae2e1)',
-          200: 'var(--color-primary-200, #afc2be)',
-          300: 'var(--color-primary-300, #7e9b96)',
-          400: 'var(--color-primary-400, #47716a)',
-          500: 'var(--color-primary-500, #063F35)',
-          600: 'var(--color-primary-600, #05362e)',
-          700: 'var(--color-primary-700, #042d26)',
-          800: 'var(--color-primary-800, #03251f)',
-          900: 'var(--color-primary-900, #031c18)',
+          50: 'var(--color-primary-50, #edf0f0)',
+          100: 'var(--color-primary-100, #d9dfde)',
+          200: 'var(--color-primary-200, #aebbb9)',
+          300: 'var(--color-primary-300, #7c918d)',
+          400: 'var(--color-primary-400, #45625c)',
+          500: 'var(--color-primary-500, #032B23)',
+          600: 'var(--color-primary-600, #032B23)',
+          700: 'var(--color-primary-700, #021f19)',
+          800: 'var(--color-primary-800, #021914)',
+          900: 'var(--color-primary-900, #011310)',
         },
         /** Driven by org portal theme via --color-accent-* (fallbacks = legacy product accent). */
         accent: {

@@ -5,11 +5,8 @@ export function LandingFooter() {
   return (
     <footer className="bg-slate-950 py-12 text-slate-400">
       <div className={`${LANDING_PAGE_GUTTER} w-full text-center sm:text-left`}>
-        <Link href="/" className="mb-4 inline-flex w-full items-center justify-center gap-2 text-slate-100 sm:justify-start">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-600 text-base font-bold text-white" aria-hidden>
-            K
-          </span>
-          <span className="text-xl font-bold">Khatario</span>
+        <Link href="/" className="mb-4 inline-flex w-full items-center justify-center sm:justify-start">
+          <img src="/brand/khatario-wordmark-light.png" alt="Khatario" className="h-12 w-auto" />
         </Link>
         <p className="text-sm">© 2026 Khatario. All rights reserved.</p>
         <p className="mt-2 text-sm text-slate-400">Made for Indian businesses — billing, stock, and trust at the counter.</p>

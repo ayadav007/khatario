@@ -222,7 +222,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
           <path
             d={path}
             fill="none"
-            stroke="#063F35"
+            stroke="#032B23"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -234,7 +234,7 @@ export const CashFlowChart = React.memo(function CashFlowChart({ businessId }: C
               cx={point.x}
               cy={point.y}
               r="5"
-              fill="#063F35"
+              fill="#032B23"
               stroke={c.pointStroke}
               strokeWidth="2"
               className="cursor-pointer"

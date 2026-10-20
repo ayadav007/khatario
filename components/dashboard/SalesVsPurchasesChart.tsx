@@ -212,7 +212,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
                     y={finalSalesY}
                     width={barHalfWidth}
                     height={finalSalesHeight}
-                    fill="#063F35"
+                    fill="#032B23"
                     data-bar="sales"
                     data-date={d.date}
                     rx="2"
@@ -275,7 +275,7 @@ export const SalesVsPurchasesChart = React.memo(function SalesVsPurchasesChart({
           </div>
           <div className="flex items-center gap-2.5 text-2xs text-text-secondary md:text-xs">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-sm bg-[#063F35]" />
+              <span className="inline-block h-2 w-2 rounded-sm bg-[#032B23]" />
               Sales
             </span>
             <span className="flex items-center gap-1">

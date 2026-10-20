@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 class KhatarioColors {
   static const background = Color(0xFFF7F4EE);
   static const surface = Color(0xFFFFFFFF);
-  static const ink = Color(0xFF063F35);
+  static const ink = Color(0xFF032B23);
   static const inkSecondary = Color(0xFF3D5C56);
   static const muted = Color(0xFF6D8580);
   static const line = Color(0xFFE4DDD0);
-  static const green = Color(0xFF063F35);
-  static const greenSoft = Color(0xFFEEF2F1);
+  static const green = Color(0xFF032B23);
+  static const greenSoft = Color(0xFFEDF0F0);
   static const orange = Color(0xFFF58220);
   static const due = Color(0xFFB45309);
   static const paidBg = Color(0xFFD1FAE5);
@@ -49,11 +49,11 @@ class KhatarioColors {
 /// `PortalTheme` from `lib/portal-theme.ts`, expanded to 50..900 scales.
 class PortalTheme {
   PortalTheme._(this.primaryHex, this.accentHex, this.fontPreset)
-      : primary = _scale(primaryHex),
+      : primary = _scale(primaryHex, buttonMatchesBase: true),
         accent = _scale(accentHex);
 
   static const fontPresets = ['inter', 'system', 'dm_sans', 'source_sans'];
-  static final defaults = PortalTheme._('#063f35', '#f58220', 'inter');
+  static final defaults = PortalTheme._('#032b23', '#f58220', 'inter');
 
   final String primaryHex;
   final String accentHex;
@@ -73,8 +73,9 @@ class PortalTheme {
   /// `normalizePortalThemeJson` + `mergePortalTheme`.
   factory PortalTheme.fromJson(Object? raw) {
     if (raw is! Map) return defaults;
-    final primary = parseHex(raw['primary_hex']);
-    if (primary == null) return defaults;
+    final parsedPrimary = parseHex(raw['primary_hex']);
+    if (parsedPrimary == null) return defaults;
+    final primary = parsedPrimary == '#063f35' ? '#032b23' : parsedPrimary;
     final presetRaw = raw['font_preset'] is String ? (raw['font_preset'] as String).trim() : '';
     final preset = fontPresets.contains(presetRaw) ? presetRaw : 'inter';
     return PortalTheme._(primary, parseHex(raw['accent_hex']) ?? defaults.accentHex, preset);
@@ -93,11 +94,12 @@ class PortalTheme {
     return '#${body.toLowerCase()}';
   }
 
-  /// `brandHexToCssVars`: mix toward white for 50..400, black for 600..900.
-  static List<Color> _scale(String hex) {
+  /// `brandHexToCssVars`: mix toward white for 50..400, black for 700..900.
+  /// Primary shade 600 stays the chosen hex so buttons match the logo green.
+  static List<Color> _scale(String hex, {bool buttonMatchesBase = false}) {
     final n = int.parse(hex.substring(1), radix: 16);
     final r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    const steps = [0.93, 0.85, 0.68, 0.48, 0.26, 0.0, -0.14, -0.28, -0.42, -0.55];
+    final steps = [0.93, 0.85, 0.68, 0.48, 0.26, 0.0, buttonMatchesBase ? 0.0 : -0.14, -0.28, -0.42, -0.55];
     int ch(int base, double t) {
       final target = t < 0 ? 0 : 255;
       final v = base + (target - base) * t.abs();

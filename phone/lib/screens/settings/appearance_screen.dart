@@ -18,7 +18,7 @@ class AppearanceEditor extends StatefulWidget {
 
 class _AppearanceEditorState extends State<AppearanceEditor> {
   static const _primaryPresets = [
-    ('Khatario green', '#063F35'),
+    ('Khatario green', '#032B23'),
     ('Blue', '#2563eb'),
     ('Indigo', '#4f46e5'),
     ('Violet', '#7c3aed'),
@@ -96,7 +96,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
 
   Future<void> _save({bool reset = false}) async {
     if (!reset && _payload() == null) {
-      setState(() => _error = 'Use a hex colour like #063F35 or #RGB.');
+      setState(() => _error = 'Use a hex colour like #032B23 or #RGB.');
       return;
     }
     setState(() {

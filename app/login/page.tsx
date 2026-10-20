@@ -242,7 +242,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f4f1ea] dark:bg-slate-950 lg:grid lg:grid-cols-2">
-      <aside className="relative overflow-hidden bg-[#063F35] px-5 py-5 text-white sm:px-8 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14 xl:px-16">
+      <aside className="relative overflow-hidden bg-[#032B23] px-5 py-5 text-white sm:px-8 lg:flex lg:flex-col lg:justify-between lg:px-12 lg:py-14 xl:px-16">
         <div
           className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10"
           aria-hidden

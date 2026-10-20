@@ -84,14 +84,14 @@ void main() {
     String hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
     // Values computed by the website in staging (getComputedStyle on --color-primary-*).
     expect(t.primary.map(hex).toList(), [
-      '#fdeff2', '#fbdde4', '#f5b7c4', '#ef89a0', '#e95878', '#e11d48', '#c2193e', '#a21534', '#83112a', '#650d20',
+      '#fdeff2', '#fbdde4', '#f5b7c4', '#ef89a0', '#e95878', '#e11d48', '#e11d48', '#a21534', '#83112a', '#650d20',
     ]);
     expect(t.accent.map(hex).toList(), [
       '#fbfdfd', '#f5fcfb', '#ebf8f6', '#def3f1', '#d0eeeb', '#bfe8e4', '#a4c8c4', '#8aa7a4', '#6f8784', '#566867',
     ]);
     expect(t.fontFamily, isNull);
     expect(PortalTheme.fromJson(null).primary.map(hex).toList(), [
-      '#eef2f1', '#dae2e1', '#afc2be', '#7e9b96', '#47716a', '#063f35', '#05362e', '#042d26', '#03251f', '#031c18',
+      '#edf0f0', '#d9dfde', '#aebbb9', '#7c918d', '#45625c', '#032b23', '#032b23', '#021f19', '#021914', '#011310',
     ]);
     expect(PortalTheme.fromJson({'primary_hex': 'nope'}).signature, PortalTheme.defaults.signature);
     expect(PortalTheme.fromJson({'primary_hex': '#123', 'font_preset': 'comic'}).fontFamily, 'Inter');
