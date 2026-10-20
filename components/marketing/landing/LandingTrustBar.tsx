@@ -13,7 +13,7 @@ export function LandingTrustBar({ items = DEFAULT_TRUST_ITEMS }: { items?: Trust
   if (items.length === 0) return null;
   return (
     <div
-      className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/80 pt-5"
+      className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/80 pt-3"
       aria-label="Product highlights"
     >
       {items.map(({ icon, label }) => (
